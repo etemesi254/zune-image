@@ -1,0 +1,13 @@
+[package]
+name = "zune-image"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+zune-jpeg = { path = "../zune-jpeg" }
+zune-imageprocs = { path = "../zune-imageprocs" }
+zune-core = { path = "../zune-core" }
+zune-ppm = { path = "../zune-ppm" }
+log = "0.4.17"

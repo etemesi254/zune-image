@@ -1,0 +1,30 @@
+[package]
+name = "zune"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = [
+    # Main struct
+    "zune-image",
+    # CLI app
+    "zune-bin",
+    # Image processing routines.
+    "zune-imageprocs",
+    # Image formats
+    "zune-jpeg",
+    "zune-ppm",
+    # Core functionality
+    "zune-core"
+
+]
+
+[dependencies]
+zune-bin = { path = "./zune-bin" }
+
+[profile.release]
+debug = 2
+
+[profile.bench]
+debug = true
