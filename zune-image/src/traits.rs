@@ -35,7 +35,7 @@ pub trait DecoderTrait
     /// ```
     /// use zune_image::traits::DecoderTrait;
     /// use zune_jpeg::Decoder;
-    /// let mut decoder = Decoder::new();
+    /// let mut decoder = JpegDecoder::new();
     ///
     /// decoder.decode_buffer(&[0xFF,0xD8]).unwrap();
     /// ```
