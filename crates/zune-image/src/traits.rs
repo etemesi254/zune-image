@@ -1,84 +1,127 @@
-use crate::colorspace::ImageColorspace;
+use zune_core::colorspace::ColorSpace;
 
+use crate::errors::{ImgEncodeErrors, ImgOperationsErrors};
+use crate::image::Image;
+
+/// Encapsulates an image decoder.
+///
+/// All supported image decoders must implement this class
 pub trait DecoderTrait
 {
-    fn decode_file(&mut self, file: &str) -> Result<Vec<u8>, crate::errors::ImgDecodeErrors>;
+    ///  Decode a file pointed to `file`
+    ///
+    /// # Arguments
+    /// file: File path.
+    ///
+    ///  # Returns
+    /// - Ok(Vec<u8>) -> Pixels decoded from the image.
+    ///
+    /// # Errors
+    /// - Any image decoding errors will be propagated up to the caller.
+    fn decode_file(&mut self, file: &str) -> Result<Vec<u8>, crate::errors::ImgErrors>;
 
-    fn decode_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>, crate::errors::ImgDecodeErrors>;
+    /// Decode a buffer already in memory
+    ///
+    /// # Arguments
+    /// buf: Buffer path
+    ///
+    /// # Returns
+    /// - OK(Vec<u8>) -> Pixels decoded from the image
+    ///
+    /// # Errors
+    ///  - Any image decoding errors will be propagated to the caller.
+    ///
+    /// # Example
+    /// ```
+    /// use zune_image::traits::DecoderTrait;
+    /// use zune_jpeg::Decoder;
+    /// let mut decoder = Decoder::new();
+    ///
+    /// decoder.decode_buffer(&[0xFF,0xD8]).unwrap();
+    /// ```
+    fn decode_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>, crate::errors::ImgErrors>;
 
+    /// Get width and height of the image
+    ///
+    /// # Returns
+    /// - Some(width,height)
+    /// - None -> If image hasn't been decoded and we can't extract
+    ///  the width and height.
     fn get_dimensions(&self) -> Option<(usize, usize)>;
 
-    fn get_out_colorspace(&self) -> ImageColorspace;
+    /// Get the colorspace that the decoded pixels
+    /// are stored in.
+    fn get_out_colorspace(&self) -> ColorSpace;
+
+    /// Get the name of the decoder
+    fn get_name(&self) -> &'static str;
 }
 
-impl DecoderTrait for zune_jpeg::Decoder
-{
-    fn decode_file(&mut self, file: &str) -> Result<Vec<u8>, crate::errors::ImgDecodeErrors>
-    {
-        self.decode_file(file).map_err(|x| x.into())
-    }
-
-    fn decode_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>, crate::errors::ImgDecodeErrors>
-    {
-        self.decode_buffer(buffer).map_err(|x| x.into())
-    }
-
-    fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        let width = usize::from(self.width());
-        let height = usize::from(self.height());
-
-        Some((width, height))
-    }
-
-    fn get_out_colorspace(&self) -> ImageColorspace
-    {
-        self.get_output_colorspace().into()
-    }
-}
-#[derive(Debug, Default)]
-pub struct Img {}
-
-#[derive(Debug, Default)]
-pub struct NewImg {}
+/// This encapsulates an image operation.
+///
+/// All operations that can be stored in a workflow
+/// need to encapsulate this struct.
 pub trait OperationsTrait
 {
-    fn name(&self) -> &'static str;
+    /// Get the name of this operation
+    fn get_name(&self) -> &'static str;
+
+    /// Execute a simple operation on the image
+    /// manipulating the image struct
+    ///
+    /// # Arguments
+    /// - image: A mutable reference to an image which
+    /// this operation will manipulate
+    ///
+    ///
+    /// # Errors
+    /// Any operations error will be propagated to the caller
+    ///
+    /// # Example
+    /// ```
+    /// use zune_image::image::Image;
+    /// use zune_image::impls::grayscale::RgbToGrayScale;
+    /// use zune_image::traits::OperationsTrait;
+    ///
+    /// let mut image = Image::new();
+    /// // Convert to grayscale
+    /// let rgb_to_grayscale = RgbToGrayScale::new();
+    /// rgb_to_grayscale.execute_simple(&mut image);
+    /// ```
+    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
 }
 
-pub trait EncoderTrait {}
+pub trait EncoderTrait
+{
+    /// Get the name of the encoder
+    fn get_name(&self) -> &'static str;
 
-//type DeInterleaveFuncSignature = fn(&[u8], (&mut [u8], &mut [u8], &mut [u8]));
+    /// Set colorspace which the encoder should store the image
+    fn set_colorspace(&mut self, colorspace: ColorSpace);
 
-pub struct DeInterleave
-{
-    //operation: DeInterleaveFuncSignature,
-    from: Img,
-    to:   NewImg,
-}
-impl DeInterleave
-{
-    pub fn new() -> DeInterleave
-    {
-        DeInterleave {
-            //operation: zune_imageprocs::deinterleave::de_interleave_3_channels,
-            from: Img::default(),
-            to:   NewImg::default(),
-        }
-    }
-}
-impl OperationsTrait for DeInterleave
-{
-    fn name(&self) -> &'static str
-    {
-        return "de-interleave";
-    }
-}
-
-impl OperationsTrait for NewImg
-{
-    fn name(&self) -> &'static str
-    {
-        return "new image";
-    }
+    /// Encode and write to a file
+    ///
+    /// The file is stored internally by the decoder, e.g
+    /// by asking for it during initialization
+    ///
+    /// # Arguments
+    /// - image: An image which we are trying to encode.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use std::io::BufWriter;
+    /// use zune_image::codecs::ppm::SPPMEncoder;
+    /// use zune_image::image::Image;
+    /// use zune_image::traits::EncoderTrait;
+    ///
+    /// let file = BufWriter::new(File::open("").unwrap());
+    ///
+    /// let mut encoder = SPPMEncoder::new(file);
+    ///
+    /// let image = Image::new();
+    ///
+    /// encoder.encode_to_file(&image);
+    /// ```
+    fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>;
 }
