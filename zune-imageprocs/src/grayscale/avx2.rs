@@ -6,6 +6,8 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
+use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
+
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn convert_rgb_to_grayscale_avx2((r, g, b): (&[u8], &[u8], &[u8]), gr: &mut [u8])
 {
@@ -60,5 +62,19 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_avx2((r, g, b): (&[u8], &[u8], &[u
             out.as_mut_ptr().cast(),
             _mm256_extracti128_si256::<0>(g_out),
         );
+    }
+    // remainders
+    if r.len() % CHUNK_SIZE != 0
+    {
+        // do the remainder
+        let rem = r.len() % CHUNK_SIZE;
+        let start = r.len() - rem;
+        let c_start = r.len() - (rem / 3);
+
+        let c1 = &r[c_start..];
+        let c2 = &g[c_start..];
+        let c3 = &b[c_start..];
+
+        convert_rgb_to_grayscale_scalar((c1, c2, c3), &mut gr[start..]);
     }
 }
