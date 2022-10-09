@@ -1,13 +1,14 @@
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#![cfg(feature = "sse3")]
+#![cfg(feature = "sse41")]
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+
 use crate::deinterleave::scalar::de_interleave_3_channels_scalar;
 
-#[target_feature(enable = "sse3")]
+#[target_feature(enable = "sse4.1")]
 pub unsafe fn de_interleave_3_channels_sse3(
     source: &[u8], (c1, c2, c3): (&mut [u8], &mut [u8], &mut [u8]),
 )
@@ -40,7 +41,6 @@ pub unsafe fn de_interleave_3_channels_sse3(
     let ssse3_blue_indeces_2 =
         _mm_set_epi8(15, 12, 9, 6, 3, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
-
     for (((source_chunk, a), b), c) in source
         .chunks_exact(CHUNK_SIZE)
         .zip(c1.chunks_exact_mut(OUT_CHUNK_SIZE))
@@ -48,7 +48,6 @@ pub unsafe fn de_interleave_3_channels_sse3(
         .zip(c3.chunks_exact_mut(OUT_CHUNK_SIZE))
     {
         // https://docs.google.com/presentation/d/1I0-SiHid1hTsv7tjLST2dYW5YF5AJVfs9l4Rg9rvz48/htmlpresent
-
 
         let chunk0 = _mm_loadu_si128(source_chunk.as_ptr().cast());
         let chunk1 = _mm_loadu_si128(source_chunk[16..].as_ptr().cast());
@@ -81,7 +80,8 @@ pub unsafe fn de_interleave_3_channels_sse3(
         _mm_storeu_si128(b.as_mut_ptr().cast(), green);
         _mm_storeu_si128(c.as_mut_ptr().cast(), blue);
     }
-    if source.len() % CHUNK_SIZE != 0 {
+    if source.len() % CHUNK_SIZE != 0
+    {
         // do the remainder
         let rem = source.len() % CHUNK_SIZE;
         let start = source.len() - rem;
