@@ -104,4 +104,11 @@ pub fn create_cmd_args() -> Command {
             .long_help("Change image type from RGB to grayscale")
             .group("operations")
             .group("deinterleave"))
+        .arg(Arg::new("transpose")
+            .long("transpose")
+            .help_heading("OPERATIONS")
+            .action(ArgAction::SetTrue)
+            .help("Transpose an image")
+            .long_help("Transpose (rotate an image by 90 degrees)")
+            )
 }
