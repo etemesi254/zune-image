@@ -180,20 +180,6 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
     {
         return;
     }
-    // get how many iterations we can go per height
-    // ┌────────┐
-    // │   8    │
-    // ├────────┤
-    // │   8    │
-    // ├────────┤
-    // │   8    │
-    // ├────────┤
-    // │   l    │
-    // └────────┘
-    //
-    // This is simply how much we can divide the height by 8
-    //
-    let height_iterations = height / 8;
 
     // get how many iterations we can go per width
     //
@@ -207,7 +193,7 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
     // We want to figure out how many times we can divide the width into
     // 8
     let width_iterations = width / 8;
-    let sin_height = (8 * width);
+    let sin_height = 8 * width;
 
     for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate()
     {

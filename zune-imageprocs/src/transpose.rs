@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::debug;
 
 use crate::transpose::scalar::transpose_scalar;
 
