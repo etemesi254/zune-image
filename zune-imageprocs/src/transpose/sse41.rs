@@ -160,7 +160,6 @@ pub unsafe fn transpose_8by8_sse4_inner(
 }
 pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
 {
-    const SMALL_CHUNK: usize = 64;
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
     //
@@ -221,28 +220,6 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
                 width,
                 height,
             );
-            // panic!();
         }
-        // if i >= 5
-        // {
-        //     return;
-        // }
-        //panic!();
-        // transpose those that could not fit in sse
-        // let o
     }
-}
-
-#[test]
-fn t1()
-{
-    let width = 96;
-    let height = 96;
-    let dimensions = width * height;
-    let in_vec = vec![255; dimensions];
-    let mut out_vec = vec![0; dimensions];
-    unsafe {
-        transpose_sse41(&in_vec, &mut out_vec, width, height);
-    };
-    println!("{:?}", out_vec.last());
 }
