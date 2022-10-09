@@ -14,7 +14,7 @@ zune-ppm = { path = "../zune-ppm" }
 memmap2 = "0.5.7"
 
 [dependencies.simple_logger]
-version = "2.2.0"
+git="https://github.com/etemesi254/rust-simple_logger"
 default-features = false
 features = ["colors"]
 
