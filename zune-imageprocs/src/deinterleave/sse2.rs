@@ -5,6 +5,7 @@
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+
 use crate::deinterleave::scalar::de_interleave_3_channels_scalar;
 
 /// De-interleave 3 channel data to different channels
@@ -84,7 +85,8 @@ pub(crate) unsafe fn de_interleave_3_channels_sse2(
         _mm_storeu_si128(c[00..].as_mut_ptr().cast(), blue_chunk0);
         _mm_storeu_si128(c[16..].as_mut_ptr().cast(), blue_chunk1);
     }
-    if source.len() % CHUNK_SIZE != 0 {
+    if source.len() % CHUNK_SIZE != 0
+    {
         // do the remainder
         let rem = source.len() % CHUNK_SIZE;
         let start = source.len() - rem;

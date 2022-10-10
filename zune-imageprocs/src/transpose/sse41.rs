@@ -103,7 +103,6 @@ pub unsafe fn transpose_8by8_sse4_inner(
     pos += in_stride;
     let mn_7 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
     let mv_3 = _mm_unpacklo_epi64(mn_6, mn_7);
-    // dbg!(pos, in_matrix.len());
 
     let ov_0 = _mm_shuffle_epi8(mv_0, sv);
     let ov_1 = _mm_shuffle_epi8(mv_1, sv);
