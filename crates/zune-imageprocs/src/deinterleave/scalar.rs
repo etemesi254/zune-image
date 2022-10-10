@@ -1,5 +1,5 @@
 #[inline(always)]
-pub (crate) fn de_interleave_3_channels_scalar(
+pub(crate) fn de_interleave_3_channels_scalar(
     source: &[u8], (c1, c2, c3): (&mut [u8], &mut [u8], &mut [u8]),
 )
 {

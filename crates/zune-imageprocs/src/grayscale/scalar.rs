@@ -7,7 +7,6 @@ pub(crate) fn convert_rgb_to_grayscale_scalar((r, g, b): (&[u8], &[u8], &[u8]), 
     for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut())
     {
         // Multiply input elements by 64 for improved accuracy.
-
         let r = u32::from(*r_v) * 64;
         let g = u32::from(*g_v) * 64;
         let b = u32::from(*b_v) * 64;
