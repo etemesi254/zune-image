@@ -1,3 +1,4 @@
+use log::warn;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::grayscale::rgb_to_grayscale;
 
@@ -38,15 +39,23 @@ impl OperationsTrait for RgbToGrayScale
     {
         let im_colorspace = image.get_colorspace();
 
-        // Support any colorspace with RGB data
-        if im_colorspace != ColorSpace::RGB
-            || im_colorspace != ColorSpace::RGBA
-            || im_colorspace != ColorSpace::RGBX
+        if im_colorspace == ColorSpace::GrayScale
         {
-            return Err(ImgOperationsErrors::WrongColorspace(
-                ColorSpace::RGB,
-                image.get_colorspace(),
-            ));
+            warn!("Image already in grayscale skipping this operation");
+            return Ok(());
+        }
+
+        // Support any colorspace with RGB data
+        match im_colorspace
+        {
+            ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX => (),
+            _ =>
+            {
+                return Err(ImgOperationsErrors::WrongColorspace(
+                    ColorSpace::RGB,
+                    im_colorspace,
+                ))
+            }
         }
 
         let (width, height) = image.get_dimensions();
@@ -65,6 +74,13 @@ impl OperationsTrait for RgbToGrayScale
                 (&rgba_data[0], &rgba_data[1], &rgba_data[2]),
                 &mut grayscale,
             );
+        }
+        else
+        {
+            static ERR_MESSAGE: &str = "Expected layout of separated RGB(A) data wasn't found\
+            ,perhaps you need to run `deinterleave` operation before calling RGB to grayscale";
+
+            return Err(ImgOperationsErrors::InvalidChannelLayout(ERR_MESSAGE));
         }
         // change image info to be grayscale
         image.set_image_channel(ImageChannels::OneChannel(grayscale));
