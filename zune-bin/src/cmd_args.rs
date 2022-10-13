@@ -1,7 +1,9 @@
 pub(crate) mod jpeg;
 
+use std::ffi::OsString;
+
 use clap::builder::PossibleValue;
-use clap::{value_parser, Arg, ArgAction, Command, ValueEnum};
+use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MmapOptions
@@ -62,11 +64,13 @@ pub fn create_cmd_args() -> Command {
             .help("Input file to read data from")
             .long("input")
             .action(ArgAction::Append)
+            .value_parser(value_parser!(OsString))
             .required(true))
         .arg(Arg::new("out")
             .short('o')
             .help("Output to write the data to")
             .action(ArgAction::Append)
+            .value_parser(value_parser!(OsString))
             .required(true))
         .arg(Arg::new("debug")
             .long("debug")
@@ -95,20 +99,53 @@ pub fn create_cmd_args() -> Command {
             .help("Influence the use of memory maps")
             .long_help("Change use of memory maps and how they are used for decoding.\nMemory maps are preferred for large images to keep memory usage low.")
             .value_parser(value_parser!(MmapOptions))
+        ).arg(Arg::new("all-yes")
+            .long("yes")
+            .help("Answer yes to all queries asked")
+            .action(ArgAction::SetTrue)
         )
-        .arg(Arg::new("grayscale")
+        .args(add_operations())
+        .group(ArgGroup::new("operations")
+            .args(["flip","transpose","grayscale","flop"])
+            .multiple(true))
+}
+fn add_operations() -> [Arg; 4]
+{
+    [
+        Arg::new("grayscale")
             .long("grayscale")
             .help_heading("OPERATIONS")
             .action(ArgAction::SetTrue)
             .help("Convert the image to grayscale")
             .long_help("Change image type from RGB to grayscale")
-            .group("operations")
-            .group("deinterleave"))
-        .arg(Arg::new("transpose")
+            .group("operations"),
+
+        Arg::new("transpose")
             .long("transpose")
             .help_heading("OPERATIONS")
             .action(ArgAction::SetTrue)
             .help("Transpose an image")
-            .long_help("Transpose (rotate an image by 90 degrees)")
-            )
+            .group("operations")
+            .long_help("Transpose an image\nThis mirrors the image along the image top left to bottom-right diagonal"),
+
+        Arg::new("flip")
+            .long("flip")
+            .help_heading("OPERATIONS")
+            .action(ArgAction::SetTrue)
+            .help("Flip an image")
+            .group("operations"),
+
+        Arg::new("flop")
+            .long("flop")
+            .help_heading("OPERATIONS")
+            .action(ArgAction::SetTrue)
+            .help("Flop an image")
+            .group("operations")
+    ]
+}
+
+#[test]
+fn verify_cli()
+{
+    create_cmd_args().debug_assert();
 }
