@@ -19,3 +19,26 @@ pub fn flop(in_out_image: &mut [u8], width: usize)
             });
     }
 }
+
+#[cfg(all(feature = "benchmarks"))]
+#[cfg(test)]
+mod benchmarks
+{
+    extern crate test;
+
+    use crate::flop::flop;
+
+    #[bench]
+    fn flop_scalar(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let mut c1 = vec![0; dimensions];
+
+        b.iter(|| {
+            flop(&mut c1, width);
+        })
+    }
+}
