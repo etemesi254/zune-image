@@ -51,9 +51,12 @@ impl OperationsTrait for Flip
                     flip(inp);
                 }
             }
-            ImageChannels::Interleaved(input) =>
+            ImageChannels::Interleaved(_) =>
             {
-                flip(input);
+                return Err(ImgOperationsErrors::InvalidChannelLayout(
+                    "Cannot flip interleaved pixels \
+                de-interleave the pixels into separate color components first",
+                ));
             }
             ImageChannels::Uninitialized =>
             {
@@ -65,4 +68,3 @@ impl OperationsTrait for Flip
         Ok(())
     }
 }
-+
