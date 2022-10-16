@@ -1,3 +1,9 @@
+pub mod brighten;
+pub mod crop;
 pub mod deinterleave;
+pub mod flip;
+pub mod flop;
 pub mod grayscale;
+pub mod invert;
+pub mod mirror;
 pub mod transpose;
