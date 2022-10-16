@@ -6,15 +6,21 @@ pub enum ImgErrors
 {
     JpegDecodeErrors(zune_jpeg::errors::DecodeErrors),
     NoImageForOperations,
+    NoImageForEncoding,
     NoImageBuffer,
     OperationsError(ImgOperationsErrors),
     EncodeErrors(ImgEncodeErrors),
+    GenericString(String),
+    GenericStr(&'static str),
 }
 
 pub enum ImgOperationsErrors
 {
     WrongColorspace(ColorSpace, ColorSpace),
     WrongComponents(usize, usize),
+    InvalidChannelLayout(&'static str),
+    Generic(&'static str),
+    GenericString(String),
 }
 
 pub enum ImgEncodeErrors
@@ -33,9 +39,22 @@ impl Debug for ImgErrors
             {
                 writeln!(f, "Jpeg decoding failed:{:?}", error)
             }
+            Self::GenericStr(err) =>
+            {
+                writeln!(f, "{}", err)
+            }
+
+            Self::GenericString(err) =>
+            {
+                writeln!(f, "{}", err)
+            }
             Self::NoImageForOperations =>
             {
                 writeln!(f, "No image found for which we can execute operations")
+            }
+            Self::NoImageForEncoding =>
+            {
+                writeln!(f, "No image found for which we can encode")
             }
             Self::NoImageBuffer => writeln!(f, "No image buffer present"),
 
@@ -73,6 +92,18 @@ impl Debug for ImgOperationsErrors
     {
         match self
         {
+            Self::InvalidChannelLayout(reason) =>
+            {
+                writeln!(f, "{:}", reason)
+            }
+            Self::Generic(reason) =>
+            {
+                writeln!(f, "{:}", reason)
+            }
+            Self::GenericString(err) =>
+            {
+                writeln!(f, "{}", err)
+            }
             Self::WrongColorspace(ref expected, ref found) =>
             {
                 writeln!(
@@ -98,5 +129,13 @@ impl Debug for ImgEncodeErrors
             Self::Generic(ref string) => writeln!(f, "{}", string),
             Self::GenericStatic(ref string) => writeln!(f, "{}", string),
         }
+    }
+}
+
+impl From<String> for ImgErrors
+{
+    fn from(s: String) -> ImgErrors
+    {
+        ImgErrors::GenericString(s)
     }
 }
