@@ -52,6 +52,16 @@ impl ImageChannels
         }
         None
     }
+    /// Return true or false whether the color components have been separated
+    /// Into different components.
+    pub fn is_interleaved(&self) -> bool
+    {
+        match self
+        {
+            Self::Uninitialized | Self::Interleaved(_) => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct Image

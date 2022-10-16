@@ -1,3 +1,4 @@
+use log::warn;
 use zune_imageprocs::deinterleave::{de_interleave_four_channels, de_interleave_three_channels};
 
 use crate::errors::ImgOperationsErrors;
@@ -27,14 +28,13 @@ impl OperationsTrait for DeInterleaveChannels
 
         let colorspace = image.get_colorspace();
 
-        if image.get_colorspace().num_components() != 3
-        {
-            return Err(ImgOperationsErrors::WrongComponents(
-                3,
-                image.get_colorspace().num_components(),
-            ));
-        }
         let channel = image.get_channel_mut();
+        if !channel.is_interleaved()
+        {
+            warn!("Image channels already de-interleaved, skipping this operation");
+            return Ok(());
+        }
+
         if let ImageChannels::Interleaved(rgb_channel) = channel
         {
             // three component de-interleave
@@ -80,6 +80,7 @@ impl OperationsTrait for DeInterleaveChannels
                 de_interleave_four_channels(rgb_channel, (&mut c1, &mut c2, &mut c3, &mut c4));
             }
         }
+
         Ok(())
     }
 }
