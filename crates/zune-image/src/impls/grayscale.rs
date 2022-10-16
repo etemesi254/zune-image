@@ -18,14 +18,24 @@ use crate::traits::OperationsTrait;
 /// ```
 /// but it's implemented using fixed point integer mathematics and simd kernels
 /// where applicable (see zune-imageprocs/grayscale)
-pub struct RgbToGrayScale;
+pub struct RgbToGrayScale
+{
+    preserve_alpha: bool,
+}
 
 impl RgbToGrayScale
 {
     #[allow(clippy::new_without_default)]
     pub fn new() -> RgbToGrayScale
     {
-        RgbToGrayScale {}
+        RgbToGrayScale {
+            preserve_alpha: false,
+        }
+    }
+    pub fn preserve_alpha(mut self, yes: bool) -> RgbToGrayScale
+    {
+        self.preserve_alpha = yes;
+        self
     }
 }
 impl OperationsTrait for RgbToGrayScale
@@ -39,7 +49,7 @@ impl OperationsTrait for RgbToGrayScale
     {
         let im_colorspace = image.get_colorspace();
 
-        if im_colorspace == ColorSpace::GrayScale
+        if im_colorspace == ColorSpace::Luma
         {
             warn!("Image already in grayscale skipping this operation");
             return Ok(());
@@ -66,6 +76,9 @@ impl OperationsTrait for RgbToGrayScale
         if let ImageChannels::ThreeChannels(rgb_data) = image.get_channel_ref()
         {
             rgb_to_grayscale((&rgb_data[0], &rgb_data[1], &rgb_data[2]), &mut grayscale);
+
+            image.set_image_channel(ImageChannels::OneChannel(grayscale));
+            image.set_colorspace(ColorSpace::Luma);
         }
         else if let ImageChannels::FourChannels(rgba_data) = image.get_channel_ref()
         {
@@ -74,6 +87,19 @@ impl OperationsTrait for RgbToGrayScale
                 (&rgba_data[0], &rgba_data[1], &rgba_data[2]),
                 &mut grayscale,
             );
+
+            if self.preserve_alpha
+            {
+                let alpha = rgba_data[4].clone();
+
+                image.set_image_channel(ImageChannels::TwoChannels([grayscale, alpha]));
+                image.set_colorspace(ColorSpace::LumaA);
+            }
+            else
+            {
+                image.set_image_channel(ImageChannels::OneChannel(grayscale));
+                image.set_colorspace(ColorSpace::Luma);
+            }
         }
         else
         {
@@ -82,9 +108,6 @@ impl OperationsTrait for RgbToGrayScale
 
             return Err(ImgOperationsErrors::InvalidChannelLayout(ERR_MESSAGE));
         }
-        // change image info to be grayscale
-        image.set_image_channel(ImageChannels::OneChannel(grayscale));
-        image.set_colorspace(ColorSpace::GrayScale);
 
         Ok(())
     }
