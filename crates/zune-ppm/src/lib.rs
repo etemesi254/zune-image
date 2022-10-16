@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::io::Write;
 
 use zune_core::colorspace::ColorSpace;
-use zune_core::colorspace::ColorSpace::{GrayScale, RGB};
+use zune_core::colorspace::ColorSpace::{Luma, RGB};
 
 enum PPMVersions
 {
@@ -43,7 +43,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
     }
     pub fn set_colorspace(&mut self, colorspace: ColorSpace)
     {
-        if self.colorspace == GrayScale
+        if self.colorspace == Luma
         {
             self.version = PPMVersions::P5;
         }
