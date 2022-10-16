@@ -1,17 +1,23 @@
-use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::transpose::transpose;
 
 use crate::errors::ImgOperationsErrors;
 use crate::image::{Image, ImageChannels};
 use crate::traits::OperationsTrait;
 
+/// Transpose an image
+///
+/// This mirrors the image along the image top left to bottom-right
+/// diagonal
+///
+/// Done by swapping X and Y indices of the array representation
+#[derive(Default)]
 pub struct Transpose;
 
 impl Transpose
 {
     pub fn new() -> Transpose
     {
-        return Transpose {};
+        Transpose::default()
     }
 }
 impl OperationsTrait for Transpose
@@ -23,54 +29,52 @@ impl OperationsTrait for Transpose
 
     fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        let colorspace = image.get_colorspace();
-        let (im_width, im_height) = image.get_dimensions();
+        let (width, height) = image.get_dimensions();
+        let out_dim = width * height;
 
-        let channels = image.get_channel_mut();
-
-        match colorspace
+        match image.get_channel_mut()
         {
-            ColorSpace::RGB | ColorSpace::YCbCr => match channels
+            ImageChannels::OneChannel(data) =>
             {
-                ImageChannels::ThreeChannels(data) =>
-                {
-                    let dimensions = im_width * im_height;
-
-                    let mut c1 = vec![0_u8; dimensions];
-                    transpose(&data[0], &mut c1, im_width, im_height);
-
-                    let mut c2 = vec![0_u8; dimensions];
-                    transpose(&data[1], &mut c2, im_width, im_height);
-
-                    let mut c3 = vec![0_u8; dimensions];
-                    transpose(&data[2], &mut c3, im_width, im_height);
-
-                    let new_channel = ImageChannels::ThreeChannels([c1, c2, c3]);
-                    *channels = new_channel;
-
-                    //set width and height to be opposite
-                    image.set_dimensions(im_height, im_width);
-                }
-
-                _ => unimplemented!(),
-            },
-            ColorSpace::GrayScale => match channels
+                let mut out_vec = vec![0; out_dim];
+                transpose(data, &mut out_vec, width, height)
+            }
+            ImageChannels::TwoChannels(input) =>
             {
-                ImageChannels::OneChannel(data) =>
+                for data in input
                 {
-                    let dimensions = im_width * im_height;
-
-                    let mut c1 = vec![0_u8; dimensions];
-                    transpose(data, &mut c1, im_width, im_height);
-
-                    let new_channel = ImageChannels::OneChannel(c1);
-                    *channels = new_channel;
-
-                    image.set_dimensions(im_height, im_width);
+                    let mut out_vec = vec![0; out_dim];
+                    transpose(data, &mut out_vec, width, height);
                 }
-                _ => unimplemented!(),
-            },
-            _ => panic!(),
+            }
+            ImageChannels::ThreeChannels(input) =>
+            {
+                for data in input
+                {
+                    let mut out_vec = vec![0; out_dim];
+                    transpose(data, &mut out_vec, width, height);
+                }
+            }
+            ImageChannels::FourChannels(input) =>
+            {
+                for data in input
+                {
+                    let mut out_vec = vec![0; out_dim];
+                    transpose(data, &mut out_vec, width, height);
+                }
+            }
+            ImageChannels::Interleaved(_) =>
+            {
+                return Err(ImgOperationsErrors::Generic(
+                    "Cannot transpose Interleaved data, run de-interleaved operation before this",
+                ))
+            }
+            ImageChannels::Uninitialized =>
+            {
+                return Err(ImgOperationsErrors::Generic(
+                    "Cannot transpose uninitialized pixels",
+                ))
+            }
         }
         Ok(())
     }
