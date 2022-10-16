@@ -5,7 +5,7 @@ pub enum ColorSpace
     RGB,
     RGBA,
     YCbCr,
-    GrayScale,
+    Luma,
     LumaA,
     RGBX,
     YCCK,
@@ -20,7 +20,7 @@ impl ColorSpace
         {
             Self::RGB | Self::YCbCr => 3,
             Self::RGBX | Self::RGBA | Self::YCCK | Self::CYMK => 4,
-            Self::GrayScale => 1,
+            Self::Luma => 1,
             Self::LumaA => 2,
             Self::Unknown => 0,
         }
