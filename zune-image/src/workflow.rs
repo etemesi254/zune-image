@@ -97,6 +97,40 @@ impl<'a> WorkFlow<'a>
         self.decode = Some(decoder);
         self
     }
+    /// Add a new operation to the workflow.
+    ///
+    /// This is used as a way to chain multiple operations in a builder
+    /// pattern style
+    ///
+    /// # Example
+    /// - This operation will decode a jpeg image pointed by buf,
+    /// which is added to the workflow via add_buffer, then
+    /// 1. It de-interleaves the image channels, separating them into
+    /// separate RGB channels
+    /// 2. Convert RGB data to grayscale
+    /// 3. Transpose the image channels   
+    /// ```
+    /// use zune_image::codecs::ppm::SPPMEncoder;
+    /// use zune_image::impls::deinterleave::DeInterleaveChannels;
+    /// use zune_image::impls::grayscale::RgbToGrayScale;
+    /// use zune_image::impls::transpose::Transpose;
+    /// use zune_image::workflow::WorkFlow;
+    ///
+    /// use zune_imageprocs::deinterleave::de_interleave_three_channels;
+    ///
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let buf = [0xff,0xd8];
+    ///
+    /// let decoder = JpegDecoder::new();
+    /// let image = WorkFlow::new()
+    ///     .add_buffer(&buf)
+    ///     .chain_decoder(Box::new(decoder))
+    ///     .chain_operations(Box::new(DeInterleaveChannels::new()))
+    ///     .chain_operations(Box::new(RgbToGrayScale::new()))
+    ///     .chain_operations(Box::new(Transpose::new()))
+    ///     .advance_to_end();
+    /// ```
     pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<'a>
     {
         self.operations.push(operations);
@@ -143,9 +177,21 @@ impl<'a> WorkFlow<'a>
 
                     let decode_op = self.decode.as_mut().unwrap();
 
-                    let pixels =
-                        ImageChannels::Interleaved(decode_op.decode_buffer(self.buf.unwrap())?);
+                    let decode_buf = decode_op.decode_buffer(self.buf.unwrap())?;
                     let colorspace = decode_op.get_out_colorspace();
+
+                    let pixels = {
+                        // One channel we don't need to deinterleave
+                        if colorspace.num_components() == 1
+                        {
+                            ImageChannels::OneChannel(decode_buf)
+                        }
+                        else
+                        {
+                            ImageChannels::Interleaved(decode_buf)
+                        }
+                    };
+
                     let (width, height) = decode_op.get_dimensions().unwrap();
 
                     let mut image = Image::new();
@@ -191,24 +237,29 @@ impl<'a> WorkFlow<'a>
                 }
                 WorkFlowState::Encode =>
                 {
-                    let image = self.image.as_ref().unwrap();
-
-                    for encoder in self.encode.iter_mut()
+                    if let Some(image) = self.image.as_ref()
                     {
-                        let encoder_name = encoder.get_name();
+                        for encoder in self.encode.iter_mut()
+                        {
+                            let encoder_name = encoder.get_name();
 
-                        info!("Running {} encoder", encoder_name);
+                            info!("Running {} encoder", encoder_name);
 
-                        let start = Instant::now();
+                            let start = Instant::now();
 
-                        encoder.encode_to_file(image)?;
+                            encoder.encode_to_file(image)?;
 
-                        let stop = Instant::now();
+                            let stop = Instant::now();
 
-                        info!(
-                            "Finished running `{encoder_name}` in {} ms",
-                            (stop - start).as_millis()
-                        );
+                            info!(
+                                "Finished running `{encoder_name}` in {} ms",
+                                (stop - start).as_millis()
+                            );
+                        }
+                    }
+                    else
+                    {
+                        return Err(ImgErrors::NoImageForOperations);
                     }
                     self.state = state.next();
                 }
