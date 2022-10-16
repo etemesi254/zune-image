@@ -64,7 +64,7 @@ impl EncoderTrait for SPPMEncoder
                 ))
             }
         }
-        else if image.get_colorspace() == ColorSpace::GrayScale
+        else if image.get_colorspace() == ColorSpace::Luma
         {
             return if let ImageChannels::OneChannel(data) = image.get_channel_ref()
             {
