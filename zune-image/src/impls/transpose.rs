@@ -37,7 +37,8 @@ impl OperationsTrait for Transpose
             ImageChannels::OneChannel(data) =>
             {
                 let mut out_vec = vec![0; out_dim];
-                transpose(data, &mut out_vec, width, height)
+                transpose(data, &mut out_vec, width, height);
+                *data = out_vec;
             }
             ImageChannels::TwoChannels(input) =>
             {
@@ -45,6 +46,7 @@ impl OperationsTrait for Transpose
                 {
                     let mut out_vec = vec![0; out_dim];
                     transpose(data, &mut out_vec, width, height);
+                    *data = out_vec;
                 }
             }
             ImageChannels::ThreeChannels(input) =>
@@ -53,6 +55,7 @@ impl OperationsTrait for Transpose
                 {
                     let mut out_vec = vec![0; out_dim];
                     transpose(data, &mut out_vec, width, height);
+                    *data = out_vec;
                 }
             }
             ImageChannels::FourChannels(input) =>
@@ -61,6 +64,7 @@ impl OperationsTrait for Transpose
                 {
                     let mut out_vec = vec![0; out_dim];
                     transpose(data, &mut out_vec, width, height);
+                    *data = out_vec;
                 }
             }
             ImageChannels::Interleaved(_) =>
@@ -76,6 +80,7 @@ impl OperationsTrait for Transpose
                 ))
             }
         }
+        image.set_dimensions(height, width);
         Ok(())
     }
 }
