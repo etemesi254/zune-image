@@ -19,6 +19,6 @@ default-features = false
 features = ["colors"]
 
 [dependencies.clap]
-version = "4.0.0-rc.2"
+version = "4.0.13"
 default-features = false
 features = ["color", "suggestions", "std", "help", "error-context"]
