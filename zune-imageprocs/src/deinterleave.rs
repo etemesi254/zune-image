@@ -41,13 +41,27 @@ pub fn de_interleave_three_channels(source: &[u8], (c1, c2, c3): (&mut [u8], &mu
             }
         }
     }
-    scalar::de_interleave_three_channels_scalar(source, (c1, c2, c3))
+    scalar::de_interleave_three_channels_scalar(source, (c1, c2, c3));
 }
 
 pub fn de_interleave_four_channels(
     source: &[u8], (c1, c2, c3, c4): (&mut [u8], &mut [u8], &mut [u8], &mut [u8]),
 )
 {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "sse41")]
+        {
+            use crate::deinterleave::sse41::de_interleave_four_channels_sse41;
+            if is_x86_feature_detected!("sse4.1")
+            {
+                unsafe {
+                    return de_interleave_four_channels_sse41(source, (c1, c2, c3, c4));
+                }
+            }
+        }
+    }
+
     scalar::de_interleave_four_channels_scalar(source, (c1, c2, c3, c4));
 }
 #[cfg(all(feature = "benchmarks"))]
@@ -74,7 +88,7 @@ mod benchmarks
             unsafe {
                 de_interleave_three_channels_sse2(&c4, (&mut c1, &mut c2, &mut c3));
             };
-        })
+        });
     }
     #[bench]
     fn de_interleave_3_channels_scalar_bench(b: &mut test::Bencher)
@@ -91,7 +105,7 @@ mod benchmarks
         let c4 = vec![255; dimensions * 3];
         b.iter(|| {
             de_interleave_three_channels_scalar(&c4, (&mut c1, &mut c2, &mut c3));
-        })
+        });
     }
     #[cfg(feature = "sse41")]
     #[bench]
@@ -111,7 +125,7 @@ mod benchmarks
             unsafe {
                 de_interleave_three_channels_sse3(&c4, (&mut c1, &mut c2, &mut c3));
             };
-        })
+        });
     }
     #[cfg(feature = "avx2")]
     #[bench]
@@ -131,7 +145,7 @@ mod benchmarks
             unsafe {
                 de_interleave_three_channels_avx2(&c4, (&mut c1, &mut c2, &mut c3));
             };
-        })
+        });
     }
 
     #[cfg(feature = "sse41")]
@@ -153,7 +167,7 @@ mod benchmarks
             unsafe {
                 de_interleave_four_channels_sse41(&c5, (&mut c1, &mut c2, &mut c3, &mut c4));
             };
-        })
+        });
     }
 
     #[bench]
@@ -172,6 +186,6 @@ mod benchmarks
         let c5 = vec![255; dimensions * 4];
         b.iter(|| {
             de_interleave_four_channels_scalar(&c5, (&mut c1, &mut c2, &mut c3, &mut c4));
-        })
+        });
     }
 }
