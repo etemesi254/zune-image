@@ -1,4 +1,7 @@
+#![cfg(feature = "zune-jpeg")]
 use zune_core::colorspace::ColorSpace;
+/// Re-expose jpeg crate here
+pub use zune_jpeg::*;
 
 use crate::traits::DecoderTrait;
 
