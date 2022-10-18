@@ -177,7 +177,7 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
 
     if width < SMALL_WIDTH_THRESHOLD
     {
-        return;
+        return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
     }
 
     // get how many iterations we can go per width
@@ -207,4 +207,53 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
             );
         }
     }
+    // Deal with the part that hasn't been copied
+    //
+    //
+    //┌──────────┬─────┐
+    //│          │     │
+    //│          │     │
+    //│  Done    │ B   │
+    //│          │     │
+    //│          │     │
+    //├──────────┘-----│
+    //│      C         │
+    //└────────────────┘
+    // Everything in region b and C isn't done
+    let rem_w = width - (width & 7);
+    let rem_h = height - (height & 7);
+
+    for i in rem_h..height
+    {
+        for j in 0..width
+        {
+            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
+        }
+    }
+    for i in rem_w..width
+    {
+        for j in 0..height
+        {
+            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
+        }
+    }
+}
+
+#[test]
+fn compare_sse_scalar()
+{
+    use crate::transpose;
+
+    let width = 10;
+    let height = 11;
+    let in_matrix: Vec<u8> = (0..(width * height)).collect();
+
+    let mut sse_out = vec![90; (width * height).into()];
+    let mut scalar_out = vec![34; (width * height).into()];
+    unsafe {
+        transpose::sse41::transpose_sse41(&in_matrix, &mut sse_out, width.into(), height.into());
+    }
+    transpose::scalar::transpose_scalar(&in_matrix, &mut scalar_out, width.into(), height.into());
+
+    assert_eq!(sse_out, scalar_out);
 }
