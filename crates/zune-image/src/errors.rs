@@ -4,6 +4,7 @@ use zune_core::colorspace::ColorSpace;
 
 pub enum ImgErrors
 {
+    #[cfg(feature = "zune-jpeg")]
     JpegDecodeErrors(zune_jpeg::errors::DecodeErrors),
     NoImageForOperations,
     NoImageForEncoding,
@@ -35,6 +36,7 @@ impl Debug for ImgErrors
     {
         match self
         {
+            #[cfg(feature = "jpeg")]
             Self::JpegDecodeErrors(ref error) =>
             {
                 writeln!(f, "Jpeg decoding failed:{:?}", error)
@@ -64,6 +66,7 @@ impl Debug for ImgErrors
         }
     }
 }
+#[cfg(feature = "zune-jpeg")]
 impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
 {
     fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
