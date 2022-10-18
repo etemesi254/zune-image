@@ -6,7 +6,9 @@ use clap::builder::PossibleValue;
 use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 use crate::cmd_args::arg_parsers::IColorSpace;
-use crate::cmd_args::help_strings::{BRIGHTEN_HELP, COLORSPACE_HELP, TRANSPOSE_HELP};
+use crate::cmd_args::help_strings::{
+    AFTER_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MmapOptions
@@ -57,9 +59,27 @@ impl CmdOptions
     }
 }
 
+fn get_long_version() -> &'static str
+{
+    let box_v = Box::new(format!(
+        "Zune Version:{}\n\n\
+        zune-jpeg Version :{}\n\
+        zune-jpeg Git hash:{}\n",
+        env!("CARGO_PKG_VERSION"),
+        zune_image::codecs::jpeg::get_version(),
+        zune_image::codecs::jpeg::get_git_hash(),
+    ));
+
+    Box::leak(box_v)
+}
+
 #[rustfmt::skip]
 pub fn create_cmd_args() -> Command {
-    Command::new("zune-images")
+    Command::new("zune")
+        .after_help(AFTER_HELP)
+        .author("Caleb Etemesi")
+        .version("0.1.1")
+        .long_version(get_long_version())
         .arg(Arg::new("in")
             .short('i')
             .help("Input file to read data from")
@@ -69,6 +89,7 @@ pub fn create_cmd_args() -> Command {
             .required(true))
         .arg(Arg::new("out")
             .short('o')
+            .long("out")
             .help("Output to write the data to")
             .action(ArgAction::Append)
             .value_parser(value_parser!(OsString))
@@ -82,13 +103,18 @@ pub fn create_cmd_args() -> Command {
             .value_parser(value_parser!(MmapOptions)))
         .arg(Arg::new("all-yes")
             .long("yes")
+            .short('y')
             .help("Answer yes to all queries asked")
             .action(ArgAction::SetTrue))
         .args(add_logging_options())
         .args(add_operations())
         .args(add_settings())
+        .args(add_filters())
         .group(ArgGroup::new("operations")
-            .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop"])
+            .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold"])
+            .multiple(true))
+        .group(ArgGroup::new("filters")
+            .args(["box-blur","gamma"])
             .multiple(true))
 }
 
@@ -117,9 +143,9 @@ fn add_logging_options() -> [Arg; 4]
             .help("Display information about the decoding options"),
     ]
 }
-fn add_settings() -> [Arg; 4]
+fn add_settings() -> Vec<Arg>
 {
-    [
+    let mut args = [
         Arg::new("colorspace")
             .long("colorspace")
             .help_heading("Image Settings")
@@ -145,11 +171,15 @@ fn add_settings() -> [Arg; 4]
             .help("Treat most warnings as errors")
             .action(ArgAction::SetTrue)
             .default_value("false"),
-    ]
+    ];
+    // list them in order
+    args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
+
+    args.to_vec()
 }
-fn add_operations() -> [Arg; 8]
+fn add_operations() -> Vec<Arg>
 {
-    [
+    let mut args = [
         Arg::new("grayscale")
             .long("grayscale")
             .help_heading("Image Operations")
@@ -160,7 +190,7 @@ fn add_operations() -> [Arg; 8]
         Arg::new("transpose")
             .long("transpose")
             .help_heading("Image Operations")
-            .action(ArgAction::SetTrue)
+            .action(ArgAction::Count)
             .help("Transpose an image")
             .group("operations")
             .long_help(TRANSPOSE_HELP),
@@ -199,9 +229,39 @@ fn add_operations() -> [Arg; 8]
         Arg::new("crop")
             .long("crop")
             .help_heading("Image Operations")
-            .help("Crop an image")
+            .value_name("out_w:out_h:x:y")
+            .help("Crop an image ")
+            .long_help(CROP_HELP)
             .group("operations"),
-    ]
+        Arg::new("threshold")
+            .long("threshold")
+            .value_name("threshold:mode")
+            .help_heading("Image Operations")
+            .help("Replace pixels in an image depending on intensity of the pixel.")
+            .long_help(THRESHOLD_HELP)
+            .group("operations"),
+    ];
+    args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
+    args.to_vec()
+}
+fn add_filters() -> Vec<Arg>
+{
+    let mut args = [
+        Arg::new("box-blur")
+            .long("box-blur")
+            .help("Perform a box blur")
+            .help_heading("Filters")
+            .value_parser(value_parser!(usize))
+            .group("filters"),
+        Arg::new("gamma")
+            .long("gamma")
+            .help("Gamma adjust an image")
+            .help_heading("Filters")
+            .value_parser(value_parser!(f32))
+            .group("filters"),
+    ];
+    args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
+    args.to_vec()
 }
 
 #[test]
