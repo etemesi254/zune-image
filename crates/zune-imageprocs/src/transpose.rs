@@ -5,6 +5,10 @@ use crate::transpose::scalar::transpose_scalar;
 pub(crate) mod scalar;
 pub(crate) mod sse41;
 
+use std::sync::Once;
+
+static START: Once = Once::new();
+
 pub fn transpose(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -15,12 +19,16 @@ pub fn transpose(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: 
 
             if is_x86_feature_detected!("sse4.1")
             {
-                trace!("Using SSE4.1 transpose algorithm");
+                START.call_once(|| {
+                    trace!("Using SSE4.1 transpose algorithm");
+                });
                 unsafe { return transpose_sse41(in_matrix, out_matrix, width, height) }
             }
         }
     }
-    trace!("Using scalar transpose algorithm");
+    START.call_once(|| {
+        trace!("Using scalar transpose algorithm");
+    });
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
 
@@ -43,7 +51,7 @@ mod benchmarks
             unsafe {
                 transpose_sse41(&in_vec, &mut out_vec, width, height);
             };
-        })
+        });
     }
     #[bench]
     fn transpose_scalar(b: &mut test::Bencher)
@@ -56,6 +64,6 @@ mod benchmarks
         let mut out_vec = vec![0; dimensions];
         b.iter(|| {
             transpose_scalar(&in_vec, &mut out_vec, width, height);
-        })
+        });
     }
 }
