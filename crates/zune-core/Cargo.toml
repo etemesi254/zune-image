@@ -3,6 +3,10 @@ name = "zune-core"
 version = "0.1.0"
 edition = "2021"
 
+
+[features]
+byte_stream=[]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
