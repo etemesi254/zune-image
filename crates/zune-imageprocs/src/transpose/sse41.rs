@@ -61,7 +61,11 @@
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use std::arch::x86_64::{
+    _mm_loadl_epi64, _mm_set_epi8, _mm_setzero_si128, _mm_shuffle_epi8, _mm_storel_epi64,
+    _mm_unpackhi_epi16, _mm_unpackhi_epi32, _mm_unpackhi_epi64, _mm_unpacklo_epi16,
+    _mm_unpacklo_epi32, _mm_unpacklo_epi64,
+};
 
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn transpose_8by8_sse4_inner(
@@ -154,8 +158,6 @@ pub unsafe fn transpose_8by8_sse4_inner(
     pos += out_stride;
 
     _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_3);
-
-    //dbg!(pos);
 }
 pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
 {
@@ -199,6 +201,7 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
         for j in 0..width_iterations
         {
             let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
+
             transpose_8by8_sse4_inner(
                 &in_width_stride[(j * 8)..],
                 out_height_stride,
