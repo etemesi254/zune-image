@@ -6,24 +6,12 @@ use crate::image::Image;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait
+pub trait DecoderTrait<'a>
 {
-    ///  Decode a file pointed to `file`
-    ///
-    /// # Arguments
-    /// file: File path.
-    ///
-    ///  # Returns
-    /// - Ok(Vec<u8>) -> Pixels decoded from the image.
-    ///
-    /// # Errors
-    /// - Any image decoding errors will be propagated up to the caller.
-    fn decode_file(&mut self, file: &str) -> Result<Vec<u8>, crate::errors::ImgErrors>;
-
     /// Decode a buffer already in memory
     ///
-    /// # Arguments
-    /// buf: Buffer path
+    /// The buffer to be decoded is the one passed
+    /// to the decoder when initializing the decoder
     ///
     /// # Returns
     /// - OK(Vec<u8>) -> Pixels decoded from the image
@@ -34,12 +22,12 @@ pub trait DecoderTrait
     /// # Example
     /// ```
     /// use zune_image::traits::DecoderTrait;
-    /// use zune_jpeg::Decoder;
-    /// let mut decoder = JpegDecoder::new();
+    /// use zune_jpeg::JpegDecoder;
+    /// let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
     ///
-    /// decoder.decode_buffer(&[0xFF,0xD8]).unwrap();
+    /// decoder.decode_buffer().unwrap();
     /// ```
-    fn decode_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>, crate::errors::ImgErrors>;
+    fn decode_buffer(&mut self) -> Result<Vec<u8>, crate::errors::ImgErrors>;
 
     /// Get width and height of the image
     ///
