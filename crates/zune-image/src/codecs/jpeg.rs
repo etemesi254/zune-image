@@ -5,16 +5,11 @@ pub use zune_jpeg::*;
 
 use crate::traits::DecoderTrait;
 
-impl DecoderTrait for zune_jpeg::JpegDecoder
+impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 {
-    fn decode_file(&mut self, file: &str) -> Result<Vec<u8>, crate::errors::ImgErrors>
+    fn decode_buffer(&mut self) -> Result<Vec<u8>, crate::errors::ImgErrors>
     {
-        self.decode_file(file).map_err(|x| x.into())
-    }
-
-    fn decode_buffer(&mut self, buffer: &[u8]) -> Result<Vec<u8>, crate::errors::ImgErrors>
-    {
-        self.decode_buffer(buffer).map_err(|x| x.into())
+        self.decode_buffer().map_err(|x| x.into())
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>
