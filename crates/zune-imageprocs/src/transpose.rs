@@ -4,6 +4,7 @@ use crate::transpose::scalar::transpose_scalar;
 
 pub(crate) mod scalar;
 pub(crate) mod sse41;
+mod tests;
 
 use std::sync::Once;
 
