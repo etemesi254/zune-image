@@ -53,19 +53,15 @@
 //! Each contiguous item in the row becomes separated by a stride, so to reduce this
 //! we do tiling as an optimization, i.e separate matrix transposition into smaller optimization
 //! problems.
-//! A good choice for me was 8 by 8 u8 sizes, which has it's own problems
+//! A good choice for me was 8 by 8 u8 sizes, so the gist of the algorithm
+//! becomes tile into 8 by 8 sub-matrices, transpose in place, write out transposition
 //!
-//! 1.
 //!
 //!
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{
-    _mm_loadl_epi64, _mm_set_epi8, _mm_setzero_si128, _mm_shuffle_epi8, _mm_storel_epi64,
-    _mm_unpackhi_epi16, _mm_unpackhi_epi32, _mm_unpackhi_epi64, _mm_unpacklo_epi16,
-    _mm_unpacklo_epi32, _mm_unpacklo_epi64,
-};
+use std::arch::x86_64::*;
 
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn transpose_8by8_sse4_inner(
@@ -240,23 +236,4 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
             out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
         }
     }
-}
-
-#[test]
-fn compare_sse_scalar()
-{
-    use crate::transpose;
-
-    let width = 10;
-    let height = 11;
-    let in_matrix: Vec<u8> = (0..(width * height)).collect();
-
-    let mut sse_out = vec![90; (width * height).into()];
-    let mut scalar_out = vec![34; (width * height).into()];
-    unsafe {
-        transpose::sse41::transpose_sse41(&in_matrix, &mut sse_out, width.into(), height.into());
-    }
-    transpose::scalar::transpose_scalar(&in_matrix, &mut scalar_out, width.into(), height.into());
-
-    assert_eq!(sse_out, scalar_out);
 }
