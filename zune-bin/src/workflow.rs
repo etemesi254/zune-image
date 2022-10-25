@@ -10,23 +10,26 @@ use clap::ArgMatches;
 use log::Level::Debug;
 use log::{debug, info, log_enabled};
 use memmap2::Mmap;
-use zune_image::codecs::ppm::SPPMEncoder;
-use zune_image::codecs::{guess_format, Codecs};
+use zune_image::codecs::guess_format;
 use zune_image::errors::ImgErrors;
+use zune_image::impls::box_blur::BoxBlur;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::crop::Crop;
 use zune_image::impls::deinterleave::DeInterleaveChannels;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
+use zune_image::impls::gamma::Gamma;
 use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
+use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
 use zune_image::workflow::WorkFlow;
 
-use crate::cmd_args::arg_parsers::{get_four_pair_args, parse_options_to_jpeg};
+use crate::cmd_args::arg_parsers::get_four_pair_args;
 use crate::{CmdOptions, MmapOptions};
 
+#[allow(unused_variables)]
 pub(crate) fn create_and_exec_workflow_from_cmd(
     args: &ArgMatches, cmd_opts: &CmdOptions,
 ) -> Result<(), ImgErrors>
@@ -39,13 +42,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         .unwrap()
         .zip(args.get_raw("out").unwrap())
     {
-        let mut workflow = WorkFlow::new();
-
-        {
-            add_operations(args, &mut workflow)?;
-            verify_file_paths(in_file, out_file, args)?;
-        }
-
+        // file i/o
         let mut fd = File::open(in_file).unwrap();
         let mmap = unsafe { Mmap::map(&fd).unwrap() };
         let mmap_opt = cmd_opts.get_mmap_options();
@@ -65,43 +62,52 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 &buf
             }
         };
-
-        workflow.add_buffer(data);
-
-        let file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(out_file)
-            .unwrap();
-
-        let buf_writer = BufWriter::new(file);
-
-        if let Some(format) = guess_format(data)
+        // workflow
         {
-            if format == Codecs::Jpeg
+            let mut workflow = WorkFlow::new();
+
             {
-                debug!("Treating {:?} as a jpg file", in_file);
-
-                let options = parse_options_to_jpeg(args);
-                let decoder = zune_jpeg::JpegDecoder::new_with_options(options);
-
-                workflow.add_decoder(Box::new(decoder));
+                add_operations(args, &mut workflow)?;
+                verify_file_paths(in_file, out_file, args)?;
             }
-        }
 
-        if let Some(ext) = Path::new(out_file).extension()
-        {
-            if ext == OsStr::new("ppm")
+            let file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(out_file)
+                .unwrap();
+
+            let buf_writer = BufWriter::new(file);
+
+            if let Some(format) = guess_format(data)
             {
-                debug!("Treating {:?} as a ppm file", out_file);
-                let encoder = SPPMEncoder::new(buf_writer);
-                workflow.add_encoder(Box::new(encoder));
-            }
-        }
+                if format == zune_image::codecs::Codecs::Jpeg
+                {
+                    debug!("Treating {:?} as a jpg file", in_file);
 
-        workflow.advance_to_end()?;
+                    let options = crate::cmd_args::arg_parsers::parse_options_to_jpeg(args);
+                    let decoder =
+                        zune_image::codecs::jpeg::JpegDecoder::new_with_options(options, data);
+
+                    workflow.add_decoder(Box::new(decoder));
+                }
+            }
+
+            if let Some(ext) = Path::new(out_file).extension()
+            {
+                if ext == OsStr::new("ppm")
+                {
+                    debug!("Treating {:?} as a ppm file", out_file);
+                    let encoder = zune_image::codecs::ppm::SPPMEncoder::new(buf_writer);
+                    workflow.add_encoder(Box::new(encoder));
+                }
+            }
+
+            workflow.advance_to_end()?;
+        }
     }
+
     Ok(())
 }
 
@@ -161,6 +167,7 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
 pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), String>
 {
     if args.value_source("operations") == Some(ValueSource::CommandLine)
+        || args.value_source("filters") == Some(ValueSource::CommandLine)
     {
         workflow.add_operation(Box::new(DeInterleaveChannels::new()));
     }
@@ -204,7 +211,7 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
         }
         else if argument == "flop"
         {
-            debug!("Added transpose operation");
+            debug!("Added flop operation");
             workflow.add_operation(Box::new(Flop::new()))
         }
         else if argument == "mirror"
@@ -254,6 +261,42 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             );
 
             workflow.add_operation(Box::new(crop));
+        }
+        else if argument == "threshold"
+        {
+            let val = args.get_one::<String>(&argument).unwrap();
+            let split_args: Vec<&str> = val.split(':').collect();
+
+            if split_args.len() != 2
+            {
+                return Err(format!("Threshold operation expected 2 arguments separated by `:` in the command line,got {}",split_args.len()));
+            }
+            // parse first one as threshold
+            let thresh_string = split_args[0];
+            let thresh_int = str::parse::<u8>(thresh_string).map_err(|x| x.to_string())?;
+            let thresh_mode = ThresholdMethod::from_string_result(split_args[1])?;
+
+            let threshold = Threshold::new(thresh_int, thresh_mode);
+            workflow.add_operation(Box::new(threshold));
+
+            debug!(
+                "Added threshold operation with mode {:?}  and value {:?}",
+                thresh_mode, thresh_int
+            )
+        }
+        else if argument == "box-blur"
+        {
+            let radius = *args.get_one::<usize>(&argument).unwrap();
+            debug!("Added box blur filter with radius {}", radius);
+
+            let box_blur = BoxBlur::new(radius);
+            workflow.add_operation(Box::new(box_blur));
+        }
+        else if argument == "gamma"
+        {
+            let value = *args.get_one::<f32>(&argument).unwrap();
+            debug!("Added gamma filter with value {}", value);
+            workflow.add_operation(Box::new(Gamma::new(value)));
         }
     }
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
