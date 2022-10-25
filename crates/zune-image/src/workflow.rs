@@ -32,9 +32,8 @@ impl WorkFlowState
 }
 pub struct WorkFlow<'a>
 {
-    buf:        Option<&'a [u8]>,
     state:      Option<WorkFlowState>,
-    decode:     Option<Box<dyn DecoderTrait>>,
+    decode:     Option<Box<dyn DecoderTrait<'a> + 'a>>,
     image:      Option<Image>,
     operations: Vec<Box<dyn OperationsTrait>>,
     encode:     Vec<Box<dyn EncoderTrait>>,
@@ -47,7 +46,6 @@ impl<'a> WorkFlow<'a>
     pub fn new() -> WorkFlow<'a>
     {
         WorkFlow {
-            buf:        None,
             image:      None,
             state:      Some(WorkFlowState::Initialized),
             decode:     None,
@@ -67,24 +65,26 @@ impl<'a> WorkFlow<'a>
     /// use zune_image::codecs::ppm::SPPMEncoder;
     /// let buf = BufWriter::new(File::open(".").unwrap());
     /// let encoder = SPPMEncoder::new(buf);
-    /// let decoder = zune_jpeg::JpegDecoder::new();
+    /// let decoder = zune_jpeg::JpegDecoder::new(&[0xff,0xd8]);
     /// ```
     pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>)
     {
         self.encode.push(encoder);
     }
     /// Add a single decoder for this image
-    pub fn add_decoder(&mut self, decoder: Box<dyn DecoderTrait>)
+    pub fn add_decoder(&mut self, decoder: Box<dyn DecoderTrait<'a> + 'a>)
     {
         self.decode = Some(decoder);
     }
-    pub fn add_buffer(&mut self, buffer: &'a [u8])
-    {
-        self.buf = Some(buffer);
-    }
+
     pub fn add_operation(&mut self, operations: Box<dyn OperationsTrait>)
     {
         self.operations.push(operations);
+    }
+    /// Add an image to this chain.
+    pub fn chain_image(&mut self, image: Image)
+    {
+        self.image = Some(image);
     }
 
     pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<'a>
@@ -92,7 +92,7 @@ impl<'a> WorkFlow<'a>
         self.encode.push(encoder);
         self
     }
-    pub fn chain_decoder(&mut self, decoder: Box<dyn DecoderTrait>) -> &mut WorkFlow<'a>
+    pub fn chain_decoder(&mut self, decoder: Box<dyn DecoderTrait<'a> + 'a>) -> &mut WorkFlow<'a>
     {
         self.decode = Some(decoder);
         self
@@ -116,13 +116,12 @@ impl<'a> WorkFlow<'a>
     /// use zune_image::impls::transpose::Transpose;
     /// use zune_image::workflow::WorkFlow;
     ///
-    /// use zune_imageprocs::deinterleave::de_interleave_three_channels;
     ///
     /// use zune_jpeg::JpegDecoder;
     ///
     /// let buf = [0xff,0xd8];
     ///
-    /// let decoder = JpegDecoder::new();
+    /// let decoder = JpegDecoder::new(&buf);
     /// let image = WorkFlow::new()
     ///     .add_buffer(&buf)
     ///     .chain_decoder(Box::new(decoder))
@@ -168,16 +167,21 @@ impl<'a> WorkFlow<'a>
                     // do the actual decode
                     if self.decode.is_none()
                     {
+                        // we have an image, no need to decode a new one
+                        if self.image.is_some()
+                        {
+                            info!("Image already present, no need to decode");
+                            // move to the next state
+                            self.state = state.next();
+
+                            return Ok(());
+                        }
                         return Err(ImgErrors::NoImageForOperations);
-                    }
-                    if self.buf.is_none()
-                    {
-                        return Err(ImgErrors::NoImageBuffer);
                     }
 
                     let decode_op = self.decode.as_mut().unwrap();
 
-                    let decode_buf = decode_op.decode_buffer(self.buf.unwrap())?;
+                    let decode_buf = decode_op.decode_buffer()?;
                     let colorspace = decode_op.get_out_colorspace();
 
                     let pixels = {
@@ -203,9 +207,10 @@ impl<'a> WorkFlow<'a>
                     self.image = Some(image);
 
                     let stop = Instant::now();
-                    info!("Finished decoding in {} ms", (stop - start).as_millis());
 
                     self.state = state.next();
+
+                    info!("Finished decoding in {} ms", (stop - start).as_millis());
                 }
                 WorkFlowState::Operations =>
                 {
@@ -243,7 +248,7 @@ impl<'a> WorkFlow<'a>
                         {
                             let encoder_name = encoder.get_name();
 
-                            info!("Running {} encoder", encoder_name);
+                            info!("Running {}", encoder_name);
 
                             let start = Instant::now();
 
