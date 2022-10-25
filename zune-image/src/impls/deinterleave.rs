@@ -78,6 +78,9 @@ impl OperationsTrait for DeInterleaveChannels
                 let mut c4 = vec![0; size];
 
                 de_interleave_four_channels(rgb_channel, (&mut c1, &mut c2, &mut c3, &mut c4));
+
+                // change the channel type to be separated rgba
+                *channel = ImageChannels::FourChannels([c1, c2, c3, c4]);
             }
         }
 
