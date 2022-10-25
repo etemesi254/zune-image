@@ -1,0 +1,45 @@
+[package]
+name = "zune-jpeg"
+version = "0.2.0"
+authors = ["caleb <etemesicaleb@gmail.com>"]
+edition = "2021"
+repository = "https://github.com/etemesi254/zune-jpeg"
+license = "MIT OR Apache-2.0"
+keywords = ["jpeg", "jpeg-decoder", "decoder"]
+categories = ["multimedia::images"]
+exclude = ["/benches/images/", "/tests/*", "/.idea/*", "/.gradle/*"]
+description = "The fastest jpeg decoder in the west"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+x86 = []
+default = ["x86"]
+
+[dependencies]
+log = "0.4.11" # logging facilities
+zune-core = { path = "../zune-core", features=["bytestream"]}
+[dev-dependencies]
+criterion = "0.3"
+mozjpeg = "0.9.2"
+jpeg-decoder = "0.2.6"
+
+[[bench]]
+name = "decode"
+harness = false
+
+#[[bench]]
+#name = "decode_grayscale"
+#harness = false
+#
+#
+#[[bench]]
+#name = "decode_prog"
+#harness = false
+#
+#[[bench]]
+#name = "decode_x86"
+#harness = false
+
+
