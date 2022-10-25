@@ -1,9 +1,6 @@
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn gamma(pixels: &mut [u8], value: f32)
 {
-    // Default gamma is 1/2.2
-    let gamma_inv = 1.0 / value;
-
     // We have to do the inverse ourselves, fp math won't convert it
     // to inv slightly slowing the loop below.
     //
