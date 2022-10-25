@@ -2,13 +2,7 @@ mod avx2;
 mod scalar;
 mod sse41;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[cfg(feature = "avx2")]
-use crate::grayscale::avx2::convert_rgb_to_grayscale_avx2;
 use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[cfg(feature = "sse41")]
-use crate::grayscale::sse41::convert_rgb_to_grayscale_sse41;
 
 pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
 {
@@ -16,6 +10,8 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
     {
         #[cfg(feature = "avx2")]
         {
+            use crate::grayscale::avx2::convert_rgb_to_grayscale_avx2;
+
             if is_x86_feature_detected!("avx2")
             {
                 unsafe {
@@ -26,6 +22,8 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
 
         #[cfg(feature = "sse41")]
         {
+            use crate::grayscale::sse41::convert_rgb_to_grayscale_sse41;
+
             if is_x86_feature_detected!("sse4.1")
             {
                 unsafe {
@@ -34,7 +32,7 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
             }
         }
     }
-    convert_rgb_to_grayscale_scalar((r, g, b), out)
+    convert_rgb_to_grayscale_scalar((r, g, b), out);
 }
 
 #[cfg(all(feature = "benchmarks"))]
@@ -42,8 +40,6 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
 mod benchmarks
 {
     extern crate test;
-
-    use crate::grayscale::sse41::convert_rgb_to_grayscale_sse41;
 
     #[cfg(feature = "sse41")]
     #[bench]
@@ -63,7 +59,7 @@ mod benchmarks
             unsafe {
                 convert_rgb_to_grayscale_sse41((&c1, &c2, &c3), &mut c4);
             };
-        })
+        });
     }
 
     #[cfg(feature = "avx2")]
@@ -84,7 +80,7 @@ mod benchmarks
             unsafe {
                 convert_rgb_to_grayscale_avx2((&c1, &c2, &c3), &mut c4);
             };
-        })
+        });
     }
 
     #[bench]
@@ -102,6 +98,6 @@ mod benchmarks
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             convert_rgb_to_grayscale_scalar((&c1, &c2, &c3), &mut c4);
-        })
+        });
     }
 }
