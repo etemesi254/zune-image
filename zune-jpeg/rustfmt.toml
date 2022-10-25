@@ -1,0 +1,9 @@
+blank_lines_lower_bound = 0
+brace_style = "AlwaysNextLine"
+wrap_comments = false
+control_brace_style = "AlwaysNextLine"
+fn_args_layout = "Compressed"
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+blank_lines_upper_bound = 1
+struct_field_align_threshold = 20
