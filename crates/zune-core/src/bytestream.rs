@@ -11,8 +11,15 @@ static ERROR_MSG: &str = "No more bytes";
 /// it provides fine grained options for reading different integer data types from
 /// the underlying buffer.
 ///
-/// [std::io::Cursor]: std::io::Cursor
+/// There are two variants mainly error and non error variants,
+/// the error variants are useful for cases where you need bytes
+/// from the underlying stream, and cannot do with zero result.
+/// the non error variants are useful when you may have proved data already exists
+/// eg by using [`has`] method or you are okay with returning zero if the underlying
+/// buffer has been completely read.
 ///
+/// [std::io::Cursor]: std::io::Cursor
+/// [`has`]: Self::has
 pub struct ZByteReader<'a>
 {
     /// Data stream
