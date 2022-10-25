@@ -18,3 +18,7 @@ sse41 = []
 benchmarks=[]
 
 default=["avx2","sse2","sse3","sse41"]
+
+
+[dev-dependencies]
+nanorand={version="0.7.0",default-features=false,features=["wyrand"]} # testing purposes.
