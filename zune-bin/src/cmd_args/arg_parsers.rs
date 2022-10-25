@@ -1,7 +1,7 @@
 use clap::builder::PossibleValue;
 use clap::{ArgMatches, ValueEnum};
 use zune_core::colorspace::ColorSpace;
-use zune_jpeg::ZuneJpegOptions;
+use zune_image::codecs::jpeg::ZuneJpegOptions;
 
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::upper_case_acronyms)]
@@ -15,6 +15,7 @@ pub enum IColorSpace
 }
 impl IColorSpace
 {
+    #[allow(dead_code)]
     pub const fn to_colorspace(self) -> ColorSpace
     {
         match self
