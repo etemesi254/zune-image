@@ -2,28 +2,27 @@ use log::warn;
 
 use crate::transpose;
 
-fn compute_mod_u32(d: u64) -> u64
-{
+fn compute_mod_u32(d: u64) -> u64 {
     // operator precedence will be the end of me,,
     return ((0xFFFF_FFFF_FFFF_FFFF_u64) / d) + 1;
 }
-fn mul128_u32(low_bits: u64, d: u32) -> u64
-{
+fn mul128_u32(low_bits: u64, d: u32) -> u64 {
     return ((u128::from(low_bits) * u128::from(d)) >> 64) as u64;
 }
 
 #[allow(clippy::cast_possible_truncation)]
-fn fastdiv_u32(a: u32, m: u64) -> u32
-{
+fn fastdiv_u32(a: u32, m: u64) -> u32 {
     mul128_u32(m, a) as u32
 }
 
 pub fn box_blur(
-    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, radius: usize,
-)
-{
-    if width == 0 || radius <= 1
-    {
+    in_out_image: &mut [u8],
+    scratch_space: &mut [u8],
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    if width == 0 || radius <= 1 {
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
@@ -33,8 +32,13 @@ pub fn box_blur(
     transpose::transpose(scratch_space, in_out_image, height, width);
 }
 #[allow(clippy::cast_possible_truncation)]
-fn box_blur_inner(in_image: &[u8], out_image: &mut [u8], width: usize, height: usize, radius: usize)
-{
+fn box_blur_inner(
+    in_image: &[u8],
+    out_image: &mut [u8],
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
     // 1D-Box blurs can be seen as the average of radius pixels iterating
     // through a window
     // A box blur therefore is
@@ -60,8 +64,7 @@ fn box_blur_inner(in_image: &[u8], out_image: &mut [u8], width: usize, height: u
     // where a is sum of chunk[0..r], (first of the array), we can keep updating a during the loop
     // and we have a window sum!
 
-    if width <= 1 || radius <= 1
-    {
+    if width <= 1 || radius <= 1 {
         // repeated here for the optimizer
         return;
     }
@@ -142,19 +145,17 @@ fn box_blur_inner(in_image: &[u8], out_image: &mut [u8], width: usize, height: u
         }
     }
     // do the bottom three that the inner loop may have failed to parse
-    if height % 4 != 0
-    {
+    if height % 4 != 0 {
         let rows_unhanded = (in_image.len() / width) % 4;
 
         for (in_stride, out_stride) in in_image
-            .chunks_exact(width)
-            .zip(out_image.chunks_exact_mut(width))
+            .rchunks_exact(width)
+            .zip(out_image.rchunks_exact_mut(width))
             .take(rows_unhanded)
         {
             let mut a1 = 0;
 
-            for (pos, i) in in_stride.iter().take(radius).enumerate()
-            {
+            for (pos, i) in in_stride.iter().take(radius).enumerate() {
                 a1 += u32::from(*i);
                 let p = (pos as u32).saturating_add(1);
                 out_stride[pos] = (a1 / p) as u8;
@@ -175,15 +176,13 @@ fn box_blur_inner(in_image: &[u8], out_image: &mut [u8], width: usize, height: u
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::box_blur::box_blur;
 
     #[bench]
-    fn bench_box_blur(b: &mut test::Bencher)
-    {
+    fn bench_box_blur(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let radius = 10;
