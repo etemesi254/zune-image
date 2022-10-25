@@ -1,5 +1,5 @@
 use zune_core::colorspace::ColorSpace;
-
+#[non_exhaustive]
 pub enum ImageChannels
 {
     OneChannel(Vec<u8>),
@@ -54,13 +54,9 @@ impl ImageChannels
     }
     /// Return true or false whether the color components have been separated
     /// Into different components.
-    pub fn is_interleaved(&self) -> bool
+    pub const fn is_interleaved(&self) -> bool
     {
-        match self
-        {
-            Self::Uninitialized | Self::Interleaved(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Uninitialized | Self::Interleaved(_))
     }
 }
 
@@ -88,7 +84,7 @@ impl Image
         Image::default()
     }
 
-    pub fn get_colorspace(&self) -> ColorSpace
+    pub const fn get_colorspace(&self) -> ColorSpace
     {
         self.colorspace
     }
@@ -97,7 +93,7 @@ impl Image
         self.colorspace = colorspace;
     }
 
-    pub fn get_channel_ref(&self) -> &ImageChannels
+    pub const fn get_channel_ref(&self) -> &ImageChannels
     {
         &self.pixels
     }
@@ -110,7 +106,7 @@ impl Image
         self.pixels = pixels;
     }
 
-    pub fn get_dimensions(&self) -> (usize, usize)
+    pub const fn get_dimensions(&self) -> (usize, usize)
     {
         self.dimensions
     }
