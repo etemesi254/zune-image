@@ -1,3 +1,13 @@
+/// Flip an image
+///
+/// ```text
+///
+///old image     new image
+/// ┌─────────┐   ┌──────────┐
+/// │a b c d e│   │j i h g f │
+/// │f g h i j│   │e d c b a │
+/// └─────────┘   └──────────┘
+/// ```
 pub fn flip(in_out_image: &mut [u8])
 {
     // this is a fast enough operation but I had some extra time
@@ -24,30 +34,23 @@ pub fn flip(in_out_image: &mut [u8])
     let in_img1_chunks = in_img1.chunks_exact_mut(8);
     let in_img2_chunks = in_img2.rchunks_exact_mut(8);
 
-    in_img1_chunks
-        .zip(in_img2_chunks)
-        .for_each(|(top, bottom)| {
-            let top_u64 = u64::from_be_bytes(top.try_into().unwrap());
-            let bottom_u64 = u64::from_be_bytes(bottom.try_into().unwrap());
+    for (top, bottom) in in_img1_chunks.zip(in_img2_chunks)
+    {
+        let top_u64 = u64::from_be_bytes(top.try_into().unwrap());
+        let bottom_u64 = u64::from_be_bytes(bottom.try_into().unwrap());
 
-            bottom.copy_from_slice(&top_u64.to_le_bytes());
-            top.copy_from_slice(&bottom_u64.to_le_bytes());
-        });
+        bottom.copy_from_slice(&top_u64.to_le_bytes());
+        top.copy_from_slice(&bottom_u64.to_le_bytes());
+    }
+    let remainder = in_img1.len() % 8;
+    let length = in_img1.len();
 
-    in_img1
-        .chunks_exact_mut(8)
-        .into_remainder()
+    for (in_dim, out_dim) in in_img1[length - remainder..]
         .iter_mut()
-        .zip(
-            in_img2
-                .rchunks_exact_mut(8)
-                .into_remainder()
-                .iter_mut()
-                .rev(),
-        )
-        .for_each(|(in_dim, out_dim)| {
-            std::mem::swap(in_dim, out_dim);
-        })
+        .zip(in_img2[0..remainder].iter_mut().rev())
+    {
+        std::mem::swap(in_dim, out_dim);
+    }
 }
 
 #[cfg(all(feature = "benchmarks"))]
@@ -69,6 +72,6 @@ mod benchmarks
 
         b.iter(|| {
             flip(&mut c1);
-        })
+        });
     }
 }
