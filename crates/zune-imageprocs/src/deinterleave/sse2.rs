@@ -6,7 +6,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::deinterleave::scalar::de_interleave_3_channels_scalar;
+use crate::deinterleave::scalar::de_interleave_three_channels_scalar;
 
 /// De-interleave 3 channel data to different channels
 ///
@@ -16,7 +16,7 @@ use crate::deinterleave::scalar::de_interleave_3_channels_scalar;
 /// [r,r],[g,g],[b,b]
 /// ```
 #[target_feature(enable = "sse2")]
-pub(crate) unsafe fn de_interleave_3_channels_sse2(
+pub(crate) unsafe fn de_interleave_three_channels_sse2(
     source: &[u8], (c1, c2, c3): (&mut [u8], &mut [u8], &mut [u8]),
 )
 {
@@ -96,6 +96,6 @@ pub(crate) unsafe fn de_interleave_3_channels_sse2(
         let c2 = &mut c2[c_start..];
         let c3 = &mut c3[c_start..];
 
-        de_interleave_3_channels_scalar(&source[start..], (c1, c2, c3));
+        de_interleave_three_channels_scalar(&source[start..], (c1, c2, c3));
     }
 }
