@@ -55,17 +55,16 @@ fn setup_logger(options: &ArgMatches)
     info!("Initialized logger");
     info!("Log level :{}", log_level);
 }
-#[allow(clippy::vec_init_then_push)]
-pub fn main()
+pub fn main() -> i32
 {
     let cmd = cmd_args::create_cmd_args();
-
     let options = cmd.get_matches();
 
     setup_logger(&options);
-    let parsed_opts = parse_options(&options);
 
+    let parsed_opts = parse_options(&options);
     let result = create_and_exec_workflow_from_cmd(&options, &parsed_opts);
+
     if result.is_err()
     {
         println!();
@@ -74,5 +73,7 @@ pub fn main()
             result.err().unwrap()
         );
         println!();
+        return 1;
     }
+    0
 }
