@@ -4,7 +4,7 @@ use log::Level::Info;
 use log::{info, log_enabled};
 
 use crate::errors::ImgErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
@@ -181,30 +181,9 @@ impl<'a> WorkFlow<'a>
 
                     let decode_op = self.decode.as_mut().unwrap();
 
-                    let decode_buf = decode_op.decode_buffer()?;
-                    let colorspace = decode_op.get_out_colorspace();
+                    let img = decode_op.decode_buffer()?;
 
-                    let pixels = {
-                        // One channel we don't need to deinterleave
-                        if colorspace.num_components() == 1
-                        {
-                            ImageChannels::OneChannel(decode_buf)
-                        }
-                        else
-                        {
-                            ImageChannels::Interleaved(decode_buf)
-                        }
-                    };
-
-                    let (width, height) = decode_op.get_dimensions().unwrap();
-
-                    let mut image = Image::new();
-
-                    image.set_dimensions(width, height);
-                    image.set_image_channel(pixels);
-                    image.set_colorspace(colorspace);
-
-                    self.image = Some(image);
+                    self.image = Some(img);
 
                     let stop = Instant::now();
 

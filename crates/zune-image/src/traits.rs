@@ -6,8 +6,7 @@ use crate::image::Image;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait<'a>
-{
+pub trait DecoderTrait<'a> {
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed
@@ -27,7 +26,7 @@ pub trait DecoderTrait<'a>
     ///
     /// decoder.decode_buffer().unwrap();
     /// ```
-    fn decode_buffer(&mut self) -> Result<Vec<u8>, crate::errors::ImgErrors>;
+    fn decode_buffer(&mut self) -> Result<Image, crate::errors::ImgErrors>;
 
     /// Get width and height of the image
     ///
@@ -49,8 +48,7 @@ pub trait DecoderTrait<'a>
 ///
 /// All operations that can be stored in a workflow
 /// need to encapsulate this struct.
-pub trait OperationsTrait
-{
+pub trait OperationsTrait {
     /// Get the name of this operation
     fn get_name(&self) -> &'static str;
 
@@ -79,8 +77,7 @@ pub trait OperationsTrait
     fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
 }
 
-pub trait EncoderTrait
-{
+pub trait EncoderTrait {
     /// Get the name of the encoder
     fn get_name(&self) -> &'static str;
 
