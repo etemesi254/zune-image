@@ -7,7 +7,8 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{
-    AFTER_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
+    AFTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, THRESHOLD_HELP,
+    TRANSPOSE_HELP,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -111,10 +112,10 @@ pub fn create_cmd_args() -> Command {
         .args(add_settings())
         .args(add_filters())
         .group(ArgGroup::new("operations")
-            .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold"])
+            .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold","gamma"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur","gamma"])
+            .args(["box-blur"])
             .multiple(true))
 }
 
@@ -179,48 +180,50 @@ fn add_settings() -> Vec<Arg>
 }
 fn add_operations() -> Vec<Arg>
 {
+    static HELP_HEADING: &str = "Image Operations";
+
     let mut args = [
         Arg::new("grayscale")
             .long("grayscale")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Convert the image to grayscale")
             .long_help("Change image type from RGB to grayscale")
             .group("operations"),
         Arg::new("transpose")
             .long("transpose")
-            .help_heading("Image Operations")
-            .action(ArgAction::Count)
+            .help_heading(HELP_HEADING)
+            .action(ArgAction::SetTrue)
             .help("Transpose an image")
             .group("operations")
             .long_help(TRANSPOSE_HELP),
         Arg::new("flip")
             .long("flip")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flip an image")
             .group("operations"),
         Arg::new("flop")
             .long("flop")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flop an image")
             .group("operations"),
         Arg::new("mirror")
             .long("mirror")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .value_parser(["north", "south", "east", "west"])
             .help("Mirror the image")
             .group("operations"),
         Arg::new("invert")
             .long("invert")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Invert image pixels")
             .group("operations"),
         Arg::new("brighten")
             .long("brighten")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .help("Brighten (or darken) an image.")
             .long_help(BRIGHTEN_HELP)
             .allow_negative_numbers(true)
@@ -228,7 +231,7 @@ fn add_operations() -> Vec<Arg>
             .group("operations"),
         Arg::new("crop")
             .long("crop")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .value_name("out_w:out_h:x:y")
             .help("Crop an image ")
             .long_help(CROP_HELP)
@@ -236,9 +239,15 @@ fn add_operations() -> Vec<Arg>
         Arg::new("threshold")
             .long("threshold")
             .value_name("threshold:mode")
-            .help_heading("Image Operations")
+            .help_heading(HELP_HEADING)
             .help("Replace pixels in an image depending on intensity of the pixel.")
             .long_help(THRESHOLD_HELP)
+            .group("operations"),
+        Arg::new("gamma")
+            .long("gamma")
+            .help("Gamma adjust an image")
+            .help_heading(HELP_HEADING)
+            .value_parser(value_parser!(f32))
             .group("operations"),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
@@ -246,20 +255,14 @@ fn add_operations() -> Vec<Arg>
 }
 fn add_filters() -> Vec<Arg>
 {
-    let mut args = [
-        Arg::new("box-blur")
-            .long("box-blur")
-            .help("Perform a box blur")
-            .help_heading("Filters")
-            .value_parser(value_parser!(usize))
-            .group("filters"),
-        Arg::new("gamma")
-            .long("gamma")
-            .help("Gamma adjust an image")
-            .help_heading("Filters")
-            .value_parser(value_parser!(f32))
-            .group("filters"),
-    ];
+    let mut args = [Arg::new("box-blur")
+        .long("box-blur")
+        .help("Perform a box blur")
+        .value_name("radius")
+        .long_help(BOX_BLUR_HELP)
+        .help_heading("Filters")
+        .value_parser(value_parser!(usize))
+        .group("filters")];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
 }
