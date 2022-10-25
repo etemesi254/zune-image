@@ -1,7 +1,8 @@
+#![cfg(feature = "ppm")]
 use std::fs::File;
 use std::io::BufWriter;
 
-use log::info;
+use log::{info, warn};
 use zune_core::colorspace::ColorSpace;
 use zune_ppm::PPMEncoder;
 
@@ -76,6 +77,22 @@ impl EncoderTrait for SPPMEncoder
             {
                 Err(ImgEncodeErrors::GenericStatic(
                     "Fatal error, image colorspace is grayscale but grayscale buffer is empty",
+                ))
+            };
+        }
+        else if image.get_colorspace() == ColorSpace::RGBA
+            || image.get_colorspace() == ColorSpace::RGBX
+        {
+            warn!("PPM does not support an alpha channel, this will be ignored");
+            return if let ImageChannels::FourChannels(data) = image.get_channel_ref()
+            {
+                ppm_encoder.write_rgb((&data[0], &data[1], &data[2]));
+                Ok(())
+            }
+            else
+            {
+                Err(ImgEncodeErrors::GenericStatic(
+                    "Cannot encode interleaved RGBA as ppm",
                 ))
             };
         }
