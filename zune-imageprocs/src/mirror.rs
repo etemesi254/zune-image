@@ -6,6 +6,17 @@ pub enum MirrorMode
     East,
     West,
 }
+/// Mirror an image by duplicating pixels from one edge to the other half
+///
+/// E.g a mirror along the east direction looks like
+///
+/// ```text           
+///  old image     new image
+///  ┌─────────┐   ┌──────────┐
+///  │a b c d e│   │a b c b a │
+///  │f g h i j│   │f g h g f │
+///  └─────────┘   └──────────┘
+/// ```
 pub fn mirror(in_pixels: &mut [u8], width: usize, height: usize, mode: MirrorMode)
 {
     if mode == MirrorMode::East || mode == MirrorMode::West
