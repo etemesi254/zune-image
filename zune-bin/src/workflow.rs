@@ -19,6 +19,7 @@ use zune_image::impls::deinterleave::DeInterleaveChannels;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
 use zune_image::impls::gamma::Gamma;
+use zune_image::impls::gaussian_blur::GaussianBlur;
 use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
@@ -42,6 +43,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         .unwrap()
         .zip(args.get_raw("out").unwrap())
     {
+        verify_file_paths(in_file, out_file, args)?;
+
         // file i/o
         let mut fd = File::open(in_file).unwrap();
         let mmap = unsafe { Mmap::map(&fd).unwrap() };
@@ -63,49 +66,53 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             }
         };
         // workflow
+
+        let mut workflow = WorkFlow::new();
+
+        add_operations(args, &mut workflow)?;
+
+        let file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(out_file)
+            .unwrap();
+
+        let buf_writer = BufWriter::new(file);
+
+        if let Some(format) = guess_format(data)
         {
-            let mut workflow = WorkFlow::new();
-
+            if format == zune_image::codecs::Codecs::Jpeg
             {
-                add_operations(args, &mut workflow)?;
-                verify_file_paths(in_file, out_file, args)?;
+                debug!("Treating {:?} as a jpg file", in_file);
+
+                let options = crate::cmd_args::arg_parsers::parse_options_to_jpeg(args);
+                let decoder =
+                    zune_image::codecs::jpeg::JpegDecoder::new_with_options(options, data);
+
+                workflow.add_decoder(Box::new(decoder));
             }
-
-            let file = OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .create(true)
-                .open(out_file)
-                .unwrap();
-
-            let buf_writer = BufWriter::new(file);
-
-            if let Some(format) = guess_format(data)
+            else if format == zune_image::codecs::Codecs::Png
             {
-                if format == zune_image::codecs::Codecs::Jpeg
-                {
-                    debug!("Treating {:?} as a jpg file", in_file);
+                debug!("Treating {:?} as a png file", in_file);
 
-                    let options = crate::cmd_args::arg_parsers::parse_options_to_jpeg(args);
-                    let decoder =
-                        zune_image::codecs::jpeg::JpegDecoder::new_with_options(options, data);
+                let decoder = zune_image::codecs::png::PngDecoder::new(data);
 
-                    workflow.add_decoder(Box::new(decoder));
-                }
+                workflow.add_decoder(Box::new(decoder));
             }
-
-            if let Some(ext) = Path::new(out_file).extension()
-            {
-                if ext == OsStr::new("ppm")
-                {
-                    debug!("Treating {:?} as a ppm file", out_file);
-                    let encoder = zune_image::codecs::ppm::SPPMEncoder::new(buf_writer);
-                    workflow.add_encoder(Box::new(encoder));
-                }
-            }
-
-            workflow.advance_to_end()?;
         }
+
+        if let Some(ext) = Path::new(out_file).extension()
+        {
+            if ext == OsStr::new("ppm")
+            {
+                debug!("Treating {:?} as a ppm file", out_file);
+                let encoder = zune_image::codecs::ppm::SPPMEncoder::new(buf_writer);
+                workflow.add_encoder(Box::new(encoder));
+            }
+        }
+
+        workflow.advance_to_end()?;
     }
 
     Ok(())
@@ -291,6 +298,14 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
 
             let box_blur = BoxBlur::new(radius);
             workflow.add_operation(Box::new(box_blur));
+        }
+        else if argument == "blur"
+        {
+            let sigma = *args.get_one::<f32>(&argument).unwrap();
+            debug!("Added gaussian blur filter with radius {}", sigma);
+
+            let gaussian_blur = GaussianBlur::new(sigma);
+            workflow.add_operation(Box::new(gaussian_blur));
         }
         else if argument == "gamma"
         {
