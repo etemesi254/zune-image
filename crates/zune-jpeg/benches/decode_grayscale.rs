@@ -3,7 +3,7 @@
 use std::fs::read;
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use zune_core::colorspace::ColorSpace;
 use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
 
@@ -44,11 +44,15 @@ fn criterion_benchmark(c: &mut Criterion)
 
     let data = read(a).unwrap();
 
-    c.bench_function("Baseline JPEG Decoding zune-jpeg-Grayscale", |b| {
+    let mut group = c.benchmark_group("Grayscale decoding");
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("Baseline JPEG Decoding zune-jpeg-Grayscale", |b| {
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
 
-    c.bench_function("Baseline JPEG Decoding  mozjpeg-Grayscale", |b| {
+    group.bench_function("Baseline JPEG Decoding  mozjpeg-Grayscale", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 }

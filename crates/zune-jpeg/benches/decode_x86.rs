@@ -3,7 +3,7 @@
 use std::fs::read;
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
 
 fn decode_jpeg(buf: &[u8], options: ZuneJpegOptions) -> Vec<u8>
@@ -18,7 +18,10 @@ fn decode_no_samp(c: &mut Criterion)
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
-    let mut group = c.benchmark_group("No sampling");
+    let mut group = c.benchmark_group("Intrinsics");
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
     group.bench_function("Baseline JPEG Decoding zune-jpeg Allowed intrinsics", |b| {
         b.iter(|| {
             let opt = ZuneJpegOptions::new();
