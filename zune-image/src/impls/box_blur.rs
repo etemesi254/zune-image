@@ -5,14 +5,12 @@ use crate::errors::ImgOperationsErrors;
 use crate::image::{Image, ImageChannels};
 use crate::traits::OperationsTrait;
 
-/// Perform a box blur with a normal gaussian
-/// kernel with the following weights
+/// Perform a box blur
 ///
-/// ```text
-/// 1 [[1,1,1]
-/// _  [1,1,1]
-/// 9  [1,1,1]]
-/// ```
+/// Radius is a measure of how many
+/// pixels to include in the box blur.
+///
+/// The greater the radius, the more pronounced the box blur
 #[derive(Default)]
 pub struct BoxBlur
 {
