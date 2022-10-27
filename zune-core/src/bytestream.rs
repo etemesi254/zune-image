@@ -54,7 +54,7 @@ impl<'a> ZByteReader<'a>
     /// bytes behind.
     ///
     /// This operation will saturate at zero
-    pub fn revert(&mut self, num: usize)
+    pub fn rewind(&mut self, num: usize)
     {
         self.position = self.position.saturating_sub(num);
     }
@@ -64,7 +64,7 @@ impl<'a> ZByteReader<'a>
     #[inline]
     pub const fn has(&self, num: usize) -> bool
     {
-        self.position + num < self.stream.len()
+        self.position + num <= self.stream.len()
     }
     /// Get number of bytes available in the stream
     #[inline]
@@ -114,6 +114,40 @@ impl<'a> ZByteReader<'a>
     pub const fn remaining(&self) -> usize
     {
         self.stream.len().saturating_sub(self.position)
+    }
+    /// Get a part of the bytestream as a reference.
+    ///
+    /// This increments the position to point past the bytestream
+    /// if position+num is in bounds
+    pub fn get_as_ref(&mut self, num: usize) -> Result<&'a [u8], &'static str>
+    {
+        match self.stream.get(self.position..self.position + num)
+        {
+            Some(bytes) =>
+            {
+                self.position += num;
+                Ok(bytes)
+            }
+            None => Err(ERROR_MSG),
+        }
+    }
+    /// Look ahead position bytes and return a reference
+    /// to num_bytes from that position, or an error if the
+    /// peek would be out of bounds.
+    ///
+    /// This doesn't increment the position, bytes would have to be discarded
+    /// at a later point.
+    #[inline]
+    pub fn peek_at(&self, position: usize, num_bytes: usize) -> Result<&'a [u8], &'static str>
+    {
+        let start = self.position + position;
+        let end = self.position + position + num_bytes;
+
+        match self.stream.get(start..end)
+        {
+            Some(bytes) => Ok(bytes),
+            None => Err(ERROR_MSG),
+        }
     }
 }
 
