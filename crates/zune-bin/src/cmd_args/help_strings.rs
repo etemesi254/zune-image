@@ -57,3 +57,13 @@ The greater the radius, the greater the blur effect,  a radius of 1 doesn't
 do anything.
 
 Speed is independent of radius";
+
+pub static GAUSSIAN_BLUR_HELP: &str = "Apply a gaussian blur to an image
+
+sigma is a measure of how much to blur by. The higher the sigma the more
+pronounced the blur.
+
+The implementation does not produce a true gaussian blur which involves convolving
+a 2D kernel over the image as that is really slow, but we approximate it using very
+fast 1D box blurs.
+";
