@@ -41,11 +41,14 @@ fn huffman_third_index()
 {
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huffman_third_index.jpg";
+    let data = &std::fs::read(path).unwrap();
+
     let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GrayScale),
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
+        data,
     );
     // Grayscale
-    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    let pixels = decoder.decode_buffer().expect("Test failed decoding");
     write_output(
         "huffman_third_index.jpg",
         &pixels,
@@ -62,11 +65,14 @@ fn single_qt()
     // with multiple QT tables defined.
     // Allows us to ensure that the multi-table QT handling logic works
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/single_qt.jpeg";
+    let data = &std::fs::read(path).unwrap();
+
     let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GrayScale),
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
+        data,
     );
     // Grayscale
-    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    let pixels = decoder.decode_buffer().expect("Test failed decoding");
     write_output(
         "single_qt.jpg",
         &pixels,
@@ -82,11 +88,14 @@ fn google_pixel()
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/google_pixel.jpg";
 
+    let data = &std::fs::read(path).unwrap();
+
     let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GrayScale),
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
+        data,
     );
     // Grayscale
-    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    let pixels = decoder.decode_buffer().expect("Test failed decoding");
     write_output(
         "google_pixel.jpg",
         &pixels,
@@ -102,11 +111,15 @@ fn google_pixel_progressive()
     //
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/google_pixel_progressive.jpg";
+
+    let data = &std::fs::read(path).unwrap();
+
     let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::GrayScale),
+        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
+        data,
     );
     // Grayscale
-    let pixels = decoder.decode_file(&path).expect("Test failed decoding");
+    let pixels = decoder.decode_buffer().expect("Test failed decoding");
     write_output(
         "google_pixel_progressive.jpg",
         &pixels,
