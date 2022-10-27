@@ -3,7 +3,7 @@
 use std::fs::read;
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use zune_jpeg::JpegDecoder;
 fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
@@ -46,6 +46,9 @@ fn decode_no_samp(c: &mut Criterion)
 
     let data = read(a).unwrap();
     let mut group = c.benchmark_group("No sampling Progressive decoding");
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
     group.bench_function("1*1 Sample JPEG Decoding zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
