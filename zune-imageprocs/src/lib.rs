@@ -27,6 +27,7 @@ pub mod deinterleave;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
+pub mod gaussian_blur;
 pub mod grayscale;
 pub mod invert;
 pub mod mirror;
