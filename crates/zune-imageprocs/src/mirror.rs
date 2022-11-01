@@ -17,7 +17,7 @@ pub enum MirrorMode
 ///  │f g h i j│   │f g h g f │
 ///  └─────────┘   └──────────┘
 /// ```
-pub fn mirror(in_pixels: &mut [u8], width: usize, height: usize, mode: MirrorMode)
+pub fn mirror<T:Copy>(in_pixels: &mut [T], width: usize, height: usize, mode: MirrorMode)
 {
     if mode == MirrorMode::East || mode == MirrorMode::West
     {

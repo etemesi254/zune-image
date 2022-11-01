@@ -22,7 +22,7 @@ impl OperationsTrait for Flop
         "Flop"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, _) = image.get_dimensions();
 

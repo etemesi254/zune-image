@@ -24,7 +24,7 @@ impl OperationsTrait for Mirror
         "Mirror"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
         match image.get_channel_mut()

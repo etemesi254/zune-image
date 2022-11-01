@@ -1,3 +1,5 @@
+use crate::traits::NumOps;
+
 #[derive(Copy, Clone, Debug)]
 pub enum ThresholdMethod
 {
@@ -21,18 +23,21 @@ impl ThresholdMethod
     }
 }
 #[rustfmt::skip]
-pub fn threshold(in_image: &mut [u8], threshold: u8, method: ThresholdMethod)
+pub fn threshold<T:NumOps<T>+Copy+Ord+PartialOrd>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
 {
+    let max = T::max_val();
+    let min = T::min_val();
     match method
     {
         ThresholdMethod::Binary => {
             for x in in_image.iter_mut()
             {
                 *x = { 
+                    
                     if *x > threshold {
-                        255
+                        max
                     } else {
-                        0
+                        min
                     }
                 }
             }
@@ -42,9 +47,9 @@ pub fn threshold(in_image: &mut [u8], threshold: u8, method: ThresholdMethod)
             {
                 *x = {
                     if *x > threshold {
-                        0
+                        min
                     } else {
-                        255
+                        max
                     }
                 }
             }
@@ -68,7 +73,7 @@ pub fn threshold(in_image: &mut [u8], threshold: u8, method: ThresholdMethod)
                     if *x > threshold {
                         threshold
                     } else {
-                        0
+                        T::min_val()
                     }
                 }
             }

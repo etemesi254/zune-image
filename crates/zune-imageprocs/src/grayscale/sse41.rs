@@ -9,6 +9,7 @@ use std::arch::x86_64::*;
 use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
 #[target_feature(enable = "sse4.1")]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) unsafe fn convert_rgb_to_grayscale_sse41((r, g, b): (&[u8], &[u8], &[u8]), gr: &mut [u8])
 {
     // Code is from https://stackoverflow.com/questions/57832444/efficient-c-code-no-libs-for-image-transformation-into-custom-rgb-pixel-grey

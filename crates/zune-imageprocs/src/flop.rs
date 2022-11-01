@@ -8,7 +8,7 @@
 ///└─────────┘   └──────────┘
 ///```
 ///
-pub fn flop(in_out_image: &mut [u8], width: usize)
+pub fn flop<T: Copy>(in_out_image: &mut [T], width: usize)
 {
     assert_eq!(
         in_out_image.len() % width,

@@ -6,6 +6,11 @@ pub enum ImgErrors
 {
     #[cfg(feature = "zune-jpeg")]
     JpegDecodeErrors(zune_jpeg::errors::DecodeErrors),
+    #[cfg(feature = "png")]
+    PngDecodeErrors(zune_png::error::PngErrors),
+
+    DimensionsMisMatch(usize, usize),
+    UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
     NoImageForOperations,
     NoImageForEncoding,
     NoImageBuffer,
@@ -41,6 +46,11 @@ impl Debug for ImgErrors
             {
                 writeln!(f, "Jpeg decoding failed:{:?}", error)
             }
+            #[cfg(feature = "png")]
+            Self::PngDecodeErrors(ref error) =>
+            {
+                writeln!(f, "Png decoding failed:{:?}", error)
+            }
             Self::GenericStr(err) =>
             {
                 writeln!(f, "{}", err)
@@ -63,6 +73,18 @@ impl Debug for ImgErrors
             Self::OperationsError(ref error) => writeln!(f, "{:?}", error),
 
             Self::EncodeErrors(ref err) => writeln!(f, "{:?}", err),
+            ImgErrors::UnsupportedColorspace(present, operation, supported) =>
+            {
+                writeln!(f,"Unsupported colorspace {:?}, for the operation {}\nSupported colorspaces are {:?}",present,operation,supported)
+            }
+            ImgErrors::DimensionsMisMatch(expected, found) =>
+            {
+                writeln!(
+                    f,
+                    "Dimensions mismatch, expected {} but found {}",
+                    expected, found
+                )
+            }
         }
     }
 }
@@ -72,6 +94,15 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
     fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
     {
         ImgErrors::JpegDecodeErrors(from)
+    }
+}
+
+#[cfg(feature = "zune-png")]
+impl From<zune_png::error::PngErrors> for ImgErrors
+{
+    fn from(from: zune_png::error::PngErrors) -> Self
+    {
+        ImgErrors::PngDecodeErrors(from)
     }
 }
 

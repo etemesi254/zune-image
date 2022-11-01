@@ -22,7 +22,7 @@ impl OperationsTrait for Flip
         "Flip"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         match image.get_channel_mut()
         {

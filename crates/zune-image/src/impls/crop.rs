@@ -32,7 +32,7 @@ impl OperationsTrait for Crop
         "Crop"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let new_dims = self.width * self.height;
         let (old_width, _) = image.get_dimensions();
