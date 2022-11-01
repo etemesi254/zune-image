@@ -234,8 +234,8 @@ impl BitStream
                     self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     return Ok(true);
                 }
-                // not there, revert the read
-                reader.revert(4);
+                // not there, rewind the read
+                reader.rewind(4);
             }
             // This serves two reasons,
             // 1: Make clippy shut up
