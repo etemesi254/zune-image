@@ -97,14 +97,6 @@ impl<'a> JpegDecoder<'a>
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
-            /*
-            Apparently, grayscale images which can be down sampled exists, which is weird in the sense
-            that it has one component Y, which is not usually down sampled.
-
-            This means some calculations will be wrong, so for that we explicitly reset params
-            for such occurrences, warn and reset the image info to appear as if it were
-            a non-sampled image to ensure decoding works
-            */
             if self.options.get_strict_mode()
             {
                 return Err(DecodeErrors::FormatStatic(
@@ -114,14 +106,9 @@ impl<'a> JpegDecoder<'a>
 
             warn!("Grayscale image with down-sampled component, resetting component details");
 
+            self.reset_params();
+
             mcu_width = ((self.info.width + 7) / 8) as usize;
-            self.h_max = 1;
-            self.options = self.options.set_out_colorspace(ColorSpace::Luma);
-            self.v_max = 1;
-            self.sub_sample_ratio = SubSampRatios::None;
-            self.components[0].vertical_sample = 1;
-            self.components[0].width_stride = mcu_width * 8;
-            self.components[0].horizontal_sample = 1;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
         // Size of our output image(width*height)
@@ -210,6 +197,7 @@ impl<'a> JpegDecoder<'a>
                                 let idct_position = {
                                     if self.is_interleaved
                                     {
+                                        // derived from stb and rewritten for my tastes
                                         let c2 = ((bias * component.vertical_sample) + v_samp) * 8;
                                         let c3 = ((j * component.horizontal_sample) + h_samp) * 8;
 
@@ -386,7 +374,7 @@ impl<'a> JpegDecoder<'a>
 fn t()
 {
     use std::fs::read;
-    let data = read("/home/caleb/jpeg/clay-banks-hv.jpg").unwrap();
+    let data = read("/home/caleb/jpeg/milad.jpg").unwrap();
 
     let mut decoder = JpegDecoder::new(&data);
     decoder.decode_buffer().unwrap();
