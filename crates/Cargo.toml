@@ -15,6 +15,10 @@ members = [
     # Image formats
     "zune-jpeg",
     "zune-ppm",
+    "zune-png",
+    # additional stuff
+    "zune-inflate",
+
     # Core functionality
     "zune-core"
 
