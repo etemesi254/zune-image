@@ -6,6 +6,8 @@ use crate::cmd_args::{CmdOptions, MmapOptions};
 use crate::workflow::create_and_exec_workflow_from_cmd;
 
 mod cmd_args;
+mod file_paths;
+mod show_gui;
 mod workflow;
 
 fn parse_options(options: &ArgMatches) -> CmdOptions
