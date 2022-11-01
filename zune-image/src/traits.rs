@@ -1,19 +1,20 @@
 use zune_core::colorspace::ColorSpace;
 
-use crate::errors::{ImgEncodeErrors, ImgOperationsErrors};
-use crate::image::Image;
+use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
+use crate::image::{Image, ImageChannels};
 
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait<'a> {
+pub trait DecoderTrait<'a>
+{
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed
     /// to the decoder when initializing the decoder
     ///
     /// # Returns
-    /// - OK(Vec<u8>) -> Pixels decoded from the image
+    /// - Image -> Pixels decoded from the image as interleaved pixels.
     ///
     /// # Errors
     ///  - Any image decoding errors will be propagated to the caller.
@@ -24,9 +25,9 @@ pub trait DecoderTrait<'a> {
     /// use zune_jpeg::JpegDecoder;
     /// let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
     ///
-    /// decoder.decode_buffer().unwrap();
+    /// decoder.decode().unwrap();
     /// ```
-    fn decode_buffer(&mut self) -> Result<Image, crate::errors::ImgErrors>;
+    fn decode(&mut self) -> Result<Image, crate::errors::ImgErrors>;
 
     /// Get width and height of the image
     ///
@@ -48,12 +49,48 @@ pub trait DecoderTrait<'a> {
 ///
 /// All operations that can be stored in a workflow
 /// need to encapsulate this struct.
-pub trait OperationsTrait {
+pub trait OperationsTrait
+{
     /// Get the name of this operation
     fn get_name(&self) -> &'static str;
 
     /// Execute a simple operation on the image
     /// manipulating the image struct
+    ///
+    /// An object should implement this function, but
+    /// a caller should call [`execute`], which does some error checking
+    /// before calling this method
+    ///
+    /// [`execute`]: Self::execute
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
+
+    /// Return the supported colorspaces this operation supports
+    ///
+    /// Some operations cannot work on all colorspaces, e.g rgb to grayscale will
+    /// only work on RGB colorspace, not YUV or YCbCr colorspace, hence such an operation
+    /// must only declare support for such colorspace
+    ///
+    /// During execution, the image colorspace will be matched to this colorspace and
+    /// if it doesn't support it, an error will be raised during execution
+    fn supported_colorspaces(&self) -> &'static [ColorSpace]
+    {
+        &[
+            ColorSpace::RGBA,
+            ColorSpace::RGB,
+            ColorSpace::LumaA,
+            ColorSpace::Luma,
+            ColorSpace::CYMK,
+            ColorSpace::RGBX,
+            ColorSpace::YCbCr,
+            ColorSpace::YCCK,
+        ]
+    }
+
+    /// Execute an operation
+    ///
+    /// This does come common error checking operations, e.g
+    /// it checks that image dimensions match array length and that this operation
+    /// supports the image colorspace, before calling [`_execute_simple`]
     ///
     /// # Arguments
     /// - image: A mutable reference to an image which
@@ -72,12 +109,98 @@ pub trait OperationsTrait {
     /// let mut image = Image::new();
     /// // Convert to grayscale
     /// let rgb_to_grayscale = RgbToGrayScale::new();
-    /// rgb_to_grayscale.execute_simple(&mut image);
+    /// rgb_to_grayscale.execute(&mut image);
     /// ```
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
+    ///
+    /// [`_execute_simple`]: Self::_execute_simple
+    fn execute(&self, image: &mut Image) -> Result<(), ImgErrors>
+    {
+        // Confirm colorspace
+        let colorspace = image.get_colorspace();
+
+        let supported = self
+            .supported_colorspaces()
+            .iter()
+            .any(|x| *x == colorspace);
+
+        if !supported
+        {
+            return Err(ImgErrors::UnsupportedColorspace(
+                colorspace,
+                self.get_name(),
+                self.supported_colorspaces(),
+            ));
+        }
+        // Ensure dimensions + are correct
+        let (w, h) = image.get_dimensions();
+        let dimensions = w * h;
+
+        match image.get_channel_ref()
+        {
+            ImageChannels::OneChannel(channel) =>
+            {
+                if channel.len() != dimensions
+                {
+                    return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
+                }
+            }
+            ImageChannels::TwoChannels(channels) =>
+            {
+                for channel in channels
+                {
+                    if channel.len() != dimensions
+                    {
+                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
+                    }
+                }
+            }
+            ImageChannels::ThreeChannels(channels) =>
+            {
+                for channel in channels
+                {
+                    if channel.len() != dimensions
+                    {
+                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
+                    }
+                }
+            }
+            ImageChannels::FourChannels(channels) =>
+            {
+                for channel in channels
+                {
+                    if channel.len() != dimensions
+                    {
+                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
+                    }
+                }
+            }
+            ImageChannels::Interleaved(channel) =>
+            {
+                let components = colorspace.num_components();
+                let expected_length = components * dimensions;
+
+                if channel.len() != expected_length
+                {
+                    return Err(ImgErrors::DimensionsMisMatch(
+                        expected_length,
+                        channel.len(),
+                    ));
+                }
+            }
+            ImageChannels::Uninitialized =>
+            {
+                return Err(ImgErrors::GenericStr(
+                    "Cannot operate on uninitialized channels",
+                ))
+            }
+        }
+
+        self._execute_simple(image).map_err(|x| x.into())
+    }
 }
 
-pub trait EncoderTrait {
+pub trait EncoderTrait
+{
     /// Get the name of the encoder
     fn get_name(&self) -> &'static str;
 

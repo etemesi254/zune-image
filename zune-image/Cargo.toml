@@ -6,14 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 ppm = ["zune-ppm"]
-jpeg=["zune-jpeg"]
+jpeg = ["zune-jpeg"]
+png = ["zune-png"]
 default = []
-threads=[]
-all=["jpeg","ppm","threads"]
+threads = []
+all = ["jpeg", "ppm", "threads", "png"]
 
 [dependencies]
-zune-jpeg = { path = "../zune-jpeg",optional=true }
+zune-jpeg = { path = "../zune-jpeg", optional = true }
 zune-imageprocs = { path = "../zune-imageprocs" }
+zune-png = { path = "../zune-png", optional = true }
 zune-core = { path = "../zune-core" }
-zune-ppm = { path = "../zune-ppm", optional=true}
+zune-ppm = { path = "../zune-ppm", optional = true }
 log = "0.4.17"

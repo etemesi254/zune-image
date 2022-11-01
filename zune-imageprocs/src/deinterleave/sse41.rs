@@ -97,6 +97,7 @@ pub unsafe fn de_interleave_three_channels_sse3(
     }
 }
 
+#[allow(clippy::zero_prefixed_literal)]
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn de_interleave_four_channels_sse41(
     source: &[u8], (c1, c2, c3, c4): (&mut [u8], &mut [u8], &mut [u8], &mut [u8]),
@@ -107,7 +108,7 @@ pub unsafe fn de_interleave_four_channels_sse41(
     const CHUNK_SIZE: usize = 64;
     const OUT_CHUNK_SIZE: usize = CHUNK_SIZE / 4;
 
-    let shuffle_mask = _mm_set_epi8(15, 11, 7, 3, 14, 10, 6, 2, 13, 09, 5, 1, 12, 08, 4, 0);
+    let shuffle_mask = _mm_set_epi8(15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0);
 
     for ((((source_chunk, rr), gg), bb), aa) in source
         .chunks_exact(CHUNK_SIZE)

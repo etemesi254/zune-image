@@ -27,7 +27,7 @@ impl OperationsTrait for Transpose
         "Transpose"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
         let out_dim = width * height;

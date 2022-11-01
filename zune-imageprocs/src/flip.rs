@@ -8,46 +8,26 @@
 /// │f g h i j│   │e d c b a │
 /// └─────────┘   └──────────┘
 /// ```
-pub fn flip(in_out_image: &mut [u8])
+pub fn flip<T: Copy>(in_out_image: &mut [T])
 {
-    // this is a fast enough operation but I had some extra time
+    // NOTE: CAE, this operation became slower after switching to generics
     //
-    // So we use the SIMD within register technique here, i.e we
-    // chunk output into 8 values, which fit into a 64 bit register
-    // then we do a byte-swap during inner loop
+    // The compiler fails to see how we can make it faster
     //
-    // The byte-swap does the flip for us, meaning we swap 8 operations per memory read
+    // Original
     //
-    // There is no explicit bswap we emulate those with read_be and write_le operations
-    // This also extends nicely to auto-vectorization hence no need for sse
+    // test flip::benchmarks::flip_scalar   ... bench:      20,777 ns/iter (+/- 655)
     //
-    // We can further increase the speed by halving the in array, since we are just moving pixels from one point to another
-    //  and this operation is symmetric along a diagonal (the bottom left becomes the top right, bottom right
-    // becomes the top left), a flip becomes a byte-swap and write.
-
-    // split into half
+    // After
+    //
+    //test flip::benchmarks::flip_scalar    ... bench:      41,956 ns/iter (+/- 4,189)
+    //
+    // It's still fast enough so hopefully no one notices
     let length = in_out_image.len() / 2;
 
-    let (in_img1, in_img2) = in_out_image.split_at_mut(length);
+    let (in_img_top, in_img_bottom) = in_out_image.split_at_mut(length);
 
-    // chunk each half into u8's
-    let in_img1_chunks = in_img1.chunks_exact_mut(8);
-    let in_img2_chunks = in_img2.rchunks_exact_mut(8);
-
-    for (top, bottom) in in_img1_chunks.zip(in_img2_chunks)
-    {
-        let top_u64 = u64::from_be_bytes(top.try_into().unwrap());
-        let bottom_u64 = u64::from_be_bytes(bottom.try_into().unwrap());
-
-        bottom.copy_from_slice(&top_u64.to_le_bytes());
-        top.copy_from_slice(&bottom_u64.to_le_bytes());
-    }
-    let remainder = in_img1.len() % 8;
-    let length = in_img1.len();
-
-    for (in_dim, out_dim) in in_img1[length - remainder..]
-        .iter_mut()
-        .zip(in_img2[0..remainder].iter_mut().rev())
+    for (in_dim, out_dim) in in_img_top.iter_mut().zip(in_img_bottom.iter_mut().rev())
     {
         std::mem::swap(in_dim, out_dim);
     }

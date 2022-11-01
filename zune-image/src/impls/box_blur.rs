@@ -32,7 +32,7 @@ impl OperationsTrait for BoxBlur
         "Box blur"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
 
@@ -42,13 +42,11 @@ impl OperationsTrait for BoxBlur
             {
                 let mut out_dim = vec![0; width * height];
                 box_blur(channel, &mut out_dim, width, height, self.radius);
-                //*channel = out_dim;
             }
             ImageChannels::TwoChannels(channels) =>
             {
                 let mut out_dim = vec![0; width * height];
                 box_blur(&mut channels[0], &mut out_dim, width, height, self.radius);
-                //channels[0] = out_dim;
             }
             ImageChannels::ThreeChannels(channels) =>
             {
@@ -60,8 +58,6 @@ impl OperationsTrait for BoxBlur
                     for channel in channels
                     {
                         box_blur(channel, &mut out_dim, width, height, self.radius);
-
-                        // *channel = out_dim;
                     }
                 }
                 #[cfg(feature = "threads")]
@@ -89,8 +85,6 @@ impl OperationsTrait for BoxBlur
                     for channel in channels.iter_mut().take(3)
                     {
                         box_blur(channel, &mut out_dim, width, height, self.radius);
-
-                        // *channel = out_dim;
                     }
                 }
                 #[cfg(feature = "threads")]
@@ -105,8 +99,6 @@ impl OperationsTrait for BoxBlur
                                 box_blur(channel, &mut out_dim, width, height, self.radius);
                             });
                         }
-                        // let mut out_dim = vec![0; width * height];
-                        //
                     });
                 }
             }

@@ -1,5 +1,6 @@
 pub mod box_blur;
 pub mod brighten;
+pub mod convolve;
 pub mod crop;
 pub mod deinterleave;
 pub mod flip;
@@ -11,3 +12,4 @@ pub mod invert;
 pub mod mirror;
 pub mod threshold;
 pub mod transpose;
+pub mod unsharpen;

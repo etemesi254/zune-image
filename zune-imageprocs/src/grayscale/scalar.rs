@@ -1,3 +1,4 @@
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn convert_rgb_to_grayscale_scalar((r, g, b): (&[u8], &[u8], &[u8]), gr: &mut [u8])
 {
     let r_coef = (0.2989 * 32768.0 + 0.5) as u32;

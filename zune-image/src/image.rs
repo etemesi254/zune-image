@@ -114,4 +114,74 @@ impl Image
     {
         self.dimensions = (width, height);
     }
+
+    pub fn to_rgba_flatten(&self) -> Vec<u8>
+    {
+        let (width, height) = self.dimensions;
+
+        let mut out = vec![0; width * height * 4];
+
+        assert!(matches!(
+            self.colorspace,
+            ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::Luma | ColorSpace::LumaA
+        ));
+
+        match &self.pixels
+        {
+            ImageChannels::ThreeChannels(val) =>
+            {
+                for (((r, g), b), out) in val[0]
+                    .iter()
+                    .zip(val[1].iter())
+                    .zip(val[2].iter())
+                    .zip(out.chunks_exact_mut(4))
+                {
+                    out[0] = *r;
+                    out[1] = *g;
+                    out[2] = *b;
+                    out[3] = 255;
+                }
+            }
+            ImageChannels::FourChannels(val) =>
+            {
+                for ((((r, g), b), a), out) in val[0]
+                    .iter()
+                    .zip(val[1].iter())
+                    .zip(val[2].iter())
+                    .zip(val[3].iter())
+                    .zip(out.chunks_exact_mut(4))
+                {
+                    out[0] = *r;
+                    out[1] = *g;
+                    out[2] = *b;
+                    out[3] = *a;
+                }
+            }
+            ImageChannels::OneChannel(val) =>
+            {
+                for (c, out) in val.iter().zip(out.chunks_exact_mut(4))
+                {
+                    out[0] = *c;
+                    out[1] = *c;
+                    out[2] = *c;
+                    out[3] = 255;
+                }
+            }
+            ImageChannels::TwoChannels(val) =>
+            {
+                for ((c, a), out) in val[0]
+                    .iter()
+                    .zip(val[1].iter())
+                    .zip(out.chunks_exact_mut(4))
+                {
+                    out[0] = *c;
+                    out[1] = *c;
+                    out[2] = *c;
+                    out[3] = *a;
+                }
+            }
+            _ => todo!(),
+        }
+        out
+    }
 }

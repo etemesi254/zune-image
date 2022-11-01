@@ -181,7 +181,7 @@ impl<'a> WorkFlow<'a>
 
                     let decode_op = self.decode.as_mut().unwrap();
 
-                    let img = decode_op.decode_buffer()?;
+                    let img = decode_op.decode()?;
 
                     self.image = Some(img);
 
@@ -203,7 +203,7 @@ impl<'a> WorkFlow<'a>
 
                             let start = Instant::now();
 
-                            operation.execute_simple(image)?;
+                            operation.execute(image)?;
 
                             let stop = Instant::now();
 

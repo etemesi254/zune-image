@@ -23,7 +23,7 @@ impl OperationsTrait for Invert
         "Invert"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         match image.get_colorspace()
         {

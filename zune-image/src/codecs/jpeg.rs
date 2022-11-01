@@ -9,7 +9,7 @@ pub use zune_jpeg::*;
 use crate::traits::DecoderTrait;
 
 impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a> {
-    fn decode_buffer(&mut self) -> Result<Image, crate::errors::ImgErrors> {
+    fn decode(&mut self) -> Result<Image, crate::errors::ImgErrors> {
         let pixel_data = self
             .decode_buffer()
             .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;

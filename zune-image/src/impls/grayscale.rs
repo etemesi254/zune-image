@@ -45,7 +45,7 @@ impl OperationsTrait for RgbToGrayScale
         "RGB to Grayscale"
     }
 
-    fn execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let im_colorspace = image.get_colorspace();
 
@@ -53,19 +53,6 @@ impl OperationsTrait for RgbToGrayScale
         {
             warn!("Image already in grayscale skipping this operation");
             return Ok(());
-        }
-
-        // Support any colorspace with RGB data
-        match im_colorspace
-        {
-            ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX => (),
-            _ =>
-            {
-                return Err(ImgOperationsErrors::WrongColorspace(
-                    ColorSpace::RGB,
-                    im_colorspace,
-                ))
-            }
         }
 
         let (width, height) = image.get_dimensions();
@@ -80,7 +67,7 @@ impl OperationsTrait for RgbToGrayScale
             image.set_image_channel(ImageChannels::OneChannel(grayscale));
             image.set_colorspace(ColorSpace::Luma);
         }
-        else if let ImageChannels::FourChannels(rgba_data) = image.get_channel_ref()
+        else if let ImageChannels::FourChannels(rgba_data) = image.get_channel_mut()
         {
             // discard alpha channel
             rgb_to_grayscale(
@@ -90,7 +77,7 @@ impl OperationsTrait for RgbToGrayScale
 
             if self.preserve_alpha
             {
-                let alpha = rgba_data[4].clone();
+                let alpha = std::mem::take(&mut rgba_data[4]);
 
                 image.set_image_channel(ImageChannels::TwoChannels([grayscale, alpha]));
                 image.set_colorspace(ColorSpace::LumaA);
@@ -110,5 +97,16 @@ impl OperationsTrait for RgbToGrayScale
         }
 
         Ok(())
+    }
+
+    fn supported_colorspaces(&self) -> &'static [ColorSpace]
+    {
+        &[
+            ColorSpace::RGBA,
+            ColorSpace::RGB,
+            ColorSpace::LumaA,
+            ColorSpace::Luma,
+            ColorSpace::RGBX,
+        ]
     }
 }
