@@ -7,8 +7,8 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{
-    AFTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, THRESHOLD_HELP,
-    TRANSPOSE_HELP,
+    AFTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, GAUSSIAN_BLUR_HELP,
+    THRESHOLD_HELP, TRANSPOSE_HELP,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -107,6 +107,10 @@ pub fn create_cmd_args() -> Command {
             .short('y')
             .help("Answer yes to all queries asked")
             .action(ArgAction::SetTrue))
+        .arg(Arg::new("view")
+            .long("view")
+            .help("View image effects after carrying out effects")
+            .action(ArgAction::SetTrue))
         .args(add_logging_options())
         .args(add_operations())
         .args(add_settings())
@@ -115,7 +119,7 @@ pub fn create_cmd_args() -> Command {
             .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold","gamma"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur"])
+            .args(["box-blur","blur","unsharpen"])
             .multiple(true))
 }
 
@@ -255,14 +259,30 @@ fn add_operations() -> Vec<Arg>
 }
 fn add_filters() -> Vec<Arg>
 {
-    let mut args = [Arg::new("box-blur")
-        .long("box-blur")
-        .help("Perform a box blur")
-        .value_name("radius")
-        .long_help(BOX_BLUR_HELP)
-        .help_heading("Filters")
-        .value_parser(value_parser!(usize))
-        .group("filters")];
+    let mut args = [
+        Arg::new("box-blur")
+            .long("box-blur")
+            .help("Perform a box blur")
+            .value_name("radius")
+            .long_help(BOX_BLUR_HELP)
+            .help_heading("Filters")
+            .value_parser(value_parser!(usize))
+            .group("filters"),
+        Arg::new("blur")
+            .long("blur")
+            .help("Perform a gaussian blur")
+            .value_name("sigma")
+            .long_help(GAUSSIAN_BLUR_HELP)
+            .help_heading("Filters")
+            .value_parser(value_parser!(f32))
+            .group("filters"),
+        Arg::new("unsharpen")
+            .long("unsharpen")
+            .help("Perform an unsharp mask")
+            .help_heading("Filters")
+            .value_name("sigma:threshold")
+            .group("filters"),
+    ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
 }

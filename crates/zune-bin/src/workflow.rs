@@ -6,6 +6,7 @@ use std::path::Path;
 use std::string::String;
 
 use clap::parser::ValueSource;
+use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::Level::Debug;
 use log::{debug, info, log_enabled};
@@ -25,9 +26,11 @@ use zune_image::impls::invert::Invert;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
+use zune_image::impls::unsharpen::Unsharpen;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_args::arg_parsers::get_four_pair_args;
+use crate::show_gui::open_in_default_app;
 use crate::{CmdOptions, MmapOptions};
 
 #[allow(unused_variables)]
@@ -113,6 +116,17 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         }
 
         workflow.advance_to_end()?;
+
+        if let Some(view) = args.value_source("view")
+        {
+            if view == CommandLine
+            {
+                if let Some(x) = workflow.get_image()
+                {
+                    open_in_default_app(x);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -312,6 +326,30 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let value = *args.get_one::<f32>(&argument).unwrap();
             debug!("Added gamma filter with value {}", value);
             workflow.add_operation(Box::new(Gamma::new(value)));
+        }
+        else if argument == "unsharpen"
+        {
+            let value = args.get_one::<String>(&argument).unwrap();
+            let split_args: Vec<&str> = value.split(':').collect();
+
+            if split_args.len() != 2
+            {
+                return Err(format!("Unsharpen operation expected 2 arguments separated by `:` in the command line,got {}",split_args.len()));
+            }
+            // parse first one as threshold
+            let sigma = split_args[0];
+            let sigma_f32 = str::parse::<f32>(sigma).map_err(|x| x.to_string())?;
+
+            let threshold = split_args[1];
+            let threshold_u8 = str::parse::<u8>(threshold).map_err(|x| x.to_string())?;
+
+            debug!(
+                "Added unsharpen filter with sigma={} and threshold={}",
+                sigma, threshold
+            );
+
+            let unsharpen = Unsharpen::new(sigma_f32, threshold_u8);
+            workflow.add_operation(Box::new(unsharpen))
         }
     }
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
