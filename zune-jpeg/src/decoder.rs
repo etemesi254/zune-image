@@ -122,6 +122,8 @@ pub struct JpegDecoder<'a>
     pub(crate) options:          ZuneJpegOptions,
     // byte-stream
     pub(crate) stream:           ZByteReader<'a>,
+    // Indicate whether headers have been decoded
+    pub(crate) headers_decoded:  bool,
 }
 
 impl<'a> JpegDecoder<'a>
@@ -168,6 +170,7 @@ impl<'a> JpegDecoder<'a>
             // options
             options,
             stream: ZByteReader::new(buffer),
+            headers_decoded: false,
         }
     }
     /// Decode a buffer already in memory
@@ -214,7 +217,7 @@ impl<'a> JpegDecoder<'a>
         // it's default we assume that the caller failed to uphold the
         // guarantees. We can be sure that an image cannot be the default since
         // its a hard panic in-case width or height are set to zero.
-        if self.info == ImageInfo::default()
+        if !self.headers_decoded
         {
             return None;
         }
@@ -268,6 +271,7 @@ impl<'a> JpegDecoder<'a>
 
                     if n == Marker::SOS
                     {
+                        self.headers_decoded = true;
                         return Ok(());
                     }
                 }

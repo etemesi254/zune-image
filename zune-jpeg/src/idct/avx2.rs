@@ -46,7 +46,7 @@ pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usiz
         // We don't call this method directly because we need to flag the code function
         // with #[target_feature] so that the compiler does do weird stuff with
         // it
-        dequantize_and_idct_int_avx2_new(in_vector, out_vector, stride)
+        idct_int_avx2_inner(in_vector, out_vector, stride);
     }
 }
 
@@ -56,11 +56,10 @@ pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usiz
     clippy::cast_possible_truncation,
     clippy::similar_names,
     clippy::op_ref,
-    unused_assignments
+    unused_assignments,
+    clippy::zero_prefixed_literal
 )]
-pub unsafe fn dequantize_and_idct_int_avx2_new(
-    in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize,
-)
+pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
 {
     let mut pos = 0;
 
