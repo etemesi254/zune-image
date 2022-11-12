@@ -126,7 +126,6 @@ impl<'a> ZlibDecoder<'a>
 
             precode_lens[usize::from(DEFLATE_PRECODE_LENS_PERMUTATION[0])] =
                 self.stream.get_bits(3) as u8;
-            let mut i = 1;
             self.stream.refill();
 
             let expected = (SINGLE_PRECODE * num_explicit_precode_lens) as u8;

@@ -1,7 +1,7 @@
-#[allow(clippy::cast_sign_loss)]
-pub fn brighten(in_matrix: &mut [u8], value: i16)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+pub fn brighten(channel: &mut [u16], value: i16, max_value: u16)
 {
-    in_matrix
+    channel
         .iter_mut()
-        .for_each(|x| *x = i16::from(*x).wrapping_add(value).clamp(0, 255) as u8);
+        .for_each(|x| *x = ((*x as i16).wrapping_add(value) as u16).clamp(0, max_value));
 }

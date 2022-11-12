@@ -14,7 +14,7 @@ memmap2 = "0.5.7"
 glob = "0.3.0"
 
 [dependencies.simple_logger]
-git = "https://github.com/etemesi254/rust-simple_logger"
+version = "4.0.0"
 default-features = false
 features = ["colors"]
 

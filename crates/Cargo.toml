@@ -20,7 +20,9 @@ members = [
     "zune-inflate",
 
     # Core functionality
-    "zune-core"
+    "zune-core",
+    #testing
+    "zune-tests"
 
 ]
 

@@ -1,6 +1,10 @@
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub(crate) fn convert_rgb_to_grayscale_scalar((r, g, b): (&[u8], &[u8], &[u8]), gr: &mut [u8])
+pub(crate) fn convert_rgb_to_grayscale_scalar(
+    r: &[u16], g:&[u16], b:&[u16], gr: &mut [u16], max_value: u16,
+)
 {
+    let max_value = u32::from(max_value);
+
     let r_coef = (0.2989 * 32768.0 + 0.5) as u32;
     let g_coef = (0.5870 * 32768.0 + 0.5) as u32;
     let b_coef = (0.1140 * 32768.0 + 0.5) as u32;
@@ -18,6 +22,6 @@ pub(crate) fn convert_rgb_to_grayscale_scalar((r, g, b): (&[u8], &[u8], &[u8]), 
 
         let g = (g1 + g2 + g3) / 64;
 
-        *g_out = g.min(255) as u8;
+        *g_out = g.min(max_value) as u16;
     }
 }

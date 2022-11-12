@@ -10,7 +10,7 @@ use std::sync::Once;
 
 static START: Once = Once::new();
 
-pub fn transpose(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
+pub fn transpose(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize)
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {

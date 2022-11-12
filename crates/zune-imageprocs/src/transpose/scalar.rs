@@ -1,4 +1,4 @@
-pub fn transpose_scalar(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
+pub fn transpose_scalar(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize)
 {
     // A slightly more optimized scalar transpose,
     // 2x faster than the naive one
@@ -22,7 +22,7 @@ pub fn transpose_scalar(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, h
         "Out matrix dimensions do not match width and height"
     );
 
-    let mut temp_matrix: [u8; 64] = [0; 64];
+    let mut temp_matrix: [u16; 64] = [0; 64];
 
     let width_iterations = width / 8;
     let sin_height = 8 * width;

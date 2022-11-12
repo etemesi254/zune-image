@@ -5,7 +5,7 @@ use crate::deinterleave::scalar::de_interleave_three_channels_scalar;
 
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn de_interleave_three_channels_avx2(
-    source: &[u8], (c1, c2, c3): (&mut [u8], &mut [u8], &mut [u8]),
+    source: &[u8], (c1, c2, c3): (&mut [u16], &mut [u16], &mut [u16]),
 )
 {
     // Rely on the auto-vectorizer

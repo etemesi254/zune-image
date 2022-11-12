@@ -2,7 +2,7 @@ use log::trace;
 use zune_imageprocs::box_blur::box_blur;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Perform a box blur
@@ -36,85 +36,34 @@ impl OperationsTrait for BoxBlur
     {
         let (width, height) = image.get_dimensions();
 
-        match image.get_channel_mut()
+        let channels = image.get_channels_mut(false);
+
+        #[cfg(feature = "threads")]
         {
-            ImageChannels::OneChannel(channel) =>
+            trace!("Running box blur in multithreaded mode");
+            std::thread::scope(|s| {
+                // blur each channel on a separate thread
+                for channel in channels
+                {
+                    s.spawn(|| {
+                        let mut out_dim = vec![0; width * height];
+                        box_blur(channel, &mut out_dim, width, height, self.radius);
+                    });
+                }
+            });
+        }
+        #[cfg(not(feature = "threads"))]
+        {
+            trace!("Running box blur in single threaded mode");
+
+            let mut out_dim = vec![0; width * height];
+
+            for channel in channels
             {
-                let mut out_dim = vec![0; width * height];
                 box_blur(channel, &mut out_dim, width, height, self.radius);
             }
-            ImageChannels::TwoChannels(channels) =>
-            {
-                let mut out_dim = vec![0; width * height];
-                box_blur(&mut channels[0], &mut out_dim, width, height, self.radius);
-            }
-            ImageChannels::ThreeChannels(channels) =>
-            {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running box blur in single threaded mode");
-                    let mut out_dim = vec![0; width * height];
-
-                    for channel in channels
-                    {
-                        box_blur(channel, &mut out_dim, width, height, self.radius);
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running box blur in multithreaded mode");
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in channels
-                        {
-                            s.spawn(|| {
-                                let mut out_dim = vec![0; width * height];
-                                box_blur(channel, &mut out_dim, width, height, self.radius);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::FourChannels(channels) =>
-            {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running box blur in single threaded mode");
-                    let mut out_dim = vec![0; width * height];
-
-                    for channel in channels.iter_mut().take(3)
-                    {
-                        box_blur(channel, &mut out_dim, width, height, self.radius);
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running box blur in multithreaded mode");
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in channels.iter_mut().take(3)
-                        {
-                            s.spawn(|| {
-                                let mut out_dim = vec![0; width * height];
-                                box_blur(channel, &mut out_dim, width, height, self.radius);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::Interleaved(_) =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot blur an interleaved channel",
-                ));
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot blur uninitialized pixels",
-                ));
-            }
         }
+
         Ok(())
     }
 }

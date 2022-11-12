@@ -49,7 +49,7 @@ fn create_box_gauss(sigma: f32) -> [usize; 3]
 }
 
 pub fn gaussian_blur(
-    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32,
+    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32,
 )
 {
     // use the box blur implementation

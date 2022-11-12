@@ -3,7 +3,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::grayscale::rgb_to_grayscale;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Convert RGB data to grayscale
@@ -49,7 +49,7 @@ impl OperationsTrait for RgbToGrayScale
     {
         let im_colorspace = image.get_colorspace();
 
-        if im_colorspace == ColorSpace::Luma
+        if im_colorspace == ColorSpace::Luma || im_colorspace == ColorSpace::LumaA
         {
             warn!("Image already in grayscale skipping this operation");
             return Ok(());
@@ -58,42 +58,25 @@ impl OperationsTrait for RgbToGrayScale
         let (width, height) = image.get_dimensions();
         let size = width * height;
 
-        let mut grayscale = vec![0; size];
+        let mut out = vec![0; size];
 
-        if let ImageChannels::ThreeChannels(rgb_data) = image.get_channel_ref()
+        let channel = image.get_channels_ref(self.preserve_alpha);
+
+        let r = &channel[0];
+        let g = &channel[1];
+        let b = &channel[2];
+
+        rgb_to_grayscale(r, g, b, &mut out, image.get_depth().max_value());
+
+        if self.preserve_alpha && image.get_colorspace().has_alpha()
         {
-            rgb_to_grayscale((&rgb_data[0], &rgb_data[1], &rgb_data[2]), &mut grayscale);
-
-            image.set_image_channel(ImageChannels::OneChannel(grayscale));
-            image.set_colorspace(ColorSpace::Luma);
-        }
-        else if let ImageChannels::FourChannels(rgba_data) = image.get_channel_mut()
-        {
-            // discard alpha channel
-            rgb_to_grayscale(
-                (&rgba_data[0], &rgba_data[1], &rgba_data[2]),
-                &mut grayscale,
-            );
-
-            if self.preserve_alpha
-            {
-                let alpha = std::mem::take(&mut rgba_data[4]);
-
-                image.set_image_channel(ImageChannels::TwoChannels([grayscale, alpha]));
-                image.set_colorspace(ColorSpace::LumaA);
-            }
-            else
-            {
-                image.set_image_channel(ImageChannels::OneChannel(grayscale));
-                image.set_colorspace(ColorSpace::Luma);
-            }
+            image.set_channels(vec![out, channel[3].to_vec()]);
+            image.set_colorspace(ColorSpace::LumaA);
         }
         else
         {
-            static ERR_MESSAGE: &str = "Expected layout of separated RGB(A) data wasn't found\
-            ,perhaps you need to run `deinterleave` operation before calling RGB to grayscale";
-
-            return Err(ImgOperationsErrors::InvalidChannelLayout(ERR_MESSAGE));
+            image.set_channels(vec![out]);
+            image.set_colorspace(ColorSpace::Luma);
         }
 
         Ok(())

@@ -2,7 +2,7 @@ use log::trace;
 use zune_imageprocs::gamma::gamma;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Rearrange the pixels up side down
@@ -28,81 +28,29 @@ impl OperationsTrait for Gamma
 
     fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        match image.get_channel_mut()
+        let max_value = image.get_depth().max_value();
+
+        #[cfg(not(feature = "threads"))]
         {
-            ImageChannels::OneChannel(input) =>
-            {
-                gamma(input, self.value);
-            }
-            ImageChannels::TwoChannels(input) =>
-            {
-                for inp in input
-                {
-                    gamma(inp, self.value);
-                }
-            }
-            ImageChannels::ThreeChannels(input) =>
-            {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running gamma correction in single threaded mode");
+            trace!("Running gamma correction in single threaded mode");
 
-                    for inp in input
-                    {
-                        gamma(inp, self.value);
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running gamma correction in multithreaded mode");
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in input
-                        {
-                            s.spawn(|| {
-                                gamma(channel, self.value);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::FourChannels(input) =>
+            for channel in image.get_channels_mut(false)
             {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running gamma correction in single threaded mode");
-
-                    for inp in input.iter_mut().take(3)
-                    {
-                        gamma(inp, self.value);
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running gamma correction in multithreaded mode");
-
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in input.iter_mut().take(3)
-                        {
-                            s.spawn(|| {
-                                gamma(channel, self.value);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::Interleaved(input) =>
-            {
-                gamma(input, self.value);
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot gamma adjust uninitialized pixels",
-                ))
+                gamma(channel, self.value, max_value);
             }
         }
+        #[cfg(feature = "threads")]
+        {
+            trace!("Running gamma correction in multithreaded mode");
+
+            std::thread::scope(|s| {
+                for channel in image.get_channels_mut(false)
+                {
+                    s.spawn(|| gamma(channel, self.value, max_value));
+                }
+            });
+        }
+
         Ok(())
     }
 }

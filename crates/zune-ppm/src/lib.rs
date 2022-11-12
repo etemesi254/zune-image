@@ -24,64 +24,52 @@ pub struct PPMEncoder<'a, W: Write>
 {
     version:    PPMVersions,
     colorspace: ColorSpace,
-    width:      usize,
-    height:     usize,
-    writer:     &'a mut W,
+
+    width:  usize,
+    height: usize,
+    writer: &'a mut W,
 }
 
 impl<'a, W: Write> PPMEncoder<'a, W>
 {
-    pub fn new(width: usize, height: usize, dest: &'a mut W) -> PPMEncoder<W>
+    pub fn new(
+        width: usize, height: usize, colorspace: ColorSpace, dest: &'a mut W,
+    ) -> PPMEncoder<W>
     {
         Self {
             version: PPMVersions::P6,
-            colorspace: ColorSpace::RGB,
+            colorspace,
             writer: dest,
             width,
             height,
         }
     }
-    pub fn set_colorspace(&mut self, colorspace: ColorSpace)
+    fn set_colorspace(&mut self)
     {
         if self.colorspace == Luma
         {
             self.version = PPMVersions::P5;
         }
-        else if colorspace == RGB
+        else if self.colorspace == RGB
         {
             self.version = PPMVersions::P6;
         }
-        self.colorspace = colorspace;
+        else
+        {
+            panic!();
+        }
     }
     pub fn write_headers(&mut self)
     {
+        self.set_colorspace();
+
         let header = format!("{} {} {} 255\n", self.version, self.width, self.height);
 
         self.writer.write_all(header.as_bytes()).unwrap();
     }
-    pub fn write_rgb(&mut self, (r, g, b): (&[u8], &[u8], &[u8]))
+    pub fn write(&mut self, data: &[u8])
     {
         self.write_headers();
-        r.iter()
-            .zip(g.iter())
-            .zip(b.iter())
-            .for_each(|((a, b), c)| {
-                self.writer.write_all(&[*a, *b, *c]).unwrap();
-            });
-    }
-    pub fn write_rgb_interleaved(&mut self, rgb: &[u8])
-    {
-        let header = format!("P6 {} {} 255\n", self.width, self.height);
-
-        self.writer.write_all(header.as_bytes()).unwrap();
-        self.writer.write_all(rgb).unwrap();
-    }
-
-    pub fn write_grayscale(&mut self, g: &[u8])
-    {
-        let header = format!("P5 {} {} 255\n", self.width, self.height);
-
-        self.writer.write_all(header.as_bytes()).unwrap();
-        self.writer.write_all(g).unwrap();
+        self.writer.write_all(data).unwrap();
     }
 }

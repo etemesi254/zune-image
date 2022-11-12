@@ -1,7 +1,7 @@
 use zune_imageprocs::crop::crop;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 pub struct Crop
@@ -36,103 +36,23 @@ impl OperationsTrait for Crop
     {
         let new_dims = self.width * self.height;
         let (old_width, _) = image.get_dimensions();
-        let colorspace = image.get_colorspace();
 
-        match image.get_channel_mut()
+        for channel in image.get_channels_mut(true)
         {
-            ImageChannels::OneChannel(input) =>
-            {
-                let mut new_vec = vec![0; new_dims];
+            let mut new_vec = vec![0; new_dims];
 
-                crop(
-                    input,
-                    old_width,
-                    &mut new_vec,
-                    self.width,
-                    self.height,
-                    self.x,
-                    self.y,
-                );
-                *input = new_vec;
-            }
-            ImageChannels::TwoChannels(input) =>
-            {
-                for inp in input
-                {
-                    let mut new_vec = vec![0; new_dims];
-
-                    crop(
-                        inp,
-                        old_width,
-                        &mut new_vec,
-                        self.width,
-                        self.height,
-                        self.x,
-                        self.y,
-                    );
-                    *inp = new_vec;
-                }
-            }
-            ImageChannels::ThreeChannels(input) =>
-            {
-                for inp in input
-                {
-                    let mut new_vec = vec![0; new_dims];
-
-                    crop(
-                        inp,
-                        old_width,
-                        &mut new_vec,
-                        self.width,
-                        self.height,
-                        self.x,
-                        self.y,
-                    );
-                    *inp = new_vec;
-                }
-            }
-            ImageChannels::FourChannels(input) =>
-            {
-                for inp in input.iter_mut().take(3)
-                {
-                    let mut new_vec = vec![0; new_dims];
-
-                    crop(
-                        inp,
-                        old_width,
-                        &mut new_vec,
-                        self.width,
-                        self.height,
-                        self.x,
-                        self.y,
-                    );
-                    *inp = new_vec;
-                }
-            }
-            ImageChannels::Interleaved(data) =>
-            {
-                // Cropping an interleaved image is a bit different
-                // Now a width is an image width plus number of pixels per component.
-                let mut new_vec = vec![0; new_dims * colorspace.num_components()];
-
-                crop(
-                    data,
-                    old_width * colorspace.num_components(),
-                    &mut new_vec,
-                    self.width * colorspace.num_components(),
-                    self.height,
-                    self.x,
-                    self.y,
-                );
-                *data = new_vec;
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot crop uninitialized pixels",
-                ))
-            }
+            crop(
+                channel,
+                old_width,
+                &mut new_vec,
+                self.width,
+                self.height,
+                self.x,
+                self.y,
+            );
+            *channel = new_vec;
         }
+
         image.set_dimensions(self.width, self.height);
 
         Ok(())

@@ -2,7 +2,7 @@ use zune_imageprocs::mirror::mirror;
 pub use zune_imageprocs::mirror::MirrorMode;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 /// Rearrange the pixels up side down
 pub struct Mirror
@@ -27,47 +27,12 @@ impl OperationsTrait for Mirror
     fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
-        match image.get_channel_mut()
+
+        for channel in image.get_channels_mut(true)
         {
-            ImageChannels::OneChannel(input) =>
-            {
-                mirror(input, width, height, self.mode);
-            }
-            ImageChannels::TwoChannels(input) =>
-            {
-                for inp in input
-                {
-                    mirror(inp, width, height, self.mode);
-                }
-            }
-            ImageChannels::ThreeChannels(input) =>
-            {
-                for inp in input
-                {
-                    mirror(inp, width, height, self.mode);
-                }
-            }
-            ImageChannels::FourChannels(input) =>
-            {
-                for inp in input
-                {
-                    mirror(inp, width, height, self.mode);
-                }
-            }
-            ImageChannels::Interleaved(_) =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot mirror interleaved pixels \
-                de-interleave the pixels into separate color components first",
-                ));
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot mirror uninitialized pixels",
-                ))
-            }
+            mirror(channel, width, height, self.mode);
         }
+
         Ok(())
     }
 }

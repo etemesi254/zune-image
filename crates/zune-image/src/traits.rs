@@ -1,7 +1,7 @@
 use zune_core::colorspace::ColorSpace;
 
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 
 /// Encapsulates an image decoder.
 ///
@@ -131,68 +131,15 @@ pub trait OperationsTrait
                 self.supported_colorspaces(),
             ));
         }
-        // Ensure dimensions + are correct
-        let (w, h) = image.get_dimensions();
-        let dimensions = w * h;
+        // Ensure dimensions are correct
+        let components = image.get_channels_mut(true).len();
 
-        match image.get_channel_ref()
+        if components != image.get_colorspace().num_components()
         {
-            ImageChannels::OneChannel(channel) =>
-            {
-                if channel.len() != dimensions
-                {
-                    return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
-                }
-            }
-            ImageChannels::TwoChannels(channels) =>
-            {
-                for channel in channels
-                {
-                    if channel.len() != dimensions
-                    {
-                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
-                    }
-                }
-            }
-            ImageChannels::ThreeChannels(channels) =>
-            {
-                for channel in channels
-                {
-                    if channel.len() != dimensions
-                    {
-                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
-                    }
-                }
-            }
-            ImageChannels::FourChannels(channels) =>
-            {
-                for channel in channels
-                {
-                    if channel.len() != dimensions
-                    {
-                        return Err(ImgErrors::DimensionsMisMatch(dimensions, channel.len()));
-                    }
-                }
-            }
-            ImageChannels::Interleaved(channel) =>
-            {
-                let components = colorspace.num_components();
-                let expected_length = components * dimensions;
-
-                if channel.len() != expected_length
-                {
-                    return Err(ImgErrors::DimensionsMisMatch(
-                        expected_length,
-                        channel.len(),
-                    ));
-                }
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgErrors::GenericStr(
-                    "Cannot operate on uninitialized channels",
-                ))
-            }
+            return  Err(ImgErrors::GenericString(
+                format!("Components mismatch, expected {} channels since image format is {:?}, but found {}",
+                        image.get_colorspace().num_components(),
+                        image.get_colorspace(),components)));
         }
 
         self._execute_simple(image).map_err(|x| x.into())
@@ -203,9 +150,6 @@ pub trait EncoderTrait
 {
     /// Get the name of the encoder
     fn get_name(&self) -> &'static str;
-
-    /// Set colorspace which the encoder should store the image
-    fn set_colorspace(&mut self, colorspace: ColorSpace);
 
     /// Encode and write to a file
     ///
