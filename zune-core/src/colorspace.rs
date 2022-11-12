@@ -15,7 +15,7 @@ pub enum ColorSpace
 }
 impl ColorSpace
 {
-    pub fn num_components(&self) -> usize
+    pub const fn num_components(&self) -> usize
     {
         match self
         {
@@ -25,5 +25,15 @@ impl ColorSpace
             Self::LumaA => 2,
             Self::Unknown => 0,
         }
+    }
+
+    pub const fn has_alpha(&self) -> bool
+    {
+        matches!(self, Self::RGBA | Self::LumaA)
+    }
+
+    pub const fn is_grayscale(&self) -> bool
+    {
+        matches!(self, Self::LumaA | Self::Luma)
     }
 }

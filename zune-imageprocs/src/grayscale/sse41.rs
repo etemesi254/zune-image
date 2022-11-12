@@ -10,7 +10,9 @@ use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
 #[target_feature(enable = "sse4.1")]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub(crate) unsafe fn convert_rgb_to_grayscale_sse41((r, g, b): (&[u8], &[u8], &[u8]), gr: &mut [u8])
+pub(crate) unsafe fn convert_rgb_to_grayscale_sse41(
+    r: &[u16], g: &[u16], b: &[u16], gr: &mut [u16], max_value: u16,
+)
 {
     // Code is from https://stackoverflow.com/questions/57832444/efficient-c-code-no-libs-for-image-transformation-into-custom-rgb-pixel-grey
     const CHUNK_SIZE: usize = 8;
@@ -19,25 +21,18 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_sse41((r, g, b): (&[u8], &[u8], &[
     let g_coef = _mm_set1_epi16((0.5870 * 32768.0 + 0.5) as i16); //8 coefficients - G scale factor.
     let b_coef = _mm_set1_epi16((0.1140 * 32768.0 + 0.5) as i16); //8 coefficients - B scale factor.
 
+    let max_val = _mm_set1_epi16(max_value as i16);
+
     for (((r_chunk, g_chunk), b_chunk), out) in r
         .chunks_exact(CHUNK_SIZE)
         .zip(b.chunks_exact(CHUNK_SIZE))
         .zip(g.chunks_exact(CHUNK_SIZE))
         .zip(gr.chunks_exact_mut(CHUNK_SIZE))
     {
-        // PS I'm not sure if this is valid, we chunked 8 values
-        // which may mean we may have a wrong alignment so I'm not sure about the cast
-        // and the cast is to _m128i which is 16 u8's , so I'm not sure what happens
-        // when you load 8 of them
-        //
-        // @ TODO: Confirm this is correct for the above theoretical issue
-        let mut r_c = _mm_loadl_epi64(r_chunk.as_ptr().cast());
-        let mut g_c = _mm_loadl_epi64(g_chunk.as_ptr().cast());
-        let mut b_c = _mm_loadl_epi64(b_chunk.as_ptr().cast());
-        // zero extend u8's to u16's
-        r_c = _mm_cvtepu8_epi16(r_c);
-        g_c = _mm_cvtepu8_epi16(g_c);
-        b_c = _mm_cvtepu8_epi16(b_c);
+        let mut r_c = _mm_loadu_si128(r_chunk.as_ptr().cast());
+        let mut g_c = _mm_loadu_si128(g_chunk.as_ptr().cast());
+        let mut b_c = _mm_loadu_si128(b_chunk.as_ptr().cast());
+
         // Multiply input elements by 64 for improved accuracy.
         r_c = _mm_slli_epi16::<6>(r_c);
         g_c = _mm_slli_epi16::<6>(g_c);
@@ -51,10 +46,10 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_sse41((r, g, b): (&[u8], &[u8], &[
         );
         // Divide by 64
         g_out = _mm_srli_epi16::<6>(g_out);
-        // pack converting them to u8's
-        g_out = _mm_packus_epi16(g_out, g_out);
+        // clamp
+        g_out = _mm_min_epu16(g_out, max_val);
         //store
-        _mm_storel_epi64(out.as_mut_ptr().cast(), g_out);
+        _mm_storeu_si128(out.as_mut_ptr().cast(), g_out);
     }
     // remainders
     if r.len() % CHUNK_SIZE != 0
@@ -68,6 +63,6 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_sse41((r, g, b): (&[u8], &[u8], &[
         let c2 = &g[c_start..];
         let c3 = &b[c_start..];
 
-        convert_rgb_to_grayscale_scalar((c1, c2, c3), &mut gr[start..]);
+        convert_rgb_to_grayscale_scalar(c1, c2, c3, &mut gr[start..], max_value);
     }
 }

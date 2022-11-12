@@ -1,5 +1,5 @@
 pub fn crop(
-    in_image: &[u8], in_width: usize, out_image: &mut [u8], out_width: usize, out_height: usize,
+    in_image: &[u16], in_width: usize, out_image: &mut [u16], out_width: usize, out_height: usize,
     x: usize, y: usize,
 )
 {

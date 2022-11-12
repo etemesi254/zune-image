@@ -16,7 +16,6 @@ use zune_image::errors::ImgErrors;
 use zune_image::impls::box_blur::BoxBlur;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::crop::Crop;
-use zune_image::impls::deinterleave::DeInterleaveChannels;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
 use zune_image::impls::gamma::Gamma;
@@ -187,11 +186,6 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
 
 pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), String>
 {
-    if args.value_source("operations") == Some(ValueSource::CommandLine)
-        || args.value_source("filters") == Some(ValueSource::CommandLine)
-    {
-        workflow.add_operation(Box::new(DeInterleaveChannels::new()));
-    }
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
     {
         println!();
@@ -294,7 +288,7 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             }
             // parse first one as threshold
             let thresh_string = split_args[0];
-            let thresh_int = str::parse::<u8>(thresh_string).map_err(|x| x.to_string())?;
+            let thresh_int = str::parse::<u16>(thresh_string).map_err(|x| x.to_string())?;
             let thresh_mode = ThresholdMethod::from_string_result(split_args[1])?;
 
             let threshold = Threshold::new(thresh_int, thresh_mode);
@@ -341,14 +335,14 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let sigma_f32 = str::parse::<f32>(sigma).map_err(|x| x.to_string())?;
 
             let threshold = split_args[1];
-            let threshold_u8 = str::parse::<u8>(threshold).map_err(|x| x.to_string())?;
+            let threshold_u16 = str::parse::<u16>(threshold).map_err(|x| x.to_string())?;
 
             debug!(
                 "Added unsharpen filter with sigma={} and threshold={}",
                 sigma, threshold
             );
 
-            let unsharpen = Unsharpen::new(sigma_f32, threshold_u8);
+            let unsharpen = Unsharpen::new(sigma_f32, threshold_u16);
             workflow.add_operation(Box::new(unsharpen))
         }
     }

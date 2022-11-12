@@ -2,7 +2,7 @@ use log::trace;
 use zune_imageprocs::gaussian_blur::gaussian_blur;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Perform a gaussian blur
@@ -31,89 +31,34 @@ impl OperationsTrait for GaussianBlur
     {
         let (width, height) = image.get_dimensions();
 
-        match image.get_channel_mut()
+        #[cfg(not(feature = "threads"))]
         {
-            ImageChannels::OneChannel(channel) =>
-            {
-                let mut out_dim = vec![0; width * height];
-                gaussian_blur(channel, &mut out_dim, width, height, self.sigma);
-            }
-            ImageChannels::TwoChannels(channels) =>
-            {
-                let mut out_dim = vec![0; width * height];
-                gaussian_blur(&mut channels[0], &mut out_dim, width, height, self.sigma);
-                //channels[0] = out_dim;
-            }
-            ImageChannels::ThreeChannels(channels) =>
-            {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running gaussian blur in single threaded mode");
-                    let mut out_dim = vec![0; width * height];
+            trace!("Running gaussian blur in single threaded mode");
 
-                    for channel in channels
-                    {
-                        gaussian_blur(channel, &mut out_dim, width, height, self.sigma);
-
-                        // *channel = out_dim;
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running gaussian blur in multithreaded mode");
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in channels
-                        {
-                            s.spawn(|| {
-                                let mut out_dim = vec![0; width * height];
-                                gaussian_blur(channel, &mut out_dim, width, height, self.sigma);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::FourChannels(channels) =>
+            let mut temp = vec![0; width * height];
+            
+            for channel in image.get_channels_mut(false)
             {
-                #[cfg(not(feature = "threads"))]
-                {
-                    trace!("Running gaussian blur in single threaded mode");
-                    let mut out_dim = vec![0; width * height];
-
-                    for channel in channels.iter_mut().take(3)
-                    {
-                        gaussian_blur(channel, &mut out_dim, width, height, self.radius);
-                    }
-                }
-                #[cfg(feature = "threads")]
-                {
-                    trace!("Running gaussian blur in multithreaded mode");
-                    std::thread::scope(|s| {
-                        // blur each channel on a separate thread
-                        for channel in channels.iter_mut().take(3)
-                        {
-                            s.spawn(|| {
-                                let mut out_dim = vec![0; width * height];
-
-                                gaussian_blur(channel, &mut out_dim, width, height, self.sigma);
-                            });
-                        }
-                    });
-                }
-            }
-            ImageChannels::Interleaved(_) =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot blur an interleaved channel",
-                ));
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot blur uninitialized pixels",
-                ));
+                gaussian_blur(channel, &mut temp, width, height, self.sigma);
             }
         }
+
+        #[cfg(feature = "threads")]
+        {
+            trace!("Running gaussian blur in multithreaded mode");
+            std::thread::scope(|s| {
+                // blur each channel on a separate thread
+                for channel in image.get_channels_mut(false)
+                {
+                    s.spawn(|| {
+                        let mut temp = vec![0; width * height];
+
+                        gaussian_blur(channel, &mut temp, width, height, self.sigma);
+                    });
+                }
+            });
+        }
+
         Ok(())
     }
 }

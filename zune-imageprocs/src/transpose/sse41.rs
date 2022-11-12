@@ -63,104 +63,73 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-#[target_feature(enable = "sse4.1")]
-pub unsafe fn transpose_8by8_sse4_inner(
-    in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize,
+#[allow(clippy::erasing_op, clippy::identity_op)]
+#[rustfmt::skip]
+unsafe fn transpose_16_by_16(
+    in_matrix: &[u16], out: &mut [u16], in_stride: usize, out_stride: usize,
 )
 {
-    // Godbolt :https://godbolt.org/z/axoorxT8o
-    // Stack overflow: https://stackoverflow.com/a/42316675
+    // ensure the writes are safe
+    assert!(in_stride * 7 + 8 <= in_matrix.len());
+    assert!(out_stride * 7 + 8 <= in_matrix.len());
 
-    assert!((7 * out_stride) <= out.len());
+    let mut row0 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 0..).as_ptr().cast());
+    let mut row1 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 1..).as_ptr().cast());
+    let mut row2 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 2..).as_ptr().cast());
+    let mut row3 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 3..).as_ptr().cast());
+    let mut row4 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 4..).as_ptr().cast());
+    let mut row5 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 5..).as_ptr().cast());
+    let mut row6 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 6..).as_ptr().cast());
+    let mut row7 = _mm_loadu_si128(in_matrix.get_unchecked(in_stride * 7..).as_ptr().cast());
 
-    assert!((7 * in_stride) <= in_matrix.len());
+    // we have rows, let's make this happen.
+    // Transpose operation borrowed from stb image
+    // at https://github.com/nothings/stb/blob/8b5f1f37b5b75829fc72d38e7b5d4bcbf8a26d55/stb_image.h#L2608
+    let mut tmp;
+    macro_rules! dct_interleave {
+        ($a:tt,$b:tt) => {
+            tmp = $a;
+            $a = _mm_unpacklo_epi16($a, $b);
+            $b = _mm_unpackhi_epi16(tmp, $b)
+        };
+    }
 
-    let sv = _mm_set_epi8(15, 7, 14, 6, 13, 5, 12, 4, 11, 3, 10, 2, 9, 1, 8, 0);
+    // 16bit 8x8 transpose pass 1
+    dct_interleave!(row0, row4);
+    dct_interleave!(row1, row5);
+    dct_interleave!(row2, row6);
+    dct_interleave!(row3, row7);
 
-    let mut pos = 0;
+    // transpose pass 2
+    dct_interleave!(row0, row2);
+    dct_interleave!(row1, row3);
+    dct_interleave!(row4, row6);
+    dct_interleave!(row5, row7);
 
-    // Load data from memory
-    // Load 64 bites to ensure we only take 8 values
-    let mn_0 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mn_1 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mv_0 = _mm_unpacklo_epi64(mn_0, mn_1);
+    // transpose pass 3
+    dct_interleave!(row0, row1);
+    dct_interleave!(row2, row3);
+    dct_interleave!(row4, row5);
+    dct_interleave!(row6, row7);
 
-    let mn_2 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mn_3 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mv_1 = _mm_unpacklo_epi64(mn_2, mn_3);
-
-    let mn_4 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mn_5 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mv_2 = _mm_unpacklo_epi64(mn_4, mn_5);
-
-    let mn_6 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    pos += in_stride;
-    let mn_7 = _mm_loadl_epi64(in_matrix.get_unchecked(pos..).as_ptr().cast());
-    let mv_3 = _mm_unpacklo_epi64(mn_6, mn_7);
-
-    let ov_0 = _mm_shuffle_epi8(mv_0, sv);
-    let ov_1 = _mm_shuffle_epi8(mv_1, sv);
-    let ov_2 = _mm_shuffle_epi8(mv_2, sv);
-    let ov_3 = _mm_shuffle_epi8(mv_3, sv);
-
-    let iv_0 = _mm_unpacklo_epi16(ov_0, ov_1);
-    let iv_1 = _mm_unpackhi_epi16(ov_0, ov_1);
-    let iv_2 = _mm_unpacklo_epi16(ov_2, ov_3);
-    let iv_3 = _mm_unpackhi_epi16(ov_2, ov_3);
-
-    let av_0 = _mm_unpacklo_epi32(iv_0, iv_2);
-    let av_1 = _mm_unpackhi_epi32(iv_0, iv_2);
-    let av_2 = _mm_unpacklo_epi32(iv_1, iv_3);
-    let av_3 = _mm_unpackhi_epi32(iv_1, iv_3);
-
-    // Now we have av1 having 0-16, av2 - 16-32 etc etc
-    // So we want to extract and write only 8 bytes, as that is essentially a matrix
-    // transpose of a 8 by 8 matrix writing to different strides.
-
-    let sv_0 = _mm_unpackhi_epi64(av_0, _mm_setzero_si128());
-    let sv_1 = _mm_unpackhi_epi64(av_1, _mm_setzero_si128());
-    let sv_2 = _mm_unpackhi_epi64(av_2, _mm_setzero_si128());
-    let sv_3 = _mm_unpackhi_epi64(av_3, _mm_setzero_si128());
-
-    pos = 0;
-    // Ensure writes are always in bounds
-    // Needed to make the below writes unsafe
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), av_0);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_0);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), av_1);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_1);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), av_2);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_2);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), av_3);
-    pos += out_stride;
-
-    _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_3);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(), row0);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(), row1);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(), row2);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(), row3);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 4..).as_mut_ptr().cast(), row4);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 5..).as_mut_ptr().cast(), row5);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 6..).as_mut_ptr().cast(), row6);
+    _mm_storeu_si128(out.get_unchecked_mut(out_stride * 7..).as_mut_ptr().cast(), row7);
 }
-pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize)
+
+pub unsafe fn transpose_sse41(
+    in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize,
+)
 {
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
-    //
     let dimensions = width * height;
+    
     assert_eq!(
         in_matrix.len(),
         dimensions,
@@ -198,8 +167,7 @@ pub unsafe fn transpose_sse41(in_matrix: &[u8], out_matrix: &mut [u8], width: us
         {
             let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
 
-            transpose_8by8_sse4_inner(
-                &in_width_stride[(j * 8)..],
+            transpose_16_by_16(&in_width_stride[(j * 8)..],
                 out_height_stride,
                 width,
                 height,

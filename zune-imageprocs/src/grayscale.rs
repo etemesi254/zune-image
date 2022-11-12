@@ -4,7 +4,7 @@ mod sse41;
 
 use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
-pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
+pub fn rgb_to_grayscale(r: &[u16], g: &[u16], b: &[u16], out: &mut [u16], max_value: u16)
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -15,7 +15,7 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
             if is_x86_feature_detected!("avx2")
             {
                 unsafe {
-                    return convert_rgb_to_grayscale_avx2((r, g, b), out);
+                    return convert_rgb_to_grayscale_avx2(r, g, b, out, max_value);
                 }
             }
         }
@@ -27,12 +27,12 @@ pub fn rgb_to_grayscale((r, g, b): (&[u8], &[u8], &[u8]), out: &mut [u8])
             if is_x86_feature_detected!("sse4.1")
             {
                 unsafe {
-                    return convert_rgb_to_grayscale_sse41((r, g, b), out);
+                    return convert_rgb_to_grayscale_sse41(r, g, b, out, max_value);
                 }
             }
         }
     }
-    convert_rgb_to_grayscale_scalar((r, g, b), out);
+    convert_rgb_to_grayscale_scalar(r, g, b, out, max_value);
 }
 
 #[cfg(all(feature = "benchmarks"))]
@@ -57,7 +57,7 @@ mod benchmarks
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_sse41((&c1, &c2, &c3), &mut c4);
+                convert_rgb_to_grayscale_sse41(&c1, &c2, &c3, &mut c4, 255);
             };
         });
     }
@@ -78,7 +78,7 @@ mod benchmarks
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_avx2((&c1, &c2, &c3), &mut c4);
+                convert_rgb_to_grayscale_avx2(&c1, &c2, &c3, &mut c4, 255);
             };
         });
     }
@@ -97,7 +97,7 @@ mod benchmarks
 
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
-            convert_rgb_to_grayscale_scalar((&c1, &c2, &c3), &mut c4);
+            convert_rgb_to_grayscale_scalar(&c1, &c2, &c3, &mut c4, 255);
         });
     }
 }

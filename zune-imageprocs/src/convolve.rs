@@ -1,10 +1,11 @@
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn convolve_1d(
-    in_channel: &[u8], out_channel: &mut [u8], width: usize, height: usize, weights: &[f64],
-    div_by: f64,
+    in_channel: &[u16], out_channel: &mut [u16], width: usize, height: usize, weights: &[f64],
+    div_by: f64, max_value: u16,
 )
 {
     let chunk_size = width * 4;
+    let max_value = f64::from(max_value);
 
     let radius = weights.len();
     let inv_div = 1.0 / div_by;
@@ -61,10 +62,10 @@ pub fn convolve_1d(
 
             // clamp and write
 
-            *o1 = suma.clamp(0.0, 255.0) as u8;
-            *o2 = sumb.clamp(0.0, 255.0) as u8;
-            *o3 = sumc.clamp(0.0, 255.0) as u8;
-            *o4 = sumd.clamp(0.0, 255.0) as u8;
+            *o1 = suma.clamp(0.0, max_value) as u16;
+            *o2 = sumb.clamp(0.0, max_value) as u16;
+            *o3 = sumc.clamp(0.0, max_value) as u16;
+            *o4 = sumd.clamp(0.0, max_value) as u16;
         }
     }
     // handle pixels that may not be divisible by 4.
@@ -88,7 +89,7 @@ pub fn convolve_1d(
                     .sum::<f64>();
 
                 sum *= inv_div;
-                *o1 = sum.clamp(0.0, 255.0) as u8;
+                *o1 = sum.clamp(0.0, max_value) as u16;
             }
         }
     }

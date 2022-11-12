@@ -1,7 +1,7 @@
 use zune_imageprocs::transpose::transpose;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Transpose an image
@@ -32,55 +32,16 @@ impl OperationsTrait for Transpose
         let (width, height) = image.get_dimensions();
         let out_dim = width * height;
 
-        match image.get_channel_mut()
+        for channel in image.get_channels_mut(true)
         {
-            ImageChannels::OneChannel(data) =>
-            {
-                let mut out_vec = vec![0; out_dim];
-                transpose(data, &mut out_vec, width, height);
-                *data = out_vec;
-            }
-            ImageChannels::TwoChannels(input) =>
-            {
-                for data in input
-                {
-                    let mut out_vec = vec![0; out_dim];
-                    transpose(data, &mut out_vec, width, height);
-                    *data = out_vec;
-                }
-            }
-            ImageChannels::ThreeChannels(input) =>
-            {
-                for data in input
-                {
-                    let mut out_vec = vec![0; out_dim];
-                    transpose(data, &mut out_vec, width, height);
-                    *data = out_vec;
-                }
-            }
-            ImageChannels::FourChannels(input) =>
-            {
-                for data in input
-                {
-                    let mut out_vec = vec![0; out_dim];
-                    transpose(data, &mut out_vec, width, height);
-                    *data = out_vec;
-                }
-            }
-            ImageChannels::Interleaved(_) =>
-            {
-                return Err(ImgOperationsErrors::Generic(
-                    "Cannot transpose Interleaved data, run de-interleaved operation before this",
-                ))
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::Generic(
-                    "Cannot transpose uninitialized pixels",
-                ))
-            }
+            let mut out_vec = vec![0; out_dim];
+
+            transpose(channel, &mut out_vec, width, height);
+            *channel = out_vec;
         }
+
         image.set_dimensions(height, width);
+
         Ok(())
     }
 }

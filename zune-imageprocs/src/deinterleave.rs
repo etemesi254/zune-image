@@ -3,7 +3,7 @@ mod scalar;
 mod sse2;
 mod sse41;
 
-pub fn de_interleave_three_channels(source: &[u8], (c1, c2, c3): (&mut [u8], &mut [u8], &mut [u8]))
+pub fn de_interleave_three_channels(source: &[u8], (c1, c2, c3): (&mut [u16], &mut [u16], &mut [u16]))
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -18,49 +18,49 @@ pub fn de_interleave_three_channels(source: &[u8], (c1, c2, c3): (&mut [u8], &mu
                 }
             }
         }
-        #[cfg(feature = "sse3")]
-        {
-            use crate::deinterleave::sse41::de_interleave_three_channels_sse3;
-
-            if is_x86_feature_detected!("sse3")
-            {
-                unsafe {
-                    return de_interleave_three_channels_sse3(source, (c1, c2, c3));
-                }
-            }
-        }
-        #[cfg(feature = "sse2")]
-        {
-            use crate::deinterleave::sse2::de_interleave_three_channels_sse2;
-
-            if is_x86_feature_detected!("sse2")
-            {
-                unsafe {
-                    return de_interleave_three_channels_sse2(source, (c1, c2, c3));
-                }
-            }
-        }
+        // #[cfg(feature = "sse3")]
+        // {
+        //     use crate::deinterleave::sse41::de_interleave_three_channels_sse3;
+        // 
+        //     if is_x86_feature_detected!("sse3")
+        //     {
+        //         unsafe {
+        //             return de_interleave_three_channels_sse3(source, (c1, c2, c3));
+        //         }
+        //     }
+        // }
+        // #[cfg(feature = "sse2")]
+        // {
+        //     use crate::deinterleave::sse2::de_interleave_three_channels_sse2;
+        // 
+        //     if is_x86_feature_detected!("sse2")
+        //     {
+        //         unsafe {
+        //             return de_interleave_three_channels_sse2(source, (c1, c2, c3));
+        //         }
+        //     }
+        // }
     }
     scalar::de_interleave_three_channels_scalar(source, (c1, c2, c3));
 }
 
 pub fn de_interleave_four_channels(
-    source: &[u8], (c1, c2, c3, c4): (&mut [u8], &mut [u8], &mut [u8], &mut [u8]),
+    source: &[u8], (c1, c2, c3, c4): (&mut [u16], &mut [u16], &mut [u16], &mut [u16]),
 )
 {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        #[cfg(feature = "sse41")]
-        {
-            use crate::deinterleave::sse41::de_interleave_four_channels_sse41;
-            if is_x86_feature_detected!("sse4.1")
-            {
-                unsafe {
-                    return de_interleave_four_channels_sse41(source, (c1, c2, c3, c4));
-                }
-            }
-        }
-    }
+    // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    // {
+    //     #[cfg(feature = "sse41")]
+    //     {
+    //         use crate::deinterleave::sse41::de_interleave_four_channels_sse41;
+    //         if is_x86_feature_detected!("sse4.1")
+    //         {
+    //             unsafe {
+    //                 return de_interleave_four_channels_sse41(source, (c1, c2, c3, c4));
+    //             }
+    //         }
+    //     }
+    // }
 
     scalar::de_interleave_four_channels_scalar(source, (c1, c2, c3, c4));
 }

@@ -1,7 +1,7 @@
 use zune_imageprocs::flip::flip;
 
 use crate::errors::ImgOperationsErrors;
-use crate::image::{Image, ImageChannels};
+use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Rearrange the pixels up side down
@@ -24,47 +24,11 @@ impl OperationsTrait for Flip
 
     fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        match image.get_channel_mut()
+        for inp in image.get_channels_mut(true)
         {
-            ImageChannels::OneChannel(input) =>
-            {
-                flip(input);
-            }
-            ImageChannels::TwoChannels(input) =>
-            {
-                for inp in input
-                {
-                    flip(inp);
-                }
-            }
-            ImageChannels::ThreeChannels(input) =>
-            {
-                for inp in input
-                {
-                    flip(inp);
-                }
-            }
-            ImageChannels::FourChannels(input) =>
-            {
-                for inp in input
-                {
-                    flip(inp);
-                }
-            }
-            ImageChannels::Interleaved(_) =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot flip interleaved pixels \
-                de-interleave the pixels into separate color components first",
-                ));
-            }
-            ImageChannels::Uninitialized =>
-            {
-                return Err(ImgOperationsErrors::InvalidChannelLayout(
-                    "Cannot flip uninitialized pixels",
-                ))
-            }
+            flip(inp);
         }
+
         Ok(())
     }
 }
