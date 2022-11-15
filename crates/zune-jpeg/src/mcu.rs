@@ -8,6 +8,7 @@ use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 use crate::JpegDecoder;
+
 /// The size of a DC block for a MCU.
 
 pub const DCT_BLOCK: usize = 64;
@@ -100,7 +101,7 @@ impl<'a> JpegDecoder<'a>
             if self.options.get_strict_mode()
             {
                 return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Grayscale image with down-sampled component.",
+                    "[strict-mode]: Grayscale image with down-sampled component."
                 ));
             }
 
@@ -189,7 +190,7 @@ impl<'a> JpegDecoder<'a>
                                 ac_table,
                                 qt_table,
                                 &mut tmp,
-                                &mut component.dc_pred,
+                                &mut component.dc_pred
                             )?;
 
                             if component.needed
@@ -269,7 +270,7 @@ impl<'a> JpegDecoder<'a>
                         let length = x.upsample_scanline.len();
 
                         x.upsample_scanline.copy_from_slice(
-                            &temporary[usize::from(x.id.saturating_sub(1))][0..length],
+                            &temporary[usize::from(x.id.saturating_sub(1))][0..length]
                         );
                     }
                 });
@@ -291,13 +292,12 @@ impl<'a> JpegDecoder<'a>
                     upsample_and_color_convert(
                         &temporary,
                         &mut self.components,
-                        self.sub_sample_ratio,
                         self.color_convert_16,
                         self.input_colorspace,
                         self.options.get_out_colorspace(),
                         chunks.next().unwrap(),
                         width,
-                        &mut upsampler_scratch_space,
+                        &mut upsampler_scratch_space
                     );
                 }
             }
@@ -317,7 +317,7 @@ impl<'a> JpegDecoder<'a>
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
                     chunks.next().unwrap(),
-                    width,
+                    width
                 );
             }
         }

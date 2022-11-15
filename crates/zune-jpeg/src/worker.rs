@@ -8,7 +8,7 @@ use crate::decoder::ColorConvert16Ptr;
 
 pub(crate) fn color_convert_no_sampling(
     unprocessed: &[&[i16]; 3], color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
-    output_colorspace: ColorSpace, output: &mut [u8], width: usize,
+    output_colorspace: ColorSpace, output: &mut [u8], width: usize
 ) // so many parameters..
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
@@ -22,7 +22,7 @@ pub(crate) fn color_convert_no_sampling(
         }
         (
             ColorSpace::YCbCr,
-            ColorSpace::YCbCr | ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX,
+            ColorSpace::YCbCr | ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX
         ) =>
         {
             color_convert_ycbcr(
@@ -30,7 +30,7 @@ pub(crate) fn color_convert_no_sampling(
                 width,
                 output_colorspace,
                 color_convert_16,
-                output,
+                output
             );
         }
         // For the other components we do nothing(currently)
@@ -48,7 +48,7 @@ pub(crate) fn color_convert_no_sampling(
 )]
 fn color_convert_ycbcr(
     mcu_block: &[&[i16]; 3], width: usize, output_colorspace: ColorSpace,
-    color_convert_16: ColorConvert16Ptr, output: &mut [u8],
+    color_convert_16: ColorConvert16Ptr, output: &mut [u8]
 )
 {
     // Width of image which takes into account fill bytes(it may be larger than actual width).
@@ -99,7 +99,7 @@ fn color_convert_ycbcr(
                 cb.try_into().unwrap(),
                 cr.try_into().unwrap(),
                 out_c,
-                &mut 0,
+                &mut 0
             );
         }
         //we have more pixels in the end that can't be handled by the main loop.
@@ -121,7 +121,7 @@ fn color_convert_ycbcr(
                 cb.try_into().unwrap(),
                 cr.try_into().unwrap(),
                 &mut temp,
-                &mut 0,
+                &mut 0
             );
         }
         let rem = out.chunks_exact_mut(16 * num_components).into_remainder();
@@ -133,9 +133,8 @@ fn color_convert_ycbcr(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn upsample_and_color_convert(
     unprocessed: &[Vec<i16>; 3], component_data: &mut [Components],
-    _sampling_factor: SubSampRatios, color_convert_16: ColorConvert16Ptr,
-    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
-    scratch_space: &mut [i16],
+    color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
+    output_colorspace: ColorSpace, output: &mut [u8], width: usize, scratch_space: &mut [i16]
 )
 {
     let v_samp = component_data[0].vertical_sample;
@@ -176,7 +175,7 @@ pub(crate) fn upsample_and_color_convert(
             input_colorspace,
             output_colorspace,
             out,
-            width,
+            width
         );
     }
 }

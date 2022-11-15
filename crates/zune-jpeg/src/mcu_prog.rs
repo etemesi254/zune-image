@@ -322,7 +322,7 @@ impl<'a> JpegDecoder<'a>
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; 3], _mcu_width: usize,
+        &mut self, block: &[Vec<i16>; 3], _mcu_width: usize
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         let (mut mcu_width, mut mcu_height);
@@ -363,7 +363,7 @@ impl<'a> JpegDecoder<'a>
             if self.options.get_strict_mode()
             {
                 return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Grayscale image with down-sampled component.",
+                    "[strict-mode]: Grayscale image with down-sampled component."
                 ));
             }
 
@@ -518,7 +518,7 @@ impl<'a> JpegDecoder<'a>
                         let length = x.upsample_scanline.len();
 
                         x.upsample_scanline.copy_from_slice(
-                            &temporary[usize::from(x.id.saturating_sub(1))][0..length],
+                            &temporary[usize::from(x.id.saturating_sub(1))][0..length]
                         );
                     }
                 });
@@ -536,13 +536,12 @@ impl<'a> JpegDecoder<'a>
                     upsample_and_color_convert(
                         &temporary,
                         &mut self.components,
-                        self.sub_sample_ratio,
                         self.color_convert_16,
                         self.input_colorspace,
                         self.options.get_out_colorspace(),
                         chunks.next().unwrap(),
                         width,
-                        &mut upsampler_scratch_space,
+                        &mut upsampler_scratch_space
                     );
                 }
             }
@@ -564,7 +563,7 @@ impl<'a> JpegDecoder<'a>
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
                     chunks.next().unwrap(),
-                    width,
+                    width
                 );
             }
         }

@@ -30,15 +30,9 @@ pub fn upsample_horizontal(
 
     for (output_window, input_window) in output[2..].chunks_exact_mut(2).zip(input.windows(3))
     {
-        // output_window = out[i*2],out[i*2+1].
-        // input_window = input[i-1], input[i], input[i+1]
-
-        let input_window: &[i16; 3] = input_window.try_into().unwrap();
-
         let sample = 3 * input_window[1] + 2;
 
         output_window[0] = (sample + input_window[0]) >> 2;
-
         output_window[1] = (sample + input_window[2]) >> 2;
     }
     // Get lengths

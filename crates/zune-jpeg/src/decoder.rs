@@ -17,7 +17,7 @@ use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
-    choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
+    choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function
 };
 use crate::ZuneJpegOptions;
 
@@ -123,7 +123,7 @@ pub struct JpegDecoder<'a>
     // byte-stream
     pub(crate) stream:           ZByteReader<'a>,
     // Indicate whether headers have been decoded
-    pub(crate) headers_decoded:  bool,
+    pub(crate) headers_decoded:  bool
 }
 
 impl<'a> JpegDecoder<'a>
@@ -170,7 +170,7 @@ impl<'a> JpegDecoder<'a>
             // options
             options,
             stream: ZByteReader::new(buffer),
-            headers_decoded: false,
+            headers_decoded: false
         }
     }
     /// Decode a buffer already in memory
@@ -196,7 +196,7 @@ impl<'a> JpegDecoder<'a>
     /// Decode a valid jpeg file
     pub fn decode_file<P>(file: P) -> Result<Vec<u8>, DecodeErrors>
     where
-        P: AsRef<Path> + Clone,
+        P: AsRef<Path> + Clone
     {
         let data = read(file)?;
         //Read to an in memory buffer
@@ -300,7 +300,7 @@ impl<'a> JpegDecoder<'a>
             /*No reason to use this*/
             {
                 return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Extra bytes between headers",
+                    "[strict-mode]: Extra bytes between headers"
                 ));
             }
         }
@@ -393,7 +393,7 @@ impl<'a> JpegDecoder<'a>
                 if self.stream.get_u16_be_err()? != 4
                 {
                     return Err(DecodeErrors::Format(
-                        "Bad DRI length, Corrupt JPEG".to_string(),
+                        "Bad DRI length, Corrupt JPEG".to_string()
                     ));
                 }
 
@@ -527,7 +527,7 @@ impl<'a> JpegDecoder<'a>
                 // no op. Do nothing
                 // Jokes , panic...
                 return Err(DecodeErrors::Format(
-                    "Unknown down-sampling method, cannot continue".to_string(),
+                    "Unknown down-sampling method, cannot continue".to_string()
                 ));
             }
         }
@@ -587,36 +587,6 @@ impl<'a> JpegDecoder<'a>
         self.info.height
     }
 
-    /// Set the number of threads the decoder should use during decoding
-    ///
-    /// This allows the end user to manually set decoding threads
-    ///
-    /// # Errors
-    /// Errors when value is `0`
-    ///
-    /// # Example
-    /// ```
-    /// use zune_jpeg::{Decoder, JpegDecoder};
-    /// let data = [0;32];
-    /// let mut img = JpegDecoder::new(&data);
-    /// img.set_num_threads(3).unwrap(); // spawn only three threads
-    /// ```
-    #[deprecated(since = "0.2.0", note = "Use new_with_options to set options")]
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn set_num_threads(&mut self, threads: usize) -> Result<(), DecodeErrors>
-    {
-        if threads == 0
-        {
-            return Err(DecodeErrors::FormatStatic(
-                "Cannot set zero threads to decode image",
-            ));
-        }
-
-        self.options = self
-            .options
-            .set_num_threads(NonZeroU32::new(threads as u32).unwrap());
-        Ok(())
-    }
     /// Check that all components have the correct width and height
     /// before continuing to decode
     ///
@@ -630,7 +600,7 @@ impl<'a> JpegDecoder<'a>
             .iter()
             .find(|c| c.component_id == ComponentID::Y)
             .ok_or(DecodeErrors::FormatStatic(
-                "Could not find Y component for the image",
+                "Could not find Y component for the image"
             ))?;
 
         let y_width = y_comp.width_stride;
@@ -680,7 +650,7 @@ pub struct ImageInfo
     /// Vertical sample
     pub y_density:     u16,
     /// Number of components
-    pub components:    u8,
+    pub components:    u8
 }
 
 impl ImageInfo
