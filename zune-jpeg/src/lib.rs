@@ -99,7 +99,6 @@ mod mcu;
 mod mcu_prog;
 mod misc;
 mod options;
-mod probe;
 mod unsafe_utils;
 mod upsampler;
 mod worker;
