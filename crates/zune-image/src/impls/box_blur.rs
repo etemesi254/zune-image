@@ -14,7 +14,7 @@ use crate::traits::OperationsTrait;
 #[derive(Default)]
 pub struct BoxBlur
 {
-    radius: usize,
+    radius: usize
 }
 
 impl BoxBlur
@@ -32,7 +32,7 @@ impl OperationsTrait for BoxBlur
         "Box blur"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
 

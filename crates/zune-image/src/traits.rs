@@ -62,7 +62,7 @@ pub trait OperationsTrait
     /// before calling this method
     ///
     /// [`execute`]: Self::execute
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
 
     /// Return the supported colorspaces this operation supports
     ///
@@ -82,7 +82,7 @@ pub trait OperationsTrait
             ColorSpace::CYMK,
             ColorSpace::RGBX,
             ColorSpace::YCbCr,
-            ColorSpace::YCCK,
+            ColorSpace::YCCK
         ]
     }
 
@@ -128,7 +128,7 @@ pub trait OperationsTrait
             return Err(ImgErrors::UnsupportedColorspace(
                 colorspace,
                 self.get_name(),
-                self.supported_colorspaces(),
+                self.supported_colorspaces()
             ));
         }
         // Ensure dimensions are correct
@@ -142,7 +142,7 @@ pub trait OperationsTrait
                         image.get_colorspace(),components)));
         }
 
-        self._execute_simple(image).map_err(|x| x.into())
+        self.execute_impl(image).map_err(|x| x.into())
     }
 }
 
@@ -176,4 +176,27 @@ pub trait EncoderTrait
     /// encoder.encode_to_file(&image);
     /// ```
     fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>;
+
+    /// Return all colorspaces supported by this encoder.
+    ///
+    /// An encoder should reject any other colorspace and should not try to write
+    /// an unknown colorspace
+    fn supported_colorspaces(&self) -> &'static [ColorSpace];
+
+    fn encode(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>
+    {
+        // check colorspace is correct.
+        let colorspace = image.get_colorspace();
+        let supported_colorspaces = self.supported_colorspaces();
+
+        if !supported_colorspaces.contains(&colorspace)
+        {
+            return Err(ImgEncodeErrors::UnsupportedColorspace(
+                colorspace,
+                supported_colorspaces
+            ));
+        }
+
+        self.encode_to_file(image)
+    }
 }

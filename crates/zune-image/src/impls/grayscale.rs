@@ -45,7 +45,7 @@ impl OperationsTrait for RgbToGrayScale
         "RGB to Grayscale"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let im_colorspace = image.get_colorspace();
 

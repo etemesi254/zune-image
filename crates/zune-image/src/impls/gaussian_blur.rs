@@ -27,7 +27,7 @@ impl OperationsTrait for GaussianBlur
         "Gaussian blur"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
 
@@ -36,7 +36,7 @@ impl OperationsTrait for GaussianBlur
             trace!("Running gaussian blur in single threaded mode");
 
             let mut temp = vec![0; width * height];
-            
+
             for channel in image.get_channels_mut(false)
             {
                 gaussian_blur(channel, &mut temp, width, height, self.sigma);

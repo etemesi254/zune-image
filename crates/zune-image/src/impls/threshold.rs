@@ -26,7 +26,7 @@ impl OperationsTrait for Threshold
         "Threshold"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         if !image.get_colorspace().is_grayscale()
         {

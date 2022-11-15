@@ -5,11 +5,10 @@ use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Invert
 #[derive(Default)]
 pub struct Brighten
 {
-    value: i16,
+    value: i16
 }
 
 impl Brighten
@@ -26,7 +25,7 @@ impl OperationsTrait for Brighten
         "Brighten"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let max_val = image.get_depth().max_value();
         for channel in image.get_channels_mut(false)
@@ -42,7 +41,7 @@ impl OperationsTrait for Brighten
             ColorSpace::RGBX,
             ColorSpace::RGB,
             ColorSpace::LumaA,
-            ColorSpace::Luma,
+            ColorSpace::Luma
         ]
     }
 }
