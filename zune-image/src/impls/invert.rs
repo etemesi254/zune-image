@@ -22,7 +22,7 @@ impl OperationsTrait for Invert
     {
         "Invert"
     }
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         for channel in image.get_channels_mut(false)
         {

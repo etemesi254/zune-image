@@ -26,7 +26,7 @@ impl OperationsTrait for Gamma
         "Gamma Correction"
     }
 
-    fn _execute_simple(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let max_value = image.get_depth().max_value();
 
