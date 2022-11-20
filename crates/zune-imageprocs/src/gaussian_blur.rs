@@ -1,3 +1,11 @@
+//! This module implements a gaussian blur functions for images
+//!
+//! The implementation does not give the true gaussian coefficients of the
+//! as that is an expensive operation but rather approximates it using a series of
+//! box blurs
+//!
+//! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
+
 /// Create different box radius for each gaussian kernel function.
 #[allow(
     clippy::cast_possible_truncation,
@@ -48,8 +56,17 @@ fn create_box_gauss(sigma: f32) -> [usize; 3]
     radii
 }
 
-pub fn gaussian_blur(
-    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32,
+/// Carry out a gaussian blur on bytes that represent a single image channel
+///
+///
+/// # Arguments
+/// - in_out_image: A single image channel, we will store blurred pixels in that same buffer
+/// - scratch_space: Buffer used to store intermediate components, dimensions must be equal to
+///    `in_out_image`
+///  - width,height: Dimensions of the image
+///  - sigma: A measure of how much to blur the image by.
+pub fn gaussian_blur_u16(
+    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32
 )
 {
     // use the box blur implementation
@@ -58,6 +75,29 @@ pub fn gaussian_blur(
     for blur_radius in blur_radii
     {
         // approximate gaussian blur using multiple box blurs
-        crate::box_blur::box_blur(in_out_image, scratch_space, width, height, blur_radius);
+        crate::box_blur::box_blur_u16(in_out_image, scratch_space, width, height, blur_radius);
+    }
+}
+
+/// Carry out a gaussian blur on bytes that represent a single image channel
+///
+///
+/// # Arguments
+/// - in_out_image: A single image channel, we will store blurred pixels in that same buffer
+/// - scratch_space: Buffer used to store intermediate components, dimensions must be equal to
+///    `in_out_image`
+///  - width,height: Dimensions of the image
+///  - sigma: A measure of how much to blur the image by.
+pub fn gaussian_blur_u8(
+    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32
+)
+{
+    // use the box blur implementation
+    let blur_radii = create_box_gauss(sigma);
+
+    for blur_radius in blur_radii
+    {
+        // approximate gaussian blur using multiple box blurs
+        crate::box_blur::box_blur_u8(in_out_image, scratch_space, width, height, blur_radius);
     }
 }

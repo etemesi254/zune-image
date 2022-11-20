@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use zune_core::colorspace::ColorSpace;
 
 use crate::color_convert::ycbcr_to_grayscale;
-use crate::components::{ComponentID, Components, SubSampRatios};
+use crate::components::{ComponentID, Components};
 use crate::decoder::ColorConvert16Ptr;
 
 pub(crate) fn color_convert_no_sampling(

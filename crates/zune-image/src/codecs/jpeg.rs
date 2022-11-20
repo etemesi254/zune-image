@@ -1,5 +1,11 @@
 #![cfg(feature = "zune-jpeg")]
-
+//! This represents a jpeg decoder instance
+//!
+//!
+//! Re-exports all items in zune_jpeg library
+//! and implements `DecoderTrait` for the library
+//!
+//!
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_jpeg::errors::DecodeErrors;
@@ -24,7 +30,6 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
         let colorspace = self.get_out_colorspace();
         let pixels = deinterleave_u8(&pixel_data, colorspace)?;
-
         let (width, height) = self.get_dimensions().unwrap();
 
         let image = Image::new(pixels, JPEG_BIT_DEPTH, width, height, colorspace);

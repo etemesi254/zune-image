@@ -1,5 +1,7 @@
-use zune_imageprocs::transpose::transpose;
+use zune_core::bit_depth::BitType;
+use zune_imageprocs::transpose::{transpose_u16, transpose_u8};
 
+use crate::channel::Channel;
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
@@ -30,14 +32,37 @@ impl OperationsTrait for Transpose
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
-        let out_dim = width * height;
+        let out_dim = width * height * image.get_depth().size_of();
+
+        let depth = image.get_depth();
 
         for channel in image.get_channels_mut(true)
         {
-            let mut out_vec = vec![0; out_dim];
+            let mut out_channel = Channel::new_with_capacity(out_dim);
 
-            transpose(channel, &mut out_vec, width, height);
-            *channel = out_vec;
+            match depth.bit_type()
+            {
+                BitType::Eight =>
+                {
+                    transpose_u8(
+                        channel.reinterpret_as::<u8>().unwrap(),
+                        out_channel.reinterpret_as_mut::<u8>().unwrap(),
+                        width,
+                        height
+                    );
+                    *channel = out_channel;
+                }
+                BitType::Sixteen =>
+                {
+                    transpose_u16(
+                        channel.reinterpret_as::<u16>().unwrap(),
+                        out_channel.reinterpret_as_mut::<u16>().unwrap(),
+                        width,
+                        height
+                    );
+                    *channel = out_channel;
+                }
+            };
         }
 
         image.set_dimensions(height, width);

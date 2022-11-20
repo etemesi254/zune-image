@@ -1,8 +1,11 @@
+//! Contains image manipulation algorithms
+//!
+//! This contains structs that implement `OperationsTrait`
+//! meaning they can manipulate images
 pub mod box_blur;
 pub mod brighten;
 pub mod convolve;
 pub mod crop;
-pub mod deinterleave;
 pub mod flip;
 pub mod flop;
 pub mod gamma;

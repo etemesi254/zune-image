@@ -7,3 +7,4 @@ imports_granularity = "Module"
 group_imports = "StdExternalCrate"
 blank_lines_upper_bound = 1
 struct_field_align_threshold = 20
+trailing_comma = "Never"

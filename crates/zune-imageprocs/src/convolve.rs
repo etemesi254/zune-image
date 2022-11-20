@@ -1,11 +1,15 @@
+use crate::traits::NumOps;
+
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub fn convolve_1d(
-    in_channel: &[u16], out_channel: &mut [u16], width: usize, height: usize, weights: &[f64],
-    div_by: f64, max_value: u16,
-)
+pub fn convolve_1d<T>(
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f64],
+    div_by: f64, max_value: u16
+) where
+    T: Copy + NumOps<T>,
+    f64: std::convert::From<T>
 {
     let chunk_size = width * 4;
-    let max_value = f64::from(max_value);
+    let max_value = max_value as f64;
 
     let radius = weights.len();
     let inv_div = 1.0 / div_by;
@@ -62,10 +66,10 @@ pub fn convolve_1d(
 
             // clamp and write
 
-            *o1 = suma.clamp(0.0, max_value) as u16;
-            *o2 = sumb.clamp(0.0, max_value) as u16;
-            *o3 = sumc.clamp(0.0, max_value) as u16;
-            *o4 = sumd.clamp(0.0, max_value) as u16;
+            *o1 = T::from_f64(suma.clamp(0.0, max_value));
+            *o2 = T::from_f64(sumb.clamp(0.0, max_value));
+            *o3 = T::from_f64(sumc.clamp(0.0, max_value));
+            *o4 = T::from_f64(sumd.clamp(0.0, max_value));
         }
     }
     // handle pixels that may not be divisible by 4.
@@ -89,7 +93,7 @@ pub fn convolve_1d(
                     .sum::<f64>();
 
                 sum *= inv_div;
-                *o1 = sum.clamp(0.0, max_value) as u16;
+                *o1 = T::from_f64(sum.clamp(0.0, max_value));
             }
         }
     }

@@ -1,33 +1,64 @@
+use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
+
 mod avx2;
 mod scalar;
 mod sse41;
 
-use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
-
-pub fn rgb_to_grayscale(r: &[u16], g: &[u16], b: &[u16], out: &mut [u16], max_value: u16)
+pub fn rgb_to_grayscale_u16(r: &[u16], g: &[u16], b: &[u16], out: &mut [u16], max_value: u16)
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         #[cfg(feature = "avx2")]
         {
-            use crate::grayscale::avx2::convert_rgb_to_grayscale_avx2;
+            use crate::grayscale::avx2::convert_rgb_to_grayscale_u16_avx2;
 
             if is_x86_feature_detected!("avx2")
             {
                 unsafe {
-                    return convert_rgb_to_grayscale_avx2(r, g, b, out, max_value);
+                    return convert_rgb_to_grayscale_u16_avx2(r, g, b, out, max_value);
                 }
             }
         }
 
         #[cfg(feature = "sse41")]
         {
-            use crate::grayscale::sse41::convert_rgb_to_grayscale_sse41;
+            use crate::grayscale::sse41::convert_rgb_to_grayscale_u16_sse41;
 
             if is_x86_feature_detected!("sse4.1")
             {
                 unsafe {
-                    return convert_rgb_to_grayscale_sse41(r, g, b, out, max_value);
+                    return convert_rgb_to_grayscale_u16_sse41(r, g, b, out, max_value);
+                }
+            }
+        }
+    }
+    convert_rgb_to_grayscale_scalar(r, g, b, out, max_value);
+}
+
+pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_value: u8)
+{
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "avx2")]
+        {
+            use crate::grayscale::avx2::convert_rgb_to_grayscale_u8_avx2;
+
+            if is_x86_feature_detected!("avx2")
+            {
+                unsafe {
+                    return convert_rgb_to_grayscale_u8_avx2(r, g, b, out);
+                }
+            }
+        }
+
+        #[cfg(feature = "sse41")]
+        {
+            use crate::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
+
+            if is_x86_feature_detected!("sse4.1")
+            {
+                unsafe {
+                    return convert_rgb_to_grayscale_u8_sse41(r, g, b, out);
                 }
             }
         }
@@ -45,7 +76,7 @@ mod benchmarks
     #[bench]
     fn convert_rgb_to_grayscale_sse41_bench(b: &mut test::Bencher)
     {
-        use crate::grayscale::sse41::convert_rgb_to_grayscale_sse41;
+        use crate::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -57,7 +88,7 @@ mod benchmarks
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_sse41(&c1, &c2, &c3, &mut c4, 255);
+                convert_rgb_to_grayscale_u8_sse41(&c1, &c2, &c3, &mut c4);
             };
         });
     }
@@ -66,7 +97,7 @@ mod benchmarks
     #[bench]
     fn convert_rgb_to_grayscale_avx2_bench(b: &mut test::Bencher)
     {
-        use crate::grayscale::avx2::convert_rgb_to_grayscale_avx2;
+        use crate::grayscale::avx2::convert_rgb_to_grayscale_u16_avx2;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -78,7 +109,7 @@ mod benchmarks
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_avx2(&c1, &c2, &c3, &mut c4, 255);
+                convert_rgb_to_grayscale_u16_avx2(&c1, &c2, &c3, &mut c4, 255);
             };
         });
     }
@@ -91,13 +122,32 @@ mod benchmarks
         let height = 800;
         let dimensions = width * height;
 
-        let c1 = vec![0; dimensions];
-        let c2 = vec![0; dimensions];
-        let c3 = vec![0; dimensions];
+        let c1 = vec![0_u16; dimensions];
+        let c2 = vec![0_u16; dimensions];
+        let c3 = vec![0_u16; dimensions];
 
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             convert_rgb_to_grayscale_scalar(&c1, &c2, &c3, &mut c4, 255);
+        });
+    }
+
+    #[cfg(feature = "avx2")]
+    #[bench]
+    fn convert_rgb_to_grayscale_u16_avx_bench(b: &mut test::Bencher)
+    {
+        use crate::grayscale::avx2::convert_rgb_to_grayscale_u16_avx2;
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let c1 = vec![0_u16; dimensions];
+        let c2 = vec![0_u16; dimensions];
+        let c3 = vec![0_u16; dimensions];
+
+        let mut c4 = vec![255; dimensions];
+        b.iter(|| unsafe {
+            convert_rgb_to_grayscale_u16_avx2(&c1, &c2, &c3, &mut c4, 255);
         });
     }
 }

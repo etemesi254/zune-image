@@ -1,5 +1,6 @@
 use log::trace;
-use zune_imageprocs::box_blur::box_blur;
+use zune_core::bit_depth::BitType;
+use zune_imageprocs::box_blur::{box_blur_u16, box_blur_u8};
 
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
@@ -36,18 +37,29 @@ impl OperationsTrait for BoxBlur
     {
         let (width, height) = image.get_dimensions();
 
-        let channels = image.get_channels_mut(false);
+        let depth = image.get_depth();
 
         #[cfg(feature = "threads")]
         {
             trace!("Running box blur in multithreaded mode");
             std::thread::scope(|s| {
                 // blur each channel on a separate thread
-                for channel in channels
+                for channel in image.get_channels_mut(false)
                 {
-                    s.spawn(|| {
-                        let mut out_dim = vec![0; width * height];
-                        box_blur(channel, &mut out_dim, width, height, self.radius);
+                    s.spawn(|| match depth.bit_type()
+                    {
+                        BitType::Sixteen =>
+                        {
+                            let mut scratch_space = vec![0; width * height];
+                            let data = channel.reinterpret_as_mut::<u16>().unwrap();
+                            box_blur_u16(data, &mut scratch_space, width, height, self.radius);
+                        }
+                        BitType::Eight =>
+                        {
+                            let mut scratch_space = vec![0; width * height];
+                            let data = channel.reinterpret_as_mut::<u8>().unwrap();
+                            box_blur_u8(data, &mut scratch_space, width, height, self.radius);
+                        }
                     });
                 }
             });
@@ -56,11 +68,28 @@ impl OperationsTrait for BoxBlur
         {
             trace!("Running box blur in single threaded mode");
 
-            let mut out_dim = vec![0; width * height];
-
-            for channel in channels
+            match depth.bit_type()
             {
-                box_blur(channel, &mut out_dim, width, height, self.radius);
+                BitType::Sixteen =>
+                {
+                    let mut scratch_space = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false)
+                    {
+                        let data = channel.reinterpret_as_mut::<u16>().unwrap();
+                        box_blur_u16(data, &mut scratch_space, width, height, self.radius);
+                    }
+                }
+                BitType::Eight =>
+                {
+                    let mut scratch_space = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false)
+                    {
+                        let data = channel.reinterpret_as_mut::<u8>().unwrap();
+                        box_blur_u8(data, &mut scratch_space, width, height, self.radius);
+                    }
+                }
             }
         }
 

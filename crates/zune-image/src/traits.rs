@@ -90,7 +90,7 @@ pub trait OperationsTrait
     ///
     /// This does come common error checking operations, e.g
     /// it checks that image dimensions match array length and that this operation
-    /// supports the image colorspace, before calling [`_execute_simple`]
+    /// supports the image colorspace, before calling [`execute_impl`]
     ///
     /// # Arguments
     /// - image: A mutable reference to an image which
@@ -112,7 +112,7 @@ pub trait OperationsTrait
     /// rgb_to_grayscale.execute(&mut image);
     /// ```
     ///
-    /// [`_execute_simple`]: Self::_execute_simple
+    /// [`execute_impl`]: Self::execute_impl
     fn execute(&self, image: &mut Image) -> Result<(), ImgErrors>
     {
         // Confirm colorspace
@@ -136,10 +136,25 @@ pub trait OperationsTrait
 
         if components != image.get_colorspace().num_components()
         {
-            return  Err(ImgErrors::GenericString(
+            return Err(ImgErrors::GenericString(
                 format!("Components mismatch, expected {} channels since image format is {:?}, but found {}",
                         image.get_colorspace().num_components(),
-                        image.get_colorspace(),components)));
+                        image.get_colorspace(), components)));
+        }
+        let (width, height) = image.get_dimensions();
+        // check the number of channels match the length
+
+        let expected_length = image.get_depth().size_of() * width * height;
+
+        for channel in image.get_channels_ref(true)
+        {
+            if channel.len() != expected_length
+            {
+                return Err(ImgErrors::DimensionsMisMatch(
+                    expected_length,
+                    channel.len()
+                ));
+            }
         }
 
         self.execute_impl(image).map_err(|x| x.into())

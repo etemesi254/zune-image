@@ -14,7 +14,7 @@ enum WorkFlowState
     Decode,
     Operations,
     Encode,
-    Finished,
+    Finished
 }
 impl WorkFlowState
 {
@@ -26,7 +26,7 @@ impl WorkFlowState
             WorkFlowState::Decode => Some(WorkFlowState::Operations),
             WorkFlowState::Operations => Some(WorkFlowState::Encode),
             WorkFlowState::Encode => Some(WorkFlowState::Finished),
-            WorkFlowState::Finished => None,
+            WorkFlowState::Finished => None
         }
     }
 }
@@ -36,7 +36,7 @@ pub struct WorkFlow<'a>
     decode:     Option<Box<dyn DecoderTrait<'a> + 'a>>,
     image:      Option<Image>,
     operations: Vec<Box<dyn OperationsTrait>>,
-    encode:     Vec<Box<dyn EncoderTrait>>,
+    encode:     Vec<Box<dyn EncoderTrait + 'a>>
 }
 
 impl<'a> WorkFlow<'a>
@@ -50,7 +50,7 @@ impl<'a> WorkFlow<'a>
             state:      Some(WorkFlowState::Initialized),
             decode:     None,
             operations: vec![],
-            encode:     vec![],
+            encode:     vec![]
         }
     }
     /// Add a single encoder for this image
@@ -67,7 +67,7 @@ impl<'a> WorkFlow<'a>
     /// let encoder = SPPMEncoder::new(buf);
     /// let decoder = zune_jpeg::JpegDecoder::new(&[0xff,0xd8]);
     /// ```
-    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>)
+    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait + 'a>)
     {
         self.encode.push(encoder);
     }
@@ -110,8 +110,6 @@ impl<'a> WorkFlow<'a>
     /// 2. Convert RGB data to grayscale
     /// 3. Transpose the image channels   
     /// ```
-    /// use zune_image::codecs::ppm::SPPMEncoder;
-    /// use zune_image::impls::deinterleave::DeInterleaveChannels;
     /// use zune_image::impls::grayscale::RgbToGrayScale;
     /// use zune_image::impls::transpose::Transpose;
     /// use zune_image::workflow::WorkFlow;
@@ -125,9 +123,8 @@ impl<'a> WorkFlow<'a>
     /// let image = WorkFlow::new()
     ///     .add_buffer(&buf)
     ///     .chain_decoder(Box::new(decoder))
-    ///     .chain_operations(Box::new(DeInterleaveChannels::new()))
     ///     .chain_operations(Box::new(RgbToGrayScale::new()))
-    ///     .chain_operations(Box::new(Transpose::new()))
+    ///     .chain_operations(Box::new(Transpose::new()))    
     ///     .advance_to_end();
     /// ```
     pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<'a>

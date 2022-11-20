@@ -1,19 +1,42 @@
+//! This module represents a single image
+//!
+//!
+//! An image is represented as
+//!
+//! - separated channels
+//!     - of a certain bit depth
+//!         - representing a colorspace
+//!             -    with the same width and height
+//!
+//! And that's how we represent images.
+//! Fully supported bit depths are 8 and 16, see channels for how that happens
+//!
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
+use zune_imageprocs::traits::NumOps;
 
+use crate::channel::Channel;
+use crate::errors::ImgErrors;
+
+/// Maximum supported color channels
+pub const MAX_CHANNELS: usize = 4;
+
+/// Represents a single image
 pub struct Image
 {
-    channels:   Vec<Vec<u16>>,
+    channels:   Vec<Channel>,
     depth:      BitDepth,
     width:      usize,
     height:     usize,
-    colorspace: ColorSpace,
+    colorspace: ColorSpace
 }
+
 impl Image
 {
+    /// Create a new image channel
     pub fn new(
-        channels: Vec<Vec<u16>>, depth: BitDepth, width: usize, height: usize,
-        colorspace: ColorSpace,
+        channels: Vec<Channel>, depth: BitDepth, width: usize, height: usize,
+        colorspace: ColorSpace
     ) -> Image
     {
         Image {
@@ -21,7 +44,7 @@ impl Image
             depth,
             width,
             height,
-            colorspace,
+            colorspace
         }
     }
     /// Get image dimensions as a tuple of (width,height)
@@ -34,7 +57,8 @@ impl Image
     {
         self.depth
     }
-    pub fn get_channels_ref(&self, alpha: bool) -> &[Vec<u16>]
+    /// Return a reference to the underlying channels
+    pub fn get_channels_ref(&self, alpha: bool) -> &[Channel]
     {
         // check if alpha channel is present in colorspace
         if alpha && self.colorspace.has_alpha()
@@ -55,7 +79,7 @@ impl Image
     ///
     /// This gives mutable access to the chanel data allowing
     /// single or multithreaded manipulation of images
-    pub fn get_channels_mut(&mut self, alpha: bool) -> &mut [Vec<u16>]
+    pub fn get_channels_mut(&mut self, alpha: bool) -> &mut [Channel]
     {
         // check if alpha channel is present in colorspace
         if alpha && self.colorspace.has_alpha()
@@ -79,27 +103,21 @@ impl Image
     }
     /// Flatten channels in this image.
     ///
-    /// This represents all image data in a single
-    /// continuous vector of unsigned 16 bit integers
-    ///
-    /// For 8 byte implementations see
-    /// [flatten_u8](Self::flatten_u8)
-    pub fn flatten(&self) -> Vec<u16>
+    /// Flatten can be used to interleave all channels into one vector
+    pub fn flatten<T: Default + Copy>(&self) -> Vec<T>
     {
         let dims = self.width * self.height * self.colorspace.num_components();
 
-        let mut out_pixel = vec![0; dims];
+        let mut out_pixel = vec![T::default(); dims];
 
         match self.colorspace.num_components()
         {
-            1 =>
-            {
-                out_pixel.copy_from_slice(&self.channels[0]);
-            }
+            1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<T>().unwrap()),
+
             2 =>
             {
-                let luma_channel = &self.channels[0];
-                let alpha_channel = &self.channels[1];
+                let luma_channel = self.channels[0].reinterpret_as::<T>().unwrap();
+                let alpha_channel = self.channels[1].reinterpret_as::<T>().unwrap();
 
                 for ((out, luma), alpha) in out_pixel
                     .chunks_exact_mut(2)
@@ -112,15 +130,12 @@ impl Image
             }
             3 =>
             {
-                let first_channel = &self.channels[0];
-                let second_channel = &self.channels[1];
-                let third_channel = &self.channels[2];
+                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
 
-                for (((out, first), second), third) in out_pixel
-                    .chunks_exact_mut(3)
-                    .zip(first_channel)
-                    .zip(second_channel)
-                    .zip(third_channel)
+                for (((out, first), second), third) in
+                    out_pixel.chunks_exact_mut(3).zip(c1).zip(c2).zip(c3)
                 {
                     out[0] = *first;
                     out[1] = *second;
@@ -129,17 +144,17 @@ impl Image
             }
             4 =>
             {
-                let first_channel = &self.channels[0];
-                let second_channel = &self.channels[1];
-                let third_channel = &self.channels[2];
-                let fourth_channel = &self.channels[3];
+                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
+                let c4 = self.channels[3].reinterpret_as::<T>().unwrap();
 
                 for ((((out, first), second), third), fourth) in out_pixel
                     .chunks_exact_mut(3)
-                    .zip(first_channel)
-                    .zip(second_channel)
-                    .zip(third_channel)
-                    .zip(fourth_channel)
+                    .zip(c1)
+                    .zip(c2)
+                    .zip(c3)
+                    .zip(c4)
                 {
                     out[0] = *first;
                     out[1] = *second;
@@ -148,7 +163,7 @@ impl Image
                 }
             }
             // panics, all the way down
-            _ => unreachable!(),
+            _ => unreachable!()
         }
 
         out_pixel
@@ -162,78 +177,7 @@ impl Image
     /// Channels are interleaved according to the colorspace
     /// i.e if colorspace is RGB, the vector will contain
     /// data in the format `[R,G,B,R,G,B,R,G,B,R,G,B]`
-    pub fn flatten_u8(&self) -> Vec<u8>
-    {
-        let dims = self.width * self.height * self.colorspace.num_components();
 
-        let mut out_pixel = vec![0; dims];
-
-        match self.colorspace.num_components()
-        {
-            1 =>
-            {
-                for (out_px, in_px) in out_pixel.iter_mut().zip(&self.channels[0])
-                {
-                    *out_px = *in_px as u8;
-                }
-            }
-            2 =>
-            {
-                let luma_channel = &self.channels[0];
-                let alpha_channel = &self.channels[1];
-
-                for ((out, luma), alpha) in out_pixel
-                    .chunks_exact_mut(2)
-                    .zip(luma_channel)
-                    .zip(alpha_channel)
-                {
-                    out[0] = *luma as u8;
-                    out[1] = *alpha as u8;
-                }
-            }
-            3 =>
-            {
-                let first_channel = &self.channels[0];
-                let second_channel = &self.channels[1];
-                let third_channel = &self.channels[2];
-
-                for (((out, first), second), third) in out_pixel
-                    .chunks_exact_mut(3)
-                    .zip(first_channel)
-                    .zip(second_channel)
-                    .zip(third_channel)
-                {
-                    out[0] = *first as u8;
-                    out[1] = *second as u8;
-                    out[2] = *third as u8;
-                }
-            }
-            4 =>
-            {
-                let first_channel = &self.channels[0];
-                let second_channel = &self.channels[1];
-                let third_channel = &self.channels[2];
-                let fourth_channel = &self.channels[3];
-
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(3)
-                    .zip(first_channel)
-                    .zip(second_channel)
-                    .zip(third_channel)
-                    .zip(fourth_channel)
-                {
-                    out[0] = *first as u8;
-                    out[1] = *second as u8;
-                    out[2] = *third as u8;
-                    out[3] = *fourth as u8;
-                }
-            }
-            // panics, all the way down
-            _ => unreachable!(),
-        }
-
-        out_pixel
-    }
     pub fn set_dimensions(&mut self, width: usize, height: usize)
     {
         self.width = width;
@@ -245,8 +189,28 @@ impl Image
         self.colorspace = colorspace;
     }
 
-    pub fn set_channels(&mut self, channels: Vec<Vec<u16>>)
+    pub fn set_channels(&mut self, channels: Vec<Channel>)
     {
         self.channels = channels;
+    }
+
+    /// Fill the image with
+    pub fn fill<T: Copy + Clone + NumOps<T>>(
+        pixel: T, depth: BitDepth, colorspace: ColorSpace, width: usize, height: usize
+    ) -> Result<Image, ImgErrors>
+    {
+        if core::mem::size_of::<T>() != depth.size_of()
+        {
+            return Err(ImgErrors::from(
+                "Size of T does not match bit depth, this is invalid"
+            ));
+        }
+        let dims = width * height * depth.size_of();
+
+        let channels = vec![Channel::from_elm::<T>(dims, pixel); colorspace.num_components()];
+
+        let img = Image::new(channels, depth, width, height, colorspace);
+
+        Ok(img)
     }
 }

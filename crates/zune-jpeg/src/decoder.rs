@@ -2,7 +2,6 @@
 #![allow(clippy::doc_markdown)]
 
 use std::fs::read;
-use std::num::NonZeroU32;
 use std::path::Path;
 
 use zune_core::bytestream::ZByteReader;

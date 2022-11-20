@@ -1,4 +1,5 @@
 use log::warn;
+use zune_core::bit_depth::BitType;
 use zune_imageprocs::threshold::threshold;
 pub use zune_imageprocs::threshold::ThresholdMethod;
 
@@ -9,7 +10,7 @@ use crate::traits::OperationsTrait;
 pub struct Threshold
 {
     method:    ThresholdMethod,
-    threshold: u16,
+    threshold: u16
 }
 
 impl Threshold
@@ -33,9 +34,23 @@ impl OperationsTrait for Threshold
             warn!("Threshold works well with grayscale images, results may be something you don't expect")
         }
 
+        let depth = image.get_depth();
         for channel in image.get_channels_mut(false)
         {
-            threshold(channel, self.threshold, self.method)
+            match depth.bit_type()
+            {
+                BitType::Sixteen => threshold(
+                    channel.reinterpret_as_mut::<u16>().unwrap(),
+                    self.threshold,
+                    self.method
+                ),
+
+                BitType::Eight => threshold(
+                    channel.reinterpret_as_mut::<u8>().unwrap(),
+                    self.threshold as u8,
+                    self.method
+                )
+            }
         }
 
         Ok(())

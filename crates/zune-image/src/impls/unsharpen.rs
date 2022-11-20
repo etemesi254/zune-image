@@ -1,5 +1,6 @@
 use log::trace;
-use zune_imageprocs::unsharpen::unsharpen;
+use zune_core::bit_depth::BitType;
+use zune_imageprocs::unsharpen::{unsharpen_u16, unsharpen_u8};
 
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
@@ -9,15 +10,20 @@ use crate::traits::OperationsTrait;
 #[derive(Default)]
 pub struct Unsharpen
 {
-    sigma:     f32,
-    threshold: u16,
+    sigma:      f32,
+    threshold:  u16,
+    percentage: u8
 }
 
 impl Unsharpen
 {
-    pub fn new(sigma: f32, threshold: u16) -> Unsharpen
+    pub fn new(sigma: f32, threshold: u16, percentage: u8) -> Unsharpen
     {
-        Unsharpen { sigma, threshold }
+        Unsharpen {
+            sigma,
+            threshold,
+            percentage
+        }
     }
 }
 
@@ -32,25 +38,55 @@ impl OperationsTrait for Unsharpen
     {
         let (width, height) = image.get_dimensions();
 
+        let depth = image.get_depth();
+
         #[cfg(not(feature = "threads"))]
         {
-            let mut blur_buffer = vec![0; width * height];
-            let mut blur_scratch = vec![0; width * height];
+            trace!("Running unsharpen in single threaded mode");
 
-            for channel in image.get_channels_mut(false)
+            match depth.bit_type()
             {
-                unsharpen(
-                    channel,
-                    &mut blur_buffer,
-                    &mut blur_scratch,
-                    self.sigma,
-                    self.threshold,
-                    width,
-                    height,
-                );
+                BitType::Sixteen =>
+                {
+                    let mut blur_buffer = vec![0; width * height];
+                    let mut blur_scratch = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false)
+                    {
+                        unsharpen_u16(
+                            channel.reinterpret_as_mut::<u16>().unwrap(),
+                            &mut blur_buffer,
+                            &mut blur_scratch,
+                            self.sigma,
+                            self.threshold,
+                            self.percentage as u16,
+                            width,
+                            height
+                        );
+                    }
+                }
+
+                BitType::Eight =>
+                {
+                    let mut blur_buffer = vec![0; width * height];
+                    let mut blur_scratch = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false)
+                    {
+                        unsharpen_u8(
+                            channel.reinterpret_as_mut::<u8>().unwrap(),
+                            &mut blur_buffer,
+                            &mut blur_scratch,
+                            self.sigma,
+                            self.threshold as u8,
+                            self.percentage,
+                            width,
+                            height
+                        );
+                    }
+                }
             }
         }
-
         #[cfg(feature = "threads")]
         {
             trace!("Running unsharpen in multithreaded mode");
@@ -58,19 +94,41 @@ impl OperationsTrait for Unsharpen
                 // blur each channel on a separate thread
                 for channel in image.get_channels_mut(false)
                 {
-                    s.spawn(|| {
-                        let mut blur_buffer = vec![0; width * height];
-                        let mut blur_scratch = vec![0; width * height];
+                    s.spawn(|| match depth.bit_type()
+                    {
+                        BitType::Sixteen =>
+                        {
+                            let mut blur_buffer = vec![0; width * height];
+                            let mut blur_scratch = vec![0; width * height];
 
-                        unsharpen(
-                            channel,
-                            &mut blur_buffer,
-                            &mut blur_scratch,
-                            self.sigma,
-                            self.threshold,
-                            width,
-                            height,
-                        );
+                            unsharpen_u16(
+                                channel.reinterpret_as_mut::<u16>().unwrap(),
+                                &mut blur_buffer,
+                                &mut blur_scratch,
+                                self.sigma,
+                                self.threshold,
+                                self.percentage as u16,
+                                width,
+                                height
+                            );
+                        }
+
+                        BitType::Eight =>
+                        {
+                            let mut blur_buffer = vec![0; width * height];
+                            let mut blur_scratch = vec![0; width * height];
+
+                            unsharpen_u8(
+                                channel.reinterpret_as_mut::<u8>().unwrap(),
+                                &mut blur_buffer,
+                                &mut blur_scratch,
+                                self.sigma,
+                                self.threshold as u8,
+                                self.percentage,
+                                width,
+                                height
+                            );
+                        }
                     });
                 }
             });

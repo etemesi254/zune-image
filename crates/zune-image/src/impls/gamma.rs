@@ -1,15 +1,16 @@
 use log::trace;
+use zune_core::bit_depth::BitType;
 use zune_imageprocs::gamma::gamma;
 
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Rearrange the pixels up side down
+/// Gamma adjust an image
 #[derive(Default)]
 pub struct Gamma
 {
-    value: f32,
+    value: f32
 }
 
 impl Gamma
@@ -30,13 +31,26 @@ impl OperationsTrait for Gamma
     {
         let max_value = image.get_depth().max_value();
 
+        let depth = image.get_depth();
         #[cfg(not(feature = "threads"))]
         {
             trace!("Running gamma correction in single threaded mode");
 
             for channel in image.get_channels_mut(false)
             {
-                gamma(channel, self.value, max_value);
+                match depth.bit_type()
+                {
+                    BitType::Sixteen => gamma(
+                        channel.reinterpret_as_mut::<u16>().unwrap(),
+                        self.value,
+                        max_value
+                    ),
+                    BitType::Eight => gamma(
+                        channel.reinterpret_as_mut::<u8>().unwrap(),
+                        self.value,
+                        max_value
+                    )
+                }
             }
         }
         #[cfg(feature = "threads")]
@@ -46,11 +60,22 @@ impl OperationsTrait for Gamma
             std::thread::scope(|s| {
                 for channel in image.get_channels_mut(false)
                 {
-                    s.spawn(|| gamma(channel, self.value, max_value));
+                    s.spawn(|| match depth.bit_type()
+                    {
+                        BitType::Sixteen => gamma(
+                            channel.reinterpret_as_mut::<u16>().unwrap(),
+                            self.value,
+                            max_value
+                        ),
+                        BitType::Eight => gamma(
+                            channel.reinterpret_as_mut::<u8>().unwrap(),
+                            self.value,
+                            max_value
+                        )
+                    });
                 }
             });
         }
-
         Ok(())
     }
 }

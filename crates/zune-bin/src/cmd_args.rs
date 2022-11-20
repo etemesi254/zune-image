@@ -1,5 +1,3 @@
-pub mod arg_parsers;
-pub mod help_strings;
 use std::ffi::OsString;
 
 use clap::builder::PossibleValue;
@@ -8,15 +6,18 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{
     AFTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, GAUSSIAN_BLUR_HELP,
-    THRESHOLD_HELP, TRANSPOSE_HELP,
+    THRESHOLD_HELP, TRANSPOSE_HELP
 };
+
+pub mod arg_parsers;
+pub mod help_strings;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MmapOptions
 {
     No,
     Always,
-    Auto,
+    Auto
 }
 
 impl ValueEnum for MmapOptions
@@ -32,21 +33,21 @@ impl ValueEnum for MmapOptions
         {
             Self::No => PossibleValue::new("no"),
             Self::Always => PossibleValue::new("always"),
-            Self::Auto => PossibleValue::new("auto"),
+            Self::Auto => PossibleValue::new("auto")
         })
     }
 }
 
 pub(crate) struct CmdOptions
 {
-    mmap: MmapOptions,
+    mmap: MmapOptions
 }
 impl CmdOptions
 {
     pub fn new() -> CmdOptions
     {
         CmdOptions {
-            mmap: MmapOptions::Auto,
+            mmap: MmapOptions::Auto
         }
     }
 
@@ -145,7 +146,7 @@ fn add_logging_options() -> [Arg; 4]
             .long("info")
             .action(ArgAction::SetTrue)
             .help_heading("Logging")
-            .help("Display information about the decoding options"),
+            .help("Display information about the decoding options")
     ]
 }
 fn add_settings() -> Vec<Arg>
@@ -175,7 +176,7 @@ fn add_settings() -> Vec<Arg>
             .help_heading("Image Settings")
             .help("Treat most warnings as errors")
             .action(ArgAction::SetTrue)
-            .default_value("false"),
+            .default_value("false")
     ];
     // list them in order
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
@@ -252,7 +253,7 @@ fn add_operations() -> Vec<Arg>
             .help("Gamma adjust an image")
             .help_heading(HELP_HEADING)
             .value_parser(value_parser!(f32))
-            .group("operations"),
+            .group("operations")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
@@ -280,8 +281,8 @@ fn add_filters() -> Vec<Arg>
             .long("unsharpen")
             .help("Perform an unsharp mask")
             .help_heading("Filters")
-            .value_name("sigma:threshold")
-            .group("filters"),
+            .value_name("sigma:threshold:percentage")
+            .group("filters")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()

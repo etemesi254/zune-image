@@ -1,6 +1,6 @@
-pub fn crop(
-    in_image: &[u16], in_width: usize, out_image: &mut [u16], out_width: usize, out_height: usize,
-    x: usize, y: usize,
+pub fn crop<T: Copy>(
+    in_image: &[T], in_width: usize, out_image: &mut [T], out_width: usize, out_height: usize,
+    x: usize, y: usize
 )
 {
     // We can take cropping as a view into a sub-image
@@ -50,5 +50,29 @@ pub fn crop(
         .zip(out_image.chunks_exact_mut(out_width))
     {
         single_out_width.copy_from_slice(&single_in_width[x..x + out_width]);
+    }
+}
+
+#[cfg(all(feature = "benchmarks"))]
+#[cfg(test)]
+mod benchmarks
+{
+    extern crate test;
+
+    use crate::crop::crop;
+
+    #[bench]
+    fn crop_bench(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let c1 = vec![0_u16; dimensions];
+        let mut c2 = vec![0_u16; dimensions / 4];
+
+        b.iter(|| {
+            crop(&c1, width, &mut c2, width / 2, height / 2, 0, 0);
+        });
     }
 }

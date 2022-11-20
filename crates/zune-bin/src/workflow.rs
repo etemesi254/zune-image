@@ -34,7 +34,7 @@ use crate::{CmdOptions, MmapOptions};
 
 #[allow(unused_variables)]
 pub(crate) fn create_and_exec_workflow_from_cmd(
-    args: &ArgMatches, cmd_opts: &CmdOptions,
+    args: &ArgMatches, cmd_opts: &CmdOptions
 ) -> Result<(), ImgErrors>
 {
     info!("Creating workflows from input");
@@ -69,10 +69,6 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         };
         // workflow
 
-        let mut workflow = WorkFlow::new();
-
-        add_operations(args, &mut workflow)?;
-
         let file = OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -80,11 +76,17 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             .open(out_file)
             .unwrap();
 
-        let buf_writer = BufWriter::new(file);
+        // Rust was pretty good to catch this.
+        // Thank you compiler gods.
+        let mut buf_writer = BufWriter::new(file);
+
+        let mut workflow = WorkFlow::new();
+
+        add_operations(args, &mut workflow)?;
 
         if let Some(format) = guess_format(data)
         {
-            if format == zune_image::codecs::Codecs::Jpeg
+            if format == zune_image::codecs::SupportedDecoders::Jpeg
             {
                 debug!("Treating {:?} as a jpg file", in_file);
 
@@ -94,7 +96,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 workflow.add_decoder(Box::new(decoder));
             }
-            else if format == zune_image::codecs::Codecs::Png
+            else if format == zune_image::codecs::SupportedDecoders::Png
             {
                 debug!("Treating {:?} as a png file", in_file);
 
@@ -109,7 +111,14 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if ext == OsStr::new("ppm")
             {
                 debug!("Treating {:?} as a ppm file", out_file);
-                let encoder = zune_image::codecs::ppm::SPPMEncoder::new(buf_writer);
+                let encoder = zune_image::codecs::ppm::PPMEncoder::new(&mut buf_writer);
+                workflow.add_encoder(Box::new(encoder));
+            }
+            else if ext == OsStr::new("pam")
+            {
+                debug!("Treating {:?} as a pam file", out_file);
+                let encoder = zune_image::codecs::ppm::PAMEncoder::new(&mut buf_writer);
+
                 workflow.add_encoder(Box::new(encoder));
             }
         }
@@ -326,9 +335,9 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let value = args.get_one::<String>(&argument).unwrap();
             let split_args: Vec<&str> = value.split(':').collect();
 
-            if split_args.len() != 2
+            if split_args.len() != 3
             {
-                return Err(format!("Unsharpen operation expected 2 arguments separated by `:` in the command line,got {}",split_args.len()));
+                return Err(format!("Unsharpen operation expected 3 arguments separated by `:` in the command line,got {}", split_args.len()));
             }
             // parse first one as threshold
             let sigma = split_args[0];
@@ -337,12 +346,15 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let threshold = split_args[1];
             let threshold_u16 = str::parse::<u16>(threshold).map_err(|x| x.to_string())?;
 
+            let percentage = split_args[2];
+            let percentage_u8 = str::parse::<u8>(percentage).map_err(|x| x.to_string())?;
+
             debug!(
                 "Added unsharpen filter with sigma={} and threshold={}",
                 sigma, threshold
             );
 
-            let unsharpen = Unsharpen::new(sigma_f32, threshold_u16);
+            let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, percentage_u8);
             workflow.add_operation(Box::new(unsharpen))
         }
     }

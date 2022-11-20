@@ -37,3 +37,15 @@ impl ColorSpace
         matches!(self, Self::LumaA | Self::Luma)
     }
 }
+
+/// Encapsulates all colorspaces supported by
+/// the library
+pub static ALL_COLORSPACES: [ColorSpace; 7] = [
+    ColorSpace::RGB,
+    ColorSpace::RGBA,
+    ColorSpace::RGBX,
+    ColorSpace::LumaA,
+    ColorSpace::Luma,
+    ColorSpace::CYMK,
+    ColorSpace::YCbCr,
+];
