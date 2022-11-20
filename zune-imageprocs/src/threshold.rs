@@ -6,7 +6,7 @@ pub enum ThresholdMethod
     Binary,
     BinaryInv,
     ThreshTrunc,
-    ThreshToZero,
+    ThreshToZero
 }
 impl ThresholdMethod
 {
@@ -15,68 +15,74 @@ impl ThresholdMethod
         match input
         {
             "binary" => Ok(Self::Binary),
-            "binary_inv"=>Ok(Self::BinaryInv),
-            "thresh_trunk"=>Ok(Self::ThreshTrunc),
-            "thresh_to_zero"=>Ok(Self::ThreshToZero),
+            "binary_inv" => Ok(Self::BinaryInv),
+            "thresh_trunc" => Ok(Self::ThreshTrunc),
+            "thresh_to_zero" => Ok(Self::ThreshToZero),
             _ => Err("Unknown threshold type,accepted values are binary,binary_inv,thresh_trunc,thresh_to_zero".to_string()),
         }
     }
 }
+
 #[rustfmt::skip]
-pub fn threshold<T:NumOps<T>+Copy+Ord+PartialOrd>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
+pub fn threshold<T>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
+    where
+        T: NumOps<T> + Copy + Ord + PartialOrd
 {
     let max = T::max_val();
     let min = T::min_val();
     match method
     {
-        ThresholdMethod::Binary => {
-            for x in in_image.iter_mut()
+        ThresholdMethod::Binary =>
             {
-                *x = { 
-                    
-                    if *x > threshold {
-                        max
-                    } else {
-                        min
+                for x in in_image.iter_mut()
+                {
+                    *x = {
+                        if *x > threshold {
+                            max
+                        } else {
+                            min
+                        }
                     }
                 }
             }
-        }
-        ThresholdMethod::BinaryInv => {
-            for x in in_image.iter_mut()
+        ThresholdMethod::BinaryInv =>
             {
-                *x = {
-                    if *x > threshold {
-                        min
-                    } else {
-                        max
+                for x in in_image.iter_mut()
+                {
+                    *x = {
+                        if *x > threshold {
+                            min
+                        } else {
+                            max
+                        }
                     }
                 }
             }
-        }
-        ThresholdMethod::ThreshTrunc => {
-            for x in in_image.iter_mut()
+        ThresholdMethod::ThreshTrunc =>
             {
-                *x = {
-                    if *x > threshold {
-                        threshold
-                    } else {
-                        *x
+                for x in in_image.iter_mut()
+                {
+                    *x = {
+                        if *x > threshold {
+                            threshold
+                        } else {
+                            *x
+                        }
                     }
                 }
             }
-        }
-        ThresholdMethod::ThreshToZero => {
-            for x in in_image.iter_mut()
+        ThresholdMethod::ThreshToZero =>
             {
-                *x = {
-                    if *x > threshold {
-                        threshold
-                    } else {
-                        T::min_val()
+                for x in in_image.iter_mut()
+                {
+                    *x = {
+                        if *x > threshold {
+                            threshold
+                        } else {
+                            T::min_val()
+                        }
                     }
                 }
-            }
         }
     }
 }
@@ -88,7 +94,7 @@ mod benchmarks
     extern crate test;
 
     #[bench]
-    fn threshold_scalar(b: &mut test::Bencher)
+    fn threshold_scalar_u8(b: &mut test::Bencher)
     {
         use crate::threshold::threshold;
 
@@ -96,7 +102,23 @@ mod benchmarks
         let height = 800;
         let dimensions = width * height;
 
-        let mut c1 = vec![0; dimensions];
+        let mut c1 = vec![0_u8; dimensions];
+
+        b.iter(|| {
+            threshold(&mut c1, 10, crate::threshold::ThresholdMethod::BinaryInv);
+        });
+    }
+
+    #[bench]
+    fn threshold_scalar_u16(b: &mut test::Bencher)
+    {
+        use crate::threshold::threshold;
+
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let mut c1 = vec![0_u16; dimensions];
 
         b.iter(|| {
             threshold(&mut c1, 10, crate::threshold::ThresholdMethod::BinaryInv);

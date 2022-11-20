@@ -1,5 +1,6 @@
 use zune_imageprocs::crop::crop;
 
+use crate::channel::Channel;
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
@@ -9,7 +10,7 @@ pub struct Crop
     x:      usize,
     y:      usize,
     width:  usize,
-    height: usize,
+    height: usize
 }
 
 impl Crop
@@ -20,7 +21,7 @@ impl Crop
             x,
             y,
             width,
-            height,
+            height
         }
     }
 }
@@ -34,21 +35,23 @@ impl OperationsTrait for Crop
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        let new_dims = self.width * self.height;
+        let new_dims = self.width * self.height * image.get_depth().size_of();
         let (old_width, _) = image.get_dimensions();
 
         for channel in image.get_channels_mut(true)
         {
-            let mut new_vec = vec![0; new_dims];
+            let mut new_vec = Channel::new_with_capacity(new_dims);
 
+            // since crop is just bytewise copies, we can use the lowest common denominator for it
+            // and it will still work
             crop(
-                channel,
+                channel.reinterpret_as::<u8>().unwrap(),
                 old_width,
-                &mut new_vec,
+                new_vec.reinterpret_as_mut::<u8>().unwrap(),
                 self.width,
                 self.height,
                 self.x,
-                self.y,
+                self.y
             );
             *channel = new_vec;
         }

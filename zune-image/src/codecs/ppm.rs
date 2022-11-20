@@ -1,7 +1,8 @@
 #![cfg(feature = "ppm")]
-
+//! Represents a PPM and PAL image encoder
 use std::io::Write;
 
+use log::debug;
 use zune_core::colorspace::ColorSpace;
 use zune_ppm::{PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
 
@@ -42,7 +43,16 @@ where
 
         let mut ppm_encoder = PPMEnc::new(writer);
 
-        ppm_encoder.encode_ppm(width, height, colorspace, &image.flatten_u8())?;
+        if image.get_depth().max_value() > 255
+        {
+            debug!("Encoding PPM as 16 bit image");
+            ppm_encoder.encode_ppm_u16(width, height, colorspace, &image.flatten::<u16>())?;
+        }
+        else
+        {
+            debug!("Encoding PPM as 8 bit image");
+            ppm_encoder.encode_ppm(width, height, colorspace, &image.flatten::<u8>())?;
+        }
 
         Ok(())
     }
@@ -91,13 +101,16 @@ where
 
         if image.get_depth().max_value() > 255
         {
+            debug!("Encoding PAM as 16 bit image");
+
             // use larger bit depth
-            pam_encoder.encode_pam_u16(width, height, colorspace, &image.flatten())?;
+            pam_encoder.encode_pam_u16(width, height, colorspace, &image.flatten::<u16>())?;
         }
         else
         {
+            debug!("Encoding PAM as 8 bit image");
             // use simple format
-            pam_encoder.encode_pam(width, height, colorspace, &image.flatten_u8())?;
+            pam_encoder.encode_pam(width, height, colorspace, &image.flatten::<u8>())?;
         }
 
         Ok(())

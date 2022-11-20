@@ -1,5 +1,7 @@
+extern crate core;
+
+pub mod channel;
 pub mod codecs;
-pub mod conversions;
 pub mod deinterleave;
 pub mod errors;
 pub mod image;

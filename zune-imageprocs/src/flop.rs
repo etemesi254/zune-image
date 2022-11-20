@@ -43,7 +43,7 @@ mod benchmarks
         let height = 800;
         let dimensions = width * height;
 
-        let mut c1 = vec![0; dimensions];
+        let mut c1 = vec![0_u16; dimensions];
 
         b.iter(|| {
             flop(&mut c1, width);

@@ -1,3 +1,4 @@
+use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::brighten::brighten;
 
@@ -28,9 +29,23 @@ impl OperationsTrait for Brighten
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let max_val = image.get_depth().max_value();
+        let depth = image.get_depth();
+
         for channel in image.get_channels_mut(false)
         {
-            brighten(channel, self.value, max_val)
+            match depth.bit_type()
+            {
+                BitType::Eight => brighten(
+                    channel.reinterpret_as_mut::<u8>().unwrap(),
+                    self.value as u8,
+                    max_val as u8
+                ),
+                BitType::Sixteen => brighten(
+                    channel.reinterpret_as_mut::<u16>().unwrap(),
+                    self.value as u16,
+                    max_val
+                )
+            }
         }
         Ok(())
     }

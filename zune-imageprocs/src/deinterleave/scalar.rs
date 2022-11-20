@@ -1,6 +1,6 @@
 #[inline(always)]
-pub(crate) fn de_interleave_three_channels_scalar(
-    source: &[u8], (c1, c2, c3): (&mut [u16], &mut [u16], &mut [u16]),
+pub(crate) fn de_interleave_three_channels_scalar<T: Copy>(
+    source: &[T], c1: &mut [T], c2: &mut [T], c3: &mut [T]
 )
 {
     for (((val, a), b), c) in source
@@ -9,14 +9,15 @@ pub(crate) fn de_interleave_three_channels_scalar(
         .zip(c2.iter_mut())
         .zip(c3.iter_mut())
     {
-        *a = val[0] as u16;
-        *b = val[1] as u16;
-        *c = val[2] as u16;
+        *a = val[0];
+        *b = val[1];
+        *c = val[2];
     }
 }
 
-pub fn de_interleave_four_channels_scalar(
-    source: &[u8], (c1, c2, c3, c4): (&mut [u16], &mut [u16], &mut [u16], &mut [u16]),
+#[inline]
+pub fn de_interleave_four_channels_scalar<T: Copy>(
+    source: &[T], c1: &mut [T], c2: &mut [T], c3: &mut [T], c4: &mut [T]
 )
 {
     for ((((src, c11), c22), c33), c44) in source
@@ -26,9 +27,9 @@ pub fn de_interleave_four_channels_scalar(
         .zip(c3.iter_mut())
         .zip(c4.iter_mut())
     {
-        *c11 = src[0] as u16;
-        *c22 = src[1] as u16;
-        *c33 = src[2] as u16;
-        *c44 = src[3] as u16;
+        *c11 = src[0];
+        *c22 = src[1];
+        *c33 = src[2];
+        *c44 = src[3];
     }
 }

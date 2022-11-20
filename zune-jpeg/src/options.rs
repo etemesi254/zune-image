@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use zune_core::colorspace::ColorSpace;
 
 /// Options available that influence decoding.

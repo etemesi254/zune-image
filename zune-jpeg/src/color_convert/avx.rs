@@ -292,10 +292,10 @@ unsafe fn ycbcr_to_rgba_unsafe(
     // Pack the integers into u8's using signed saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
-    // transpose and interleave channels
+    // transpose_u16 and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-    // final transpose
+    // final transpose_u16
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 
@@ -359,10 +359,10 @@ unsafe fn ycbcr_to_rgbx_unsafe(
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     // Set alpha channel to random things, Mostly I see it using the b values
     let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
-    // transpose and interleave channels
+    // transpose_u16 and interleave channels
     let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
     let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-    // final transpose
+    // final transpose_u16
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
 

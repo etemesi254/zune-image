@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::BufWriter;
 use std::time::UNIX_EPOCH;
 
-use zune_image::codecs::ppm::SPPMEncoder;
+use zune_image::codecs::ppm::PAMEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
@@ -20,16 +20,16 @@ pub fn open_in_default_app(image: &Image)
 
     path.push(time);
 
-    SPPMEncoder::new(BufWriter::new(
+    let mut file = BufWriter::new(
         OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
             .open(&path)
-            .unwrap(),
-    ))
-    .encode_to_file(image)
-    .unwrap();
+            .unwrap()
+    );
+
+    PAMEncoder::new(&mut file).encode_to_file(image).unwrap();
 
     #[cfg(target_os = "linux")]
     {

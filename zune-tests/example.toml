@@ -1,0 +1,9 @@
+# This is an example of a toml file that should be used during testing
+
+[file]
+# Name of the file.
+# Relative directory to env!("CARGO_MANIFEST_DIR")
+name = ""
+# Hash of the decoded bytes.
+# This is the xxh128 bits output of the bytes decoded
+hash = 0x37

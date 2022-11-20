@@ -1,5 +1,6 @@
 use log::warn;
 
+use crate::traits::NumOps;
 use crate::transpose;
 
 fn compute_mod_u32(d: u64) -> u64
@@ -18,8 +19,8 @@ fn fastdiv_u32(a: u32, m: u64) -> u32
     mul128_u32(m, a) as u32
 }
 
-pub fn box_blur(
-    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, radius: usize,
+pub fn box_blur_u16(
+    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, radius: usize
 )
 {
     if width == 0 || radius <= 1
@@ -28,14 +29,32 @@ pub fn box_blur(
         return;
     }
     box_blur_inner(in_out_image, scratch_space, width, height, radius);
-    transpose::transpose(scratch_space, in_out_image, width, height);
+    transpose::transpose_u16(scratch_space, in_out_image, width, height);
     box_blur_inner(in_out_image, scratch_space, height, width, radius);
-    transpose::transpose(scratch_space, in_out_image, height, width);
+    transpose::transpose_u16(scratch_space, in_out_image, height, width);
 }
-#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
-fn box_blur_inner(
-    in_image: &[u16], out_image: &mut [u16], width: usize, height: usize, radius: usize,
+
+pub fn box_blur_u8(
+    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, radius: usize
 )
+{
+    if width == 0 || radius <= 1
+    {
+        warn!("Box blur with radius less than or equal to 1 does nothing");
+        return;
+    }
+    box_blur_inner(in_out_image, scratch_space, width, height, radius);
+    transpose::transpose_u8(scratch_space, in_out_image, width, height);
+    box_blur_inner(in_out_image, scratch_space, height, width, radius);
+    transpose::transpose_u8(scratch_space, in_out_image, height, width);
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn box_blur_inner<T>(
+    in_image: &[T], out_image: &mut [T], width: usize, height: usize, radius: usize
+) where
+    T: Copy + NumOps<T>,
+    u32: std::convert::From<T>
 {
     // 1D-Box blurs can be seen as the average of radius pixels iterating
     // through a window
@@ -70,21 +89,12 @@ fn box_blur_inner(
     let radius = radius.min(width);
     let m_radius = compute_mod_u32(radius as u64);
 
-    let start = radius * width;
-    let stop = (height - radius) * width;
-
-    {
-        // handle top pixels not in boundaries
-        // copy them ....
-        // TODO: Fix this mahn
-        //out_image[0..=start].copy_from_slice(&in_image[0..=start]);
-    }
     {
         // handle pixels inside boundaries
 
         for (four_stride_in, four_stride_out) in in_image
             .chunks_exact(width * 4)
-            .zip(out_image[start..stop].chunks_exact_mut(width * 4))
+            .zip(out_image.chunks_exact_mut(width * 4))
         {
             // output strides
             let (os1, rem) = four_stride_out.split_at_mut(width);
@@ -114,50 +124,77 @@ fn box_blur_inner(
                 a4 += u32::from(*n4);
 
                 // Handle edge pixels
-                os1[pos] = (a1 / p) as u16;
-                os2[pos] = (a2 / p) as u16;
-                os3[pos] = (a3 / p) as u16;
-                os4[pos] = (a4 / p) as u16;
+                os1[pos] = T::from_u32(a1 / p);
+                os2[pos] = T::from_u32(a2 / p);
+                os3[pos] = T::from_u32(a3 / p);
+                os4[pos] = T::from_u32(a4 / p);
                 p += 1;
             }
             // some won't be handled explicitly by the loop
             // handle it here
-            os1[radius - 1] = (a1 / p) as u16;
-            os2[radius - 1] = (a2 / p) as u16;
-            os3[radius - 1] = (a3 / p) as u16;
-            os4[radius - 1] = (a4 / p) as u16;
+            os1[radius - 1] = T::from_u32(a1 / p);
+            os2[radius - 1] = T::from_u32(a2 / p);
+            os3[radius - 1] = T::from_u32(a3 / p);
+            os4[radius - 1] = T::from_u32(a4 / p);
 
             let mut r1 = 0;
             let mut r2 = 0;
             let mut r3 = 0;
             let mut r4 = 0;
 
-            for (((((((o1, o2), o3), o4), w1), w2), w3), w4) in os1[radius..]
+            let mut pos = 0;
+
+            for (((((((o1, o2), o3), o4), w1), w2), w3), w4) in os1[radius / 2..]
                 .iter_mut()
-                .zip(os2[radius..].iter_mut())
-                .zip(os3[radius..].iter_mut())
-                .zip(os4[radius..].iter_mut())
+                .zip(os2[radius / 2..].iter_mut())
+                .zip(os3[radius / 2..].iter_mut())
+                .zip(os4[radius / 2..].iter_mut())
                 .zip(ws1.windows(radius))
                 .zip(ws2.windows(radius))
                 .zip(ws3.windows(radius))
                 .zip(ws4.windows(radius))
             {
                 a1 = a1.wrapping_add(u32::from(w1[radius - 1])).wrapping_sub(r1);
-                *o1 = fastdiv_u32(a1, m_radius) as u16;
+                *o1 = T::from_u32(fastdiv_u32(a1, m_radius));
 
                 a2 = a2.wrapping_add(u32::from(w2[radius - 1])).wrapping_sub(r2);
-                *o2 = fastdiv_u32(a2, m_radius) as u16;
+                *o2 = T::from_u32(fastdiv_u32(a2, m_radius));
 
                 a3 = a3.wrapping_add(u32::from(w3[radius - 1])).wrapping_sub(r3);
-                *o3 = fastdiv_u32(a3, m_radius) as u16;
+                *o3 = T::from_u32(fastdiv_u32(a3, m_radius));
 
                 a4 = a4.wrapping_add(u32::from(w4[radius - 1])).wrapping_sub(r4);
-                *o4 = fastdiv_u32(a4, m_radius) as u16;
+                *o4 = T::from_u32(fastdiv_u32(a4, m_radius));
 
                 r1 = u32::from(w1[0]);
                 r2 = u32::from(w2[0]);
                 r3 = u32::from(w3[0]);
                 r4 = u32::from(w4[0]);
+
+                pos += 1;
+            }
+
+            let mut p = (radius + 1) as u32 / 2;
+
+            for (((n1, n2), n3), n4) in ws1
+                .iter()
+                .rev()
+                .zip(ws2.iter().rev())
+                .zip(ws3.iter().rev())
+                .zip(ws4.iter().rev())
+                .take((radius + 1) / 2)
+            {
+                a1 -= u32::from(*n1);
+                a2 -= u32::from(*n2);
+                a3 -= u32::from(*n3);
+                a4 -= u32::from(*n4);
+
+                // Handle edge pixels
+                os1[pos] = T::from_u32(a1 / p);
+                os2[pos] = T::from_u32(a2 / p);
+                os3[pos] = T::from_u32(a3 / p);
+                os4[pos] = T::from_u32(a4 / p);
+                p -= 1;
             }
         }
         // do the bottom three that the inner loop may have failed to parse
@@ -167,7 +204,7 @@ fn box_blur_inner(
 
             for (in_stride, out_stride) in in_image
                 .rchunks_exact(width)
-                .zip(out_image[start..stop].rchunks_exact_mut(width))
+                .zip(out_image.rchunks_exact_mut(width))
                 .take(rows_unhanded)
             {
                 let mut a1 = 0;
@@ -176,29 +213,23 @@ fn box_blur_inner(
                 for (pos, i) in in_stride.iter().take(radius).enumerate()
                 {
                     a1 += u32::from(*i);
-                    out_stride[pos] = (a1 / p) as u16;
+                    out_stride[pos] = T::from_u32(a1 / p);
                     p += 1;
                 }
-                out_stride[radius - 1] = (a1 / p) as u16;
+                out_stride[radius - 1] = T::from_u32(a1 / p);
 
                 let mut r1 = 0;
 
                 for (w1, o1) in in_stride
                     .windows(radius)
-                    .zip(out_stride[radius..].iter_mut())
+                    .zip(out_stride[radius / 2..].iter_mut())
                 {
                     a1 = a1.wrapping_add(u32::from(w1[radius - 1])).wrapping_sub(r1);
-                    *o1 = fastdiv_u32(a1, m_radius) as u16;
+                    *o1 = T::from_u32(fastdiv_u32(a1, m_radius));
                     r1 = u32::from(w1[0]);
                 }
             }
         }
-    }
-    {
-        // handle top pixels not in boundaries
-        // copy them ....
-        // TODO: Fix this mahn
-        //out_image[stop..].copy_from_slice(&in_image[stop..]);
     }
 }
 
@@ -208,10 +239,10 @@ mod benchmarks
 {
     extern crate test;
 
-    use crate::box_blur::box_blur;
+    use crate::box_blur::{box_blur_u16, box_blur_u8};
 
     #[bench]
-    fn bench_box_blur(b: &mut test::Bencher)
+    fn bench_box_blur_u16(b: &mut test::Bencher)
     {
         let width = 800;
         let height = 800;
@@ -221,7 +252,22 @@ mod benchmarks
         let mut scratch_space = vec![0; dimensions];
 
         b.iter(|| {
-            box_blur(&mut in_vec, &mut scratch_space, width, height, radius);
+            box_blur_u16(&mut in_vec, &mut scratch_space, width, height, radius);
+        });
+    }
+
+    #[bench]
+    fn bench_box_blur_u8(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+        let radius = 10;
+        let dimensions = width * height;
+        let mut in_vec = vec![255; dimensions];
+        let mut scratch_space = vec![0; dimensions];
+
+        b.iter(|| {
+            box_blur_u8(&mut in_vec, &mut scratch_space, width, height, radius);
         });
     }
 }
@@ -236,5 +282,5 @@ fn test_blur()
     let mut in_vec = vec![255; dimensions];
     let mut scratch_space = vec![0; dimensions];
 
-    box_blur(&mut in_vec, &mut scratch_space, width, height, radius);
+    box_blur_u16(&mut in_vec, &mut scratch_space, width, height, radius);
 }

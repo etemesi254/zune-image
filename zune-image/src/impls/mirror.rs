@@ -1,13 +1,15 @@
+use zune_core::bit_depth::BitType;
 use zune_imageprocs::mirror::mirror;
 pub use zune_imageprocs::mirror::MirrorMode;
 
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
+
 /// Rearrange the pixels up side down
 pub struct Mirror
 {
-    mode: MirrorMode,
+    mode: MirrorMode
 }
 
 impl Mirror
@@ -27,10 +29,32 @@ impl OperationsTrait for Mirror
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
         let (width, height) = image.get_dimensions();
+        let depth = image.get_depth();
 
         for channel in image.get_channels_mut(true)
         {
-            mirror(channel, width, height, self.mode);
+            match depth.bit_type()
+            {
+                BitType::Eight =>
+                {
+                    mirror(
+                        channel.reinterpret_as_mut::<u8>().unwrap(),
+                        width,
+                        height,
+                        self.mode
+                    );
+                }
+
+                BitType::Sixteen =>
+                {
+                    mirror(
+                        channel.reinterpret_as_mut::<u16>().unwrap(),
+                        width,
+                        height,
+                        self.mode
+                    );
+                }
+            }
         }
 
         Ok(())

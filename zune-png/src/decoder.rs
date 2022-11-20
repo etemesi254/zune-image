@@ -1,3 +1,6 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 
@@ -12,7 +15,7 @@ pub(crate) struct PngChunk
     pub length:     usize,
     pub chunk_type: PngChunkType,
     pub chunk:      [u8; 4],
-    pub crc:        u32,
+    pub crc:        u32
 }
 
 #[derive(Default, Debug)]
@@ -24,7 +27,7 @@ pub struct PngInfo
     pub color:            PngColor,
     pub component:        u8,
     pub filter_method:    FilterMethod,
-    pub interlace_method: InterlaceMethod,
+    pub interlace_method: InterlaceMethod
 }
 
 pub struct PngDecoder<'a>
@@ -34,7 +37,7 @@ pub struct PngDecoder<'a>
     pub(crate) options:     PngOptions,
     pub(crate) png_info:    PngInfo,
     pub(crate) palette:     Vec<u8>,
-    pub(crate) idat_chunks: Vec<&'a [u8]>,
+    pub(crate) idat_chunks: Vec<&'a [u8]>
 }
 
 impl<'a> PngDecoder<'a>
@@ -53,7 +56,7 @@ impl<'a> PngDecoder<'a>
             options,
             palette: Vec::new(),
             png_info: PngInfo::default(),
-            idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number
+            idat_chunks: Vec::with_capacity(37) // randomly chosen size, my favourite number
         }
     }
 
@@ -75,7 +78,7 @@ impl<'a> PngDecoder<'a>
             PngColor::LumaA => ColorSpace::LumaA,
             PngColor::RGB => ColorSpace::RGB,
             PngColor::RGBA => ColorSpace::RGBA,
-            PngColor::Unknown => todo!(),
+            PngColor::Unknown => todo!()
         }
     }
     fn read_chunk_header(&mut self) -> Result<PngChunk, PngErrors>
@@ -102,7 +105,7 @@ impl<'a> PngDecoder<'a>
             b"pHYs" => PngChunkType::pHYs,
             b"tIME" => PngChunkType::tIME,
 
-            _ => PngChunkType::unkn,
+            _ => PngChunkType::unkn
         };
 
         if !self.stream.has(chunk_length + 4 /*crc stream*/)
@@ -121,7 +124,7 @@ impl<'a> PngDecoder<'a>
             length: chunk_length,
             chunk: chunk_type_int,
             chunk_type,
-            crc,
+            crc
         })
     }
 
@@ -139,7 +142,7 @@ impl<'a> PngDecoder<'a>
         if self.stream.peek_at(4, 4)? != b"IHDR"
         {
             return Err(PngErrors::GenericStatic(
-                "First chunk not IHDR, Corrupt PNG",
+                "First chunk not IHDR, Corrupt PNG"
             ));
         }
         loop
@@ -169,8 +172,8 @@ impl<'a> PngDecoder<'a>
                     header.length,
                     header.chunk,
                     &mut self.stream,
-                    header.crc,
-                )?,
+                    header.crc
+                )?
             }
         }
         // go parse IDAT chunks
@@ -195,6 +198,15 @@ impl<'a> PngDecoder<'a>
         // So since we have IDAT chunks as references
         // we call deflate with those chunks until we have full
         // data, we can suspend
+        let mut file = OpenOptions::new()
+            .write(true)
+            .open("/home/caleb/Documents/zune-image/zune-inflate/tests/tt.zlib")
+            .unwrap();
+
+        for chunk in &self.idat_chunks
+        {
+            file.write_all(chunk).unwrap();
+        }
     }
 }
 

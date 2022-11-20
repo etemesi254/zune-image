@@ -1,3 +1,4 @@
+use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::invert::invert;
 
@@ -24,9 +25,15 @@ impl OperationsTrait for Invert
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
+        let depth = image.get_depth().bit_type();
+
         for channel in image.get_channels_mut(false)
         {
-            invert(channel)
+            match depth
+            {
+                BitType::Eight => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
+                BitType::Sixteen => invert(channel.reinterpret_as_mut::<u16>().unwrap())
+            }
         }
 
         Ok(())
@@ -39,7 +46,7 @@ impl OperationsTrait for Invert
             ColorSpace::RGBA,
             ColorSpace::LumaA,
             ColorSpace::RGBX,
-            ColorSpace::Luma,
+            ColorSpace::Luma
         ]
     }
 }

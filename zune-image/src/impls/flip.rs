@@ -1,3 +1,4 @@
+use zune_core::bit_depth::BitType;
 use zune_imageprocs::flip::flip;
 
 use crate::errors::ImgOperationsErrors;
@@ -24,9 +25,21 @@ impl OperationsTrait for Flip
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
+        let depth = image.get_depth();
+
         for inp in image.get_channels_mut(true)
         {
-            flip(inp);
+            match depth.bit_type()
+            {
+                BitType::Eight =>
+                {
+                    flip(inp.reinterpret_as_mut::<u8>().unwrap());
+                }
+                BitType::Sixteen =>
+                {
+                    flip(inp.reinterpret_as_mut::<u16>().unwrap());
+                }
+            }
         }
 
         Ok(())

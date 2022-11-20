@@ -1,13 +1,15 @@
-pub fn transpose_scalar(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize)
+pub fn transpose_scalar<T: Copy + Default>(
+    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
+)
 {
-    // A slightly more optimized scalar transpose,
+    // A slightly more optimized scalar transpose_u16,
     // 2x faster than the naive one
     //
     // The only difference with the naive is that you
-    // do tiling transpose, this allows us to use the cache better
+    // do tiling transpose_u16, this allows us to use the cache better
     // at the compromise that is is complicated.
     //
-    // The gist of it is that we do scalar a single 8 by 8 transpose and write to an immediate
+    // The gist of it is that we do scalar a single 8 by 8 transpose_u16 and write to an immediate
     // buffer and then write that buffer to our destination
     let dimensions = width * height;
     assert_eq!(
@@ -22,7 +24,7 @@ pub fn transpose_scalar(in_matrix: &[u16], out_matrix: &mut [u16], width: usize,
         "Out matrix dimensions do not match width and height"
     );
 
-    let mut temp_matrix: [u16; 64] = [0; 64];
+    let mut temp_matrix: [T; 64] = [T::default(); 64];
 
     let width_iterations = width / 8;
     let sin_height = 8 * width;

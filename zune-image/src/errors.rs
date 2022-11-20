@@ -1,7 +1,12 @@
+//! Errors possible during image processing
 use std::fmt::{Debug, Formatter};
 
 use zune_core::colorspace::ColorSpace;
 
+/// All possible image errors that can occur.
+///
+/// This is the grandfather of image errors and contains
+/// all decoding,processing and encoding errors possible
 pub enum ImgErrors
 {
     #[cfg(feature = "zune-jpeg")]
@@ -17,22 +22,32 @@ pub enum ImgErrors
     OperationsError(ImgOperationsErrors),
     EncodeErrors(ImgEncodeErrors),
     GenericString(String),
-    GenericStr(&'static str),
+    GenericStr(&'static str)
 }
 
+/// Errors that may occur during image operations
 pub enum ImgOperationsErrors
 {
+    /// Unexpected colorspace
     WrongColorspace(ColorSpace, ColorSpace),
+    /// Wrong number of components
     WrongComponents(usize, usize),
+    /// Channel layout does not match expected
     InvalidChannelLayout(&'static str),
+    /// Generic errors
     Generic(&'static str),
-    GenericString(String),
+    /// Generic errors which have more context
+    GenericString(String)
 }
 
+/// All errors possible during image encoding
 pub enum ImgEncodeErrors
 {
     Generic(String),
     GenericStatic(&'static str),
+    UnsupportedColorspace(ColorSpace, &'static [ColorSpace]),
+    #[cfg(feature = "ppm")]
+    PPMEncodeErrors(zune_ppm::PPMErrors)
 }
 
 impl Debug for ImgErrors
@@ -162,7 +177,29 @@ impl Debug for ImgEncodeErrors
         {
             Self::Generic(ref string) => writeln!(f, "{}", string),
             Self::GenericStatic(ref string) => writeln!(f, "{}", string),
+            Self::UnsupportedColorspace(ref found, ref expected) =>
+            {
+                writeln!(
+                    f,
+                    "Found colorspace {:?} but the encoder supports {:?}",
+                    found, expected
+                )
+            }
+            #[cfg(feature = "ppm")]
+            Self::PPMEncodeErrors(ref error) =>
+            {
+                writeln!(f, "{:?}", error)
+            }
         }
+    }
+}
+
+#[cfg(feature = "ppm")]
+impl From<zune_ppm::PPMErrors> for ImgEncodeErrors
+{
+    fn from(error: zune_ppm::PPMErrors) -> Self
+    {
+        ImgEncodeErrors::PPMEncodeErrors(error)
     }
 }
 
@@ -171,5 +208,13 @@ impl From<String> for ImgErrors
     fn from(s: String) -> ImgErrors
     {
         ImgErrors::GenericString(s)
+    }
+}
+
+impl From<&'static str> for ImgErrors
+{
+    fn from(s: &'static str) -> ImgErrors
+    {
+        ImgErrors::GenericStr(s)
     }
 }
