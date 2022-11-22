@@ -1,4 +1,5 @@
 #![cfg(feature = "bytestream")]
+
 use std::cmp::min;
 use std::io::Read;
 
@@ -24,14 +25,14 @@ pub struct ZByteReader<'a>
 {
     /// Data stream
     stream:   &'a [u8],
-    position: usize,
+    position: usize
 }
 enum Mode
 {
     // Big endian
     BE,
     // Little Endian
-    LE,
+    LE
 }
 
 impl<'a> ZByteReader<'a>
@@ -41,7 +42,7 @@ impl<'a> ZByteReader<'a>
     {
         ZByteReader {
             stream:   buf,
-            position: 0,
+            position: 0
         }
     }
     /// Skip `num` bytes ahead of the stream.
@@ -128,7 +129,7 @@ impl<'a> ZByteReader<'a>
                 self.position += num;
                 Ok(bytes)
             }
-            None => Err(ERROR_MSG),
+            None => Err(ERROR_MSG)
         }
     }
     /// Look ahead position bytes and return a reference
@@ -146,7 +147,25 @@ impl<'a> ZByteReader<'a>
         match self.stream.get(start..end)
         {
             Some(bytes) => Ok(bytes),
-            None => Err(ERROR_MSG),
+            None => Err(ERROR_MSG)
+        }
+    }
+    #[inline]
+    /// Skip bytes until a condition becomes false
+    pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F)
+    {
+        // iterate until we have no more bytes
+        while self.has(1)
+        {
+            // get a byte from stream
+            let byte = self.get_u8();
+
+            if !(func)(byte)
+            {
+                // function returned false meaning we stop skipping
+                self.rewind(1);
+                break;
+            }
         }
     }
 }
@@ -291,7 +310,7 @@ impl<'a> ZByteReader<'a>
                 self.position += 1;
                 Ok(*byte)
             }
-            None => Err(ERROR_MSG),
+            None => Err(ERROR_MSG)
         }
     }
 }
