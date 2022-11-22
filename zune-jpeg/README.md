@@ -32,7 +32,7 @@ i.e it doesn't give a reference upsampling and color conversion algorithm)
 - [x] Fast Huffman Decoding
 - [x] Fast color convert functions.
 - [x] Support for extended colorspaces like GrayScale and RGBA
-- [X] Multi-threaded decoding.
+- [X] Single-threaded decoding.
 
 
 # Crate Features  
@@ -49,23 +49,7 @@ The decoder heavily relies on platform specific intrinsics, namely AVX2 and SSE 
 but in debug build rust generally [doesn't like platform specific intrinsics](https://godbolt.org/z/vPq57z13b) (try passing `-O` parameter to see optimized build) hence obviously speeds tank so bad during debug builds, and there is probably nothing
 we can do about that.
 
-
-## Benchmarks.
-
-### x86_64 benchmarks
-![](bar-graph.png)
-
-### Apple M1 benchmarks
-![](bar-graph_m1.png)
-
-
-The decoder is fast enough to beat all other open source decoders 
-and also beats the reference decoder([libjpeg-turbo]) on *most* images out there.
-
-This is a consequence of using multithreaded decoding and a bit more optimized routines 
-on most paths(but mainly multi-threading), with the consequence of us using more memory
-than libjpeg-turbo for decoding the same image.
-
+## Benchmarks
 For more up-to-date benchmarks, see [Benches.md](/Benches.md).
 
 

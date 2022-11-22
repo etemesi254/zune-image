@@ -4,7 +4,6 @@ Here I compare how long it takes popular JPEG decoders to decode the below 7680*
 of [Cutefish OS](https://en.cutefishos.com/) default wallpaper.
 ![img](benches/images/speed_bench.jpg)
 
-
 ## About benchmarks
 
 Benchmarks are weird, especially IO & multi-threaded programs. This library uses both of the above hence performance may
@@ -20,9 +19,7 @@ Then run.
 
 ## Benchmarks vs real world usage
 
-The library may be fast, okay it is fast.
-
-But real world usage may vary.
+Real world usage may vary.
 
 Notice that I'm using a large image but probably most decoding will be small to medium images.
 
@@ -48,21 +45,22 @@ To reproduce them
 
 | feature                      | image-rs/jpeg-decoder | libjpeg-turbo | zune-jpeg |
 |------------------------------|-----------------------|---------------|-----------|
-| multithreaded                | ✅                     | ❌             | ✅         |
+| multithreaded                | ✅                     | ❌             | ❌         |
 | platform specific intrinsics | ✅                     | ✅             | ✅         |
 
-
 - Image-rs/jpeg-decoder uses [rayon] under the hood but it's under a feature
- flag.
+  flag.
 
 - libjpeg-turbo uses hand-written asm for platform specific intrinsics, ported to
-the most common architectures out there but falls back to scalar
-code if it can't run in a platform.
+  the most common architectures out there but falls back to scalar
+  code if it can't run in a platform.
 
 # Finally benchmarks
+
 ## x86_64
 
 #### Machine Specs
+
 - Model name:          AMD Ryzen 5 4500U with Radeon Graphics
 - CPU family:          23
 - Model:               96
@@ -77,150 +75,25 @@ code if it can't run in a platform.
 - L2:                    3 MiB (6 instances)
 - L3:                    8 MiB (2 instances)
 
-### 1 * 1 (No upsampling) Baseline RGB Decoding
+###   
 
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 62.246 ms  |
-| [libjpeg-turbo] | 98.343 ms  |
-| [jpeg-decoder]  | 117.350 ms |
+| Benchmark name                      | zune-jpeg | mozjpeg   | image-rs/jpeg-decoder |
+|-------------------------------------|-----------|-----------|-----------------------|
+| No sampling/Baseline JPEG Decoding  | 101.95 ms | 107.78 ms | 207.17 ms             |
+| Horizontal Sub sampling 2V1         | 95.501 ms | 92.514 ms | 142.73 ms             |
+| Vertical sub sampling 2V1           | 94.996 ms | 138.03 ms | 138.05 ms             |
+| HV sampling (2V2)                   | 93.982 ms | 84.644ms  | 110.61 ms             |
+| Grayscale                           | 59.420 ms | 42.094 ms | -                     |
+| Progressive 1V1                     | 305.68 ms | 289.02 ms | 499.63 ms             |
+| Progressive Horizontal sub-sampling | 258.19 ms | 230.50 ms | 373.94 ms             |
+| Progressive Vertical Sub Sampling   | 247.71 ms | 252.79 ms | 356.26 ms             |
+| Progressive HV sampling             | 248.46 ms | 264.36 ms | 351.00 ms             |
+| APPROX TOTAL                        | 1500 ms   | 1498 ms   | 2176 ms*              |
 
-63% faster than libjpeg-turbo.
-
-105% faster than image-rs/jpeg-decoder.
-
-### Grayscale
-
-### 1*1 Baseline grayscale decoding.
-
-| Decoder       | Speed     |
-|---------------|-----------|
-| **zune-jpeg** | 45.598 ms |
-| libjpeg-turbo | 46.648 ms |
-
-Image-rs/jpeg-decoder does not support YCbCr->Grayscale decoding, hence it wasn't included in the benchmark
-
-### Horizontal Sub-sampling
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 50.246 ms  |
-| [libjpeg-turbo] | 85.343 ms  |
-| [jpeg-decoder]  | 118.350 ms |
-
-70% faster than libjpeg-turbo.
-
-136% faster than image-rs.
-
-Image-rs remained almost the same compared to RGB no upsampling here.
-
-### Vertical Sub-sampling
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 50.175 ms  |
-| [libjpeg-turbo] | 130.343 ms |
-| [jpeg-decoder]  | 115.350 ms |
-
-160% faster than libjpeg-turbo.
-
-134% faster than image-rs.
-
-
-### Horizontal Vertical Sub-sampling
-
-This is probably the most common for low to medium quality images out there
-
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 52.175 ms  |
-| [libjpeg-turbo] | 78.343 ms  |
-| [jpeg-decoder]  | 118.350 ms |
-
-50% faster than libjpeg-turbo.
-
-126% faster than image-rs.
-
-# Apple M1
-
-- Apple M1 2020
-- 8Gb unified memory
-
-
-### No upsampling  RGB Decoding
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 44.246 ms  |
-| [libjpeg-turbo] | 139.343 ms |
-| [jpeg-decoder]  | 74.350 ms  |
-
-### Horizontal Sub Sampling  RGB Decoding
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 35.246 ms  |
-| [libjpeg-turbo] | 121.343 ms |
-| [jpeg-decoder]  | 76.350 ms  |
-
-### Vertical Sub Sampling
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 35.286 ms  |
-| [libjpeg-turbo] | 161.343 ms |
-| [jpeg-decoder]  | 73.350 ms  |
-
-### HV Sub Sampling
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 32.286 ms  |
-| [libjpeg-turbo] | 141.343 ms |
-| [jpeg-decoder]  | 82.350 ms  |
-
-## Progressive decoding
-
-Still incredibly spicy.
-
-So here are the benchmarks.
-
-### Apple M1
-
-#### No upsampling  RGB Decoding
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 141.246 ms |
-| [libjpeg-turbo] | 246.343 ms |
-| [jpeg-decoder]  | 257.350 ms |
-
-#### Horizontal Sub Sampling  RGB Decoding
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 115.246 ms |
-| [libjpeg-turbo] | 198.343 ms |
-| [jpeg-decoder]  | 211.350 ms |
-
-#### Vertical Sub Sampling
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 116.286 ms |
-| [libjpeg-turbo] | 257.343 ms |
-| [jpeg-decoder]  | 225.350 ms |
-
-#### HV Sub Sampling
-
-| Decoder         | Speed      |
-|-----------------|------------|
-| **zune-jpeg**   | 124.286 ms |
-| [libjpeg-turbo] | 249.343 ms |
-| [jpeg-decoder]  | 205.350 ms |
-
-
-
+* Without grayscale sum
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo
+
 [jpeg-decoder]:https://github.com/image-rs/jpeg-decoder
 
 [rayon]:https://github.com/rayon-rs/rayon
