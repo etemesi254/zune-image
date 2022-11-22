@@ -42,41 +42,41 @@ impl OperationsTrait for Convolve
             std::thread::scope(|s| {
                 for channel in image.get_channels_mut(false)
                 {
-                    s.spawn(||
+                    s.spawn(|| {
                         // Hello
+                        let mut out_channel =
+                            Channel::new_with_length(width * height * depth.size_of());
+
                         match depth.bit_type()
                         {
                             BitType::Eight =>
-                                {
-                                    let mut out_channel = Channel::new_with_capacity(width * height * 1);
-
-                                    convolve_1d(
-                                        channel.reinterpret_as::<u8>().unwrap(),
-                                        out_channel.reinterpret_as_mut::<u8>().unwrap(),
-                                        width,
-                                        height,
-                                        &self.weights,
-                                        self.weights.len() as f64,
-                                        max_val,
-                                    );
-                                    *channel = out_channel;
-                                }
+                            {
+                                convolve_1d(
+                                    channel.reinterpret_as::<u8>().unwrap(),
+                                    out_channel.reinterpret_as_mut::<u8>().unwrap(),
+                                    width,
+                                    height,
+                                    &self.weights,
+                                    self.weights.len() as f64,
+                                    max_val
+                                );
+                                *channel = out_channel;
+                            }
                             BitType::Sixteen =>
-                                {
-                                    let mut out_channel = Channel::new_with_capacity(width * height * 2);
-
-                                    convolve_1d(
-                                        channel.reinterpret_as::<u16>().unwrap(),
-                                        out_channel.reinterpret_as_mut::<u16>().unwrap(),
-                                        width,
-                                        height,
-                                        &self.weights,
-                                        self.weights.len() as f64,
-                                        max_val,
-                                    );
-                                    *channel = out_channel;
-                                }
-                        });
+                            {
+                                convolve_1d(
+                                    channel.reinterpret_as::<u16>().unwrap(),
+                                    out_channel.reinterpret_as_mut::<u16>().unwrap(),
+                                    width,
+                                    height,
+                                    &self.weights,
+                                    self.weights.len() as f64,
+                                    max_val
+                                );
+                                *channel = out_channel;
+                            }
+                        }
+                    });
                 }
             });
         }
@@ -86,12 +86,12 @@ impl OperationsTrait for Convolve
 
             for channel in image.get_channels_mut(false)
             {
+                let mut out_channel = Channel::new_with_length(width * height * depth.size_of());
+
                 match depth.bit_type()
                 {
                     BitType::Eight =>
                     {
-                        let mut out_channel = Channel::new_with_capacity(width * height * 1);
-
                         convolve_1d(
                             channel.reinterpret_as::<u8>().unwrap(),
                             out_channel.reinterpret_as_mut::<u8>().unwrap(),
@@ -105,8 +105,6 @@ impl OperationsTrait for Convolve
                     }
                     BitType::Sixteen =>
                     {
-                        let mut out_channel = Channel::new_with_capacity(width * height * 2);
-
                         convolve_1d(
                             channel.reinterpret_as::<u16>().unwrap(),
                             out_channel.reinterpret_as_mut::<u16>().unwrap(),
