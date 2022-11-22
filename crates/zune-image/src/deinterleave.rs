@@ -33,7 +33,7 @@ pub fn deinterleave_u8(
 
     if colorspace.num_components() == 1
     {
-        let mut c1 = Channel::new_with_length(size);
+        let mut c1 = Channel::new_with_capacity(size);
 
         c1.extend(interleaved_pixels);
 
