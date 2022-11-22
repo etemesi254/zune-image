@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::BufWriter;
 use std::time::UNIX_EPOCH;
 
-use zune_image::codecs::ppm::PAMEncoder;
+use zune_image::codecs::ppm::PPMEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
@@ -29,7 +29,7 @@ pub fn open_in_default_app(image: &Image)
             .unwrap()
     );
 
-    PAMEncoder::new(&mut file).encode_to_file(image).unwrap();
+    PPMEncoder::new(&mut file).encode_to_file(image).unwrap();
 
     #[cfg(target_os = "linux")]
     {
