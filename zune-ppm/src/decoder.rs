@@ -228,7 +228,7 @@ impl<'a> PPMDecoder<'a>
     {
         let mut value = 0;
 
-        while self.reader.has(1)
+        while !self.reader.eof()
         {
             let byte = self.reader.get_u8();
 
@@ -315,7 +315,7 @@ impl<'a> PPMDecoder<'a>
             }
             BitType::Sixteen =>
             {
-                // size is divided by 2 since
+                // size is divided by 2 since sizeof added 2
                 let mut data = vec![0_u16; size / 2];
 
                 for datum in data.iter_mut()
