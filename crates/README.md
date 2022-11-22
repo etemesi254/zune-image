@@ -30,10 +30,10 @@ compared to other implementations.
 |-------|--------------|----------------------|
 | JPEG  | Full support | None                 |
 | PNG   | Partial      | None                 |
-| PPM   | None         | 8 and 16 bit support |
+| PPM   | 8 and 16 bit | 8 and 16 bit support |
 | PAL   | None         | 8 and 16 bit support |
 
-`zune -i [img].jpg -o [img].ppm`
+`zune -i ([img].jpg | [img].ppm) -o [img].ppm`
 
 i.e decode a jpg image,apply operations and encode it into
 a ppm image.
@@ -43,7 +43,7 @@ a ppm image.
 - Things that we'll work in 1-2 months
     - PNG decoding
     - Image resizing
-    - PPM/PAM decoding
+    - PAM decoding
     - Gaussian and box blurring
     - Unsharpen
     - Contrast
