@@ -159,9 +159,18 @@ impl Channel
     /// Create a new channel
     pub fn new() -> Channel
     {
-        Self::new_with_capacity(1)
+        Self::new_with_length(1)
+    }
+    /// Create a new channel with the specified lenght and capacity
+    pub fn new_with_length(length: usize) -> Channel
+    {
+        let mut channel = Channel::new_with_capacity(length);
+        channel.length = length;
+
+        channel
     }
     /// Create a new channel with the specified capacity
+    /// and zero length
     pub fn new_with_capacity(capacity: usize) -> Channel
     {
         unsafe {
@@ -169,7 +178,7 @@ impl Channel
 
             Self {
                 ptr,
-                length: capacity,
+                length: 0,
                 capacity
             }
         }
@@ -180,7 +189,7 @@ impl Channel
     pub fn from_elm<T: Copy>(length: usize, elm: T) -> Channel
     {
         // new currently zeroes memory
-        let mut new_chan = Channel::new_with_capacity(length * size_of::<T>());
+        let mut new_chan = Channel::new_with_length(length * size_of::<T>());
 
         new_chan.fill(elm).unwrap();
 
@@ -373,30 +382,4 @@ fn is_aligned<T>(ptr: *const u8) -> bool
     let size = core::mem::size_of::<T>();
 
     (ptr as usize) & ((size) - 1) == 0
-}
-
-#[test]
-fn t1()
-{
-    let mut hel = Channel::new();
-    let mut x = vec![12_u32; 10];
-    x.iter_mut().for_each(|z| *z = z.to_be());
-    hel.extend(&x);
-    println!("{:?}", hel.reinterpret_as::<u8>().unwrap());
-    dbg!(hel.len());
-}
-
-#[test]
-fn t2()
-{
-    let mut hel = Channel::new();
-
-    hel.push::<u32>(324241);
-    println!("{:?}", hel.reinterpret_as::<u8>());
-
-    hel.push::<u8>(122);
-    println!("{:?}", hel.reinterpret_as::<u8>());
-
-    hel.push::<u64>(3233124122313);
-    println!("{:?}", hel.reinterpret_as::<u64>());
 }
