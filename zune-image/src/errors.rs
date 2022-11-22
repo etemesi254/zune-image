@@ -13,6 +13,8 @@ pub enum ImgErrors
     JpegDecodeErrors(zune_jpeg::errors::DecodeErrors),
     #[cfg(feature = "png")]
     PngDecodeErrors(zune_png::error::PngErrors),
+    #[cfg(feature = "ppm")]
+    PPMDecodeErrors(zune_ppm::PPMDecodeErrors),
 
     DimensionsMisMatch(usize, usize),
     UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
@@ -65,6 +67,11 @@ impl Debug for ImgErrors
             Self::PngDecodeErrors(ref error) =>
             {
                 writeln!(f, "Png decoding failed:{:?}", error)
+            }
+            #[cfg(feature = "ppm")]
+            Self::PPMDecodeErrors(ref error) =>
+            {
+                writeln!(f, "PPM decoding failed:{:?}", error)
             }
             Self::GenericStr(err) =>
             {
@@ -121,6 +128,15 @@ impl From<zune_png::error::PngErrors> for ImgErrors
     }
 }
 
+#[cfg(feature = "ppm")]
+impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
+{
+    fn from(from: zune_ppm::PPMDecodeErrors) -> Self
+    {
+        ImgErrors::PPMDecodeErrors(from)
+    }
+}
+
 impl From<ImgOperationsErrors> for ImgErrors
 {
     fn from(from: ImgOperationsErrors) -> Self
@@ -128,6 +144,7 @@ impl From<ImgOperationsErrors> for ImgErrors
         ImgErrors::OperationsError(from)
     }
 }
+
 impl From<ImgEncodeErrors> for ImgErrors
 {
     fn from(from: ImgEncodeErrors) -> Self
