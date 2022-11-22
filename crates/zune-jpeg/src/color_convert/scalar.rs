@@ -12,7 +12,7 @@ fn clamp(a: i16) -> u8
 /// YCbCr to RGBA color conversion
 
 pub fn ycbcr_to_rgba_16_scalar(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 )
 {
     let (_, output_position) = output.split_at_mut(*pos);
@@ -50,7 +50,7 @@ pub fn ycbcr_to_rgba_16_scalar(
 }
 
 pub fn ycbcr_to_rgb_16_scalar(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 )
 {
     let mut p = 0;
@@ -90,7 +90,11 @@ pub fn ycbcr_to_rgb_16_scalar(
 
 pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8])
 {
-    let width_chunk = ((width + 7) >> 3) * 8;
+    let t = y.len() / width; // number of rows
+    let u = y.len() % width; // number of extras
+    let padding_bytes = u / t;
+
+    let width_chunk = width + padding_bytes;
 
     for (y_in, out) in y
         .chunks_exact(width_chunk)
@@ -107,7 +111,7 @@ pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8])
 ///
 /// Basically all we do is remove fill bytes (if there) in the edges
 pub fn ycbcr_to_ycbcr(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 )
 {
     // let mut p = 0;
