@@ -155,7 +155,7 @@ impl<'a> ZByteReader<'a>
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F)
     {
         // iterate until we have no more bytes
-        while self.has(1)
+        while !self.eof()
         {
             // get a byte from stream
             let byte = self.get_u8();
