@@ -4,11 +4,13 @@ use std::io::Write;
 
 use log::debug;
 use zune_core::colorspace::ColorSpace;
-use zune_ppm::{PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
+pub use zune_ppm::PPMDecoder;
+use zune_ppm::{DecodingResult, PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
 
-use crate::errors::ImgEncodeErrors;
+use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
+use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
-use crate::traits::EncoderTrait;
+use crate::traits::{DecoderTrait, EncoderTrait};
 
 pub struct PPMEncoder<'a, W: Write>
 {
@@ -124,5 +126,42 @@ where
             ColorSpace::RGBA, // p7
             ColorSpace::RGBX  // p7
         ]
+    }
+}
+
+impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
+{
+    fn decode(&mut self) -> Result<Image, ImgErrors>
+    {
+        let pixels = self.decode()?;
+
+        let depth = self.get_bit_depth().unwrap();
+        let (width, height) = self.get_dimensions().unwrap();
+        let colorspace = self.get_colorspace().unwrap();
+
+        debug!("De-Interleaving image channel");
+
+        let channel = match pixels
+        {
+            DecodingResult::U8(data) => deinterleave_u8(&data, colorspace).unwrap(),
+            DecodingResult::U16(data) => deinterleave_u16(&data, colorspace).unwrap()
+        };
+
+        Ok(Image::new(channel, depth, width, height, colorspace))
+    }
+
+    fn get_dimensions(&self) -> Option<(usize, usize)>
+    {
+        self.get_dimensions()
+    }
+
+    fn get_out_colorspace(&self) -> ColorSpace
+    {
+        self.get_colorspace().unwrap_or(ColorSpace::Unknown)
+    }
+
+    fn get_name(&self) -> &'static str
+    {
+        "PPM Decoder"
     }
 }
