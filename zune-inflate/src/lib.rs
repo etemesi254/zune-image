@@ -5,3 +5,4 @@ mod bitstream;
 pub(crate) mod constants;
 mod enums;
 pub mod errors;
+mod utils;

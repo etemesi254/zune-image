@@ -21,6 +21,8 @@ pub const LITLEN_ENOUGH: usize = 2342;
 /// offsets larger than this require a lookup into a sub-table
 pub const OFFSET_TABLEBITS: usize = 8;
 pub const OFFSET_ENOUGH: usize = 402;
+/// Maximum number of symbols across all codes
+pub const DEFLATE_MAX_NUM_SYMS: usize = 208;
 
 /// Format for precode decode table entries, Bits not explicitly contain zeroes
 ///
@@ -32,7 +34,7 @@ pub const OFFSET_ENOUGH: usize = 402;
 ///
 /// PRECODE_DECODE_RESULTS contains static parts of the entry for each symbol,
 /// make_decode_table_entry produces the final results
-static PRECODE_DECODE_RESULTS: [u32; 19] = make_precode_static_table();
+pub static PRECODE_DECODE_RESULTS: [u32; 19] = make_precode_static_table();
 
 const fn make_precode_static_table() -> [u32; 19]
 {
@@ -49,13 +51,13 @@ const fn make_precode_static_table() -> [u32; 19]
 }
 
 /// Presence of a literal entry
-const HUFFDEC_LITERAL: u32 = 0x80000000;
+pub const HUFFDEC_LITERAL: u32 = 0x80000000;
 /// Presence of HUFFDEC_SUITABLE_POINTER or HUFFDEC_END_OF_BLOCK
-const HUFFDEC_EXCEPTIONAL: u32 = 0x00008000;
+pub const HUFFDEC_EXCEPTIONAL: u32 = 0x00008000;
 /// Pointer entry in the litlen or offset decode table
-const HUFFDEC_SUITABLE_POINTER: u32 = 0x00004000;
+pub const HUFFDEC_SUITABLE_POINTER: u32 = 0x00004000;
 /// End of block entry in litlen decode table
-const HUFFDEC_END_OF_BLOCK: u32 = 0x00002000;
+pub const HUFFDEC_END_OF_BLOCK: u32 = 0x00002000;
 
 #[rustfmt::skip]
 #[allow(clippy::zero_prefixed_literal)]
@@ -98,4 +100,5 @@ const fn construct_litlen_decode_table() -> [u32; 288]
     results
 }
 
-const LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
+static LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
+
