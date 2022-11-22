@@ -34,17 +34,17 @@ default-features = false
 name = "decode"
 harness = false
 
-#[[bench]]
-#name = "decode_grayscale"
-#harness = false
-#
-#
-#[[bench]]
-#name = "decode_prog"
-#harness = false
-#
-#[[bench]]
-#name = "decode_x86"
-#harness = false
+[[bench]]
+name = "decode_grayscale"
+harness = false
+
+
+[[bench]]
+name = "decode_prog"
+harness = false
+
+[[bench]]
+name = "decode_x86"
+harness = false
 
 
