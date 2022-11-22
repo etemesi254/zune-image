@@ -388,7 +388,7 @@ impl<'a> JpegDecoder<'a>
         }
 
         let mut pixels = vec![255; capacity * out_colorspace_components];
-        let mut chunks = pixels.chunks_exact_mut(chunks_size);
+        let mut chunks = pixels.chunks_mut(chunks_size);
         let mut temporary = [vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
@@ -525,7 +525,8 @@ impl<'a> JpegDecoder<'a>
             }
             if self.is_interleaved
             {
-                if (self.sub_sample_ratio == SubSampRatios::H && i % 2 == 1)
+                if i == mcu_width - 1 // take last row even if it doesn't divide it
+                    || (self.sub_sample_ratio == SubSampRatios::H && i % 2 == 1)
                     || (self.sub_sample_ratio == SubSampRatios::V)
                     || (self.sub_sample_ratio == SubSampRatios::HV && i % 2 == 1)
                 {
