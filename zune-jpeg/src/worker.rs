@@ -52,7 +52,12 @@ fn color_convert_ycbcr(
 )
 {
     // Width of image which takes into account fill bytes(it may be larger than actual width).
-    let width_chunk = ((width + 7) >> 3) * 8;
+
+    let t = mcu_block[0].len() / width; // number of rows
+    let u = mcu_block[0].len() % width; // number of extras
+    let padding_bytes = u / t;
+
+    let width_chunk = width + padding_bytes;
     let num_components = output_colorspace.num_components();
 
     let stride = width * num_components;
