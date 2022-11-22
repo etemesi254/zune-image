@@ -6,4 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = {path="../zune-core"}
+zune-core = { path = "../zune-core", features = ["bytestream"] }
+log = "0.4.17"
