@@ -33,7 +33,7 @@ pub fn deinterleave_u8(
 
     if colorspace.num_components() == 1
     {
-        let mut c1 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
 
         c1.extend(interleaved_pixels);
 
@@ -42,9 +42,9 @@ pub fn deinterleave_u8(
     // three component de-interleave
     else if colorspace.num_components() == 3
     {
-        let mut c1 = Channel::new_with_capacity(size);
-        let mut c2 = Channel::new_with_capacity(size);
-        let mut c3 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+        let mut c3 = Channel::new_with_length(size);
 
         let c1_mut = c1.reinterpret_as_mut::<u8>().unwrap();
         let c2_mut = c2.reinterpret_as_mut::<u8>().unwrap();
@@ -57,10 +57,10 @@ pub fn deinterleave_u8(
     }
     else if colorspace.num_components() == 4
     {
-        let mut c1 = Channel::new_with_capacity(size);
-        let mut c2 = Channel::new_with_capacity(size);
-        let mut c3 = Channel::new_with_capacity(size);
-        let mut c4 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+        let mut c3 = Channel::new_with_length(size);
+        let mut c4 = Channel::new_with_length(size);
 
         let c1_mut = c1.reinterpret_as_mut::<u8>().unwrap();
         let c2_mut = c2.reinterpret_as_mut::<u8>().unwrap();
@@ -90,7 +90,7 @@ pub fn deinterleave_u16(
 
     if colorspace.num_components() == 1
     {
-        let mut c1 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
 
         c1.extend(interleaved_pixels);
 
@@ -99,9 +99,9 @@ pub fn deinterleave_u16(
     // three component de-interleave
     else if colorspace.num_components() == 3
     {
-        let mut c1 = Channel::new_with_capacity(size);
-        let mut c2 = Channel::new_with_capacity(size);
-        let mut c3 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+        let mut c3 = Channel::new_with_length(size);
 
         let c1_mut = c1.reinterpret_as_mut::<u16>().unwrap();
         let c2_mut = c2.reinterpret_as_mut::<u16>().unwrap();
@@ -114,10 +114,10 @@ pub fn deinterleave_u16(
     }
     else if colorspace.num_components() == 4
     {
-        let mut c1 = Channel::new_with_capacity(size);
-        let mut c2 = Channel::new_with_capacity(size);
-        let mut c3 = Channel::new_with_capacity(size);
-        let mut c4 = Channel::new_with_capacity(size);
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+        let mut c3 = Channel::new_with_length(size);
+        let mut c4 = Channel::new_with_length(size);
 
         let c1_mut = c1.reinterpret_as_mut::<u16>().unwrap();
         let c2_mut = c2.reinterpret_as_mut::<u16>().unwrap();
