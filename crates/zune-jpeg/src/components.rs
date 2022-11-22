@@ -47,7 +47,7 @@ pub(crate) struct Components
     /// Upsample destination, stores a scanline
     pub upsample_dest: Vec<i16>,
     pub counter: usize,
-    pub idct_pos: usize,
+    pub idct_pos: usize
 }
 
 impl Components
@@ -122,7 +122,7 @@ impl Components
             upsample_scanline: vec![],
             upsample_dest: vec![],
             counter: 0,
-            idct_pos: 0,
+            idct_pos: 0
         })
     }
     /// Setup space for upsampling
@@ -151,7 +151,7 @@ pub enum ComponentID
     /// Blue chrominance
     Cb,
     /// Red chrominance
-    Cr,
+    Cr
 }
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
@@ -160,5 +160,5 @@ pub enum SubSampRatios
     HV,
     V,
     H,
-    None,
+    None
 }
