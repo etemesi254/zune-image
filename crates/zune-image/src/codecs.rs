@@ -7,7 +7,7 @@
 //! |-----|-------------|-------|
 //! |JPEG |Full support| None |
 //! |PNG |Partial  |None |
-//! |PPM | None |8 and 16 bit support|
+//! |PPM | 8 and 16 bit support |8 and 16 bit support|
 //! |PAL | None |8 and 16 bit support |
 //!
 //!
@@ -25,7 +25,9 @@ pub enum SupportedDecoders
     /// Fully complete
     Jpeg,
     /// Not yet complete
-    Png
+    Png,
+    /// Fully complete
+    PPM
 }
 
 /// All supported encoders
@@ -54,6 +56,13 @@ pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
         {
             // png signature
             return Some(SupportedDecoders::Png);
+        }
+    }
+    if let Some(bytes) = bytes.get(0..2)
+    {
+        if bytes[0] == b'P' && matches!(bytes[1], b'5' | b'6')
+        {
+            return Some(SupportedDecoders::PPM);
         }
     }
     None
@@ -89,6 +98,17 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
             #[cfg(not(feature = "png"))]
             {
                 unimplemented!("PNG feature not included")
+            }
+        }
+        SupportedDecoders::PPM =>
+        {
+            #[cfg(feature = "ppm")]
+            {
+                Box::new(zune_ppm::PPMDecoder::new(data))
+            }
+            #[cfg(not(feature = "ppm"))]
+            {
+                unimplemented!("PPM feature not included")
             }
         }
     }
