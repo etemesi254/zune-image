@@ -85,7 +85,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
         &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u8]
     ) -> Result<(), PPMErrors>
     {
-        if width * height != data.len()
+        if width * height * colorspace.num_components() != data.len()
         {
             return Err(PPMErrors::Static(
                 "Data length does not match image dimensions"
