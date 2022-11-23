@@ -120,7 +120,7 @@ pub fn create_cmd_args() -> Command {
             .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold","gamma"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur","blur","unsharpen"])
+            .args(["box-blur", "blur", "unsharpen", "median"])
             .multiple(true))
 }
 
@@ -282,6 +282,12 @@ fn add_filters() -> Vec<Arg>
             .help("Perform an unsharp mask")
             .help_heading("Filters")
             .value_name("sigma:threshold:percentage")
+            .group("filters"),
+        Arg::new("median")
+            .long("median")
+            .help("Apply a median filter")
+            .help_heading("Filters")
+            .value_parser(value_parser!(usize))
             .group("filters")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
