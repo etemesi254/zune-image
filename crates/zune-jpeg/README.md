@@ -50,7 +50,7 @@ but in debug build rust generally [doesn't like platform specific intrinsics](ht
 we can do about that.
 
 ## Benchmarks
-For more up-to-date benchmarks, see [Benches.md](/Benches.md).
+For more up-to-date benchmarks, see [Benches.md](/zune-jpeg/Benches.md).
 
 
 # TODO
