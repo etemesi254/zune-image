@@ -6,6 +6,7 @@ pub mod box_blur;
 pub mod brighten;
 pub mod convolve;
 pub mod crop;
+pub mod erode;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
