@@ -210,6 +210,7 @@ impl<'a> JpegDecoder<'a>
                         }
                     }
                 }
+                self.todo -= 1;
                 // After all interleaved components, that's an MCU
                 // handle stream markers
                 //
@@ -224,11 +225,16 @@ impl<'a> JpegDecoder<'a>
                 {
                     if m == Marker::EOI
                     {
-                        break;
+                        // acknowledge and ignore EOI marker.
+                        stream.marker.take();
+                        info!("Found EOI marker");
                     }
                     else if let Marker::RST(_) = m
                     {
-                        self.handle_rst(&mut stream)?;
+                        if self.todo == 0
+                        {
+                            self.handle_rst(&mut stream)?;
+                        }
                     }
                     else
                     {
@@ -364,17 +370,4 @@ impl<'a> JpegDecoder<'a>
         }
         Ok(())
     }
-}
-//
-#[test]
-fn t()
-{
-    use std::fs::read;
-
-    use crate::ZuneJpegOptions;
-    let data = read("/home/caleb/jpeg/2041.jpeg").unwrap();
-
-    let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma);
-    let mut decoder = JpegDecoder::new_with_options(options, &data);
-    decoder.decode_buffer().unwrap();
 }
