@@ -31,6 +31,7 @@ pub mod gamma;
 pub mod gaussian_blur;
 pub mod grayscale;
 pub mod invert;
+pub mod median;
 pub mod mirror;
 pub mod rotate;
 pub mod threshold;
