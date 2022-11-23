@@ -25,6 +25,7 @@ pub mod brighten;
 pub mod convolve;
 pub mod crop;
 pub mod deinterleave;
+pub mod erode;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
