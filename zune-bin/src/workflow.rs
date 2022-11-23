@@ -16,6 +16,7 @@ use zune_image::errors::ImgErrors;
 use zune_image::impls::box_blur::BoxBlur;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::crop::Crop;
+use zune_image::impls::erode::Erode;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
 use zune_image::impls::gamma::Gamma;
@@ -252,6 +253,12 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let radius = *args.get_one::<usize>("median").unwrap();
             workflow.add_operation(Box::new(Median::new(radius)));
             debug!("Added Median operation");
+        }
+        else if argument == "erode"
+        {
+            let radius = *args.get_one::<usize>("erode").unwrap();
+            workflow.add_operation(Box::new(Erode::new(radius)));
+            debug!("Added Erode operation");
         }
         else if argument == "mirror"
         {

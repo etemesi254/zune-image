@@ -120,7 +120,7 @@ pub fn create_cmd_args() -> Command {
             .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold","gamma"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur", "blur", "unsharpen", "median"])
+            .args(["box-blur", "blur", "unsharpen", "median", "erode"])
             .multiple(true))
 }
 
@@ -286,6 +286,12 @@ fn add_filters() -> Vec<Arg>
         Arg::new("median")
             .long("median")
             .help("Apply a median filter")
+            .help_heading("Filters")
+            .value_parser(value_parser!(usize))
+            .group("filters"),
+        Arg::new("erode")
+            .long("erode")
+            .help("Apply Erode filter")
             .help_heading("Filters")
             .value_parser(value_parser!(usize))
             .group("filters")
