@@ -22,6 +22,7 @@ use zune_image::impls::gamma::Gamma;
 use zune_image::impls::gaussian_blur::GaussianBlur;
 use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
+use zune_image::impls::median::Median;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
@@ -245,6 +246,12 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
         {
             debug!("Added flop operation");
             workflow.add_operation(Box::new(Flop::new()))
+        }
+        else if argument == "median"
+        {
+            let radius = *args.get_one::<usize>("median").unwrap();
+            workflow.add_operation(Box::new(Median::new(radius)));
+            debug!("Added Median operation");
         }
         else if argument == "mirror"
         {
