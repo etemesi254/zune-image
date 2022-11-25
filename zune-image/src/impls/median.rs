@@ -35,7 +35,7 @@ impl OperationsTrait for Median
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        let (width, _) = image.get_dimensions();
+        let (width, height) = image.get_dimensions();
 
         let depth = image.get_depth();
         #[cfg(not(feature = "threads"))]
@@ -50,13 +50,15 @@ impl OperationsTrait for Median
                         channel.reinterpret_as::<u16>().unwrap(),
                         new_channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.radius,
-                        width
+                        width,
+                        height
                     ),
                     BitType::Eight => median(
                         channel.reinterpret_as::<u8>().unwrap(),
                         new_channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.radius,
-                        width
+                        width,
+                        height
                     )
                 }
                 *channel = new_channel;
@@ -78,13 +80,15 @@ impl OperationsTrait for Median
                                 channel.reinterpret_as::<u16>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u16>().unwrap(),
                                 self.radius,
-                                width
+                                width,
+                                height
                             ),
                             BitType::Eight => median(
                                 channel.reinterpret_as::<u8>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u8>().unwrap(),
                                 self.radius,
-                                width
+                                width,
+                                height
                             )
                         }
                         *channel = new_channel;
