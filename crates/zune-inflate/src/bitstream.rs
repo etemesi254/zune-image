@@ -12,7 +12,7 @@ pub struct BitStreamReader<'src>
     position: usize,
 
     bits_left: u8,
-    buffer:    u64,
+    buffer:    u64
 }
 
 impl<'src> BitStreamReader<'src>
@@ -28,7 +28,7 @@ impl<'src> BitStreamReader<'src>
             bits_left: 0,
             buffer:    0,
             src:       in_buffer,
-            position:  0,
+            position:  0
         }
     }
     /// Refill the bitstream ensuring the buffer has bits between
@@ -62,7 +62,7 @@ impl<'src> BitStreamReader<'src>
                 // bits left are now between 56-63
                 self.bits_left |= 56;
             }
-            None => self.refill_slow(),
+            None => self.refill_slow()
         }
     }
     fn refill_slow(&mut self)
@@ -86,6 +86,8 @@ impl<'src> BitStreamReader<'src>
 
     pub fn get_bits(&mut self, num_bits: u8) -> u64
     {
+        debug_assert!(self.bits_left >= num_bits);
+
         let mask = (1_u64 << num_bits) - 1;
 
         let value = self.buffer & mask;
@@ -100,5 +102,13 @@ impl<'src> BitStreamReader<'src>
     pub const fn has(&self, bits: u8) -> bool
     {
         self.bits_left >= bits
+    }
+
+    #[inline(always)]
+    pub fn drop_bits(&mut self, bits: u8)
+    {
+        debug_assert!(self.bits_left >= bits);
+        self.bits_left -= bits;
+        self.buffer >>= bits;
     }
 }
