@@ -2,6 +2,11 @@
 /// and offset codes, these are actually the maximum values; a given block
 /// might use fewer symbols.
 pub const DEFLATE_NUM_PRECODE_SYMS: usize = 19;
+pub const DEFLATE_NUM_LITLEN_SYMS: usize = 288;
+pub const DEFLATE_NUM_OFFSET_SYMS: usize = 32;
+
+/// Maximum possible overrun when decoding codeword lengths
+pub const DELFATE_MAX_LENS_OVERRUN: usize = 137;
 
 /// Order which precode lengths are stored
 pub static DEFLATE_PRECODE_LENS_PERMUTATION: [u8; DEFLATE_NUM_PRECODE_SYMS] = [
@@ -23,6 +28,9 @@ pub const OFFSET_TABLEBITS: usize = 8;
 pub const OFFSET_ENOUGH: usize = 402;
 /// Maximum number of symbols across all codes
 pub const DEFLATE_MAX_NUM_SYMS: usize = 208;
+
+///Maximum codeword length in bits for each precode
+pub const DEFLATE_MAX_PRE_CODEWORD_LEN: u8 = 7;
 
 /// Format for precode decode table entries, Bits not explicitly contain zeroes
 ///
@@ -101,4 +109,3 @@ const fn construct_litlen_decode_table() -> [u32; 288]
 }
 
 static LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
-
