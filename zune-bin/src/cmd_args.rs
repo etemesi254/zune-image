@@ -283,18 +283,11 @@ fn add_filters() -> Vec<Arg>
             .help_heading("Filters")
             .value_name("sigma:threshold:percentage")
             .group("filters"),
-        Arg::new("median")
-            .long("median")
-            .help("Apply a median filter")
+        Arg::new("statistic")
+            .long("statistic")
+            .help("Replace each pixel with corresponding statistic from the neighbourhood")
             .help_heading("Filters")
-            .value_parser(value_parser!(usize))
-            .group("filters"),
-        Arg::new("erode")
-            .long("erode")
-            .help("Apply Erode filter")
-            .help_heading("Filters")
-            .value_parser(value_parser!(usize))
-            .group("filters")
+            .value_name("radius:statistic")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
