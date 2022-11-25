@@ -386,8 +386,9 @@ impl<'a> JpegDecoder<'a>
             // for some strange reason
             chunks_size /= 2;
         }
+        let extra = usize::from(self.info.width) * 8;
 
-        let mut pixels = vec![255; capacity * out_colorspace_components];
+        let mut pixels = vec![0; capacity * out_colorspace_components + extra];
         let mut chunks = pixels.chunks_mut(chunks_size);
         let mut temporary = [vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];

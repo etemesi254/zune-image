@@ -1,6 +1,7 @@
 use log::trace;
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::erode::erode;
+use zune_imageprocs::spatial_ops::spatial_ops;
+pub use zune_imageprocs::spatial_ops::StatisticOperations;
 
 use crate::channel::Channel;
 use crate::errors::ImgOperationsErrors;
@@ -12,30 +13,30 @@ use crate::traits::OperationsTrait;
 /// The parameter radius corresponds to the radius of the neighbor area to be searched,
 ///
 /// for example a radius of R will result in a search window length of 2R+1 for each dimension.
-#[derive(Default)]
-pub struct Erode
+pub struct StatisticsOps
 {
-    radius: usize
+    radius:    usize,
+    operation: StatisticOperations
 }
 
-impl Erode
+impl StatisticsOps
 {
-    pub fn new(radius: usize) -> Erode
+    pub fn new(radius: usize, operation: StatisticOperations) -> StatisticsOps
     {
-        Erode { radius }
+        StatisticsOps { radius, operation }
     }
 }
 
-impl OperationsTrait for Erode
+impl OperationsTrait for StatisticsOps
 {
     fn get_name(&self) -> &'static str
     {
-        "Erode Filter"
+        "StatisticsOps Filter"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        let (width, _) = image.get_dimensions();
+        let (width, height) = image.get_dimensions();
 
         let depth = image.get_depth();
         #[cfg(not(feature = "threads"))]
@@ -52,13 +53,15 @@ impl OperationsTrait for Erode
                         channel.reinterpret_as::<u16>().unwrap(),
                         new_channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.radius,
-                        width
+                        width,
+                        height
                     ),
                     BitType::Eight => erode(
                         channel.reinterpret_as::<u8>().unwrap(),
                         new_channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.radius,
-                        width
+                        width,
+                        height
                     )
                 }
                 *channel = new_channel;
@@ -66,7 +69,10 @@ impl OperationsTrait for Erode
         }
         #[cfg(feature = "threads")]
         {
-            trace!("Running erode filter in multithreaded mode");
+            trace!(
+                "Running statistics filter  for {:?} in multithreaded mode",
+                self.operation
+            );
 
             std::thread::scope(|s| {
                 for channel in image.get_channels_mut(false)
@@ -76,17 +82,21 @@ impl OperationsTrait for Erode
 
                         match depth.bit_type()
                         {
-                            BitType::Sixteen => erode(
+                            BitType::Sixteen => spatial_ops(
                                 channel.reinterpret_as::<u16>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u16>().unwrap(),
                                 self.radius,
-                                width
+                                width,
+                                height,
+                                self.operation
                             ),
-                            BitType::Eight => erode(
+                            BitType::Eight => spatial_ops(
                                 channel.reinterpret_as::<u8>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u8>().unwrap(),
                                 self.radius,
-                                width
+                                width,
+                                height,
+                                self.operation
                             )
                         }
                         *channel = new_channel;
