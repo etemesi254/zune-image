@@ -12,6 +12,12 @@ pub trait NumOps<T>
     fn from_f64(x: f64) -> T;
 
     fn from_f32(x: f32) -> T;
+
+    fn from_usize(x: usize) -> T;
+
+    fn saturating_add(self, other: T) -> T;
+
+    fn one() -> T;
 }
 
 macro_rules! numops_for_int {
@@ -42,6 +48,22 @@ macro_rules! numops_for_int {
             fn from_f32(x: f32) -> $int
             {
                 x as $int
+            }
+            #[inline(always)]
+            fn one() -> $int
+            {
+                1 as $int
+            }
+
+            #[inline(always)]
+            fn from_usize(x: usize) -> $int
+            {
+                x as $int
+            }
+            #[inline(always)]
+            fn saturating_add(self, other: $int) -> $int
+            {
+                self.saturating_add(other)
             }
         }
     };
