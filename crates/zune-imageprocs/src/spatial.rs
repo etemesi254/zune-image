@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::utls::z_prefetch;
+use crate::utils::z_prefetch;
 
 /// spatial goes through each pixel on an image collecting its neighbors and picking one
 /// based on the function provided.
