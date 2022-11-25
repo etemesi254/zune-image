@@ -16,7 +16,6 @@ use zune_image::errors::ImgErrors;
 use zune_image::impls::box_blur::BoxBlur;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::crop::Crop;
-use zune_image::impls::erode::Erode;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
 use zune_image::impls::gamma::Gamma;
@@ -25,6 +24,7 @@ use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::median::Median;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
+use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
 use zune_image::impls::unsharpen::Unsharpen;
@@ -254,11 +254,22 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             workflow.add_operation(Box::new(Median::new(radius)));
             debug!("Added Median operation");
         }
-        else if argument == "erode"
+        else if argument == "statistic"
         {
-            let radius = *args.get_one::<usize>("erode").unwrap();
-            workflow.add_operation(Box::new(Erode::new(radius)));
-            debug!("Added Erode operation");
+            let val = args.get_one::<String>(&argument).unwrap();
+            let split_args: Vec<&str> = val.split(':').collect();
+
+            if split_args.len() != 2
+            {
+                return Err(format!("Statistic operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
+            }
+            // parse first one as radius
+            let thresh_string = split_args[0];
+            let radius = str::parse::<usize>(thresh_string).map_err(|x| x.to_string())?;
+            let stats_mode = StatisticOperations::from_string_result(split_args[1])?;
+
+            workflow.add_operation(Box::new(StatisticsOps::new(radius, stats_mode)));
+            debug!("Added StatisticsOps operation");
         }
         else if argument == "mirror"
         {
