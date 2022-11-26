@@ -295,12 +295,21 @@ impl<'a> JpegDecoder<'a>
             last_byte = m;
             bytes_before_marker += 1;
 
-            if self.options.get_strict_mode() && bytes_before_marker > 3
-            /*No reason to use this*/
+            if bytes_before_marker > 3
             {
-                return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Extra bytes between headers"
-                ));
+                if self.options.get_strict_mode()
+                /*No reason to use this*/
+                {
+                    return Err(DecodeErrors::FormatStatic(
+                        "[strict-mode]: Extra bytes between headers"
+                    ));
+                }
+
+                error!(
+                    "Extra bytes {} before marker 0xFF{:X}",
+                    bytes_before_marker - 3,
+                    m
+                );
             }
         }
     }
