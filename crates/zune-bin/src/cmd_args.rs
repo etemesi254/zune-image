@@ -82,6 +82,8 @@ pub fn create_cmd_args() -> Command {
         .author("Caleb Etemesi")
         .version("0.1.1")
         .long_version(get_long_version())
+        .next_line_help(false)
+        .term_width(200)
         .arg(Arg::new("in")
             .short('i')
             .help("Input file to read data from")
@@ -281,7 +283,7 @@ fn add_filters() -> Vec<Arg>
             .long("unsharpen")
             .help("Perform an unsharp mask")
             .help_heading("Filters")
-            .value_name("sigma:threshold:percentage")
+            .value_name("sigma:threshold")
             .group("filters"),
         Arg::new("statistic")
             .long("statistic")
