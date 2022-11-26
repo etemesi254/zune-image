@@ -39,30 +39,21 @@ pub enum SupportedEncoders
     PAM // PAM encoder
 }
 
+// stolen from imagers
+static MAGIC_BYTES: [(&[u8], SupportedDecoders); 4] = [
+    (&[137, 80, 78, 71, 13, 10, 26, 10], SupportedDecoders::Png),
+    (&[0xff, 0xd8, 0xff], SupportedDecoders::Jpeg),
+    (b"P6", SupportedDecoders::PPM),
+    (b"P5", SupportedDecoders::PPM)
+];
 /// Return the format of an image or none if it's unsupported
 pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
 {
-    if let Some(magic) = bytes.get(0..2)
+    for (magic, decoder) in MAGIC_BYTES
     {
-        if magic == (0xffd8_u16).to_be_bytes()
+        if bytes.starts_with(magic)
         {
-            // jpeg bits
-            return Some(SupportedDecoders::Jpeg);
-        }
-    }
-    if let Some(magic) = bytes.get(0..8)
-    {
-        if magic == [137, 80, 78, 71, 13, 10, 26, 10]
-        {
-            // png signature
-            return Some(SupportedDecoders::Png);
-        }
-    }
-    if let Some(bytes) = bytes.get(0..2)
-    {
-        if bytes[0] == b'P' && matches!(bytes[1], b'5' | b'6')
-        {
-            return Some(SupportedDecoders::PPM);
+            return Some(decoder);
         }
     }
     None
