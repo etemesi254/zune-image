@@ -21,7 +21,7 @@ where
 {
     // Read the length of the Huffman table
     let mut dht_length = i32::from(decoder.stream.get_u16_be_err()?.checked_sub(2).ok_or(
-        DecodeErrors::FormatStatic("Invalid Huffman length in image"),
+        DecodeErrors::FormatStatic("Invalid Huffman length in image")
     )?);
 
     while dht_length > 16
@@ -64,7 +64,7 @@ where
         if symbols_sum > 256
         {
             return Err(DecodeErrors::FormatStatic(
-                "Encountered Huffman table with excessive length in DHT",
+                "Encountered Huffman table with excessive length in DHT"
             ));
         }
         if symbols_sum > dht_length
@@ -93,7 +93,7 @@ where
                     &num_symbols,
                     symbols,
                     true,
-                    decoder.is_progressive,
+                    decoder.is_progressive
                 )?);
             }
             _ =>
@@ -102,7 +102,7 @@ where
                     &num_symbols,
                     symbols,
                     false,
-                    decoder.is_progressive,
+                    decoder.is_progressive
                 )?);
             }
         }
@@ -126,7 +126,7 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
             .get_u16_be_err()?
             .checked_sub(2)
             .ok_or(DecodeErrors::FormatStatic(
-                "Invalid DQT length. Length should be greater than 2",
+                "Invalid DQT length. Length should be greater than 2"
             ))?;
     // A single DQT header may have multiple QT's
     while qt_length > 0
@@ -159,10 +159,15 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
             1 =>
             {
                 // 16 bit quantization tables
-                //(cae) Before we enable this. Should 16 bit QT cause any other lib changes
-                return Err(DecodeErrors::FormatStatic(
-                    "Support for 16 bit quantization table is not complete",
-                ));
+                let mut qt_values = [0_u16; 64];
+
+                for i in 0..64
+                {
+                    qt_values[i] = img.stream.get_u16_be_err()?;
+                }
+                qt_length -= (precision_value as u16) + 1;
+
+                un_zig_zag(&qt_values)
             }
             _ =>
             {
@@ -190,7 +195,7 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
 /// Section:`B.2.2 Frame header syntax`
 
 pub(crate) fn parse_start_of_frame(
-    sof: SOFMarkers, img: &mut JpegDecoder,
+    sof: SOFMarkers, img: &mut JpegDecoder
 ) -> Result<(), DecodeErrors>
 {
     // Get length of the frame header
@@ -242,7 +247,7 @@ pub(crate) fn parse_start_of_frame(
     if num_components == 0
     {
         return Err(DecodeErrors::SofError(
-            "Number of components cannot be zero.".to_string(),
+            "Number of components cannot be zero.".to_string()
         ));
     }
 
@@ -363,7 +368,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     if image.info.components == 0
     {
         return Err(DecodeErrors::FormatStatic(
-            "Error decoding SOF Marker, Number of components cannot be zero.",
+            "Error decoding SOF Marker, Number of components cannot be zero."
         ));
     }
 
@@ -469,9 +474,12 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
 
 /// Small utility function to print Un-zig-zagged quantization tables
 
-fn un_zig_zag(a: &[u8]) -> [i32; 64]
+fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
+where
+    T: Default + Copy,
+    i32: std::convert::From<T>
 {
-    let mut output = [0; 64];
+    let mut output = [i32::default(); 64];
 
     for i in 0..64
     {
