@@ -25,6 +25,7 @@ use zune_image::impls::invert::Invert;
 use zune_image::impls::median::Median;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
 use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
+use zune_image::impls::stretch_contrast::StretchContrast;
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
 use zune_image::impls::unsharpen::Unsharpen;
@@ -386,6 +387,29 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
 
             let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, 0);
             workflow.add_operation(Box::new(unsharpen))
+        }
+        else if argument == "stretch_contrast"
+        {
+            let value = args.get_one::<String>(&argument).unwrap();
+            let split_args: Vec<&str> = value.split(':').collect();
+
+            if split_args.len() != 2
+            {
+                return Err(format!("Stretch contrast operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
+            }
+            // parse first one as threshold
+            let lower = split_args[0];
+            let lower_u16 = str::parse::<u16>(lower).map_err(|x| x.to_string())?;
+
+            let upper = split_args[1];
+            let upper_u16 = str::parse::<u16>(upper).map_err(|x| x.to_string())?;
+
+            debug!(
+                "Added stretch contrast filter with lower={} and upper={}",
+                lower, upper
+            );
+            let stretch_contrast = StretchContrast::new(lower_u16, upper_u16);
+            workflow.add_operation(Box::new(stretch_contrast));
         }
     }
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
