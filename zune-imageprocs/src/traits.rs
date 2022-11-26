@@ -1,3 +1,5 @@
+/// Various number traits useful for generic image
+/// processing.
 pub trait NumOps<T>
 {
     /// Return the maximum value possible for this
@@ -7,16 +9,29 @@ pub trait NumOps<T>
     /// type
     fn min_val() -> T;
 
+    /// Convert a u32 to type T
+    /// using an `as` cast
     fn from_u32(x: u32) -> T;
 
+    /// Convert an f64 to type T
+    /// using an `as` cast
     fn from_f64(x: f64) -> T;
 
+    /// Convert an f32 to type T using an
+    /// `as` cast
     fn from_f32(x: f32) -> T;
 
+    /// Convert a usize to type T
+    /// using an `as` cast
     fn from_usize(x: usize) -> T;
 
+    /// Saturating addition.
+    ///
+    /// Computes self + other, saturating at the relevant high
+    /// boundary of the type.
     fn saturating_add(self, other: T) -> T;
 
+    /// Returns `1` representation as type T
     fn one() -> T;
 }
 
