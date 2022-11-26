@@ -210,7 +210,7 @@ impl<'a> JpegDecoder<'a>
                         }
                     }
                 }
-                self.todo -= 1;
+                self.todo = self.todo.saturating_sub(1);
                 // After all interleaved components, that's an MCU
                 // handle stream markers
                 //
