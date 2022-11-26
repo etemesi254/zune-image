@@ -114,14 +114,7 @@ pub fn spatial_ops<T>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
     operations: StatisticOperations
 ) where
-    T: Ord
-        + Default
-        + Copy
-        + NumOps<T>
-        + Sub<Output = T>
-        + Add<Output = T>
-        + Div<Output = T>
-        + Debug,
+    T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
     usize: std::convert::From<T>
 {
     //pad here
