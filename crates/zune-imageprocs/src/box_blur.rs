@@ -1,23 +1,8 @@
 use log::warn;
 
+use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;
 use crate::transpose;
-
-fn compute_mod_u32(d: u64) -> u64
-{
-    // operator precedence will be the end of me,,
-    return ((0xFFFF_FFFF_FFFF_FFFF_u64) / d) + 1;
-}
-fn mul128_u32(low_bits: u64, d: u32) -> u64
-{
-    return ((u128::from(low_bits) * u128::from(d)) >> 64) as u64;
-}
-
-#[allow(clippy::cast_possible_truncation)]
-fn fastdiv_u32(a: u32, m: u64) -> u32
-{
-    mul128_u32(m, a) as u32
-}
 
 pub fn box_blur_u16(
     in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, radius: usize
