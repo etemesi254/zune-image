@@ -1,3 +1,9 @@
+//! Various operations useful for generic image processing.
+//!
+//!
+//! NB: Everything with an implementation should have `#[inline(always)]` attribute. as
+//! this massively speeds up a lot of vectorizable implementations
+
 /// Various number traits useful for generic image
 /// processing.
 pub trait NumOps<T>
@@ -9,6 +15,9 @@ pub trait NumOps<T>
     /// type
     fn min_val() -> T;
 
+    /// Convert a u8 to type T
+    /// using an `as` cast
+    fn from_u8(x: u8) -> T;
     /// Convert a u32 to type T
     /// using an `as` cast
     fn from_u32(x: u32) -> T;
@@ -30,6 +39,12 @@ pub trait NumOps<T>
     /// Computes self + other, saturating at the relevant high
     /// boundary of the type.
     fn saturating_add(self, other: T) -> T;
+
+    /// Saturating subtraction.
+    ///
+    /// Computes self - other, saturating at the relevant high
+    /// boundary of the type.
+    fn saturating_sub(self, other: T) -> T;
 
     /// Returns `1` representation as type T
     fn one() -> T;
@@ -69,6 +84,11 @@ macro_rules! numops_for_int {
             {
                 1 as $int
             }
+            #[inline(always)]
+            fn from_u8(x: u8) -> $int
+            {
+                x as $int
+            }
 
             #[inline(always)]
             fn from_usize(x: usize) -> $int
@@ -79,6 +99,11 @@ macro_rules! numops_for_int {
             fn saturating_add(self, other: $int) -> $int
             {
                 self.saturating_add(other)
+            }
+            #[inline(always)]
+            fn saturating_sub(self, other: $int) -> $int
+            {
+                self.saturating_sub(other)
             }
         }
     };
