@@ -368,9 +368,9 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let value = args.get_one::<String>(&argument).unwrap();
             let split_args: Vec<&str> = value.split(':').collect();
 
-            if split_args.len() != 3
+            if split_args.len() != 2
             {
-                return Err(format!("Unsharpen operation expected 3 arguments separated by `:` in the command line,got {}", split_args.len()));
+                return Err(format!("Unsharpen operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
             }
             // parse first one as threshold
             let sigma = split_args[0];
@@ -379,15 +379,12 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut WorkFlow) -> Result<(), 
             let threshold = split_args[1];
             let threshold_u16 = str::parse::<u16>(threshold).map_err(|x| x.to_string())?;
 
-            let percentage = split_args[2];
-            let percentage_u8 = str::parse::<u8>(percentage).map_err(|x| x.to_string())?;
-
             debug!(
                 "Added unsharpen filter with sigma={} and threshold={}",
                 sigma, threshold
             );
 
-            let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, percentage_u8);
+            let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, 0);
             workflow.add_operation(Box::new(unsharpen))
         }
     }
