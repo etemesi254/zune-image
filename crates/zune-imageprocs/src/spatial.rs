@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::utils::z_prefetch;
 
 /// spatial goes through each pixel on an image collecting its neighbors and picking one
@@ -25,10 +23,12 @@ use crate::utils::z_prefetch;
 ///
 /// - function: Any function that when given an array returns a single element.
 ///
-pub fn spatial<T: Default + Copy + Debug, F: Fn(&[T]) -> T>(
+pub fn spatial<T, F>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
     function: F
-)
+) where
+    T: Default + Copy,
+    F: Fn(&[T]) -> T
 {
     let old_width = width;
     let height = (radius * 2) + height;
