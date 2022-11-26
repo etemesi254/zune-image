@@ -255,6 +255,12 @@ fn add_operations() -> Vec<Arg>
             .help("Gamma adjust an image")
             .help_heading(HELP_HEADING)
             .value_parser(value_parser!(f32))
+            .group("operations"),
+        Arg::new("stretch_contrast")
+            .long("stretch_contrast")
+            .value_name("lower:upper")
+            .help_heading(HELP_HEADING)
+            .help("Linearly stretch contrast in an image")
             .group("operations")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
