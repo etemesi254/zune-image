@@ -1,5 +1,25 @@
 use crate::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
 
+///  Sharpen an image
+///
+///  The underlying algorithm applies a gaussian blur
+/// to a copy of the image and compare it with the image,
+/// if difference is greater than threshold, we add it to the
+/// image
+///
+/// The formula is
+///
+/// sharpened = original + (original − blurred);
+///
+///
+/// # Arguments
+/// - channel: Incoming pixels, output will be written to the same location
+/// - blur_buffer: Temporary location we use to store blur coefficients
+/// - blur_scratch_buffer: Temporary location we use during blurring to store blur coefficients
+/// - sigma: Radius of blur
+/// - threshold: If the difference between original and blurred is greater than this, add the diff to
+/// the pixel
+///- width,height: Image dimensions.
 #[allow(clippy::too_many_arguments)]
 pub fn unsharpen_u16(
     channel: &mut [u16], blur_buffer: &mut [u16], blur_scratch_buffer: &mut [u16], sigma: f32,
@@ -30,6 +50,26 @@ pub fn unsharpen_u16(
     }
 }
 
+///  Sharpen an image
+///
+///  The underlying algorithm applies a gaussian blur
+/// to a copy of the image and compare it with the image,
+/// if difference is greater than threshold, we add it to the
+/// image
+///
+/// The formula is
+///
+/// sharpened = original + (original − blurred);
+///
+///
+/// # Arguments
+/// - channel: Incoming pixels, output will be written to the same location
+/// - blur_buffer: Temporary location we use to store blur coefficients
+/// - blur_scratch_buffer: Temporary location we use during blurring to store blur coefficients
+/// - sigma: Radius of blur
+/// - threshold: If the difference between original and blurred is greater than this, add the diff to
+/// the pixel
+///- width,height: Image dimensions.
 #[allow(clippy::too_many_arguments)]
 pub fn unsharpen_u8(
     channel: &mut [u8], blur_buffer: &mut [u8], blur_scratch_buffer: &mut [u8], sigma: f32,
