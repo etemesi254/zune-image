@@ -115,6 +115,14 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 workflow.add_decoder(Box::new(decoder));
             }
+            else if format == zune_image::codecs::SupportedDecoders::PSD
+            {
+                debug!("Treating {:?} as a psd file", in_file);
+
+                let decoder = zune_image::codecs::psd::PSDDecoder::new(data);
+
+                workflow.add_decoder(Box::new(decoder));
+            }
         }
 
         if let Some(ext) = Path::new(out_file).extension()
