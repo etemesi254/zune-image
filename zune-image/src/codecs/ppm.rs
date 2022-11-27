@@ -4,8 +4,9 @@ use std::io::Write;
 
 use log::debug;
 use zune_core::colorspace::ColorSpace;
+use zune_core::DecodingResult;
 pub use zune_ppm::PPMDecoder;
-use zune_ppm::{DecodingResult, PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
+use zune_ppm::{PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
 
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImgEncodeErrors, ImgErrors};
