@@ -10,6 +10,7 @@
 //!
 use std::cmp::Ordering;
 
+use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -173,6 +174,11 @@ impl<'a> PSDDecoder<'a>
         self.compression = CompressionMethod::from_int(compression).unwrap();
 
         self.decoded_header = true;
+
+        info!("Image width:{}", self.width);
+        info!("Image height:{}", self.height);
+        info!("Channels: {}", self.channel_count);
+        info!("Bit depth : {:?}", self.depth);
 
         Ok(())
     }

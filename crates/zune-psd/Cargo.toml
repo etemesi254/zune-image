@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 zune-core = { path = "../zune-core", features = ["bytestream"] }
+log = "0.4.17"
