@@ -1,4 +1,4 @@
-//! Errors possible during image processing
+//! PSDDecodeErrors possible during image processing
 use std::fmt::{Debug, Formatter};
 
 use zune_core::colorspace::ColorSpace;
@@ -15,6 +15,8 @@ pub enum ImgErrors
     PngDecodeErrors(zune_png::error::PngErrors),
     #[cfg(feature = "ppm")]
     PPMDecodeErrors(zune_ppm::PPMDecodeErrors),
+    #[cfg(feature = "psd")]
+    PSDDecodeErrors(zune_psd::errors::PSDDecodeErrors),
 
     DimensionsMisMatch(usize, usize),
     UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
@@ -27,7 +29,7 @@ pub enum ImgErrors
     GenericStr(&'static str)
 }
 
-/// Errors that may occur during image operations
+/// PSDDecodeErrors that may occur during image operations
 pub enum ImgOperationsErrors
 {
     /// Unexpected colorspace
@@ -72,6 +74,11 @@ impl Debug for ImgErrors
             Self::PPMDecodeErrors(ref error) =>
             {
                 writeln!(f, "PPM decoding failed:{:?}", error)
+            }
+            #[cfg(feature = "psd")]
+            Self::PSDDecodeErrors(ref error) =>
+            {
+                writeln!(f, "PSD decoding failed:{:?}", error)
             }
             Self::GenericStr(err) =>
             {
@@ -217,6 +224,15 @@ impl From<zune_ppm::PPMErrors> for ImgEncodeErrors
     fn from(error: zune_ppm::PPMErrors) -> Self
     {
         ImgEncodeErrors::PPMEncodeErrors(error)
+    }
+}
+
+#[cfg(feature = "psd")]
+impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
+{
+    fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
+    {
+        ImgErrors::PSDDecodeErrors(error)
     }
 }
 
