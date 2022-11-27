@@ -16,9 +16,9 @@ members = [
     "zune-jpeg",
     "zune-ppm",
     "zune-png",
+    "zune-psd",
     # additional stuff
     "zune-inflate",
-
     # Core functionality
     "zune-core",
     #testing
