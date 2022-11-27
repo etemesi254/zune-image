@@ -17,7 +17,7 @@ use crate::traits::DecoderTrait;
 pub mod jpeg;
 pub mod png;
 pub mod ppm;
-
+pub mod psd;
 /// All supported decoders
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SupportedDecoders
@@ -27,7 +27,9 @@ pub enum SupportedDecoders
     /// Not yet complete
     Png,
     /// Fully complete
-    PPM
+    PPM,
+    /// Partial support
+    PSD
 }
 
 /// All supported encoders
@@ -40,11 +42,12 @@ pub enum SupportedEncoders
 }
 
 // stolen from imagers
-static MAGIC_BYTES: [(&[u8], SupportedDecoders); 4] = [
+static MAGIC_BYTES: [(&[u8], SupportedDecoders); 5] = [
     (&[137, 80, 78, 71, 13, 10, 26, 10], SupportedDecoders::Png),
     (&[0xff, 0xd8, 0xff], SupportedDecoders::Jpeg),
     (b"P6", SupportedDecoders::PPM),
-    (b"P5", SupportedDecoders::PPM)
+    (b"P5", SupportedDecoders::PPM),
+    (b"8BPS", SupportedDecoders::PSD)
 ];
 /// Return the format of an image or none if it's unsupported
 pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
@@ -96,6 +99,17 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
             #[cfg(feature = "ppm")]
             {
                 Box::new(zune_ppm::PPMDecoder::new(data))
+            }
+            #[cfg(not(feature = "ppm"))]
+            {
+                unimplemented!("PPM feature not included")
+            }
+        }
+        SupportedDecoders::PSD =>
+        {
+            #[cfg(feature = "ppm")]
+            {
+                Box::new(zune_psd::PSDDecoder::new(data))
             }
             #[cfg(not(feature = "ppm"))]
             {
