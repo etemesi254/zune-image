@@ -221,7 +221,7 @@ impl<'a> PPMDecoder<'a>
     }
     fn get_integer(&mut self) -> usize
     {
-        let mut value = 0;
+        let mut value = 0_usize;
 
         while !self.reader.eof()
         {
@@ -229,7 +229,10 @@ impl<'a> PPMDecoder<'a>
 
             if byte.is_ascii_digit()
             {
-                value = value * 10 + usize::from(byte - b'0')
+                // if it overflows, we have bigger problems.
+                value = value
+                    .wrapping_mul(10_usize)
+                    .wrapping_add(usize::from(byte - b'0'))
             }
             else
             {
