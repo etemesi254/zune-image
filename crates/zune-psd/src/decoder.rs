@@ -71,7 +71,7 @@ impl<'a> PSDDecoder<'a>
             decoded_header: false,
             stream: ZByteReader::new(data),
             options,
-            depth: BitDepth::Unknown,
+            depth: BitDepth::Eight,
             compression: CompressionMethod::NoCompression,
             channel_count: 0
         }
