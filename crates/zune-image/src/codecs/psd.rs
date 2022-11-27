@@ -1,5 +1,6 @@
 use log::debug;
 use zune_core::colorspace::ColorSpace;
+use zune_core::DecodingResult;
 pub use zune_psd::PSDDecoder;
 
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
@@ -11,8 +12,6 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 {
     fn decode(&mut self) -> Result<Image, ImgErrors>
     {
-        use zune_psd::decoder::DecodingResult;
-
         let pixels = self.decode()?;
 
         let depth = self.get_bit_depth().unwrap();
