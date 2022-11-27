@@ -4,6 +4,7 @@ use log::info;
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
+use zune_core::DecodingResult;
 
 /// PPM options one can use to influence PPM decoding
 #[derive(Copy, Clone)]
@@ -31,12 +32,6 @@ impl ZunePPMOptions
     {
         self.max_height
     }
-}
-
-pub enum DecodingResult
-{
-    U8(Vec<u8>),
-    U16(Vec<u16>)
 }
 
 impl Default for ZunePPMOptions
