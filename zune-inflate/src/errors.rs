@@ -5,6 +5,7 @@ pub enum ZlibDecodeErrors
     InsufficientData,
     Generic(&'static str),
     GenericStr(String),
+    CorruptData
 }
 
 impl Debug for ZlibDecodeErrors
@@ -16,6 +17,7 @@ impl Debug for ZlibDecodeErrors
             Self::InsufficientData => writeln!(f, "Insufficient data"),
             Self::Generic(reason) => writeln!(f, "{}", reason),
             Self::GenericStr(reason) => writeln!(f, "{}", reason),
+            Self::CorruptData => writeln!(f, "Corrupt data")
         }
     }
 }
