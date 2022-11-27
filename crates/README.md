@@ -26,12 +26,13 @@ compared to other implementations.
 
 ## What you can currently do
 
-| IMAGE | Decoder      | Encoder              |
-|-------|--------------|----------------------|
-| JPEG  | Full support | None                 |
-| PNG   | Partial      | None                 |
-| PPM   | 8 and 16 bit | 8 and 16 bit support |
-| PAL   | None         | 8 and 16 bit support |
+| IMAGE | Decoder          | Encoder              |
+|-------|------------------|----------------------|
+| JPEG  | Full support     | None                 |
+| PNG   | Partial          | None                 |
+| PPM   | 8 and 16 bit     | 8 and 16 bit support |
+| PAL   | None             | 8 and 16 bit support |
+| PSD   | 8 and 16 bit RGB | None                 |
 
 `zune -i ([img].jpg | [img].ppm) -o [img].ppm`
 
