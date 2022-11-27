@@ -213,7 +213,10 @@ impl<'a> ZlibDecoder<'a>
                 if presym == 16
                 {
                     // repeat previous length three to 6 times
-                    assert_ne!(i, 0);
+                    if i == 0
+                    {
+                        return Err(ZlibDecodeErrors::CorruptData);
+                    }
                     rep_val = lens[i - 1];
                     rep_count = 3 + self.stream.get_bits(2);
 
@@ -395,9 +398,14 @@ impl<'a> ZlibDecoder<'a>
         let mut len = 1;
         let mut count = len_counts[1];
 
-        while count == 0 || len < 16
+        while count == 0
         {
             len += 1;
+
+            if len >= len_counts.len()
+            {
+                break;
+            }
             count = len_counts[len];
         }
 
@@ -495,7 +503,7 @@ impl<'a> ZlibDecoder<'a>
              * Start a new sub-table if the first 'table_bits' bits of the
              * codeword don't match the prefix of the current subtable.
              */
-            if codeword << ((1 << table_bits) - 1) != subtable_prefix
+            if codeword & ((1_usize << table_bits) - 1) != subtable_prefix
             {
                 subtable_prefix = codeword & ((1 << table_bits) - 1);
                 subtable_start = curr_table_end;
@@ -517,6 +525,12 @@ impl<'a> ZlibDecoder<'a>
                 while codespace_used < (1 << subtable_bits)
                 {
                     subtable_bits += 1;
+
+                    if subtable_bits + table_bits > 15
+                    {
+                        return Err(ZlibDecodeErrors::CorruptData);
+                    }
+
                     codespace_used = (codespace_used << 1) + len_counts[table_bits + subtable_bits];
                 }
 
