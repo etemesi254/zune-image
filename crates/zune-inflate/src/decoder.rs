@@ -10,7 +10,7 @@ use crate::errors::ZlibDecodeErrors;
 use crate::errors::ZlibDecodeErrors::InsufficientData;
 use crate::utils::make_decode_table_entry;
 
-struct ZlibDecoder<'a>
+pub struct ZlibDecoder<'a>
 {
     data:                &'a [u8],
     position:            usize,
@@ -21,7 +21,7 @@ struct ZlibDecoder<'a>
 }
 impl<'a> ZlibDecoder<'a>
 {
-    fn new_zlib(data: &'a [u8]) -> ZlibDecoder<'a>
+    pub fn new_zlib(data: &'a [u8]) -> ZlibDecoder<'a>
     {
         // create stream
 
@@ -87,7 +87,7 @@ impl<'a> ZlibDecoder<'a>
 
         self.position = 2;
 
-        self.decode_deflate();
+        self.decode_deflate()?;
 
         Ok(())
     }
@@ -395,7 +395,7 @@ impl<'a> ZlibDecoder<'a>
         let mut len = 1;
         let mut count = len_counts[1];
 
-        while count == 0
+        while count == 0 || len < 16
         {
             len += 1;
             count = len_counts[len];
