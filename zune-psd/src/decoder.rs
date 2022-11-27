@@ -31,8 +31,8 @@ impl Default for ZunePSDOptions
     fn default() -> Self
     {
         ZunePSDOptions {
-            max_height: 1 << 17,
-            max_width:  1 << 17
+            max_height: 30000, // Supported width
+            max_width:  30000
         }
     }
 }
@@ -127,6 +127,11 @@ impl<'a> PSDDecoder<'a>
 
         self.width = width;
         self.height = height;
+
+        if self.width == 0 || self.height == 0 || self.channel_count == 0
+        {
+            return Err(PSDDecodeErrors::ZeroDimensions);
+        }
 
         let depth = self.stream.get_u16_be_err()?;
 
@@ -287,7 +292,7 @@ impl<'a> PSDDecoder<'a>
                 out_channel.truncate(pixel_count * self.channel_count);
                 DecodingResult::U16(out_channel)
             }
-            _ => todo!()
+            _ => return Err(PSDDecodeErrors::Generic("Not implemented or Unknown"))
         };
         // remove white matte from psd
         if self.channel_count >= 4
@@ -355,6 +360,11 @@ impl<'a> PSDDecoder<'a>
                     }
                     count += len;
 
+                    if position + (self.channel_count * len) > buffer.len()
+                    {
+                        return Err(PSDDecodeErrors::BadRLE);
+                    }
+
                     while len > 0
                     {
                         buffer[position] = self.stream.get_u8();
@@ -375,6 +385,11 @@ impl<'a> PSDDecoder<'a>
                     }
                     count += len;
                     let val = self.stream.get_u8();
+
+                    if position + (self.channel_count * len) > buffer.len()
+                    {
+                        return Err(PSDDecodeErrors::BadRLE);
+                    }
 
                     while len > 0
                     {
