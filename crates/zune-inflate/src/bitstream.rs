@@ -42,7 +42,6 @@ impl<'src> BitStreamReader<'src>
          *
          * Bits stored will never go above 63 and if bits are in the range 56-63 no refills occur.
          */
-
         let mut buf = [0; 8];
 
         match self.src.get(self.position..self.position + 8)
@@ -70,11 +69,18 @@ impl<'src> BitStreamReader<'src>
         // ensure we don't read if we can do it in the
         // first byte
         assert!(self.position + 8 > self.src.len());
+        let bytes = &self.src[self.position..];
 
-        for byte in &self.src[self.position..]
+        for byte in bytes
         {
             self.buffer |= u64::from(*byte) << self.bits_left;
             self.bits_left += 8;
+            self.position += 1;
+
+            if self.bits_left > 56
+            {
+                break;
+            }
         }
     }
 
