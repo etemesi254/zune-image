@@ -8,9 +8,10 @@ edition = "2021"
 ppm = ["zune-ppm"]
 jpeg = ["zune-jpeg"]
 png = ["zune-png"]
+psd = ["zune-psd"]
 default = []
 threads = []
-all = ["jpeg", "ppm", "threads", "png"]
+all = ["jpeg", "ppm", "threads", "png", "psd"]
 
 [dependencies]
 zune-jpeg = { path = "../zune-jpeg", optional = true }
@@ -18,4 +19,5 @@ zune-imageprocs = { path = "../zune-imageprocs" }
 zune-png = { path = "../zune-png", optional = true }
 zune-core = { path = "../zune-core" }
 zune-ppm = { path = "../zune-ppm", optional = true }
+zune-psd = { path = "../zune-psd", optional = true }
 log = "0.4.17"
