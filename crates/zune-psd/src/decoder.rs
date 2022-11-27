@@ -100,7 +100,7 @@ impl<'a> PSDDecoder<'a>
         // Read the number of channels (R, G, B, A, etc).
         let channel_count = self.stream.get_u16_be_err()?;
 
-        if channel_count > 16
+        if channel_count > 4
         {
             return Err(PSDDecodeErrors::UnsupportedChannelCount(channel_count));
         }
