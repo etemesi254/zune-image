@@ -11,6 +11,7 @@ pub enum PSDDecodeErrors
     UnsupportedBitDepth(u16),
     UnsupportedColorFormat(Option<ColorModes>),
     LargeDimensions(usize, usize),
+    ZeroDimensions,
     UnknownCompression,
     Generic(&'static str),
     BadRLE
@@ -85,6 +86,10 @@ impl Debug for PSDDecodeErrors
                     "Too large dimensions, supported {} but found {}",
                     supported, found
                 )
+            }
+            PSDDecodeErrors::ZeroDimensions =>
+            {
+                writeln!(f, "Zero found where not expected")
             }
         }
     }
