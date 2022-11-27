@@ -1,8 +1,9 @@
 //! An incredibly spiffy deflate decoder
-mod decoder;
+pub use crate::decoder::ZlibDecoder;
 
 mod bitstream;
-pub(crate) mod constants;
+mod constants;
+mod decoder;
 mod enums;
 pub mod errors;
 mod utils;
