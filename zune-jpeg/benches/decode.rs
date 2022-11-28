@@ -10,7 +10,7 @@ fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
     let mut d = JpegDecoder::new(buf);
 
-    d.decode_buffer().unwrap()
+    d.decode().unwrap()
 }
 
 fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]>
@@ -66,7 +66,7 @@ fn decode_h_samp(c: &mut Criterion)
 {
     let data = read(
         env!("CARGO_MANIFEST_DIR").to_string()
-            + "/benches/images/speed_bench_horizontal_subsampling.jpg",
+            + "/benches/images/speed_bench_horizontal_subsampling.jpg"
     )
     .unwrap();
     let mut group = c.benchmark_group("Horizontal Sub Sampling");
@@ -82,7 +82,7 @@ fn decode_h_samp(c: &mut Criterion)
 
     group.bench_function(
         "Horizontal sampling JPEG Decoding  imagers/jpeg-decoder",
-        |b| b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice()))),
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     );
 }
 
@@ -90,7 +90,7 @@ fn decode_v_samp(c: &mut Criterion)
 {
     let data = read(
         env!("CARGO_MANIFEST_DIR").to_string()
-            + "/benches/images/speed_bench_vertical_subsampling.jpg",
+            + "/benches/images/speed_bench_vertical_subsampling.jpg"
     )
     .unwrap();
     let mut group = c.benchmark_group("Vertical sub sampling");
@@ -106,14 +106,14 @@ fn decode_v_samp(c: &mut Criterion)
 
     group.bench_function(
         "Vertical sub-sampling sampling JPEG Decoding  imagers/jpeg-decoder",
-        |b| b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice()))),
+        |b| b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
     );
 }
 
 fn decode_hv_samp(c: &mut Criterion)
 {
     let data = read(
-        env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_hv_subsampling.jpg",
+        env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_hv_subsampling.jpg"
     )
     .unwrap();
     let mut group = c.benchmark_group("HV sampling");
