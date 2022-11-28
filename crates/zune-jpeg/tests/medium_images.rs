@@ -50,13 +50,13 @@ fn medium_no_sampling_factors_rgb()
 
     // RGB
     {
-        let pixels = decoder.decode_buffer().expect("Test failed decoding");
+        let pixels = decoder.decode().expect("Test failed decoding");
         write_output(
             "medium_no_samp_rgb_7680_4320.jpg",
             &pixels,
             decoder.width() as usize,
             decoder.height() as usize,
-            OutColorSpace::JCS_RGB,
+            OutColorSpace::JCS_RGB
         );
     }
 }
@@ -71,17 +71,17 @@ fn medium_no_sampling_factors_grayscale()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
     // Grayscale
 
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "medium_no_samp_grayscale_7680_4320.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }
 
@@ -95,14 +95,14 @@ fn medium_horizontal_sampling_rgb()
 
     let mut decoder = JpegDecoder::new(data);
 
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
 
     write_output(
         "medium_horiz_samp_rgb_7680_4320.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_RGB,
+        OutColorSpace::JCS_RGB
     );
 }
 
@@ -116,16 +116,16 @@ fn medium_horizontal_sampling_grayscale()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
 
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "medium_horiz_samp_grayscale_7680_4320.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }
 
@@ -138,17 +138,17 @@ fn medium_horizontal_sampling_cymk()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::YCbCr),
-        data,
+        data
     );
     // cymk
 
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
 
     write_output(
         "medium_horiz_samp_ycbcr_7680_4320.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_YCbCr,
+        OutColorSpace::JCS_YCbCr
     );
 }

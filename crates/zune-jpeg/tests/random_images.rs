@@ -45,16 +45,16 @@ fn huffman_third_index()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
     // Grayscale
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "huffman_third_index.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }
 
@@ -69,16 +69,16 @@ fn single_qt()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
     // Grayscale
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "single_qt.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }
 
@@ -92,16 +92,16 @@ fn google_pixel()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
     // Grayscale
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "google_pixel.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }
 
@@ -116,15 +116,15 @@ fn google_pixel_progressive()
 
     let mut decoder = JpegDecoder::new_with_options(
         ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data,
+        data
     );
     // Grayscale
-    let pixels = decoder.decode_buffer().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
         "google_pixel_progressive.jpg",
         &pixels,
         decoder.width() as usize,
         decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE,
+        OutColorSpace::JCS_GRAYSCALE
     );
 }

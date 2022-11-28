@@ -179,7 +179,7 @@ impl<'a> JpegDecoder<'a>
     ///
     /// # Errors
     /// See DecodeErrors for an explanation
-    pub fn decode_buffer(&mut self) -> Result<Vec<u8>, DecodeErrors>
+    pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         self.decode_internal()
     }
@@ -201,7 +201,7 @@ impl<'a> JpegDecoder<'a>
         //Read to an in memory buffer
         info!("File size: {} bytes", data.len());
 
-        JpegDecoder::new(&data).decode_buffer()
+        JpegDecoder::new(&data).decode()
     }
 
     /// Returns the image information
@@ -462,14 +462,14 @@ impl<'a> JpegDecoder<'a>
     ///
     /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
     /// let mut decoder = JpegDecoder::new(&img_data);
-    /// decoder.read_headers().unwrap();
+    /// decoder.decode_headers().unwrap();
     ///
     /// println!("Total decoder dimensions are : {} pixels",usize::from(decoder.width()) * usize::from(decoder.height()));
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
     /// # Errors
     /// See DecodeErrors enum for list of possible errors during decoding
-    pub fn read_headers(&mut self) -> Result<(), DecodeErrors>
+    pub fn decode_headers(&mut self) -> Result<(), DecodeErrors>
     {
         self.decode_headers_internal()?;
         Ok(())
@@ -541,41 +541,6 @@ impl<'a> JpegDecoder<'a>
         }
 
         return Ok(());
-    }
-
-    /// Set output colorspace to be RGBA
-    /// equivalent of calling
-    /// ```rust
-    /// use zune_core::colorspace::ColorSpace;
-    /// use zune_jpeg::{JpegDecoder, ColorSpace};
-    /// let data = [0;32];
-    /// JpegDecoder::new(&data).set_output_colorspace(ColorSpace::RGBA);
-    /// ```
-    #[deprecated(
-        since = "0.2.0",
-        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
-    )]
-    pub fn rgba(&mut self)
-    {
-        // told you so
-        self.options = self.options.set_out_colorspace(ColorSpace::RGBA);
-    }
-
-    #[deprecated(
-        since = "0.2.0",
-        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
-    )]
-    pub fn set_limits(&mut self, width: u16, height: u16)
-    {
-        self.options = self.options.set_max_width(width).set_max_height(height);
-    }
-    #[deprecated(
-        since = "0.2.0",
-        note = "Set options in the ZuneJpegOptions struct and then use new_with_options"
-    )]
-    pub fn set_output_colorspace(&mut self, colorspace: ColorSpace)
-    {
-        self.options = self.options.set_out_colorspace(colorspace);
     }
     #[must_use]
     /// Get the width of the image as a u16

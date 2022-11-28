@@ -10,7 +10,7 @@ fn decode_jpeg(buf: &[u8], options: ZuneJpegOptions) -> Vec<u8>
 {
     let mut d = JpegDecoder::new_with_options(options, buf);
 
-    d.decode_buffer().unwrap()
+    d.decode().unwrap()
 }
 
 fn decode_no_samp(c: &mut Criterion)

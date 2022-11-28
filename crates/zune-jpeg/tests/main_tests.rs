@@ -13,7 +13,7 @@ impl TestTrait for MyType
     {
         let mut decoder = JpegDecoder::new(compressed_bytes);
 
-        decoder.decode_buffer().unwrap()
+        decoder.decode().unwrap()
     }
 }
 

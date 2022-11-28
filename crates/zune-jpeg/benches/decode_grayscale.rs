@@ -11,10 +11,10 @@ fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
     let mut d = JpegDecoder::new_with_options(
         ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma),
-        buf,
+        buf
     );
 
-    d.decode_buffer().unwrap()
+    d.decode().unwrap()
 }
 
 fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 1]>
