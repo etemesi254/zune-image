@@ -25,7 +25,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
         const JPEG_BIT_DEPTH: BitDepth = BitDepth::Eight;
 
         let pixel_data = self
-            .decode_buffer()
+            .decode()
             .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;
 
         let colorspace = self.get_out_colorspace();
