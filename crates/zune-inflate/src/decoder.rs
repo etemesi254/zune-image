@@ -1,16 +1,22 @@
+#![allow(clippy::never_loop)]
+
+// TODO: Remove this
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
-    DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS, DEFLATE_MAX_PRE_CODEWORD_LEN,
-    DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, DEFLATE_NUM_PRECODE_SYMS,
-    DEFLATE_PRECODE_LENS_PERMUTATION, DELFATE_MAX_LENS_OVERRUN, HUFFDEC_EXCEPTIONAL,
-    HUFFDEC_SUITABLE_POINTER, PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
+    DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_STATIC, DEFLATE_BLOCKTYPE_UNCOMPRESSED,
+    DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS,
+    DEFLATE_MAX_OFFSET_CODEWORD_LENGTH, DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS,
+    DEFLATE_NUM_OFFSET_SYMS, DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION,
+    DELFATE_MAX_LENS_OVERRUN, HUFFDEC_EXCEPTIONAL, HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_RESULTS,
+    LITLEN_ENOUGH, LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS,
+    PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
 };
 use crate::enums::DeflateState;
 use crate::errors::ZlibDecodeErrors;
 use crate::errors::ZlibDecodeErrors::InsufficientData;
 use crate::utils::make_decode_table_entry;
 
-pub struct ZlibDecoder<'a>
+pub struct DeflateDecoder<'a>
 {
     data:                &'a [u8],
     position:            usize,
@@ -19,13 +25,14 @@ pub struct ZlibDecoder<'a>
     is_last_block:       bool,
     static_codes_loaded: bool
 }
-impl<'a> ZlibDecoder<'a>
+
+impl<'a> DeflateDecoder<'a>
 {
-    pub fn new_zlib(data: &'a [u8]) -> ZlibDecoder<'a>
+    pub fn new(data: &'a [u8]) -> DeflateDecoder<'a>
     {
         // create stream
 
-        ZlibDecoder {
+        DeflateDecoder {
             data,
             position: 0,
             state: DeflateState::Initialized,
@@ -106,146 +113,239 @@ impl<'a> ZlibDecoder<'a>
     {
         let mut precode_lens = [0; DEFLATE_NUM_PRECODE_SYMS];
         let mut precode_decode_table = [0_u32; PRECODE_ENOUGH];
+        let mut litlen_decode_table = [0_u32; LITLEN_ENOUGH];
+        let mut offset_decode_table = [0; OFFSET_ENOUGH];
+
         // start deflate decode
         // re-read the stream so that we can remove code read by zlib
         self.stream = BitStreamReader::new(&self.data[self.position..]);
 
         self.stream.refill();
 
+        let mut out_block = Vec::<u8>::with_capacity(37000);
         // bits used
         self.is_last_block = self.stream.get_bits(1) == 1;
         let block_type = self.stream.get_bits(2);
 
-        if block_type == 2
+        let mut overread_count = 0;
+        const COUNT: usize =
+            DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DELFATE_MAX_LENS_OVERRUN;
+
+        let mut lens = [0_u8; COUNT];
+
+        let mut num_litlen_syms = 0;
+        let mut num_offset_syms = 0;
+
+        loop
         {
-            const SINGLE_PRECODE: usize = 3;
-
-            // Dynamic Huffman block
-
-            // Read codeword lengths
-            let num_litlen_syms = 257 + (self.stream.get_bits(5)) as usize;
-            let num_offset_syms = 1 + (self.stream.get_bits(5)) as usize;
-
-            let num_explicit_precode_lens = 4 + (self.stream.get_bits(4)) as usize;
-
-            self.static_codes_loaded = false;
-
-            self.stream.refill();
-
-            let expected = (SINGLE_PRECODE * num_explicit_precode_lens) as u8;
-
-            if !self.stream.has(expected)
+            if block_type == DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN
             {
-                return Err(ZlibDecodeErrors::InsufficientData);
-            }
+                const SINGLE_PRECODE: usize = 3;
 
-            for i in DEFLATE_PRECODE_LENS_PERMUTATION
-                .iter()
-                .take(num_explicit_precode_lens)
-            {
-                let bits = self.stream.get_bits(3) as u8;
+                // Dynamic Huffman block
+                // Read codeword lengths
+                num_litlen_syms = 257 + (self.stream.get_bits(5)) as usize;
+                num_offset_syms = 1 + (self.stream.get_bits(5)) as usize;
 
-                precode_lens[usize::from(*i)] = bits;
-            }
+                let num_explicit_precode_lens = 4 + (self.stream.get_bits(4)) as usize;
 
-            self.build_decode_table(
-                &precode_lens,
-                &PRECODE_DECODE_RESULTS,
-                &mut precode_decode_table,
-                PRECODE_TABLE_BITS,
-                DEFLATE_NUM_PRECODE_SYMS,
-                DEFLATE_MAX_CODEWORD_LENGTH
-            )?;
+                self.static_codes_loaded = false;
 
-            let mut i = 0;
+                self.stream.refill();
 
-            const COUNT: usize =
-                DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DELFATE_MAX_LENS_OVERRUN;
+                let expected = (SINGLE_PRECODE * num_explicit_precode_lens) as u8;
 
-            let mut lens = [0_u8; COUNT];
-
-            loop
-            {
-                let rep_val: u8;
-                let rep_count: u64;
-
-                if !self.stream.has(DEFLATE_MAX_PRE_CODEWORD_LEN + 7)
+                if !self.stream.has(expected)
                 {
-                    self.stream.refill();
-                }
-                // decode next precode symbol
-                let entry_pos = self
-                    .stream
-                    .peek_bits::<{ DEFLATE_MAX_PRE_CODEWORD_LEN as usize }>();
-
-                let entry = precode_decode_table[entry_pos];
-                let presym = entry >> 16;
-
-                self.stream.drop_bits(entry as u8);
-
-                if presym < 16
-                {
-                    // explicit codeword length
-                    lens[i] = presym as u8;
-                    i += 1;
-                    continue;
+                    return Err(ZlibDecodeErrors::InsufficientData);
                 }
 
-                /* Run-length encoded codeword lengths */
+                for i in DEFLATE_PRECODE_LENS_PERMUTATION
+                    .iter()
+                    .take(num_explicit_precode_lens)
+                {
+                    let bits = self.stream.get_bits(3) as u8;
+
+                    precode_lens[usize::from(*i)] = bits;
+                }
+
+                self.build_decode_table(
+                    &precode_lens,
+                    &PRECODE_DECODE_RESULTS,
+                    &mut precode_decode_table,
+                    PRECODE_TABLE_BITS,
+                    DEFLATE_NUM_PRECODE_SYMS,
+                    DEFLATE_MAX_CODEWORD_LENGTH
+                )?;
+
+                let mut i = 0;
+
+                loop
+                {
+                    let rep_val: u8;
+                    let rep_count: u64;
+
+                    if !self.stream.has(DEFLATE_MAX_PRE_CODEWORD_LEN + 7)
+                    {
+                        self.stream.refill();
+                    }
+                    // decode next precode symbol
+                    let entry_pos = self
+                        .stream
+                        .peek_bits::<{ DEFLATE_MAX_PRE_CODEWORD_LEN as usize }>();
+
+                    let entry = precode_decode_table[entry_pos];
+                    let presym = entry >> 16;
+
+                    self.stream.drop_bits(entry as u8);
+
+                    if presym < 16
+                    {
+                        // explicit codeword length
+                        lens[i] = presym as u8;
+                        i += 1;
+                        continue;
+                    }
+
+                    /* Run-length encoded codeword lengths */
+
+                    /*
+                     * Note: we don't need verify that the repeat count
+                     * doesn't overflow the number of elements, since we've
+                     * sized the lens array to have enough extra space to
+                     * allow for the worst-case overrun (138 zeroes when
+                     * only 1 length was remaining).
+                     *
+                     * In the case of the small repeat counts (presyms 16
+                     * and 17), it is fastest to always write the maximum
+                     * number of entries.  That gets rid of branches that
+                     * would otherwise be required.
+                     *
+                     * It is not just because of the numerical order that
+                     * our checks go in the order 'presym < 16', 'presym ==
+                     * 16', and 'presym == 17'.  For typical data this is
+                     * ordered from most frequent to least frequent case.
+                     */
+                    if presym == 16
+                    {
+                        // repeat previous length three to 6 times
+                        if i == 0
+                        {
+                            return Err(ZlibDecodeErrors::CorruptData);
+                        }
+                        rep_val = lens[i - 1];
+                        rep_count = 3 + self.stream.get_bits(2);
+
+                        lens[i..i + 6].fill(rep_val);
+
+                        i += rep_count as usize;
+                    }
+                    else if presym == 17
+                    {
+                        /* Repeat zero 3 - 10 times. */
+                        rep_count = 3 + self.stream.get_bits(3);
+
+                        lens[i..i + 10].fill(0);
+
+                        i += rep_count as usize;
+                    }
+                    else
+                    {
+                        // repeat zero 11-138 times.
+                        rep_count = 11 + self.stream.get_bits(7);
+
+                        lens[i..i + rep_count as usize].fill(0);
+
+                        i += rep_count as usize;
+                    }
+                    if i >= num_litlen_syms + num_offset_syms
+                    {
+                        break;
+                    }
+                }
+            }
+            else if block_type == DEFLATE_BLOCKTYPE_UNCOMPRESSED
+            {
+                /*
+                 * Uncompressed block: copy 'len' bytes literally from the input
+                 * buffer to the output buffer.
+                 */
 
                 /*
-                 * Note: we don't need verify that the repeat count
-                 * doesn't overflow the number of elements, since we've
-                 * sized the lens array to have enough extra space to
-                 * allow for the worst-case overrun (138 zeroes when
-                 * only 1 length was remaining).
-                 *
-                 * In the case of the small repeat counts (presyms 16
-                 * and 17), it is fastest to always write the maximum
-                 * number of entries.  That gets rid of branches that
-                 * would otherwise be required.
-                 *
-                 * It is not just because of the numerical order that
-                 * our checks go in the order 'presym < 16', 'presym ==
-                 * 16', and 'presym == 17'.  For typical data this is
-                 * ordered from most frequent to least frequent case.
+                 * Align the bitstream to the next byte boundary.  This means
+                 * the next byte boundary as if we were reading a byte at a
+                 * time.  Therefore, we have to rewind 'in_next' by any bytes
+                 * that have been refilled but not actually consumed yet (not
+                 * counting overread bytes, which don't increment 'in_next').
+                 * The RFC says that
+                 * skip any remaining bits in current partially
+                 *       processed byte
+                 *     read LEN and NLEN (see next section)
+                 *     copy LEN bytes of data to output
                  */
-                if presym == 16
+
+                if overread_count > self.stream.get_bits_left() >> 3
                 {
-                    // repeat previous length three to 6 times
-                    if i == 0
-                    {
-                        return Err(ZlibDecodeErrors::CorruptData);
-                    }
-                    rep_val = lens[i - 1];
-                    rep_count = 3 + self.stream.get_bits(2);
-
-                    lens[i..i + 6].fill(rep_val);
-
-                    i += rep_count as usize;
+                    return Err(ZlibDecodeErrors::Generic("Over-read stream"));
                 }
-                else if presym == 17
+                let partial_bits = usize::from((self.stream.get_bits_left() & 7) != 0);
+                // advance if we have extra bits
+                self.stream.advance(partial_bits);
+                let len = self.stream.get_bits(16) as usize;
+                let nlen = self.stream.get_bits(16) as usize;
+
+                // copy to deflate
+                if len != !nlen
                 {
-                    /* Repeat zero 3 - 10 times. */
-                    rep_count = 3 + self.stream.get_bits(3);
-
-                    lens[i..i + 10].fill(0);
-
-                    i += rep_count as usize;
+                    return Err(ZlibDecodeErrors::Generic("Len and nlen do not match"));
                 }
-                else
-                {
-                    // repeat zero 11-138 times.
-                    rep_count = 11 + self.stream.get_bits(7);
 
-                    lens[i..i + rep_count as usize].fill(0);
-
-                    i += rep_count as usize;
-                }
-                if i >= num_litlen_syms + num_offset_syms
+                let start = self.stream.get_position();
+                out_block.extend_from_slice(&self.data[start..start + len]);
+            }
+            else if block_type == DEFLATE_BLOCKTYPE_STATIC
+            {
+                if self.static_codes_loaded
                 {
                     break;
                 }
+
+                self.static_codes_loaded = true;
+
+                lens[000..144].fill(8);
+                lens[144..256].fill(9);
+                lens[256..280].fill(7);
+                lens[280..288].fill(8);
+                lens[288..].fill(5);
+
+                num_litlen_syms = 288;
+                num_offset_syms = 32;
+            }
+
+            // build offset decode table
+            self.build_decode_table(
+                &lens[num_litlen_syms..],
+                &OFFSET_DECODE_RESULTS,
+                &mut offset_decode_table,
+                OFFSET_TABLEBITS,
+                num_offset_syms,
+                DEFLATE_MAX_OFFSET_CODEWORD_LENGTH
+            )?;
+
+            self.build_decode_table(
+                &lens,
+                &LITLEN_DECODE_RESULTS,
+                &mut litlen_decode_table,
+                LITLEN_TABLE_BITS,
+                num_litlen_syms,
+                DEFLATE_MAX_LITLEN_CODEWORD_LENGTH
+            )?;
+
+            break;
+
+            if self.is_last_block
+            {
+                break;
             }
         }
 
@@ -254,18 +354,19 @@ impl<'a> ZlibDecoder<'a>
     /// Build the decode table for the precode
     fn build_decode_table(
         &mut self, lens: &[u8], decode_results: &[u32], decode_table: &mut [u32],
-        table_bits: usize, num_syms: usize, max_codeword_len: usize
+        table_bits: usize, num_syms: usize, mut max_codeword_len: usize
     ) -> Result<(), ZlibDecodeErrors>
     {
+        const BITS: u32 = usize::BITS - 1;
+
         let mut len_counts: [u32; DEFLATE_MAX_CODEWORD_LENGTH + 1] =
             [0; DEFLATE_MAX_CODEWORD_LENGTH + 1];
         let mut offsets: [u32; DEFLATE_MAX_CODEWORD_LENGTH + 1] =
             [0; DEFLATE_MAX_CODEWORD_LENGTH + 1];
         let mut sorted_syms: [u16; DEFLATE_MAX_NUM_SYMS] = [0; DEFLATE_MAX_NUM_SYMS];
 
-        let mut i = 0;
+        let mut i;
 
-        let mut max_codeword_length = max_codeword_len;
         // count how many codewords have each length, including 0.
         for sym in 0..num_syms
         {
@@ -276,9 +377,9 @@ impl<'a> ZlibDecoder<'a>
          * Determine the actual maximum codeword length that was used, and
          * decrease table_bits to it if allowed.
          */
-        while max_codeword_length > 1 && len_counts[max_codeword_length] == 0
+        while max_codeword_len > 1 && len_counts[max_codeword_len] == 0
         {
-            max_codeword_length -= 1;
+            max_codeword_len -= 1;
         }
         /*
          * Sort the symbols primarily by increasing codeword length and
@@ -294,12 +395,12 @@ impl<'a> ZlibDecoder<'a>
 
         let mut codespace_used = 0_u32;
 
-        for len in 1..max_codeword_length
+        for len in 1..max_codeword_len
         {
             offsets[len + 1] = offsets[len] + len_counts[len];
             codespace_used = (codespace_used << 1) + len_counts[len];
         }
-        codespace_used = (codespace_used << 1) + len_counts[max_codeword_length];
+        codespace_used = (codespace_used << 1) + len_counts[max_codeword_len];
 
         for sym in 0..num_syms
         {
@@ -319,16 +420,14 @@ impl<'a> ZlibDecoder<'a>
          */
 
         // Overfull code
-        if codespace_used > 1 << max_codeword_length
+        if codespace_used > 1 << max_codeword_len
         {
             return Err(ZlibDecodeErrors::Generic("Overflown code"));
         }
         // incomplete code
-        if codespace_used < 1 << max_codeword_length
+        if codespace_used < 1 << max_codeword_len
         {
-            let mut entry;
-
-            if codespace_used == 0
+            let entry = if codespace_used == 0
             {
                 /*
                  * An empty code is allowed.  This can happen for the
@@ -337,7 +436,7 @@ impl<'a> ZlibDecoder<'a>
                  */
 
                 /* sym=0, len=1 (arbitrary) */
-                entry = make_decode_table_entry(decode_results, 0, 1);
+                make_decode_table_entry(decode_results, 0, 1)
             }
             else
             {
@@ -352,22 +451,21 @@ impl<'a> ZlibDecoder<'a>
                  * We also assign both codewords '0' and '1' to the
                  * symbol to avoid having to handle '1' specially.
                  */
-                if codespace_used != 1 << max_codeword_length || len_counts[1] != 1
+                if codespace_used != 1 << max_codeword_len || len_counts[1] != 1
                 {
                     return Err(ZlibDecodeErrors::Generic(
                         "Cannot work with empty pre-code table"
                     ));
                 }
-                entry = make_decode_table_entry(decode_results, usize::from(sorted_syms[0]), 1);
-
-                /*
-                 * Note: the decode table still must be fully initialized, in
-                 * case the stream is malformed and contains bits from the part
-                 * of the codespace the incomplete code doesn't use.
-                 */
-                decode_table.fill(entry);
-                return Ok(());
-            }
+                make_decode_table_entry(decode_results, usize::from(sorted_syms[i]), 1)
+            };
+            /*
+             * Note: the decode table still must be fully initialized, in
+             * case the stream is malformed and contains bits from the part
+             * of the codespace the incomplete code doesn't use.
+             */
+            decode_table.fill(entry);
+            return Ok(());
         }
 
         /*
@@ -452,12 +550,12 @@ impl<'a> ZlibDecoder<'a>
                  * use it first flip all bits in the codeword by XOR'ing
                  * it with (1U << len) - 1 == cur_table_end - 1.
                  */
-                let adv = ((usize::BITS) - 1) - (codeword ^ (curr_table_end - 1)).leading_zeros();
 
+                let adv = BITS - (codeword ^ (curr_table_end - 1)).leading_zeros();
                 let bit = 1 << adv;
+
                 codeword &= bit - 1;
                 codeword |= bit;
-
                 count -= 1;
 
                 if count == 0
@@ -564,24 +662,23 @@ impl<'a> ZlibDecoder<'a>
             //advance to the next codeword
             if codeword == (1 << len) - 1
             {
+                // last codeword
                 return Ok(());
             }
-            let bit = 1 << ((usize::BITS - 1) - (codeword ^ (curr_table_end - 1)).leading_zeros());
+
+            let adv = BITS - (codeword ^ (curr_table_end - 1)).leading_zeros();
+            let bit = 1 << adv;
 
             codeword &= bit - 1;
             codeword |= bit;
-
             count -= 1;
 
-            if count == 0
+            while count == 0
             {
-                break;
+                len += 1;
+                count = len_counts[len];
             }
-
-            count -= 1;
         }
-
-        todo!()
     }
 }
 
@@ -590,6 +687,6 @@ fn simple_test()
 {
     use std::fs::read;
     let file = read("/home/caleb/Documents/zune-image/zune-inflate/tests/tt.zlib").unwrap();
-    let mut decoder = ZlibDecoder::new_zlib(&file);
+    let mut decoder = DeflateDecoder::new(&file);
     decoder.decode_zlib().unwrap();
 }
