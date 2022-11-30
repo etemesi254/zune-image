@@ -104,7 +104,32 @@ impl<'src> BitStreamReader<'src>
 
         value
     }
+    /// Get number of bits left in the bit buffer.
+    pub const fn get_bits_left(&self) -> u8
+    {
+        self.bits_left
+    }
+    /// Get position the stream is in this buffer
+    /// Or alternatively, number of bits read.
+    pub const fn get_position(&self) -> usize
+    {
+        self.position
+    }
 
+    /// Reset buffer and bits left to zero.
+    pub fn reset(&mut self)
+    {
+        self.buffer = 0;
+        self.bits_left = 0;
+    }
+
+    /// Advance the reader n bytes ahead
+    pub fn advance(&mut self, bytes: usize)
+    {
+        self.position = self.position.saturating_add(bytes);
+    }
+    /// Return true if the bit buffer can satisfy
+    /// `bits` read without refilling,
     pub const fn has(&self, bits: u8) -> bool
     {
         self.bits_left >= bits
