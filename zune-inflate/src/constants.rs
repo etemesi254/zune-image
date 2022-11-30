@@ -18,6 +18,9 @@ pub const PRECODE_ENOUGH: usize = 128;
 /// Maximum codeword length across all codes.
 pub const DEFLATE_MAX_CODEWORD_LENGTH: usize = 15;
 
+pub const DEFLATE_MAX_OFFSET_CODEWORD_LENGTH: usize = 15;
+pub const DEFLATE_MAX_LITLEN_CODEWORD_LENGTH: usize = 15;
+
 pub const PRECODE_TABLE_BITS: usize = 7;
 
 pub const LITLEN_TABLE_BITS: usize = 11;
@@ -27,7 +30,7 @@ pub const LITLEN_ENOUGH: usize = 2342;
 pub const OFFSET_TABLEBITS: usize = 8;
 pub const OFFSET_ENOUGH: usize = 402;
 /// Maximum number of symbols across all codes
-pub const DEFLATE_MAX_NUM_SYMS: usize = 208;
+pub const DEFLATE_MAX_NUM_SYMS: usize = 288;
 
 ///Maximum codeword length in bits for each precode
 pub const DEFLATE_MAX_PRE_CODEWORD_LEN: u8 = 7;
@@ -108,4 +111,27 @@ const fn construct_litlen_decode_table() -> [u32; 288]
     results
 }
 
-static LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
+const fn entry(base: u32, extra: u32) -> u32
+{
+    base << 16 | extra
+}
+
+#[rustfmt::skip]
+pub static OFFSET_DECODE_RESULTS: [u32; 32] = [
+    entry(1, 0), entry(2, 0), entry(3, 0), entry(4, 0),
+    entry(5, 1), entry(7, 1), entry(9, 2), entry(13, 2),
+    entry(17, 3), entry(25, 3), entry(33, 4), entry(49, 4),
+    entry(65, 5), entry(97, 5), entry(129, 6), entry(193, 6),
+    entry(257, 7), entry(385, 7), entry(513, 8), entry(769, 8),
+    entry(1025, 9), entry(1537, 9), entry(2049, 10), entry(3073, 10),
+    entry(4097, 11), entry(6145, 11), entry(8193, 12), entry(12289, 12),
+    entry(16385, 13), entry(24577, 13), entry(24577, 13), entry(24577, 13),
+];
+
+pub static LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
+
+pub const DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN: u64 = 2;
+
+pub const DEFLATE_BLOCKTYPE_UNCOMPRESSED: u64 = 0;
+
+pub const DEFLATE_BLOCKTYPE_STATIC: u64 = 1;
