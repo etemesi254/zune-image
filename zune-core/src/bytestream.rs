@@ -1,5 +1,3 @@
-#![cfg(feature = "bytestream")]
-
 use std::cmp::min;
 use std::io::Read;
 
