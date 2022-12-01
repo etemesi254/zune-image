@@ -1,6 +1,7 @@
 #![allow(clippy::never_loop)]
 
-// TODO: Remove this
+use std::cmp::min;
+
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
     DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_STATIC, DEFLATE_BLOCKTYPE_UNCOMPRESSED,
@@ -127,7 +128,7 @@ impl<'a> DeflateDecoder<'a>
         self.is_last_block = self.stream.get_bits(1) == 1;
         let block_type = self.stream.get_bits(2);
 
-        let mut overread_count = 0;
+        let overread_count = 0;
         const COUNT: usize =
             DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DELFATE_MAX_LENS_OVERRUN;
 
@@ -136,7 +137,7 @@ impl<'a> DeflateDecoder<'a>
         let mut num_litlen_syms = 0;
         let mut num_offset_syms = 0;
 
-        loop
+        'block: loop
         {
             if block_type == DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN
             {
@@ -177,6 +178,8 @@ impl<'a> DeflateDecoder<'a>
                     DEFLATE_NUM_PRECODE_SYMS,
                     DEFLATE_MAX_CODEWORD_LENGTH
                 )?;
+
+                /* Decode the litlen and offset codeword lengths. */
 
                 let mut i = 0;
 
@@ -341,7 +344,42 @@ impl<'a> DeflateDecoder<'a>
                 DEFLATE_MAX_LITLEN_CODEWORD_LENGTH
             )?;
 
-            break;
+            /*
+             * This is the "fastloop" for decoding literals and matches.  It does
+             * bounds checks on in_next and out_next in the loop conditions so that
+             * additional bounds checks aren't needed inside the loop body.
+             *
+             * To reduce latency, the bitbuffer is refilled and the next litlen
+             * decode table entry is preloaded before each loop iteration.
+             */
+
+            'decode: loop
+            {
+                let litlen_decode_bits: usize =
+                    min(DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, LITLEN_TABLE_BITS);
+
+                self.stream.refill();
+
+                let entry_pos = self.stream.peek_bits_no_const(litlen_decode_bits);
+
+                let entry = litlen_decode_table[entry_pos];
+
+                'sequence: loop
+                {
+                    // sequence loop
+                    /*
+                     * Consume the bits for the litlen decode table entry.  Save the
+                     * original bitbuf for later, in case the extra match length
+                     * bits need to be extracted from it.
+                     */
+                    let saved_bitbuf = self.stream.buffer;
+
+                    self.stream.drop_bits(entry as u8);
+                    break;
+                }
+
+                break;
+            }
 
             if self.is_last_block
             {
@@ -666,7 +704,7 @@ impl<'a> DeflateDecoder<'a>
                 return Ok(());
             }
 
-            let adv = BITS - (codeword ^ (curr_table_end - 1)).leading_zeros();
+            let adv = BITS - (codeword ^ ((1 << len) - 1)).leading_zeros();
             let bit = 1 << adv;
 
             codeword &= bit - 1;
