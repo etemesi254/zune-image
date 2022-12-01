@@ -135,12 +135,28 @@ impl<'a> FarbFeldDecoder<'a>
         Ok(data)
     }
 
-    pub fn get_colorspace(&mut self) -> ColorSpace
+    /// Returns farbfeld default image colorspace.
+    ///
+    /// This is always RGBA
+    pub const fn get_colorspace(&self) -> ColorSpace
     {
         FARBFELD_COLORSPACE
     }
-    pub fn get_bit_depth(&mut self) -> BitDepth
+    /// Return farbfeld default bit depth
+    ///
+    /// This is always 16
+    pub const fn get_bit_depth(&self) -> BitDepth
     {
         FARBFELD_BIT_DEPTH
+    }
+
+    /// Return the width and height of the image
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
+    {
+        if self.decoded_headers
+        {
+            return Some((self.width, self.height));
+        }
+        None
     }
 }
