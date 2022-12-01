@@ -11,8 +11,8 @@ pub struct BitStreamReader<'src>
     // position in our buffer,
     position: usize,
 
-    bits_left: u8,
-    buffer:    u64
+    pub bits_left: u8,
+    pub buffer:    u64
 }
 
 impl<'src> BitStreamReader<'src>
@@ -88,6 +88,11 @@ impl<'src> BitStreamReader<'src>
     pub const fn peek_bits<const LOOKAHEAD: usize>(&self) -> usize
     {
         (self.buffer & ((1 << LOOKAHEAD) - 1)) as usize
+    }
+    #[inline(always)]
+    pub fn peek_bits_no_const(&self, lookahead: usize) -> usize
+    {
+        (self.buffer & ((1 << lookahead) - 1)) as usize
     }
 
     pub fn get_bits(&mut self, num_bits: u8) -> u64
