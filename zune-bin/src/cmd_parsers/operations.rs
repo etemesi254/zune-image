@@ -12,7 +12,6 @@ use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::stretch_contrast::StretchContrast;
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
-use zune_image::traits::OperationsTrait;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_args::arg_parsers::get_four_pair_args;

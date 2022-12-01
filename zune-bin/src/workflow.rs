@@ -1,28 +1,27 @@
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufWriter, Read, stdin};
+use std::io::{stdin, BufRead, BufWriter, Read};
 use std::ops::Deref;
 use std::path::Path;
 use std::string::String;
 
-use clap::ArgMatches;
 use clap::parser::ValueSource;
 use clap::parser::ValueSource::CommandLine;
-use log::{debug, info, log_enabled};
+use clap::ArgMatches;
 use log::Level::Debug;
+use log::{debug, info, log_enabled};
 use memmap2::Mmap;
-
 use zune_image::codecs::guess_format;
 use zune_image::errors::ImgErrors;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_parsers::global_options::CmdOptions;
-use crate::MmapOptions;
 use crate::show_gui::open_in_default_app;
+use crate::MmapOptions;
 
 #[allow(unused_variables)]
 pub(crate) fn create_and_exec_workflow_from_cmd(
-    args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions,
+    args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions
 ) -> Result<(), ImgErrors>
 {
     info!("Creating workflows from input");
@@ -198,7 +197,7 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
 }
 
 pub fn add_operations(
-    args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow,
+    args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow
 ) -> Result<(), String>
 {
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
@@ -210,7 +209,7 @@ pub fn add_operations(
     crate::cmd_parsers::filters::parse_options(workflow, order_args, args)?;
 
     debug!("Arranging options as specified in cmd");
-    workflow.
+
     if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
     {
         println!();
