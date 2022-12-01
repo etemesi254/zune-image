@@ -37,6 +37,26 @@ impl Default for ZunePSDOptions
     }
 }
 
+impl ZunePSDOptions
+{
+    pub fn set_max_width(&mut self, width: usize)
+    {
+        self.max_width = width;
+    }
+    pub fn set_max_height(&mut self, height: usize)
+    {
+        self.max_height = height;
+    }
+    pub const fn get_max_width(&self) -> usize
+    {
+        self.max_width
+    }
+    pub const fn get_max_height(&self) -> usize
+    {
+        self.max_height
+    }
+}
+
 /// A simple Photoshop PSD reader.
 ///
 /// This currently doesn't support layer flattening
@@ -104,6 +124,7 @@ impl<'a> PSDDecoder<'a>
         {
             return Err(PSDDecodeErrors::UnsupportedChannelCount(channel_count));
         }
+
         self.channel_count = usize::from(channel_count);
 
         let height = self.stream.get_u32_be_err()? as usize;
@@ -171,6 +192,7 @@ impl<'a> PSDDecoder<'a>
 
         // find out if data is compressed
         let compression = self.stream.get_u16_be_err()?;
+
         if compression > 1
         {
             return Err(PSDDecodeErrors::UnknownCompression);

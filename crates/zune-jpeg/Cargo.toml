@@ -19,7 +19,7 @@ default = ["x86"]
 
 [dependencies]
 log = "0.4.11" # logging facilities
-zune-core = { path = "../zune-core", features = ["bytestream"] }
+zune-core = { path = "../zune-core" }
 
 [dev-dependencies]
 zune-tests = { path = "../zune-tests" }
