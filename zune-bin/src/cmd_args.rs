@@ -13,7 +13,7 @@ pub mod arg_parsers;
 pub mod help_strings;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum MmapOptions
+pub enum MmapOptions
 {
     No,
     Always,
@@ -37,51 +37,12 @@ impl ValueEnum for MmapOptions
         })
     }
 }
-
-pub(crate) struct CmdOptions
-{
-    mmap: MmapOptions
-}
-impl CmdOptions
-{
-    pub fn new() -> CmdOptions
-    {
-        CmdOptions {
-            mmap: MmapOptions::Auto
-        }
-    }
-
-    pub fn set_mmap_options(&mut self, mmap: MmapOptions)
-    {
-        self.mmap = mmap;
-    }
-    pub fn get_mmap_options(&self) -> MmapOptions
-    {
-        self.mmap
-    }
-}
-
-fn get_long_version() -> &'static str
-{
-    let box_v = Box::new(format!(
-        "Zune Version:{}\n\n\
-        zune-jpeg Version :{}\n\
-        zune-jpeg Git hash:{}\n",
-        env!("CARGO_PKG_VERSION"),
-        zune_image::codecs::jpeg::get_version(),
-        zune_image::codecs::jpeg::get_git_hash(),
-    ));
-
-    Box::leak(box_v)
-}
-
 #[rustfmt::skip]
 pub fn create_cmd_args() -> Command {
     Command::new("zune")
         .after_help(AFTER_HELP)
         .author("Caleb Etemesi")
-        .version("0.1.1")
-        .long_version(get_long_version())
+        .version(env!("CARGO_PKG_VERSION"))
         .next_line_help(false)
         .term_width(200)
         .arg(Arg::new("in")
