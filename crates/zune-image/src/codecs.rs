@@ -3,17 +3,19 @@
 //!
 //! Current status
 //!
-//! |IMAGE| Decoder     |Encoder|
-//! |-----|-------------|-------|
-//! |JPEG |Full support| None |
-//! |PNG |Partial  |None |
-//! |PPM | 8 and 16 bit support |8 and 16 bit support|
-//! |PAL | None |8 and 16 bit support |
+//! |IMAGE    | Decoder      |Encoder|
+//! |---------|--------------|-------|
+//! |JPEG     |Full support  | None |
+//! |PNG      |Partial       |None |
+//! |PPM      | 8 and 16 bit support |8 and 16 bit support|
+//! |PAL      | None |8 and 16 bit support |
+//! | Farbfeld|16 bit support|None|
 //!
 //!
 #[allow(unused_imports)]
 use crate::traits::DecoderTrait;
 
+pub mod farbfeld;
 pub mod jpeg;
 pub mod png;
 pub mod ppm;
