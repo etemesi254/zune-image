@@ -313,7 +313,9 @@ impl<'a> PPMDecoder<'a>
             }
             BitType::Sixteen =>
             {
-                // size is divided by 2 since sizeof added 2
+                // size is divided by 2 since sizeof added 2 for u16
+                // and when channel stores u16 it uses double the size
+                // as that of u8
                 let mut data = vec![0_u16; size / 2];
 
                 for datum in data.iter_mut()
