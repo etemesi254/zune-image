@@ -31,7 +31,9 @@ pub enum SupportedDecoders
     /// Fully complete
     PPM,
     /// Partial support
-    PSD
+    PSD,
+    /// Full support
+    Farbfeld
 }
 
 /// All supported encoders
@@ -44,12 +46,13 @@ pub enum SupportedEncoders
 }
 
 // stolen from imagers
-static MAGIC_BYTES: [(&[u8], SupportedDecoders); 5] = [
+static MAGIC_BYTES: [(&[u8], SupportedDecoders); 6] = [
     (&[137, 80, 78, 71, 13, 10, 26, 10], SupportedDecoders::Png),
     (&[0xff, 0xd8, 0xff], SupportedDecoders::Jpeg),
     (b"P6", SupportedDecoders::PPM),
     (b"P5", SupportedDecoders::PPM),
-    (b"8BPS", SupportedDecoders::PSD)
+    (b"8BPS", SupportedDecoders::PSD),
+    (b"farbfeld", SupportedDecoders::Farbfeld)
 ];
 /// Return the format of an image or none if it's unsupported
 pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
@@ -116,6 +119,18 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
             #[cfg(not(feature = "ppm"))]
             {
                 unimplemented!("PPM feature not included")
+            }
+        }
+
+        SupportedDecoders::Farbfeld =>
+        {
+            #[cfg(feature = "farbfeld")]
+            {
+                Box::new(zune_farbfeld::FarbFeldDecoder::new(data))
+            }
+            #[cfg(not(feature = "farbfeld"))]
+            {
+                unimplemented!("Farbfeld feature not included")
             }
         }
     }
