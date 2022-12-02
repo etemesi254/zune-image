@@ -5,6 +5,17 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+## Disabling this disables CRC checking and the associated code for that
+## Can save some bytes on images.
+## Note, this can be disabled manually using options
+crc = []
+default = ["crc"]
+
 [dependencies]
 zune-core = { path = "../zune-core" }
 log = "0.4.17"
+
+
+[dev-dependencies]
+nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
