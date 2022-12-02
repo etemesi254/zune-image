@@ -13,6 +13,7 @@ use log::{debug, info, log_enabled};
 use memmap2::Mmap;
 use zune_image::codecs::guess_format;
 use zune_image::errors::ImgErrors;
+use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_parsers::global_options::CmdOptions;
@@ -73,7 +74,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(format) = guess_format(data)
         {
-            if format == zune_image::codecs::SupportedDecoders::Jpeg
+            let decoder: Box<dyn DecoderTrait> = if format
+                == zune_image::codecs::SupportedDecoders::Jpeg
             {
                 debug!("Treating {:?} as a jpg file", in_file);
 
@@ -81,7 +83,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 let decoder =
                     zune_image::codecs::jpeg::JpegDecoder::new_with_options(options, data);
 
-                workflow.add_decoder(Box::new(decoder));
+                Box::new(decoder)
             }
             else if format == zune_image::codecs::SupportedDecoders::Png
             {
@@ -89,7 +91,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 let decoder = zune_image::codecs::png::PngDecoder::new(data);
 
-                workflow.add_decoder(Box::new(decoder));
+                Box::new(decoder)
             }
             else if format == zune_image::codecs::SupportedDecoders::PPM
             {
@@ -97,7 +99,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 let decoder = zune_image::codecs::ppm::PPMDecoder::new(data);
 
-                workflow.add_decoder(Box::new(decoder));
+                Box::new(decoder)
             }
             else if format == zune_image::codecs::SupportedDecoders::PSD
             {
@@ -105,8 +107,18 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 let decoder = zune_image::codecs::psd::PSDDecoder::new(data);
 
-                workflow.add_decoder(Box::new(decoder));
+                Box::new(decoder)
             }
+            else
+            {
+                return Err(ImgErrors::from("Unknown/Unsupported format"));
+            };
+            if decoder.is_experimental() && !cmd_opts.experimental_formats
+            {
+                let msg = format!("The `{}` is currently experimental and can only be used when --experimental is passed via the command line", decoder.get_name());
+                return Err(ImgErrors::from(msg));
+            }
+            workflow.add_decoder(decoder);
         }
 
         if let Some(ext) = Path::new(out_file).extension()
