@@ -109,6 +109,14 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
                 Box::new(decoder)
             }
+            else if format == zune_image::codecs::SupportedDecoders::Farbfeld
+            {
+                debug!("Treating {:?} as a farbfeld file", in_file);
+
+                let decoder = zune_image::codecs::farbfeld::FarbFeldDecoder::new(data);
+
+                Box::new(decoder)
+            }
             else
             {
                 return Err(ImgErrors::from("Unknown/Unsupported format"));
