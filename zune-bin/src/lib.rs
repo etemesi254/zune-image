@@ -7,7 +7,6 @@ use crate::workflow::create_and_exec_workflow_from_cmd;
 
 mod cmd_args;
 mod cmd_parsers;
-mod file_paths;
 mod show_gui;
 mod workflow;
 

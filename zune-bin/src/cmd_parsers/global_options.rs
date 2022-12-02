@@ -8,11 +8,12 @@ use crate::cmd_args::MmapOptions;
 #[derive(Debug, Copy, Clone)]
 pub struct CmdOptions
 {
-    pub mmap:           MmapOptions,
-    pub max_width:      usize,
-    pub max_height:     usize,
-    pub strict_mode:    bool,
-    pub override_files: bool
+    pub mmap:                 MmapOptions,
+    pub max_width:            usize,
+    pub max_height:           usize,
+    pub strict_mode:          bool,
+    pub override_files:       bool,
+    pub experimental_formats: bool
 }
 
 impl CmdOptions
@@ -20,11 +21,12 @@ impl CmdOptions
     pub fn new() -> CmdOptions
     {
         CmdOptions {
-            mmap:           MmapOptions::Auto,
-            max_width:      0,
-            max_height:     0,
-            strict_mode:    false,
-            override_files: false
+            mmap:                 MmapOptions::Auto,
+            max_width:            0,
+            max_height:           0,
+            strict_mode:          false,
+            override_files:       false,
+            experimental_formats: false
         }
     }
 }
@@ -53,6 +55,12 @@ pub fn parse_options(options: &ArgMatches) -> CmdOptions
     {
         info!("Setting all commands to yes");
         cmd_options.override_files = true;
+    }
+
+    if options.value_source("experimental") == Some(ValueSource::CommandLine)
+    {
+        info!("Allowing experimental image decoding");
+        cmd_options.experimental_formats = true;
     }
     cmd_options
 }
