@@ -11,7 +11,7 @@
 //! as separate bit depths.
 //! All are seen as u8 to it.
 //!
-use std::alloc::{alloc, realloc, Layout};
+use std::alloc::{alloc, dealloc, realloc, Layout};
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 
@@ -154,6 +154,13 @@ impl Channel
         self.ptr = realloc(self.ptr, layout, new_size);
         // set capacity to be new size
         self.capacity = new_size;
+    }
+    /// Deallocate storage allocated
+    unsafe fn dealloc(&mut self)
+    {
+        let layout = Layout::from_size_align(self.capacity, MIN_ALIGNMENT).unwrap();
+
+        dealloc(self.ptr, layout);
     }
 
     /// Create a new channel
@@ -373,6 +380,17 @@ impl Channel
         }
 
         Ok(())
+    }
+}
+
+impl Drop for Channel
+{
+    fn drop(&mut self)
+    {
+        // dealloc storage
+        unsafe {
+            self.dealloc();
+        }
     }
 }
 
