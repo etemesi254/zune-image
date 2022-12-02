@@ -37,7 +37,7 @@ pub fn crc32_slice8(data: &[u8], mut crc: u32) -> u32
 }
 
 /// A smaller CRC function used by hot loops to handle extra data
-pub fn crc32_slice1(data: &[u8], mut crc: u32) -> u32
+pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32
 {
     for datum in data
     {
