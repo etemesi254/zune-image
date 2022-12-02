@@ -5,7 +5,7 @@ pub enum PngErrors
     BadSignature,
     GenericStatic(&'static str),
     Generic(String),
-
+    BadCrc(u32, u32)
 }
 impl Debug for PngErrors
 {
@@ -16,7 +16,11 @@ impl Debug for PngErrors
             Self::BadSignature => writeln!(f, "Bad PNG signature, not a png"),
             Self::GenericStatic(val) => writeln!(f, "{:?}", val),
             Self::Generic(val) => writeln!(f, "{:?}", val),
-
+            Self::BadCrc(expected, found) => writeln!(
+                f,
+                "CRC does not match, expected {} but found {}",
+                expected, found
+            )
         }
     }
 }

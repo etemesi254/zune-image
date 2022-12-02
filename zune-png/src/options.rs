@@ -8,11 +8,11 @@ pub type UnkownChunkHandler = fn(
     length: usize,
     chunkType: [u8; 4],
     reader: &mut ZByteReader,
-    crc: u32,
+    crc: u32
 ) -> Result<(), PngErrors>;
 
 fn default_chunk_handler(
-    length: usize, chunk_type: [u8; 4], reader: &mut ZByteReader, _crc: u32,
+    length: usize, chunk_type: [u8; 4], reader: &mut ZByteReader, _crc: u32
 ) -> Result<(), PngErrors>
 {
     let chunk_name = std::str::from_utf8(&chunk_type).unwrap_or("XXXX");
@@ -40,6 +40,7 @@ pub struct PngOptions
     pub(crate) max_height:    usize,
     pub(crate) chunk_handler: UnkownChunkHandler,
     pub(crate) _strict_mode:  bool,
+    pub(crate) confirm_crc:   bool
 }
 
 impl Default for PngOptions
@@ -51,6 +52,7 @@ impl Default for PngOptions
             max_height:    1 << 17,
             chunk_handler: default_chunk_handler,
             _strict_mode:  false,
+            confirm_crc:   true
         }
     }
 }
