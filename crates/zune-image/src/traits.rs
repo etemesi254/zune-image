@@ -43,6 +43,16 @@ pub trait DecoderTrait<'a>
 
     /// Get the name of the decoder
     fn get_name(&self) -> &'static str;
+
+    /// Return true whether or not this codec is fully supported
+    /// and well tested to handle various formats.
+    ///
+    /// Currently set to true but a codec that is experimental should override it
+    /// to be false
+    fn is_experimental(&self) -> bool
+    {
+        false
+    }
 }
 
 /// This encapsulates an image operation.
