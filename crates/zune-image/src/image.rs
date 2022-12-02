@@ -82,7 +82,7 @@ impl Image
     pub fn get_channels_mut(&mut self, alpha: bool) -> &mut [Channel]
     {
         // check if alpha channel is present in colorspace
-        if alpha && self.colorspace.has_alpha()
+        if !alpha && self.colorspace.has_alpha()
         {
             // do not take the last one,
             // we assume the last one contains the alpha channel
@@ -150,7 +150,7 @@ impl Image
                 let c4 = self.channels[3].reinterpret_as::<T>().unwrap();
 
                 for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(3)
+                    .chunks_exact_mut(4)
                     .zip(c1)
                     .zip(c2)
                     .zip(c3)
