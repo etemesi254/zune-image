@@ -35,4 +35,9 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
     {
         "Farbfeld Decoder"
     }
+
+    fn is_experimental(&self) -> bool
+    {
+        true
+    }
 }
