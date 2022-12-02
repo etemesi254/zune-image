@@ -119,6 +119,31 @@ impl<'a> PngDecoder<'a>
 
             return Err(PngErrors::Generic(err));
         }
+        // Confirm the CRC here.
+        #[cfg(feature = "crc")]
+        {
+            if self.options.confirm_crc
+            {
+                use crate::crc::crc32_slice8;
+
+                // go back and point to chunk type.
+                self.stream.rewind(4);
+                // read chunk type + chunk data
+                let bytes = self.stream.peek_at(0, chunk_length + 4).unwrap();
+
+                // calculate crc
+                let calc_crc = !crc32_slice8(bytes, u32::MAX);
+
+                if crc != calc_crc
+                {
+                    return Err(PngErrors::BadCrc(crc, calc_crc));
+                }
+                // go point after the chunk type
+                // The other parts expect the bit-reader to point to the
+                // start of the chunk data.
+                self.stream.skip(4);
+            }
+        }
 
         Ok(PngChunk {
             length: chunk_length,
@@ -128,9 +153,12 @@ impl<'a> PngDecoder<'a>
         })
     }
 
+    /// Decode PNG encoded images and return the vector of raw
+    /// pixels
     pub fn decode(&mut self) -> Result<Vec<u8>, PngErrors>
     {
         let data = vec![];
+        // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
 
         if signature != PNG_SIGNATURE
