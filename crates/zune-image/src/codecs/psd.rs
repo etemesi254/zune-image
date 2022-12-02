@@ -43,4 +43,9 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
     {
         "PSD Decoder"
     }
+
+    fn is_experimental(&self) -> bool
+    {
+        true
+    }
 }
