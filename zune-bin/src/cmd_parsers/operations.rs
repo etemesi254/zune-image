@@ -4,6 +4,7 @@ use zune_image::impls::brighten::Brighten;
 use zune_image::impls::crop::Crop;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
+use zune_image::impls::gamma::Gamma;
 use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::median::Median;
@@ -162,6 +163,12 @@ pub fn parse_options(
             );
             let stretch_contrast = StretchContrast::new(lower_u16, upper_u16);
             workflow.add_operation(Box::new(stretch_contrast));
+        }
+        else if argument == "gamma"
+        {
+            let value = *args.get_one::<f32>(argument).unwrap();
+            debug!("Added gamma filter with value {}", value);
+            workflow.add_operation(Box::new(Gamma::new(value)));
         }
     }
     Ok(())
