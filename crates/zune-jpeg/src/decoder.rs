@@ -56,7 +56,7 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
-/// A Decoder Instance
+/// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms)]
 pub struct JpegDecoder<'a>
 {
@@ -137,7 +137,6 @@ impl<'a> JpegDecoder<'a>
             dc_huffman_tables: [None, None, None, None],
             ac_huffman_tables: [None, None, None, None],
             components: vec![],
-
             // Interleaved information
             h_max: 1,
             v_max: 1,
@@ -190,18 +189,6 @@ impl<'a> JpegDecoder<'a>
     pub fn new(stream: &'a [u8]) -> JpegDecoder
     {
         JpegDecoder::default(ZuneJpegOptions::new(), stream)
-    }
-
-    /// Decode a valid jpeg file
-    pub fn decode_file<P>(file: P) -> Result<Vec<u8>, DecodeErrors>
-    where
-        P: AsRef<Path> + Clone
-    {
-        let data = read(file)?;
-        //Read to an in memory buffer
-        info!("File size: {} bytes", data.len());
-
-        JpegDecoder::new(&data).decode()
     }
 
     /// Returns the image information

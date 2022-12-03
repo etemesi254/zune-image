@@ -30,15 +30,22 @@
 //!```no_run
 //! use zune_core::colorspace::ColorSpace;
 //! use zune_jpeg::{ColorSpace, Decoder, JpegDecoder, ZuneJpegOptions};
-//! let mut decoder = JpegDecoder::new_with_options(ZuneJpegOptions::new().set_out_colorspace(ColorSpace::RGBA),&[]);
+//!
+//! let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::RGBA);
+//!
+//! let mut decoder = JpegDecoder::new_with_options(options,&[]);
+//! let pixels = decoder.decode().unwrap();
 //! ```
 //!
 //! ## Decode an image and get it's width and height.
 //!```no_run
 //! use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
-//! use zune_jpeg::ColorSpace::GRAYSCALE;
-//! let mut decoder = JpegDecoder::new_with_options(ZuneJpegOptions::new()
-//! .set_out_colorspace(GRAYSCALE),&[]);
+//! use zune_core::colorspace::ColorSpace::Luma;
+//!
+//! let options = ZuneJpegOptions::new().set_out_colorspace(Luma);
+//!
+//! let mut decoder = JpegDecoder::new_with_options(options,&[]);
+//! let decoder = decoder.decode_headers();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)
 //! ```
