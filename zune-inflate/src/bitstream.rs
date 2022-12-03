@@ -64,6 +64,7 @@ impl<'src> BitStreamReader<'src>
             None => self.refill_slow()
         }
     }
+    #[inline(never)]
     fn refill_slow(&mut self)
     {
         // ensure we don't read if we can do it in the
@@ -95,6 +96,7 @@ impl<'src> BitStreamReader<'src>
         (self.buffer & ((1 << lookahead) - 1)) as usize
     }
 
+    #[inline(always)]
     pub fn get_bits(&mut self, num_bits: u8) -> u64
     {
         debug_assert!(self.bits_left >= num_bits);

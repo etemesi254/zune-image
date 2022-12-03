@@ -8,9 +8,10 @@ use crate::constants::{
     DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS,
     DEFLATE_MAX_OFFSET_CODEWORD_LENGTH, DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS,
     DEFLATE_NUM_OFFSET_SYMS, DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION,
-    DELFATE_MAX_LENS_OVERRUN, HUFFDEC_EXCEPTIONAL, HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_RESULTS,
-    LITLEN_ENOUGH, LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS,
-    PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
+    DELFATE_MAX_LENS_OVERRUN, HUFFDEC_END_OF_BLOCK, HUFFDEC_EXCEPTIONAL, HUFFDEC_LITERAL,
+    HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_RESULTS, LITLEN_ENOUGH, LITLEN_TABLE_BITS,
+    OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS, PRECODE_DECODE_RESULTS, PRECODE_ENOUGH,
+    PRECODE_TABLE_BITS
 };
 use crate::enums::DeflateState;
 use crate::errors::ZlibDecodeErrors;
@@ -154,16 +155,21 @@ impl<'a> DeflateDecoder<'a>
 
                 self.stream.refill();
 
-                let expected = (SINGLE_PRECODE * num_explicit_precode_lens) as u8;
+                precode_lens[usize::from(DEFLATE_PRECODE_LENS_PERMUTATION[0])] =
+                    self.stream.get_bits(3) as u8;
+
+                self.stream.refill();
+
+                let expected = (SINGLE_PRECODE * num_explicit_precode_lens.saturating_sub(1)) as u8;
 
                 if !self.stream.has(expected)
                 {
                     return Err(ZlibDecodeErrors::InsufficientData);
                 }
 
-                for i in DEFLATE_PRECODE_LENS_PERMUTATION
+                for i in DEFLATE_PRECODE_LENS_PERMUTATION[1..]
                     .iter()
-                    .take(num_explicit_precode_lens)
+                    .take(num_explicit_precode_lens - 1)
                 {
                     let bits = self.stream.get_bits(3) as u8;
 
@@ -185,6 +191,13 @@ impl<'a> DeflateDecoder<'a>
 
                 loop
                 {
+                    if i >= num_litlen_syms + num_offset_syms
+                    {
+                        // confirm here since with a continue loop stuff
+                        // breaks
+                        break;
+                    }
+
                     let rep_val: u8;
                     let rep_count: u64;
 
@@ -231,11 +244,11 @@ impl<'a> DeflateDecoder<'a>
                      */
                     if presym == 16
                     {
-                        // repeat previous length three to 6 times
                         if i == 0
                         {
                             return Err(ZlibDecodeErrors::CorruptData);
                         }
+                        // repeat previous length three to 6 times
                         rep_val = lens[i - 1];
                         rep_count = 3 + self.stream.get_bits(2);
 
@@ -353,16 +366,21 @@ impl<'a> DeflateDecoder<'a>
              * decode table entry is preloaded before each loop iteration.
              */
 
+            let mut i = 0;
+            let (mut literal, mut length, mut offset) = (0, 0, 0);
+
             'decode: loop
             {
+                let mut saved_bitbuf = self.stream.buffer;
+
                 let litlen_decode_bits: usize =
                     min(DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, LITLEN_TABLE_BITS);
 
                 self.stream.refill();
 
-                let entry_pos = self.stream.peek_bits_no_const(litlen_decode_bits);
+                let litlen_tablemask = self.stream.peek_bits_no_const(litlen_decode_bits);
 
-                let entry = litlen_decode_table[entry_pos];
+                let mut entry = litlen_decode_table[litlen_tablemask];
 
                 'sequence: loop
                 {
@@ -372,14 +390,150 @@ impl<'a> DeflateDecoder<'a>
                      * original bitbuf for later, in case the extra match length
                      * bits need to be extracted from it.
                      */
-                    let saved_bitbuf = self.stream.buffer;
+                    saved_bitbuf = self.stream.buffer;
 
                     self.stream.drop_bits(entry as u8);
+
+                    /*
+                     * Begin by checking for a "fast" literal, i.e. a literal that
+                     * doesn't need a subtable.
+                     */
+                    if (entry & HUFFDEC_LITERAL) != 0
+                    {
+                        /*
+                         * On 64-bit platforms, we decode up to 2 extra fast
+                         * literals in addition to the primary item, as this
+                         * increases performance and still leaves enough bits
+                         * remaining for what follows.  We could actually do 3,
+                         * assuming LITLEN_TABLEBITS=11, but that actually
+                         * decreases performance slightly (perhaps by messing
+                         * with the branch prediction of the conditional refill
+                         * that happens later while decoding the match offset).
+                         *
+                         * Note: the definitions of FASTLOOP_MAX_BYTES_WRITTEN
+                         * and FASTLOOP_MAX_BYTES_READ need to be updated if the
+                         * number of extra literals decoded here is changed.
+                         */
+                        let new_pos = self.stream.peek_bits_no_const(litlen_decode_bits);
+
+                        literal = entry >> 16;
+                        entry = litlen_decode_table[new_pos];
+                        saved_bitbuf = self.stream.buffer;
+
+                        self.stream.drop_bits(entry as u8);
+
+                        out_block.push(literal as u8);
+
+                        if (entry & HUFFDEC_LITERAL) != 0
+                        {
+                            /*
+                             * Another fast literal, but this one is in lieu of the
+                             * primary item, so it doesn't count as one of the extras.
+                             */
+                            let new_pos = self.stream.peek_bits_no_const(litlen_decode_bits);
+
+                            literal = entry >> 16;
+                            entry = litlen_decode_table[new_pos];
+
+                            self.stream.refill();
+                            out_block.push(literal as u8);
+                            continue;
+                        }
+                    }
+                    /*
+                     * It's not a literal entry, so it can be a length entry, a
+                     * subtable pointer entry, or an end-of-block entry.  Detect the
+                     * two unlikely cases by testing the HUFFDEC_EXCEPTIONAL flag.
+                     */
+                    if (entry & HUFFDEC_EXCEPTIONAL) != 0
+                    {
+                        // Subtable pointer or end of block entry
+                        if (entry & HUFFDEC_END_OF_BLOCK) != 0
+                        {
+                            // block done
+                            break 'block;
+                        }
+                        /*
+                         * A subtable is required.  Load and consume the
+                         * subtable entry.  The subtable entry can be of any
+                         * type: literal, length, or end-of-block.
+                         */
+                        let entry_position = ((entry >> 8) & 0x3F) as usize;
+
+                        saved_bitbuf = self.stream.buffer;
+
+                        let pos =
+                            (entry >> 16) as usize + self.stream.peek_bits_no_const(entry_position);
+
+                        entry = litlen_decode_table[pos];
+                        self.stream.drop_bits(entry as u8);
+
+                        if (entry & HUFFDEC_LITERAL) != 0
+                        {
+                            // decode a literal that required a sub table
+                            let new_pos = self.stream.peek_bits_no_const(litlen_decode_bits);
+
+                            literal = entry >> 16;
+                            entry = litlen_decode_table[new_pos];
+
+                            self.stream.refill();
+                            out_block.push(literal as u8);
+                            continue;
+                        }
+                        if (entry & HUFFDEC_END_OF_BLOCK) != 0
+                        {
+                            break 'block;
+                        }
+                    }
+
+                    /*
+                     * Decode the match length: the length base value associated
+                     * with the litlen symbol (which we extract from the decode
+                     * table entry), plus the extra length bits.  We don't need to
+                     * consume the extra length bits here, as they were included in
+                     * the bits consumed by the entry earlier.  We also don't need
+                     * to check for too-long matches here, as this is inside the
+                     * fastloop where it's already been verified that the output
+                     * buffer has enough space remaining to copy a max-length match.
+                     */
+                    length = (entry >> 16) as usize;
+
+                    let mask = (1 << entry as u8) - 1;
+
+                    length += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+
+                    entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
+                    saved_bitbuf = self.stream.buffer;
+
+                    if (entry & HUFFDEC_EXCEPTIONAL) != 0
+                    {
+                        // offset requires a subtable
+                        self.stream.refill();
+
+                        self.stream.drop_bits(OFFSET_TABLEBITS as u8);
+
+                        let extra = self
+                            .stream
+                            .peek_bits_no_const(((entry >> 8) & 0x3F) as usize);
+
+                        entry = offset_decode_table[(entry >> 16) as usize + extra];
+                    }
+                    self.stream.refill();
+                    self.stream.drop_bits(entry as u8);
+                    let mask = (1 << entry as u8) - 1;
+
+                    offset = (entry >> 16) as usize;
+                    offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+
+                    entry = litlen_decode_table[self.stream.peek_bits_no_const(litlen_decode_bits)];
+                    self.stream.refill();
                     break;
                 }
 
                 break;
             }
+
+            break;
 
             if self.is_last_block
             {
