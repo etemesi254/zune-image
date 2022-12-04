@@ -166,6 +166,10 @@ impl<'a> ZByteReader<'a>
             }
         }
     }
+    /// Return the remaining unread bytes in this byte reader
+    pub fn remaining_bytes(&self) -> &'a [u8] {
+        &self.stream[self.position..]
+    }
 }
 
 impl<'a> Read for ZByteReader<'a>
