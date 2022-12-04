@@ -22,6 +22,7 @@
 
 pub mod box_blur;
 pub mod brighten;
+pub mod contrast;
 pub mod convolve;
 pub mod crop;
 pub mod deinterleave;
