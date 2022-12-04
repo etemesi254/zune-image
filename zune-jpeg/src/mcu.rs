@@ -123,7 +123,7 @@ impl<'a> JpegDecoder<'a>
         let mut stream = BitStream::new();
         let mut pixels = vec![0; capacity * out_colorspace_components];
         let mut chunks = pixels.chunks_mut(chunks_size);
-        let mut temporary = [vec![], vec![], vec![]];
+        let mut channels = [vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
         let mut bias = 0;
@@ -143,7 +143,7 @@ impl<'a> JpegDecoder<'a>
                 }
 
                 comp.needed = true;
-                temporary[pos] = vec![0; len];
+                channels[pos] = vec![0; len];
             }
             else
             {
@@ -172,7 +172,7 @@ impl<'a> JpegDecoder<'a>
                         .ok_or(DecodeErrors::FormatStatic("No AC table for component"))?;
 
                     let qt_table = &component.quantization_table;
-                    let channel = &mut temporary[pos & 3];
+                    let channel = &mut channels[pos & 3];
                     // If image is interleaved iterate over scan  components,
                     // otherwise if it-s non-interleaved, these routines iterate in
                     // trivial scanline order(Y,Cb,Cr)
@@ -270,7 +270,7 @@ impl<'a> JpegDecoder<'a>
                         let length = x.upsample_scanline.len();
 
                         x.upsample_scanline.copy_from_slice(
-                            &temporary[usize::from(x.id.saturating_sub(1))][0..length]
+                            &channels[usize::from(x.id.saturating_sub(1))][0..length]
                         );
                     }
                 });
@@ -291,7 +291,7 @@ impl<'a> JpegDecoder<'a>
                     bias = 0;
 
                     upsample_and_color_convert(
-                        &temporary,
+                        &channels,
                         &mut self.components,
                         self.color_convert_16,
                         self.input_colorspace,
@@ -304,23 +304,26 @@ impl<'a> JpegDecoder<'a>
             }
             else
             {
-                let mut un_t: [&[i16]; 3] = [&[]; 3];
+                // color convert expects a reference to channel data, so convert
+                // it here.
+                let mut channels_ref: [&[i16]; 3] = [&[]; 3];
 
-                bias = 0;
-                temporary
+                channels
                     .iter()
                     .enumerate()
-                    .for_each(|(pos, x)| un_t[pos] = x);
+                    .for_each(|(pos, x)| channels_ref[pos] = x);
 
                 // Color convert.
                 color_convert_no_sampling(
-                    &un_t,
+                    &channels_ref,
                     self.color_convert_16,
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
                     chunks.next().unwrap(),
                     width
                 );
+
+                bias = 0;
             }
         }
         info!("Finished decoding image");
