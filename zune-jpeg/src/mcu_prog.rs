@@ -325,36 +325,19 @@ impl<'a> JpegDecoder<'a>
         &mut self, block: &[Vec<i16>; 3], _mcu_width: usize
     ) -> Result<Vec<u8>, DecodeErrors>
     {
-        let (mut mcu_width, mut mcu_height);
+        let mut mcu_height;
 
-        let mut bias = 0;
-
-        let mut v_counter = 1;
         if self.is_interleaved
         {
             // set upsampling functions
             self.set_upsampling()?;
 
-            mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;
-
-            if self.sub_sample_ratio == SubSampRatios::V
-            {
-                mcu_width = self.mcu_x / 2;
-                v_counter = 2;
-            }
-
-            if self.sub_sample_ratio == SubSampRatios::HV
-            {
-                mcu_width = self.mcu_x / 2;
-                mcu_height = self.mcu_y * 2;
-            }
         }
         else
         {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided by 8.
-            mcu_width = ((self.info.width + 7) / 8) as usize;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
@@ -370,7 +353,6 @@ impl<'a> JpegDecoder<'a>
             warn!("Grayscale image with down-sampled component, resetting component details");
             self.reset_params();
 
-            mcu_width = ((self.info.width + 7) / 8) as usize;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
         // Size of our output image(width*height)
@@ -379,13 +361,8 @@ impl<'a> JpegDecoder<'a>
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let out_colorspace_components = self.options.get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
-        let mut chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
+        let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
 
-        if self.sub_sample_ratio == SubSampRatios::HV
-        {
-            // for some strange reason
-            chunks_size /= 2;
-        }
         let extra = usize::from(self.info.width) * 8;
 
         let mut pixels = vec![0; capacity * out_colorspace_components + extra];
@@ -411,7 +388,7 @@ impl<'a> JpegDecoder<'a>
                 }
 
                 comp.needed = true;
-                temporary[pos] = vec![255; len];
+                temporary[pos] = vec![0; len];
             }
             else
             {
@@ -423,97 +400,86 @@ impl<'a> JpegDecoder<'a>
                 comp.setup_upsample_scanline(self.h_max, self.v_max);
             }
         }
+
+        // dequantize, idct and color convert.
         for i in 0..mcu_height
         {
-            for _ in 0..v_counter
+            'component: for position in 0..self.input_colorspace.num_components()
             {
-                for j in 0..mcu_width
+                let component = &mut self.components[position];
+
+                if !component.needed
                 {
-                    // iterate over components
-                    for pos in 0..self.input_colorspace.num_components()
-                    {
-                        let component = &mut self.components[pos];
-
-                        if !component.needed
-                        {
-                            continue;
-                        }
-
-                        let qt_table = &component.quantization_table;
-                        let data_block = &block[pos & 3];
-
-                        let channel = &mut temporary[pos & 3];
-
-                        for v_samp in 0..component.vertical_sample
-                        {
-                            for h_samp in 0..component.horizontal_sample
-                            {
-                                // Carry out dequantization here
-                                // Read the block into a small array which we can pass to
-                                // the IDCT.
-                                data_block[component.counter..component.counter + 64]
-                                    .iter()
-                                    .zip(tmp.iter_mut())
-                                    .zip(qt_table.iter())
-                                    .for_each(|((x, out), qt_val)| {
-                                        *out = i32::from(*x) * qt_val;
-                                    });
-
-                                let idct_position = {
-                                    if self.is_interleaved
-                                    {
-                                        if self.sub_sample_ratio == SubSampRatios::H
-                                        {
-                                            let c2 =
-                                                ((bias * component.vertical_sample) + v_samp) * 8;
-                                            let c3 =
-                                                ((j * component.horizontal_sample) + h_samp) * 8;
-
-                                            component.width_stride * c2 + c3
-                                        }
-                                        else
-                                        {
-                                            component.idct_pos
-                                        }
-                                    }
-                                    else
-                                    {
-                                        j * 8
-                                    }
-                                };
-
-                                let idct_pos = channel.get_mut(idct_position..).unwrap();
-                                (self.idct_func)(&mut tmp, idct_pos, component.width_stride);
-
-                                component.counter += 64;
-                                component.idct_pos += 8;
-                            }
-                        }
-                    }
+                    continue 'component;
                 }
+                let qt_table = &component.quantization_table;
 
-                // After iterating every halfway through a hv unsampled image.
-                // Bump up idct pos to point 1 MCU row downward.
-                // This ensures the other iteration starts one MCU down
-                for component in &mut self.components
+                // step is the number of pixels this iteration wil be handling
+                // Given by the number of mcu's height and the length of the component block
+                // Since the component block contains the whole channel as raw pixels
+                // we this evenly divides the pixels into MCU blocks
+                //
+                // For interleaved images, this gives us the exact pixels comprising a whole MCU
+                // block
+                let step = block[position].len() / mcu_height;
+                // where we will be reading our pixels from.
+                let start = i * step;
+
+                let slice = &block[position][start..start + step];
+
+                let temp_channel = &mut temporary[position];
+
+                // The next logical step is to iterate width wise.
+                // To figure out how many pixels we iterate by we use effective pixels
+                // Given to us by component.x
+                // iterate per effective pixels.
+                let mcu_x = component.width_stride / 8;
+
+                // iterate per every vertical sample.
+                for k in 0..component.vertical_sample
                 {
-                    if component.component_id == ComponentID::Y
+                    for j in 0..mcu_x
                     {
-                        // idct pos is one mcu width, so move it 7 more to account
-                        // for 7 lines we wrote.
-                        component.idct_pos += 7 * component.width_stride;
-                        break;
+                        // after writing a single stride, we need to skip 8 rows.
+                        // This does the row calculation
+                        let width_stride = k * 8 * component.width_stride;
+                        let start = j * 64 + width_stride;
+
+                        // dequantize
+                        for ((x, out), qt_val) in slice[start..start + 64]
+                            .iter()
+                            .zip(tmp.iter_mut())
+                            .zip(qt_table.iter())
+                        {
+                            *out = i32::from(*x) * qt_val;
+                        }
+                        // determine where to write.
+                        let sl = &mut temp_channel[component.idct_pos..];
+
+                        component.idct_pos += 8;
+                        // tmp now contains a dequantized block so idct it
+                        (self.idct_func)(&mut tmp, sl, component.width_stride);
                     }
+
+                    // after every write of 8, skip 7 since idct write stride wise 8 times.
+                    //
+                    // Remember each MCU is 8x8 block, so each idct will write 8 strides into
+                    // sl
+                    //
+                    // and component.idct_pos is one stride long
+                    component.idct_pos += 7 * component.width_stride;
                 }
             }
-            bias += 1;
 
             if i == 0
             {
                 // copy first row of idct to the upsampler
                 // Needed for HV and V upsampling.
                 self.components.iter_mut().for_each(|x| {
-                    if x.needed && self.is_interleaved && x.component_id != ComponentID::Y
+                    if x.needed
+                        && self.is_interleaved
+                        && x.component_id != ComponentID::Y
+                        && self.sub_sample_ratio != SubSampRatios::H
                     {
                         //copy
                         let length = x.upsample_scanline.len();
@@ -524,17 +490,24 @@ impl<'a> JpegDecoder<'a>
                     }
                 });
             }
+
             if self.is_interleaved
             {
-                if i == mcu_width - 1 // take last row even if it doesn't divide it
+                if i == mcu_height - 1 // take last row even if it doesn't evenly divide it
                     || (self.sub_sample_ratio == SubSampRatios::H && i % 2 == 1)
                     || (self.sub_sample_ratio == SubSampRatios::V)
                     || (self.sub_sample_ratio == SubSampRatios::HV && i % 2 == 1)
                 {
-                    bias = 0;
-                    self.components.iter_mut().for_each(|x| x.idct_pos = 0);
-
                     // We have done a complete mcu width, we can upsample.
+
+                    // reset counter.
+                    // The next iteration will reuse the temporary channel
+                    // so reset here.
+                    for component in &mut self.components
+                    {
+                        component.idct_pos = 0;
+                    }
+
                     upsample_and_color_convert(
                         &temporary,
                         &mut self.components,
@@ -549,18 +522,21 @@ impl<'a> JpegDecoder<'a>
             }
             else
             {
-                let mut un_t: [&[i16]; 3] = [&[]; 3];
-
-                self.components.iter_mut().for_each(|x| x.idct_pos = 0);
+                for component in &mut self.components
+                {
+                    component.idct_pos = 0;
+                }
+                // color convert expects a reference.
+                let mut temporary_ref: [&[i16]; 3] = [&[]; 3];
 
                 temporary
                     .iter()
                     .enumerate()
-                    .for_each(|(pos, x)| un_t[pos] = x);
+                    .for_each(|(pos, x)| temporary_ref[pos] = x);
 
                 // Color convert.
                 color_convert_no_sampling(
-                    &un_t,
+                    &temporary_ref,
                     self.color_convert_16,
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
@@ -634,4 +610,19 @@ fn get_marker(reader: &mut ZByteReader, stream: &mut BitStream) -> Result<Marker
         }
     }
     return Err(DecodeErrors::from("No more bytes"));
+}
+
+#[test]
+fn test()
+{
+    use std::fs::read;
+
+    use crate::ZuneJpegOptions;
+
+    let bytes = read("/home/caleb/jpeg/zune-top/victorius_196.jpg").unwrap();
+
+    let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma);
+
+    let mut bytes = JpegDecoder::new_with_options(options, &bytes);
+    bytes.decode().unwrap();
 }
