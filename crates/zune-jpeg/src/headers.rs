@@ -322,6 +322,12 @@ pub(crate) fn parse_start_of_frame(
                 ))
             })?;
 
+        let x = (usize::from(img_width) * component.horizontal_sample + img.h_max - 1) / img.h_max;
+        let y = (usize::from(img_height) * component.horizontal_sample + img.h_max - 1) / img.v_max;
+        component.x = x;
+        component.w2 = img.mcu_x * component.horizontal_sample * 8;
+        // probably not needed. :)
+        component.y = y;
         component.quantization_table = qt_table;
         // initially stride contains its horizontal sub-sampling
         component.width_stride *= img.mcu_x * 8;
