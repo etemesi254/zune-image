@@ -13,7 +13,7 @@ and an ability to add options to influence decoding
 
 ```rust
 // Import the library
-use zune_jpeg::{JpegDecoder};
+use zune_jpeg::JpegDecoder;
 use std::fs::read;
 // load some jpeg data
 let data = read("cat.jpg").unwrap();
