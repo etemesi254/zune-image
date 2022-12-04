@@ -84,7 +84,7 @@ pub fn create_cmd_args() -> Command {
         .args(add_settings())
         .args(add_filters())
         .group(ArgGroup::new("operations")
-            .args(["flip","transpose","grayscale","flop","mirror","invert","brighten","crop","threshold","gamma"])
+            .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast"])
             .multiple(true))
         .group(ArgGroup::new("filters")
             .args(["box-blur", "blur", "unsharpen", "median", "erode"])
@@ -226,6 +226,13 @@ fn add_operations() -> Vec<Arg>
             .value_name("lower:upper")
             .help_heading(HELP_HEADING)
             .help("Linearly stretch contrast in an image")
+            .group("operations"),
+        Arg::new("contrast")
+            .long("contrast")
+            .value_name("contrast")
+            .help_heading(HELP_HEADING)
+            .help("Adjust contrast of the image")
+            .value_parser(value_parser!(f32))
             .group("operations")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));

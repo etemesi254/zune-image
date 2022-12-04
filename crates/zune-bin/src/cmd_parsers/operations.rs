@@ -1,6 +1,7 @@
 use clap::ArgMatches;
 use log::debug;
 use zune_image::impls::brighten::Brighten;
+use zune_image::impls::contrast::Contrast;
 use zune_image::impls::crop::Crop;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
@@ -169,6 +170,12 @@ pub fn parse_options(
             let value = *args.get_one::<f32>(argument).unwrap();
             debug!("Added gamma filter with value {}", value);
             workflow.add_operation(Box::new(Gamma::new(value)));
+        }
+        else if argument == "contrast"
+        {
+            let value = *args.get_one::<f32>(argument).unwrap();
+            debug!("Added contrast filter with value {},", value);
+            workflow.add_operation(Box::new(Contrast::new(value)));
         }
     }
     Ok(())
