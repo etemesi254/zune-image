@@ -1,9 +1,6 @@
 //! Main image logic.
 #![allow(clippy::doc_markdown)]
 
-use std::fs::read;
-use std::path::Path;
-
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 
