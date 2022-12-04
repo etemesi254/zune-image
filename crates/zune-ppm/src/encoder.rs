@@ -144,7 +144,7 @@ impl<'a, W: Write> PAMEncoder<'a, W>
         let tuple_type = convert_tuple_type_to_pam(colorspace);
 
         let header = format!(
-            "P7 WIDTH {} HEIGHT {} DEPTH {} MAXVAL {} TUPLETYPE {} ENDHDR\n",
+            "P7\nWIDTH {}\nHEIGHT {}\nDEPTH {}\nMAXVAL {}\nTUPLTYPE {}\n ENDHDR\n",
             width,
             height,
             colorspace.num_components(),
