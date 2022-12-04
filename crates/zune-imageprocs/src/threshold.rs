@@ -36,54 +36,30 @@ pub fn threshold<T>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
             {
                 for x in in_image.iter_mut()
                 {
-                    *x = {
-                        if *x > threshold {
-                            max
-                        } else {
-                            min
-                        }
-                    }
+                    *x = if *x > threshold { max } else { min };
                 }
             }
         ThresholdMethod::BinaryInv =>
             {
                 for x in in_image.iter_mut()
                 {
-                    *x = {
-                        if *x > threshold {
-                            min
-                        } else {
-                            max
-                        }
-                    }
+                    *x = if *x > threshold { min } else { max };
                 }
             }
         ThresholdMethod::ThreshTrunc =>
             {
                 for x in in_image.iter_mut()
                 {
-                    *x = {
-                        if *x > threshold {
-                            threshold
-                        } else {
-                            *x
-                        }
-                    }
+                    *x = if *x > threshold { threshold } else { *x };
                 }
             }
         ThresholdMethod::ThreshToZero =>
             {
                 for x in in_image.iter_mut()
                 {
-                    *x = {
-                        if *x > threshold {
-                            threshold
-                        } else {
-                            T::min_val()
-                        }
-                    }
+                    *x = if *x > threshold { threshold } else { T::min_val() }
                 }
-        }
+            }
     }
 }
 
