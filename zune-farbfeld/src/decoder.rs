@@ -127,10 +127,13 @@ impl<'a> FarbFeldDecoder<'a>
         }
 
         // 4x16-Bit BE unsigned integers [RGBA] / pixel, row-major
+        let remaining_bytes = self.stream.remaining_bytes();
 
-        for datum in data.iter_mut()
+        assert_eq!(remaining_bytes.len(), data.len() * 2);
+
+        for (datum, pix) in data.iter_mut().zip(remaining_bytes.chunks_exact(2))
         {
-            *datum = self.stream.get_u16_be();
+            *datum = u16::from_be_bytes(pix.try_into().unwrap());
         }
         Ok(data)
     }
@@ -151,6 +154,17 @@ impl<'a> FarbFeldDecoder<'a>
     }
 
     /// Return the width and height of the image
+    ///
+    /// Or none if the headers haven't been decoded
+    ///
+    /// ```no_run
+    /// use zune_farbfeld::FarbFeldDecoder;
+    /// let mut decoder = FarbFeldDecoder::new(&[]);
+    ///
+    /// decoder.decode_headers().unwrap();
+    /// // get dimensions now.
+    /// let (w,h)=decoder.get_dimensions();
+    /// ```
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if self.decoded_headers
@@ -159,4 +173,14 @@ impl<'a> FarbFeldDecoder<'a>
         }
         None
     }
+}
+
+#[test]
+fn test_farbfeld()
+{
+    let data = std::fs::read("/home/caleb/clay-banks.ff").unwrap();
+
+    let mut decoder = crate::decoder::FarbFeldDecoder::new(&data);
+    let pix = decoder.decode().unwrap();
+    dbg!(pix[0]);
 }
