@@ -74,53 +74,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(format) = guess_format(data)
         {
-            let decoder: Box<dyn DecoderTrait> = if format
-                == zune_image::codecs::SupportedDecoders::Jpeg
-            {
-                debug!("Treating {:?} as a jpg file", in_file);
+            let decoder: Box<dyn DecoderTrait> = zune_image::codecs::get_decoder(format, data);
 
-                let options = crate::cmd_args::arg_parsers::parse_options_to_jpeg(args);
-                let decoder =
-                    zune_image::codecs::jpeg::JpegDecoder::new_with_options(options, data);
-
-                Box::new(decoder)
-            }
-            else if format == zune_image::codecs::SupportedDecoders::Png
-            {
-                debug!("Treating {:?} as a png file", in_file);
-
-                let decoder = zune_image::codecs::png::PngDecoder::new(data);
-
-                Box::new(decoder)
-            }
-            else if format == zune_image::codecs::SupportedDecoders::PPM
-            {
-                debug!("Treating {:?} as a ppm file", in_file);
-
-                let decoder = zune_image::codecs::ppm::PPMDecoder::new(data);
-
-                Box::new(decoder)
-            }
-            else if format == zune_image::codecs::SupportedDecoders::PSD
-            {
-                debug!("Treating {:?} as a psd file", in_file);
-
-                let decoder = zune_image::codecs::psd::PSDDecoder::new(data);
-
-                Box::new(decoder)
-            }
-            else if format == zune_image::codecs::SupportedDecoders::Farbfeld
-            {
-                debug!("Treating {:?} as a farbfeld file", in_file);
-
-                let decoder = zune_image::codecs::farbfeld::FarbFeldDecoder::new(data);
-
-                Box::new(decoder)
-            }
-            else
-            {
-                return Err(ImgErrors::from("Unknown/Unsupported format"));
-            };
             if decoder.is_experimental() && !cmd_opts.experimental_formats
             {
                 let msg = format!("The `{}` is currently experimental and can only be used when --experimental is passed via the command line", decoder.get_name());
