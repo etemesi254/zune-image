@@ -17,6 +17,8 @@ pub enum ImgErrors
     PPMDecodeErrors(zune_ppm::PPMDecodeErrors),
     #[cfg(feature = "psd")]
     PSDDecodeErrors(zune_psd::errors::PSDDecodeErrors),
+    #[cfg(feature = "qoi")]
+    QoiDecodeErrors(zune_qoi::QoiErrors),
 
     DimensionsMisMatch(usize, usize),
     UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
@@ -79,6 +81,11 @@ impl Debug for ImgErrors
             Self::PSDDecodeErrors(ref error) =>
             {
                 writeln!(f, "PSD decoding failed:{:?}", error)
+            }
+            #[cfg(feature = "qoi")]
+            Self::QoiDecodeErrors(ref error) =>
+            {
+                writeln!(f, "QOI decoding failed:{:?}", error)
             }
             Self::GenericStr(err) =>
             {
@@ -233,6 +240,15 @@ impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
     fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
     {
         ImgErrors::PSDDecodeErrors(error)
+    }
+}
+
+#[cfg(feature = "qoi")]
+impl From<zune_qoi::QoiErrors> for ImgErrors
+{
+    fn from(error: zune_qoi::QoiErrors) -> Self
+    {
+        ImgErrors::QoiDecodeErrors(error)
     }
 }
 

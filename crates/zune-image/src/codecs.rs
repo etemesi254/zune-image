@@ -20,6 +20,7 @@ pub mod jpeg;
 pub mod png;
 pub mod ppm;
 pub mod psd;
+pub mod qoi;
 /// All supported decoders
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SupportedDecoders
@@ -33,7 +34,9 @@ pub enum SupportedDecoders
     /// Partial support
     PSD,
     /// Full support
-    Farbfeld
+    Farbfeld,
+    /// Full support
+    QOI
 }
 
 /// All supported encoders
@@ -46,13 +49,14 @@ pub enum SupportedEncoders
 }
 
 // stolen from imagers
-static MAGIC_BYTES: [(&[u8], SupportedDecoders); 6] = [
+static MAGIC_BYTES: [(&[u8], SupportedDecoders); 7] = [
     (&[137, 80, 78, 71, 13, 10, 26, 10], SupportedDecoders::Png),
     (&[0xff, 0xd8, 0xff], SupportedDecoders::Jpeg),
     (b"P6", SupportedDecoders::PPM),
     (b"P5", SupportedDecoders::PPM),
     (b"8BPS", SupportedDecoders::PSD),
-    (b"farbfeld", SupportedDecoders::Farbfeld)
+    (b"farbfeld", SupportedDecoders::Farbfeld),
+    (b"qoif", SupportedDecoders::QOI)
 ];
 /// Return the format of an image or none if it's unsupported
 pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
@@ -71,7 +75,6 @@ pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
 ///
 /// This does not handle special form decoders, i.e it uses default settings
 /// for decoders
-#[cfg(any(feature = "png", feature = "jpeg"))]
 pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn DecoderTrait + 'a>
 {
     match codec
@@ -131,6 +134,18 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
             #[cfg(not(feature = "farbfeld"))]
             {
                 unimplemented!("Farbfeld feature not included")
+            }
+        }
+
+        SupportedDecoders::QOI =>
+        {
+            #[cfg(feature = "qoi")]
+            {
+                Box::new(zune_qoi::QoiDecoder::new(data))
+            }
+            #[cfg(not(feature = "qoi"))]
+            {
+                unimplemented!("QOI feature not included")
             }
         }
     }
