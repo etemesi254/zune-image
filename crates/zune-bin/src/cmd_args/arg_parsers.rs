@@ -11,7 +11,7 @@ pub enum IColorSpace
     GRAYSCALE,
     YCbCr,
     RGBA,
-    RGBX,
+    RGBX
 }
 impl IColorSpace
 {
@@ -24,7 +24,7 @@ impl IColorSpace
             IColorSpace::GRAYSCALE => ColorSpace::Luma,
             IColorSpace::YCbCr => ColorSpace::YCbCr,
             IColorSpace::RGBA => ColorSpace::RGBA,
-            IColorSpace::RGBX => ColorSpace::RGBX,
+            IColorSpace::RGBX => ColorSpace::RGBX
         }
     }
 }
@@ -37,7 +37,7 @@ impl ValueEnum for IColorSpace
             Self::RGBA,
             Self::RGB,
             Self::YCbCr,
-            Self::GRAYSCALE,
+            Self::GRAYSCALE
         ]
     }
 
@@ -49,7 +49,7 @@ impl ValueEnum for IColorSpace
             Self::RGBA => PossibleValue::new("rgba"),
             Self::RGB => PossibleValue::new("rgb"),
             Self::YCbCr => PossibleValue::new("ycbcr"),
-            Self::GRAYSCALE => PossibleValue::new("grayscale"),
+            Self::GRAYSCALE => PossibleValue::new("grayscale")
         })
     }
 }
@@ -88,26 +88,4 @@ pub fn get_four_pair_args(input: &str) -> Result<[usize; 4], String>
     }
 
     Ok(result)
-}
-
-pub fn parse_options_to_jpeg(arguments: &ArgMatches) -> ZuneJpegOptions
-{
-    let max_height = *arguments
-        .get_one::<usize>("max-height")
-        .unwrap_or(&(1 << 16));
-    let max_width = *arguments
-        .get_one::<usize>("max-width")
-        .unwrap_or(&(1 << 16));
-    let colorspace = *arguments
-        .get_one::<IColorSpace>("colorspace")
-        .unwrap_or(&IColorSpace::RGB);
-    let use_strict = *arguments.get_one::<bool>("strict").unwrap_or(&false);
-
-    let z_colorspace = colorspace.to_colorspace();
-
-    ZuneJpegOptions::new()
-        .set_out_colorspace(z_colorspace)
-        .set_max_height(max_height as u16)
-        .set_max_width(max_width as u16)
-        .set_strict_mode(use_strict)
 }
