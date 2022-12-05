@@ -152,6 +152,7 @@ impl<'a> QoiDecoder<'a>
         info!("Image width: {:?}", self.width);
         info!("Image height: {:?}", self.height);
         info!("Image colorspace:{:?}", self.colorspace);
+        self.decoded_headers = true;
 
         Ok(())
     }
