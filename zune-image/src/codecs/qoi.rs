@@ -13,8 +13,10 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
     fn decode(&mut self) -> Result<Image, ImgErrors>
     {
         let pixels = self.decode()?;
+        // safe because these are none when we haven't decoded.
         let colorspace = self.get_colorspace().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
+
         let depth = self.get_bit_depth();
         let channels = deinterleave_u8(&pixels, colorspace)?;
 
@@ -28,7 +30,7 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
 
     fn get_out_colorspace(&self) -> ColorSpace
     {
-        self.get_colorspace()
+        self.get_colorspace().unwrap()
     }
 
     fn get_name(&self) -> &'static str
