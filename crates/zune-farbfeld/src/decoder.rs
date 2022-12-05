@@ -6,6 +6,7 @@ use zune_core::colorspace::ColorSpace;
 const FARBFELD_COLORSPACE: ColorSpace = ColorSpace::RGBA;
 const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 
+/// Configuration options for the decoder
 #[derive(Copy, Clone, Debug)]
 pub struct ZuneFarbFeldOptions
 {
@@ -44,7 +45,10 @@ impl Default for ZuneFarbFeldOptions
     }
 }
 
-/// A simple Farbfeld lossless decoder
+/// A simple Farbfeld lossless decoder.
+///
+/// One can modify the decoder accepted dimensions
+/// via `ZuneFarbFeldOptions`
 pub struct FarbFeldDecoder<'a>
 {
     stream:          ZByteReader<'a>,
@@ -79,8 +83,9 @@ impl<'a> FarbFeldDecoder<'a>
     /// Decode a header for this specific image
     pub fn decode_headers(&mut self) -> Result<(), &'static str>
     {
+        const HEADER_SIZE: usize = 8/*magic*/ + 4/*width*/ + 4 /*height*/;
         // read magic
-        if !self.stream.has(8/*magic*/ + 4/*width*/ + 4 /*height*/)
+        if !self.stream.has(HEADER_SIZE)
         {
             return Err("Not enough bytes for header, need 16");
         }
@@ -111,6 +116,16 @@ impl<'a> FarbFeldDecoder<'a>
         Ok(())
     }
     /// Decode a farbfeld data returning raw pixels or an error
+    ///
+    ///
+    /// # Example
+    /// ```
+    /// use zune_farbfeld::FarbFeldDecoder;
+    /// let mut decoder = FarbFeldDecoder::new(b"NOT A VALID FILE");
+    ///
+    /// assert!(decoder.decode().is_err());
+    ///
+    /// ```
     pub fn decode(&mut self) -> Result<Vec<u16>, &'static str>
     {
         self.decode_headers()?;
