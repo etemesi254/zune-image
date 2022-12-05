@@ -24,6 +24,21 @@ and there is probably no reason to have this,
 But I'll let the overall speed of operations(decoding, applying image operations like blurring) speak for itself when
 compared to other implementations.
 
+## Library organization
+
+- `zune-bin`: Provides a simple cmd application you can use for simple image manipulations
+
+- `zune-image_format`: Provides an image decoder(and sometimes encoder) for that specific image format
+  e.g `zune-jpeg` has a jpeg decoder, `zune-ppm` has a ppm decoder.
+  Each decoder is independent of the rest of the decoders so one can pick whatever suits them.
+- `zune-imageprocs`: Image processing routines, raw processing routines like `brighten` operations that work on native
+  rust types
+  (`u8` & `u16`) and are independent of image format.
+- `zune-image`: A combined library relying on decoders and encoders and image processing routines that brings together
+  the whole set together.
+  allows one to slice , dice and splice images and create whatever suits you.
+- `zune-core`: Core routines required by(and shared with) multiple image formats.
+
 ## What you can currently do
 
 | IMAGE | Decoder          | Encoder              |
@@ -47,7 +62,6 @@ a ppm image.
     - PAM decoding
     - Gaussian and box blurring
     - Unsharpen
-    - Contrast
 - Things that will work in 2-4 months
     - JPEG encoding
     - PNG encoding
