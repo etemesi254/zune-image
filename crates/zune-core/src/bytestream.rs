@@ -148,6 +148,46 @@ impl<'a> ZByteReader<'a>
             None => Err(ERROR_MSG)
         }
     }
+    /// Get a fixed amount of bytes or error out if we can't satisfy the read
+    #[inline]
+    pub fn get_fixed_or_err<const N: usize>(&mut self) -> Result<[u8; N], &'static str>
+    {
+        let mut byte_store: [u8; N] = [0; N];
+
+        match self.stream.get(self.position..self.position + N)
+        {
+            Some(bytes) =>
+            {
+                self.position += N;
+                byte_store.copy_from_slice(bytes);
+
+                Ok(byte_store)
+            }
+            None => Err(ERROR_MSG)
+        }
+    }
+
+    /// Get a fixed amount of bytes
+    ///
+    /// Or return zero if we cant read enough bytes.
+    /// Should be used with has
+    #[inline]
+    pub fn get_fixed_or_zero<const N: usize>(&mut self) -> [u8; N]
+    {
+        let mut byte_store: [u8; N] = [0; N];
+
+        match self.stream.get(self.position..self.position + N)
+        {
+            Some(bytes) =>
+            {
+                self.position += N;
+                byte_store.copy_from_slice(bytes);
+
+                byte_store
+            }
+            None => byte_store
+        }
+    }
     #[inline]
     /// Skip bytes until a condition becomes false
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F)
@@ -167,7 +207,8 @@ impl<'a> ZByteReader<'a>
         }
     }
     /// Return the remaining unread bytes in this byte reader
-    pub fn remaining_bytes(&self) -> &'a [u8] {
+    pub fn remaining_bytes(&self) -> &'a [u8]
+    {
         &self.stream[self.position..]
     }
 }
