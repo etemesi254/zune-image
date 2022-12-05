@@ -18,13 +18,16 @@ pub struct ZuneQoiOptions
 
 impl ZuneQoiOptions
 {
-    pub fn set_max_width(&mut self, width: usize)
+    pub fn set_max_width(mut self, width: usize) -> Self
     {
         self.max_width = width;
+        self
     }
-    pub fn set_max_height(&mut self, height: usize)
+    pub fn set_max_height(mut self, height: usize) -> Self
     {
         self.max_height = height;
+
+        self
     }
     pub const fn get_max_width(&self) -> usize
     {
@@ -78,6 +81,23 @@ impl<'a> QoiDecoder<'a>
     /// ```
     pub fn new(data: &'a [u8]) -> QoiDecoder<'a>
     {
+        QoiDecoder::new_with_options(ZuneQoiOptions::default(), data)
+    }
+    /// Create a new QOI format decoder that obeys specified restrictions
+    ///
+    /// E.g can be used to set width and height limits to prevent OOM attacks
+    ///
+    /// #Example
+    /// ```
+    /// use zune_qoi::{QoiDecoder, ZuneQoiOptions};
+    /// // only decode images less than 10 in bytes
+    ///
+    /// let options = ZuneQoiOptions::default().set_max_height(10);
+    /// let mut decoder=QoiDecoder::new_with_options(options,&[]);
+    /// ```
+    #[allow(clippy::redundant_field_names)]
+    pub fn new_with_options(options: ZuneQoiOptions, data: &'a [u8]) -> QoiDecoder<'a>
+    {
         QoiDecoder {
             width:             0,
             height:            0,
@@ -85,7 +105,7 @@ impl<'a> QoiDecoder<'a>
             colorspace_layout: QoiColorspace::Linear,
             decoded_headers:   false,
             stream:            ZByteReader::new(data),
-            options:           ZuneQoiOptions::default()
+            options:           options
         }
     }
     /// Decode a QOI header storing needed information into
