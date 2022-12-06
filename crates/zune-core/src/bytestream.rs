@@ -148,9 +148,28 @@ impl<'a> ZByteReader<'a>
             None => Err(ERROR_MSG)
         }
     }
-    /// Get a fixed amount of bytes or error out if we can't satisfy the read
+    /// Get a fixed amount of bytes or return an error if we cant
+    /// satisy the read
+    ///
+    /// This should be combined with [`has`] since if there are no
+    /// more bytes you get an error.
+    ///
+    /// But it's useful for cases where you expect bytes but they are not present
+    ///
+    /// For the zero  variant see, [`get_fixed_bytes_or_zero`]
+    ///
+    /// # Example
+    /// ```rust
+    /// use zune_core::bytestream::ZByteReader;
+    /// let mut stream = ZByteReader::new(&[0x0,0x5,0x3,0x2]);
+    /// let first_bytes = stream.get_fixed_bytes_or_err::<10>(); // not enough bytes
+    /// assert!(first_bytes.is_err());
+    /// ```
+    ///
+    /// [`has`]:Self::has
+    /// [`get_fixed_bytes_or_zero`]: Self::get_fixed_bytes_or_zero
     #[inline]
-    pub fn get_fixed_or_err<const N: usize>(&mut self) -> Result<[u8; N], &'static str>
+    pub fn get_fixed_bytes_or_err<const N: usize>(&mut self) -> Result<[u8; N], &'static str>
     {
         let mut byte_store: [u8; N] = [0; N];
 
@@ -167,12 +186,26 @@ impl<'a> ZByteReader<'a>
         }
     }
 
-    /// Get a fixed amount of bytes
+    /// Get a fixed amount of bytes or return a zero array size
+    /// if we can't satisfy the read
     ///
-    /// Or return zero if we cant read enough bytes.
-    /// Should be used with has
+    /// This should be combined with [`has`] since if there are no
+    /// more bytes you get a zero initialized array
+    ///
+    /// For the error variant see, [`get_fixed_bytes_or_err`]
+    ///
+    /// # Example
+    /// ```rust
+    /// use zune_core::bytestream::ZByteReader;
+    /// let mut stream = ZByteReader::new(&[0x0,0x5,0x3,0x2]);
+    /// let first_bytes = stream.get_fixed_bytes_or_zero::<2>();
+    /// assert!(first_bytes,[0x0,0x5]);
+    /// ```
+    ///
+    /// [`has`]:Self::has
+    /// [`get_fixed_bytes_or_err`]: Self::get_fixed_bytes_or_err
     #[inline]
-    pub fn get_fixed_or_zero<const N: usize>(&mut self) -> [u8; N]
+    pub fn get_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N]
     {
         let mut byte_store: [u8; N] = [0; N];
 
@@ -189,7 +222,15 @@ impl<'a> ZByteReader<'a>
         }
     }
     #[inline]
-    /// Skip bytes until a condition becomes false
+    /// Skip bytes until a condition becomes false or the stream runs out of bytes
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use zune_core::bytestream::ZByteReader;
+    /// let mut stream = ZByteReader::new(&[0;10]);
+    /// stream.skip_until_false(|x| x.is_ascii()) // skip until we meet a non ascii character
+    /// ```
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F)
     {
         // iterate until we have no more bytes
