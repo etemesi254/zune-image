@@ -61,10 +61,20 @@ impl<'a> ZByteReader<'a>
 
     /// Return whether the underlying buffer
     /// has `num` bytes available for reading
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use zune_core::bytestream::ZByteReader;
+    /// let data = [0;120];
+    /// let reader = ZByteReader::new(&data);
+    /// assert!(reader.has(3));
+    /// assert!(!reader.has(121));
+    /// ```
     #[inline]
     pub const fn has(&self, num: usize) -> bool
     {
-        self.position + num <= self.stream.len()
+        self.position.saturating_add(num) <= self.stream.len()
     }
     /// Get number of bytes available in the stream
     #[inline]
