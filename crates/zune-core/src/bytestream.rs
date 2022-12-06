@@ -7,6 +7,7 @@
 //! Useful for a lot of image readers and writers, it's put
 //! here to minimize code reuse
 pub use reader::ZByteReader;
+pub use writer::ZByteWriter;
 
 mod reader;
 mod writer;
