@@ -1,3 +1,5 @@
+//! Image bit depth, information and manipulations
+
 /// The image bit depth.
 ///
 /// The library successfully supports depths up to
@@ -5,7 +7,7 @@
 ///
 /// This allows us to comfortably support a wide variety of images
 /// e.g 10 bit av1, 16 bit png and ppm.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum BitDepth
 {
