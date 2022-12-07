@@ -11,6 +11,7 @@
 //! And that's how we represent images.
 //! Fully supported bit depths are 8 and 16, see channels for how that happens
 //!
+use log::{debug, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::traits::NumOps;
@@ -22,6 +23,7 @@ use crate::errors::ImgErrors;
 pub const MAX_CHANNELS: usize = 4;
 
 /// Represents a single image
+#[derive(Clone)]
 pub struct Image
 {
     channels:   Vec<Channel>,
@@ -106,6 +108,7 @@ impl Image
     /// Flatten can be used to interleave all channels into one vector
     pub fn flatten<T: Default + Copy>(&self) -> Vec<T>
     {
+        info!("Called flatten operation");
         let dims = self.width * self.height * self.colorspace.num_components();
 
         let mut out_pixel = vec![T::default(); dims];
@@ -167,6 +170,81 @@ impl Image
         }
 
         out_pixel
+    }
+
+    /// Force flattening to RGBA
+    pub fn flatten_rgba(&self, out_pixel: &mut [u8])
+    {
+        assert_eq!(self.depth, BitDepth::Eight);
+
+        match self.colorspace.num_components()
+        {
+            1 =>
+            {
+                let luma_channel = self.channels[0].reinterpret_as::<u8>().unwrap();
+
+                for (out, luma) in out_pixel.chunks_exact_mut(4).zip(luma_channel)
+                {
+                    out[0] = *luma;
+                    out[1] = *luma;
+                    out[2] = *luma;
+                    out[3] = 255;
+                }
+            }
+            2 =>
+            {
+                let luma_channel = self.channels[0].reinterpret_as::<u8>().unwrap();
+                let alpha_channel = self.channels[1].reinterpret_as::<u8>().unwrap();
+
+                for ((out, luma), alpha) in out_pixel
+                    .chunks_exact_mut(4)
+                    .zip(luma_channel)
+                    .zip(alpha_channel)
+                {
+                    out[0] = *luma;
+                    out[1] = *luma;
+                    out[2] = *luma;
+                    out[3] = *alpha;
+                }
+            }
+            3 =>
+            {
+                let c1 = self.channels[0].reinterpret_as::<u8>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<u8>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<u8>().unwrap();
+
+                for (((out, first), second), third) in
+                    out_pixel.chunks_exact_mut(4).zip(c1).zip(c2).zip(c3)
+                {
+                    out[0] = *first;
+                    out[1] = *second;
+                    out[2] = *third;
+                    out[3] = 255;
+                }
+            }
+            4 =>
+            {
+                let c1 = self.channels[0].reinterpret_as::<u8>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<u8>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<u8>().unwrap();
+                let c4 = self.channels[3].reinterpret_as::<u8>().unwrap();
+
+                for ((((out, first), second), third), fourth) in out_pixel
+                    .chunks_exact_mut(4)
+                    .zip(c1)
+                    .zip(c2)
+                    .zip(c3)
+                    .zip(c4)
+                {
+                    out[0] = *first;
+                    out[1] = *second;
+                    out[2] = *third;
+                    out[3] = *fourth;
+                }
+            }
+            // panics, all the way down
+            _ => unreachable!()
+        }
     }
     /// Flatten channels in this image
     ///
