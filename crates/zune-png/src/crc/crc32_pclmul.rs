@@ -1,3 +1,8 @@
+#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+
+#[cfg(target_arch = "x86")]
+use std::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{__m128i, _mm_clmulepi64_si128, _mm_xor_si128};
 
 unsafe fn _fold_sse(src: __m128i, dst: __m128i, multipliers: __m128i) -> __m128i
