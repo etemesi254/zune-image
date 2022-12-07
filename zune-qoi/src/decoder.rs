@@ -212,7 +212,7 @@ impl<'a> QoiDecoder<'a>
 
                 if chunk == QOI_OP_RGB
                 {
-                    let packed_bytes = self.stream.get_fixed_or_zero::<3>();
+                    let packed_bytes = self.stream.get_fixed_bytes_or_zero::<3>();
 
                     px[0] = packed_bytes[0];
                     px[1] = packed_bytes[1];
@@ -220,7 +220,7 @@ impl<'a> QoiDecoder<'a>
                 }
                 else if chunk == QOI_OP_RGBA
                 {
-                    let packed_bytes = self.stream.get_fixed_or_zero::<4>();
+                    let packed_bytes = self.stream.get_fixed_bytes_or_zero::<4>();
 
                     px.copy_from_slice(&packed_bytes);
                 }
