@@ -11,10 +11,11 @@ png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
+image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi"]
 default = []
 threads = []
 
-all = ["jpeg", "ppm", "threads", "png", "psd", "farbfeld", "qoi"]
+all = ["threads", "image_formats"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
