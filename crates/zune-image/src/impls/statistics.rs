@@ -49,19 +49,21 @@ impl OperationsTrait for StatisticsOps
 
                 match depth.bit_type()
                 {
-                    BitType::Sixteen => erode(
+                    BitType::Sixteen => spatial_ops(
                         channel.reinterpret_as::<u16>().unwrap(),
                         new_channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.radius,
                         width,
-                        height
+                        height,
+                        self.operation
                     ),
-                    BitType::Eight => erode(
+                    BitType::Eight => spatial_ops(
                         channel.reinterpret_as::<u8>().unwrap(),
                         new_channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.radius,
                         width,
-                        height
+                        height,
+                        self.operation
                     )
                 }
                 *channel = new_channel;
