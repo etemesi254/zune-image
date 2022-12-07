@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [workspace]
 members = [
+    # Core functionality
+    "zune-core",
     # Main struct
     "zune-image",
     # CLI app
@@ -21,10 +23,10 @@ members = [
     "zune-qoi",
     # additional stuff
     "zune-inflate",
-    # Core functionality
-    "zune-core",
     #testing
-    "zune-tests"
+    "zune-tests",
+    # WASM
+    "zune-wasm"
 
 ]
 
