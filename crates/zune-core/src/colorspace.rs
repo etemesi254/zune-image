@@ -1,3 +1,7 @@
+//! Image Colorspace information and manipulation utilities.
+
+/// All possible image colorspaces
+/// Some of them aren't yet supported exist here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -11,7 +15,7 @@ pub enum ColorSpace
     RGBX,
     YCCK,
     CYMK,
-    Unknown,
+    Unknown
 }
 impl ColorSpace
 {
@@ -23,7 +27,7 @@ impl ColorSpace
             Self::RGBX | Self::RGBA | Self::YCCK | Self::CYMK => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
-            Self::Unknown => 0,
+            Self::Unknown => 0
         }
     }
 
@@ -47,5 +51,5 @@ pub static ALL_COLORSPACES: [ColorSpace; 7] = [
     ColorSpace::LumaA,
     ColorSpace::Luma,
     ColorSpace::CYMK,
-    ColorSpace::YCbCr,
+    ColorSpace::YCbCr
 ];
