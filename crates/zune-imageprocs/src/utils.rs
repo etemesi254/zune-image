@@ -13,6 +13,7 @@
 ///  - position: The position of data we expect to fetch that we think
 /// is not in the cache.
 #[inline(always)]
+#[allow(dead_code, unused_variables)]
 pub fn z_prefetch<T>(data: &[T], position: usize)
 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
