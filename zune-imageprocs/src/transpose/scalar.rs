@@ -45,6 +45,7 @@ pub fn transpose_scalar<T: Copy + Default>(
                     // Optimizer is really trying stuff here
                     // Not a perf boost but a code bloat, so tell it
                     // to listen to me, the MASTER.
+                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                     unsafe {
                         std::arch::asm!("");
                     }
