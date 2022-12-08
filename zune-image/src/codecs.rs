@@ -36,7 +36,9 @@ pub enum SupportedDecoders
     /// Full support
     Farbfeld,
     /// Full support
-    QOI
+    QOI,
+    /// Any unknown format.
+    Unknown
 }
 
 /// All supported encoders
@@ -147,6 +149,10 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
             {
                 unimplemented!("QOI feature not included")
             }
+        }
+        SupportedDecoders::Unknown =>
+        {
+            panic!("Unknown format encountered")
         }
     }
 }
