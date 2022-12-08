@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use log::{debug, error, info};
 use wasm_bindgen::prelude::*;
-use zune_image::codecs::{get_decoder, guess_format};
+use zune_image::codecs::{get_decoder, guess_format as guess_format_zimage};
 use zune_image::image::Image;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::contrast::Contrast;
@@ -14,8 +14,10 @@ use zune_image::impls::stretch_contrast::StretchContrast;
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::traits::OperationsTrait;
 
+use crate::enums::{WasmColorspace, WasmImageDecodeFormats};
 use crate::utils::set_panic_hook;
 
+mod enums;
 mod utils;
 
 #[wasm_bindgen]
@@ -143,7 +145,7 @@ impl WasmImage
         self.execute_ops(&ops);
     }
 
-    /// Invert an image
+    /// Invert an image's pixels
     pub fn invert(&mut self)
     {
         let ops = Invert::new();
@@ -172,18 +174,39 @@ impl WasmImage
         let ops = StatisticsOps::new(radius, StatisticOperations::Mean);
         self.execute_ops(&ops);
     }
+
+    /// Return the image's colorspace
+    pub fn colorspace(&mut self) -> WasmColorspace
+    {
+        WasmColorspace::from_colorspace(self.image.get_colorspace())
+    }
 }
 
+/// Decode an image returning the pixels if the image is decodable
+/// or none otherwise
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Option<WasmImage>
 {
-    if let Some(format) = guess_format(bytes)
+    if let Some(format) = guess_format_zimage(bytes)
     {
         let mut decoder = get_decoder(format, bytes);
 
         return Some(WasmImage {
             image: decoder.decode().unwrap()
         });
+    }
+    None
+}
+
+/// Guess the image format returning an enum if we know the format
+///
+/// or None otherwise
+#[wasm_bindgen]
+pub fn guess_format(bytes: &[u8]) -> Option<WasmImageDecodeFormats>
+{
+    if let Some(format) = guess_format_zimage(bytes)
+    {
+        return Some(WasmImageDecodeFormats::from_formats(format));
     }
     None
 }
