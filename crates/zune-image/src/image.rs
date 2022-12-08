@@ -11,7 +11,7 @@
 //! And that's how we represent images.
 //! Fully supported bit depths are 8 and 16, see channels for how that happens
 //!
-use log::{debug, info};
+use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::traits::NumOps;
