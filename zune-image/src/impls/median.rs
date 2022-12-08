@@ -40,6 +40,8 @@ impl OperationsTrait for Median
         let depth = image.get_depth();
         #[cfg(not(feature = "threads"))]
         {
+            trace!("Running median filter single threaded mode");
+
             for channel in image.get_channels_mut(false)
             {
                 let mut new_channel = Channel::new_with_length(channel.len());
