@@ -6,7 +6,7 @@ use log::debug;
 use zune_core::colorspace::ColorSpace;
 use zune_core::DecodingResult;
 pub use zune_ppm::PPMDecoder;
-use zune_ppm::{PAMEncoder as PAMEnc, PPMEncoder as PPMEnc};
+use zune_ppm::PPMEncoder as PPMEnc;
 
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImgEncodeErrors, ImgErrors};
@@ -46,74 +46,17 @@ where
 
         let mut ppm_encoder = PPMEnc::new(writer);
 
+        let version = zune_ppm::version_for_colorspace(colorspace).unwrap();
+
         if image.get_depth().max_value() > 255
         {
             debug!("Encoding PPM as 16 bit image");
-            ppm_encoder.encode_ppm_u16(width, height, colorspace, &image.flatten::<u16>())?;
+            ppm_encoder.encode_u16(width, height, colorspace, version, &image.flatten::<u16>())?;
         }
         else
         {
             debug!("Encoding PPM as 8 bit image");
-            ppm_encoder.encode_ppm(width, height, colorspace, &image.flatten::<u8>())?;
-        }
-
-        Ok(())
-    }
-
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
-        &[
-            ColorSpace::RGB,  // p6
-            ColorSpace::Luma  // p5
-        ]
-    }
-}
-
-pub struct PAMEncoder<'a, W: Write>
-{
-    file: &'a mut W
-}
-
-impl<'a, W> PAMEncoder<'a, W>
-where
-    W: Write
-{
-    pub fn new(file: &'a mut W) -> PAMEncoder<W>
-    {
-        Self { file }
-    }
-}
-
-impl<'a, W> EncoderTrait for PAMEncoder<'a, W>
-where
-    W: Write
-{
-    fn get_name(&self) -> &'static str
-    {
-        "PAM Encoder"
-    }
-
-    fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>
-    {
-        let (width, height) = image.get_dimensions();
-        let writer = &mut self.file;
-
-        let colorspace = image.get_colorspace();
-
-        let mut pam_encoder = PAMEnc::new(writer);
-
-        if image.get_depth().max_value() > 255
-        {
-            debug!("Encoding PAM as 16 bit image");
-
-            // use larger bit depth
-            pam_encoder.encode_pam_u16(width, height, colorspace, &image.flatten::<u16>())?;
-        }
-        else
-        {
-            debug!("Encoding PAM as 8 bit image");
-            // use simple format
-            pam_encoder.encode_pam(width, height, colorspace, &image.flatten::<u8>())?;
+            ppm_encoder.encode_u8(width, height, colorspace, version, &image.flatten::<u8>())?;
         }
 
         Ok(())
@@ -125,7 +68,8 @@ where
             ColorSpace::RGB,  // p7
             ColorSpace::Luma, // p7
             ColorSpace::RGBA, // p7
-            ColorSpace::RGBX  // p7
+            ColorSpace::RGBX, // p7
+            ColorSpace::LumaA
         ]
     }
 }
