@@ -86,17 +86,10 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(ext) = Path::new(out_file).extension()
         {
-            if ext == OsStr::new("ppm")
+            if ext == OsStr::new("ppm") || ext == OsStr::new("pam")
             {
                 debug!("Treating {:?} as a ppm file", out_file);
                 let encoder = zune_image::codecs::ppm::PPMEncoder::new(&mut buf_writer);
-                workflow.add_encoder(Box::new(encoder));
-            }
-            else if ext == OsStr::new("pam")
-            {
-                debug!("Treating {:?} as a pam file", out_file);
-                let encoder = zune_image::codecs::ppm::PAMEncoder::new(&mut buf_writer);
-
                 workflow.add_encoder(Box::new(encoder));
             }
         }
