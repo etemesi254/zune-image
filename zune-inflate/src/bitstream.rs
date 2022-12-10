@@ -74,14 +74,14 @@ impl<'src> BitStreamReader<'src>
 
         for byte in bytes
         {
-            self.buffer |= u64::from(*byte) << self.bits_left;
-            self.bits_left += 8;
-            self.position += 1;
-
-            if self.bits_left > 56
+            if self.bits_left >= 56
             {
                 break;
             }
+
+            self.buffer |= u64::from(*byte) << self.bits_left;
+            self.bits_left += 8;
+            self.position += 1;
         }
     }
 
@@ -91,7 +91,7 @@ impl<'src> BitStreamReader<'src>
         (self.buffer & ((1 << LOOKAHEAD) - 1)) as usize
     }
     #[inline(always)]
-    pub fn peek_bits_no_const(&self, lookahead: usize) -> usize
+    pub fn peek_var_bits(&self, lookahead: usize) -> usize
     {
         (self.buffer & ((1 << lookahead) - 1)) as usize
     }
@@ -148,5 +148,13 @@ impl<'src> BitStreamReader<'src>
         debug_assert!(self.bits_left >= bits);
         self.bits_left -= bits;
         self.buffer >>= bits;
+    }
+    /// Return the remaining bytes in this stream.
+    ///
+    /// This does not consider bits in the bit-buffer hence
+    /// may not be accurate
+    pub const fn remaining_bytes(&self) -> usize
+    {
+        self.src.len().saturating_sub(self.position)
     }
 }
