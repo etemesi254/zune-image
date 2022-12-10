@@ -37,10 +37,11 @@ impl Debug for PPMErrors
     }
 }
 
-enum PPMVersions
+pub enum PPMVersions
 {
     P5,
-    P6
+    P6,
+    P7
 }
 
 impl Display for PPMVersions
@@ -50,7 +51,8 @@ impl Display for PPMVersions
         match self
         {
             Self::P6 => write!(f, "P6"),
-            Self::P5 => write!(f, "P5")
+            Self::P5 => write!(f, "P5"),
+            Self::P7 => write!(f, "P7")
         }
     }
 }
@@ -69,6 +71,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
         Self { writer }
     }
 
+    /// Write Headers for P5 and P6 formats
     fn write_headers(
         &mut self, version: PPMVersions, width: usize, height: usize, max_val: usize
     ) -> Result<(), PPMErrors>
@@ -80,9 +83,58 @@ impl<'a, W: Write> PPMEncoder<'a, W>
         Ok(())
     }
 
-    /// Encode`data` as 8 bit PPM file
-    pub fn encode_ppm(
+    /// Write headers for P7 format
+    fn write_headers_pam(
+        &mut self, width: usize, height: usize, colorspace: ColorSpace, depth: usize
+    ) -> Result<(), PPMErrors>
+    {
+        let tuple_type = convert_tuple_type_to_pam(colorspace);
+
+        let header = format!(
+            "P7\nWIDTH {}\nHEIGHT {}\nDEPTH {}\nMAXVAL {}\nTUPLTYPE {}\n ENDHDR\n",
+            width,
+            height,
+            colorspace.num_components(),
+            depth,
+            tuple_type
+        );
+        self.writer.write_all(header.as_bytes())?;
+
+        Ok(())
+    }
+    fn encode_pam_u8(
         &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u8]
+    ) -> Result<(), PPMErrors>
+    {
+        self.write_headers_pam(width, height, colorspace, 255)?;
+
+        self.writer.write_all(data)?;
+
+        Ok(())
+    }
+    fn encode_pam_u16(
+        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
+    ) -> Result<(), PPMErrors>
+    {
+        self.write_headers_pam(width, height, colorspace, 255)?;
+
+        // Create big endian bytes from data
+        let owned_data = data
+            .iter()
+            .flat_map(|x| x.to_be_bytes())
+            .collect::<Vec<u8>>();
+
+        self.writer.write_all(&owned_data)?;
+
+        Ok(())
+    }
+
+    /// Encode`data` as 8 bit PPM file
+    ///
+    /// Recommended version is P6, which allows one to save RGB
+    pub fn encode_u8(
+        &mut self, width: usize, height: usize, colorspace: ColorSpace, version: PPMVersions,
+        data: &[u8]
     ) -> Result<(), PPMErrors>
     {
         if width * height * colorspace.num_components() != data.len()
@@ -91,17 +143,26 @@ impl<'a, W: Write> PPMEncoder<'a, W>
                 "Data length does not match image dimensions"
             ));
         }
+        match version
+        {
+            PPMVersions::P5 | PPMVersions::P6 =>
+            {
+                let version = get_ppm_version(colorspace)?;
 
-        let version = get_ppm_version(colorspace)?;
-
-        self.write_headers(version, width, height, 255)?;
-        self.writer.write_all(data)?;
+                self.write_headers(version, width, height, 255)?;
+                self.writer.write_all(data)?;
+            }
+            PPMVersions::P7 =>
+            {
+                self.encode_pam_u8(width, height, colorspace, data)?;
+            }
+        }
 
         Ok(())
     }
 
     /// Encode data as 16 bit PPM
-    pub fn encode_ppm_u16(
+    fn encode_ppm_u16(
         &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
     ) -> Result<(), PPMErrors>
     {
@@ -123,71 +184,32 @@ impl<'a, W: Write> PPMEncoder<'a, W>
 
         Ok(())
     }
+
+    pub fn encode_u16(
+        &mut self, width: usize, height: usize, colorspace: ColorSpace, version: PPMVersions,
+        data: &[u16]
+    ) -> Result<(), PPMErrors>
+    {
+        match version
+        {
+            PPMVersions::P5 | PPMVersions::P6 =>
+            {
+                self.encode_ppm_u16(width, height, colorspace, data)
+            }
+
+            PPMVersions::P7 => self.encode_pam_u16(width, height, colorspace, data)
+        }
+    }
 }
 
-/// A PAM encoder.
-pub struct PAMEncoder<'a, W>
+pub fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
 {
-    writer: &'a mut W
-}
-
-impl<'a, W: Write> PAMEncoder<'a, W>
-{
-    pub fn new(writer: &'a mut W) -> PAMEncoder<'a, W>
+    match colorspace
     {
-        Self { writer }
-    }
-    fn write_headers_pam(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, depth: usize
-    ) -> Result<(), PPMErrors>
-    {
-        let tuple_type = convert_tuple_type_to_pam(colorspace);
-
-        let header = format!(
-            "P7\nWIDTH {}\nHEIGHT {}\nDEPTH {}\nMAXVAL {}\nTUPLTYPE {}\n ENDHDR\n",
-            width,
-            height,
-            colorspace.num_components(),
-            depth,
-            tuple_type
-        );
-        self.writer.write_all(header.as_bytes())?;
-
-        Ok(())
-    }
-    pub fn encode_pam(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u8]
-    ) -> Result<(), PPMErrors>
-    {
-        self.write_headers_pam(width, height, colorspace, 255)?;
-
-        self.writer.write_all(data)?;
-
-        Ok(())
-    }
-
-    /// Encode u16's as a PAM file
-    ///
-    /// Layout of the bits are big endian to emulate netbpm style.
-    pub fn encode_pam_u16(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
-    ) -> Result<(), PPMErrors>
-    {
-        self.write_headers_pam(width, height, colorspace, 65535)?;
-
-        // NOTE: Cae we can save memory here, but it becomes slow
-        // so we cheat by having our own copy
-
-        // Convert to big endian since netbpm uses big endian
-        // so we emulate that
-        let owned_data = data
-            .iter()
-            .flat_map(|x| x.to_be_bytes())
-            .collect::<Vec<u8>>();
-
-        self.writer.write_all(&owned_data)?;
-
-        Ok(())
+        ColorSpace::Luma => Some(PPMVersions::P5),
+        ColorSpace::RGB => Some(PPMVersions::P6),
+        ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::LumaA => Some(PPMVersions::P7),
+        _ => None
     }
 }
 
