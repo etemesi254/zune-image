@@ -1,6 +1,6 @@
 use log::trace;
 use zune_core::bit_depth::BitDepth;
-use zune_imageprocs::depth::depth_u8_to_u16;
+use zune_imageprocs::depth::{depth_u16_to_u8, depth_u8_to_u16};
 
 use crate::channel::Channel;
 use crate::errors::ImgOperationsErrors;
@@ -63,7 +63,7 @@ impl OperationsTrait for Depth
 
                     let new_channel_raw = new_channel.reinterpret_as_mut().unwrap();
 
-                    depth_u8_to_u16(old_data, new_channel_raw, self.depth.max_value());
+                    depth_u16_to_u8(old_data, new_channel_raw, image_depth.max_value());
 
                     *channel = new_channel;
                 }
