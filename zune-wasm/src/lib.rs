@@ -2,10 +2,12 @@ use std::ops::{Deref, DerefMut};
 
 use log::{debug, error, info};
 use wasm_bindgen::prelude::*;
+use zune_core::bit_depth::BitDepth;
 use zune_image::codecs::{get_decoder, guess_format as guess_format_zimage};
 use zune_image::image::Image;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::contrast::Contrast;
+use zune_image::impls::depth::Depth;
 use zune_image::impls::gamma::Gamma;
 use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
@@ -97,7 +99,7 @@ impl WasmImage
     /// # Behaviour
     /// For Luma, it duplicates channel to grayscale
     ///
-    pub fn flatten_rgba(&self, out_pixel: &mut [u8])
+    pub fn flatten_rgba(&mut self, out_pixel: &mut [u8])
     {
         self.image.flatten_rgba(out_pixel)
     }
@@ -191,9 +193,12 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage>
     {
         let mut decoder = get_decoder(format, bytes);
 
-        return Some(WasmImage {
-            image: decoder.decode().unwrap()
-        });
+        let mut image = decoder.decode().unwrap();
+
+        // WASM works with 8 bit images, so convert this to an 8 biy image
+        Depth::new(BitDepth::Eight).execute(&mut image).unwrap();
+
+        return Some(WasmImage { image });
     }
     None
 }
