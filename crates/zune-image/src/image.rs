@@ -18,6 +18,8 @@ use zune_imageprocs::traits::NumOps;
 
 use crate::channel::Channel;
 use crate::errors::ImgErrors;
+use crate::impls::depth::Depth;
+use crate::traits::OperationsTrait;
 
 /// Maximum supported color channels
 pub const MAX_CHANNELS: usize = 4;
@@ -26,11 +28,11 @@ pub const MAX_CHANNELS: usize = 4;
 #[derive(Clone)]
 pub struct Image
 {
-    channels:   Vec<Channel>,
-    depth:      BitDepth,
-    width:      usize,
-    height:     usize,
-    colorspace: ColorSpace
+    pub(crate) channels:   Vec<Channel>,
+    pub(crate) depth:      BitDepth,
+    pub(crate) width:      usize,
+    pub(crate) height:     usize,
+    pub(crate) colorspace: ColorSpace
 }
 
 impl Image
@@ -173,9 +175,18 @@ impl Image
     }
 
     /// Force flattening to RGBA
-    pub fn flatten_rgba(&self, out_pixel: &mut [u8])
+    ///
+    /// This internally converts channel to a u8 representation if it's not
+    /// in that value
+    pub fn flatten_rgba(&mut self, out_pixel: &mut [u8])
     {
-        assert_eq!(self.depth, BitDepth::Eight);
+        if self.depth != BitDepth::Eight
+        {
+            // convert depth if it doesn't match
+            let operation = Depth::new(BitDepth::Eight);
+
+            operation.execute(self).unwrap();
+        }
 
         match self.colorspace.num_components()
         {
