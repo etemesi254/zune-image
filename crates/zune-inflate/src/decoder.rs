@@ -1,7 +1,5 @@
 #![allow(clippy::never_loop)]
 
-use std::cmp::min;
-
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
     DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_STATIC, DEFLATE_BLOCKTYPE_UNCOMPRESSED,
@@ -134,16 +132,21 @@ impl<'a> DeflateDecoder<'a>
         // Output space for our decoded bytes.
         let mut out_block = vec![0; 37000];
         // bits used
-        self.is_last_block = self.stream.get_bits(1) == 1;
-        let block_type = self.stream.get_bits(2);
-
-        let overread_count = 0;
 
         let mut src_offset = 0;
         let mut dest_offset = 0;
 
-        'block: loop
+        loop
         {
+            if !self.stream.has(3)
+            {
+                return Err(ZlibDecodeErrors::InsufficientData);
+            }
+            self.is_last_block = self.stream.get_bits(1) == 1;
+            let block_type = self.stream.get_bits(2);
+
+            let overread_count = 0;
+
             if block_type == DEFLATE_BLOCKTYPE_UNCOMPRESSED
             {
                 /*
@@ -170,6 +173,10 @@ impl<'a> DeflateDecoder<'a>
                 }
                 let partial_bits = usize::from((self.stream.get_bits_left() & 7) != 0);
                 // advance if we have extra bits
+                if !self.stream.has(32)
+                {
+                    return Err(ZlibDecodeErrors::InsufficientData);
+                }
                 self.stream.advance(partial_bits);
                 let len = self.stream.get_bits(16) as usize;
                 let nlen = self.stream.get_bits(16) as usize;
@@ -202,28 +209,35 @@ impl<'a> DeflateDecoder<'a>
              * To reduce latency, the bit-buffer is refilled and the next litlen
              * decode table entry is preloaded before each loop iteration.
              */
-            let (mut literal, mut length, mut offset) = (0, 0, 0);
+            let (mut literal, mut length, mut offset, mut entry) = (0, 0, 0, 0);
 
             let mut saved_bitbuf;
 
-            let x = self.deflate_header_tables.litlen_decode_table[2065];
-
-            assert_eq!(x, 41731);
-
-            let close_src = 3 * FASTCOPY_BITS >= self.stream.remaining_bytes();
-
-            if !close_src
+            'decode: loop
             {
-                'decode: loop
+                let close_src = 3 * FASTCOPY_BITS < self.stream.remaining_bytes();
+
+                if close_src
                 {
                     self.stream.refill();
 
                     let lit_mask = self.stream.peek_var_bits(LITLEN_DECODE_BITS);
 
-                    let mut entry = litlen_decode_table[lit_mask];
+                    entry = litlen_decode_table[lit_mask];
 
                     'sequence: loop
                     {
+                        // recheck after every sequence
+                        // when we hit continue, we need to recheck this
+                        // as this is not a do while
+                        let new_check = 3 * FASTCOPY_BITS > self.stream.remaining_bytes();
+
+                        if new_check
+                        {
+                            break 'decode;
+                        }
+
+                        self.stream.refill();
                         // sequence loop
                         /*
                          * Consume the bits for the litlen decode table entry.  Save the
@@ -291,19 +305,14 @@ impl<'a> DeflateDecoder<'a>
                             // Subtable pointer or end of block entry
                             if (entry & HUFFDEC_END_OF_BLOCK) != 0
                             {
-                                println!("LIT 1");
                                 // block done
-                                break 'block;
+                                break 'decode;
                             }
                             /*
                              * A subtable is required.  Load and consume the
                              * subtable entry.  The subtable entry can be of any
                              * type: literal, length, or end-of-block.
                              */
-                            if dest_offset > 128000
-                            {
-                                let t1 = 0;
-                            }
                             let entry_position = ((entry >> 8) & 0x3F) as usize;
                             let mut pos = (entry >> 16) as usize;
 
@@ -330,14 +339,9 @@ impl<'a> DeflateDecoder<'a>
                                 continue;
                             }
 
-                            if dest_offset > 118200
-                            {
-                                let t = 0;
-                            }
                             if (entry & HUFFDEC_END_OF_BLOCK) != 0
                             {
-                                let t = 0;
-                                break 'block;
+                                break 'decode;
                             }
                         }
 
@@ -384,12 +388,13 @@ impl<'a> DeflateDecoder<'a>
 
                         self.stream.refill();
 
+                        if offset > dest_offset
+                        {
+                            return Err(ZlibDecodeErrors::CorruptData);
+                        }
+
                         src_offset = dest_offset - offset;
 
-                        if dest_offset > 128000
-                        {
-                            let t = 0;
-                        }
                         // ensure there is enough space for a fast copy
                         if dest_offset + length + FASTCOPY_BITS > out_block.len()
                         {
@@ -462,114 +467,123 @@ impl<'a> DeflateDecoder<'a>
                         // why 3
                         if 3 * FASTCOPY_BITS > self.stream.remaining_bytes()
                         {
-                            println!("SEQUENCE");
                             break 'sequence;
                         }
                     }
-                    // generic loop that does things a bit slower but it's okay since it doesn't
-                    // deal with a lot of things
-                    'remainder: loop
+                }
+                // generic loop that does things a bit slower but it's okay since it doesn't
+                // deal with a lot of things
+                // We can afford to be more careful here, checking that we do
+                // not drop non-existent bits etc etc as we do not have the
+                // assurances of the fast loop bits above.
+                loop
+                {
+                    self.stream.refill();
+
+                    let literal_mask = self.stream.peek_var_bits(LITLEN_DECODE_BITS);
+
+                    entry = litlen_decode_table[literal_mask];
+
+                    saved_bitbuf = self.stream.buffer;
+
+                    if !self.stream.has((entry & 0xFF) as u8)
                     {
-                        self.stream.refill();
+                        return Err(ZlibDecodeErrors::InsufficientData);
+                    }
 
-                        let literal_mask = self.stream.peek_var_bits(LITLEN_DECODE_BITS);
+                    self.stream.drop_bits((entry & 0xFF) as u8);
 
-                        entry = litlen_decode_table[literal_mask];
+                    if (entry & HUFFDEC_SUITABLE_POINTER) != 0
+                    {
+                        let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
 
+                        entry = litlen_decode_table[(entry >> 16) as usize + extra];
                         saved_bitbuf = self.stream.buffer;
 
                         self.stream.drop_bits((entry & 0xFF) as u8);
+                    }
+                    length = (entry >> 16) as usize;
 
-                        if (entry & HUFFDEC_SUITABLE_POINTER) != 0
-                        {
-                            let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
+                    if (entry & HUFFDEC_LITERAL) != 0
+                    {
+                        resize_and_push(&mut out_block, dest_offset, literal as u8);
+                        dest_offset += 1;
 
-                            entry = litlen_decode_table[(entry >> 16) as usize + extra];
-                            saved_bitbuf = self.stream.buffer;
-
-                            self.stream.drop_bits((entry & 0xFF) as u8);
-                        }
-                        length = (entry >> 16) as usize;
-
-                        if (entry & HUFFDEC_LITERAL) != 0
-                        {
-                            resize_and_push(&mut out_block, dest_offset, literal as u8);
-                            dest_offset += 1;
-
-                            continue;
-                        }
-
-                        if (entry & HUFFDEC_END_OF_BLOCK) != 0
-                        {
-                            break 'remainder;
-                        }
-
-                        let mask = (1 << entry as u8) - 1;
-
-                        length += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
-
-                        self.stream.refill();
-
-                        entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
-
-                        if (entry & HUFFDEC_EXCEPTIONAL) != 0
-                        {
-                            // offset requires a subtable
-                            self.stream.refill();
-                            self.stream.drop_bits(OFFSET_TABLEBITS as u8);
-
-                            let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
-
-                            entry = offset_decode_table[(entry >> 16) as usize + extra];
-
-                            self.stream.refill();
-                        }
-
-                        // ensure there is enough space for a fast copy
-                        if dest_offset + length + FASTCOPY_BITS > out_block.len()
-                        {
-                            let new_len = out_block.len() + RESIZE_BY + length;
-                            out_block.resize(new_len, 0);
-                        }
-                        saved_bitbuf = self.stream.buffer;
-
-                        let mask = (1 << (entry & 0xFF) as u8) - 1;
-
-                        offset = (entry >> 16) as usize;
-                        offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
-
-                        src_offset = dest_offset - offset;
-
-                        self.stream.refill();
-                        self.stream.drop_bits(entry as u8);
-
-                        let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
-
-                        if src_offset + length + FASTCOPY_BITS > dest_offset
-                        {
-                            // overlapping copy
-                            // do a simple rep match
-                            copy_rep_matches::<true>(
-                                &mut out_block,
-                                src_offset,
-                                dest_offset,
-                                length
-                            );
-                        }
-                        else
-                        {
-                            dest_ptr[0..length]
-                                .copy_from_slice(&dest_src[src_offset..src_offset + length]);
-                        }
-
-                        dest_offset += length;
+                        continue;
                     }
 
-                    break;
+                    if (entry & HUFFDEC_END_OF_BLOCK) != 0
+                    {
+                        break 'decode;
+                    }
+
+                    let mask = (1 << entry as u8) - 1;
+
+                    length += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+
+                    self.stream.refill();
+
+                    entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
+
+                    if (entry & HUFFDEC_EXCEPTIONAL) != 0
+                    {
+                        // offset requires a subtable
+                        self.stream.refill();
+                        self.stream.drop_bits(OFFSET_TABLEBITS as u8);
+
+                        let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
+
+                        entry = offset_decode_table[(entry >> 16) as usize + extra];
+
+                        self.stream.refill();
+                    }
+
+                    // ensure there is enough space for a fast copy
+                    if dest_offset + length + FASTCOPY_BITS > out_block.len()
+                    {
+                        let new_len = out_block.len() + RESIZE_BY + length;
+                        out_block.resize(new_len, 0);
+                    }
+                    saved_bitbuf = self.stream.buffer;
+
+                    let mask = (1 << (entry & 0xFF) as u8) - 1;
+
+                    offset = (entry >> 16) as usize;
+                    offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+
+                    if offset > dest_offset
+                    {
+                        return Err(ZlibDecodeErrors::CorruptData);
+                    }
+
+                    src_offset = dest_offset - offset;
+
+                    self.stream.refill();
+
+                    if !self.stream.has((entry & 0xFF) as u8)
+                    {
+                        return Err(ZlibDecodeErrors::InsufficientData);
+                    }
+
+                    self.stream.drop_bits(entry as u8);
+
+                    let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
+
+                    if src_offset + length + FASTCOPY_BITS > dest_offset
+                    {
+                        // overlapping copy
+                        // do a simple rep match
+                        copy_rep_matches::<true>(&mut out_block, src_offset, dest_offset, length);
+                    }
+                    else
+                    {
+                        dest_ptr[0..length]
+                            .copy_from_slice(&dest_src[src_offset..src_offset + length]);
+                    }
+
+                    dest_offset += length;
                 }
             }
-
-            break;
 
             if self.is_last_block
             {
@@ -600,23 +614,33 @@ impl<'a> DeflateDecoder<'a>
         {
             const SINGLE_PRECODE: usize = 3;
 
+            self.static_codes_loaded = false;
+
             // Dynamic Huffman block
             // Read codeword lengths
+            if !self.stream.has(5 + 5 + 4)
+            {
+                return Err(ZlibDecodeErrors::InsufficientData);
+            }
+
             num_litlen_syms = 257 + (self.stream.get_bits(5)) as usize;
             num_offset_syms = 1 + (self.stream.get_bits(5)) as usize;
 
             let num_explicit_precode_lens = 4 + (self.stream.get_bits(4)) as usize;
 
-            self.static_codes_loaded = false;
-
             self.stream.refill();
 
-            precode_lens[usize::from(DEFLATE_PRECODE_LENS_PERMUTATION[0])] =
-                self.stream.get_bits(3) as u8;
+            if !self.stream.has(3)
+            {
+                return Err(ZlibDecodeErrors::InsufficientData);
+            }
 
-            self.stream.refill();
-
+            let first_precode = self.stream.get_bits(3) as u8;
             let expected = (SINGLE_PRECODE * num_explicit_precode_lens.saturating_sub(1)) as u8;
+
+            precode_lens[usize::from(DEFLATE_PRECODE_LENS_PERMUTATION[0])] = first_precode;
+
+            self.stream.refill();
 
             if !self.stream.has(expected)
             {
@@ -669,6 +693,11 @@ impl<'a> DeflateDecoder<'a>
                 let entry = precode_decode_table[entry_pos];
                 let presym = entry >> 16;
 
+                if !self.stream.has(entry as u8)
+                {
+                    return Err(ZlibDecodeErrors::InsufficientData);
+                }
+
                 self.stream.drop_bits(entry as u8);
 
                 if presym < 16
@@ -705,6 +734,11 @@ impl<'a> DeflateDecoder<'a>
                         return Err(ZlibDecodeErrors::CorruptData);
                     }
 
+                    if !self.stream.has(2)
+                    {
+                        return Err(ZlibDecodeErrors::InsufficientData);
+                    }
+
                     // repeat previous length three to 6 times
                     rep_val = lens[i - 1];
                     rep_count = 3 + self.stream.get_bits(2);
@@ -713,6 +747,10 @@ impl<'a> DeflateDecoder<'a>
                 }
                 else if presym == 17
                 {
+                    if !self.stream.has(3)
+                    {
+                        return Err(ZlibDecodeErrors::InsufficientData);
+                    }
                     /* Repeat zero 3 - 10 times. */
                     rep_count = 3 + self.stream.get_bits(3);
                     lens[i..i + 10].fill(0);
@@ -720,6 +758,10 @@ impl<'a> DeflateDecoder<'a>
                 }
                 else
                 {
+                    if !self.stream.has(7)
+                    {
+                        return Err(ZlibDecodeErrors::InsufficientData);
+                    }
                     // repeat zero 11-138 times.
                     rep_count = 11 + self.stream.get_bits(7);
                     lens[i..i + rep_count as usize].fill(0);
@@ -1075,7 +1117,7 @@ impl<'a> DeflateDecoder<'a>
 
             let mut j = subtable_start + (codeword >> table_bits);
 
-            let mut entry = make_decode_table_entry(
+            let entry = make_decode_table_entry(
                 decode_results,
                 sorted_syms[i] as usize,
                 (len - table_bits) as u32
