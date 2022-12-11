@@ -1,3 +1,5 @@
+use crate::utils::const_min_usize;
+
 /// Number of symbols in each Huffman code.  Note: for the literal/length
 /// and offset codes, these are actually the maximum values; a given block
 /// might use fewer symbols.
@@ -83,7 +85,7 @@ const fn construct_litlen_decode_table() -> [u32; 288]
         i += 1;
     }
 
-    results[i] = HUFFDEC_EXCEPTIONAL | HUFFDEC_LITERAL;
+    results[i] = HUFFDEC_EXCEPTIONAL | HUFFDEC_END_OF_BLOCK;
     i += 1;
 
 
@@ -135,3 +137,6 @@ pub const DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN: u64 = 2;
 pub const DEFLATE_BLOCKTYPE_UNCOMPRESSED: u64 = 0;
 
 pub const DEFLATE_BLOCKTYPE_STATIC: u64 = 1;
+
+pub const LITLEN_DECODE_BITS: usize =
+    const_min_usize(DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, LITLEN_TABLE_BITS);
