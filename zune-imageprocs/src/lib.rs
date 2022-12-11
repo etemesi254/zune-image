@@ -26,6 +26,7 @@ pub mod contrast;
 pub mod convolve;
 pub mod crop;
 pub mod deinterleave;
+pub mod depth;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
