@@ -15,6 +15,9 @@ default = ["crc"]
 [dependencies]
 zune-core = { path = "../zune-core" }
 log = "0.4.17"
+zune-inflate = { path = "../zune-inflate" }
+flate2 = "1.0.25"
+
 
 
 [dev-dependencies]
