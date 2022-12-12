@@ -53,7 +53,7 @@ pub fn const_copy<const SIZE: usize, const SAFE: bool>(
         }
     }
 }
-
+#[inline(always)]
 pub fn copy_rep_matches<const SAFE: bool>(
     dest: &mut [u8], offset: usize, dest_offset: usize, length: usize
 )
