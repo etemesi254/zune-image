@@ -30,7 +30,12 @@ impl Default for DeflateHeaderTables
         }
     }
 }
-
+/// A deflate decoder with wings.
+///
+/// This one manages it's memory, it pre-allocates a buffer which
+/// it tracks number of bytes written and on successfully reaching the
+/// end of the block, will return a vector with exactly
+/// the number of bytes
 pub struct DeflateDecoder<'a>
 {
     data:                  &'a [u8],
@@ -56,7 +61,9 @@ impl<'a> DeflateDecoder<'a>
             deflate_header_tables: DeflateHeaderTables::default()
         }
     }
-    pub fn decode_zlib(&mut self) -> Result<(), ZlibDecodeErrors>
+    /// Decode zlib-encoded data returning the uncompressed in a Vec<u8>
+    /// or an error of what went wrong.
+    pub fn decode_zlib(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
     {
         if self.data.len()
             < 2 /* zlib header */
@@ -109,18 +116,17 @@ impl<'a> DeflateDecoder<'a>
 
         self.position = 2;
 
-        self.decode_deflate()?;
-
-        Ok(())
+        self.decode_deflate()
     }
-    ///Decode a deflate stream
-    pub fn decode_deflate(&mut self) -> Result<(), ZlibDecodeErrors>
+    /// Decode a deflate stream returning the data as Vec<u8> or an error
+    /// indicating what went wrong.
+    pub fn decode_deflate(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
     {
-        self.start_deflate_block()?;
-        Ok(())
+        self.start_deflate_block()
     }
+    /// Main inner loop for decompressing
     #[allow(unused_assignments)]
-    fn start_deflate_block(&mut self) -> Result<(), ZlibDecodeErrors>
+    fn start_deflate_block(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
     {
         const FASTCOPY_BITS: usize = 16;
         // start deflate decode
@@ -189,6 +195,13 @@ impl<'a> DeflateDecoder<'a>
 
                 let start = self.stream.get_position();
                 out_block.extend_from_slice(&self.data[start..start + len]);
+
+                if self.is_last_block
+                {
+                    break;
+                }
+
+                self.stream.reset();
 
                 continue;
             }
@@ -362,7 +375,6 @@ impl<'a> DeflateDecoder<'a>
                         length += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
 
                         entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
-                        saved_bitbuf = self.stream.buffer;
 
                         if (entry & HUFFDEC_EXCEPTIONAL) != 0
                         {
@@ -376,6 +388,8 @@ impl<'a> DeflateDecoder<'a>
                             entry = offset_decode_table[(entry >> 16) as usize + extra];
                         }
 
+                        saved_bitbuf = self.stream.buffer;
+
                         self.stream.refill();
                         self.stream.drop_bits(entry as u8);
 
@@ -383,8 +397,6 @@ impl<'a> DeflateDecoder<'a>
 
                         offset = (entry >> 16) as usize;
                         offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
-
-                        entry = litlen_decode_table[self.stream.peek_var_bits(LITLEN_DECODE_BITS)];
 
                         self.stream.refill();
 
@@ -405,6 +417,8 @@ impl<'a> DeflateDecoder<'a>
                         }
 
                         let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
+
+                        entry = litlen_decode_table[self.stream.peek_var_bits(LITLEN_DECODE_BITS)];
 
                         if src_offset + length + FASTCOPY_BITS > dest_offset
                         {
@@ -590,8 +604,12 @@ impl<'a> DeflateDecoder<'a>
                 break;
             }
         }
+        // decompression. DONE
+        // Truncate data to match the number of actual
+        // bytes written.
+        out_block.truncate(dest_offset);
 
-        Ok(())
+        Ok(out_block)
     }
 
     /// Build decode tables for static and dynamic
@@ -1165,13 +1183,4 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
-}
-
-#[test]
-fn simple_test()
-{
-    use std::fs::read;
-    let file = read("/home/caleb/Documents/zune-image/zune-inflate/tests/tt.zlib").unwrap();
-    let mut decoder = DeflateDecoder::new(&file);
-    decoder.decode_zlib().unwrap();
 }
