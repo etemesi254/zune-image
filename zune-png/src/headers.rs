@@ -56,6 +56,7 @@ impl<'a> PngDecoder<'a>
         {
             return Err(PngErrors::Generic(format!("Unknown color value {}", color)));
         }
+        self.png_info.component = self.png_info.color.num_components();
         // verify colors plus bit depths
         match self.png_info.depth
         {
@@ -76,7 +77,7 @@ impl<'a> PngDecoder<'a>
                 if self.png_info.color == PngColor::Palette
                 {
                     return Err(PngErrors::GenericStatic(
-                        "Indexed colour cannot have 16 bit depth",
+                        "Indexed colour cannot have 16 bit depth"
                     ));
                 }
             }
@@ -171,10 +172,9 @@ impl<'a> PngDecoder<'a>
         // we will later pass these to the deflate decoder as a whole, to get the whole
         // uncompressed stream.
 
-        // Note we pass references, not owned data, this means we do not allocate twice
         let idat_stream = self.stream.get_as_ref(png_chunk.length)?;
 
-        self.idat_chunks.push(idat_stream);
+        self.idat_chunks.extend_from_slice(idat_stream);
 
         // skip crc
         self.stream.skip(4);
