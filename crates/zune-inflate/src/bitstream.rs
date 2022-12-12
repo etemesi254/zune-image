@@ -128,12 +128,6 @@ impl<'src> BitStreamReader<'src>
         self.buffer = 0;
         self.bits_left = 0;
     }
-
-    /// Advance the reader n bytes ahead
-    pub fn advance(&mut self, bytes: usize)
-    {
-        self.position = self.position.saturating_add(bytes);
-    }
     /// Return true if the bit buffer can satisfy
     /// `bits` read without refilling,
     pub const fn has(&self, bits: u8) -> bool
