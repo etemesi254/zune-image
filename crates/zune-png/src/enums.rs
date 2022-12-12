@@ -1,8 +1,6 @@
 #![allow(dead_code, unused_must_use)]
 #![allow(clippy::upper_case_acronyms, non_camel_case_types)]
 
-use crate::enums::PngColor::LumaA;
-
 /// Chunk type according to table 5.3 of
 /// the jpeg spec, see https://www.w3.org/TR/2003/REC-PNG-20031110/
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -26,7 +24,7 @@ pub enum PngChunkType
     iTXt,
     tEXt,
     zTxt,
-    unkn,
+    unkn
 }
 
 impl PngChunkType
@@ -68,7 +66,7 @@ impl PngChunkType
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum FilterMethod
 {
     None,
@@ -76,7 +74,7 @@ pub enum FilterMethod
     Up,
     Average,
     Paeth,
-    Unkwown,
+    Unkwown
 }
 impl FilterMethod
 {
@@ -89,7 +87,7 @@ impl FilterMethod
             2 => Some(FilterMethod::Up),
             3 => Some(FilterMethod::Average),
             4 => Some(FilterMethod::Paeth),
-            _ => None,
+            _ => None
         }
     }
 }
@@ -101,12 +99,13 @@ impl Default for FilterMethod
         FilterMethod::Unkwown
     }
 }
-#[derive(Copy, Clone, Debug)]
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InterlaceMethod
 {
     Standard,
     Adam7,
-    Unkwown,
+    Unkwown
 }
 
 impl Default for InterlaceMethod
@@ -124,7 +123,7 @@ impl InterlaceMethod
         {
             0 => Some(Self::Standard),
             1 => Some(Self::Adam7),
-            _ => None,
+            _ => None
         }
     }
 }
@@ -137,7 +136,7 @@ pub enum PngColor
     LumaA,
     RGB,
     RGBA,
-    Unknown,
+    Unknown
 }
 impl Default for PngColor
 {
@@ -148,6 +147,18 @@ impl Default for PngColor
 }
 impl PngColor
 {
+    pub(crate) fn num_components(self) -> u8
+    {
+        match self
+        {
+            PngColor::Luma => 0,
+            PngColor::Palette => 3,
+            PngColor::LumaA => 2,
+            PngColor::RGB => 3,
+            PngColor::RGBA => 4,
+            PngColor::Unknown => unreachable!()
+        }
+    }
     pub(crate) fn from_int(int: u8) -> Option<PngColor>
     {
         match int
@@ -155,9 +166,9 @@ impl PngColor
             0 => Some(Self::Luma),
             2 => Some(Self::RGB),
             3 => Some(Self::Palette),
-            4 => Some(LumaA),
+            4 => Some(Self::LumaA),
             6 => Some(Self::RGBA),
-            _ => None,
+            _ => None
         }
     }
 }
