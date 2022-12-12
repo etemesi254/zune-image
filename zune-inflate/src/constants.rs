@@ -30,7 +30,9 @@ pub const LITLEN_ENOUGH: usize = 2342;
 /// Maximum bits found in the lookup table for offsets
 /// offsets larger than this require a lookup into a sub-table
 pub const OFFSET_TABLEBITS: usize = 8;
-pub const OFFSET_ENOUGH: usize = 402;
+/// Note, default libdeflate value is 402, but with 512,
+/// we can remove a branch check by simply doing & 511, and I'll take that.
+pub const OFFSET_ENOUGH: usize = 512;
 /// Maximum number of symbols across all codes
 pub const DEFLATE_MAX_NUM_SYMS: usize = 288;
 
