@@ -112,7 +112,7 @@ pub(crate) struct BitStream
     pub successive_low:  u8,
     spec_start:          u8,
     spec_end:            u8,
-    pub eob_run:         i32,
+    pub eob_run:         i32
 }
 
 impl BitStream
@@ -129,7 +129,7 @@ impl BitStream
             successive_low:  0,
             spec_start:      0,
             spec_end:        0,
-            eob_run:         0,
+            eob_run:         0
         }
     }
 
@@ -146,7 +146,7 @@ impl BitStream
             successive_low: al,
             spec_start,
             spec_end,
-            eob_run: 0,
+            eob_run: 0
         }
     }
 
@@ -270,7 +270,7 @@ impl BitStream
     )]
     #[inline(always)]
     fn decode_dc(
-        &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, dc_prediction: &mut i32,
+        &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     {
         let (mut symbol, r);
@@ -313,7 +313,7 @@ impl BitStream
     #[inline(never)]
     pub fn decode_mcu_block(
         &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
-        qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32,
+        qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     {
         // Get fast AC table as a reference before we enter the hot path
@@ -413,7 +413,7 @@ impl BitStream
     #[inline]
     pub(crate) fn decode_prog_dc_first(
         &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, block: &mut i16,
-        dc_prediction: &mut i32,
+        dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
@@ -422,7 +422,7 @@ impl BitStream
     }
     #[inline]
     pub(crate) fn decode_prog_dc_refine(
-        &mut self, reader: &mut ZByteReader, block: &mut i16,
+        &mut self, reader: &mut ZByteReader, block: &mut i16
     ) -> Result<(), DecodeErrors>
     {
         // refinement scan
@@ -448,7 +448,7 @@ impl BitStream
         return k;
     }
     pub(crate) fn decode_mcu_ac_first(
-        &mut self, reader: &mut ZByteReader, ac_table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZByteReader, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     {
         let shift = self.successive_low;
@@ -513,7 +513,7 @@ impl BitStream
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     pub(crate) fn decode_mcu_ac_refine(
-        &mut self, reader: &mut ZByteReader, table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZByteReader, table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     {
         let bit = (1 << self.successive_low) as i16;
@@ -552,7 +552,7 @@ impl BitStream
                     if symbol != 1
                     {
                         return Err(DecodeErrors::HuffmanDecode(
-                            "Bad Huffman code, corrupt JPEG?".to_string(),
+                            "Bad Huffman code, corrupt JPEG?".to_string()
                         ));
                     }
                     // get sign bit
