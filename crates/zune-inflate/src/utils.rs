@@ -43,14 +43,6 @@ pub fn const_copy<const SIZE: usize, const SAFE: bool>(
         dest.as_mut_ptr()
             .add(dest_offset)
             .copy_from(src.as_ptr().add(src_offset), SIZE);
-        // do not generate calls to memcpy optimizer
-        // I'm doing some exclusive shit
-        // (If it's a loop, the optimizer may lift this to be a memcpy)
-        #[cfg(not(any(target_arch = "asmjs", target_arch = "wasm32")))]
-        {
-            use std::arch::asm;
-            asm!("");
-        }
     }
 }
 #[inline(always)]
