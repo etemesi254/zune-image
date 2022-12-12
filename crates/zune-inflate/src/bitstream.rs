@@ -7,10 +7,9 @@ pub struct BitStreamReader<'src>
 {
     // buffer from which we are pulling in bits from
     // used in decompression.
-    src:      &'src [u8],
+    src:           &'src [u8],
     // position in our buffer,
-    position: usize,
-
+    position:      usize,
     pub bits_left: u8,
     pub buffer:    u64
 }
@@ -67,9 +66,6 @@ impl<'src> BitStreamReader<'src>
     #[inline(never)]
     fn refill_slow(&mut self)
     {
-        // ensure we don't read if we can do it in the
-        // first byte
-        assert!(self.position + 8 > self.src.len());
         let bytes = &self.src[self.position..];
 
         for byte in bytes
@@ -88,11 +84,14 @@ impl<'src> BitStreamReader<'src>
     #[inline(always)]
     pub const fn peek_bits<const LOOKAHEAD: usize>(&self) -> usize
     {
+        debug_assert!(self.bits_left >= LOOKAHEAD as u8);
+
         (self.buffer & ((1 << LOOKAHEAD) - 1)) as usize
     }
     #[inline(always)]
     pub fn peek_var_bits(&self, lookahead: usize) -> usize
     {
+        debug_assert!(self.bits_left >= lookahead as u8);
         (self.buffer & ((1 << lookahead) - 1)) as usize
     }
 
