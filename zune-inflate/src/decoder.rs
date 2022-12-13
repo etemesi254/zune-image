@@ -239,7 +239,8 @@ impl<'a> DeflateDecoder<'a>
                     'sequence: loop
                     {
                         // At this point entry contains the next value of the litlen
-                        // This will always be the case so meaning our first read always
+                        // This will always be the case so meaning all our exit paths need
+                        // to load in the next entry.
 
                         // recheck after every sequence
                         // when we hit continue, we need to recheck this
@@ -248,7 +249,7 @@ impl<'a> DeflateDecoder<'a>
 
                         if new_check
                         {
-                            break 'decode;
+                            break 'sequence;
                         }
 
                         self.stream.refill();
@@ -297,6 +298,7 @@ impl<'a> DeflateDecoder<'a>
                                  */
                                 let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
+                                // load in the next entry.
                                 literal = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
@@ -376,8 +378,6 @@ impl<'a> DeflateDecoder<'a>
                         entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
 
                         // offset requires a subtable
-                        self.stream.refill();
-
                         if (entry & HUFFDEC_EXCEPTIONAL) != 0
                         {
                             self.stream.drop_bits(OFFSET_TABLEBITS as u8);
@@ -425,7 +425,7 @@ impl<'a> DeflateDecoder<'a>
                         {
                             // overlapping copy
                             // do a simple rep match
-                            copy_rep_matches::<true>(
+                            copy_rep_matches::<false>(
                                 &mut out_block,
                                 src_offset,
                                 dest_offset,
@@ -484,6 +484,7 @@ impl<'a> DeflateDecoder<'a>
 
                         if 4 * FASTCOPY_BITS > self.stream.remaining_bytes()
                         {
+                            // close to input end, move to the slower one
                             break 'sequence;
                         }
                     }
@@ -497,7 +498,7 @@ impl<'a> DeflateDecoder<'a>
                 {
                     self.stream.refill();
 
-                    let literal_mask = self.stream.peek_var_bits(LITLEN_DECODE_BITS);
+                    let literal_mask = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
                     entry = litlen_decode_table[literal_mask];
 
