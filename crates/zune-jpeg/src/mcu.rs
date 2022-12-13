@@ -6,6 +6,7 @@ use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SubSampRatios};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
+use crate::misc::setup_component_params;
 use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 use crate::JpegDecoder;
 
@@ -74,6 +75,8 @@ impl<'a> JpegDecoder<'a>
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
+        setup_component_params(self)?;
+
         self.check_component_dimensions()?;
         // check dc and AC tables
         self.check_tables()?;

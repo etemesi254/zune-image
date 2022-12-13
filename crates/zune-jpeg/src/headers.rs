@@ -2,8 +2,6 @@
 //!
 //! This file deals with decoding header information in a jpeg file
 //!
-
-use std::cmp::max;
 use std::io::Read;
 
 use zune_core::colorspace::ColorSpace;
@@ -292,55 +290,10 @@ pub(crate) fn parse_start_of_frame(
 
     img.info.set_sof_marker(sof);
 
-    for component in &mut components
-    {
-        // compute interleaved image info
-        // h_max contains the maximum horizontal component
-        img.h_max = max(img.h_max, component.horizontal_sample);
-        // v_max contains the maximum vertical component
-        img.v_max = max(img.v_max, component.vertical_sample);
-        img.mcu_width = img.h_max * 8;
-        img.mcu_height = img.v_max * 8;
-        // Number of MCU's per width
-        img.mcu_x = (usize::from(img.info.width) + img.mcu_width - 1) / img.mcu_width;
-        // Number of MCU's per height
-        img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1) / img.mcu_height;
-
-        if img.h_max != 1 || img.v_max != 1
-        {
-            // interleaved images have horizontal and vertical sampling factors
-            // not equal to 1.
-            img.is_interleaved = true;
-        }
-        // Extract quantization tables from the arrays into components
-        let qt_table = *img.qt_tables[component.quantization_table_number as usize]
-            .as_ref()
-            .ok_or_else(|| {
-                DecodeErrors::DqtError(format!(
-                    "No quantization table for component {:?}",
-                    component.component_id
-                ))
-            })?;
-
-        let x = (usize::from(img_width) * component.horizontal_sample + img.h_max - 1) / img.h_max;
-        let y = (usize::from(img_height) * component.horizontal_sample + img.h_max - 1) / img.v_max;
-        component.x = x;
-        component.w2 = img.mcu_x * component.horizontal_sample * 8;
-        // probably not needed. :)
-        component.y = y;
-        component.quantization_table = qt_table;
-        // initially stride contains its horizontal sub-sampling
-        component.width_stride *= img.mcu_x * 8;
-    }
-
-    // delete quantization tables, we'll extract them from the components when
-    // needed
-    img.qt_tables = [None, None, None, None];
     img.components = components;
 
     Ok(())
 }
-
 /// Parse a start of scan data
 pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
 {

@@ -24,6 +24,7 @@ use crate::errors::DecodeErrors::Format;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
+use crate::misc::setup_component_params;
 use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 
 impl<'a> JpegDecoder<'a>
@@ -38,6 +39,8 @@ impl<'a> JpegDecoder<'a>
         &mut self
     ) -> Result<Vec<u8>, DecodeErrors>
     {
+        setup_component_params(self)?;
+
         self.check_component_dimensions()?;
         let mcu_height;
 
@@ -620,7 +623,7 @@ fn test()
 
     use crate::ZuneJpegOptions;
 
-    let bytes = read("/home/caleb/jpeg/zune-top/victorius_196.jpg").unwrap();
+    let bytes = read("/home/caleb/jpeg/error.jpg/zune-y-component/lion1-800.jpg").unwrap();
 
     let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma);
 
