@@ -31,7 +31,7 @@
 //! ## Decode a JPEG file to RGBA format
 //!```no_run
 //! use zune_core::colorspace::ColorSpace;
-//! use zune_jpeg::{ColorSpace, Decoder, JpegDecoder, ZuneJpegOptions};
+//! use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
 //!
 //! let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::RGBA);
 //!
@@ -47,7 +47,7 @@
 //! let options = ZuneJpegOptions::new().set_out_colorspace(Luma);
 //!
 //! let mut decoder = JpegDecoder::new_with_options(options,&[]);
-//! let decoder = decoder.decode_headers().unwrap();
+//! decoder.decode_headers().unwrap();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)
 //! ```
