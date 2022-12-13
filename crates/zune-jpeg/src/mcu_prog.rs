@@ -570,6 +570,7 @@ impl<'a> JpegDecoder<'a>
         self.options = self.options.set_out_colorspace(ColorSpace::Luma);
         self.v_max = 1;
         self.sub_sample_ratio = SubSampRatios::None;
+        self.is_interleaved = false;
         self.components[0].vertical_sample = 1;
         self.components[0].width_stride = (((self.info.width as usize) + 7) / 8) * 8;
         self.components[0].horizontal_sample = 1;
