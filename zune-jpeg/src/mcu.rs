@@ -124,7 +124,7 @@ impl<'a> JpegDecoder<'a>
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
 
         let mut stream = BitStream::new();
-        let mut pixels = vec![0; capacity * out_colorspace_components];
+        let mut pixels = vec![128; capacity * out_colorspace_components];
         let mut chunks = pixels.chunks_mut(chunks_size);
         let mut channels = [vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
@@ -161,6 +161,20 @@ impl<'a> JpegDecoder<'a>
 
         for i in 0..mcu_height
         {
+            // Report if we have no more bytes
+            // This may generate false negatives since we overread bytes
+            // hence that why 37 is chosen(we assume if we overread more than 37 bytes, we have a problem)
+            if stream.overread_by > 37
+            // favourite number :)
+            {
+                if self.options.get_strict_mode()
+                {
+                    return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
+                };
+
+                error!("Premature end of buffer");
+                break;
+            }
             for j in 0..mcu_width
             {
                 // iterate over components
@@ -259,15 +273,12 @@ impl<'a> JpegDecoder<'a>
             }
             bias += 1;
 
-            if i == 0
+            if i == 0 && self.is_interleaved && self.sub_sample_ratio != SubSampRatios::H
             {
                 // copy first row of idct to the upsampler
                 // Needed for HV and V upsampling.
                 self.components.iter_mut().for_each(|x| {
-                    if x.needed
-                        && self.is_interleaved
-                        && x.component_id != ComponentID::Y
-                        && self.sub_sample_ratio != SubSampRatios::H
+                    if x.needed && x.component_id != ComponentID::Y
                     {
                         //copy
                         let length = x.upsample_scanline.len();

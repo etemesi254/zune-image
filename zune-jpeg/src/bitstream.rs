@@ -112,7 +112,8 @@ pub(crate) struct BitStream
     pub successive_low:  u8,
     spec_start:          u8,
     spec_end:            u8,
-    pub eob_run:         i32
+    pub eob_run:         i32,
+    pub overread_by:     usize
 }
 
 impl BitStream
@@ -129,24 +130,26 @@ impl BitStream
             successive_low:  0,
             spec_start:      0,
             spec_end:        0,
-            eob_run:         0
+            eob_run:         0,
+            overread_by:     0
         }
     }
 
     /// Create a new Bitstream for progressive decoding
-
+    #[allow(clippy::redundant_field_names)]
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream
     {
         BitStream {
-            buffer: 0,
-            aligned_buffer: 0,
-            bits_left: 0,
-            marker: None,
+            buffer:          0,
+            aligned_buffer:  0,
+            bits_left:       0,
+            marker:          None,
             successive_high: ah,
-            successive_low: al,
-            spec_start,
-            spec_end,
-            eob_run: 0
+            successive_low:  al,
+            spec_start:      spec_start,
+            spec_end:        spec_end,
+            eob_run:         0,
+            overread_by:     0
         }
     }
 
@@ -169,6 +172,7 @@ impl BitStream
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
                 $byte = u64::from(reader.get_u8());
+                self.overread_by += usize::from(reader.eof());
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
