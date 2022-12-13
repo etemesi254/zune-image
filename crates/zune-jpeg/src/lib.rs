@@ -20,10 +20,12 @@
 //! # Examples
 //!
 //! ## Decode a JPEG file with default arguments.
-//! ```no_run
+//!```no_run
+//! use std::fs::read;
 //! use zune_jpeg::JpegDecoder;
-//! //will contain pixels
-//! let mut pixels = JpegDecoder::decode_file("a_jpeg_file").unwrap();
+//! let file_contents = read("a_jpeg.file").unwrap();
+//! let mut decoder = JpegDecoder::new(&file_contents);
+//! let mut pixels = decoder.decode().unwrap();
 //! ```
 //!
 //! ## Decode a JPEG file to RGBA format
@@ -45,7 +47,7 @@
 //! let options = ZuneJpegOptions::new().set_out_colorspace(Luma);
 //!
 //! let mut decoder = JpegDecoder::new_with_options(options,&[]);
-//! let decoder = decoder.decode_headers();
+//! let decoder = decoder.decode_headers().unwrap();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)
 //! ```
