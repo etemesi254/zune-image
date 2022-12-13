@@ -225,6 +225,11 @@ impl<'a> JpegDecoder<'a>
     ///  - JPG(n)
     fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors>
     {
+        if self.headers_decoded
+        {
+            warn!("Headers decoded!");
+            return Ok(());
+        }
         // First two bytes should be jpeg soi marker
         let magic_bytes = self.stream.get_u16_be_err()?;
 
