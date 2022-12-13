@@ -447,7 +447,7 @@ impl<'a> JpegDecoder<'a>
     ///
     /// # Examples
     /// ```no_run
-    /// use zune_jpeg::{Decoder, JpegDecoder};
+    /// use zune_jpeg::{JpegDecoder};
     ///
     /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
     /// let mut decoder = JpegDecoder::new(&img_data);
