@@ -1,3 +1,5 @@
+use simd_adler32::Adler32;
+
 /// make_decode_table_entry() creates a decode table entry for the given symbol
 /// by combining the static part 'decode_results[sym]' with the dynamic part
 /// 'len', which is the remaining codeword length (the codeword length for main
@@ -43,12 +45,19 @@ pub fn const_copy<const SIZE: usize, const SAFE: bool>(
         dest.as_mut_ptr()
             .add(dest_offset)
             .copy_from(src.as_ptr().add(src_offset), SIZE);
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            // optimizer, don't do that, dont optimize this.
+            // 1.55% improvement
+            use std::arch::asm;
+            asm!("");
+        }
     }
 }
+
 #[inline(always)]
-pub fn copy_rep_matches<const SAFE: bool>(
-    dest: &mut [u8], offset: usize, dest_offset: usize, length: usize
-)
+pub fn copy_rep_matches(dest: &mut [u8], offset: usize, dest_offset: usize, length: usize)
 {
     // REP MATCHES (LITERAL + REP MATCH).
     //
@@ -89,58 +98,45 @@ pub fn copy_rep_matches<const SAFE: bool>(
     // [xab{a}b]   │  [copy at = 3]
     // [xaba{b}a]  │  [copy at = 4]
 
-    let mut counter = 0;
+    // Asserts are a 1.4% performance detriment
+    assert!(offset + length < dest.len());
+    assert!(dest_offset + length < dest.len());
 
-    let mut match_length = length;
-
-    let (mut dest_src, mut dest_ptr) =
-        unsafe { split_at_mut_unchecked::<SAFE, u8>(dest, dest_offset) };
-
-    let mut dest_offset = dest_offset;
-    // While this can be improved, it rarely occurs and the improvement is a bit ugly code wise
-    // This simple byte wise implementation does what we need and fast enough
-    while match_length > 0
+    for i in 0..length
     {
-        // PS, this should remain. Removing it is a performance
-        // fall of 300 Mb/s decode speeds. :)
-        const_copy::<1, false>(dest_src, dest_ptr, offset + counter, 0);
-
-        dest_offset += 1;
-        // use unsafe here because we know that src and dest
-        // are in bounds
-        (dest_src, dest_ptr) = unsafe { split_at_mut_unchecked::<false, u8>(dest, dest_offset) };
-
-        counter += 1;
-
-        match_length -= 1;
+        // Safety: We assert the worst possible length is in place
+        // before the loop for both src and dest.
+        //
+        // Reason: This is perf sensitive, we can't afford such slowdowns
+        // and it activates optimizations i.e see
+        unsafe {
+            let byte = *dest.get_unchecked(offset + i);
+            *dest.get_unchecked_mut(dest_offset + i) = byte;
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            {
+                // optimizer, don't do that, dont optimize this.
+                // 1.55% improvement
+                use std::arch::asm;
+                asm!("");
+            }
+        }
     }
-}
-
-pub unsafe fn split_at_mut_unchecked<const SAFE: bool, T>(
-    slice: &mut [T], mid: usize
-) -> (&[T], &mut [T])
-{
-    let len = slice.len();
-    let ptr = slice.as_mut_ptr();
-    if SAFE
-    {
-        assert!(mid <= len, "{},{}", mid, len);
-    }
-    (
-        std::slice::from_raw_parts(ptr, mid),
-        std::slice::from_raw_parts_mut(ptr.add(mid), len - mid)
-    )
 }
 
 /// Return the minimum of two usizes in a const context
+#[rustfmt::skip]
 pub const fn const_min_usize(a: usize, b: usize) -> usize
 {
-    if a < b
-    {
-        a
-    }
-    else
-    {
-        b
-    }
+    if a < b { a } else { b }
+}
+
+/// Calculate the adler hash of a piece of data.
+#[inline(never)]
+pub fn calc_adler_hash(data: &[u8]) -> u32
+{
+    let mut hasher = Adler32::new();
+
+    hasher.write(data);
+
+    hasher.finish()
 }
