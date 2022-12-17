@@ -35,10 +35,12 @@ fn test_similarity()
             let zune_data = decode_writer_zune(&data);
             let flate_data = decode_writer_flate(&data);
 
+            assert_eq!(zune_data.len(), flate_data.len());
             for ((pos, a), b) in zune_data.iter().enumerate().zip(flate_data.iter())
             {
                 if a != b
                 {
+                    println!("FILE: {:?}", file.path());
                     panic!("[position: {pos}]: {a} {b} do not match");
                 }
             }
