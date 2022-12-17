@@ -12,7 +12,7 @@ use crate::constants::{
     PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
 };
 use crate::errors::ZlibDecodeErrors;
-use crate::utils::{const_copy, copy_rep_matches, make_decode_table_entry};
+use crate::utils::{calc_adler_hash, const_copy, copy_rep_matches, make_decode_table_entry};
 
 struct DeflateHeaderTables
 {
@@ -96,15 +96,13 @@ impl<'a> DeflateDecoder<'a>
                 ));
             }
             return Err(ZlibDecodeErrors::GenericStr(format!(
-                "Unknown zlib compression method {}",
-                cm
+                "Unknown zlib compression method {cm}"
             )));
         }
         if cinfo > 7
         {
             return Err(ZlibDecodeErrors::GenericStr(format!(
-                "Unknown cinfo `{}` greater than 7, not allowed",
-                cinfo
+                "Unknown cinfo `{cinfo}` greater than 7, not allowed"
             )));
         }
         let flag_checks = (u16::from(cmf) * 256) + u16::from(flg);
@@ -245,7 +243,7 @@ impl<'a> DeflateDecoder<'a>
                         // recheck after every sequence
                         // when we hit continue, we need to recheck this
                         // as we are trying to emulate a do while
-                        let new_check = 3 * FASTCOPY_BITS > self.stream.remaining_bytes();
+                        let new_check = 2 * FASTCOPY_BITS > self.stream.remaining_bytes();
 
                         if new_check
                         {
@@ -389,7 +387,7 @@ impl<'a> DeflateDecoder<'a>
 
                         saved_bitbuf = self.stream.buffer;
 
-                        self.stream.drop_bits(entry as u8);
+                        self.stream.drop_bits((entry & 0xFF) as u8);
 
                         let mask = (1 << entry as u8) - 1;
 
@@ -421,16 +419,36 @@ impl<'a> DeflateDecoder<'a>
                         // a loop+ don't send too much pressure to the Memory unit.
                         const_copy::<FASTCOPY_BITS, false>(dest_src, dest_ptr, src_offset, 0);
 
-                        if src_offset + length > dest_offset
+                        if offset == 1
+                        {
+                            // RLE match, copy it in groups of 8
+                            let rep_num = u64::from(dest_src[src_offset]) * 0x0101010101010101;
+                            let rep_byte = rep_num.to_ne_bytes();
+
+                            // number of bytes we can copy per loop
+                            const N_BYTES: usize = (u64::BITS / u8::BITS) as usize;
+
+                            let mut bytes_written = 0;
+
+                            loop
+                            {
+                                // Safety
+                                // We resized this to enable sloppy copies
+                                // (remember we control our output)
+                                const_copy::<N_BYTES, false>(&rep_byte, dest_ptr, 0, bytes_written);
+                                bytes_written += N_BYTES;
+
+                                if bytes_written > length
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                        else if src_offset + length + FASTCOPY_BITS > dest_offset
                         {
                             // overlapping copy
                             // do a simple rep match
-                            copy_rep_matches::<false>(
-                                &mut out_block,
-                                src_offset,
-                                dest_offset,
-                                length
-                            );
+                            copy_rep_matches(&mut out_block, src_offset, dest_offset, length);
                         }
                         else if length > FASTCOPY_BITS
                         {
@@ -445,10 +463,10 @@ impl<'a> DeflateDecoder<'a>
                             // wasm.
 
                             // current position of the match
-                            let mut counter = src_offset + FASTCOPY_BITS;
+                            let mut dest_src_offset = src_offset + FASTCOPY_BITS;
 
                             // current position where the destination offset should be
-                            let mut tmp_dest_offset = FASTCOPY_BITS;
+                            let mut dest_dst_offset = FASTCOPY_BITS;
 
                             // Number of bytes we are to copy
                             let mut ml_copy = length;
@@ -460,13 +478,12 @@ impl<'a> DeflateDecoder<'a>
                                 const_copy::<FASTCOPY_BITS, false>(
                                     dest_src,
                                     dest_ptr,
-                                    counter,
-                                    tmp_dest_offset
+                                    dest_src_offset,
+                                    dest_dst_offset
                                 );
 
-                                counter += FASTCOPY_BITS;
-
-                                tmp_dest_offset += FASTCOPY_BITS;
+                                dest_src_offset += FASTCOPY_BITS;
+                                dest_dst_offset += FASTCOPY_BITS;
 
                                 if ml_copy < 2 * FASTCOPY_BITS
                                 {
@@ -476,13 +493,13 @@ impl<'a> DeflateDecoder<'a>
                                     break 'match_lengths;
                                 }
 
-                                ml_copy = ml_copy.wrapping_sub(FASTCOPY_BITS);
+                                ml_copy = ml_copy.saturating_sub(FASTCOPY_BITS);
                             }
                         }
 
                         dest_offset += length;
 
-                        if 4 * FASTCOPY_BITS > self.stream.remaining_bytes()
+                        if 2 * FASTCOPY_BITS > self.stream.remaining_bytes()
                         {
                             // close to input end, move to the slower one
                             break 'sequence;
@@ -587,7 +604,7 @@ impl<'a> DeflateDecoder<'a>
                     {
                         // overlapping copy
                         // do a simple rep match
-                        copy_rep_matches::<true>(&mut out_block, src_offset, dest_offset, length);
+                        copy_rep_matches(&mut out_block, src_offset, dest_offset, length);
                     }
                     else
                     {
@@ -604,10 +621,27 @@ impl<'a> DeflateDecoder<'a>
                 break;
             }
         }
+        // revert bitstream back to last read bits
+        let out_pos = self.stream.get_position() - usize::from(self.stream.bits_left >> 3);
+
         // decompression. DONE
         // Truncate data to match the number of actual
         // bytes written.
         out_block.truncate(dest_offset);
+
+        // read adler
+        {
+            let adler_bits: [u8; 4] = self.data
+                [self.position + out_pos..self.position + out_pos + 4]
+                .try_into()
+                .unwrap();
+
+            let adler32_expected = u32::from_be_bytes(adler_bits);
+
+            let adler32_found = calc_adler_hash(&out_block);
+
+            assert_eq!(adler32_expected, adler32_found);
+        }
 
         Ok(out_block)
     }
