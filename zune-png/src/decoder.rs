@@ -6,6 +6,7 @@ use zune_core::DecodingResult;
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngErrors;
+use crate::filters::{handle_avg, handle_paeth, handle_sub, paeth};
 use crate::options::PngOptions;
 
 #[derive(Copy, Clone)]
@@ -441,56 +442,11 @@ impl<'a> PngDecoder<'a>
                 }
                 FilterMethod::Average =>
                 {
-                    let mut max_recon: [u8; 4] = [0; 4];
-
-                    // handle leftmost byte explicitly
-                    for i in 0..components
-                    {
-                        current[i] = in_stride[i + 1].wrapping_add(prev_row[i] >> 1);
-                        max_recon[i] = current[i];
-                    }
-
-                    for ((filt, recon_b), out_px) in in_stride[1 + components..]
-                        .chunks(components)
-                        .zip(prev_row[components..].chunks_exact(components))
-                        .zip(current[components..].chunks_exact_mut(components))
-                    {
-                        for (((recon_a, recon_b), filt_x), out_p) in
-                            max_recon.iter_mut().zip(recon_b).zip(filt).zip(out_px)
-                        {
-                            // this needs to be performed with at least 9 bits of precision, so bump
-                            // it up to 16.
-                            let recona_u16 = u16::from(*recon_a);
-                            let reconb_u16 = u16::from(*recon_b);
-
-                            // The addition can never flow, ad 8 bit addition  <= 9 bits.
-                            let recon_x = (((recona_u16 + reconb_u16) >> 1) & 0xFF) as u8;
-
-                            *out_p = (*filt_x).wrapping_add(recon_x);
-                            *recon_a = *out_p;
-                        }
-                    }
+                    handle_avg(prev_row, &in_stride[1..], current, components);
                 }
                 FilterMethod::Sub =>
                 {
-                    // Since sub is color component respective
-                    // maintain a running recon_a of the loop outside
-                    // with the maximum number of supported color components
-
-                    // recon_a for each pixel, may be unused
-                    let mut max_recon: [u8; 4] = [0; 4];
-
-                    for (filt, recon_x) in in_stride[1..chunk_size]
-                        .chunks(components)
-                        .zip(current.chunks_exact_mut(components))
-                    {
-                        for ((recon_a, filt_x), recon_v) in
-                            max_recon.iter_mut().zip(filt).zip(recon_x)
-                        {
-                            *recon_v = (*filt_x).wrapping_add(*recon_a);
-                            *recon_a = *recon_v;
-                        }
-                    }
+                    handle_sub(&in_stride[1..], current, components);
                 }
                 FilterMethod::Up =>
                 {
@@ -501,37 +457,7 @@ impl<'a> PngDecoder<'a>
                 }
                 FilterMethod::Paeth =>
                 {
-                    let mut max_recon: [u8; 4] = [0; 4];
-                    let mut max_recon_c: [u8; 4] = [0; 4];
-                    // handle leftmost byte explicitly
-                    for i in 0..components
-                    {
-                        current[i] = in_stride[i + 1].wrapping_add(paeth(0, prev_row[i], 0));
-                        max_recon[i] = current[i];
-                        max_recon_c[i] = prev_row[i];
-                    }
-
-                    for ((filt, recon_b), out_px) in in_stride[1 + components..]
-                        .chunks(components)
-                        .zip(prev_row[components..].chunks_exact(components))
-                        .zip(current[components..].chunks_exact_mut(components))
-                    {
-                        for ((((r_a, r_b), r_c), f_x), orig) in max_recon
-                            .iter_mut()
-                            .zip(recon_b)
-                            .zip(max_recon_c.iter_mut())
-                            .zip(filt)
-                            .zip(out_px)
-                        {
-                            let paeth_res = paeth(*r_a, *r_b, *r_c);
-
-                            *orig = (*f_x).wrapping_add(paeth_res);
-
-                            // setup for the following iteration
-                            *r_c = *r_b;
-                            *r_a = *orig;
-                        }
-                    }
+                    handle_paeth(prev_row, &in_stride[1..], current, components);
                 }
                 FilterMethod::Unkwown =>
                 {
@@ -547,26 +473,4 @@ impl<'a> PngDecoder<'a>
 
         Ok(out)
     }
-}
-
-#[inline(always)]
-fn paeth(a: u8, b: u8, c: u8) -> u8
-{
-    let a = i16::from(a);
-    let b = i16::from(b);
-    let c = i16::from(c);
-    let p = a + b - c;
-    let pa = (p - a).abs();
-    let pb = (p - b).abs();
-    let pc = (p - c).abs();
-
-    if pa <= pb && pa <= pc
-    {
-        return a as u8;
-    }
-    if pb <= pc
-    {
-        return b as u8;
-    }
-    c as u8
 }
