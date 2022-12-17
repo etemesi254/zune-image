@@ -5,9 +5,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
         1 =>
         {
             // handle leftmost byte explicitly
-
             current[0] = raw[0].wrapping_add(prev_row[0] >> 1);
-
             let mut recon_a = current[0];
 
             for ((filt, recon_b), out_px) in raw[1..]
@@ -32,6 +30,10 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
             const COMP: usize = 2;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
@@ -65,6 +67,10 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
             const COMP: usize = 3;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
@@ -99,6 +105,10 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
             const COMP: usize = 4;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
@@ -152,6 +162,11 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
             const COMP: usize = 2;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP
+            {
+                return;
+            }
+
             for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
             {
                 macro_rules! unroll {
@@ -169,6 +184,10 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
             const COMP: usize = 3;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP
+            {
+                return;
+            }
             for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
             {
                 macro_rules! unroll {
@@ -186,6 +205,11 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
         {
             const COMP: usize = 4;
             let mut recon_a: [u8; COMP] = [0; COMP];
+
+            if current.len() < COMP || raw.len() < COMP
+            {
+                return;
+            }
 
             for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
             {
@@ -237,6 +261,11 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
             let mut max_recon_a: [u8; COMP] = [0; COMP];
             let mut max_recon_c: [u8; COMP] = [0; COMP];
 
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
+
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
@@ -270,6 +299,11 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
             const COMP: usize = 3;
             let mut max_recon_a: [u8; COMP] = [0; COMP];
             let mut max_recon_c: [u8; COMP] = [0; COMP];
+
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
 
             // handle leftmost byte explicitly
             for i in 0..COMP
@@ -305,6 +339,11 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
             const COMP: usize = 4;
             let mut max_recon_a: [u8; COMP] = [0; COMP];
             let mut max_recon_c: [u8; COMP] = [0; COMP];
+
+            if current.len() < COMP || raw.len() < COMP || prev_row.len() < COMP
+            {
+                return;
+            }
 
             // handle leftmost byte explicitly
             for i in 0..COMP
