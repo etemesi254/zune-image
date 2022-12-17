@@ -16,9 +16,9 @@ default = ["crc"]
 zune-core = { path = "../zune-core" }
 log = "0.4.17"
 zune-inflate = { path = "../zune-inflate" }
-flate2 = "1.0.25"
-
 
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
+criterion = "0.4.0"
+png = "0.17.7"
