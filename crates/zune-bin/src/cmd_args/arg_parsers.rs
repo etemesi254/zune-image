@@ -1,7 +1,6 @@
 use clap::builder::PossibleValue;
-use clap::{ArgMatches, ValueEnum};
+use clap::ValueEnum;
 use zune_core::colorspace::ColorSpace;
-use zune_image::codecs::jpeg::ZuneJpegOptions;
 
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::upper_case_acronyms)]
