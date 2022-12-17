@@ -56,7 +56,7 @@ fn test_crc_same()
     let mut data = vec![0_u8; 1000];
     rng.fill(&mut data);
 
-    let crc_simple = crc32_slice1(&data, 0);
+    let crc_simple = _crc32_slice1(&data, 0);
     let crc_table8 = crc32_slice8(&data, 0);
 
     assert_eq!(
