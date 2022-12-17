@@ -24,7 +24,7 @@ fn decode_writer_zune(bytes: &[u8]) -> Vec<u8>
 
 fn decode_test(c: &mut Criterion)
 {
-    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/zlib/41284_PNG.zlib";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/zlib/412845_PNG.zlib";
 
     let data = read(&path).unwrap();
 
