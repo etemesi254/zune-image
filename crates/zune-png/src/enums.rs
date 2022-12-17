@@ -151,7 +151,7 @@ impl PngColor
     {
         match self
         {
-            PngColor::Luma => 0,
+            PngColor::Luma => 1,
             PngColor::Palette => 3,
             PngColor::LumaA => 2,
             PngColor::RGB => 3,
