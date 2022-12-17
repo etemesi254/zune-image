@@ -1,5 +1,3 @@
-use std::io::{Cursor, Read};
-
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -236,6 +234,7 @@ impl<'a> PngDecoder<'a>
         Err(PngErrors::GenericStatic("Not yet done"))
     }
     /// Undo deflate decoding
+    #[allow(clippy::manual_memcpy)]
     fn inflate(&mut self) -> Result<Vec<u8>, PngErrors>
     {
         // An annoying thing is that deflate doesn't
@@ -255,58 +254,319 @@ impl<'a> PngDecoder<'a>
         // runs.
         //
 
-        {
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open("/home/caleb/Documents/zune-image/zune-inflate/tests/zlib/41284_PNG.zlib")
-                .unwrap();
-
-            file.write_all(&self.idat_chunks).unwrap();
-        }
+        // {
+        //     use std::fs::OpenOptions;
+        //     use std::io::Write;
+        //     let mut file = OpenOptions::new()
+        //         .write(true)
+        //         .create(true)
+        //         .truncate(true)
+        //         .open("/home/caleb/Documents/zune-image/zune-inflate/tests/zlib/412845_PNG.zlib")
+        //         .unwrap();
+        //
+        //     file.write_all(&self.idat_chunks).unwrap();
+        // }
         let mut decoder = zune_inflate::DeflateDecoder::new(&self.idat_chunks);
 
-        let uncompressed_data = decoder.decode_zlib().unwrap();
+        let deflate_data = decoder.decode_zlib().unwrap();
 
-        //let uncompressed_data = _decode_writer_flate(&self.idat_chunks);
+        // let deflate_data = _decode_writer_flate(&self.idat_chunks);
+        // assert_eq!(deflate_data_x, deflate_data);
 
         let info = &self.png_info;
-        let img_width_bytes =
-            ((usize::from(info.component) * info.width * usize::from(info.depth)) + 7) >> 3;
+
+        let mut img_width_bytes;
+
+        img_width_bytes = usize::from(info.component) * info.width;
+        img_width_bytes *= usize::from(info.depth);
+        img_width_bytes += 7;
+        img_width_bytes >>= 3;
 
         let image_len = (img_width_bytes + 1) * info.height;
 
-        if uncompressed_data.len() < image_len
+        if deflate_data.len() < image_len
         {
             let msg = format!(
                 "Not enough pixels, expected {} but found {}",
                 image_len,
-                uncompressed_data.len()
+                deflate_data.len()
             );
             return Err(PngErrors::Generic(msg));
         }
+        let mut out = vec![0; image_len];
+        // stride
+        // do png  un-filtering
+        let mut chunk_size;
 
-        Ok(uncompressed_data)
+        let mut components = usize::from(info.color.num_components());
+
+        if info.depth < 8
+        {
+            // if the bit depth is 8, the spec says the byte before
+            // X to be used by the filter
+            components = 1;
+        }
+
+        // add width plus colour component, this gives us number of bytes per every scan line
+        chunk_size = info.width * usize::from(info.color.num_components());
+        // add depth, and
+        chunk_size *= usize::from(info.depth);
+        chunk_size /= 8;
+        // filter type
+        chunk_size += 1;
+
+        let mut chunks = deflate_data.chunks_exact(chunk_size);
+
+        let filter_byte = deflate_data[0];
+        // handle first loop explicitly
+        // side effect is to ensure filter is always known
+        let filter = FilterMethod::from_int(filter_byte)
+            .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
+
+        let first_scanline = chunks.next().unwrap();
+
+        match filter
+        {
+            FilterMethod::None | FilterMethod::Up =>
+            {
+                out[0..chunk_size - 1].copy_from_slice(&first_scanline[1..]);
+            }
+            FilterMethod::Sub =>
+            {
+                let mut max_recon: [u8; 4] = [0; 4];
+
+                for (filt, recon_x) in first_scanline[1..chunk_size]
+                    .chunks(components)
+                    .zip(out.chunks_exact_mut(components))
+                {
+                    for ((recon_a, filt_x), recon_v) in max_recon.iter_mut().zip(filt).zip(recon_x)
+                    {
+                        *recon_v = (*filt_x).wrapping_add(*recon_a);
+                        *recon_a = *recon_v;
+                    }
+                }
+            }
+            FilterMethod::Average =>
+            {
+                let mut max_recon: [u8; 4] = [0; 4];
+                // handle leftmost byte explicitly
+                for i in 0..components
+                {
+                    out[i] = first_scanline[i + 1];
+                    max_recon[i] = out[i];
+                }
+                for (filt, recon_x) in first_scanline[1 + components..]
+                    .chunks(components)
+                    .zip(out[components..].chunks_exact_mut(components))
+                {
+                    for ((recon_a, filt_x), recon_v) in max_recon.iter_mut().zip(filt).zip(recon_x)
+                    {
+                        let recon_x = *recon_a >> 1;
+
+                        *recon_v = (*filt_x).wrapping_add(recon_x);
+                        *recon_a = *recon_v;
+                    }
+                }
+            }
+            FilterMethod::Paeth =>
+            {
+                let mut max_recon: [u8; 4] = [0; 4];
+                // handle leftmost byte explicitly
+                for i in 0..components
+                {
+                    out[i] = first_scanline[i + 1];
+                    max_recon[i] = out[i];
+                }
+
+                for (filt, out_px) in first_scanline[1 + components..]
+                    .chunks(components)
+                    .zip(out[components..].chunks_exact_mut(components))
+                {
+                    for ((recon_a, filt_x), out_p) in max_recon.iter_mut().zip(filt).zip(out_px)
+                    {
+                        let paeth_res = paeth(*recon_a, 0, 0);
+
+                        *out_p = (*filt_x).wrapping_add(paeth_res);
+                        *recon_a = *out_p;
+                    }
+                }
+            }
+            _ => unreachable!()
+        }
+
+        // so now we have the first row/scanline copied, we become a little fancy
+        //
+        //
+        // ┌─────┬─────┐
+        // │ c   │  b  │
+        // ├─────┼─────┤
+        // │ a   │ x   │
+        // └─────┴─────┘
+        //
+        // This is the loop filter,
+        // the only trick we have is how we do get the top row
+        //
+        // We do it in the following way
+        // 1. Iterate one stride below, chunk taking 2x width
+        //
+
+        let mut prev_row_start = 0;
+        let width_stride = chunk_size - 1;
+
+        let mut out_position = width_stride;
+
+        for in_stride in chunks
+        {
+            // Split output into current and previous
+            let (prev, current) = out.split_at_mut(out_position);
+            // get the previous row.
+            let prev_row = &prev[prev_row_start..prev_row_start + width_stride];
+
+            prev_row_start += width_stride;
+            out_position += width_stride;
+            // take filter
+            let filter_byte = in_stride[0];
+            // get it's type
+            let filter = FilterMethod::from_int(filter_byte)
+                .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
+
+            assert_eq!(prev_row.len(), in_stride.len() - 1);
+
+            match filter
+            {
+                FilterMethod::None =>
+                {
+                    // memcpy
+                    current[0..width_stride].copy_from_slice(&in_stride[1..]);
+                }
+                FilterMethod::Average =>
+                {
+                    let mut max_recon: [u8; 4] = [0; 4];
+
+                    // handle leftmost byte explicitly
+                    for i in 0..components
+                    {
+                        current[i] = in_stride[i + 1].wrapping_add(prev_row[i] >> 1);
+                        max_recon[i] = current[i];
+                    }
+
+                    for ((filt, recon_b), out_px) in in_stride[1 + components..]
+                        .chunks(components)
+                        .zip(prev_row[components..].chunks_exact(components))
+                        .zip(current[components..].chunks_exact_mut(components))
+                    {
+                        for (((recon_a, recon_b), filt_x), out_p) in
+                            max_recon.iter_mut().zip(recon_b).zip(filt).zip(out_px)
+                        {
+                            // this needs to be performed with at least 9 bits of precision, so bump
+                            // it up to 16.
+                            let recona_u16 = u16::from(*recon_a);
+                            let reconb_u16 = u16::from(*recon_b);
+
+                            // The addition can never flow, ad 8 bit addition  <= 9 bits.
+                            let recon_x = (((recona_u16 + reconb_u16) >> 1) & 0xFF) as u8;
+
+                            *out_p = (*filt_x).wrapping_add(recon_x);
+                            *recon_a = *out_p;
+                        }
+                    }
+                }
+                FilterMethod::Sub =>
+                {
+                    // Since sub is color component respective
+                    // maintain a running recon_a of the loop outside
+                    // with the maximum number of supported color components
+
+                    // recon_a for each pixel, may be unused
+                    let mut max_recon: [u8; 4] = [0; 4];
+
+                    for (filt, recon_x) in in_stride[1..chunk_size]
+                        .chunks(components)
+                        .zip(current.chunks_exact_mut(components))
+                    {
+                        for ((recon_a, filt_x), recon_v) in
+                            max_recon.iter_mut().zip(filt).zip(recon_x)
+                        {
+                            *recon_v = (*filt_x).wrapping_add(*recon_a);
+                            *recon_a = *recon_v;
+                        }
+                    }
+                }
+                FilterMethod::Up =>
+                {
+                    for ((filt, recon), up) in in_stride[1..].iter().zip(current).zip(prev_row)
+                    {
+                        *recon = (*filt).wrapping_add(*up)
+                    }
+                }
+                FilterMethod::Paeth =>
+                {
+                    let mut max_recon: [u8; 4] = [0; 4];
+                    let mut max_recon_c: [u8; 4] = [0; 4];
+                    // handle leftmost byte explicitly
+                    for i in 0..components
+                    {
+                        current[i] = in_stride[i + 1].wrapping_add(paeth(0, prev_row[i], 0));
+                        max_recon[i] = current[i];
+                        max_recon_c[i] = prev_row[i];
+                    }
+
+                    for ((filt, recon_b), out_px) in in_stride[1 + components..]
+                        .chunks(components)
+                        .zip(prev_row[components..].chunks_exact(components))
+                        .zip(current[components..].chunks_exact_mut(components))
+                    {
+                        for ((((r_a, r_b), r_c), f_x), orig) in max_recon
+                            .iter_mut()
+                            .zip(recon_b)
+                            .zip(max_recon_c.iter_mut())
+                            .zip(filt)
+                            .zip(out_px)
+                        {
+                            let paeth_res = paeth(*r_a, *r_b, *r_c);
+
+                            *orig = (*f_x).wrapping_add(paeth_res);
+
+                            // setup for the following iteration
+                            *r_c = *r_b;
+                            *r_a = *orig;
+                        }
+                    }
+                }
+                FilterMethod::Unkwown =>
+                {
+                    unreachable!()
+                }
+            }
+        }
+
+        // trim out
+        let new_len = info.width * info.height * usize::from(info.color.num_components());
+
+        out.truncate(new_len);
+
+        Ok(out)
     }
 }
 
-fn _decode_writer_flate(bytes: &[u8]) -> Vec<u8>
+#[inline(always)]
+fn paeth(a: u8, b: u8, c: u8) -> u8
 {
-    let mut writer = Vec::new();
+    let a = i16::from(a);
+    let b = i16::from(b);
+    let c = i16::from(c);
+    let p = a + b - c;
+    let pa = (p - a).abs();
+    let pb = (p - b).abs();
+    let pc = (p - c).abs();
 
-    let mut deflater = flate2::read::ZlibDecoder::new(Cursor::new(bytes));
-
-    deflater.read_to_end(&mut writer).unwrap();
-
-    writer
-}
-
-#[test]
-fn decode()
-{
-    let data = std::fs::read("/home/caleb/jpeg/mahasahiro.png").unwrap();
-    let mut decoder = PngDecoder::new(&data);
-    decoder.decode().unwrap();
+    if pa <= pb && pa <= pc
+    {
+        return a as u8;
+    }
+    if pb <= pc
+    {
+        return b as u8;
+    }
+    c as u8
 }
