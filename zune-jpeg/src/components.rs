@@ -159,7 +159,7 @@ pub enum ComponentID
 }
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-pub enum SubSampRatios
+pub enum SampleRatios
 {
     HV,
     V,
