@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+miniz_oxide = "0.6.2"
 
 [dependencies.zune-inflate]
 path = ".."
@@ -21,5 +22,11 @@ members = ["."]
 [[bin]]
 name = "decode_buffer"
 path = "fuzz_targets/decode_buffer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "roundtrip"
+path = "fuzz_targets/roundtrip.rs"
 test = false
 doc = false
