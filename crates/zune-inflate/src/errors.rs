@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-pub enum ZlibDecodeErrors
+pub enum DecodeErrors
 {
     InsufficientData,
     Generic(&'static str),
@@ -8,7 +8,7 @@ pub enum ZlibDecodeErrors
     CorruptData
 }
 
-impl Debug for ZlibDecodeErrors
+impl Debug for DecodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
