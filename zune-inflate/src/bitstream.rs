@@ -117,9 +117,9 @@ impl<'src> BitStreamReader<'src>
     }
     /// Get position the stream is in this buffer
     /// Or alternatively, number of bits read.
-    pub const fn get_position(&self) -> usize
+    pub fn get_position(&self) -> usize
     {
-        self.position
+        self.position - usize::from(self.bits_left >> 3)
     }
 
     /// Reset buffer and bits left to zero.
