@@ -88,16 +88,10 @@ pub fn ycbcr_to_rgb_16_scalar(
     *pos += 48;
 }
 
-pub fn ycbcr_to_grayscale(y: &[i16], width: usize, output: &mut [u8])
+pub fn ycbcr_to_grayscale(y: &[i16], width: usize, padded_width: usize, output: &mut [u8])
 {
-    let t = y.len() / width; // number of rows
-    let u = y.len() % width; // number of extras
-    let padding_bytes = u / t;
-
-    let width_chunk = width + padding_bytes;
-
     for (y_in, out) in y
-        .chunks_exact(width_chunk)
+        .chunks_exact(padded_width)
         .zip(output.chunks_exact_mut(width))
     {
         for (y, out) in y_in.iter().zip(out.iter_mut())

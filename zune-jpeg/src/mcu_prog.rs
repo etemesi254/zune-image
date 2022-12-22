@@ -17,14 +17,14 @@ use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
-use crate::components::{ComponentID, SubSampRatios};
+use crate::components::{ComponentID, SampleRatios};
 use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::errors::DecodeErrors::Format;
 use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
-use crate::misc::setup_component_params;
+use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 
 impl<'a> JpegDecoder<'a>
@@ -222,7 +222,9 @@ impl<'a> JpegDecoder<'a>
                                 // we can use divisors to determine how many MCU's to skip
                                 // which is more faster than a decrement and return since EOB runs can be
                                 // as big as 10,000
-
+                                // We also have to cover RST runs, but notice RST just becomes zero.
+                                // So we cheat by setting rst to be 1
+                                self.todo = self.todo.saturating_sub(stream.eob_run as usize) + 1;
                                 i += (j + stream.eob_run as usize - 1) / mcu_width;
                                 j = (j + stream.eob_run as usize - 1) % mcu_width;
                                 stream.eob_run = 0;
@@ -360,12 +362,12 @@ impl<'a> JpegDecoder<'a>
         }
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
-        let is_hv = usize::from(self.sub_sample_ratio == SubSampRatios::HV);
+        let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let out_colorspace_components = self.options.get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
-
+        let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
         let extra = usize::from(self.info.width) * 8;
 
         let mut pixels = vec![0; capacity * out_colorspace_components + extra];
@@ -383,8 +385,8 @@ impl<'a> JpegDecoder<'a>
 
                 len *= comp.vertical_sample * comp.horizontal_sample;
 
-                if (self.sub_sample_ratio == SubSampRatios::H
-                    || self.sub_sample_ratio == SubSampRatios::HV)
+                if (self.sub_sample_ratio == SampleRatios::H
+                    || self.sub_sample_ratio == SampleRatios::HV)
                     && comp.component_id != ComponentID::Y
                 {
                     len *= 2;
@@ -482,7 +484,7 @@ impl<'a> JpegDecoder<'a>
                     if x.needed
                         && self.is_interleaved
                         && x.component_id != ComponentID::Y
-                        && self.sub_sample_ratio != SubSampRatios::H
+                        && self.sub_sample_ratio != SampleRatios::H
                     {
                         //copy
                         let length = x.upsample_scanline.len();
@@ -497,9 +499,9 @@ impl<'a> JpegDecoder<'a>
             if self.is_interleaved
             {
                 if i == mcu_height - 1 // take last row even if it doesn't evenly divide it
-                    || (self.sub_sample_ratio == SubSampRatios::H && i % 2 == 1)
-                    || (self.sub_sample_ratio == SubSampRatios::V)
-                    || (self.sub_sample_ratio == SubSampRatios::HV && i % 2 == 1)
+                    || (self.sub_sample_ratio == SampleRatios::H && i % 2 == 1)
+                    || (self.sub_sample_ratio == SampleRatios::V)
+                    || (self.sub_sample_ratio == SampleRatios::HV && i % 2 == 1)
                 {
                     // We have done a complete mcu width, we can upsample.
 
@@ -514,6 +516,7 @@ impl<'a> JpegDecoder<'a>
                     upsample_and_color_convert(
                         &temporary,
                         &mut self.components,
+                        padded_width,
                         self.color_convert_16,
                         self.input_colorspace,
                         self.options.get_out_colorspace(),
@@ -544,7 +547,8 @@ impl<'a> JpegDecoder<'a>
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
                     chunks.next().unwrap(),
-                    width
+                    width,
+                    padded_width
                 );
             }
         }
@@ -572,7 +576,7 @@ impl<'a> JpegDecoder<'a>
         self.h_max = 1;
         self.options = self.options.set_out_colorspace(ColorSpace::Luma);
         self.v_max = 1;
-        self.sub_sample_ratio = SubSampRatios::None;
+        self.sub_sample_ratio = SampleRatios::None;
         self.is_interleaved = false;
         self.components[0].vertical_sample = 1;
         self.components[0].width_stride = (((self.info.width as usize) + 7) / 8) * 8;
@@ -623,9 +627,9 @@ fn test()
 
     use crate::ZuneJpegOptions;
 
-    let bytes = read("/home/caleb/jpeg/error.jpg/zune-y-component/lion1-800.jpg").unwrap();
+    let bytes = read("/home/caleb/jpeg/error.jpg/zune-divergences-3/d.jpg").unwrap();
 
-    let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma);
+    let options = ZuneJpegOptions::new();
 
     let mut bytes = JpegDecoder::new_with_options(options, &bytes);
     bytes.decode().unwrap();
