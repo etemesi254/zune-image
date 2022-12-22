@@ -8,7 +8,7 @@ use crate::decoder::ColorConvert16Ptr;
 
 pub(crate) fn color_convert_no_sampling(
     unprocessed: &[&[i16]; 3], color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
-    output_colorspace: ColorSpace, output: &mut [u8], width: usize
+    output_colorspace: ColorSpace, output: &mut [u8], width: usize, padded_width: usize
 ) // so many parameters..
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
@@ -18,7 +18,7 @@ pub(crate) fn color_convert_no_sampling(
     {
         (ColorSpace::YCbCr | ColorSpace::Luma, ColorSpace::Luma) =>
         {
-            ycbcr_to_grayscale(unprocessed[0], width, output);
+            ycbcr_to_grayscale(unprocessed[0], width, padded_width, output);
         }
         (
             ColorSpace::YCbCr,
@@ -28,6 +28,7 @@ pub(crate) fn color_convert_no_sampling(
             color_convert_ycbcr(
                 unprocessed,
                 width,
+                padded_width,
                 output_colorspace,
                 color_convert_16,
                 output
@@ -47,17 +48,10 @@ pub(crate) fn color_convert_no_sampling(
     clippy::unwrap_used
 )]
 fn color_convert_ycbcr(
-    mcu_block: &[&[i16]; 3], width: usize, output_colorspace: ColorSpace,
+    mcu_block: &[&[i16]; 3], width: usize, padded_width: usize, output_colorspace: ColorSpace,
     color_convert_16: ColorConvert16Ptr, output: &mut [u8]
 )
 {
-    // Width of image which takes into account fill bytes(it may be larger than actual width).
-
-    let t = mcu_block[0].len() / width; // number of rows
-    let u = mcu_block[0].len() % width; // number of extras
-    let padding_bytes = u / t;
-
-    let width_chunk = width + padding_bytes;
     let num_components = output_colorspace.num_components();
 
     let stride = width * num_components;
@@ -67,9 +61,9 @@ fn color_convert_ycbcr(
     // We need to chunk per width to ensure we can discard extra values at the end of the width.
     // Since the encoder may pad bits to ensure the width is a multiple of 8.
     for (((y_width, cb_width), cr_width), out) in mcu_block[0]
-        .chunks_exact(width_chunk)
-        .zip(mcu_block[1].chunks_exact(width_chunk))
-        .zip(mcu_block[2].chunks_exact(width_chunk))
+        .chunks_exact(padded_width)
+        .zip(mcu_block[1].chunks_exact(padded_width))
+        .zip(mcu_block[2].chunks_exact(padded_width))
         .zip(output.chunks_exact_mut(stride))
     {
         if width < 16
@@ -111,14 +105,10 @@ fn color_convert_ycbcr(
         //move pointer back a little bit to get last 16 bytes,
         //color convert, and overwrite
         //This means some values will be color converted twice.
-
-        //redo the last one
-
-        // handles widths not divisible by 16
-        for ((y, cb), cr) in y_width
-            .rchunks_exact(16)
-            .zip(cb_width.rchunks_exact(16))
-            .zip(cr_width.rchunks_exact(16))
+        for ((y, cb), cr) in y_width[width - 16..]
+            .chunks_exact(16)
+            .zip(cb_width[width - 16..].chunks_exact(16))
+            .zip(cr_width[width - 16..].chunks_exact(16))
             .take(1)
         {
             (color_convert_16)(
@@ -129,7 +119,11 @@ fn color_convert_ycbcr(
                 &mut 0
             );
         }
-        let rem = out.chunks_exact_mut(16 * num_components).into_remainder();
+
+        let rem = out[(width - 16) * num_components..]
+            .chunks_exact_mut(16 * num_components)
+            .next()
+            .unwrap();
 
         rem.copy_from_slice(&temp[0..rem.len()]);
     }
@@ -137,7 +131,7 @@ fn color_convert_ycbcr(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn upsample_and_color_convert(
-    unprocessed: &[Vec<i16>; 3], component_data: &mut [Components],
+    unprocessed: &[Vec<i16>; 3], component_data: &mut [Components], padded_width: usize,
     color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
     output_colorspace: ColorSpace, output: &mut [u8], width: usize, scratch_space: &mut [i16]
 )
@@ -180,7 +174,8 @@ pub(crate) fn upsample_and_color_convert(
             input_colorspace,
             output_colorspace,
             out,
-            width
+            width,
+            padded_width
         );
     }
 }

@@ -3,10 +3,10 @@ use std::cmp::min;
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
-use crate::components::{ComponentID, SubSampRatios};
+use crate::components::{ComponentID, SampleRatios};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
-use crate::misc::setup_component_params;
+use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 use crate::JpegDecoder;
 
@@ -117,11 +117,12 @@ impl<'a> JpegDecoder<'a>
         }
         // Size of our output image(width*height)
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
-        let is_hv = usize::from(self.sub_sample_ratio == SubSampRatios::HV);
+        let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let out_colorspace_components = self.options.get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
+        let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
 
         let mut stream = BitStream::new();
         let mut pixels = vec![128; capacity * out_colorspace_components];
@@ -273,7 +274,7 @@ impl<'a> JpegDecoder<'a>
             }
             bias += 1;
 
-            if i == 0 && self.is_interleaved && self.sub_sample_ratio != SubSampRatios::H
+            if i == 0 && self.is_interleaved && self.sub_sample_ratio != SampleRatios::H
             {
                 // copy first row of idct to the upsampler
                 // Needed for HV and V upsampling.
@@ -293,9 +294,9 @@ impl<'a> JpegDecoder<'a>
             if self.is_interleaved
             {
                 if i == mcu_height - 1 // take last row even if it doesn't evenly divide it
-                    || (self.sub_sample_ratio == SubSampRatios::H && i % 2 == 1)
-                    || (self.sub_sample_ratio == SubSampRatios::V)
-                    || (self.sub_sample_ratio == SubSampRatios::HV && i % 2 == 1)
+                    || (self.sub_sample_ratio == SampleRatios::H && i % 2 == 1)
+                    || (self.sub_sample_ratio == SampleRatios::V)
+                    || (self.sub_sample_ratio == SampleRatios::HV && i % 2 == 1)
                 {
                     // We have done a complete mcu width, we can upsample.
 
@@ -307,6 +308,7 @@ impl<'a> JpegDecoder<'a>
                     upsample_and_color_convert(
                         &channels,
                         &mut self.components,
+                        padded_width,
                         self.color_convert_16,
                         self.input_colorspace,
                         self.options.get_out_colorspace(),
@@ -334,7 +336,8 @@ impl<'a> JpegDecoder<'a>
                     self.input_colorspace,
                     self.options.get_out_colorspace(),
                     chunks.next().unwrap(),
-                    width
+                    width,
+                    padded_width
                 );
 
                 bias = 0;
