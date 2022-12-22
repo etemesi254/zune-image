@@ -215,10 +215,19 @@ impl<'a> DeflateDecoder<'a>
 
                 let start = self.stream.get_position() + self.position;
 
-                let curr_len = out_block.len();
+                // ensure there is enough space for a fast copy
+                if dest_offset + len + FASTCOPY_BITS > out_block.len()
+                {
+                    // and if there is not, resize
+                    let new_len = out_block.len() + RESIZE_BY + len;
 
-                out_block.resize(len + curr_len, 0);
-                out_block[curr_len..curr_len + len].copy_from_slice(&self.data[start..start + len]);
+                    out_block.resize(new_len, 0);
+                }
+
+                out_block[dest_offset..dest_offset + len]
+                    .copy_from_slice(&self.data[start..start + len]);
+
+                dest_offset += len;
 
                 if self.is_last_block
                 {
