@@ -11,7 +11,7 @@ use crate::constants::{
     LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS,
     PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
 };
-use crate::errors::ZlibDecodeErrors;
+use crate::errors::DecodeErrors;
 use crate::utils::{calc_adler_hash, const_copy, copy_rep_matches, make_decode_table_entry};
 
 struct DeflateHeaderTables
@@ -63,14 +63,14 @@ impl<'a> DeflateDecoder<'a>
     }
     /// Decode zlib-encoded data returning the uncompressed in a Vec<u8>
     /// or an error of what went wrong.
-    pub fn decode_zlib(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
+    pub fn decode_zlib(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         if self.data.len()
             < 2 /* zlib header */
             + 4
         /* Deflate */
         {
-            return Err(ZlibDecodeErrors::InsufficientData);
+            return Err(DecodeErrors::InsufficientData);
         }
 
         // Zlib flags
@@ -91,17 +91,17 @@ impl<'a> DeflateDecoder<'a>
         {
             if cm == 15
             {
-                return Err(ZlibDecodeErrors::Generic(
+                return Err(DecodeErrors::Generic(
                     "CM of 15 is preserved by the standard,currently don't know how to handle it"
                 ));
             }
-            return Err(ZlibDecodeErrors::GenericStr(format!(
+            return Err(DecodeErrors::GenericStr(format!(
                 "Unknown zlib compression method {cm}"
             )));
         }
         if cinfo > 7
         {
-            return Err(ZlibDecodeErrors::GenericStr(format!(
+            return Err(DecodeErrors::GenericStr(format!(
                 "Unknown cinfo `{cinfo}` greater than 7, not allowed"
             )));
         }
@@ -109,22 +109,48 @@ impl<'a> DeflateDecoder<'a>
 
         if flag_checks % 31 != 0
         {
-            return Err(ZlibDecodeErrors::Generic("FCHECK integrity not preserved"));
+            return Err(DecodeErrors::Generic("FCHECK integrity not preserved"));
         }
 
         self.position = 2;
 
-        self.decode_deflate()
+        let data = self.decode_deflate()?;
+
+        // revert bitstream back to last read bits
+        let out_pos = self.stream.get_position() - usize::from(self.stream.bits_left >> 3);
+
+        // read adler
+        if let Some(adler) = self
+            .data
+            .get(self.position + out_pos..self.position + out_pos + 4)
+        {
+            let adler_bits: [u8; 4] = adler.try_into().unwrap();
+
+            let adler32_expected = u32::from_be_bytes(adler_bits);
+
+            let adler32_found = calc_adler_hash(&data);
+
+            if adler32_expected != adler32_found
+            {
+                return Err(DecodeErrors::CorruptData);
+            }
+        }
+        else
+        {
+            return Err(DecodeErrors::InsufficientData);
+        }
+
+        Ok(data)
     }
     /// Decode a deflate stream returning the data as Vec<u8> or an error
     /// indicating what went wrong.
-    pub fn decode_deflate(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
+    pub fn decode_deflate(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         self.start_deflate_block()
     }
     /// Main inner loop for decompressing
     #[allow(unused_assignments)]
-    fn start_deflate_block(&mut self) -> Result<Vec<u8>, ZlibDecodeErrors>
+    fn start_deflate_block(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         const FASTCOPY_BITS: usize = 16;
         // start deflate decode
@@ -144,7 +170,7 @@ impl<'a> DeflateDecoder<'a>
         {
             if !self.stream.has(3)
             {
-                return Err(ZlibDecodeErrors::InsufficientData);
+                return Err(DecodeErrors::InsufficientData);
             }
             self.is_last_block = self.stream.get_bits(1) == 1;
             let block_type = self.stream.get_bits(2);
@@ -167,23 +193,25 @@ impl<'a> DeflateDecoder<'a>
 
                 if overread_count > self.stream.get_bits_left() >> 3
                 {
-                    return Err(ZlibDecodeErrors::Generic("Over-read stream"));
+                    return Err(DecodeErrors::Generic("Over-read stream"));
                 }
                 let partial_bits = self.stream.get_bits_left() & 7;
                 // advance if we have extra bits
                 if !self.stream.has(32 + partial_bits)
                 {
-                    return Err(ZlibDecodeErrors::InsufficientData);
+                    return Err(DecodeErrors::InsufficientData);
                 }
                 self.stream.drop_bits(partial_bits);
-                let len = self.stream.get_bits(16) as usize;
-                let nlen = self.stream.get_bits(16) as usize;
+
+                let len = self.stream.get_bits(16) as u16;
+                let nlen = self.stream.get_bits(16) as u16;
 
                 // copy to deflate
                 if len != !nlen
                 {
-                    return Err(ZlibDecodeErrors::Generic("Len and nlen do not match"));
+                    return Err(DecodeErrors::Generic("Len and nlen do not match"));
                 }
+                let len = len as usize;
 
                 let start = self.stream.get_position() + self.position;
 
@@ -396,7 +424,7 @@ impl<'a> DeflateDecoder<'a>
 
                         if offset > dest_offset
                         {
-                            return Err(ZlibDecodeErrors::CorruptData);
+                            return Err(DecodeErrors::CorruptData);
                         }
 
                         src_offset = dest_offset - offset;
@@ -523,7 +551,7 @@ impl<'a> DeflateDecoder<'a>
 
                     if !self.stream.has((entry & 0xFF) as u8)
                     {
-                        return Err(ZlibDecodeErrors::InsufficientData);
+                        return Err(DecodeErrors::InsufficientData);
                     }
 
                     self.stream.drop_bits((entry & 0xFF) as u8);
@@ -586,14 +614,14 @@ impl<'a> DeflateDecoder<'a>
 
                     if offset > dest_offset
                     {
-                        return Err(ZlibDecodeErrors::CorruptData);
+                        return Err(DecodeErrors::CorruptData);
                     }
 
                     src_offset = dest_offset - offset;
 
                     if !self.stream.has((entry & 0xFF) as u8)
                     {
-                        return Err(ZlibDecodeErrors::InsufficientData);
+                        return Err(DecodeErrors::InsufficientData);
                     }
 
                     self.stream.drop_bits(entry as u8);
@@ -621,34 +649,18 @@ impl<'a> DeflateDecoder<'a>
                 break;
             }
         }
-        // revert bitstream back to last read bits
-        let out_pos = self.stream.get_position() - usize::from(self.stream.bits_left >> 3);
 
         // decompression. DONE
         // Truncate data to match the number of actual
         // bytes written.
         out_block.truncate(dest_offset);
 
-        // read adler
-        {
-            let adler_bits: [u8; 4] = self.data
-                [self.position + out_pos..self.position + out_pos + 4]
-                .try_into()
-                .unwrap();
-
-            let adler32_expected = u32::from_be_bytes(adler_bits);
-
-            let adler32_found = calc_adler_hash(&out_block);
-
-            assert_eq!(adler32_expected, adler32_found);
-        }
-
         Ok(out_block)
     }
 
     /// Build decode tables for static and dynamic
     /// huffman blocks.
-    fn build_decode_table(&mut self, block_type: u64) -> Result<(), ZlibDecodeErrors>
+    fn build_decode_table(&mut self, block_type: u64) -> Result<(), DecodeErrors>
     {
         const COUNT: usize =
             DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DELFATE_MAX_LENS_OVERRUN;
@@ -672,7 +684,7 @@ impl<'a> DeflateDecoder<'a>
             // Read codeword lengths
             if !self.stream.has(5 + 5 + 4)
             {
-                return Err(ZlibDecodeErrors::InsufficientData);
+                return Err(DecodeErrors::InsufficientData);
             }
 
             num_litlen_syms = 257 + (self.stream.get_bits(5)) as usize;
@@ -684,7 +696,7 @@ impl<'a> DeflateDecoder<'a>
 
             if !self.stream.has(3)
             {
-                return Err(ZlibDecodeErrors::InsufficientData);
+                return Err(DecodeErrors::InsufficientData);
             }
 
             let first_precode = self.stream.get_bits(3) as u8;
@@ -696,7 +708,7 @@ impl<'a> DeflateDecoder<'a>
 
             if !self.stream.has(expected)
             {
-                return Err(ZlibDecodeErrors::InsufficientData);
+                return Err(DecodeErrors::InsufficientData);
             }
 
             for i in DEFLATE_PRECODE_LENS_PERMUTATION[1..]
@@ -747,7 +759,7 @@ impl<'a> DeflateDecoder<'a>
 
                 if !self.stream.has(entry as u8)
                 {
-                    return Err(ZlibDecodeErrors::InsufficientData);
+                    return Err(DecodeErrors::InsufficientData);
                 }
 
                 self.stream.drop_bits(entry as u8);
@@ -783,12 +795,12 @@ impl<'a> DeflateDecoder<'a>
                 {
                     if i == 0
                     {
-                        return Err(ZlibDecodeErrors::CorruptData);
+                        return Err(DecodeErrors::CorruptData);
                     }
 
                     if !self.stream.has(2)
                     {
-                        return Err(ZlibDecodeErrors::InsufficientData);
+                        return Err(DecodeErrors::InsufficientData);
                     }
 
                     // repeat previous length three to 6 times
@@ -801,7 +813,7 @@ impl<'a> DeflateDecoder<'a>
                 {
                     if !self.stream.has(3)
                     {
-                        return Err(ZlibDecodeErrors::InsufficientData);
+                        return Err(DecodeErrors::InsufficientData);
                     }
                     /* Repeat zero 3 - 10 times. */
                     rep_count = 3 + self.stream.get_bits(3);
@@ -812,7 +824,7 @@ impl<'a> DeflateDecoder<'a>
                 {
                     if !self.stream.has(7)
                     {
-                        return Err(ZlibDecodeErrors::InsufficientData);
+                        return Err(DecodeErrors::InsufficientData);
                     }
                     // repeat zero 11-138 times.
                     rep_count = 11 + self.stream.get_bits(7);
@@ -873,7 +885,7 @@ impl<'a> DeflateDecoder<'a>
     fn build_decode_table_inner(
         &mut self, lens: &[u8], decode_results: &[u32], decode_table: &mut [u32],
         table_bits: usize, num_syms: usize, mut max_codeword_len: usize
-    ) -> Result<(), ZlibDecodeErrors>
+    ) -> Result<(), DecodeErrors>
     {
         const BITS: u32 = usize::BITS - 1;
 
@@ -940,7 +952,7 @@ impl<'a> DeflateDecoder<'a>
         // Overfull code
         if codespace_used > 1 << max_codeword_len
         {
-            return Err(ZlibDecodeErrors::Generic("Overflown code"));
+            return Err(DecodeErrors::Generic("Overflown code"));
         }
         // incomplete code
         if codespace_used < 1 << max_codeword_len
@@ -971,7 +983,7 @@ impl<'a> DeflateDecoder<'a>
                  */
                 if codespace_used != 1 << max_codeword_len || len_counts[1] != 1
                 {
-                    return Err(ZlibDecodeErrors::Generic(
+                    return Err(DecodeErrors::Generic(
                         "Cannot work with empty pre-code table"
                     ));
                 }
@@ -1144,7 +1156,7 @@ impl<'a> DeflateDecoder<'a>
 
                     if subtable_bits + table_bits > 15
                     {
-                        return Err(ZlibDecodeErrors::CorruptData);
+                        return Err(DecodeErrors::CorruptData);
                     }
 
                     codespace_used = (codespace_used << 1) + len_counts[table_bits + subtable_bits];
