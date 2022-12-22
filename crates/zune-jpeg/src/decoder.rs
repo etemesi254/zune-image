@@ -5,7 +5,7 @@ use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{ComponentID, Components, SubSampRatios};
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
@@ -83,7 +83,7 @@ pub struct JpegDecoder<'a>
     pub(crate) mcu_y:             usize,
     /// Is the image interleaved?
     pub(crate) is_interleaved:    bool,
-    pub(crate) sub_sample_ratio:  SubSampRatios,
+    pub(crate) sub_sample_ratio:  SampleRatios,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
     pub(crate) input_colorspace:  ColorSpace,
@@ -142,7 +142,7 @@ impl<'a> JpegDecoder<'a>
             mcu_x: 0,
             mcu_y: 0,
             is_interleaved: false,
-            sub_sample_ratio: SubSampRatios::None,
+            sub_sample_ratio: SampleRatios::None,
 
             // Progressive information
             is_progressive: false,
@@ -486,7 +486,7 @@ impl<'a> JpegDecoder<'a>
         {
             (2, 1) =>
             {
-                self.sub_sample_ratio = SubSampRatios::H;
+                self.sub_sample_ratio = SampleRatios::H;
                 // horizontal sub-sampling
                 info!("Horizontal sub-sampling (2,1)");
 
@@ -499,7 +499,7 @@ impl<'a> JpegDecoder<'a>
             }
             (1, 2) =>
             {
-                self.sub_sample_ratio = SubSampRatios::V;
+                self.sub_sample_ratio = SampleRatios::V;
                 // Vertical sub-sampling
                 info!("Vertical sub-sampling (1,2)");
 
@@ -510,7 +510,7 @@ impl<'a> JpegDecoder<'a>
             }
             (2, 2) =>
             {
-                self.sub_sample_ratio = SubSampRatios::HV;
+                self.sub_sample_ratio = SampleRatios::HV;
                 // vertical and horizontal sub sampling
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
