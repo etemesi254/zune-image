@@ -6,6 +6,7 @@ use std::fmt;
 
 use zune_core::bytestream::ZByteReader;
 
+use crate::components::SampleRatios;
 use crate::errors::DecodeErrors;
 use crate::JpegDecoder;
 
@@ -259,4 +260,40 @@ pub(crate) fn setup_component_params(img: &mut JpegDecoder) -> Result<(), Decode
     img.qt_tables = [None, None, None, None];
 
     Ok(())
+}
+
+///Calculate number of fill bytes added to the end of a JPEG image
+/// to fill the image
+///
+/// JPEG usually inserts padding bytes if the image width cannot be evenly divided into
+/// 8 , 16 or 32 chunks depending on the sub sampling ratio. So given a sub-sampling ratio,
+/// and the actual width, this calculates the padded bytes that were added to the image
+///
+///  # Params
+/// -actual_width: Actual width of the image
+/// -sub_sample: Sub sampling factor of the image
+///
+/// # Returns
+/// The padded width, this is how long the width is for a particular image
+pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> usize
+{
+    match sub_sample
+    {
+        SampleRatios::None | SampleRatios::V =>
+        {
+            // None+V sends one MCU row, so that's a simple calculation
+            ((actual_width + 7) / 8) * 8
+        }
+        SampleRatios::H =>
+        {
+            // sends two rows, width can be expanded by up to 15 more bytes
+            ((actual_width + 15) / 16) * 16
+        }
+
+        SampleRatios::HV =>
+        {
+            // sends four rows, width can be expanded up to 31 extra bytes
+            ((actual_width + 31) / 32) * 32
+        }
+    }
 }
