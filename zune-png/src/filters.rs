@@ -1,3 +1,9 @@
+//! A set of optimized filter functions for de-filtering ong
+//! scanlines.
+//!
+
+mod sse4;
+
 pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize)
 {
     match components
@@ -18,7 +24,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
                 let recon_b_u16 = u16::from(*recon_b);
                 let recon_a_u16 = u16::from(recon_a);
 
-                // The addition can never flow, ad 8 bit addition  <= 9 bits.
+                // The addition can never flow, an 8 bit addition  <= 9 bits.
                 let recon_x = (((recon_a_u16 + recon_b_u16) >> 1) & 0xFF) as u8;
 
                 *out_px = (*filt).wrapping_add(recon_x);
@@ -64,6 +70,19 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
         }
         3 =>
         {
+            #[cfg(all(
+                target_feature = "sse2",
+                feature = "sse",
+                any(target_arch = "x86", target_arch = "x86_64")
+            ))]
+            {
+                if is_x86_feature_detected!("sse2")
+                {
+                    // use the sse capable one when possible
+                    crate::filters::sse4::defilter_avg3_sse(prev_row, raw, current);
+                    return;
+                }
+            }
             const COMP: usize = 3;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
@@ -102,6 +121,19 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
         }
         4 =>
         {
+            #[cfg(all(
+                target_feature = "sse2",
+                feature = "sse",
+                any(target_arch = "x86", target_arch = "x86_64")
+            ))]
+            {
+                if is_x86_feature_detected!("sse2")
+                {
+                    // use the sse capable one when possible
+                    crate::filters::sse4::defilter_avg4_sse(prev_row, raw, current);
+                    return;
+                }
+            }
             const COMP: usize = 4;
             let mut recon_a: [u8; COMP] = [0; COMP];
 
@@ -181,48 +213,80 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
         }
         3 =>
         {
-            const COMP: usize = 3;
-            let mut recon_a: [u8; COMP] = [0; COMP];
-
-            if current.len() < COMP || raw.len() < COMP
+            #[cfg(all(
+                target_feature = "sse2",
+                feature = "sse",
+                any(target_arch = "x86", target_arch = "x86_64")
+            ))]
             {
-                return;
-            }
-            for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
-            {
-                macro_rules! unroll {
-                    ($pos:tt) => {
-                        orig[$pos] = filt[$pos].wrapping_add(recon_a[$pos]);
-                        recon_a[$pos] = orig[$pos];
-                    };
+                if is_x86_feature_detected!("sse2")
+                {
+                    // use the sse capable one when possible
+                    crate::filters::sse4::de_filter_sub3_sse2(raw, current);
+                    return;
                 }
-                unroll!(0);
-                unroll!(1);
-                unroll!(2);
+            }
+
+            {
+                const COMP: usize = 3;
+                let mut recon_a: [u8; COMP] = [0; COMP];
+
+                if current.len() < COMP || raw.len() < COMP
+                {
+                    return;
+                }
+                for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
+                {
+                    macro_rules! unroll {
+                        ($pos:tt) => {
+                            orig[$pos] = filt[$pos].wrapping_add(recon_a[$pos]);
+                            recon_a[$pos] = orig[$pos];
+                        };
+                    }
+                    unroll!(0);
+                    unroll!(1);
+                    unroll!(2);
+                }
             }
         }
         4 =>
         {
-            const COMP: usize = 4;
-            let mut recon_a: [u8; COMP] = [0; COMP];
-
-            if current.len() < COMP || raw.len() < COMP
+            #[cfg(all(
+                target_feature = "sse2",
+                feature = "sse",
+                any(target_arch = "x86", target_arch = "x86_64")
+            ))]
             {
-                return;
+                // use the sst capable one when possible
+                if is_x86_feature_detected!("sse2")
+                {
+                    crate::filters::sse4::de_filter_sub4_sse2(raw, current);
+                    return;
+                }
             }
 
-            for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
             {
-                macro_rules! unroll {
-                    ($pos:tt) => {
-                        orig[$pos] = filt[$pos].wrapping_add(recon_a[$pos]);
-                        recon_a[$pos] = orig[$pos];
-                    };
+                const COMP: usize = 4;
+                let mut recon_a: [u8; COMP] = [0; COMP];
+
+                if current.len() < COMP || raw.len() < COMP
+                {
+                    return;
                 }
-                unroll!(0);
-                unroll!(1);
-                unroll!(2);
-                unroll!(3);
+
+                for (filt, orig) in raw.chunks_exact(COMP).zip(current.chunks_exact_mut(COMP))
+                {
+                    macro_rules! unroll {
+                        ($pos:tt) => {
+                            orig[$pos] = filt[$pos].wrapping_add(recon_a[$pos]);
+                            recon_a[$pos] = orig[$pos];
+                        };
+                    }
+                    unroll!(0);
+                    unroll!(1);
+                    unroll!(2);
+                    unroll!(3);
+                }
             }
         }
         _ => unreachable!()
@@ -296,6 +360,16 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
         }
         3 =>
         {
+            #[cfg(all(feature = "sse", any(target_arch = "x86", target_arch = "x86_64")))]
+            {
+                // use the sse capable one when possible
+                if is_x86_feature_detected!("sse4.1")
+                {
+                    crate::filters::sse4::de_filter_paeth3_sse41(prev_row, raw, current);
+                    //  return;
+                }
+            }
+
             const COMP: usize = 3;
             let mut max_recon_a: [u8; COMP] = [0; COMP];
             let mut max_recon_c: [u8; COMP] = [0; COMP];
@@ -308,7 +382,8 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
-                current[i] = raw[i].wrapping_add(paeth(0, prev_row[i], 0));
+                let paeth_x = paeth(0, prev_row[i], 0);
+                current[i] = raw[i].wrapping_add(paeth_x);
                 max_recon_a[i] = current[i];
                 max_recon_c[i] = prev_row[i];
             }
@@ -336,6 +411,15 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
         }
         4 =>
         {
+            #[cfg(all(feature = "sse", any(target_arch = "x86", target_arch = "x86_64")))]
+            {
+                // use the sse capable one when possible
+                if is_x86_feature_detected!("sse4.1")
+                {
+                    crate::filters::sse4::de_filter_paeth4_sse41(prev_row, raw, current);
+                    return;
+                }
+            }
             const COMP: usize = 4;
             let mut max_recon_a: [u8; COMP] = [0; COMP];
             let mut max_recon_c: [u8; COMP] = [0; COMP];
@@ -348,7 +432,8 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
             // handle leftmost byte explicitly
             for i in 0..COMP
             {
-                current[i] = raw[i].wrapping_add(paeth(0, prev_row[i], 0));
+                let paeth_x = paeth(0, prev_row[i], 0);
+                current[i] = raw[i].wrapping_add(paeth_x);
                 max_recon_a[i] = current[i];
                 max_recon_c[i] = prev_row[i];
             }
