@@ -9,9 +9,10 @@ pub struct BitStreamReader<'src>
     // used in decompression.
     src:           &'src [u8],
     // position in our buffer,
-    position:      usize,
+    pub position:  usize,
     pub bits_left: u8,
-    pub buffer:    u64
+    pub buffer:    u64,
+    pub over_read: usize
 }
 
 impl<'src> BitStreamReader<'src>
@@ -27,7 +28,8 @@ impl<'src> BitStreamReader<'src>
             bits_left: 0,
             buffer:    0,
             src:       in_buffer,
-            position:  0
+            position:  0,
+            over_read: 0
         }
     }
     /// Refill the bitstream ensuring the buffer has bits between
@@ -79,13 +81,16 @@ impl<'src> BitStreamReader<'src>
             self.bits_left += 8;
             self.position += 1;
         }
+        while self.bits_left < 56
+        {
+            self.bits_left += 8;
+            self.over_read += 1;
+        }
     }
 
     #[inline(always)]
     pub const fn peek_bits<const LOOKAHEAD: usize>(&self) -> usize
     {
-        debug_assert!(self.bits_left >= LOOKAHEAD as u8);
-
         (self.buffer & ((1 << LOOKAHEAD) - 1)) as usize
     }
     #[inline(always)]
