@@ -137,6 +137,7 @@ pub static LITLEN_DECODE_RESULTS: [u32; 288] = construct_litlen_decode_table();
 pub const DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN: u64 = 2;
 
 pub const DEFLATE_BLOCKTYPE_UNCOMPRESSED: u64 = 0;
+pub const DEFLATE_BLOCKTYPE_RESERVED: u64 = 3;
 
 pub const DEFLATE_BLOCKTYPE_STATIC: u64 = 1;
 
