@@ -13,7 +13,9 @@ use crate::constants::{
     PRECODE_TABLE_BITS
 };
 use crate::errors::DecodeErrors;
-use crate::utils::{calc_adler_hash, const_copy, copy_rep_matches, make_decode_table_entry};
+use crate::utils::{
+    calc_adler_hash, const_copy, const_copy_within, copy_rep_matches, make_decode_table_entry
+};
 
 struct DeflateHeaderTables
 {
@@ -118,7 +120,7 @@ impl<'a> DeflateDecoder<'a>
         let data = self.decode_deflate()?;
 
         // revert bitstream back to last read bits
-        let out_pos = self.stream.get_position() - usize::from(self.stream.bits_left >> 3);
+        let out_pos = self.stream.get_position() + self.stream.over_read;
 
         // read adler
         if let Some(adler) = self
@@ -153,7 +155,7 @@ impl<'a> DeflateDecoder<'a>
     #[allow(unused_assignments)]
     fn start_deflate_block(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
-        const FASTCOPY_BITS: usize = 16;
+        const FASTCOPY_BYTES: usize = 16;
         // start deflate decode
         // re-read the stream so that we can remove code read by zlib
         self.stream = BitStreamReader::new(&self.data[self.position..]);
@@ -215,7 +217,7 @@ impl<'a> DeflateDecoder<'a>
                 let start = self.stream.get_position() + self.position + self.stream.over_read;
 
                 // ensure there is enough space for a fast copy
-                if dest_offset + len + FASTCOPY_BITS > out_block.len()
+                if dest_offset + len + FASTCOPY_BYTES > out_block.len()
                 {
                     // and if there is not, resize
                     let new_len = out_block.len() + RESIZE_BY + len;
@@ -266,7 +268,7 @@ impl<'a> DeflateDecoder<'a>
 
             'decode: loop
             {
-                let close_src = 3 * FASTCOPY_BITS < self.stream.remaining_bytes();
+                let close_src = 3 * FASTCOPY_BYTES < self.stream.remaining_bytes();
 
                 if close_src
                 {
@@ -285,7 +287,7 @@ impl<'a> DeflateDecoder<'a>
                         // recheck after every sequence
                         // when we hit continue, we need to recheck this
                         // as we are trying to emulate a do while
-                        let new_check = 2 * FASTCOPY_BITS > self.stream.remaining_bytes();
+                        let new_check = 2 * FASTCOPY_BYTES > self.stream.remaining_bytes();
 
                         if new_check
                         {
@@ -444,7 +446,7 @@ impl<'a> DeflateDecoder<'a>
                         src_offset = dest_offset - offset;
 
                         // ensure there is enough space for a fast copy
-                        if dest_offset + length + FASTCOPY_BITS > out_block.len()
+                        if dest_offset + length + 4 * FASTCOPY_BYTES > out_block.len()
                         {
                             // and if there is not, resize
                             let new_len = out_block.len() + RESIZE_BY + length;
@@ -452,14 +454,24 @@ impl<'a> DeflateDecoder<'a>
                             out_block.resize(new_len, 0);
                         }
 
+                        // Copy some bytes unconditionally
+                        // This makes us copy smaller match lengths quicker because we don't need
+                        // a loop + don't send too much pressure to the Memory unit.
+                        unsafe {
+                            // Safety: We resized out_block above to hold enough bytes to allow
+                            // sloppy copies
+                            // Reason: This allows us to skip excessive steps encountered from copying
+                            // long copies, which require additional steps and are a perf hog
+                            const_copy_within::<FASTCOPY_BYTES>(
+                                &mut out_block,
+                                src_offset,
+                                dest_offset
+                            );
+                        }
+
                         let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
 
                         entry = litlen_decode_table[self.stream.peek_bits::<LITLEN_DECODE_BITS>()];
-
-                        // Copy some bytes unconditionally
-                        // This makes us copy smaller match lengths quicker because we don't need
-                        // a loop+ don't send too much pressure to the Memory unit.
-                        const_copy::<FASTCOPY_BITS, false>(dest_src, dest_ptr, src_offset, 0);
 
                         if offset == 1
                         {
@@ -477,7 +489,9 @@ impl<'a> DeflateDecoder<'a>
                                 // Safety
                                 // We resized this to enable sloppy copies
                                 // (remember we control our output)
-                                const_copy::<N_BYTES, false>(&rep_byte, dest_ptr, 0, bytes_written);
+                                unsafe {
+                                    const_copy::<N_BYTES>(&rep_byte, dest_ptr, 0, bytes_written);
+                                }
                                 bytes_written += N_BYTES;
 
                                 if bytes_written > length
@@ -486,13 +500,13 @@ impl<'a> DeflateDecoder<'a>
                                 }
                             }
                         }
-                        else if src_offset + length + FASTCOPY_BITS > dest_offset
+                        else if src_offset + length + FASTCOPY_BYTES > dest_offset
                         {
                             // overlapping copy
                             // do a simple rep match
                             copy_rep_matches(&mut out_block, src_offset, dest_offset, length);
                         }
-                        else if length > FASTCOPY_BITS
+                        else if length > FASTCOPY_BYTES
                         {
                             // fast non-overlapping copy
                             //
@@ -500,34 +514,38 @@ impl<'a> DeflateDecoder<'a>
                             // so we know this won't come to shoot us in the foot.
                             //
                             // An optimization is to copy FAST_COPY_BITS per invocation
-                            // Currently FASTCOPY_BITS is 16, this fits in nicely as we
+                            // Currently FASTCOPY_BYTES is 16, this fits in nicely as we
                             // it's a single SIMD instruction on a lot of things, i.e x86,Arm and even
                             // wasm.
 
                             // current position of the match
-                            let mut dest_src_offset = src_offset + FASTCOPY_BITS;
+                            let mut dest_src_offset = src_offset + FASTCOPY_BYTES;
 
                             // current position where the destination offset should be
-                            let mut dest_dst_offset = FASTCOPY_BITS;
+                            let mut dest_dst_offset = FASTCOPY_BYTES;
 
                             // Number of bytes we are to copy
                             let mut ml_copy = length;
-                            // copy in batches of FAST_BITS
+                            // copy in batches of FAST_BYTES
                             'match_lengths: loop
                             {
-                                // No need to be safe here,
-                                // we resized this to allow such things above
-                                const_copy::<FASTCOPY_BITS, false>(
-                                    dest_src,
-                                    dest_ptr,
-                                    dest_src_offset,
-                                    dest_dst_offset
-                                );
+                                unsafe {
+                                    // Safety: We resized out_block hence we know it can handle
+                                    // sloppy copies without it being out of bounds
+                                    //
+                                    // Reason: This is a latency critical loop, even branches start
+                                    // to matter
+                                    const_copy::<FASTCOPY_BYTES>(
+                                        dest_src,
+                                        dest_ptr,
+                                        dest_src_offset,
+                                        dest_dst_offset
+                                    );
+                                }
+                                dest_src_offset += FASTCOPY_BYTES;
+                                dest_dst_offset += FASTCOPY_BYTES;
 
-                                dest_src_offset += FASTCOPY_BITS;
-                                dest_dst_offset += FASTCOPY_BITS;
-
-                                if ml_copy < 2 * FASTCOPY_BITS
+                                if ml_copy < 2 * FASTCOPY_BYTES
                                 {
                                     // we copied FAST_BITS above in this loop
                                     // and we copied another one in our unconditional copy
@@ -535,13 +553,13 @@ impl<'a> DeflateDecoder<'a>
                                     break 'match_lengths;
                                 }
 
-                                ml_copy = ml_copy.wrapping_sub(FASTCOPY_BITS);
+                                ml_copy = ml_copy.wrapping_sub(FASTCOPY_BYTES);
                             }
                         }
 
                         dest_offset += length;
 
-                        if 2 * FASTCOPY_BITS > self.stream.remaining_bytes()
+                        if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
                         {
                             // close to input end, move to the slower one
                             break 'sequence;
@@ -615,7 +633,7 @@ impl<'a> DeflateDecoder<'a>
                     }
 
                     // ensure there is enough space for a fast copy
-                    if dest_offset + length + FASTCOPY_BITS > out_block.len()
+                    if dest_offset + length + FASTCOPY_BYTES > out_block.len()
                     {
                         let new_len = out_block.len() + RESIZE_BY + length;
                         out_block.resize(new_len, 0);
@@ -643,7 +661,7 @@ impl<'a> DeflateDecoder<'a>
 
                     let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
 
-                    if src_offset + length + FASTCOPY_BITS > dest_offset
+                    if src_offset + length + FASTCOPY_BYTES > dest_offset
                     {
                         // overlapping copy
                         // do a simple rep match
@@ -1065,7 +1083,6 @@ impl<'a> DeflateDecoder<'a>
         while len <= table_bits
         {
             // Process all count codewords with length len
-
             loop
             {
                 let entry = make_decode_table_entry(
