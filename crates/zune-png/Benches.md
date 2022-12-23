@@ -60,5 +60,5 @@ RUSTFLAGS='-C target-cpu=native' cargo bench
 
 | Variation         | zune-png  | imagers/png |
 |-------------------|-----------|-------------|
-| 8 bytes per pixel | 228.99 ms | 300.97 ms   |
+| 8 bytes per pixel | 191.15 ms | 296.97 ms   |
 
