@@ -346,7 +346,7 @@ impl BitStream
                 pos += ((fast_ac >> 4) & 63) as usize; // run
                 let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
 
-                block[t_pos] = i32::from(fast_ac >> 10) * (qt_table[t_pos]); // Value
+                block[t_pos] = (fast_ac >> 10) * (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             }
@@ -410,7 +410,7 @@ impl BitStream
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
         let bits = (self.aligned_buffer & mask) as i32;
-        self.bits_left = self.bits_left.saturating_sub(n_bits);
+        self.bits_left = self.bits_left.wrapping_sub(n_bits);
         bits
     }
 
@@ -472,11 +472,11 @@ impl BitStream
             fac = fast_ac[symbol as usize];
             symbol = ac_table.lookup[symbol as usize];
 
-            if fac != 0
+            if false && fac != 0
             {
                 // fast ac path
                 k += ((fac >> 4) & 63) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10).wrapping_mul(1 << shift); // value
+                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10).wrapping_mul(1 << shift) as i16; // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             }

@@ -29,20 +29,20 @@ pub struct HuffmanTable
 
     /// A table which can be used to decode small AC coefficients and
     /// do an equivalent of receive_extend
-    pub(crate) ac_lookup: Option<[i16; 1 << HUFF_LOOKAHEAD]>,
+    pub(crate) ac_lookup: Option<[i32; 1 << HUFF_LOOKAHEAD]>,
 
     /// Directly represent contents of a JPEG DHT marker
     ///
     /// \# number of symbols with codes of length `k` bits
     // bits[0] is unused
     /// Symbols in order of increasing code length
-    pub(crate) values: [u8; 256],
+    pub(crate) values: [u8; 256]
 }
 
 impl HuffmanTable
 {
     pub fn new(
-        codes: &[u8; 17], values: [u8; 256], is_dc: bool, is_progressive: bool,
+        codes: &[u8; 17], values: [u8; 256], is_dc: bool, is_progressive: bool
     ) -> Result<HuffmanTable, DecodeErrors>
     {
         let too_long_code = (i32::from(HUFF_LOOKAHEAD) + 1) << HUFF_LOOKAHEAD;
@@ -51,7 +51,7 @@ impl HuffmanTable
             offset: [0; 18],
             lookup: [too_long_code; 1 << HUFF_LOOKAHEAD],
             values,
-            ac_lookup: None,
+            ac_lookup: None
         };
 
         p.make_derived_table(is_dc, is_progressive, codes)?;
@@ -70,7 +70,7 @@ impl HuffmanTable
         clippy::needless_range_loop
     )]
     fn make_derived_table(
-        &mut self, is_dc: bool, is_progressive: bool, bits: &[u8; 17],
+        &mut self, is_dc: bool, is_progressive: bool, bits: &[u8; 17]
     ) -> Result<(), DecodeErrors>
     {
         // build a list of code size
@@ -212,11 +212,11 @@ impl HuffmanTable
                     // get symbol value from AC table
                     let rs = self.values[fast_v as usize];
                     // shift by 4 to get run length
-                    let run = i16::from((rs >> 4) & 15);
+                    let run = i32::from((rs >> 4) & 15);
                     // get magnitude bits stored at the lower 3 bits
-                    let mag_bits = i16::from(rs & 15);
+                    let mag_bits = i32::from(rs & 15);
                     // length of the bit we've read
-                    let len = i16::from(huff_size[fast_v as usize]);
+                    let len = i32::from(huff_size[fast_v as usize]);
 
                     if mag_bits == 0 && !is_progressive
                     {
@@ -233,16 +233,16 @@ impl HuffmanTable
                         let new_run = if run == 0 { 63 } else { run };
                         fast_ac[i] = (new_run << 4) + len;
                     }
-                    else if mag_bits != 0 && (len + mag_bits) <= i16::from(HUFF_LOOKAHEAD)
+                    else if mag_bits != 0 && (len + mag_bits) <= i32::from(HUFF_LOOKAHEAD)
                     {
                         // magnitude code followed by receive_extend code
-                        let mut k = (((i as i16) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
-                            >> (i16::from(HUFF_LOOKAHEAD) - mag_bits);
+                        let mut k = (((i as i32) << len) & ((1 << HUFF_LOOKAHEAD) - 1))
+                            >> (i32::from(HUFF_LOOKAHEAD) - mag_bits);
                         let m = 1 << (mag_bits - 1);
 
                         if k < m
                         {
-                            k += (!0_i16 << mag_bits) + 1;
+                            k += (!0_i32 << mag_bits) + 1;
                         };
 
                         // if result is small enough fit into fast ac table
