@@ -1,3 +1,5 @@
+use std::ptr;
+
 use simd_adler32::Adler32;
 
 /// make_decode_table_entry() creates a decode table entry for the given symbol
@@ -20,31 +22,60 @@ pub(crate) fn make_decode_table_entry(decode_results: &[u32], sym: usize, len: u
 ///
 /// This function might read and write out  of bounds memory, if SAFE is true, it checks
 /// both in debug and release builds that the reads and rights are in bounds at the cost of performance.
-pub fn const_copy<const SIZE: usize, const SAFE: bool>(
+pub unsafe fn const_copy<const SIZE: usize>(
     src: &[u8], dest: &mut [u8], src_offset: usize, dest_offset: usize
 )
 {
-    // ensure we don't go out of bounds(only if SAFE is true)
-    if SAFE
-    {
-        assert!(
-            src_offset + SIZE - 1 <= src.len(),
-            "[src]: End position {} out of range for slice of length {}",
-            src_offset + SIZE,
-            src.len()
-        );
-        assert!(
-            dest_offset + SIZE <= dest.len(),
-            "[dst]: End position {} out of range for slice of length {}",
-            dest_offset + SIZE,
-            dest.len()
-        );
-    }
+    // for debug builds, ensure we don't go out of bounds
+    debug_assert!(
+        src_offset + SIZE - 1 <= src.len(),
+        "[src]: End position {} out of range for slice of length {}",
+        src_offset + SIZE,
+        src.len()
+    );
+    debug_assert!(
+        dest_offset + SIZE <= dest.len(),
+        "[dst]: End position {} out of range for slice of length {}",
+        dest_offset + SIZE,
+        dest.len()
+    );
 
     unsafe {
         dest.as_mut_ptr()
             .add(dest_offset)
             .copy_from(src.as_ptr().add(src_offset), SIZE);
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            // optimizer, don't do that, dont optimize this.
+            // 1.55% improvement
+            use std::arch::asm;
+            asm!("");
+        }
+    }
+}
+
+/// An unsafe version of src.copy_within that has no bounds check
+/// in release mode.
+pub unsafe fn const_copy_within<const SIZE: usize>(
+    dest: &mut [u8], src_offset: usize, dest_offset: usize
+)
+{
+    // for debug builds ensure we don't go out of bounds
+    debug_assert!(
+        dest_offset + SIZE <= dest.len(),
+        "[dst]: End position {} out of range for slice of length {}",
+        dest_offset + SIZE,
+        dest.len()
+    );
+
+    unsafe {
+        // Derive both `src_ptr` and `dest_ptr` from the same loan
+        let ptr = dest.as_mut_ptr();
+        let src_ptr = ptr.add(src_offset);
+        let dest_ptr = ptr.add(dest_offset);
+
+        ptr::copy(src_ptr, dest_ptr, SIZE);
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
