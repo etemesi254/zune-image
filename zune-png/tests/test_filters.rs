@@ -21,7 +21,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
 
 fn decode_zune(data: &[u8]) -> Vec<u8>
 {
-    zune_png::PngDecoder::new(&data)
+    zune_png::PngDecoder::new(data)
         .decode()
         .unwrap()
         .u8()
@@ -107,6 +107,16 @@ fn test_paeth()
     }
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f04n2c08.png";
+
+        test_decoding(path);
+    }
+}
+
+#[test]
+fn test_black_and_white()
+{
+    {
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g01.png";
 
         test_decoding(path);
     }

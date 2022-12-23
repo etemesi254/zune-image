@@ -54,7 +54,7 @@ impl<'a> PngDecoder<'a>
         }
         else
         {
-            return Err(PngErrors::Generic(format!("Unknown color value {}", color)));
+            return Err(PngErrors::Generic(format!("Unknown color value {color}")));
         }
         self.png_info.component = self.png_info.color.num_components();
         // verify colors plus bit depths
@@ -104,8 +104,7 @@ impl<'a> PngDecoder<'a>
         else
         {
             return Err(PngErrors::Generic(format!(
-                "Unknown filter method {}",
-                filter_method
+                "Unknown filter method {filter_method}"
             )));
         }
 
@@ -118,8 +117,7 @@ impl<'a> PngDecoder<'a>
         else
         {
             return Err(PngErrors::Generic(format!(
-                "Unknown interlace method {}",
-                interlace_method
+                "Unknown interlace method {interlace_method}",
             )));
         }
 
@@ -179,6 +177,45 @@ impl<'a> PngDecoder<'a>
         // skip crc
         self.stream.skip(4);
 
+        Ok(())
+    }
+
+    pub(crate) fn parse_trns(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    {
+        match self.png_info.color
+        {
+            PngColor::Luma =>
+            {
+                let _grey_sample = self.stream.get_u16_be();
+            }
+            PngColor::RGB =>
+            {
+                let _red_sample = self.stream.get_u16_be();
+                let _blue_sample = self.stream.get_u16_be();
+                let _green_sample = self.stream.get_u16_be();
+            }
+            PngColor::Palette =>
+            {
+                if self.palette.is_empty()
+                {
+                    return Err(PngErrors::GenericStatic("tRNS chunk before plTE"));
+                }
+                if self.palette.len() <= chunk.length * 4
+                {
+                    return Err(PngErrors::GenericStatic("tRNS chunk with too long entries"));
+                }
+                for i in 0..chunk.length
+                {
+                    self.palette[i * 4 + 3] = self.stream.get_u8();
+                }
+            }
+            _ =>
+            {
+                let msg = format!("A tRNS chunk shall not appear for colour type {:?} as it is already transparent", self.png_info.color);
+
+                return Err(PngErrors::Generic(msg));
+            }
+        }
         Ok(())
     }
 }
