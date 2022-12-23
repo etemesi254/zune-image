@@ -366,7 +366,7 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
                 if is_x86_feature_detected!("sse4.1")
                 {
                     crate::filters::sse4::de_filter_paeth3_sse41(prev_row, raw, current);
-                    //  return;
+                    return;
                 }
             }
 
