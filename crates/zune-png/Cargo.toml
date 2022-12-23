@@ -10,7 +10,8 @@ edition = "2021"
 ## Can save some bytes on images.
 ## Note, this can be disabled manually using options
 crc = []
-default = ["crc"]
+sse = []
+default = ["crc", "sse"]
 
 [dependencies]
 zune-core = { path = "../zune-core" }
