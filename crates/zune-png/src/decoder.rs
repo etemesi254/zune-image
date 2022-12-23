@@ -207,6 +207,10 @@ impl<'a> PngDecoder<'a>
                 {
                     self.parse_idat(header)?;
                 }
+                PngChunkType::tRNS =>
+                {
+                    self.parse_trns(header)?;
+                }
 
                 PngChunkType::IEND =>
                 {
@@ -255,24 +259,9 @@ impl<'a> PngDecoder<'a>
         // runs.
         //
 
-        // {
-        //     use std::fs::OpenOptions;
-        //     use std::io::Write;
-        //     let mut file = OpenOptions::new()
-        //         .write(true)
-        //         .create(true)
-        //         .truncate(true)
-        //         .open("/home/caleb/Documents/zune-image/zune-inflate/tests/zlib/412845_PNG.zlib")
-        //         .unwrap();
-        //
-        //     file.write_all(&self.idat_chunks).unwrap();
-        // }
         let mut decoder = zune_inflate::DeflateDecoder::new(&self.idat_chunks);
 
         let deflate_data = decoder.decode_zlib().unwrap();
-
-        // let deflate_data = _decode_writer_flate(&self.idat_chunks);
-        // assert_eq!(deflate_data_x, deflate_data);
 
         let info = &self.png_info;
 
@@ -407,9 +396,7 @@ impl<'a> PngDecoder<'a>
         // This is the loop filter,
         // the only trick we have is how we do get the top row
         //
-        // We do it in the following way
-        // 1. Iterate one stride below, chunk taking 2x width
-        //
+        // Complicated filters are handled in filters.rs
 
         let mut prev_row_start = 0;
         let width_stride = chunk_size - 1;
@@ -427,6 +414,7 @@ impl<'a> PngDecoder<'a>
             out_position += width_stride;
             // take filter
             let filter_byte = in_stride[0];
+            let raw = &in_stride[1..];
             // get it's type
             let filter = FilterMethod::from_int(filter_byte)
                 .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
@@ -438,19 +426,19 @@ impl<'a> PngDecoder<'a>
                 FilterMethod::None =>
                 {
                     // memcpy
-                    current[0..width_stride].copy_from_slice(&in_stride[1..]);
+                    current[0..width_stride].copy_from_slice(raw);
                 }
                 FilterMethod::Average =>
                 {
-                    handle_avg(prev_row, &in_stride[1..], current, components);
+                    handle_avg(prev_row, raw, current, components);
                 }
                 FilterMethod::Sub =>
                 {
-                    handle_sub(&in_stride[1..], current, components);
+                    handle_sub(raw, current, components);
                 }
                 FilterMethod::Up =>
                 {
-                    for ((filt, recon), up) in in_stride[1..].iter().zip(current).zip(prev_row)
+                    for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row)
                     {
                         *recon = (*filt).wrapping_add(*up)
                     }
