@@ -2,14 +2,15 @@
 
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
-    DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_STATIC, DEFLATE_BLOCKTYPE_UNCOMPRESSED,
-    DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS,
-    DEFLATE_MAX_OFFSET_CODEWORD_LENGTH, DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS,
-    DEFLATE_NUM_OFFSET_SYMS, DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION,
-    DELFATE_MAX_LENS_OVERRUN, HUFFDEC_END_OF_BLOCK, HUFFDEC_EXCEPTIONAL, HUFFDEC_LITERAL,
-    HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_BITS, LITLEN_DECODE_RESULTS, LITLEN_ENOUGH,
-    LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS,
-    PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
+    DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_RESERVED, DEFLATE_BLOCKTYPE_STATIC,
+    DEFLATE_BLOCKTYPE_UNCOMPRESSED, DEFLATE_MAX_CODEWORD_LENGTH,
+    DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS, DEFLATE_MAX_OFFSET_CODEWORD_LENGTH,
+    DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS,
+    DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION, DELFATE_MAX_LENS_OVERRUN,
+    HUFFDEC_END_OF_BLOCK, HUFFDEC_EXCEPTIONAL, HUFFDEC_LITERAL, HUFFDEC_SUITABLE_POINTER,
+    LITLEN_DECODE_BITS, LITLEN_DECODE_RESULTS, LITLEN_ENOUGH, LITLEN_TABLE_BITS,
+    OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS, PRECODE_DECODE_RESULTS, PRECODE_ENOUGH,
+    PRECODE_TABLE_BITS
 };
 use crate::errors::DecodeErrors;
 use crate::utils::{calc_adler_hash, const_copy, copy_rep_matches, make_decode_table_entry};
@@ -175,8 +176,6 @@ impl<'a> DeflateDecoder<'a>
             self.is_last_block = self.stream.get_bits(1) == 1;
             let block_type = self.stream.get_bits(2);
 
-            let overread_count = 0;
-
             if block_type == DEFLATE_BLOCKTYPE_UNCOMPRESSED
             {
                 /*
@@ -191,7 +190,7 @@ impl<'a> DeflateDecoder<'a>
                  *     copy LEN bytes of data to output
                  */
 
-                if overread_count > self.stream.get_bits_left() >> 3
+                if self.stream.over_read > usize::from(self.stream.get_bits_left() >> 3)
                 {
                     return Err(DecodeErrors::Generic("Over-read stream"));
                 }
@@ -213,7 +212,7 @@ impl<'a> DeflateDecoder<'a>
                 }
                 let len = len as usize;
 
-                let start = self.stream.get_position() + self.position;
+                let start = self.stream.get_position() + self.position + self.stream.over_read;
 
                 // ensure there is enough space for a fast copy
                 if dest_offset + len + FASTCOPY_BITS > out_block.len()
@@ -237,6 +236,12 @@ impl<'a> DeflateDecoder<'a>
                 self.stream.reset();
 
                 continue;
+            }
+            else if block_type == DEFLATE_BLOCKTYPE_RESERVED
+            {
+                return Err(DecodeErrors::Generic(
+                    "Reserved block type 0b11 encountered"
+                ));
             }
 
             // build decode tables for static and dynamic tables
@@ -530,7 +535,7 @@ impl<'a> DeflateDecoder<'a>
                                     break 'match_lengths;
                                 }
 
-                                ml_copy = ml_copy.saturating_sub(FASTCOPY_BITS);
+                                ml_copy = ml_copy.wrapping_sub(FASTCOPY_BITS);
                             }
                         }
 
@@ -574,6 +579,7 @@ impl<'a> DeflateDecoder<'a>
 
                         self.stream.drop_bits((entry & 0xFF) as u8);
                     }
+
                     length = (entry >> 16) as usize;
 
                     if (entry & HUFFDEC_LITERAL) != 0
@@ -651,6 +657,14 @@ impl<'a> DeflateDecoder<'a>
 
                     dest_offset += length;
                 }
+            }
+            /*
+             * If any of the implicit appended zero bytes were consumed (not just
+             * refilled) before hitting end of stream, then the data is bad.
+             */
+            if self.stream.over_read > usize::from(self.stream.bits_left >> 3)
+            {
+                return Err(DecodeErrors::CorruptData);
             }
 
             if self.is_last_block
@@ -990,7 +1004,7 @@ impl<'a> DeflateDecoder<'a>
                  * We also assign both codewords '0' and '1' to the
                  * symbol to avoid having to handle '1' specially.
                  */
-                if codespace_used != 1 << max_codeword_len || len_counts[1] != 1
+                if codespace_used != 1 << (max_codeword_len - 1) || len_counts[1] != 1
                 {
                     return Err(DecodeErrors::Generic(
                         "Cannot work with empty pre-code table"
@@ -1238,4 +1252,29 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
+}
+
+#[test]
+fn test_samples()
+{
+    let sample = [
+        69, 140, 161, 13, 128, 48, 20, 5, 95, 41, 2, 28, 35, 16, 44, 9, 2, 79, 130, 253, 73, 55,
+        192, 48, 1, 67, 48, 66, 37, 170, 162, 211, 48, 68, 59, 5, 150, 199, 7, 195, 229, 228, 229,
+        172, 221, 45, 140, 137, 17, 192, 4, 164, 148, 22, 231, 8, 114, 232, 79, 167, 132, 20, 107,
+        81, 26, 200, 77, 150, 113, 20, 28, 36, 179, 105, 43, 211, 109, 51, 121, 121, 255, 85, 162,
+        131, 226, 47, 185, 136, 64, 167, 204, 235, 123, 67, 128, 90, 224, 1
+    ];
+    let expected = vec![
+        3_u8, 3, 130, 3, 0, 1, 1, 164, 164, 0, 0, 0, 61, 0, 0, 222, 222, 222, 91, 76, 76, 255, 0,
+        255, 255, 46, 43, 202, 76, 76, 76, 76, 160, 222, 164, 9, 73, 73, 73, 73, 16, 0, 73, 254,
+        255, 255, 4, 164, 50, 73, 0, 154, 255, 255, 255, 223, 1, 32, 8, 1, 34, 110, 64, 255, 255,
+        245, 146, 146, 76, 76, 160, 222, 164, 73, 0, 0, 0, 2, 73, 73, 73, 73, 16, 0, 73, 254, 255,
+        255, 255, 91, 73, 73, 0, 164, 0, 0, 255, 223, 96, 255, 0, 255, 255, 0, 160, 0, 0, 160, 0,
+        2, 0,
+    ];
+    let mut decoder = DeflateDecoder::new(&sample);
+
+    let x = decoder.decode_deflate().unwrap();
+    // println!("{:?}", x);
+    assert_eq!(&expected, &x);
 }
