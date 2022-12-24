@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 miniz_oxide = "0.6.2"
+flate2 = { version = "1.0.17", features = ["zlib-ng"], default-features = false }
 
 [dependencies.zune-inflate]
 path = ".."
@@ -28,5 +29,11 @@ doc = false
 [[bin]]
 name = "roundtrip"
 path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "roundtrip_zlib"
+path = "fuzz_targets/roundtrip_zlib.rs"
 test = false
 doc = false
