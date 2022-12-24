@@ -37,6 +37,7 @@ pub mod mathops;
 pub mod median;
 pub mod mirror;
 pub mod pad;
+pub mod resize;
 pub mod rotate;
 pub mod spatial;
 pub mod spatial_ops;

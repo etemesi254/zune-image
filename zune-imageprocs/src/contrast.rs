@@ -23,6 +23,7 @@
 pub fn contrast_u8(channel: &mut [u8], contrast: f32)
 {
     // calculate correlation factor
+    // These constants may not work for u16
     let factor = (259.0 * (contrast + 255.0)) / (255.0 * (259.0 - contrast));
 
     for pix in channel

@@ -10,6 +10,7 @@ use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::median::Median;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
+use zune_image::impls::resize::{Resize, ResizeMethod};
 use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::stretch_contrast::StretchContrast;
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
@@ -176,6 +177,30 @@ pub fn parse_options(
             let value = *args.get_one::<f32>(argument).unwrap();
             debug!("Added contrast filter with value {},", value);
             workflow.add_operation(Box::new(Contrast::new(value)));
+        }
+        else if argument == "resize"
+        {
+            let value = args.get_one::<String>(argument).unwrap();
+            let split_val = value.split("x").collect::<Vec<&str>>();
+
+            if split_val.len() != 2
+            {
+                return Err(format!(
+                    "Expected width and height separated by  `x` but got {} args",
+                    split_val.len()
+                ));
+            }
+            let width = str::parse::<usize>(split_val[0].trim()).unwrap();
+
+            let height = str::parse::<usize>(split_val[1].trim()).unwrap();
+
+            let func = Resize::new(width, height, ResizeMethod::Bilinear);
+
+            debug!(
+                "Added resize operation with width:{}, height:{}",
+                width, height
+            );
+            workflow.add_operation(Box::new(func));
         }
     }
     Ok(())

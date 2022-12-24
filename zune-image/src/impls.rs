@@ -16,6 +16,7 @@ pub mod grayscale;
 pub mod invert;
 pub mod median;
 pub mod mirror;
+pub mod resize;
 pub mod statistics;
 pub mod stretch_contrast;
 pub mod threshold;
