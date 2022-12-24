@@ -283,8 +283,6 @@ unsafe fn de_filter_paeth3_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mu
 
         smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
 
-        let csa = _mm_cmpeq_epi16(smallest, pa);
-        let csb = _mm_cmpeq_epi16(smallest, pb);
         /* Paeth breaks ties favoring a over b over c. */
         nearest = if_then_else(
             _mm_cmpeq_epi16(smallest, pa),
@@ -385,8 +383,8 @@ unsafe fn defilter_avg4_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u
      */
 
     let zero = _mm_setzero_si128();
-    let mut b;
-    let (mut a, mut d) = (zero, zero);
+    let (mut a, mut b);
+    let mut d = zero;
     let mut avg;
 
     for ((prev, raw), current_row) in prev_row
@@ -418,8 +416,8 @@ unsafe fn defilter_avg3_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u
      */
 
     let zero = _mm_setzero_si128();
-    let mut b;
-    let (mut a, mut d) = (zero, zero);
+    let (mut a, mut b);
+    let mut d = zero;
     let mut avg;
 
     for ((prev, raw), current_row) in prev_row
