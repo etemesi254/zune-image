@@ -20,8 +20,7 @@ fn default_chunk_handler(
     if chunk_type[0] & (1 << 5) == 0
     {
         return Err(PngErrors::Generic(format!(
-            "Marker {} unknown but deemed necessary",
-            chunk_name
+            "Marker {chunk_name} unknown but deemed necessary",
         )));
     }
 
