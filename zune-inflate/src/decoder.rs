@@ -119,13 +119,11 @@ impl<'a> DeflateDecoder<'a>
 
         let data = self.decode_deflate()?;
 
-        // revert bitstream back to last read bits
-        let out_pos = self.stream.get_position() + self.stream.over_read;
+        // Get number of consumed bytes from the input
+        let out_pos = self.stream.get_position() + self.position + self.stream.over_read;
 
         // read adler
-        if let Some(adler) = self
-            .data
-            .get(self.position + out_pos..self.position + out_pos + 4)
+        if let Some(adler) = self.data.get(out_pos..out_pos + 4)
         {
             let adler_bits: [u8; 4] = adler.try_into().unwrap();
 
@@ -230,12 +228,16 @@ impl<'a> DeflateDecoder<'a>
 
                 dest_offset += len;
 
+                // get the new position to write.
+                self.stream.position =
+                    len + (self.stream.position - usize::from(self.stream.bits_left >> 3));
+
+                self.stream.reset();
+
                 if self.is_last_block
                 {
                     break;
                 }
-
-                self.stream.reset();
 
                 continue;
             }
@@ -1274,24 +1276,10 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
 #[test]
 fn test_samples()
 {
-    let sample = [
-        69, 140, 161, 13, 128, 48, 20, 5, 95, 41, 2, 28, 35, 16, 44, 9, 2, 79, 130, 253, 73, 55,
-        192, 48, 1, 67, 48, 66, 37, 170, 162, 211, 48, 68, 59, 5, 150, 199, 7, 195, 229, 228, 229,
-        172, 221, 45, 140, 137, 17, 192, 4, 164, 148, 22, 231, 8, 114, 232, 79, 167, 132, 20, 107,
-        81, 26, 200, 77, 150, 113, 20, 28, 36, 179, 105, 43, 211, 109, 51, 121, 121, 255, 85, 162,
-        131, 226, 47, 185, 136, 64, 167, 204, 235, 123, 67, 128, 90, 224, 1
-    ];
-    let expected = vec![
-        3_u8, 3, 130, 3, 0, 1, 1, 164, 164, 0, 0, 0, 61, 0, 0, 222, 222, 222, 91, 76, 76, 255, 0,
-        255, 255, 46, 43, 202, 76, 76, 76, 76, 160, 222, 164, 9, 73, 73, 73, 73, 16, 0, 73, 254,
-        255, 255, 4, 164, 50, 73, 0, 154, 255, 255, 255, 223, 1, 32, 8, 1, 34, 110, 64, 255, 255,
-        245, 146, 146, 76, 76, 160, 222, 164, 73, 0, 0, 0, 2, 73, 73, 73, 73, 16, 0, 73, 254, 255,
-        255, 255, 91, 73, 73, 0, 164, 0, 0, 255, 223, 96, 255, 0, 255, 255, 0, 160, 0, 0, 160, 0,
-        2, 0,
-    ];
+    let sample = [120, 156, 187, 118, 237, 26, 23, 0, 7, 148, 2, 141];
+
     let mut decoder = DeflateDecoder::new(&sample);
 
-    let x = decoder.decode_deflate().unwrap();
-    // println!("{:?}", x);
-    assert_eq!(&expected, &x);
+    let x = decoder.decode_zlib().unwrap();
+    println!("{:?}", x);
 }
