@@ -25,11 +25,22 @@ fn decode_zune(data: &[u8]) -> Vec<u8>
         .unwrap()
 }
 
+fn decode_spng(data: &[u8]) -> Vec<u8>
+{
+    let cursor = std::io::Cursor::new(data);
+    let decoder = spng::Decoder::new(cursor);
+    let (_, mut reader) = decoder.read_info().unwrap();
+    let output_buffer_size = reader.output_buffer_size();
+    let mut out = vec![0; output_buffer_size];
+    reader.next_frame(&mut out).unwrap();
+    out
+}
+
 fn decode_test(c: &mut Criterion)
 {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/benchmarks/speed_bench.png";
 
-    let data = read(&path).unwrap();
+    let data = read(path).unwrap();
 
     let mut group = c.benchmark_group("PNG decoding");
     group.throughput(Throughput::Bytes(data.len() as u64));
@@ -40,6 +51,10 @@ fn decode_test(c: &mut Criterion)
 
     group.bench_function("PNG Decoding image-rs", |b| {
         b.iter(|| black_box(decode_ref(data.as_slice())))
+    });
+
+    group.bench_function("PNG Decoding spng", |b| {
+        b.iter(|| black_box(decode_spng(data.as_slice())))
     });
 }
 criterion_group!(name=benches;
