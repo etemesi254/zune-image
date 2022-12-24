@@ -84,7 +84,7 @@ pub fn create_cmd_args() -> Command {
         .args(add_settings())
         .args(add_filters())
         .group(ArgGroup::new("operations")
-            .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast"])
+            .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast", "resize"])
             .multiple(true))
         .group(ArgGroup::new("filters")
             .args(["box-blur", "blur", "unsharpen", "median", "erode"])
@@ -118,32 +118,38 @@ fn add_logging_options() -> [Arg; 4]
 }
 fn add_settings() -> Vec<Arg>
 {
+    const HELP_HEADING: &str = "Image Settings";
     let mut args = [
         Arg::new("colorspace")
             .long("colorspace")
-            .help_heading("Image Settings")
+            .help_heading(HELP_HEADING)
             .help("Change the image colorspace during decoding")
             .long_help(COLORSPACE_HELP)
             .value_parser(value_parser!(IColorSpace))
             .hide_possible_values(true),
         Arg::new("max-width")
             .long("max-width")
-            .help_heading("Image Settings")
+            .help_heading(HELP_HEADING)
             .help("Maximum width of images allowed")
             .default_value("37268")
             .value_parser(value_parser!(usize)),
         Arg::new("max-height")
             .long("max-height")
-            .help_heading("Image Settings")
+            .help_heading(HELP_HEADING)
             .help("Maximum height of images allowed")
             .default_value("37268")
             .value_parser(value_parser!(usize)),
         Arg::new("strict")
             .long("strict")
-            .help_heading("Image Settings")
+            .help_heading(HELP_HEADING)
             .help("Treat most warnings as errors")
             .action(ArgAction::SetTrue)
-            .default_value("false")
+            .default_value("false"),
+        Arg::new("depth")
+            .long("depth")
+            .help_heading(HELP_HEADING)
+            .help("Adjust the depth of the image")
+            .value_parser(value_parser!(u8))
     ];
     // list them in order
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
@@ -233,6 +239,12 @@ fn add_operations() -> Vec<Arg>
             .help_heading(HELP_HEADING)
             .help("Adjust contrast of the image")
             .value_parser(value_parser!(f32))
+            .group("operations"),
+        Arg::new("resize")
+            .long("resize")
+            .value_name("width x height")
+            .help_heading(HELP_HEADING)
+            .help("Resize an image")
             .group("operations")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
