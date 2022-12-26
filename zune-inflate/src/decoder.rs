@@ -33,6 +33,86 @@ impl Default for DeflateHeaderTables
         }
     }
 }
+
+/// Options that can influence decompression
+/// in Deflate/Zlib
+///
+/// To use them, pass a customized options to
+/// the deflate decoder.
+#[derive(Copy, Clone)]
+pub struct DeflateOptions
+{
+    limit:            usize,
+    confirm_checksum: bool
+}
+
+impl Default for DeflateOptions
+{
+    fn default() -> Self
+    {
+        DeflateOptions {
+            limit:            1 << 30,
+            confirm_checksum: true
+        }
+    }
+}
+
+impl DeflateOptions
+{
+    /// Get deflate/zlib limit option
+    ///
+    /// The decoder won't extend the inbuilt limit and will
+    /// return an error if the limit is exceeded
+    ///
+    /// This is provided as a best effort, correctly quiting
+    /// is detrimental to speed and hence this should not be relied too much
+    pub const fn get_limit(&self) -> usize
+    {
+        self.limit
+    }
+    /// Set a limit to the internal vector
+    /// used to store decoded zlib/deflate output.
+    ///
+    /// # Arguments
+    /// limit: The new decompressor limit
+    /// # Returns
+    /// A modified version of DeflateDecoder
+    ///
+    /// # Note
+    /// This is provided as a best effort, correctly quiting
+    /// is detrimental to speed and hence this should not be relied too much
+    #[must_use]
+    pub fn set_limit(mut self, limit: usize) -> Self
+    {
+        self.limit = limit;
+        self
+    }
+
+    /// Get whether the decoder will confirm a checksum
+    /// after decoding
+    pub const fn get_confirm_checksum(&self) -> bool
+    {
+        self.confirm_checksum
+    }
+    /// Set whether the decoder should confirm a checksum
+    /// after decoding
+    ///
+    /// Note, you should definitely confirm your checksum, use
+    /// this with caution, otherwise data returned may be corrupt
+    ///
+    /// # Arguments
+    /// - yes: When true, the decoder will confirm checksum
+    /// when false, the decoder will skip checksum confirm
+    /// # Notes
+    /// This does not have an influence for deflate decoding as
+    /// it does not have a checksum
+    pub fn set_confirm_checksum(mut self, yes: bool) -> Self
+    {
+        self.confirm_checksum = yes;
+        self
+    }
+}
+
 /// A deflate decoder with wings.
 ///
 /// This one manages it's memory, it pre-allocates a buffer which
@@ -46,22 +126,29 @@ pub struct DeflateDecoder<'a>
     stream:                BitStreamReader<'a>,
     is_last_block:         bool,
     static_codes_loaded:   bool,
-    deflate_header_tables: DeflateHeaderTables
+    deflate_header_tables: DeflateHeaderTables,
+    options:               DeflateOptions
 }
 
 impl<'a> DeflateDecoder<'a>
 {
     pub fn new(data: &'a [u8]) -> DeflateDecoder<'a>
     {
-        // create stream
+        let options = DeflateOptions::default();
 
+        Self::new_with_options(data, options)
+    }
+    pub fn new_with_options(data: &'a [u8], options: DeflateOptions) -> DeflateDecoder<'a>
+    {
+        // create stream
         DeflateDecoder {
             data,
             position: 0,
             stream: BitStreamReader::new(data),
             is_last_block: false,
             static_codes_loaded: false,
-            deflate_header_tables: DeflateHeaderTables::default()
+            deflate_header_tables: DeflateHeaderTables::default(),
+            options
         }
     }
     /// Decode zlib-encoded data returning the uncompressed in a Vec<u8>
@@ -119,26 +206,29 @@ impl<'a> DeflateDecoder<'a>
 
         let data = self.decode_deflate()?;
 
-        // Get number of consumed bytes from the input
-        let out_pos = self.stream.get_position() + self.position + self.stream.over_read;
-
-        // read adler
-        if let Some(adler) = self.data.get(out_pos..out_pos + 4)
+        if self.options.confirm_checksum
         {
-            let adler_bits: [u8; 4] = adler.try_into().unwrap();
+            // Get number of consumed bytes from the input
+            let out_pos = self.stream.get_position() + self.position + self.stream.over_read;
 
-            let adler32_expected = u32::from_be_bytes(adler_bits);
-
-            let adler32_found = calc_adler_hash(&data);
-
-            if adler32_expected != adler32_found
+            // read adler
+            if let Some(adler) = self.data.get(out_pos..out_pos + 4)
             {
-                return Err(DecodeErrors::CorruptData);
+                let adler_bits: [u8; 4] = adler.try_into().unwrap();
+
+                let adler32_expected = u32::from_be_bytes(adler_bits);
+
+                let adler32_found = calc_adler_hash(&data);
+
+                if adler32_expected != adler32_found
+                {
+                    return Err(DecodeErrors::CorruptData);
+                }
             }
-        }
-        else
-        {
-            return Err(DecodeErrors::InsufficientData);
+            else
+            {
+                return Err(DecodeErrors::InsufficientData);
+            }
         }
 
         Ok(data)
@@ -544,9 +634,6 @@ impl<'a> DeflateDecoder<'a>
                                         dest_dst_offset
                                     );
                                 }
-                                dest_src_offset += FASTCOPY_BYTES;
-                                dest_dst_offset += FASTCOPY_BYTES;
-
                                 if ml_copy < 2 * FASTCOPY_BYTES
                                 {
                                     // we copied FAST_BITS above in this loop
@@ -555,11 +642,23 @@ impl<'a> DeflateDecoder<'a>
                                     break 'match_lengths;
                                 }
 
+                                dest_src_offset += FASTCOPY_BYTES;
+                                dest_dst_offset += FASTCOPY_BYTES;
+
                                 ml_copy = ml_copy.wrapping_sub(FASTCOPY_BYTES);
                             }
                         }
 
                         dest_offset += length;
+
+                        if dest_offset > self.options.limit
+                        {
+                            let msg = format!(
+                                "Position {} bypasses max length {}",
+                                dest_offset, self.options.limit
+                            );
+                            return Err(DecodeErrors::GenericStr(msg));
+                        }
 
                         if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
                         {
@@ -676,6 +775,15 @@ impl<'a> DeflateDecoder<'a>
                     }
 
                     dest_offset += length;
+
+                    if dest_offset > self.options.limit
+                    {
+                        let msg = format!(
+                            "Position {} bypasses max length {}",
+                            dest_offset, self.options.limit
+                        );
+                        return Err(DecodeErrors::GenericStr(msg));
+                    }
                 }
             }
             /*
@@ -1271,15 +1379,4 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
-}
-
-#[test]
-fn test_samples()
-{
-    let sample = [120, 156, 187, 118, 237, 26, 23, 0, 7, 148, 2, 141];
-
-    let mut decoder = DeflateDecoder::new(&sample);
-
-    let x = decoder.decode_zlib().unwrap();
-    println!("{:?}", x);
 }
