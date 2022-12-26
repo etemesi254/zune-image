@@ -1,7 +1,8 @@
 [package]
 name = "zune-inflate"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "A heavily optimized deflate decompressor"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,6 +11,7 @@ simd-adler32 = "0.3.4" # Use it, generally faster and support for a wide variety
 [dev-dependencies]
 flate2 = { version = "1.0.25" }
 criterion = "0.4.0"
+libdeflater = "0.11.0"
 
 
 [[bench]]
