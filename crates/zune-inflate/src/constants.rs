@@ -121,14 +121,15 @@ const fn entry(base: u32, extra: u32) -> u32
 }
 
 #[rustfmt::skip]
+#[allow(clippy::zero_prefixed_literal)] // the things we do for alignment
 pub static OFFSET_DECODE_RESULTS: [u32; 32] = [
-    entry(1, 0), entry(2, 0), entry(3, 0), entry(4, 0),
-    entry(5, 1), entry(7, 1), entry(9, 2), entry(13, 2),
-    entry(17, 3), entry(25, 3), entry(33, 4), entry(49, 4),
-    entry(65, 5), entry(97, 5), entry(129, 6), entry(193, 6),
-    entry(257, 7), entry(385, 7), entry(513, 8), entry(769, 8),
-    entry(1025, 9), entry(1537, 9), entry(2049, 10), entry(3073, 10),
-    entry(4097, 11), entry(6145, 11), entry(8193, 12), entry(12289, 12),
+    entry(00001, 00), entry(00002, 00), entry(00003, 00), entry(00004, 00),
+    entry(00005, 01), entry(00007, 01), entry(00009, 02), entry(00013, 02),
+    entry(00017, 03), entry(00025, 03), entry(00033, 04), entry(00049, 04),
+    entry(00065, 05), entry(00097, 05), entry(00129, 06), entry(00193, 06),
+    entry(00257, 07), entry(00385, 07), entry(00513, 08), entry(00769, 08),
+    entry(01025, 09), entry(01537, 09), entry(02049, 10), entry(03073, 10),
+    entry(04097, 11), entry(06145, 11), entry(08193, 12), entry(12289, 12),
     entry(16385, 13), entry(24577, 13), entry(24577, 13), entry(24577, 13),
 ];
 
