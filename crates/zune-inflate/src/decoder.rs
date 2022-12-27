@@ -556,41 +556,39 @@ impl<'a> DeflateDecoder<'a>
                             dest_offset
                         );
 
-                        let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
-
                         entry = litlen_decode_table[self.stream.peek_bits::<LITLEN_DECODE_BITS>()];
+
+                        let mut current_position = dest_offset;
+
+                        dest_offset += length;
 
                         if offset == 1
                         {
                             // RLE match, copy it in groups of 8
-                            let rep_num = u64::from(dest_src[src_offset]) * 0x0101010101010101;
-                            let rep_byte = rep_num.to_ne_bytes();
-
-                            // number of bytes we can copy per loop
-                            const N_BYTES: usize = (u64::BITS / u8::BITS) as usize;
-
-                            let mut bytes_written = 0;
+                            let rep_num = u64::from(out_block[src_offset]) * 0x0101010101010101;
+                            let rep_byte = &rep_num.to_ne_bytes();
 
                             loop
                             {
-                                fixed_copy::<N_BYTES>(&rep_byte, dest_ptr, 0, bytes_written);
+                                fixed_copy::<8>(rep_byte, &mut out_block, 0, current_position);
 
-                                bytes_written += N_BYTES;
+                                current_position += 8;
 
-                                if bytes_written > length
+                                if current_position > dest_offset
                                 {
                                     break;
                                 }
                             }
                         }
-                        else if src_offset + length + FASTCOPY_BYTES > dest_offset
+                        else if src_offset + length > current_position
                         {
                             // overlapping copy
                             // do a simple rep match
-                            copy_rep_matches(&mut out_block, src_offset, dest_offset, length);
+                            copy_rep_matches(&mut out_block, src_offset, current_position, length);
                         }
                         else if length > FASTCOPY_BYTES
                         {
+                            current_position += FASTCOPY_BYTES;
                             // fast non-overlapping copy
                             //
                             // We have enough space to write the ML+FAST_COPY bytes ahead
@@ -604,9 +602,6 @@ impl<'a> DeflateDecoder<'a>
                             // current position of the match
                             let mut dest_src_offset = src_offset + FASTCOPY_BYTES;
 
-                            // current position where the destination offset should be
-                            let mut dest_dst_offset = FASTCOPY_BYTES;
-
                             // Number of bytes we are to copy
                             // copy in batches of FAST_BYTES
                             'match_lengths: loop
@@ -616,24 +611,21 @@ impl<'a> DeflateDecoder<'a>
                                 //
                                 // Reason: This is a latency critical loop, even branches start
                                 // to matter
-                                fixed_copy::<FASTCOPY_BYTES>(
-                                    dest_src,
-                                    dest_ptr,
+                                fixed_copy_within::<FASTCOPY_BYTES>(
+                                    &mut out_block,
                                     dest_src_offset,
-                                    dest_dst_offset
+                                    current_position
                                 );
 
                                 dest_src_offset += FASTCOPY_BYTES;
-                                dest_dst_offset += FASTCOPY_BYTES;
+                                current_position += FASTCOPY_BYTES;
 
-                                if dest_dst_offset > length
+                                if current_position > dest_offset
                                 {
                                     break 'match_lengths;
                                 }
                             }
                         }
-
-                        dest_offset += length;
 
                         if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
                         {
