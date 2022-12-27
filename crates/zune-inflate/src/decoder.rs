@@ -43,7 +43,8 @@ impl Default for DeflateHeaderTables
 pub struct DeflateOptions
 {
     limit:            usize,
-    confirm_checksum: bool
+    confirm_checksum: bool,
+    size_hint:        usize
 }
 
 impl Default for DeflateOptions
@@ -52,7 +53,8 @@ impl Default for DeflateOptions
     {
         DeflateOptions {
             limit:            1 << 30,
-            confirm_checksum: true
+            confirm_checksum: true,
+            size_hint:        37000
         }
     }
 }
@@ -111,6 +113,26 @@ impl DeflateOptions
         self.confirm_checksum = yes;
         self
     }
+
+    /// Get the default set size hint for the decompressor
+    ///
+    /// The decompressor initializes the internal storage for decompressed bytes
+    /// with this size and will reallocate the vec if the decompressed size becomes bigger
+    /// than this, but when the user currently knows how big the output will be, can be used
+    /// to prevent unnecessary re-allocations
+    pub const fn get_size_hint(&self) -> usize
+    {
+        self.size_hint
+    }
+    /// Set the size hint for the decompressor
+    ///
+    /// This can be used to prevent multiple re-allocations
+    #[must_use]
+    pub const fn set_size_hint(mut self, hint: usize) -> Self
+    {
+        self.size_hint = hint;
+        self
+    }
 }
 
 /// A deflate decoder with wings.
@@ -132,7 +154,18 @@ pub struct DeflateDecoder<'a>
 
 impl<'a> DeflateDecoder<'a>
 {
-    /// The default output size limit is **1 GiB.** The checksum will be verified.
+    /// Create a new decompressor that will read compressed
+    /// data from `data` and return a new vector containing new data
+    ///
+    ///
+    ///  # Note
+    ///
+    /// The default output size limit is **1 GiB.**
+    /// this is to protect the end user against ddos attacks as deflate does not specify it's
+    /// output size upfront
+    ///
+    /// The checksum will be verified depending on the called function.
+    /// this only works for zlib and gzip since deflate does not have a checksum
     ///
     /// These defaults can be overridden via [new_with_options()](Self::new_with_options).
     pub fn new(data: &'a [u8]) -> DeflateDecoder<'a>
@@ -253,7 +286,7 @@ impl<'a> DeflateDecoder<'a>
         self.stream.refill();
 
         // Output space for our decoded bytes.
-        let mut out_block = vec![0; 37000];
+        let mut out_block = vec![0; self.options.size_hint];
         // bits used
 
         let mut src_offset = 0;
@@ -317,6 +350,13 @@ impl<'a> DeflateDecoder<'a>
                 if self.data.get(start + len).is_none()
                 {
                     return Err(DecodeErrors::CorruptData);
+                }
+                if out_block.len() > self.options.limit
+                {
+                    return Err(DecodeErrors::OutputLimitExceeded(
+                        self.options.limit,
+                        out_block.len()
+                    ));
                 }
 
                 out_block[dest_offset..dest_offset + len]
@@ -630,6 +670,14 @@ impl<'a> DeflateDecoder<'a>
                             }
                         }
 
+                        if dest_offset > self.options.limit
+                        {
+                            return Err(DecodeErrors::OutputLimitExceeded(
+                                self.options.limit,
+                                dest_offset
+                            ));
+                        }
+
                         if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
                         {
                             // close to input end, move to the slower one
@@ -743,11 +791,10 @@ impl<'a> DeflateDecoder<'a>
 
                     if dest_offset > self.options.limit
                     {
-                        let msg = format!(
-                            "Position {} bypasses max length {}",
-                            dest_offset, self.options.limit
-                        );
-                        return Err(DecodeErrors::GenericStr(msg));
+                        return Err(DecodeErrors::OutputLimitExceeded(
+                            self.options.limit,
+                            dest_offset
+                        ));
                     }
                 }
             }

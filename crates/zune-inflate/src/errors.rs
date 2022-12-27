@@ -5,7 +5,8 @@ pub enum DecodeErrors
     InsufficientData,
     Generic(&'static str),
     GenericStr(String),
-    CorruptData
+    CorruptData,
+    OutputLimitExceeded(usize, usize)
 }
 
 impl Debug for DecodeErrors
@@ -15,9 +16,13 @@ impl Debug for DecodeErrors
         match self
         {
             Self::InsufficientData => writeln!(f, "Insufficient data"),
-            Self::Generic(reason) => writeln!(f, "{}", reason),
-            Self::GenericStr(reason) => writeln!(f, "{}", reason),
-            Self::CorruptData => writeln!(f, "Corrupt data")
+            Self::Generic(reason) => writeln!(f, "{reason}"),
+            Self::GenericStr(reason) => writeln!(f, "{reason}"),
+            Self::CorruptData => writeln!(f, "Corrupt data"),
+            Self::OutputLimitExceeded(limit, current) => writeln!(
+                f,
+                "Output limit exceeded, set limit was {limit} and output size is {current}"
+            )
         }
     }
 }
