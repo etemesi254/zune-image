@@ -118,7 +118,7 @@ impl DeflateOptions
 /// This one manages it's memory, it pre-allocates a buffer which
 /// it tracks number of bytes written and on successfully reaching the
 /// end of the block, will return a vector with exactly
-/// the number of bytes
+/// the number of bytes.
 pub struct DeflateDecoder<'a>
 {
     data:                  &'a [u8],
@@ -132,6 +132,9 @@ pub struct DeflateDecoder<'a>
 
 impl<'a> DeflateDecoder<'a>
 {
+    /// The default output size limit is **1 GiB.** The checksum will be verified.
+    ///
+    /// These defaults can be overridden via [new_with_options()](Self::new_with_options).
     pub fn new(data: &'a [u8]) -> DeflateDecoder<'a>
     {
         let options = DeflateOptions::default();
