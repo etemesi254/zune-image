@@ -99,7 +99,7 @@ infused madness, we test decompression on the machine
 
 ## Fuzzing
 
-The decoder is currently fuzzed for correctness by both `miniz-oxide` and `flate`, see the fuzz/src directory
+The decoder is currently fuzzed for correctness by both `miniz-oxide` and `zlib-ng`, see the fuzz/src directory
 
 [libdeflater]: https://github.com/adamkewley/libdeflater
 
