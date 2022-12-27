@@ -6,7 +6,9 @@ pub enum DecodeErrors
     Generic(&'static str),
     GenericStr(String),
     CorruptData,
-    OutputLimitExceeded(usize, usize)
+    OutputLimitExceeded(usize, usize),
+    MismatchedCRC(u32, u32),
+    MismatchedAdler(u32, u32)
 }
 
 impl Debug for DecodeErrors
@@ -22,7 +24,15 @@ impl Debug for DecodeErrors
             Self::OutputLimitExceeded(limit, current) => writeln!(
                 f,
                 "Output limit exceeded, set limit was {limit} and output size is {current}"
-            )
+            ),
+            Self::MismatchedCRC(expected, found) =>
+            {
+                writeln!(f, "Mismatched CRC, expected {expected} but found {found}")
+            }
+            Self::MismatchedAdler(expected, found) =>
+            {
+                writeln!(f, "Mismatched Adler, expected {expected} but found {found}")
+            }
         }
     }
 }
