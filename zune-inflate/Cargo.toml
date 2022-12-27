@@ -7,10 +7,17 @@ exclude = ["tests/"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+zlib = ["simd-adler32"]
+gzip = []
+
+default = ["zlib", "gzip"]
+
 [dependencies]
-simd-adler32 = "0.3.4" # Use it, generally faster and support for a wide variety of archs, no need to roll out my own
+simd-adler32 = { version = "0.3.4", optional = true }
+
 [dev-dependencies]
-flate2 = { version = "1.0.25" }
+flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng"] }
 criterion = "0.4.0"
 libdeflater = "0.11.0"
 

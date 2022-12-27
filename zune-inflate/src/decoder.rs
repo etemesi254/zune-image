@@ -1,4 +1,4 @@
-#![allow(clippy::never_loop)]
+#![allow(unused_imports)]
 
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
@@ -13,9 +13,12 @@ use crate::constants::{
     PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
 };
 use crate::errors::DecodeErrors;
-use crate::utils::{
-    calc_adler_hash, copy_rep_matches, fixed_copy, fixed_copy_within, make_decode_table_entry
+#[cfg(feature = "gzip")]
+use crate::gzip_constants::{
+    GZIP_CM_DEFLATE, GZIP_FCOMMENT, GZIP_FEXTRA, GZIP_FHCRC, GZIP_FNAME, GZIP_FOOTER_SIZE,
+    GZIP_FRESERVED, GZIP_ID1, GZIP_ID2
 };
+use crate::utils::{copy_rep_matches, fixed_copy, fixed_copy_within, make_decode_table_entry};
 
 struct DeflateHeaderTables
 {
@@ -188,9 +191,12 @@ impl<'a> DeflateDecoder<'a>
         }
     }
     /// Decode zlib-encoded data returning the uncompressed in a `Vec<u8>`
-    /// or an error of what went wrong.
+    /// or an error if something went wrong
+    #[cfg(feature = "zlib")]
     pub fn decode_zlib(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
+        use crate::utils::calc_adler_hash;
+
         if self.data.len()
             < 2 /* zlib header */
             + 4
@@ -258,7 +264,10 @@ impl<'a> DeflateDecoder<'a>
 
                 if adler32_expected != adler32_found
                 {
-                    return Err(DecodeErrors::CorruptData);
+                    return Err(DecodeErrors::MismatchedAdler(
+                        adler32_expected,
+                        adler32_found
+                    ));
                 }
             }
             else
@@ -269,13 +278,174 @@ impl<'a> DeflateDecoder<'a>
 
         Ok(data)
     }
+
+    /// Decode a gzip encoded data and return the uncompressed data in a
+    /// `Vec<u8>` or an error if something went wrong
+    #[cfg(feature = "gzip")]
+    pub fn decode_gzip(&mut self) -> Result<Vec<u8>, DecodeErrors>
+    {
+        if self.data.len() < 18
+        {
+            return Err(DecodeErrors::InsufficientData);
+        }
+
+        if self.data[self.position] != GZIP_ID1
+        {
+            return Err(DecodeErrors::CorruptData);
+        }
+        self.position += 1;
+        if self.data[self.position] != GZIP_ID2
+        {
+            return Err(DecodeErrors::CorruptData);
+        }
+        self.position += 1;
+
+        if self.data[self.position] != GZIP_CM_DEFLATE
+        {
+            return Err(DecodeErrors::CorruptData);
+        }
+        self.position += 1;
+
+        let flg = self.data[self.position];
+
+        // skip mtime
+        self.position += 4;
+        // skip xfl
+        self.position += 1;
+        // skip os
+        self.position += 1;
+
+        if (flg & GZIP_FRESERVED) != 0
+        {
+            return Err(DecodeErrors::CorruptData);
+        }
+        // extra field
+        if (flg & GZIP_FEXTRA) != 0
+        {
+            let len_bytes = self.data[self.position..self.position + 2]
+                .try_into()
+                .unwrap();
+            let xlen = usize::from(u16::from_le_bytes(len_bytes));
+
+            self.position += 2;
+
+            if self.data.len().saturating_sub(self.position) < xlen + GZIP_FOOTER_SIZE
+            {
+                return Err(DecodeErrors::CorruptData);
+            }
+            self.position += xlen;
+        }
+        // original file name zero terminated
+        if (flg & GZIP_FNAME) != 0
+        {
+            loop
+            {
+                if let Some(byte) = self.data.get(self.position)
+                {
+                    if *byte == 0
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    return Err(DecodeErrors::InsufficientData);
+                }
+                self.position += 1;
+            }
+
+            self.position += 1;
+        }
+        // File comment zero terminated
+        if (flg & GZIP_FCOMMENT) != 0
+        {
+            loop
+            {
+                if let Some(byte) = self.data.get(self.position)
+                {
+                    if *byte == 0
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    return Err(DecodeErrors::InsufficientData);
+                }
+                self.position += 1;
+            }
+            self.position += 1;
+        }
+        // crc16 for gzip header
+        if (flg & GZIP_FHCRC) != 0
+        {
+            self.position += 2;
+        }
+
+        if self.position + GZIP_FOOTER_SIZE > self.data.len()
+        {
+            return Err(DecodeErrors::InsufficientData);
+        }
+
+        let data = self.decode_deflate()?;
+
+        let mut out_pos = self.stream.get_position() + self.position + self.stream.over_read;
+
+        if self.options.confirm_checksum
+        {
+            // Get number of consumed bytes from the input
+
+            if let Some(crc) = self.data.get(out_pos..out_pos + 4)
+            {
+                let crc_bits: [u8; 4] = crc.try_into().unwrap();
+
+                let crc32_expected = u32::from_le_bytes(crc_bits);
+
+                let crc32_found = !crate::crc::crc32(&data, !0);
+
+                if crc32_expected != crc32_found
+                {
+                    return Err(DecodeErrors::MismatchedCRC(crc32_expected, crc32_found));
+                }
+            }
+            else
+            {
+                return Err(DecodeErrors::InsufficientData);
+            }
+        }
+        //checksum
+        out_pos += 4;
+
+        if let Some(val) = self.data.get(out_pos..out_pos + 4)
+        {
+            let actual_bytes: [u8; 4] = val.try_into().unwrap();
+            let ac = u32::from_le_bytes(actual_bytes) as usize;
+
+            if data.len() != ac
+            {
+                return Err(DecodeErrors::Generic("ISIZE does not match actual bytes"));
+            }
+        }
+        else
+        {
+            return Err(DecodeErrors::InsufficientData);
+        }
+
+        Ok(data)
+    }
     /// Decode a deflate stream returning the data as `Vec<u8>` or an error
     /// indicating what went wrong.
+    ///
+    /// # Example
+    /// ```no_run
+    /// let mut decoder = zune_inflate::DeflateDecoder::new(&[42]);
+    /// let bytes = decoder.decode_deflate()?;
+    /// ```
     pub fn decode_deflate(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         self.start_deflate_block()
     }
-    /// Main inner loop for decompressing
+    /// Main inner loop for decompressing deflate data
     #[allow(unused_assignments)]
     fn start_deflate_block(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
@@ -1391,4 +1561,15 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
+}
+
+#[test]
+fn test_gz()
+{
+    use std::fs::read;
+    let x = read("/home/caleb/tests/enwiki.smaller.gz").unwrap();
+
+    let mut decoder = DeflateDecoder::new(&x);
+
+    decoder.decode_gzip().unwrap();
 }

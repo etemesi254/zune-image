@@ -65,6 +65,8 @@ pub use crate::decoder::{DeflateDecoder, DeflateOptions};
 
 mod bitstream;
 mod constants;
+mod crc;
 mod decoder;
 pub mod errors;
+mod gzip_constants;
 mod utils;

@@ -1,5 +1,3 @@
-use simd_adler32::Adler32;
-
 /// make_decode_table_entry() creates a decode table entry for the given symbol
 /// by combining the static part 'decode_results[sym]' with the dynamic part
 /// 'len', which is the remaining codeword length (the codeword length for main
@@ -35,8 +33,8 @@ pub fn fixed_copy<const SIZE: usize>(
     dest[dest_offset..dest_offset + SIZE].copy_from_slice(&src[src_offset..src_offset + SIZE]);
 }
 
-/// An unsafe version of src.copy_within that has no bounds check
-/// in release mode.
+/// A safe version of src.copy_within that helps me because I tend to always
+/// confuse the arguments
 pub fn fixed_copy_within<const SIZE: usize>(dest: &mut [u8], src_offset: usize, dest_offset: usize)
 {
     // for debug builds ensure we don't go out of bounds
@@ -113,8 +111,10 @@ pub const fn const_min_usize(a: usize, b: usize) -> usize
 
 /// Calculate the adler hash of a piece of data.
 #[inline(never)]
+#[cfg(feature = "zlib")]
 pub fn calc_adler_hash(data: &[u8]) -> u32
 {
+    use simd_adler32::Adler32;
     let mut hasher = Adler32::new();
 
     hasher.write(data);
