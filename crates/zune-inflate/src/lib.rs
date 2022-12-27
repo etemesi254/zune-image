@@ -9,8 +9,7 @@
 //! Use it if
 //! - You want a smaller library footprint when compared to flate/miniz-oxide
 //! - You want zlib-ng/libdeflate speeds
-//! - You want a pure rust implementation with above.
-//! - You are okay with some unsafe.
+//! - You want a 100% safe, pure rust implementation with above.
 //!
 //!
 //!
