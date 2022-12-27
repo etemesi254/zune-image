@@ -71,7 +71,7 @@ I'll compare this with `flate2` with `miniz-oxide` backend.
 |-------------------------|----------------|----------|
 | zlib decompression      | yes            | yes      |
 | delfate decompression   | yes            | yes      |
-| gzip                    | soon           | yes      |
+| gzip                    | yes            | yes      |
 | compression             | soon           | yes      |
 | streaming decompression | no             | yes      |
 | **unsafe**              | no             | yes      |
