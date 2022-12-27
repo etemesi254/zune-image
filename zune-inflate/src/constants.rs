@@ -144,3 +144,13 @@ pub const DEFLATE_BLOCKTYPE_STATIC: u64 = 1;
 
 pub const LITLEN_DECODE_BITS: usize =
     const_min_usize(DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, LITLEN_TABLE_BITS);
+
+/// Maximum length of a deflate match
+pub const DEFLATE_MAX_MATCH_LEN: usize = 258;
+
+/// Number of bytes copied per every loop
+pub const FASTCOPY_BYTES: usize = 16;
+
+/// Worst case maximum number of output bytes writtern during each iteration of the
+/// fastloop.
+pub const FASTLOOP_MAX_BYTES_WRITTEN: usize = 6 + DEFLATE_MAX_MATCH_LEN + (2 * FASTCOPY_BYTES);
