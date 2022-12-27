@@ -74,10 +74,10 @@ I'll compare this with `flate2` with `miniz-oxide` backend.
 | gzip                    | soon           | yes      |
 | compression             | soon           | yes      |
 | streaming decompression | no             | yes      |
-| **unsafe**              | yes            | no       |
+| **unsafe**              | no             | yes      |
 
 As you can see, there are a lot of features we currently lack when compared to
-flate2/miniz-oxide and we have some unsafe code.
+flate2/miniz-oxide.
 
 There's actually nothing riding in for us, except...it's wickedly fast...
 
@@ -90,8 +90,8 @@ infused madness, we test decompression on the machine
 
 | File        | Metric     | Zune-Inflate | flate2/miniz-oxide | libdeflate  |
 |-------------|------------|--------------|--------------------|-------------|
-| enwiki_part | Speed      | 88.295 ms    | 158.11 ms          | 63.745ms    |
-|             | Throughput | 150.83 Mb/s  | 84.230 Mb/s        | 208.92 Mb/s |
+| enwiki_part | Speed      | 86.295 ms    | 158.11 ms          | 63.745ms    |
+|             | Throughput | 146.83 Mb/s  | 84.230 Mb/s        | 208.92 Mb/s |
 
 - libdeflate: Provided by [libdeflater] which offers bindings to [libdeflate]
 
