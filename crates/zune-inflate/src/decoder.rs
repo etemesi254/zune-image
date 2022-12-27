@@ -311,6 +311,10 @@ impl<'a> DeflateDecoder<'a>
 
                     out_block.resize(new_len, 0);
                 }
+                if self.data.get(start + len).is_none()
+                {
+                    return Err(DecodeErrors::CorruptData);
+                }
 
                 out_block[dest_offset..dest_offset + len]
                     .copy_from_slice(&self.data[start..start + len]);
