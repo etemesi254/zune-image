@@ -14,7 +14,7 @@ use crate::constants::{
 };
 use crate::errors::DecodeErrors;
 use crate::utils::{
-    calc_adler_hash, const_copy, const_copy_within, copy_rep_matches, make_decode_table_entry
+    calc_adler_hash, copy_rep_matches, fixed_copy, fixed_copy_within, make_decode_table_entry
 };
 
 struct DeflateHeaderTables
@@ -546,17 +546,11 @@ impl<'a> DeflateDecoder<'a>
                         // Copy some bytes unconditionally
                         // This makes us copy smaller match lengths quicker because we don't need
                         // a loop + don't send too much pressure to the Memory unit.
-                        unsafe {
-                            // Safety: We resized out_block above to hold enough bytes to allow
-                            // sloppy copies
-                            // Reason: This allows us to skip excessive steps encountered from copying
-                            // long copies, which require additional steps and are a perf hog
-                            const_copy_within::<FASTCOPY_BYTES>(
-                                &mut out_block,
-                                src_offset,
-                                dest_offset
-                            );
-                        }
+                        fixed_copy_within::<FASTCOPY_BYTES>(
+                            &mut out_block,
+                            src_offset,
+                            dest_offset
+                        );
 
                         let (dest_src, dest_ptr) = out_block.split_at_mut(dest_offset);
 
@@ -575,12 +569,8 @@ impl<'a> DeflateDecoder<'a>
 
                             loop
                             {
-                                // Safety
-                                // We resized this to enable sloppy copies
-                                // (remember we control our output)
-                                unsafe {
-                                    const_copy::<N_BYTES>(&rep_byte, dest_ptr, 0, bytes_written);
-                                }
+                                fixed_copy::<N_BYTES>(&rep_byte, dest_ptr, 0, bytes_written);
+
                                 bytes_written += N_BYTES;
 
                                 if bytes_written > length
@@ -617,19 +607,17 @@ impl<'a> DeflateDecoder<'a>
                             // copy in batches of FAST_BYTES
                             'match_lengths: loop
                             {
-                                unsafe {
-                                    // Safety: We resized out_block hence we know it can handle
-                                    // sloppy copies without it being out of bounds
-                                    //
-                                    // Reason: This is a latency critical loop, even branches start
-                                    // to matter
-                                    const_copy::<FASTCOPY_BYTES>(
-                                        dest_src,
-                                        dest_ptr,
-                                        dest_src_offset,
-                                        dest_dst_offset
-                                    );
-                                }
+                                // Safety: We resized out_block hence we know it can handle
+                                // sloppy copies without it being out of bounds
+                                //
+                                // Reason: This is a latency critical loop, even branches start
+                                // to matter
+                                fixed_copy::<FASTCOPY_BYTES>(
+                                    dest_src,
+                                    dest_ptr,
+                                    dest_src_offset,
+                                    dest_dst_offset
+                                );
 
                                 dest_src_offset += FASTCOPY_BYTES;
                                 dest_dst_offset += FASTCOPY_BYTES;
@@ -642,15 +630,6 @@ impl<'a> DeflateDecoder<'a>
                         }
 
                         dest_offset += length;
-
-                        if dest_offset > self.options.limit
-                        {
-                            let msg = format!(
-                                "Position {} bypasses max length {}",
-                                dest_offset, self.options.limit
-                            );
-                            return Err(DecodeErrors::GenericStr(msg));
-                        }
 
                         if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
                         {
@@ -678,11 +657,6 @@ impl<'a> DeflateDecoder<'a>
                     entry = litlen_decode_table[literal_mask];
 
                     saved_bitbuf = self.stream.buffer;
-
-                    if !self.stream.has((entry & 0xFF) as u8)
-                    {
-                        return Err(DecodeErrors::InsufficientData);
-                    }
 
                     self.stream.drop_bits((entry & 0xFF) as u8);
 
@@ -749,11 +723,6 @@ impl<'a> DeflateDecoder<'a>
                     }
 
                     src_offset = dest_offset - offset;
-
-                    if !self.stream.has((entry & 0xFF) as u8)
-                    {
-                        return Err(DecodeErrors::InsufficientData);
-                    }
 
                     self.stream.drop_bits(entry as u8);
 
