@@ -124,7 +124,8 @@ impl<'src> BitStreamReader<'src>
     /// Or alternatively, number of bits read.
     pub fn get_position(&self) -> usize
     {
-        self.position - usize::from(self.bits_left >> 3)
+        self.position
+            .saturating_sub(usize::from(self.bits_left >> 3))
     }
 
     /// Reset buffer and bits left to zero.
