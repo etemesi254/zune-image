@@ -1,5 +1,3 @@
-use std::ptr;
-
 use simd_adler32::Adler32;
 
 /// make_decode_table_entry() creates a decode table entry for the given symbol
@@ -17,12 +15,7 @@ pub(crate) fn make_decode_table_entry(decode_results: &[u32], sym: usize, len: u
 
 /// Copy SIZE amount of bytes from src, starting from `src_offset` into dest starting from
 /// `dest_offset`.
-///
-/// # Unsafety
-///
-/// This function might read and write out  of bounds memory, if SAFE is true, it checks
-/// both in debug and release builds that the reads and rights are in bounds at the cost of performance.
-pub unsafe fn const_copy<const SIZE: usize>(
+pub fn fixed_copy<const SIZE: usize>(
     src: &[u8], dest: &mut [u8], src_offset: usize, dest_offset: usize
 )
 {
@@ -39,27 +32,12 @@ pub unsafe fn const_copy<const SIZE: usize>(
         dest_offset + SIZE,
         dest.len()
     );
-
-    unsafe {
-        dest.as_mut_ptr()
-            .add(dest_offset)
-            .copy_from(src.as_ptr().add(src_offset), SIZE);
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            // optimizer, don't do that, dont optimize this.
-            // 1.55% improvement
-            use std::arch::asm;
-            asm!("");
-        }
-    }
+    dest[dest_offset..dest_offset + SIZE].copy_from_slice(&src[src_offset..src_offset + SIZE]);
 }
 
 /// An unsafe version of src.copy_within that has no bounds check
 /// in release mode.
-pub unsafe fn const_copy_within<const SIZE: usize>(
-    dest: &mut [u8], src_offset: usize, dest_offset: usize
-)
+pub fn fixed_copy_within<const SIZE: usize>(dest: &mut [u8], src_offset: usize, dest_offset: usize)
 {
     // for debug builds ensure we don't go out of bounds
     debug_assert!(
@@ -69,22 +47,7 @@ pub unsafe fn const_copy_within<const SIZE: usize>(
         dest.len()
     );
 
-    unsafe {
-        // Derive both `src_ptr` and `dest_ptr` from the same loan
-        let ptr = dest.as_mut_ptr();
-        let src_ptr = ptr.add(src_offset);
-        let dest_ptr = ptr.add(dest_offset);
-
-        ptr::copy(src_ptr, dest_ptr, SIZE);
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            // optimizer, don't do that, dont optimize this.
-            // 1.55% improvement
-            use std::arch::asm;
-            asm!("");
-        }
-    }
+    dest.copy_within(src_offset..src_offset + SIZE, dest_offset);
 }
 
 #[inline(always)]
@@ -129,10 +92,6 @@ pub fn copy_rep_matches(dest: &mut [u8], offset: usize, dest_offset: usize, leng
     // [xab{a}b]   │  [copy at = 3]
     // [xaba{b}a]  │  [copy at = 4]
 
-    // Asserts are a 1.4% performance detriment
-    assert!(offset + length < dest.len());
-    assert!(dest_offset + length < dest.len());
-
     for i in 0..length
     {
         // Safety: We assert the worst possible length is in place
@@ -140,17 +99,8 @@ pub fn copy_rep_matches(dest: &mut [u8], offset: usize, dest_offset: usize, leng
         //
         // Reason: This is perf sensitive, we can't afford such slowdowns
         // and it activates optimizations i.e see
-        unsafe {
-            let byte = *dest.get_unchecked(offset + i);
-            *dest.get_unchecked_mut(dest_offset + i) = byte;
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            {
-                // optimizer, don't do that, dont optimize this.
-                // 1.55% improvement
-                use std::arch::asm;
-                asm!("");
-            }
-        }
+        let byte = dest[offset + i];
+        dest[dest_offset + i] = byte;
     }
 }
 
