@@ -7,10 +7,10 @@ use crate::constants::{
     DEFLATE_MAX_LITLEN_CODEWORD_LENGTH, DEFLATE_MAX_NUM_SYMS, DEFLATE_MAX_OFFSET_CODEWORD_LENGTH,
     DEFLATE_MAX_PRE_CODEWORD_LEN, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS,
     DEFLATE_NUM_PRECODE_SYMS, DEFLATE_PRECODE_LENS_PERMUTATION, DELFATE_MAX_LENS_OVERRUN,
-    HUFFDEC_END_OF_BLOCK, HUFFDEC_EXCEPTIONAL, HUFFDEC_LITERAL, HUFFDEC_SUITABLE_POINTER,
-    LITLEN_DECODE_BITS, LITLEN_DECODE_RESULTS, LITLEN_ENOUGH, LITLEN_TABLE_BITS,
-    OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS, PRECODE_DECODE_RESULTS, PRECODE_ENOUGH,
-    PRECODE_TABLE_BITS
+    FASTCOPY_BYTES, FASTLOOP_MAX_BYTES_WRITTEN, HUFFDEC_END_OF_BLOCK, HUFFDEC_EXCEPTIONAL,
+    HUFFDEC_LITERAL, HUFFDEC_SUITABLE_POINTER, LITLEN_DECODE_BITS, LITLEN_DECODE_RESULTS,
+    LITLEN_ENOUGH, LITLEN_TABLE_BITS, OFFSET_DECODE_RESULTS, OFFSET_ENOUGH, OFFSET_TABLEBITS,
+    PRECODE_DECODE_RESULTS, PRECODE_ENOUGH, PRECODE_TABLE_BITS
 };
 use crate::errors::DecodeErrors;
 use crate::utils::{
@@ -243,7 +243,6 @@ impl<'a> DeflateDecoder<'a>
     #[allow(unused_assignments)]
     fn start_deflate_block(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
-        const FASTCOPY_BYTES: usize = 16;
         // start deflate decode
         // re-read the stream so that we can remove code read by zlib
         self.stream = BitStreamReader::new(&self.data[self.position..]);
@@ -372,6 +371,13 @@ impl<'a> DeflateDecoder<'a>
 
                     'sequence: loop
                     {
+                        // Resize the output vector here to ensure we can always have
+                        // enough space for sloppy copies
+                        if dest_offset + FASTLOOP_MAX_BYTES_WRITTEN > out_block.len()
+                        {
+                            let curr_len = out_block.len();
+                            out_block.resize(curr_len + FASTLOOP_MAX_BYTES_WRITTEN + RESIZE_BY, 0)
+                        }
                         // At this point entry contains the next value of the litlen
                         // This will always be the case so meaning all our exit paths need
                         // to load in the next entry.
@@ -421,7 +427,7 @@ impl<'a> DeflateDecoder<'a>
 
                             self.stream.drop_bits(entry as u8);
 
-                            resize_and_push(&mut out_block, dest_offset, literal as u8);
+                            out_block[dest_offset] = literal as u8;
                             dest_offset += 1;
 
                             if (entry & HUFFDEC_LITERAL) != 0
@@ -436,7 +442,7 @@ impl<'a> DeflateDecoder<'a>
                                 literal = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
-                                resize_and_push(&mut out_block, dest_offset, literal as u8);
+                                out_block[dest_offset] = literal as u8;
                                 dest_offset += 1;
 
                                 continue;
@@ -478,7 +484,7 @@ impl<'a> DeflateDecoder<'a>
                                 literal = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
-                                resize_and_push(&mut out_block, dest_offset, literal as u8);
+                                out_block[dest_offset] = (literal & 0xFF) as u8;
                                 dest_offset += 1;
 
                                 continue;
@@ -536,15 +542,6 @@ impl<'a> DeflateDecoder<'a>
                         }
 
                         src_offset = dest_offset - offset;
-
-                        // ensure there is enough space for a fast copy
-                        if dest_offset + length + 4 * FASTCOPY_BYTES > out_block.len()
-                        {
-                            // and if there is not, resize
-                            let new_len = out_block.len() + RESIZE_BY + length;
-
-                            out_block.resize(new_len, 0);
-                        }
 
                         // Copy some bytes unconditionally
                         // This makes us copy smaller match lengths quicker because we don't need
@@ -617,7 +614,6 @@ impl<'a> DeflateDecoder<'a>
                             let mut dest_dst_offset = FASTCOPY_BYTES;
 
                             // Number of bytes we are to copy
-                            let mut ml_copy = length;
                             // copy in batches of FAST_BYTES
                             'match_lengths: loop
                             {
@@ -634,18 +630,14 @@ impl<'a> DeflateDecoder<'a>
                                         dest_dst_offset
                                     );
                                 }
-                                if ml_copy < 2 * FASTCOPY_BYTES
-                                {
-                                    // we copied FAST_BITS above in this loop
-                                    // and we copied another one in our unconditional copy
-                                    // so if we are less than the above, we know we are done.
-                                    break 'match_lengths;
-                                }
 
                                 dest_src_offset += FASTCOPY_BYTES;
                                 dest_dst_offset += FASTCOPY_BYTES;
 
-                                ml_copy = ml_copy.wrapping_sub(FASTCOPY_BYTES);
+                                if dest_dst_offset > length
+                                {
+                                    break 'match_lengths;
+                                }
                             }
                         }
 
@@ -675,6 +667,11 @@ impl<'a> DeflateDecoder<'a>
                 loop
                 {
                     self.stream.refill();
+
+                    if self.stream.over_read > usize::from(self.stream.bits_left >> 3)
+                    {
+                        return Err(DecodeErrors::CorruptData);
+                    }
 
                     let literal_mask = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
