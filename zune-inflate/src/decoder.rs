@@ -154,7 +154,7 @@ impl<'a> DeflateDecoder<'a>
             options
         }
     }
-    /// Decode zlib-encoded data returning the uncompressed in a Vec<u8>
+    /// Decode zlib-encoded data returning the uncompressed in a `Vec<u8>`
     /// or an error of what went wrong.
     pub fn decode_zlib(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
@@ -236,7 +236,7 @@ impl<'a> DeflateDecoder<'a>
 
         Ok(data)
     }
-    /// Decode a deflate stream returning the data as Vec<u8> or an error
+    /// Decode a deflate stream returning the data as `Vec<u8>` or an error
     /// indicating what went wrong.
     pub fn decode_deflate(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
