@@ -88,10 +88,10 @@ Again, I'm gonna compare zune-inflate and miniz-oxide.
 The test bench is a 42mb enwiki file compressed to 13.3 mb of zlib
 infused madness, we test decompression on the machine
 
-| File        | Metric     | Zune-Inflate | flate2/miniz-oxide | flate/zlib-ng | libdeflate  |
+| File        | Metric     | zune-inflate | flate2/miniz-oxide | flate/zlib-ng | libdeflate  |
 |-------------|------------|--------------|--------------------|---------------|-------------|
 | enwiki_part | Speed      | 86.295 ms    | 158.11 ms          | 112.18 ms     | 63.745ms    |
-|             | Throughput | 146.83 Mb/s  | 84.230 Mb/s        | 118.72 Mb/s   | 208.92 Mb/s |
+|             | Throughput | 153.83 Mb/s  | 84.230 Mb/s        | 118.72 Mb/s   | 208.92 Mb/s |
 
 - libdeflate: Provided by [libdeflater] which offers bindings to [libdeflate]
 
