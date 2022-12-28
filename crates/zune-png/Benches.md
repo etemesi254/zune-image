@@ -58,7 +58,7 @@ RUSTFLAGS='-C target-cpu=native' cargo bench
 
 ### Benchmarks on my machine.
 
-| Variation         | zune-png  | imagers/png |
-|-------------------|-----------|-------------|
-| 8 bytes per pixel | 191.15 ms | 296.97 ms   |
-
+| Variation                         | zune-png  | imagers/png | spng      |
+|-----------------------------------|-----------|-------------|-----------|
+| 8 bytes per pixel                 | 191.15 ms | 296.97 ms   | 251.15ms  |
+| 8 bytes per pixel interlaced RGBA | 325.89ms  | 422.87 ms   | 337.48 ms |
