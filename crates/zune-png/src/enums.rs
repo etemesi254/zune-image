@@ -74,7 +74,11 @@ pub enum FilterMethod
     Up,
     Average,
     Paeth,
-    Unkwown
+    // First scanline, special
+    PaethFirst,
+    AvgFirst,
+    // Unknown type of filter
+    Unknown
 }
 impl FilterMethod
 {
@@ -96,7 +100,7 @@ impl Default for FilterMethod
 {
     fn default() -> Self
     {
-        FilterMethod::Unkwown
+        FilterMethod::Unknown
     }
 }
 
@@ -105,14 +109,14 @@ pub enum InterlaceMethod
 {
     Standard,
     Adam7,
-    Unkwown
+    Unknown
 }
 
 impl Default for InterlaceMethod
 {
     fn default() -> Self
     {
-        Self::Unkwown
+        Self::Unknown
     }
 }
 impl InterlaceMethod
