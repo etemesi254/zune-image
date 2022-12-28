@@ -177,6 +177,11 @@ impl<'a> DeflateDecoder<'a>
 
         Self::new_with_options(data, options)
     }
+    /// Create new decoder with specified options
+    ///
+    /// This can be used to fine tune the decoder to the user's
+    /// needs.
+    ///
     pub fn new_with_options(data: &'a [u8], options: DeflateOptions) -> DeflateDecoder<'a>
     {
         // create stream
@@ -1561,15 +1566,4 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
-}
-
-#[test]
-fn test_gz()
-{
-    use std::fs::read;
-    let x = read("/home/caleb/tests/enwiki.smaller.gz").unwrap();
-
-    let mut decoder = DeflateDecoder::new(&x);
-
-    decoder.decode_gzip().unwrap();
 }

@@ -23,6 +23,13 @@
 //!
 //!- For streaming support use [flate2-rs] with an appropriate backend(zlib-ng is recommended for speed)
 //!  
+//! # Features
+//! You can disable features depending on what you need. the following are
+//! features present
+//! - gzip: Enable gzip decoding
+//! - zlib: Enable zlib decoding
+//!
+//! These features are enabled by default
 //!
 //! # Usage
 //!
