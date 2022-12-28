@@ -1,4 +1,4 @@
-#[cfg(feature = "gzip")]
+#![cfg(feature = "gzip")]
 pub const GZIP_ID1: u8 = 0x1F;
 pub const GZIP_ID2: u8 = 0x8B;
 pub const GZIP_CM_DEFLATE: u8 = 8;
