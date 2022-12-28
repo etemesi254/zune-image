@@ -1,6 +1,13 @@
-//! A set of optimized filter functions for de-filtering ong
+//! A set of optimized filter functions for de-filtering png
 //! scanlines.
 //!
+//!
+//! There exist two types of filter functions here,
+//! special filter functions for the first scanline which has special conditions
+//! and normal filter functions,
+//!
+//! The special first scanlines have a suffix _first on them and are only called
+//! for the first scanline.
 
 mod sse4;
 
@@ -464,6 +471,14 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
     }
 }
 
+pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+{
+    for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row)
+    {
+        *recon = (*filt).wrapping_add(*up)
+    }
+}
+
 #[inline(always)]
 pub fn paeth(a: u8, b: u8, c: u8) -> u8
 {
@@ -484,4 +499,57 @@ pub fn paeth(a: u8, b: u8, c: u8) -> u8
         return b as u8;
     }
     c as u8
+}
+
+/// Handle images with the first scanline as paeth scanline
+///
+/// Special in that the above row is treated as zero
+#[allow(clippy::manual_memcpy)]
+pub fn handle_paeth_first(raw: &[u8], current: &mut [u8], components: usize)
+{
+    let mut max_recon: [u8; 4] = [0; 4];
+    // handle leftmost byte explicitly
+    for i in 0..components
+    {
+        current[i] = raw[i];
+        max_recon[i] = current[i];
+    }
+
+    let raw_chunks = raw[components..].chunks(components);
+    let curr_chunks = current[components..].chunks_exact_mut(components);
+
+    for (filt, out_px) in raw_chunks.zip(curr_chunks)
+    {
+        for ((a, f_x), out_p) in max_recon.iter_mut().zip(filt).zip(out_px)
+        {
+            let paeth_res = paeth(*a, 0, 0);
+
+            *out_p = (*f_x).wrapping_add(paeth_res);
+            *a = *out_p;
+        }
+    }
+}
+
+#[allow(clippy::manual_memcpy)]
+pub fn handle_avg_first(raw: &[u8], current: &mut [u8], components: usize)
+{
+    let mut max_recon: [u8; 4] = [0; 4];
+    // handle leftmost byte explicitly
+    for i in 0..components
+    {
+        current[i] = raw[i];
+        max_recon[i] = current[i];
+    }
+    for (filt, recon_x) in raw[components..]
+        .chunks(components)
+        .zip(current[components..].chunks_exact_mut(components))
+    {
+        for ((recon_a, filt_x), recon_v) in max_recon.iter_mut().zip(filt).zip(recon_x)
+        {
+            let recon_x = *recon_a >> 1;
+
+            *recon_v = (*filt_x).wrapping_add(recon_x);
+            *recon_a = *recon_v;
+        }
+    }
 }
