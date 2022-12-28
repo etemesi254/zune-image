@@ -6,7 +6,9 @@ use zune_core::DecodingResult;
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngErrors;
-use crate::filters::{handle_avg, handle_paeth, handle_sub, paeth};
+use crate::filters::{
+    handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
+};
 use crate::options::PngOptions;
 
 #[derive(Copy, Clone)]
@@ -18,7 +20,7 @@ pub(crate) struct PngChunk
     pub crc:        u32
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct PngInfo
 {
     pub width:            usize,
@@ -37,7 +39,8 @@ pub struct PngDecoder<'a>
     pub(crate) options:     PngOptions,
     pub(crate) png_info:    PngInfo,
     pub(crate) palette:     Vec<u8>,
-    pub(crate) idat_chunks: Vec<u8>
+    pub(crate) idat_chunks: Vec<u8>,
+    pub(crate) out:         Vec<u8>
 }
 
 impl<'a> PngDecoder<'a>
@@ -56,7 +59,8 @@ impl<'a> PngDecoder<'a>
             options,
             palette: Vec::new(),
             png_info: PngInfo::default(),
-            idat_chunks: Vec::with_capacity(37) // randomly chosen size, my favourite number
+            idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            out: Vec::new()
         }
     }
 
@@ -224,19 +228,368 @@ impl<'a> PngDecoder<'a>
                 )?
             }
         }
-        // go parse IDAT chunks
-        let data = self.inflate()?;
-        // now we have uncompressed data from zlib. Undo filtering
+        // go parse IDAT chunks returning the inflate
+        let deflate_data = self.inflate()?;
+        // remove idat chunks from memory
+        // we are already done with them.
+        self.idat_chunks = Vec::new();
 
-        // images with depth of 8, no interlace or filter can proceed to be returned
-        if self.png_info.depth == 8
-            && self.png_info.filter_method == FilterMethod::None
-            && self.png_info.interlace_method == InterlaceMethod::Standard
+        let info = self.png_info;
+
+        let out_n = usize::from(info.color.num_components());
+
+        if info.interlace_method == InterlaceMethod::Standard
         {
-            return Ok(DecodingResult::U8(data));
+            self.create_png_image_raw(&deflate_data, info.width, info.height)?;
+
+            // images with depth of 8, no interlace or filter can proceed to be returned
+            if info.depth == 8
+            {
+                let new_len = info.width * info.height * usize::from(info.color.num_components());
+                self.out.truncate(new_len);
+                let out = std::mem::take(&mut self.out);
+                return Ok(DecodingResult::U8(out));
+            }
+        }
+        else if info.interlace_method == InterlaceMethod::Adam7
+        {
+            let new_len = info.width * info.height * usize::from(info.color.num_components());
+
+            let mut final_out = vec![0_u8; new_len];
+            const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
+            const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
+
+            const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
+            const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
+
+            let mut image_offset = 0;
+
+            for p in 0..7
+            {
+                let x = (info.width - XORIG[p] + XSPC[p] - 1) / XSPC[p];
+                let y = (info.height - YORIG[p] + YSPC[p] - 1) / YSPC[p];
+
+                if x != 0 && y != 0
+                {
+                    let mut image_len = usize::from(info.color.num_components()) * x;
+
+                    image_len *= usize::from(info.depth);
+                    image_len += 7;
+                    image_len >>= 3;
+                    image_len += 1;
+                    image_len *= y;
+
+                    self.create_png_image_raw(
+                        &deflate_data[image_offset..image_offset + image_len],
+                        x,
+                        y
+                    )?;
+                    let bytes = if info.depth == 16 { 2 } else { 1 };
+                    let out_bytes = out_n * bytes;
+
+                    for j in 0..y
+                    {
+                        for i in 0..x
+                        {
+                            let out_y = j * YSPC[p] + YORIG[p];
+                            let out_x = i * XSPC[p] + XORIG[p];
+
+                            let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
+
+                            let out_start = (j * x + i) * out_bytes;
+
+                            final_out[final_start..final_start + out_bytes]
+                                .copy_from_slice(&self.out[out_start..out_start + out_bytes]);
+                        }
+                    }
+                    image_offset += image_len;
+                }
+            }
+            self.out = final_out;
+
+            if info.depth <= 8
+            {
+                let new_len = info.width * info.height * usize::from(info.color.num_components());
+                self.out.truncate(new_len);
+                let out = std::mem::take(&mut self.out);
+                return Ok(DecodingResult::U8(out));
+            }
         }
 
         Err(PngErrors::GenericStatic("Not yet done"))
+    }
+    /// Create the png data from post deflated data
+    #[allow(clippy::manual_memcpy)]
+    fn create_png_image_raw(
+        &mut self, deflate_data: &[u8], width: usize, height: usize
+    ) -> Result<(), PngErrors>
+    {
+        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
+
+        let info = &self.png_info;
+
+        let bytes = if info.depth == 16 { 2 } else { 1 };
+
+        let mut img_width_bytes;
+
+        let out_n = usize::from(info.color.num_components());
+
+        img_width_bytes = usize::from(info.component) * width;
+        img_width_bytes *= usize::from(info.depth);
+        img_width_bytes += 7;
+        img_width_bytes >>= 3;
+
+        let image_len = (img_width_bytes + 1) * height;
+
+        self.out = vec![0; image_len];
+
+        let out = &mut self.out;
+
+        let stride = width * out_n * bytes;
+
+        if deflate_data.len() < image_len
+        {
+            let msg = format!(
+                "Not enough pixels, expected {} but found {}",
+                image_len,
+                deflate_data.len()
+            );
+            return Err(PngErrors::Generic(msg));
+        }
+        // stride
+        // do png  un-filtering
+        let mut chunk_size;
+
+        let mut components = usize::from(info.color.num_components());
+
+        if info.depth < 8
+        {
+            // if the bit depth is 8, the spec says the byte before
+            // X to be used by the filter
+            components = 1;
+        }
+
+        // add width plus colour component, this gives us number of bytes per every scan line
+        chunk_size = width * out_n;
+        // add depth, and
+        chunk_size *= usize::from(info.depth);
+        chunk_size += 7;
+        chunk_size /= 8;
+        // filter type
+        chunk_size += 1;
+
+        let chunks = deflate_data.chunks_exact(chunk_size);
+
+        //
+        // ┌─────┬─────┐
+        // │ c   │  b  │
+        // ├─────┼─────┤
+        // │ a   │ x   │
+        // └─────┴─────┘
+        //
+        // Begin doing loop un-filtering.
+
+        let mut prev_row_start = 0;
+        let width_stride = chunk_size - 1;
+
+        let mut first_row = true;
+
+        let mut out_position = 0;
+
+        for in_stride in chunks.take(height)
+        {
+            // Split output into current and previous
+            // current points to the start of the row where we are writing de-filtered output to
+            // prev is all rows we already wrote output to.
+            let (prev, current) = out.split_at_mut(out_position);
+
+            // get the previous row.
+            //Set this to a dummy to handle special case of first row, if we aren't in the first
+            // row, we actually take the real slice a line down
+            let mut prev_row: &[u8] = &[0_u8];
+
+            if !first_row
+            {
+                prev_row = &prev[prev_row_start..prev_row_start + width_stride];
+                prev_row_start += width_stride;
+            }
+
+            out_position += width_stride;
+
+            // take filter
+            let filter_byte = in_stride[0];
+
+            // raw image bytes
+            let raw = &in_stride[1..];
+
+            // get it's type
+            let mut filter = FilterMethod::from_int(filter_byte)
+                .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
+
+            if first_row
+            {
+                // match our filters to special filters for first row
+                // these special filters do not need the previous scanline and treat it
+                // as zero
+
+                if filter == FilterMethod::Paeth
+                {
+                    filter = FilterMethod::PaethFirst;
+                }
+                if filter == FilterMethod::Up
+                {
+                    // up for the first row becomes a memcpy
+                    filter = FilterMethod::None;
+                }
+                if filter == FilterMethod::Average
+                {
+                    filter = FilterMethod::AvgFirst;
+                }
+
+                first_row = false;
+            }
+
+            match filter
+            {
+                FilterMethod::None =>
+                {
+                    // Memcpy
+                    current[0..width_stride].copy_from_slice(raw)
+                }
+
+                FilterMethod::Average => handle_avg(prev_row, raw, current, components),
+
+                FilterMethod::Sub => handle_sub(raw, current, components),
+
+                FilterMethod::Up => handle_up(prev_row, raw, current),
+
+                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components),
+
+                FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
+
+                FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
+
+                FilterMethod::Unknown => unreachable!()
+            }
+        }
+        // make a separate pass to expand bits to pixels
+        if info.depth < 8
+        {
+            // okay this depth up-scaling can be done in place
+            // stb_image does it, it's a performance benefit to do it that way
+            // but for GOD's sake, there are too many pointer arithmetic and implicit
+            // things I cannot even begin to wrap my head on how to go about it
+            //
+            // So just allocate a new byte, write to that and set it to be
+            // out later on
+            let new_size = height * width * out_n;
+            let mut new_out = vec![0; new_size];
+
+            let mut in_offset = 0;
+
+            for i in 0..height
+            {
+                let mut current = stride * i;
+
+                let scale = if info.color == PngColor::Luma
+                {
+                    DEPTH_SCALE_TABLE[usize::from(info.depth)]
+                }
+                else
+                {
+                    1
+                };
+
+                let mut k = width * out_n;
+                let mut in_val = out[in_offset];
+
+                if info.depth == 1
+                {
+                    while k >= 8
+                    {
+                        let cur: &mut [u8; 8] =
+                            &mut new_out[current..current + 8].try_into().unwrap();
+
+                        cur[0] = scale * ((in_val >> 7) & 0x01);
+                        cur[1] = scale * ((in_val >> 6) & 0x01);
+                        cur[2] = scale * ((in_val >> 5) & 0x01);
+                        cur[3] = scale * ((in_val >> 4) & 0x01);
+                        cur[4] = scale * ((in_val >> 3) & 0x01);
+                        cur[5] = scale * ((in_val >> 2) & 0x01);
+                        cur[6] = scale * ((in_val >> 1) & 0x01);
+                        cur[7] = scale * ((in_val) & 0x01);
+
+                        in_offset += 1;
+                        current += 8;
+
+                        in_val = out[in_offset];
+
+                        k -= 8;
+                    }
+                    for p in 0..k
+                    {
+                        let shift = (7_usize).wrapping_sub(p);
+                        new_out[current] = scale * ((in_val >> shift) & 0x01);
+                        current += 1;
+                    }
+                }
+                else if info.depth == 2
+                {
+                    while k >= 4
+                    {
+                        let cur: &mut [u8; 4] = &mut out[current..current + 4].try_into().unwrap();
+
+                        cur[0] = scale * ((in_val >> 6) & 0x03);
+                        cur[1] = scale * ((in_val >> 4) & 0x03);
+                        cur[2] = scale * ((in_val >> 2) & 0x03);
+                        cur[3] = scale * ((in_val) & 0x03);
+
+                        k -= 4;
+
+                        in_offset += 1;
+                        current += 4;
+
+                        in_val = out[in_offset];
+                    }
+
+                    for p in 0..k
+                    {
+                        let shift = (6_usize).wrapping_sub(p * 2);
+                        new_out[current] = scale * ((in_val >> shift) & 0x03);
+                        current += 1;
+                    }
+                }
+                else if info.depth == 4
+                {
+                    while k >= 2
+                    {
+                        let cur: &mut [u8; 2] = &mut out[current..current + 2].try_into().unwrap();
+
+                        cur[1] = scale * ((in_val >> 4) & 0x0f);
+                        cur[2] = scale * ((in_val) & 0x0f);
+
+                        k -= 2;
+
+                        in_offset += 1;
+                        current += 2;
+
+                        in_val = out[in_offset];
+                    }
+
+                    // leftovers
+                    for p in 0..k
+                    {
+                        let shift = (4_usize).wrapping_sub(p * 4);
+                        new_out[current] = scale * ((in_val >> shift) & 0x0f);
+                        current += 1;
+                    }
+                }
+                in_offset += 1;
+            }
+            self.out = new_out;
+        }
+
+        Ok(())
     }
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
@@ -261,204 +614,6 @@ impl<'a> PngDecoder<'a>
 
         let mut decoder = zune_inflate::DeflateDecoder::new(&self.idat_chunks);
 
-        let deflate_data = decoder.decode_zlib().unwrap();
-
-        let info = &self.png_info;
-
-        let mut img_width_bytes;
-
-        img_width_bytes = usize::from(info.component) * info.width;
-        img_width_bytes *= usize::from(info.depth);
-        img_width_bytes += 7;
-        img_width_bytes >>= 3;
-
-        let image_len = (img_width_bytes + 1) * info.height;
-
-        if deflate_data.len() < image_len
-        {
-            let msg = format!(
-                "Not enough pixels, expected {} but found {}",
-                image_len,
-                deflate_data.len()
-            );
-            return Err(PngErrors::Generic(msg));
-        }
-        let mut out = vec![0; image_len];
-        // stride
-        // do png  un-filtering
-        let mut chunk_size;
-
-        let mut components = usize::from(info.color.num_components());
-
-        if info.depth < 8
-        {
-            // if the bit depth is 8, the spec says the byte before
-            // X to be used by the filter
-            components = 1;
-        }
-
-        // add width plus colour component, this gives us number of bytes per every scan line
-        chunk_size = info.width * usize::from(info.color.num_components());
-        // add depth, and
-        chunk_size *= usize::from(info.depth);
-        chunk_size /= 8;
-        // filter type
-        chunk_size += 1;
-
-        let mut chunks = deflate_data.chunks_exact(chunk_size);
-
-        let filter_byte = deflate_data[0];
-        // handle first loop explicitly
-        // side effect is to ensure filter is always known
-        let filter = FilterMethod::from_int(filter_byte)
-            .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
-
-        let first_scanline = chunks.next().unwrap();
-
-        match filter
-        {
-            FilterMethod::None | FilterMethod::Up =>
-            {
-                out[0..chunk_size - 1].copy_from_slice(&first_scanline[1..]);
-            }
-            FilterMethod::Sub =>
-            {
-                let mut max_recon: [u8; 4] = [0; 4];
-
-                for (filt, recon_x) in first_scanline[1..chunk_size]
-                    .chunks(components)
-                    .zip(out.chunks_exact_mut(components))
-                {
-                    for ((recon_a, filt_x), recon_v) in max_recon.iter_mut().zip(filt).zip(recon_x)
-                    {
-                        *recon_v = (*filt_x).wrapping_add(*recon_a);
-                        *recon_a = *recon_v;
-                    }
-                }
-            }
-            FilterMethod::Average =>
-            {
-                let mut max_recon: [u8; 4] = [0; 4];
-                // handle leftmost byte explicitly
-                for i in 0..components
-                {
-                    out[i] = first_scanline[i + 1];
-                    max_recon[i] = out[i];
-                }
-                for (filt, recon_x) in first_scanline[1 + components..]
-                    .chunks(components)
-                    .zip(out[components..].chunks_exact_mut(components))
-                {
-                    for ((recon_a, filt_x), recon_v) in max_recon.iter_mut().zip(filt).zip(recon_x)
-                    {
-                        let recon_x = *recon_a >> 1;
-
-                        *recon_v = (*filt_x).wrapping_add(recon_x);
-                        *recon_a = *recon_v;
-                    }
-                }
-            }
-            FilterMethod::Paeth =>
-            {
-                let mut max_recon: [u8; 4] = [0; 4];
-                // handle leftmost byte explicitly
-                for i in 0..components
-                {
-                    out[i] = first_scanline[i + 1];
-                    max_recon[i] = out[i];
-                }
-
-                for (filt, out_px) in first_scanline[1 + components..]
-                    .chunks(components)
-                    .zip(out[components..].chunks_exact_mut(components))
-                {
-                    for ((recon_a, filt_x), out_p) in max_recon.iter_mut().zip(filt).zip(out_px)
-                    {
-                        let paeth_res = paeth(*recon_a, 0, 0);
-
-                        *out_p = (*filt_x).wrapping_add(paeth_res);
-                        *recon_a = *out_p;
-                    }
-                }
-            }
-            _ => unreachable!()
-        }
-
-        // so now we have the first row/scanline copied, we become a little fancy
-        //
-        //
-        // ┌─────┬─────┐
-        // │ c   │  b  │
-        // ├─────┼─────┤
-        // │ a   │ x   │
-        // └─────┴─────┘
-        //
-        // This is the loop filter,
-        // the only trick we have is how we do get the top row
-        //
-        // Complicated filters are handled in filters.rs
-
-        let mut prev_row_start = 0;
-        let width_stride = chunk_size - 1;
-
-        let mut out_position = width_stride;
-
-        for in_stride in chunks
-        {
-            // Split output into current and previous
-            let (prev, current) = out.split_at_mut(out_position);
-            // get the previous row.
-            let prev_row = &prev[prev_row_start..prev_row_start + width_stride];
-
-            prev_row_start += width_stride;
-            out_position += width_stride;
-            // take filter
-            let filter_byte = in_stride[0];
-            let raw = &in_stride[1..];
-            // get it's type
-            let filter = FilterMethod::from_int(filter_byte)
-                .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
-
-            assert_eq!(prev_row.len(), in_stride.len() - 1);
-
-            match filter
-            {
-                FilterMethod::None =>
-                {
-                    // memcpy
-                    current[0..width_stride].copy_from_slice(raw);
-                }
-                FilterMethod::Average =>
-                {
-                    handle_avg(prev_row, raw, current, components);
-                }
-                FilterMethod::Sub =>
-                {
-                    handle_sub(raw, current, components);
-                }
-                FilterMethod::Up =>
-                {
-                    for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row)
-                    {
-                        *recon = (*filt).wrapping_add(*up)
-                    }
-                }
-                FilterMethod::Paeth =>
-                {
-                    handle_paeth(prev_row, &in_stride[1..], current, components);
-                }
-                FilterMethod::Unkwown =>
-                {
-                    unreachable!()
-                }
-            }
-        }
-
-        // trim out
-        let new_len = info.width * info.height * usize::from(info.color.num_components());
-
-        out.truncate(new_len);
-
-        Ok(out)
+        decoder.decode_zlib().map_err(PngErrors::ZlibDecodeErrors)
     }
 }
