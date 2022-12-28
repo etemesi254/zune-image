@@ -5,7 +5,8 @@ pub enum PngErrors
     BadSignature,
     GenericStatic(&'static str),
     Generic(String),
-    BadCrc(u32, u32)
+    BadCrc(u32, u32),
+    ZlibDecodeErrors(zune_inflate::errors::DecodeErrors)
 }
 impl Debug for PngErrors
 {
@@ -18,9 +19,12 @@ impl Debug for PngErrors
             Self::Generic(val) => writeln!(f, "{:?}", val),
             Self::BadCrc(expected, found) => writeln!(
                 f,
-                "CRC does not match, expected {} but found {}",
-                expected, found
-            )
+                "CRC does not match, expected {expected} but found {found}",
+            ),
+            Self::ZlibDecodeErrors(err) =>
+            {
+                writeln!(f, "Error decoding idat chunks {:?}", err)
+            }
         }
     }
 }
@@ -37,5 +41,13 @@ impl From<String> for PngErrors
     fn from(val: String) -> Self
     {
         Self::Generic(val)
+    }
+}
+
+impl From<zune_inflate::errors::DecodeErrors> for PngErrors
+{
+    fn from(val: zune_inflate::errors::DecodeErrors) -> Self
+    {
+        Self::ZlibDecodeErrors(val)
     }
 }
