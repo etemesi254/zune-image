@@ -2,6 +2,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::DecodingResult;
+use zune_inflate::DeflateOptions;
 
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
@@ -565,8 +566,8 @@ impl<'a> PngDecoder<'a>
                     {
                         let cur: &mut [u8; 2] = &mut out[current..current + 2].try_into().unwrap();
 
-                        cur[1] = scale * ((in_val >> 4) & 0x0f);
-                        cur[2] = scale * ((in_val) & 0x0f);
+                        cur[0] = scale * ((in_val >> 4) & 0x0f);
+                        cur[1] = scale * ((in_val) & 0x0f);
 
                         k -= 2;
 
@@ -611,8 +612,11 @@ impl<'a> PngDecoder<'a>
         // because it controls the allocation and doesn't have to check for near EOB
         // runs.
         //
+        let size_hint = (self.png_info.width + 1) * self.png_info.height;
 
-        let mut decoder = zune_inflate::DeflateDecoder::new(&self.idat_chunks);
+        let option = DeflateOptions::default().set_size_hint(size_hint);
+
+        let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
         decoder.decode_zlib().map_err(PngErrors::ZlibDecodeErrors)
     }
