@@ -1,9 +1,21 @@
 // copied from zune-image/gamma
+/// Gamma correct an image
+///
+/// # Arguments
+/// - pixels: Image pixels
+/// - value: Recorded gamma of the image, this is what is found in the gAMA chunk after dividing by 100000
+/// - max_value: Maximum pixel value, for 8 bit or less images this is 255, for 16 bit images this is 65535
+/// # Note
+/// It is recommended that you call this once, after having all images, not
+/// repeatedly per scanline
 #[allow(clippy::needless_range_loop)]
 pub fn gamma_correct<T>(pixels: &mut [T], value: f32, max_value: u16)
 where
     T: Copy + NumOps<T> + Default
 {
+    // build a lookup table which we use for gamma correction in the next stage
+    // it is faster to do it this way as calling pow in the inner loop is slow
+
     // must be inclusive so that 65535 and 255 are covered
     let mut lut = vec![f32::default(); usize::from(max_value) + 1];
 
