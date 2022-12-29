@@ -35,11 +35,12 @@ fn default_chunk_handler(
 #[derive(Copy, Clone)]
 pub struct PngOptions
 {
-    pub(crate) max_width:     usize,
-    pub(crate) max_height:    usize,
-    pub(crate) chunk_handler: UnkownChunkHandler,
-    pub(crate) _strict_mode:  bool,
-    pub(crate) confirm_crc:   bool
+    pub(crate) max_width:         usize,
+    pub(crate) max_height:        usize,
+    pub(crate) chunk_handler:     UnkownChunkHandler,
+    pub(crate) strict_mode:       bool,
+    pub(crate) confirm_checksums: bool,
+    pub(crate) gama_correct:      bool
 }
 
 impl Default for PngOptions
@@ -47,11 +48,12 @@ impl Default for PngOptions
     fn default() -> Self
     {
         Self {
-            max_width:     1 << 17,
-            max_height:    1 << 17,
-            chunk_handler: default_chunk_handler,
-            _strict_mode:  false,
-            confirm_crc:   true
+            max_width:         1 << 17,
+            max_height:        1 << 17,
+            chunk_handler:     default_chunk_handler,
+            strict_mode:       false,
+            confirm_checksums: true,
+            gama_correct:      true
         }
     }
 }
