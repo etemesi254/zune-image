@@ -16,7 +16,7 @@ impl DecodingResult
     /// return None.
     ///
     /// Useful for de-sugaring the result of a decoding operation
-    /// into row bytes
+    /// into raw bytes
     ///
     /// # Example
     /// ```
