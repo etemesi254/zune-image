@@ -217,6 +217,24 @@ impl<'a> PngDecoder<'a>
                 return Err(PngErrors::Generic(msg));
             }
         }
+        // skip crc
+        self.stream.skip(4);
+
+        Ok(())
+    }
+    pub(crate) fn parse_gama(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    {
+        if self.options.strict_mode && chunk.length != 4
+        {
+            let error = format!("Gama chunk length is not 4 but {}", chunk.length);
+            return Err(PngErrors::Generic(error));
+        }
+
+        self.gama = self.stream.get_u32_be();
+
+        // skip crc
+        self.stream.skip(4);
+
         Ok(())
     }
 }
