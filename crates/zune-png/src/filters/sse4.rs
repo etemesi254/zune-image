@@ -374,6 +374,7 @@ pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
     }
 }
 
+#[target_feature(enable = "sse2")]
 unsafe fn defilter_avg4_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     /* The Avg filter predicts each pixel as the (truncated) average of a and b.

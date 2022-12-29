@@ -28,5 +28,6 @@ mod decoder;
 mod enums;
 pub mod error;
 mod filters;
+mod gamma_correct;
 mod headers;
 mod options;
