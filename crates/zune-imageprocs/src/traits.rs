@@ -48,6 +48,10 @@ pub trait NumOps<T>
 
     /// Returns `1` representation as type T
     fn one() -> T;
+
+    /// Return this as number casted
+    /// to usize
+    fn to_usize(self) -> usize;
 }
 
 macro_rules! numops_for_int {
@@ -104,6 +108,11 @@ macro_rules! numops_for_int {
             fn saturating_sub(self, other: $int) -> $int
             {
                 self.saturating_sub(other)
+            }
+            #[inline(always)]
+            fn to_usize(self) -> usize
+            {
+                self as usize
             }
         }
     };
