@@ -42,7 +42,30 @@ fn decode_test(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("PNG decoding");
+    let mut group = c.benchmark_group("PNG decoding baseline");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("PNG decoding Zune", |b| {
+        b.iter(|| black_box(decode_zune(data.as_slice())))
+    });
+
+    group.bench_function("PNG Decoding image-rs", |b| {
+        b.iter(|| black_box(decode_ref(data.as_slice())))
+    });
+
+    group.bench_function("PNG Decoding spng", |b| {
+        b.iter(|| black_box(decode_spng(data.as_slice())))
+    });
+}
+
+fn decode_test_interlaced(c: &mut Criterion)
+{
+    let path =
+        env!("CARGO_MANIFEST_DIR").to_string() + "/tests/benchmarks/speed_bench_interlaced.png";
+
+    let data = read(path).unwrap();
+
+    let mut group = c.benchmark_group("PNG decoding interlaced 8bpp");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("PNG decoding Zune", |b| {
@@ -62,6 +85,6 @@ criterion_group!(name=benches;
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=decode_test);
+    targets=decode_test,decode_test_interlaced);
 
 criterion_main!(benches);
