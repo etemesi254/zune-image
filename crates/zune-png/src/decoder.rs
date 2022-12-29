@@ -1,3 +1,4 @@
+use log::error;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -10,6 +11,7 @@ use crate::error::PngErrors;
 use crate::filters::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
+use crate::gamma_correct::gamma_correct;
 use crate::options::PngOptions;
 
 #[derive(Copy, Clone)]
@@ -41,7 +43,8 @@ pub struct PngDecoder<'a>
     pub(crate) png_info:    PngInfo,
     pub(crate) palette:     Vec<u8>,
     pub(crate) idat_chunks: Vec<u8>,
-    pub(crate) out:         Vec<u8>
+    pub(crate) out:         Vec<u8>,
+    pub(crate) gama:        u32
 }
 
 impl<'a> PngDecoder<'a>
@@ -61,7 +64,8 @@ impl<'a> PngDecoder<'a>
             palette: Vec::new(),
             png_info: PngInfo::default(),
             idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out: Vec::new()
+            out: Vec::new(),
+            gama: 0 // used also to indicate if we should do gama unfiltering
         }
     }
 
@@ -126,7 +130,7 @@ impl<'a> PngDecoder<'a>
             b"IEND" => PngChunkType::IEND,
             b"pHYs" => PngChunkType::pHYs,
             b"tIME" => PngChunkType::tIME,
-
+            b"gAMA" => PngChunkType::gAMA,
             _ => PngChunkType::unkn
         };
 
@@ -144,7 +148,7 @@ impl<'a> PngDecoder<'a>
         // Confirm the CRC here.
         #[cfg(feature = "crc")]
         {
-            if self.options.confirm_crc
+            if self.options.confirm_checksums
             {
                 use crate::crc::crc32_slice8;
 
@@ -217,6 +221,10 @@ impl<'a> PngDecoder<'a>
                     self.parse_trns(header)?;
                 }
 
+                PngChunkType::gAMA =>
+                {
+                    self.parse_gama(header)?;
+                }
                 PngChunkType::IEND =>
                 {
                     break;
@@ -239,24 +247,23 @@ impl<'a> PngDecoder<'a>
 
         let out_n = usize::from(info.color.num_components());
 
+        let new_len = info.width * info.height * usize::from(info.color.num_components());
+
         if info.interlace_method == InterlaceMethod::Standard
         {
             self.create_png_image_raw(&deflate_data, info.width, info.height)?;
-
-            // images with depth of 8, no interlace or filter can proceed to be returned
-            if info.depth == 8
-            {
-                let new_len = info.width * info.height * usize::from(info.color.num_components());
-                self.out.truncate(new_len);
-                let out = std::mem::take(&mut self.out);
-                return Ok(DecodingResult::U8(out));
-            }
         }
         else if info.interlace_method == InterlaceMethod::Adam7
         {
-            let new_len = info.width * info.height * usize::from(info.color.num_components());
+            // A mad idea would be to make this multithreaded :)
+            // They called me a mad man - Thanos
 
-            let mut final_out = vec![0_u8; new_len];
+            let bytes = if info.depth == 16 { 2 } else { 1 };
+            let out_bytes = out_n * bytes;
+            let new_len_ex = new_len * bytes;
+
+            let mut final_out = vec![0_u8; new_len_ex];
+
             const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
             const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
 
@@ -280,13 +287,9 @@ impl<'a> PngDecoder<'a>
                     image_len += 1;
                     image_len *= y;
 
-                    self.create_png_image_raw(
-                        &deflate_data[image_offset..image_offset + image_len],
-                        x,
-                        y
-                    )?;
-                    let bytes = if info.depth == 16 { 2 } else { 1 };
-                    let out_bytes = out_n * bytes;
+                    let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
+
+                    self.create_png_image_raw(deflate_slice, x, y)?;
 
                     for j in 0..y
                     {
@@ -296,7 +299,6 @@ impl<'a> PngDecoder<'a>
                             let out_x = i * XSPC[p] + XORIG[p];
 
                             let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
-
                             let out_start = (j * x + i) * out_bytes;
 
                             final_out[final_start..final_start + out_bytes]
@@ -307,14 +309,42 @@ impl<'a> PngDecoder<'a>
                 }
             }
             self.out = final_out;
+        }
 
-            if info.depth <= 8
+        if info.depth <= 8
+        {
+            self.out.truncate(new_len);
+
+            let mut out = std::mem::take(&mut self.out);
+
+            if self.gama != 0 && self.options.gama_correct
             {
-                let new_len = info.width * info.height * usize::from(info.color.num_components());
-                self.out.truncate(new_len);
-                let out = std::mem::take(&mut self.out);
-                return Ok(DecodingResult::U8(out));
+                let val = (self.gama as f32) / 100000.0;
+                gamma_correct(&mut out, val, 255);
             }
+            return Ok(DecodingResult::U8(out));
+        }
+        if info.depth == 16
+        {
+            // TODO: This sucks, we should not be allocating a new array for
+            // such.
+            // But Transmuting is unsafe :(
+            let mut new_array = vec![0_u16; new_len];
+
+            for (old, new) in self.out.chunks_exact(2).zip(new_array.iter_mut())
+            {
+                let old_arr: [u8; 2] = old.try_into().unwrap();
+
+                // png treats 16 bit images as network/big endian.
+                *new = u16::from_be_bytes(old_arr);
+            }
+
+            if self.gama != 0 && self.options.gama_correct
+            {
+                let val = (self.gama as f32) / 100000.0;
+                gamma_correct(&mut new_array, val, 65535);
+            }
+            return Ok(DecodingResult::U16(new_array));
         }
 
         Err(PngErrors::GenericStatic("Not yet done"))
@@ -325,8 +355,6 @@ impl<'a> PngDecoder<'a>
         &mut self, deflate_data: &[u8], width: usize, height: usize
     ) -> Result<(), PngErrors>
     {
-        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
-
         let info = &self.png_info;
 
         let bytes = if info.depth == 16 { 2 } else { 1 };
@@ -361,7 +389,7 @@ impl<'a> PngDecoder<'a>
         // do png  un-filtering
         let mut chunk_size;
 
-        let mut components = usize::from(info.color.num_components());
+        let mut components = usize::from(info.color.num_components()) * bytes;
 
         if info.depth < 8
         {
@@ -476,121 +504,127 @@ impl<'a> PngDecoder<'a>
         // make a separate pass to expand bits to pixels
         if info.depth < 8
         {
-            // okay this depth up-scaling can be done in place
-            // stb_image does it, it's a performance benefit to do it that way
-            // but for GOD's sake, there are too many pointer arithmetic and implicit
-            // things I cannot even begin to wrap my head on how to go about it
-            //
-            // So just allocate a new byte, write to that and set it to be
-            // out later on
-            let new_size = height * width * out_n;
-            let mut new_out = vec![0; new_size];
-
-            let mut in_offset = 0;
-
-            for i in 0..height
-            {
-                let mut current = stride * i;
-
-                let scale = if info.color == PngColor::Luma
-                {
-                    DEPTH_SCALE_TABLE[usize::from(info.depth)]
-                }
-                else
-                {
-                    1
-                };
-
-                let mut k = width * out_n;
-                let mut in_val = out[in_offset];
-
-                if info.depth == 1
-                {
-                    while k >= 8
-                    {
-                        let cur: &mut [u8; 8] =
-                            &mut new_out[current..current + 8].try_into().unwrap();
-
-                        cur[0] = scale * ((in_val >> 7) & 0x01);
-                        cur[1] = scale * ((in_val >> 6) & 0x01);
-                        cur[2] = scale * ((in_val >> 5) & 0x01);
-                        cur[3] = scale * ((in_val >> 4) & 0x01);
-                        cur[4] = scale * ((in_val >> 3) & 0x01);
-                        cur[5] = scale * ((in_val >> 2) & 0x01);
-                        cur[6] = scale * ((in_val >> 1) & 0x01);
-                        cur[7] = scale * ((in_val) & 0x01);
-
-                        in_offset += 1;
-                        current += 8;
-
-                        in_val = out[in_offset];
-
-                        k -= 8;
-                    }
-                    for p in 0..k
-                    {
-                        let shift = (7_usize).wrapping_sub(p);
-                        new_out[current] = scale * ((in_val >> shift) & 0x01);
-                        current += 1;
-                    }
-                }
-                else if info.depth == 2
-                {
-                    while k >= 4
-                    {
-                        let cur: &mut [u8; 4] = &mut out[current..current + 4].try_into().unwrap();
-
-                        cur[0] = scale * ((in_val >> 6) & 0x03);
-                        cur[1] = scale * ((in_val >> 4) & 0x03);
-                        cur[2] = scale * ((in_val >> 2) & 0x03);
-                        cur[3] = scale * ((in_val) & 0x03);
-
-                        k -= 4;
-
-                        in_offset += 1;
-                        current += 4;
-
-                        in_val = out[in_offset];
-                    }
-
-                    for p in 0..k
-                    {
-                        let shift = (6_usize).wrapping_sub(p * 2);
-                        new_out[current] = scale * ((in_val >> shift) & 0x03);
-                        current += 1;
-                    }
-                }
-                else if info.depth == 4
-                {
-                    while k >= 2
-                    {
-                        let cur: &mut [u8; 2] = &mut out[current..current + 2].try_into().unwrap();
-
-                        cur[0] = scale * ((in_val >> 4) & 0x0f);
-                        cur[1] = scale * ((in_val) & 0x0f);
-
-                        k -= 2;
-
-                        in_offset += 1;
-                        current += 2;
-
-                        in_val = out[in_offset];
-                    }
-
-                    // leftovers
-                    for p in 0..k
-                    {
-                        let shift = (4_usize).wrapping_sub(p * 4);
-                        new_out[current] = scale * ((in_val >> shift) & 0x0f);
-                        current += 1;
-                    }
-                }
-                in_offset += 1;
-            }
-            self.out = new_out;
+            self.expand_bits_to_byte(height, width, stride, out_n)
         }
 
         Ok(())
+    }
+    fn expand_bits_to_byte(&mut self, height: usize, width: usize, stride: usize, out_n: usize)
+    {
+        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
+
+        // okay this depth up-scaling can be done in place
+        // stb_image does it, it's a performance benefit to do it that way
+        // but for GOD's sake, there are too many pointer arithmetic and implicit
+        // things I cannot even begin to wrap my head on how to go about it
+        //
+        // So just allocate a new byte, write to that and set it to be
+        // out later on
+        let info = &self.png_info;
+        let new_size = height * width * out_n;
+        let mut new_out = vec![0; new_size];
+
+        let mut in_offset = 0;
+
+        for i in 0..height
+        {
+            let mut current = stride * i;
+
+            let scale = if info.color == PngColor::Luma
+            {
+                DEPTH_SCALE_TABLE[usize::from(info.depth)]
+            }
+            else
+            {
+                1
+            };
+
+            let mut k = width * out_n;
+            let mut in_val = self.out[in_offset];
+
+            if info.depth == 1
+            {
+                while k >= 8
+                {
+                    let cur: &mut [u8; 8] = &mut new_out[current..current + 8].try_into().unwrap();
+
+                    cur[0] = scale * ((in_val >> 7) & 0x01);
+                    cur[1] = scale * ((in_val >> 6) & 0x01);
+                    cur[2] = scale * ((in_val >> 5) & 0x01);
+                    cur[3] = scale * ((in_val >> 4) & 0x01);
+                    cur[4] = scale * ((in_val >> 3) & 0x01);
+                    cur[5] = scale * ((in_val >> 2) & 0x01);
+                    cur[6] = scale * ((in_val >> 1) & 0x01);
+                    cur[7] = scale * ((in_val) & 0x01);
+
+                    in_offset += 1;
+                    current += 8;
+
+                    in_val = self.out[in_offset];
+
+                    k -= 8;
+                }
+                for p in 0..k
+                {
+                    let shift = (7_usize).wrapping_sub(p);
+                    new_out[current] = scale * ((in_val >> shift) & 0x01);
+                    current += 1;
+                }
+            }
+            else if info.depth == 2
+            {
+                while k >= 4
+                {
+                    let cur: &mut [u8; 4] = &mut self.out[current..current + 4].try_into().unwrap();
+
+                    cur[0] = scale * ((in_val >> 6) & 0x03);
+                    cur[1] = scale * ((in_val >> 4) & 0x03);
+                    cur[2] = scale * ((in_val >> 2) & 0x03);
+                    cur[3] = scale * ((in_val) & 0x03);
+
+                    k -= 4;
+
+                    in_offset += 1;
+                    current += 4;
+
+                    in_val = self.out[in_offset];
+                }
+
+                for p in 0..k
+                {
+                    let shift = (6_usize).wrapping_sub(p * 2);
+                    new_out[current] = scale * ((in_val >> shift) & 0x03);
+                    current += 1;
+                }
+            }
+            else if info.depth == 4
+            {
+                while k >= 2
+                {
+                    let cur: &mut [u8; 2] = &mut self.out[current..current + 2].try_into().unwrap();
+
+                    cur[0] = scale * ((in_val >> 4) & 0x0f);
+                    cur[1] = scale * ((in_val) & 0x0f);
+
+                    k -= 2;
+
+                    in_offset += 1;
+                    current += 2;
+
+                    in_val = self.out[in_offset];
+                }
+
+                // leftovers
+                for p in 0..k
+                {
+                    let shift = (4_usize).wrapping_sub(p * 4);
+                    new_out[current] = scale * ((in_val >> shift) & 0x0f);
+                    current += 1;
+                }
+            }
+            in_offset += 1;
+        }
+        self.out = new_out;
     }
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
@@ -614,7 +648,9 @@ impl<'a> PngDecoder<'a>
         //
         let size_hint = (self.png_info.width + 1) * self.png_info.height;
 
-        let option = DeflateOptions::default().set_size_hint(size_hint);
+        let option = DeflateOptions::default()
+            .set_size_hint(size_hint)
+            .set_confirm_checksum(self.options.confirm_checksums);
 
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
