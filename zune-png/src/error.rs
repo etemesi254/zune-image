@@ -15,15 +15,15 @@ impl Debug for PngErrors
         match self
         {
             Self::BadSignature => writeln!(f, "Bad PNG signature, not a png"),
-            Self::GenericStatic(val) => writeln!(f, "{:?}", val),
-            Self::Generic(val) => writeln!(f, "{:?}", val),
+            Self::GenericStatic(val) => writeln!(f, "{val:?}"),
+            Self::Generic(val) => writeln!(f, "{val:?}"),
             Self::BadCrc(expected, found) => writeln!(
                 f,
                 "CRC does not match, expected {expected} but found {found}",
             ),
             Self::ZlibDecodeErrors(err) =>
             {
-                writeln!(f, "Error decoding idat chunks {:?}", err)
+                writeln!(f, "Error decoding idat chunks {err:?}")
             }
         }
     }
