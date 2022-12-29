@@ -1,4 +1,3 @@
-use log::error;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -37,14 +36,15 @@ pub struct PngInfo
 
 pub struct PngDecoder<'a>
 {
-    pub(crate) seen_hdr:    bool,
-    pub(crate) stream:      ZByteReader<'a>,
-    pub(crate) options:     PngOptions,
-    pub(crate) png_info:    PngInfo,
-    pub(crate) palette:     Vec<u8>,
-    pub(crate) idat_chunks: Vec<u8>,
-    pub(crate) out:         Vec<u8>,
-    pub(crate) gama:        u32
+    pub(crate) seen_hdr:     bool,
+    pub(crate) stream:       ZByteReader<'a>,
+    pub(crate) options:      PngOptions,
+    pub(crate) png_info:     PngInfo,
+    pub(crate) palette:      Vec<u8>,
+    pub(crate) idat_chunks:  Vec<u8>,
+    pub(crate) out:          Vec<u8>,
+    pub(crate) gama:         u32,
+    pub(crate) un_palettize: bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -65,7 +65,8 @@ impl<'a> PngDecoder<'a>
             png_info: PngInfo::default(),
             idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
             out: Vec::new(),
-            gama: 0 // used also to indicate if we should do gama unfiltering
+            gama: 0, // used also to indicate if we should do gama unfiltering
+            un_palettize: false
         }
     }
 
@@ -247,7 +248,7 @@ impl<'a> PngDecoder<'a>
 
         let out_n = usize::from(info.color.num_components());
 
-        let new_len = info.width * info.height * usize::from(info.color.num_components());
+        let mut new_len = info.width * info.height * usize::from(info.color.num_components());
 
         if info.interlace_method == InterlaceMethod::Standard
         {
@@ -311,6 +312,16 @@ impl<'a> PngDecoder<'a>
             self.out = final_out;
         }
 
+        if self.un_palettize && !self.palette.is_empty()
+        {
+            // for palettized data, always use RGB
+            // may change for future versions
+            self.expand_palette(3);
+            self.png_info.color = PngColor::RGB;
+            // initially it was 1, since palette num_components is 1, so multiply
+            // by three since for palettized images we turn it to RGB
+            new_len *= 3;
+        }
         if info.depth <= 8
         {
             self.out.truncate(new_len);
@@ -655,5 +666,36 @@ impl<'a> PngDecoder<'a>
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
         decoder.decode_zlib().map_err(PngErrors::ZlibDecodeErrors)
+    }
+
+    /// Expand a palettized image to the number of components
+    ///
+    /// Currently the number of expected components is three
+    fn expand_palette(&mut self, components: usize)
+    {
+        if components == 0
+        {
+            return;
+        }
+        let data = &self.out;
+
+        let info = self.png_info;
+        let out_size = info.width * info.height * components;
+
+        let mut out = vec![0; out_size];
+
+        if components == 3
+        {
+            for (px, entry) in out.chunks_exact_mut(3).zip(data)
+            {
+                let entry_start = usize::from(*entry) * 3;
+
+                px[0] = self.palette[entry_start];
+                px[1] = self.palette[entry_start + 1];
+                px[2] = self.palette[entry_start + 2];
+            }
+        }
+
+        self.out = out;
     }
 }

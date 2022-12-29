@@ -152,16 +152,18 @@ impl<'a> PngDecoder<'a>
         }
 
         // allocate palette
-        self.palette.resize(256 * 4, 0);
+        self.palette.resize(256 * 3, 0);
 
-        for pal_chunk in self.palette.chunks_exact_mut(4)
+        for pal_chunk in self.palette.chunks_exact_mut(3)
         {
             pal_chunk[0] = self.stream.get_u8();
             pal_chunk[1] = self.stream.get_u8();
             pal_chunk[2] = self.stream.get_u8();
-            pal_chunk[0] = 255;
         }
 
+        // skip crc chunk
+        self.stream.skip(4);
+        self.un_palettize = true;
         Ok(())
     }
 
