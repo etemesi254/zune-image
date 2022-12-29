@@ -1,26 +1,45 @@
 use crate::traits::NumOps;
 
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless,
+    clippy::needless_range_loop,
+    clippy::cast_precision_loss
+)]
 pub fn gamma<T>(pixels: &mut [T], value: f32, max_value: u16)
 where
-    T: Copy + NumOps<T>,
-    f32: std::convert::From<T>
+    T: Copy + NumOps<T> + Default
 {
-    // We have to do the inverse ourselves, fp math won't convert it
-    // to inv slightly slowing the loop below.
-    //
-    // The reason we are slow is because the powf cannot be inlines
-    // so this can't be vectorized and unrolling doesn't help as execution
-    // always has to jump to the caller
-    let value_inv = 1.0 / 255.0;
+    let mut lut = vec![f32::default(); usize::from(max_value) + 1];
 
-    let max_value = max_value as f32;
-    for pixel in pixels
     {
-        let pixel_f32 = f32::from(*pixel) * value_inv;
-        let gamma_corrected = 255.0 * pixel_f32.powf(value);
-        let new_pix_val = 255.0 * (gamma_corrected * value_inv).powf(1.0 / 2.2);
-        *pixel = T::from_f32(new_pix_val.clamp(0.0, max_value));
+        // create a lookup table for conversion.
+
+        let max_usize = usize::from(max_value);
+        let max_value = max_value as f32;
+        let value_inv = 1.0 / max_value;
+
+        // inclusive so that 65535 and 255 are covered
+        for x in 0..=max_usize
+        {
+            let pixel_f32 = (x as f32) * value_inv;
+            let gamma_corrected = max_value * pixel_f32.powf(value);
+
+            let mut new_pix_val = max_value * (gamma_corrected * value_inv).powf(1.0 / 2.2);
+
+            if new_pix_val > max_value
+            {
+                new_pix_val = max_value;
+            }
+
+            lut[x] = new_pix_val;
+        }
+    }
+    // now do gamma correction
+    for px in pixels
+    {
+        *px = T::from_f32(lut[(*px).to_usize()]);
     }
 }
 
