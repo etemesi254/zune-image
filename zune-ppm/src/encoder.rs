@@ -76,7 +76,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
         &mut self, version: PPMVersions, width: usize, height: usize, max_val: usize
     ) -> Result<(), PPMErrors>
     {
-        let header = format!("{} {} {} {}\n", version, width, height, max_val);
+        let header = format!("{version}\n{width}\n{height}\n{max_val}\n");
 
         self.writer.write_all(header.as_bytes())?;
 
