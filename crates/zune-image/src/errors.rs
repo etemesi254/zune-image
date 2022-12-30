@@ -9,17 +9,7 @@ use zune_core::colorspace::ColorSpace;
 /// all decoding,processing and encoding errors possible
 pub enum ImgErrors
 {
-    #[cfg(feature = "zune-jpeg")]
-    JpegDecodeErrors(zune_jpeg::errors::DecodeErrors),
-    #[cfg(feature = "png")]
-    PngDecodeErrors(zune_png::error::PngErrors),
-    #[cfg(feature = "ppm")]
-    PPMDecodeErrors(zune_ppm::PPMDecodeErrors),
-    #[cfg(feature = "psd")]
-    PSDDecodeErrors(zune_psd::errors::PSDDecodeErrors),
-    #[cfg(feature = "qoi")]
-    QoiDecodeErrors(zune_qoi::QoiErrors),
-
+    ImageDecodeErrors(String),
     DimensionsMisMatch(usize, usize),
     UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
     NoImageForOperations,
@@ -52,8 +42,7 @@ pub enum ImgEncodeErrors
     Generic(String),
     GenericStatic(&'static str),
     UnsupportedColorspace(ColorSpace, &'static [ColorSpace]),
-    #[cfg(feature = "ppm")]
-    PPMEncodeErrors(zune_ppm::PPMErrors)
+    ImageEncodeErrors(String)
 }
 
 impl Debug for ImgErrors
@@ -62,31 +51,11 @@ impl Debug for ImgErrors
     {
         match self
         {
-            #[cfg(feature = "jpeg")]
-            Self::JpegDecodeErrors(ref error) =>
+            Self::ImageDecodeErrors(err) =>
             {
-                writeln!(f, "Jpeg decoding failed:{error:?}")
+                writeln!(f, "{err}")
             }
-            #[cfg(feature = "png")]
-            Self::PngDecodeErrors(ref error) =>
-            {
-                writeln!(f, "Png decoding failed:{error:?}")
-            }
-            #[cfg(feature = "ppm")]
-            Self::PPMDecodeErrors(ref error) =>
-            {
-                writeln!(f, "PPM decoding failed:{error:?}")
-            }
-            #[cfg(feature = "psd")]
-            Self::PSDDecodeErrors(ref error) =>
-            {
-                writeln!(f, "PSD decoding failed:{error:?}")
-            }
-            #[cfg(feature = "qoi")]
-            Self::QoiDecodeErrors(ref error) =>
-            {
-                writeln!(f, "QOI decoding failed:{error:?}")
-            }
+
             Self::GenericStr(err) =>
             {
                 writeln!(f, "{err}")
@@ -128,7 +97,9 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
 {
     fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
     {
-        ImgErrors::JpegDecodeErrors(from)
+        let err = format!("psd: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
     }
 }
 
@@ -137,7 +108,9 @@ impl From<zune_png::error::PngErrors> for ImgErrors
 {
     fn from(from: zune_png::error::PngErrors) -> Self
     {
-        ImgErrors::PngDecodeErrors(from)
+        let err = format!("png: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
     }
 }
 
@@ -146,7 +119,9 @@ impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
 {
     fn from(from: zune_ppm::PPMDecodeErrors) -> Self
     {
-        ImgErrors::PPMDecodeErrors(from)
+        let err = format!("psd: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
     }
 }
 
@@ -195,36 +170,14 @@ impl Debug for ImgOperationsErrors
     }
 }
 
-impl Debug for ImgEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
-            Self::Generic(ref string) => writeln!(f, "{string}"),
-            Self::GenericStatic(ref string) => writeln!(f, "{string}"),
-            Self::UnsupportedColorspace(ref found, ref expected) =>
-            {
-                writeln!(
-                    f,
-                    "Found colorspace {found:?} but the encoder supports {expected:?}"
-                )
-            }
-            #[cfg(feature = "ppm")]
-            Self::PPMEncodeErrors(ref error) =>
-            {
-                writeln!(f, "{error:?}")
-            }
-        }
-    }
-}
-
 #[cfg(feature = "ppm")]
 impl From<zune_ppm::PPMErrors> for ImgEncodeErrors
 {
     fn from(error: zune_ppm::PPMErrors) -> Self
     {
-        ImgEncodeErrors::PPMEncodeErrors(error)
+        let err = format!("ppm: {error:?}");
+
+        ImgEncodeErrors::ImageEncodeErrors(err)
     }
 }
 
@@ -233,7 +186,9 @@ impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
 {
     fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
     {
-        ImgErrors::PSDDecodeErrors(error)
+        let err = format!("psd: {error:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
     }
 }
 
@@ -242,7 +197,9 @@ impl From<zune_qoi::QoiErrors> for ImgErrors
 {
     fn from(error: zune_qoi::QoiErrors) -> Self
     {
-        ImgErrors::QoiDecodeErrors(error)
+        let err = format!("qoi: {error:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
     }
 }
 
@@ -259,5 +216,28 @@ impl From<&'static str> for ImgErrors
     fn from(s: &'static str) -> ImgErrors
     {
         ImgErrors::GenericStr(s)
+    }
+}
+
+impl Debug for ImgEncodeErrors
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        match self
+        {
+            Self::Generic(ref string) => writeln!(f, "{string}"),
+            Self::GenericStatic(ref string) => writeln!(f, "{string}"),
+            Self::UnsupportedColorspace(ref found, ref expected) =>
+            {
+                writeln!(
+                    f,
+                    "Found colorspace {found:?} but the encoder supports {expected:?}"
+                )
+            }
+            Self::ImageEncodeErrors(err) =>
+            {
+                writeln!(f, "Image could not be encoded, reason: {err}")
+            }
+        }
     }
 }
