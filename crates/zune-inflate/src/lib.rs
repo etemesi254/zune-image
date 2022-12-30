@@ -34,8 +34,14 @@
 //! To disable a feature , modify Cargo.toml to disable default features
 //! and add the needed feature , e.g below will include zlib decoding and disable gzip decoding
 //! ```toml
-//! zune-inflate={version="0.2",default-features=false,feature=["zlib"]}
+//! zune-inflate={ version="0.2",default-features=false,feature=["zlib"]}
 //! ```
+//!
+//! # Errors
+//! In case of an error, the library returns the error and the decoded
+//! data up to when the error was encountered hence that data can be recovered
+//! but no data further than that can be recovered
+//!
 //!
 //! # Usage
 //!
