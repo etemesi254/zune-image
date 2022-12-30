@@ -20,6 +20,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
     }
 
     #[cfg(feature = "sse")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // use sse features where applicable
         if is_x86_feature_detected!("sse2")
@@ -69,6 +70,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
         return;
     }
     #[cfg(feature = "sse")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("sse2")
         {
@@ -106,6 +108,7 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
     }
 
     #[cfg(feature = "sse")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("sse4.1")
         {
