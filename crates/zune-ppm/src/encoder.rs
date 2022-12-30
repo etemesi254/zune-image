@@ -27,11 +27,11 @@ impl Debug for PPMErrors
         {
             PPMErrors::Static(ref errors) =>
             {
-                writeln!(f, "{}", errors)
+                writeln!(f, "{errors}")
             }
             PPMErrors::IOErrors(ref err) =>
             {
-                writeln!(f, "{}", err)
+                writeln!(f, "{err}")
             }
         }
     }

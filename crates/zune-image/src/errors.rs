@@ -65,36 +65,36 @@ impl Debug for ImgErrors
             #[cfg(feature = "jpeg")]
             Self::JpegDecodeErrors(ref error) =>
             {
-                writeln!(f, "Jpeg decoding failed:{:?}", error)
+                writeln!(f, "Jpeg decoding failed:{error:?}")
             }
             #[cfg(feature = "png")]
             Self::PngDecodeErrors(ref error) =>
             {
-                writeln!(f, "Png decoding failed:{:?}", error)
+                writeln!(f, "Png decoding failed:{error:?}")
             }
             #[cfg(feature = "ppm")]
             Self::PPMDecodeErrors(ref error) =>
             {
-                writeln!(f, "PPM decoding failed:{:?}", error)
+                writeln!(f, "PPM decoding failed:{error:?}")
             }
             #[cfg(feature = "psd")]
             Self::PSDDecodeErrors(ref error) =>
             {
-                writeln!(f, "PSD decoding failed:{:?}", error)
+                writeln!(f, "PSD decoding failed:{error:?}")
             }
             #[cfg(feature = "qoi")]
             Self::QoiDecodeErrors(ref error) =>
             {
-                writeln!(f, "QOI decoding failed:{:?}", error)
+                writeln!(f, "QOI decoding failed:{error:?}")
             }
             Self::GenericStr(err) =>
             {
-                writeln!(f, "{}", err)
+                writeln!(f, "{err}")
             }
 
             Self::GenericString(err) =>
             {
-                writeln!(f, "{}", err)
+                writeln!(f, "{err}")
             }
             Self::NoImageForOperations =>
             {
@@ -106,19 +106,18 @@ impl Debug for ImgErrors
             }
             Self::NoImageBuffer => writeln!(f, "No image buffer present"),
 
-            Self::OperationsError(ref error) => writeln!(f, "{:?}", error),
+            Self::OperationsError(ref error) => writeln!(f, "{error:?}"),
 
-            Self::EncodeErrors(ref err) => writeln!(f, "{:?}", err),
+            Self::EncodeErrors(ref err) => writeln!(f, "{err:?}"),
             ImgErrors::UnsupportedColorspace(present, operation, supported) =>
             {
-                writeln!(f,"Unsupported colorspace {:?}, for the operation {}\nSupported colorspaces are {:?}",present,operation,supported)
+                writeln!(f, "Unsupported colorspace {present:?}, for the operation {operation}\nSupported colorspaces are {supported:?}")
             }
             ImgErrors::DimensionsMisMatch(expected, found) =>
             {
                 writeln!(
                     f,
-                    "Dimensions mismatch, expected {} but found {}",
-                    expected, found
+                    "Dimensions mismatch, expected {expected} but found {found}"
                 )
             }
         }
@@ -174,27 +173,23 @@ impl Debug for ImgOperationsErrors
         {
             Self::InvalidChannelLayout(reason) =>
             {
-                writeln!(f, "{:}", reason)
+                writeln!(f, "{reason:}")
             }
             Self::Generic(reason) =>
             {
-                writeln!(f, "{:}", reason)
+                writeln!(f, "{reason:}")
             }
             Self::GenericString(err) =>
             {
-                writeln!(f, "{}", err)
+                writeln!(f, "{err}")
             }
             Self::WrongColorspace(ref expected, ref found) =>
             {
-                writeln!(
-                    f,
-                    "Expected {:?} colorspace but found {:?}",
-                    expected, found
-                )
+                writeln!(f, "Expected {expected:?} colorspace but found {found:?}")
             }
             Self::WrongComponents(expected, found) =>
             {
-                writeln!(f, "Expected {} components and found {}", expected, found)
+                writeln!(f, "Expected {expected} components and found {found}")
             }
         }
     }
@@ -206,20 +201,19 @@ impl Debug for ImgEncodeErrors
     {
         match self
         {
-            Self::Generic(ref string) => writeln!(f, "{}", string),
-            Self::GenericStatic(ref string) => writeln!(f, "{}", string),
+            Self::Generic(ref string) => writeln!(f, "{string}"),
+            Self::GenericStatic(ref string) => writeln!(f, "{string}"),
             Self::UnsupportedColorspace(ref found, ref expected) =>
             {
                 writeln!(
                     f,
-                    "Found colorspace {:?} but the encoder supports {:?}",
-                    found, expected
+                    "Found colorspace {found:?} but the encoder supports {expected:?}"
                 )
             }
             #[cfg(feature = "ppm")]
             Self::PPMEncodeErrors(ref error) =>
             {
-                writeln!(f, "{:?}", error)
+                writeln!(f, "{error:?}")
             }
         }
     }

@@ -147,7 +147,7 @@ impl<'a> JpegDecoder<'a>
             let k = self.z_order[0];
 
             if k >= self.components.len() {
-                return Err(DecodeErrors::Format(format!("Cannot find component {}, corrupt image", k)));
+                return Err(DecodeErrors::Format(format!("Cannot find component {k}, corrupt image")));
             }
 
             let (mcu_width, mcu_height);
@@ -204,9 +204,9 @@ impl<'a> JpegDecoder<'a>
                     } else {
                         let pos = self.components[k].ac_huff_table;
                         let ac_table = self.ac_huffman_tables.get(pos)
-                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", pos)))?
+                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{pos}")))?
                             .as_ref()
-                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized", pos)))?;
+                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {pos} not initialized")))?;
 
                         if self.succ_high == 0
                         {
@@ -301,7 +301,7 @@ impl<'a> JpegDecoder<'a>
                                 let y2 = i * component.vertical_sample + v_samp;
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
 
-                                let data = &mut buffer[n as usize][position];
+                                let data = &mut buffer[n][position];
 
                                 if self.succ_high == 0
                                 {

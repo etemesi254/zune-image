@@ -25,7 +25,7 @@ impl Debug for PSDDecodeErrors
         {
             PSDDecodeErrors::Generic(reason) =>
             {
-                writeln!(f, "{}", reason)
+                writeln!(f, "{reason}")
             }
             PSDDecodeErrors::WrongMagicBytes(bytes) =>
             {

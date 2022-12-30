@@ -116,8 +116,7 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
     if p0 == p1
     {
         return Err(ImgErrors::GenericString(format!(
-            "Cannot use {:?} as both input and output",
-            p0
+            "Cannot use {p0:?} as both input and output"
         )));
     }
     let in_path = Path::new(p0);
@@ -126,16 +125,14 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
     if !in_path.exists()
     {
         return Err(ImgErrors::GenericString(format!(
-            "Path {:?}, does not exist",
-            in_path
+            "Path {in_path:?}, does not exist"
         )));
     }
 
     if !in_path.is_file()
     {
         return Err(ImgErrors::GenericString(format!(
-            "Path {:?} is not a file",
-            in_path
+            "Path {in_path:?} is not a file"
         )));
     }
 
@@ -147,7 +144,7 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
         }
         else
         {
-            println!("File {:?} exists, overwrite [y/N]", out_path);
+            println!("File {out_path:?} exists, overwrite [y/N]");
             let mut result = String::new();
 
             stdin().lock().read_line(&mut result).unwrap();
@@ -155,8 +152,7 @@ fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), Im
             if result.trim() != "y"
             {
                 return Err(ImgErrors::GenericString(format!(
-                    "Not overwriting file {:?}",
-                    out_path
+                    "Not overwriting file {out_path:?}"
                 )));
             }
         }

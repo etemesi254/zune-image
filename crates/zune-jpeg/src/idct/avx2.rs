@@ -109,7 +109,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
     {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
-        let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).min(255).max(0) as i16);
+        let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).clamp(0, 255) as i16);
 
         macro_rules! store {
             ($pos:tt,$value:tt) => {
@@ -120,7 +120,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
                         .unwrap()
                         .as_mut_ptr()
                         .cast(),
-                    $value,
+                    $value
                 );
                 $pos += stride;
             };
@@ -162,10 +162,10 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
             let mut t3 = p1 + row2 * 3135;
 
             let mut t0 = YmmRegister {
-                mm256: _mm256_slli_epi32((row0 + row4).mm256, 12),
+                mm256: _mm256_slli_epi32((row0 + row4).mm256, 12)
             };
             let mut t1 = YmmRegister {
-                mm256: _mm256_slli_epi32((row0 - row4).mm256, 12),
+                mm256: _mm256_slli_epi32((row0 - row4).mm256, 12)
             };
 
             let x0 = t0 + t3 + $SCALE_BITS;
@@ -209,13 +209,13 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
     // Process rows
     dct_pass!(512, 10);
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
     // process columns
     dct_pass!(SCALE_BITS, 17);
     transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7,
+        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
     // Pack i32 to i16's,
@@ -239,7 +239,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
                     .unwrap()
                     .as_mut_ptr()
                     .cast(),
-                _mm256_extractf128_si256::<0>(c),
+                _mm256_extractf128_si256::<0>(c)
             );
             $index += stride;
             // second vector
@@ -249,7 +249,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
                     .unwrap()
                     .as_mut_ptr()
                     .cast(),
-                _mm256_extractf128_si256::<1>(c),
+                _mm256_extractf128_si256::<1>(c)
             );
             $index += stride;
         };
@@ -282,7 +282,7 @@ type Reg = YmmRegister;
 #[target_feature(enable = "avx2")]
 unsafe fn transpose(
     v0: &mut Reg, v1: &mut Reg, v2: &mut Reg, v3: &mut Reg, v4: &mut Reg, v5: &mut Reg,
-    v6: &mut Reg, v7: &mut Reg,
+    v6: &mut Reg, v7: &mut Reg
 )
 {
     macro_rules! merge_epi32 {
@@ -351,5 +351,5 @@ unsafe fn transpose(
 #[inline]
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
-    ((z << 6) | (y << 4) | (x << 2) | w) as i32
+    ((z << 6) | (y << 4) | (x << 2) | w)
 }

@@ -224,7 +224,7 @@ pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
 #[target_feature(enable = "sse4.1")]
 unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i
 {
-    return _mm_blendv_epi8(e, t, c);
+    _mm_blendv_epi8(e, t, c)
 
     // SSE 2
     //return _mm_or_si128(_mm_and_si128(c, t), _mm_andnot_si128(c, e));

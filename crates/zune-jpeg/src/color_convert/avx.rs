@@ -415,5 +415,5 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
 #[inline]
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
 {
-    ((z << 6) | (y << 4) | (x << 2) | w) as i32
+    (z << 6) | (y << 4) | (x << 2) | w
 }

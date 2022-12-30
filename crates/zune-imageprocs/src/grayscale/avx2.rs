@@ -9,7 +9,11 @@ use std::arch::x86_64::*;
 use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
 #[target_feature(enable = "avx2")]
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
 pub(crate) unsafe fn convert_rgb_to_grayscale_u16_avx2(
     r: &[u16], g: &[u16], b: &[u16], gr: &mut [u16], max_value: u16
 )

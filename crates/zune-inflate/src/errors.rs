@@ -1,12 +1,30 @@
 use std::fmt::{Debug, Formatter};
 
-pub struct DecodeWrapper
+/// A struct returned when decompression fails
+pub struct InflateDecodeErrors
 {
-    pub error: DecodeErrors,
+    /// reason why decompression fails
+    pub error: DecodeErrorStatus,
+    /// Data up until that decompression stage
     pub data:  Vec<u8>
 }
 
-impl Debug for DecodeWrapper
+impl InflateDecodeErrors
+{
+    /// Create a new decode wrapper with data being
+    /// how many bytes we actually decoded before hitting an error
+    pub fn new(error: DecodeErrorStatus, data: Vec<u8>) -> InflateDecodeErrors
+    {
+        InflateDecodeErrors { error, data }
+    }
+    /// Create a new decode wrapper with an empty vector
+    pub fn new_with_error(error: DecodeErrorStatus) -> InflateDecodeErrors
+    {
+        InflateDecodeErrors::new(error, vec![])
+    }
+}
+
+impl Debug for InflateDecodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
@@ -14,7 +32,7 @@ impl Debug for DecodeWrapper
     }
 }
 
-pub enum DecodeErrors
+pub enum DecodeErrorStatus
 {
     InsufficientData,
     Generic(&'static str),
@@ -25,7 +43,7 @@ pub enum DecodeErrors
     MismatchedAdler(u32, u32)
 }
 
-impl Debug for DecodeErrors
+impl Debug for DecodeErrorStatus
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
