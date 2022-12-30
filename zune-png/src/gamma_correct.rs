@@ -20,10 +20,12 @@ where
     let mut lut = vec![f32::default(); usize::from(max_value) + 1];
 
     let max_usize = usize::from(max_value);
-
     let max_value = max_value as f32;
-
     let value_inv = 1.0 / max_value;
+    // optimizer hint to remove bounds check, these values should be
+    // powers of two, currently we support 255 and 65535
+    assert!(lut.len().is_power_of_two());
+    let lut_mask = lut.len() - 1;
 
     for x in 0..=max_usize
     {
@@ -37,12 +39,12 @@ where
             new_pix_val = max_value;
         }
 
-        lut[x] = new_pix_val;
+        lut[x & lut_mask] = new_pix_val;
     }
     // now do gamma correction
     for px in pixels
     {
-        *px = T::from_f32(lut[(*px).to_usize()]);
+        *px = T::from_f32(lut[(*px).to_usize() & lut_mask]);
     }
 }
 
@@ -71,11 +73,13 @@ impl NumOps<u16> for u16
 
 impl NumOps<u8> for u8
 {
+    #[inline(always)]
     fn to_usize(self) -> usize
     {
         self as usize
     }
 
+    #[inline(always)]
     fn from_f32(other: f32) -> u8
     {
         other as u8

@@ -70,9 +70,9 @@ impl Debug for PPMDecodeErrors
         {
             Self::Generic(val) =>
             {
-                writeln!(f, "{}", val)
+                writeln!(f, "{val}")
             }
-            Self::GenericStatic(val) => writeln!(f, "{}", val)
+            Self::GenericStatic(val) => writeln!(f, "{val}")
         }
     }
 }
@@ -195,7 +195,7 @@ impl<'a> PPMDecoder<'a>
 
             if max_value > usize::from(u16::MAX)
             {
-                let msg = format!("MAX value {} greater than 65535", max_value);
+                let msg = format!("MAX value {max_value} greater than 65535");
 
                 return Err(PPMDecodeErrors::Generic(msg));
             }
@@ -212,7 +212,7 @@ impl<'a> PPMDecoder<'a>
         else
         {
             let len = self.reader.remaining();
-            let msg = format!("Expected at least 3 bytes in header but stream has {}", len);
+            let msg = format!("Expected at least 3 bytes in header but stream has {len}");
 
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -297,7 +297,7 @@ impl<'a> PPMDecoder<'a>
 
         if size != remaining
         {
-            let msg = format!("Expected {} number of bytes but found {}", size, remaining);
+            let msg = format!("Expected {size} number of bytes but found {remaining}");
 
             return Err(PPMDecodeErrors::Generic(msg));
         }

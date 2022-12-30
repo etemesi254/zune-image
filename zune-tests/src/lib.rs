@@ -69,6 +69,7 @@ where
         if directory.path().is_file() && filter(&directory.path())
         // ignore nested directories.
         {
+            dbg!(directory.path());
             // read file
             let file_contents = read(directory.path()).unwrap();
             let pixels = decoder.decode(&file_contents);

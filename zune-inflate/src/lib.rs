@@ -31,6 +31,12 @@
 //!
 //! These features are enabled by default
 //!
+//! To disable a feature , modify Cargo.toml to disable default features
+//! and add the needed feature , e.g below will include zlib decoding and disable gzip decoding
+//! ```toml
+//! zune-inflate={version="0.2",default-features=false,feature=["zlib"]}
+//! ```
+//!
 //! # Usage
 //!
 //! Decoding delfate data
@@ -40,7 +46,7 @@
 //! let totally_valid_data = [0;23];
 //! let mut decoder = DeflateDecoder::new(&totally_valid_data);
 //!
-//! let decompressed =decoder.decode_deflate();
+//! let decompressed =decoder.decode_deflate().unwrap();
 //! ```
 //!
 //! Decoding zlib data
@@ -50,7 +56,7 @@
 //! let totally_valid_data = [0;23];
 //! let mut decoder = DeflateDecoder::new(&totally_valid_data);
 //!
-//! let decompressed =decoder.decode_zlib();
+//! let decompressed =decoder.decode_zlib().unwrap();
 //! ```
 //!
 //! Decoding zlib data without confirming the adler32 checksum

@@ -20,7 +20,7 @@ pub trait DecoderTrait<'a>
     ///  - Any image decoding errors will be propagated to the caller.
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// use zune_image::traits::DecoderTrait;
     /// use zune_jpeg::JpegDecoder;
     /// let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
@@ -110,17 +110,6 @@ pub trait OperationsTrait
     /// # Errors
     /// Any operations error will be propagated to the caller
     ///
-    /// # Example
-    /// ```
-    /// use zune_image::image::Image;
-    /// use zune_image::impls::grayscale::RgbToGrayScale;
-    /// use zune_image::traits::OperationsTrait;
-    ///
-    /// let mut image = Image::new();
-    /// // Convert to grayscale
-    /// let rgb_to_grayscale = RgbToGrayScale::new();
-    /// rgb_to_grayscale.execute(&mut image);
-    /// ```
     ///
     /// [`execute_impl`]: Self::execute_impl
     fn execute(&self, image: &mut Image) -> Result<(), ImgErrors>
@@ -184,22 +173,6 @@ pub trait EncoderTrait
     /// # Arguments
     /// - image: An image which we are trying to encode.
     ///
-    /// # Example
-    /// ```no_run
-    /// use std::fs::File;
-    /// use std::io::BufWriter;
-    /// use zune_image::codecs::ppm::SPPMEncoder;
-    /// use zune_image::image::Image;
-    /// use zune_image::traits::EncoderTrait;
-    ///
-    /// let file = BufWriter::new(File::open("").unwrap());
-    ///
-    /// let mut encoder = SPPMEncoder::new(file);
-    ///
-    /// let image = Image::new();
-    ///
-    /// encoder.encode_to_file(&image);
-    /// ```
     fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>;
 
     /// Return all colorspaces supported by this encoder.

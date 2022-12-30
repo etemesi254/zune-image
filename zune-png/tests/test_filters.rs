@@ -112,12 +112,12 @@ fn test_paeth()
     }
 }
 
-#[test]
-fn test_black_and_white()
-{
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g01.png";
-
-        test_decoding(path);
-    }
-}
+// #[test]
+// fn test_black_and_white()
+// {
+//     {
+//         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g01.png";
+//
+//         test_decoding(path);
+//     }
+// }

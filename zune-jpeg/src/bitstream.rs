@@ -343,10 +343,10 @@ impl BitStream
             if fast_ac != 0
             {
                 //  FAST AC path
-                pos += ((fast_ac >> 4) & 63) as usize; // run
+                pos += ((fast_ac >> 4) & 15) as usize; // run
                 let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
 
-                block[t_pos] = (fast_ac >> 10) * (qt_table[t_pos]); // Value
+                block[t_pos] = i32::from(fast_ac >> 8) * (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             }
@@ -472,11 +472,11 @@ impl BitStream
             fac = fast_ac[symbol as usize];
             symbol = ac_table.lookup[symbol as usize];
 
-            if false && fac != 0
+            if fac != 0
             {
                 // fast ac path
-                k += ((fac >> 4) & 63) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 10).wrapping_mul(1 << shift) as i16; // value
+                k += ((fac >> 4) & 15) as usize; // run
+                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(1 << shift); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             }

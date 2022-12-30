@@ -313,7 +313,7 @@ impl<'a> QoiDecoder<'a>
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.
-    /// let (w,h)=decoder.get_dimensions();
+    /// let (w,h)=decoder.get_dimensions().unwrap();
     /// ```
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {

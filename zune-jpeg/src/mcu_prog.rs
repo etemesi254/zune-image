@@ -224,10 +224,11 @@ impl<'a> JpegDecoder<'a>
                                 // as big as 10,000
                                 // We also have to cover RST runs, but notice RST just becomes zero.
                                 // So we cheat by setting rst to be 1
-                                self.todo = self.todo.saturating_sub(stream.eob_run as usize) + 1;
-                                i += (j + stream.eob_run as usize - 1) / mcu_width;
-                                j = (j + stream.eob_run as usize - 1) % mcu_width;
-                                stream.eob_run = 0;
+                                // self.todo = self.todo.saturating_sub(stream.eob_run as usize) + 1;
+                                // i += (j + stream.eob_run as usize - 1) / mcu_width;
+                                // j = (j + stream.eob_run as usize - 1) % mcu_width;
+                                //continue;
+                                stream.eob_run -= 1;
                             } else {
                                 stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
                             }
@@ -265,7 +266,7 @@ impl<'a> JpegDecoder<'a>
                 let n = self.z_order[k as usize];
 
                 if n >= self.components.len() {
-                    return Err(DecodeErrors::Format(format!("Cannot find component {}, corrupt image", n)));
+                    return Err(DecodeErrors::Format(format!("Cannot find component {n}, corrupt image")));
                 }
 
                 let component = &mut self.components[n];
@@ -465,7 +466,6 @@ impl<'a> JpegDecoder<'a>
                         // tmp now contains a dequantized block so idct it
                         (self.idct_func)(&mut tmp, sl, component.width_stride);
                     }
-
                     // after every write of 8, skip 7 since idct write stride wise 8 times.
                     //
                     // Remember each MCU is 8x8 block, so each idct will write 8 strides into
@@ -627,7 +627,7 @@ fn test()
 
     use crate::ZuneJpegOptions;
 
-    let bytes = read("/home/caleb/jpeg/error.jpg/zune-divergences-3/d.jpg").unwrap();
+    let bytes = read("/home/caleb/jpeg/error.jpg/zune-divergences-3/sk_SK.jpg").unwrap();
 
     let options = ZuneJpegOptions::new();
 
