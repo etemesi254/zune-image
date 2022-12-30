@@ -7,7 +7,7 @@ use std::fmt::{Debug, Display, Formatter};
 use crate::decoder::MAX_DIMENSIONS;
 use crate::misc::{
     START_OF_FRAME_EXT_AR, START_OF_FRAME_EXT_SEQ, START_OF_FRAME_LOS_SEQ,
-    START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT_AR,
+    START_OF_FRAME_LOS_SEQ_AR, START_OF_FRAME_PROG_DCT_AR
 };
 
 /// Common Decode errors
@@ -39,7 +39,7 @@ pub enum DecodeErrors
     /// Exhausted data
     ExhaustedData,
     /// Large image dimensions(Corrupted data)?
-    LargeDimensions(usize),
+    LargeDimensions(usize)
 }
 impl From<&'static str> for DecodeErrors
 {
@@ -54,32 +54,31 @@ impl Debug for DecodeErrors
     {
         match &self
         {
-            Self::Format(ref a) => write!(f, "{:?}", a),
+            Self::Format(ref a) => write!(f, "{a:?}"),
             Self::FormatStatic(a) => write!(f, "{:?}", &a),
 
             Self::HuffmanDecode(ref reason) =>
             {
-                write!(f, "Error decoding huffman values: {}", reason)
+                write!(f, "Error decoding huffman values: {reason}")
             }
             Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
-            Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{}", reason),
-            Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{}", reason),
-            Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{}", reason),
+            Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{reason}"),
+            Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{reason}"),
+            Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{reason}"),
             Self::IllegalMagicBytes(bytes) =>
             {
-                write!(f, "Error parsing image. Illegal start bytes:{}", bytes)
+                write!(f, "Error parsing image. Illegal start bytes:{bytes}")
             }
-            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {}", reason),
+            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {reason}"),
             Self::Unsupported(ref image_type) =>
             {
-                write!(f, "{:?}", image_type)
+                write!(f, "{image_type:?}")
             }
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
-                "Too large dimensions {},library supports up to {}",
-                dimensions, MAX_DIMENSIONS
-            ),
+                "Too large dimensions {dimensions},library supports up to {MAX_DIMENSIONS}"
+            )
         }
     }
 }
@@ -90,32 +89,31 @@ impl Display for DecodeErrors
     {
         match &self
         {
-            Self::Format(ref a) => write!(f, "{}", a),
+            Self::Format(ref a) => write!(f, "{a}"),
             Self::FormatStatic(a) => write!(f, "{:?}", &a),
             Self::HuffmanDecode(ref reason) =>
             {
-                write!(f, "Error decoding huffman tables.Reason:{}", reason)
+                write!(f, "Error decoding huffman tables.Reason:{reason}")
             }
             Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
-            Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{}", reason),
-            Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{}", reason),
-            Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{}", reason),
+            Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{reason}"),
+            Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{reason}"),
+            Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{reason}"),
             Self::IllegalMagicBytes(bytes) =>
             {
-                write!(f, "Error parsing image. Illegal start bytes:{}", bytes)
+                write!(f, "Error parsing image. Illegal start bytes:{bytes}")
             }
             Self::Unsupported(ref image_type) =>
             {
-                write!(f, "{:?}", image_type)
+                write!(f, "{image_type:?}")
             }
-            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {}", reason),
+            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {reason}"),
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
 
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
-                "Too large dimensions {},library supports up to {}",
-                dimensions, MAX_DIMENSIONS
-            ),
+                "Too large dimensions {dimensions},library supports up to {MAX_DIMENSIONS}"
+            )
         }
     }
 }
@@ -126,7 +124,7 @@ impl From<Box<dyn Error>> for DecodeErrors
 {
     fn from(err: Box<dyn Error>) -> Self
     {
-        DecodeErrors::Format(format!("Error decoding an image:\n {}", err))
+        DecodeErrors::Format(format!("Error decoding an image:\n {err}"))
     }
 }
 
@@ -134,7 +132,7 @@ impl From<std::io::Error> for DecodeErrors
 {
     fn from(err: std::io::Error) -> Self
     {
-        DecodeErrors::Format(format!("Error decoding an image:\n {}", err))
+        DecodeErrors::Format(format!("Error decoding an image:\n {err}"))
     }
 }
 
@@ -152,7 +150,7 @@ pub enum UnsupportedSchemes
     /// Progressive DCT, arithmetic coding,
     ProgressiveDctArithmetic,
     /// Lossless ( sequential), arithmetic coding
-    LosslessArithmetic,
+    LosslessArithmetic
 }
 
 impl Debug for UnsupportedSchemes
@@ -205,7 +203,7 @@ impl UnsupportedSchemes
             START_OF_FRAME_LOS_SEQ_AR => Some(Self::LosslessArithmetic),
             START_OF_FRAME_EXT_SEQ => Some(Self::ExtendedSequentialHuffman),
             START_OF_FRAME_EXT_AR => Some(Self::ExtendedSequentialDctArithmetic),
-            _ => None,
+            _ => None
         }
     }
 }

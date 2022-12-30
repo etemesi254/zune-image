@@ -10,7 +10,7 @@ fn test_transpose_sse_scalar_identical()
     let width: usize = 40;
     let height: usize = 24;
 
-    let mut in_matrix: Vec<u16> = vec![0; width as usize * height as usize];
+    let mut in_matrix: Vec<u16> = vec![0; width * height];
     rng.fill(&mut in_matrix);
 
     let mut sse_out = vec![90; width * height];

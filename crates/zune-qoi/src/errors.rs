@@ -24,33 +24,30 @@ impl Debug for QoiErrors
             {
                 writeln!(
                     f,
-                    "Insufficient data required {} but remaining stream has {}",
-                    expected, found
+                    "Insufficient data required {expected} but remaining stream has {found}"
                 )
             }
             QoiErrors::UnknownChannels(channel) =>
             {
                 writeln!(
                     f,
-                    "Unknown channel number {}, expected either 3 or 4",
-                    channel
+                    "Unknown channel number {channel}, expected either 3 or 4"
                 )
             }
             QoiErrors::UnknownColorspace(colorspace) =>
             {
                 writeln!(
                     f,
-                    "Unknown colorspace number {}, expected either 0 or 1",
-                    colorspace
+                    "Unknown colorspace number {colorspace}, expected either 0 or 1"
                 )
             }
             QoiErrors::Generic(val) =>
             {
-                writeln!(f, "{}", val)
+                writeln!(f, "{val}")
             }
             QoiErrors::GenericStatic(val) =>
             {
-                writeln!(f, "{}", val)
+                writeln!(f, "{val}")
             }
         }
     }

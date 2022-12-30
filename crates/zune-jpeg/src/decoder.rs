@@ -272,8 +272,7 @@ impl<'a> JpegDecoder<'a>
                     if length < 2
                     {
                         return Err(DecodeErrors::Format(format!(
-                            "Found a marker with invalid length : {}",
-                            length
+                            "Found a marker with invalid length : {length}"
                         )));
                     }
 
@@ -345,8 +344,7 @@ impl<'a> JpegDecoder<'a>
                 if length < 2
                 {
                     return Err(DecodeErrors::Format(format!(
-                        "Found a marker with invalid length:{}\n",
-                        length
+                        "Found a marker with invalid length:{length}\n"
                     )));
                 }
                 // skip for now
@@ -378,9 +376,8 @@ impl<'a> JpegDecoder<'a>
             Marker::DAC | Marker::DNL =>
             {
                 return Err(DecodeErrors::Format(format!(
-                    "Parsing of the following header `{:?}` is not supported,\
-                                cannot continue",
-                    m
+                    "Parsing of the following header `{m:?}` is not supported,\
+                                cannot continue"
                 )));
             }
             Marker::DRI =>
@@ -409,8 +406,7 @@ impl<'a> JpegDecoder<'a>
                 if length < 2
                 {
                     return Err(DecodeErrors::Format(format!(
-                        "Found a marker with invalid length:{}\n",
-                        length
+                        "Found a marker with invalid length:{length}\n"
                     )));
                 }
                 warn!("Skipping {} bytes", length - 2);
