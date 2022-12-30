@@ -619,18 +619,3 @@ fn get_marker(reader: &mut ZByteReader, stream: &mut BitStream) -> Result<Marker
     }
     return Err(DecodeErrors::from("No more bytes"));
 }
-
-#[test]
-fn test()
-{
-    use std::fs::read;
-
-    use crate::ZuneJpegOptions;
-
-    let bytes = read("/home/caleb/jpeg/error.jpg/zune-divergences-3/sk_SK.jpg").unwrap();
-
-    let options = ZuneJpegOptions::new();
-
-    let mut bytes = JpegDecoder::new_with_options(options, &bytes);
-    bytes.decode().unwrap();
-}
