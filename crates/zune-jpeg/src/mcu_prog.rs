@@ -613,7 +613,7 @@ fn get_marker(reader: &mut ZByteReader, stream: &mut BitStream) -> Result<Marker
             if r != 0
             {
                 return Marker::from_u8(r)
-                    .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{:X}", r)));
+                    .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{r:X}")));
             }
         }
     }
