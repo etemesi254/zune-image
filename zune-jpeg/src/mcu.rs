@@ -259,8 +259,7 @@ impl<'a> JpegDecoder<'a>
                         if self.options.get_strict_mode()
                         {
                             return Err(DecodeErrors::Format(format!(
-                                "Marker {:?} found where not expected",
-                                m
+                                "Marker {m:?} found where not expected"
                             )));
                         }
                         error!(
@@ -382,8 +381,7 @@ impl<'a> JpegDecoder<'a>
                 _ =>
                 {
                     return Err(DecodeErrors::MCUError(format!(
-                        "Marker {:?} found in bitstream, possibly corrupt jpeg",
-                        marker
+                        "Marker {marker:?} found in bitstream, possibly corrupt jpeg"
                     )));
                 }
             }

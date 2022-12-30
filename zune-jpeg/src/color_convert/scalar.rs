@@ -1,4 +1,3 @@
-use std::cmp::{max, min};
 use std::convert::TryInto;
 
 /// Limit values to 0 and 255
@@ -6,7 +5,7 @@ use std::convert::TryInto;
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, dead_code)]
 fn clamp(a: i16) -> u8
 {
-    min(max(a, 0), 255) as u8
+    a.clamp(0, 255) as u8
 }
 
 /// YCbCr to RGBA color conversion

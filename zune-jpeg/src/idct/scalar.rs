@@ -209,5 +209,5 @@ fn fsh(x: i32) -> i32
 #[allow(clippy::cast_possible_truncation)]
 fn clamp(a: i32) -> i16
 {
-    a.max(0).min(255) as i16
+    a.clamp(0, 255) as i16
 }

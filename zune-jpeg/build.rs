@@ -13,5 +13,5 @@ fn main()
             .stdout,
     )
     .unwrap();
-    println!("cargo:rustc-env=ZUNE_JPEG_GIT_HASH={}", string);
+    println!("cargo:rustc-env=ZUNE_JPEG_GIT_HASH={string}");
 }

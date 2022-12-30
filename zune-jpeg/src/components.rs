@@ -66,8 +66,7 @@ impl Components
             r =>
             {
                 return Err(DecodeErrors::Format(format!(
-                        "Unknown component id found,{}, expected value between 1 and 3\nNote I and Q components are not supported yet",
-                        r
+                        "Unknown component id found,{r}, expected value between 1 and 3\nNote I and Q components are not supported yet"
                     )));
             }
         };
@@ -79,8 +78,7 @@ impl Components
         if usize::from(quantization_table_number) >= MAX_COMPONENTS
         {
             return Err(DecodeErrors::Format(format!(
-                "Too large quantization number :{}, expected value between 0 and {}",
-                quantization_table_number, MAX_COMPONENTS
+                "Too large quantization number :{quantization_table_number}, expected value between 0 and {MAX_COMPONENTS}"
             )));
         }
         // check that upsampling ratios are powers of two
@@ -88,16 +86,14 @@ impl Components
         if !horizontal_sample.is_power_of_two()
         {
             return Err(DecodeErrors::Format(format!(
-                "Horizontal sample is not a power of two({}) cannot decode",
-                horizontal_sample
+                "Horizontal sample is not a power of two({horizontal_sample}) cannot decode"
             )));
         }
 
         if !vertical_sample.is_power_of_two()
         {
             return Err(DecodeErrors::Format(format!(
-                "Vertical sub-sample is not power of two({}) cannot decode",
-                vertical_sample
+                "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
             )));
         }
 

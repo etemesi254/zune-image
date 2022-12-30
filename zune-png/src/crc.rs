@@ -61,7 +61,6 @@ fn test_crc_same()
 
     assert_eq!(
         crc_simple, crc_table8,
-        "CRC {} {} do not match",
-        crc_simple, crc_table8
+        "CRC {crc_simple} {crc_table8} do not match"
     );
 }

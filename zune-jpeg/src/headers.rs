@@ -36,16 +36,14 @@ where
         if index >= MAX_COMPONENTS
         {
             return Err(DecodeErrors::HuffmanDecode(format!(
-                "Invalid DHT index {}, expected between 0 and 3",
-                index
+                "Invalid DHT index {index}, expected between 0 and 3"
             )));
         }
 
         if dc_or_ac > 1
         {
             return Err(DecodeErrors::HuffmanDecode(format!(
-                "Invalid DHT position {}, should be 0 or 1",
-                dc_or_ac
+                "Invalid DHT position {dc_or_ac}, should be 0 or 1"
             )));
         }
 
@@ -68,8 +66,7 @@ where
         if symbols_sum > dht_length
         {
             return Err(DecodeErrors::HuffmanDecode(format!(
-                "Excessive Huffman table of length {} found when header length is {}",
-                symbols_sum, dht_length
+                "Excessive Huffman table of length {symbols_sum} found when header length is {dht_length}"
             )));
         }
         dht_length -= symbols_sum;
@@ -80,7 +77,7 @@ where
             .stream
             .read_exact(&mut symbols[0..(symbols_sum as usize)])
             .map_err(|x| {
-                DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+                DecodeErrors::Format(format!("Could not read symbols into the buffer\n{x}"))
             })?;
         // store
         match dc_or_ac
@@ -115,7 +112,7 @@ where
 }
 
 ///**B.2.4.1 Quantization table-specification syntax**
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::needless_range_loop)]
 pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
 {
     // read length
@@ -148,7 +145,7 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
                 let mut qt_values = [0; 64];
 
                 img.stream.read_exact(&mut qt_values).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{}", x))
+                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{x}"))
                 })?;
                 qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
                 // carry out un zig-zag here
@@ -170,8 +167,7 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
             _ =>
             {
                 return Err(DecodeErrors::DqtError(format!(
-                    "Expected QT precision value of either 0 or 1, found {:?}",
-                    precision
+                    "Expected QT precision value of either 0 or 1, found {precision:?}"
                 )));
             }
         };
@@ -179,8 +175,7 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
         if table_position >= MAX_COMPONENTS
         {
             return Err(DecodeErrors::DqtError(format!(
-                "Too large table position for QT :{}, expected between 0 and 3",
-                table_position
+                "Too large table position for QT :{table_position}, expected between 0 and 3"
             )));
         }
 
@@ -205,8 +200,7 @@ pub(crate) fn parse_start_of_frame(
     if dt_precision != 8
     {
         return Err(DecodeErrors::SofError(format!(
-            "The library can only parse 8-bit images, the image has {} bits of precision",
-            dt_precision
+            "The library can only parse 8-bit images, the image has {dt_precision} bits of precision"
         )));
     }
 
@@ -254,8 +248,7 @@ pub(crate) fn parse_start_of_frame(
     if length != expected
     {
         return Err(DecodeErrors::SofError(format!(
-            "Length of start of frame differs from expected {},value is {}",
-            expected, length
+            "Length of start of frame differs from expected {expected},value is {length}"
         )));
     }
 
@@ -281,7 +274,7 @@ pub(crate) fn parse_start_of_frame(
         // read 3 bytes for each component
         img.stream
             .read_exact(&mut temp)
-            .map_err(|x| DecodeErrors::Format(format!("Could not read component data\n{}", x)))?;
+            .map_err(|x| DecodeErrors::Format(format!("Could not read component data\n{x}")))?;
         // create a component.
         let component = Components::from(temp)?;
 
@@ -309,8 +302,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     if ls != 6 + 2 * u16::from(ns)
     {
         return Err(DecodeErrors::SosError(format!(
-            "Bad SOS length {},corrupt jpeg",
-            ls
+            "Bad SOS length {ls},corrupt jpeg"
         )));
     }
 
@@ -319,8 +311,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     if !(1..4).contains(&ns)
     {
         return Err(DecodeErrors::SosError(format!(
-            "Number of components in start of scan should be less than 3 but more than 0. Found {}",
-            ns
+            "Number of components in start of scan should be less than 3 but more than 0. Found {ns}"
         )));
     }
 
@@ -348,8 +339,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
         if seen[usize::from(id)]
         {
             return Err(DecodeErrors::SofError(format!(
-                "Duplicate ID {} seen twice in the same component",
-                id
+                "Duplicate ID {id} seen twice in the same component"
             )));
         }
         seen[usize::from(id)] = true;

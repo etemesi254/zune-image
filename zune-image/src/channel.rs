@@ -43,18 +43,13 @@ impl Debug for ChannelErrors
         {
             ChannelErrors::UnalignedPointer(expected, found) =>
             {
-                writeln!(
-                    f,
-                    "Channel pointer {} is not aligned to {}",
-                    expected, found
-                )
+                writeln!(f, "Channel pointer {expected} is not aligned to {found}")
             }
             ChannelErrors::UnevenLength(length, size_of_1) =>
             {
                 writeln!(
                     f,
-                    "Size of {} cannot evenly divide length {}",
-                    size_of_1, length
+                    "Size of {size_of_1} cannot evenly divide length {length}"
                 )
             }
         }
@@ -99,7 +94,7 @@ impl Debug for Channel
         unsafe {
             let slice = std::slice::from_raw_parts(self.ptr, self.length);
 
-            writeln!(f, "{:?}", slice)
+            writeln!(f, "{slice:?}")
         }
     }
 }

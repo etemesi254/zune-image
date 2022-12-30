@@ -65,7 +65,7 @@ impl std::str::FromStr for IColorSpace
                 return Ok(*variant);
             }
         }
-        Err(format!("Invalid variant: {}", s))
+        Err(format!("Invalid variant: {s}"))
     }
 }
 pub fn get_four_pair_args(input: &str) -> Result<[usize; 4], String>

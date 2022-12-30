@@ -18,7 +18,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
 
 fn decode_zune(data: &[u8]) -> Vec<u8>
 {
-    zune_png::PngDecoder::new(&data)
+    zune_png::PngDecoder::new(data)
         .decode()
         .unwrap()
         .u8()
