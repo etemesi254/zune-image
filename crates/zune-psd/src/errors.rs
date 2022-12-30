@@ -40,20 +40,18 @@ impl Debug for PSDDecodeErrors
             {
                 writeln!(
                     f,
-                    "Unsupported file version {:?}, known versions are 1",
-                    version
+                    "Unsupported file version {version:?}, known versions are 1",
                 )
             }
             PSDDecodeErrors::UnsupportedChannelCount(channels) =>
             {
-                writeln!(f, "Unsupported channel count {:?}", channels)
+                writeln!(f, "Unsupported channel count {channels:?}")
             }
             PSDDecodeErrors::UnsupportedBitDepth(depth) =>
             {
                 writeln!(
                     f,
-                    "Unsupported bit depth {:?}, supported depths are 8 and 16",
-                    depth
+                    "Unsupported bit depth {depth:?}, supported depths are 8 and 16",
                 )
             }
             PSDDecodeErrors::UnsupportedColorFormat(color) =>
@@ -62,8 +60,7 @@ impl Debug for PSDDecodeErrors
                 {
                     writeln!(
                         f,
-                        "Unsupported color format  {:?}, supported formats RGB only",
-                        color
+                        "Unsupported color format  {color:?}, supported formats RGB only",
                     )
                 }
                 else
@@ -83,8 +80,7 @@ impl Debug for PSDDecodeErrors
             {
                 writeln!(
                     f,
-                    "Too large dimensions, supported {} but found {}",
-                    supported, found
+                    "Too large dimensions, supported {supported} but found {found}",
                 )
             }
             PSDDecodeErrors::ZeroDimensions =>
