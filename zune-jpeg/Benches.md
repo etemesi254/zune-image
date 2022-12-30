@@ -88,7 +88,7 @@ To reproduce them
 | Progressive Horizontal sub-sampling | 235.19 ms | 214.50 ms | 352.94 ms             |
 | Progressive Vertical Sub Sampling   | 238.71 ms | 269.79 ms | 333.90 ms             |
 | Progressive HV sampling             | 224.46 ms | 265.36 ms | 350.00 ms             |
-| APPROX TOTAL                        | 1451 ms   | 1512 ms   | 2176 ms*              |
+| APPROX TOTAL                        | 1451 ms   | 1512 ms   | 2030 ms*              |
 
 * Without grayscale sum
 
