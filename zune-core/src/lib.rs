@@ -1,5 +1,3 @@
-use std::mem::ManuallyDrop;
-
 pub mod bit_depth;
 pub mod bytestream;
 pub mod colorspace;
