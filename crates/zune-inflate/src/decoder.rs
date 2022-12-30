@@ -444,7 +444,7 @@ impl<'a> DeflateDecoder<'a>
     /// # Example
     /// ```no_run
     /// let mut decoder = zune_inflate::DeflateDecoder::new(&[42]);
-    /// let bytes = decoder.decode_deflate()?;
+    /// let bytes = decoder.decode_deflate().unwrap();
     /// ```
     pub fn decode_deflate(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {

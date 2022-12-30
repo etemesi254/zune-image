@@ -87,7 +87,7 @@ pub fn create_cmd_args() -> Command {
             .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast", "resize"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur", "blur", "unsharpen", "median", "erode"])
+            .args(["box-blur", "blur", "unsharpen"])
             .multiple(true))
 }
 

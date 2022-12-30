@@ -166,7 +166,7 @@ impl Channel
     /// Create a new channel
     pub fn new() -> Channel
     {
-        Self::new_with_length(1)
+        Self::new_with_capacity(10)
     }
     /// Create a new channel with the specified lenght and capacity
     pub fn new_with_length(length: usize) -> Channel

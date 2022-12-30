@@ -1,5 +1,19 @@
 use std::fmt::{Debug, Formatter};
 
+pub struct DecodeWrapper
+{
+    pub error: DecodeErrors,
+    pub data:  Vec<u8>
+}
+
+impl Debug for DecodeWrapper
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        writeln!(f, "{:?}", self.error)
+    }
+}
+
 pub enum DecodeErrors
 {
     InsufficientData,

@@ -178,7 +178,7 @@ impl<'a> FarbFeldDecoder<'a>
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.
-    /// let (w,h)=decoder.get_dimensions();
+    /// let (w,h)=decoder.get_dimensions().unwrap();
     /// ```
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
@@ -188,14 +188,4 @@ impl<'a> FarbFeldDecoder<'a>
         }
         None
     }
-}
-
-#[test]
-fn test_farbfeld()
-{
-    let data = std::fs::read("/home/caleb/clay-banks.ff").unwrap();
-
-    let mut decoder = crate::decoder::FarbFeldDecoder::new(&data);
-    let pix = decoder.decode().unwrap();
-    dbg!(pix[0]);
 }

@@ -107,7 +107,7 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
 
     #[cfg(feature = "sse")]
     {
-        if is_x86_feature_detected!("sse2")
+        if is_x86_feature_detected!("sse4.1")
         {
             if components == 3
             {
