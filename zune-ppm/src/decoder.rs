@@ -331,12 +331,3 @@ impl<'a> PPMDecoder<'a>
         };
     }
 }
-
-#[test]
-fn hello_test()
-{
-    use std::fs::read;
-    let data = read("/home/caleb/tt.ppm").unwrap();
-    let mut decoder = PPMDecoder::new(&data);
-    decoder.decode().unwrap();
-}
