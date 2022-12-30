@@ -19,4 +19,4 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workflow
+      run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace
