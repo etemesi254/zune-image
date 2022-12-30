@@ -362,7 +362,7 @@ impl BitStream
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    let t_pos = UN_ZIGZAG[pos as usize & 63] & 63;
+                    let t_pos = UN_ZIGZAG[pos & 63] & 63;
 
                     block[t_pos] = symbol * qt_table[t_pos];
 
@@ -492,8 +492,7 @@ impl BitStream
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    block[UN_ZIGZAG[k as usize & 63] & 63] =
-                        (symbol as i16).wrapping_mul(1 << shift);
+                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(1 << shift);
                     k += 1;
                 }
                 else
@@ -584,7 +583,7 @@ impl BitStream
 
                     if *coefficient != 0
                     {
-                        if self.get_bit() == 1 && (*coefficient & bit as i16) == 0
+                        if self.get_bit() == 1 && (*coefficient & bit) == 0
                         {
                             if *coefficient >= 0
                             {

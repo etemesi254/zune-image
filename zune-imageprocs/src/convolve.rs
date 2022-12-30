@@ -1,6 +1,10 @@
 use crate::traits::NumOps;
 
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#[allow(
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless
+)]
 pub fn convolve_1d<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f64],
     div_by: f64, max_value: u16

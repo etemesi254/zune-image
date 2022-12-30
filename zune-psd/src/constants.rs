@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 pub const PSD_IDENTIFIER_BE: u32 = 0x38425053;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

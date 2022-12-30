@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use wasm_bindgen::prelude::wasm_bindgen;
 use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::SupportedDecoders;

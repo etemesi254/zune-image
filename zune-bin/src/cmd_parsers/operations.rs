@@ -91,7 +91,7 @@ pub fn parse_options(
             }
             else
             {
-                return Err(format!("Unknown mirror mode {:?}", value));
+                return Err(format!("Unknown mirror mode {value:?}"));
             }
 
             debug!("Added mirror with direction {:?}", value);
@@ -181,7 +181,7 @@ pub fn parse_options(
         else if argument == "resize"
         {
             let value = args.get_one::<String>(argument).unwrap();
-            let split_val = value.split("x").collect::<Vec<&str>>();
+            let split_val = value.split('x').collect::<Vec<&str>>();
 
             if split_val.len() != 2
             {

@@ -10,7 +10,8 @@
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    clippy::cast_precision_loss
 )]
 fn create_box_gauss(sigma: f32) -> [usize; 3]
 {
@@ -48,7 +49,7 @@ fn create_box_gauss(sigma: f32) -> [usize; 3]
             }
             else
             {
-                radii[i] = wu as usize;
+                radii[i] = wu;
             }
         }
     }
