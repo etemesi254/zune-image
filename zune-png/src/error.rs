@@ -6,7 +6,7 @@ pub enum PngErrors
     GenericStatic(&'static str),
     Generic(String),
     BadCrc(u32, u32),
-    ZlibDecodeErrors(zune_inflate::errors::DecodeErrors)
+    ZlibDecodeErrors(zune_inflate::errors::DecodeErrorStatus)
 }
 impl Debug for PngErrors
 {
@@ -44,9 +44,9 @@ impl From<String> for PngErrors
     }
 }
 
-impl From<zune_inflate::errors::DecodeErrors> for PngErrors
+impl From<zune_inflate::errors::DecodeErrorStatus> for PngErrors
 {
-    fn from(val: zune_inflate::errors::DecodeErrors) -> Self
+    fn from(val: zune_inflate::errors::DecodeErrorStatus) -> Self
     {
         Self::ZlibDecodeErrors(val)
     }
