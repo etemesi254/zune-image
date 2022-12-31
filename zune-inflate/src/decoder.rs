@@ -866,7 +866,7 @@ impl<'a> DeflateDecoder<'a>
                                 }
                             }
                         }
-                        else if src_offset + length > current_position
+                        else if src_offset + length > current_position && offset < FASTCOPY_BYTES
                         {
                             // overlapping copy
                             // do a simple rep match
