@@ -2,9 +2,11 @@
 name = "zune-inflate"
 version = "0.2.0"
 edition = "2021"
-description = "A heavily optimized deflate decompressor"
+description = "A heavily optimized deflate decompressor in Pure Rust"
 exclude = ["tests/"]
-
+homepage = "https://github.com/etemesi254/zune-image/tree/main/zune-inflate"
+keywords = ["compression", "inflate", "deflate"]
+categories = ["compression"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
