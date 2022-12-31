@@ -182,7 +182,15 @@ impl<'a> PngDecoder<'a>
 
     /// Decode PNG encoded images and return the vector of raw
     /// pixels
-    pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
+    ///
+    /// The resulting vec may be bigger or smaller than expected
+    /// depending on the bit depth of the image.
+    ///
+    /// The endianness is big endian for 16 bit images represented as two u8 slices
+    ///
+    /// This does not do gamma correction as opposed to decode,but may change
+    /// in the future.
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
     {
         // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
@@ -359,12 +367,24 @@ impl<'a> PngDecoder<'a>
             // by three since for palettized images we turn it to RGB
             new_len *= 3;
         }
-        if info.depth == 8
+        self.out.truncate(new_len);
+        let out = std::mem::take(&mut self.out);
+
+        Ok(out)
+    }
+    /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
+    /// represent them in a Vec<u16>
+    ///
+    /// This does one extra allocation when compared to `decode_raw` for 16 bit images to create the
+    /// necessary representation of 16 bit images.
+    ///
+    /// This does gamma correction
+    pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
+    {
+        let mut out = self.decode_raw()?;
+
+        if self.png_info.depth <= 8
         {
-            self.out.truncate(new_len);
-
-            let mut out = std::mem::take(&mut self.out);
-
             if self.gama != 0 && self.options.gama_correct
             {
                 let val = (self.gama as f32) / 100000.0;
@@ -372,20 +392,16 @@ impl<'a> PngDecoder<'a>
             }
             return Ok(DecodingResult::U8(out));
         }
-        if info.depth == 16
+        if self.png_info.depth == 16
         {
-            // TODO: This sucks, we should not be allocating a new array for
-            // such.
-            // But Transmuting is unsafe :(
-            let mut new_array = vec![0_u16; new_len];
-
-            for (old, new) in self.out.chunks_exact(2).zip(new_array.iter_mut())
-            {
-                let old_arr: [u8; 2] = old.try_into().unwrap();
-
-                // png treats 16 bit images as network/big endian.
-                *new = u16::from_be_bytes(old_arr);
-            }
+            // https://github.com/etemesi254/zune-image/issues/36
+            let mut new_array: Vec<u16> = out
+                .chunks_exact(2)
+                .map(|chunk| {
+                    let value: [u8; 2] = chunk.try_into().unwrap();
+                    u16::from_be_bytes(value)
+                })
+                .collect();
 
             if self.gama != 0 && self.options.gama_correct
             {
@@ -394,8 +410,7 @@ impl<'a> PngDecoder<'a>
             }
             return Ok(DecodingResult::U16(new_array));
         }
-
-        Err(PngErrors::GenericStatic("Not yet done"))
+        Err(PngErrors::GenericStatic("Not implemented"))
     }
     /// Create the png data from post deflated data
     ///
