@@ -182,7 +182,15 @@ impl<'a> PngDecoder<'a>
 
     /// Decode PNG encoded images and return the vector of raw
     /// pixels
-    pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
+    ///
+    /// The resulting vec may be bigger or smaller than expected
+    /// depending on the bit depth of the image.
+    ///
+    /// The endianness is big endian for 16 bit images represented as two u8 slices
+    ///
+    /// This does not do gamma correction as opposed to decode,but may change
+    /// in the future.
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
     {
         // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
@@ -252,6 +260,18 @@ impl<'a> PngDecoder<'a>
 
         if info.interlace_method == InterlaceMethod::Standard
         {
+            // allocate out to be enough to hold raw decoded bytes
+            let mut img_width_bytes;
+
+            img_width_bytes = usize::from(info.component) * info.width;
+            img_width_bytes *= usize::from(info.depth);
+            img_width_bytes += 7;
+            img_width_bytes /= 8;
+
+            let image_len = img_width_bytes * info.height;
+
+            self.out = vec![0; image_len];
+
             self.create_png_image_raw(&deflate_data, info.width, info.height)?;
         }
         else if info.interlace_method == InterlaceMethod::Adam7
@@ -273,6 +293,31 @@ impl<'a> PngDecoder<'a>
 
             let mut image_offset = 0;
 
+            let mut max_height = 0;
+            let mut max_width = 0;
+
+            // get the maximum height and width for the whole interlace part
+            for p in 0..7
+            {
+                let x = (info.width - XORIG[p] + XSPC[p] - 1) / XSPC[p];
+                let y = (info.height - YORIG[p] + YSPC[p] - 1) / YSPC[p];
+
+                max_height = max_height.max(y);
+                max_width = max_width.max(x);
+            }
+            {
+                // then allocate a vector big enough to hold the largest pass
+                let mut image_len = usize::from(info.color.num_components()) * max_width;
+
+                image_len *= usize::from(info.depth);
+                image_len += 7;
+                image_len /= 8;
+                image_len += 1;
+                image_len *= max_height;
+
+                self.out = vec![0; image_len];
+            }
+
             for p in 0..7
             {
                 let x = (info.width - XORIG[p] + XSPC[p] - 1) / XSPC[p];
@@ -284,8 +329,8 @@ impl<'a> PngDecoder<'a>
 
                     image_len *= usize::from(info.depth);
                     image_len += 7;
-                    image_len >>= 3;
-                    image_len += 1;
+                    image_len /= 8;
+                    image_len += 1; // filter byte
                     image_len *= y;
 
                     let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
@@ -322,12 +367,24 @@ impl<'a> PngDecoder<'a>
             // by three since for palettized images we turn it to RGB
             new_len *= 3;
         }
-        if info.depth <= 8
+        self.out.truncate(new_len);
+        let out = std::mem::take(&mut self.out);
+
+        Ok(out)
+    }
+    /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
+    /// represent them in a Vec<u16>
+    ///
+    /// This does one extra allocation when compared to `decode_raw` for 16 bit images to create the
+    /// necessary representation of 16 bit images.
+    ///
+    /// This does gamma correction
+    pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
+    {
+        let mut out = self.decode_raw()?;
+
+        if self.png_info.depth <= 8
         {
-            self.out.truncate(new_len);
-
-            let mut out = std::mem::take(&mut self.out);
-
             if self.gama != 0 && self.options.gama_correct
             {
                 let val = (self.gama as f32) / 100000.0;
@@ -335,16 +392,16 @@ impl<'a> PngDecoder<'a>
             }
             return Ok(DecodingResult::U8(out));
         }
-        if info.depth == 16
+        if self.png_info.depth == 16
         {
-            // TODO: This sucks, we should not be allocating a new array for such.
-            // But Transmuting is unsound :(
             // https://github.com/etemesi254/zune-image/issues/36
-            let mut new_array: Vec<u16> = self.out.chunks_exact(2).map(|chunk| {
-                let value: [u8; 2] = chunk.try_into().unwrap();
-                // png treats 16 bit images as network/big endian.
-                u16::from_be_bytes(value)
-            }).collect();
+            let mut new_array: Vec<u16> = out
+                .chunks_exact(2)
+                .map(|chunk| {
+                    let value: [u8; 2] = chunk.try_into().unwrap();
+                    u16::from_be_bytes(value)
+                })
+                .collect();
 
             if self.gama != 0 && self.options.gama_correct
             {
@@ -353,10 +410,16 @@ impl<'a> PngDecoder<'a>
             }
             return Ok(DecodingResult::U16(new_array));
         }
-
-        Err(PngErrors::GenericStatic("Not yet done"))
+        Err(PngErrors::GenericStatic("Not implemented"))
     }
     /// Create the png data from post deflated data
+    ///
+    /// `self.out` needs to have enough space to hold data, otherwise
+    /// this will panic
+    ///
+    /// This is to allow reuse e.g interlaced images use one big allocation
+    /// to and since that ends up calling this multiple times, allocation was moved
+    /// away from this method to the caller of this method
     #[allow(clippy::manual_memcpy)]
     fn create_png_image_raw(
         &mut self, deflate_data: &[u8], width: usize, height: usize
@@ -368,22 +431,18 @@ impl<'a> PngDecoder<'a>
 
         let mut img_width_bytes;
 
-        let out_n = usize::from(info.color.num_components());
-
         img_width_bytes = usize::from(info.component) * width;
         img_width_bytes *= usize::from(info.depth);
         img_width_bytes += 7;
         img_width_bytes >>= 3;
 
-        let image_len = (img_width_bytes + 1) * height;
+        let image_len = img_width_bytes * height;
 
-        self.out = vec![0; image_len];
+        let out_n = usize::from(info.color.num_components());
+        let out = &mut self.out[0..image_len];
 
-        let out = &mut self.out;
-
-        let stride = width * out_n * bytes;
-
-        if deflate_data.len() < image_len
+        if deflate_data.len() < image_len + height
+        // account for filter bytes
         {
             let msg = format!(
                 "Not enough pixels, expected {} but found {}",
@@ -392,7 +451,6 @@ impl<'a> PngDecoder<'a>
             );
             return Err(PngErrors::Generic(msg));
         }
-        // stride
         // do png  un-filtering
         let mut chunk_size;
 
@@ -407,7 +465,6 @@ impl<'a> PngDecoder<'a>
 
         // add width plus colour component, this gives us number of bytes per every scan line
         chunk_size = width * out_n;
-        // add depth, and
         chunk_size *= usize::from(info.depth);
         chunk_size += 7;
         chunk_size /= 8;
@@ -508,15 +565,10 @@ impl<'a> PngDecoder<'a>
                 FilterMethod::Unknown => unreachable!()
             }
         }
-        // make a separate pass to expand bits to pixels
-        if info.depth < 8
-        {
-            self.expand_bits_to_byte(height, width, stride, out_n)
-        }
 
         Ok(())
     }
-    fn expand_bits_to_byte(&mut self, height: usize, width: usize, stride: usize, out_n: usize)
+    fn _expand_bits_to_byte(&mut self, height: usize, width: usize, stride: usize, out_n: usize)
     {
         const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 

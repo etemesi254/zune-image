@@ -41,7 +41,7 @@ fn decode_test(c: &mut Criterion)
     let mut group = c.benchmark_group("ZLIB decoding");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("FLATE-[miniz-oxide]", |b| {
+    group.bench_function("FLATE-[zlib-ng]", |b| {
         b.iter(|| black_box(decode_writer_flate(data.as_slice())))
     });
 

@@ -67,32 +67,16 @@
 //! # Horizontal vertical downsampling/chroma quartering.
 //!
 //! Carry out a vertical filter in the first pass, then a horizontal filter in the second pass.
-#[cfg(feature = "x86")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use sse::upsample_horizontal_sse;
-
 use crate::components::UpSampler;
 
 mod scalar;
-mod sse;
 
 // choose best possible implementation for this platform
-pub fn choose_horizontal_samp_function(use_unsafe: bool) -> UpSampler
+pub fn choose_horizontal_samp_function(_use_unsafe: bool) -> UpSampler
 {
-    if use_unsafe
-    {
-        #[cfg(all(feature = "x86", any(target_arch = "x86_64", target_arch = "x86")))]
-        {
-            if is_x86_feature_detected!("sse4.1")
-            {
-                debug!("Using sse H up-sampler");
-                return sse::upsample_horizontal_sse;
-            }
-        }
-    }
-    debug!("Using scalar H up-sampler");
     return scalar::upsample_horizontal;
 }
+
 pub fn choose_hv_samp_function(_use_unsafe: bool) -> UpSampler
 {
     return scalar::upsample_hv;
@@ -105,7 +89,7 @@ pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler
 /// Upsample nothing
 
 pub fn upsample_no_op(
-    _input: &[i16], _in_ref: &mut [i16], _scratch_space: &mut [i16], _output: &mut [i16],
+    _input: &[i16], _in_ref: &mut [i16], _scratch_space: &mut [i16], _output: &mut [i16]
 )
 {
 }

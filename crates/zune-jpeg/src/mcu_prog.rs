@@ -164,19 +164,13 @@ impl<'a> JpegDecoder<'a>
                 mcu_width = self.mcu_x;
                 mcu_height = self.mcu_y;
             }
-            let mut i = 0;
-            let mut j = 0;
 
-            while i < mcu_height
+            for i in 0..mcu_height
             {
-                while j < mcu_width
+                for j in 0..mcu_width
                 {
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
 
-                    if i >= mcu_height
-                    {
-                        break;
-                    }
 
                     let data: &mut [i16; 64] = buffer.get_mut(k)
                         .unwrap().get_mut(start..start + 64)
@@ -213,21 +207,6 @@ impl<'a> JpegDecoder<'a>
                             // first scan for this MCU
                             if stream.eob_run > 0
                             {
-                                // EOB runs indicate the whole block is empty, but unlike for baseline
-                                // EOB in progressive tell us the number of proceeding blocks currently zero.
-
-                                // other decoders use a check in decode_mcu_first decrement and return if it's an
-                                // eob run(since the array is expected to contain zeroes). but that's a function call overhead(if not inlined) and a branch check
-                                // we do it a bit differently
-                                // we can use divisors to determine how many MCU's to skip
-                                // which is more faster than a decrement and return since EOB runs can be
-                                // as big as 10,000
-                                // We also have to cover RST runs, but notice RST just becomes zero.
-                                // So we cheat by setting rst to be 1
-                                // self.todo = self.todo.saturating_sub(stream.eob_run as usize) + 1;
-                                // i += (j + stream.eob_run as usize - 1) / mcu_width;
-                                // j = (j + stream.eob_run as usize - 1) % mcu_width;
-                                //continue;
                                 stream.eob_run -= 1;
                             } else {
                                 stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
@@ -237,8 +216,6 @@ impl<'a> JpegDecoder<'a>
                             stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
                         }
                     }
-                    j += 1;
-                    // TODO, look into RST streams 
                     // + EOB and investigate effect.
                     self.todo -= 1;
 
@@ -247,8 +224,6 @@ impl<'a> JpegDecoder<'a>
                         self.handle_rst(stream)?;
                     }
                 }
-                j = 0;
-                i += 1;
             }
         } else {
             if self.spec_end != 0

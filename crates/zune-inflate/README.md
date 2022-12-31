@@ -7,6 +7,7 @@ Supported formats are
 
 - raw deflate
 - zlib (deflate with a zlib wrapper on)
+- gzip
 
 The implementation is heavily based on Eric Biggers [libdeflate] and hence
 has similar characteristics.
@@ -22,6 +23,23 @@ Cargo.toml
 [dependencies]
 #other amazing crates from other amazing people
 zune-inflate = "0.2.0"
+```
+
+## Features
+
+One can enable or disable a specific format using
+cargo features.
+
+Specifically, the following can be enabled
+
+- `gzip`: Enable decompressing of gzip encoded data
+- `zlib`: Enable decompressing of zlib encoded data
+
+To enable one feature, modify `Cargo.toml` entry to be
+
+```toml
+[dependencies]
+zune-inflate = { version = "0.2", default-features = false, features = ["#ADD_SPECIFIC_FEATURE"] }
 ```
 
 ## Usage.

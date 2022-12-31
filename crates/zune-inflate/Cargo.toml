@@ -2,9 +2,12 @@
 name = "zune-inflate"
 version = "0.2.0"
 edition = "2021"
-description = "A heavily optimized deflate decompressor"
+description = "A heavily optimized deflate decompressor in Pure Rust"
 exclude = ["tests/"]
-
+homepage = "https://github.com/etemesi254/zune-image/tree/main/zune-inflate"
+keywords = ["compression", "inflate", "deflate"]
+categories = ["compression"]
+license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
@@ -18,9 +21,12 @@ simd-adler32 = { version = "0.3.4", optional = true }
 
 [dev-dependencies]
 flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng"] }
-criterion = "0.4.0"
 libdeflater = "0.11.0"
 
+[dev-dependencies.criterion]
+version = "0.4.0"
+default-features = false
+features = ["html_reports"]
 
 [[bench]]
 name = "decode"

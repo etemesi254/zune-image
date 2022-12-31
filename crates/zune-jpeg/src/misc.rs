@@ -284,16 +284,10 @@ pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> 
             // None+V sends one MCU row, so that's a simple calculation
             ((actual_width + 7) / 8) * 8
         }
-        SampleRatios::H =>
+        SampleRatios::H | SampleRatios::HV =>
         {
             // sends two rows, width can be expanded by up to 15 more bytes
             ((actual_width + 15) / 16) * 16
-        }
-
-        SampleRatios::HV =>
-        {
-            // sends four rows, width can be expanded up to 31 extra bytes
-            ((actual_width + 31) / 32) * 32
         }
     }
 }
