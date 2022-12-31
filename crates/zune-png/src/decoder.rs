@@ -337,18 +337,14 @@ impl<'a> PngDecoder<'a>
         }
         if info.depth == 16
         {
-            // TODO: This sucks, we should not be allocating a new array for
-            // such.
-            // But Transmuting is unsafe :(
-            let mut new_array = vec![0_u16; new_len];
-
-            for (old, new) in self.out.chunks_exact(2).zip(new_array.iter_mut())
-            {
-                let old_arr: [u8; 2] = old.try_into().unwrap();
-
+            // TODO: This sucks, we should not be allocating a new array for such.
+            // But Transmuting is unsound :(
+            // https://github.com/etemesi254/zune-image/issues/36
+            let mut new_array: Vec<u16> = self.out.chunks_exact(2).map(|chunk| {
+                let value: [u8; 2] = chunk.try_into().unwrap();
                 // png treats 16 bit images as network/big endian.
-                *new = u16::from_be_bytes(old_arr);
-            }
+                u16::from_be_bytes(value)
+            }).collect();
 
             if self.gama != 0 && self.options.gama_correct
             {
