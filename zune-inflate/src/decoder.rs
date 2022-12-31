@@ -562,7 +562,8 @@ impl<'a> DeflateDecoder<'a>
 
                     out_block.resize(new_len, 0);
                 }
-                if self.data.get(start + len).is_none()
+
+                if self.data.get((start + len).saturating_sub(1)).is_none()
                 {
                     out_block.truncate(dest_offset);
 
@@ -1657,4 +1658,14 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
+}
+
+#[test]
+fn tx()
+{
+    let data = [
+        1, 16, 0, 239, 255, 123, 123, 123, 0, 123, 38, 10, 74, 10, 10, 38, 10, 74, 130, 91, 10
+    ];
+    let mut deflate = DeflateDecoder::new(&data);
+    let t = deflate.decode_deflate().unwrap();
 }
