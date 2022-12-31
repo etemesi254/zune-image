@@ -21,8 +21,8 @@ jobs:
       with:
           toolchain: nightly
           override: true
-    - name: Build
-      run: cargo build --verbose
+    - name: Install
+      run: cargo install cargo-fuzz
     - name: Fuzz deflate
       run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- --runs=2000
     - name: Fuzz zlib
