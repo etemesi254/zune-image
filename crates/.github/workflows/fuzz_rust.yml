@@ -1,4 +1,4 @@
-name: Rust
+name: Fuzz
 
 on:
   push:
@@ -16,10 +16,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: nightly
+          override: true
+    - name: Install
+      run: cargo install cargo-fuzz
     - name: Fuzz deflate
       run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- --runs=2000
     - name: Fuzz zlib
