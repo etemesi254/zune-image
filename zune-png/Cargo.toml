@@ -21,10 +21,15 @@ zune-inflate = { path = "../zune-inflate", default-features = false, features = 
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
-criterion = "0.4.0"
 png = "0.17.7"
 spng = "0.1.0"
 
+
+
+[dev-dependencies.criterion]
+version = "0.4.0"
+default-features = false
+features = ["html_reports"]
 
 [[bench]]
 name = "decode"

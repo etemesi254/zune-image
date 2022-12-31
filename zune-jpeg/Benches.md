@@ -75,22 +75,27 @@ To reproduce them
 - L2:                    3 MiB (6 instances)
 - L3:                    8 MiB (2 instances)
 
-###   
+###     
 
 | Benchmark name                      | zune-jpeg | mozjpeg   | image-rs/jpeg-decoder |
 |-------------------------------------|-----------|-----------|-----------------------|
-| No sampling/Baseline JPEG Decoding  | 101.95 ms | 107.78 ms | 207.17 ms             |
-| Horizontal Sub sampling 2V1         | 95.501 ms | 92.514 ms | 142.73 ms             |
-| Vertical sub sampling 2V1           | 94.996 ms | 138.03 ms | 138.05 ms             |
-| HV sampling (2V2)                   | 93.982 ms | 84.644ms  | 110.61 ms             |
-| Grayscale                           | 59.420 ms | 42.094 ms | -                     |
-| Progressive 1V1                     | 305.68 ms | 289.02 ms | 499.63 ms             |
-| Progressive Horizontal sub-sampling | 258.19 ms | 230.50 ms | 373.94 ms             |
-| Progressive Vertical Sub Sampling   | 247.71 ms | 252.79 ms | 356.26 ms             |
-| Progressive HV sampling             | 248.46 ms | 264.36 ms | 351.00 ms             |
-| APPROX TOTAL                        | 1500 ms   | 1498 ms   | 2176 ms*              |
+| No sampling/Baseline JPEG Decoding  | 101.15 ms | 100.56 ms | 177.20 ms             |
+| Horizontal Sub sampling 2V1         | 93.501 ms | 92.514 ms | 123.50 ms             |
+| Vertical sub sampling 2V1           | 98.996 ms | 138.03 ms | 120.05 ms             |
+| HV sampling (2V2)                   | 96.982 ms | 89.644ms  | 107.61 ms             |
+| Grayscale                           | 54.420 ms | 43.094 ms | -                     |
+| Progressive 1V1                     | 312.68 ms | 302.02 ms | 468.63 ms             |
+| Progressive Horizontal sub-sampling | 235.19 ms | 214.50 ms | 352.94 ms             |
+| Progressive Vertical Sub Sampling   | 238.71 ms | 269.79 ms | 333.90 ms             |
+| Progressive HV sampling             | 224.46 ms | 265.36 ms | 350.00 ms             |
+| APPROX TOTAL                        | 1451 ms   | 1512 ms   | 2030 ms*              |
 
 * Without grayscale sum
+
+| Benchmark          | zune-jpeg |
+|--------------------|-----------|
+| allowed intrinsics | 107.03 ms |
+| no-intrinsics      | 132.43 ms |
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo
 

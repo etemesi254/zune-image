@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    if data.len() > 1
+    if data.len() > 10
     {
         let compression_level = data[0];
         let data = &data[1..];
