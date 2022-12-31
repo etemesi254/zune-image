@@ -20,3 +20,7 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace
+    - name: Fuzz deflate
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- --runs=2000
+    - name: Fuzz zlib
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib -- --runs=2000
