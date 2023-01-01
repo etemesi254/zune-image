@@ -870,7 +870,13 @@ impl<'a> DeflateDecoder<'a>
                             }
                         }
                         else if offset <= FASTCOPY_BYTES
+                            && current_position + offset < dest_offset
                         {
+                            // The second conditional ensures we only come
+                            // here if the first copy didn't succeed to copy just enough bytes for a rep
+                            // match to be valid, i.e we want this path to be taken the least amount
+                            // of times possible
+
                             // the unconditional copy above copied some bytes
                             // don't let it go into waste
                             // Increment the position we are in by the number of correct bytes
