@@ -1,6 +1,6 @@
 [package]
 name = "zune-inflate"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "A heavily optimized deflate decompressor in Pure Rust"
 exclude = ["tests/"]
