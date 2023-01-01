@@ -869,11 +869,34 @@ impl<'a> DeflateDecoder<'a>
                                 }
                             }
                         }
-                        else if src_offset + length > current_position && offset < FASTCOPY_BYTES
+                        else if offset <= FASTCOPY_BYTES
                         {
-                            // overlapping copy
-                            // do a simple rep match
-                            copy_rep_matches(&mut out_block, src_offset, current_position, length);
+                            // the unconditional copy above copied some bytes
+                            // don't let it go into waste
+                            // Increment the position we are in by the number of correct bytes
+                            // currently copied
+                            let mut src_position = src_offset + offset;
+                            let mut dest_position = current_position + offset;
+
+                            // loop copying offset bytes in place
+                            // notice this loop does fixed copies but increments in offset bytes :)
+                            // that is intentional.
+                            loop
+                            {
+                                fixed_copy_within::<FASTCOPY_BYTES>(
+                                    &mut out_block,
+                                    src_position,
+                                    dest_position
+                                );
+
+                                src_position += offset;
+                                dest_position += offset;
+
+                                if dest_position > dest_offset
+                                {
+                                    break;
+                                }
+                            }
                         }
                         else if length > FASTCOPY_BYTES
                         {
@@ -1660,12 +1683,4 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
         buf.resize(new_len, 0);
     }
     buf[position] = elm;
-}
-
-#[test]
-fn tx()
-{
-    let data = [0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 246];
-    let mut deflate = DeflateDecoder::new(&data);
-    let t = deflate.decode_deflate().unwrap();
 }
