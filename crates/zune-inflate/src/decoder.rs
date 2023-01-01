@@ -507,6 +507,8 @@ impl<'a> DeflateDecoder<'a>
 
         loop
         {
+            self.stream.refill();
+
             self.is_last_block = self.stream.get_bits(1) == 1;
             let block_type = self.stream.get_bits(2);
 
@@ -1663,9 +1665,7 @@ fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8)
 #[test]
 fn tx()
 {
-    let data = [
-        1, 16, 0, 239, 255, 123, 123, 123, 0, 123, 38, 10, 74, 10, 10, 38, 10, 74, 130, 91, 10
-    ];
+    let data = [0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 246];
     let mut deflate = DeflateDecoder::new(&data);
     let t = deflate.decode_deflate().unwrap();
 }
