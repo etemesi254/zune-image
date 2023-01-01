@@ -24,6 +24,6 @@ jobs:
     - name: Install
       run: cargo install cargo-fuzz
     - name: Fuzz deflate
-      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- --runs=200
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- -runs=10000
     - name: Fuzz zlib
-      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib -- --runs=200
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib -- -runs=10000
