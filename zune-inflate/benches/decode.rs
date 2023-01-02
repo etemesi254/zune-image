@@ -17,7 +17,9 @@ fn decode_writer_flate(bytes: &[u8]) -> Vec<u8>
 
 fn decode_writer_zune(bytes: &[u8]) -> Vec<u8>
 {
-    let mut deflater = zune_inflate::DeflateDecoder::new(bytes);
+    let options = zune_inflate::DeflateOptions::default().set_size_hint((1 << 20) * 50);
+
+    let mut deflater = zune_inflate::DeflateDecoder::new_with_options(bytes, options);
 
     deflater.decode_zlib().unwrap()
 }
@@ -53,11 +55,33 @@ fn decode_test(c: &mut Criterion)
         b.iter(|| black_box(decode_writer_libdeflate(data.as_slice())))
     });
 }
+
+fn decode_test_crow(c: &mut Criterion)
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/zlib/png_artwork.zlib";
+
+    let data = read(path).unwrap();
+
+    let mut group = c.benchmark_group("ZLIB decoding-png zlib");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("FLATE/zlib-ng", |b| {
+        b.iter(|| black_box(decode_writer_flate(data.as_slice())))
+    });
+
+    group.bench_function("ZUNE", |b| {
+        b.iter(|| black_box(decode_writer_zune(data.as_slice())))
+    });
+
+    group.bench_function("libdeflate", |b| {
+        b.iter(|| black_box(decode_writer_libdeflate(data.as_slice())))
+    });
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=decode_test);
+    targets=decode_test_crow,decode_test);
 
 criterion_main!(benches);

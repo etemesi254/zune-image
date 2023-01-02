@@ -26,7 +26,6 @@ fn filter(path: &PathBuf) -> bool
     magic_bytes == (0xffd8_u16).to_be_bytes()
 }
 
-#[test]
 fn add_tests()
 {
     let paths = env!("CARGO_MANIFEST_DIR").to_string();

@@ -1,0 +1,37 @@
+name: Fuzz Deflate
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'zune-inflate/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'zune-inflate/**'
+  schedule:
+    - cron: '0 0 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+    - name: Install
+      run: cargo install cargo-fuzz
+    - name: Fuzz deflate
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -- -runs=200000
+    - name: Fuzz zlib
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib -- -runs=200000
+    - name: Normal Fuzz testing.
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz decode_buffer  -- -runs=200000

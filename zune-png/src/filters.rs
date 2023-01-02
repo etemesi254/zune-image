@@ -48,7 +48,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
 
     if components > 8
     {
-        // optimizer hint to tell the CPU that we don't see this ever happening
+        // optimizer hint to tell the compiler that we don't see this ever happening
         return;
     }
     for i in components..end
