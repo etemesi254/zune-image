@@ -329,6 +329,7 @@ impl<'a> DeflateDecoder<'a>
         self.position += 1;
 
         let flg = self.data[self.position];
+        self.position += 1;
 
         // skip mtime
         self.position += 4;
@@ -381,8 +382,6 @@ impl<'a> DeflateDecoder<'a>
                 }
                 self.position += 1;
             }
-
-            self.position += 1;
         }
         // File comment zero terminated
         if (flg & GZIP_FCOMMENT) != 0
@@ -404,7 +403,6 @@ impl<'a> DeflateDecoder<'a>
                 }
                 self.position += 1;
             }
-            self.position += 1;
         }
         // crc16 for gzip header
         if (flg & GZIP_FHCRC) != 0
