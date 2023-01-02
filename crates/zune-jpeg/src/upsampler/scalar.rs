@@ -1,5 +1,5 @@
 pub fn upsample_horizontal(
-    input: &[i16], _ref: &mut [i16], _scratch: &mut [i16], output: &mut [i16],
+    input: &[i16], _ref: &mut [i16], _scratch: &mut [i16], output: &mut [i16]
 )
 {
     assert_eq!(
@@ -48,7 +48,7 @@ pub fn upsample_horizontal(
     f_out[1] = i_last[1];
 }
 pub fn upsample_vertical(
-    input: &[i16], in_ref: &mut [i16], _scratch_space: &mut [i16], output: &mut [i16],
+    input: &[i16], in_ref: &mut [i16], _scratch_space: &mut [i16], output: &mut [i16]
 )
 {
     let middle = output.len() / 2;
@@ -68,5 +68,29 @@ pub fn upsample_hv(input: &[i16], in_ref: &mut [i16], scratch_space: &mut [i16],
 {
     let mut t = [0];
     upsample_vertical(input, in_ref, &mut t, scratch_space);
-    upsample_horizontal(scratch_space, in_ref, &mut t, output);
+    // horizontal upsampling must be done separate for every line
+    // Otherwise it introduces artifacts that may cause the edge colors
+    // to appear on the other line.
+
+    // Since this is called for two scanlines/widths currently
+    // splitting the inputs and outputs into half ensures we only handle
+    // one scanline per iteration
+    let scratch_half = scratch_space.len() / 2;
+    let in_ref_half = in_ref.len() / 2;
+
+    let output_half = output.len() / 2;
+
+    upsample_horizontal(
+        &scratch_space[..scratch_half],
+        &mut in_ref[..in_ref_half],
+        &mut t,
+        &mut output[..output_half]
+    );
+
+    upsample_horizontal(
+        &scratch_space[scratch_half..],
+        &mut in_ref[in_ref_half..],
+        &mut t,
+        &mut output[output_half..]
+    );
 }
