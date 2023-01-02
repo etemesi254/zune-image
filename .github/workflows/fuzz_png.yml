@@ -1,0 +1,30 @@
+name: Fuzz PPM
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'zune-png/**'
+  schedule:
+    - cron: '0 0 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install
+        run: cargo install cargo-fuzz
+
+      - name: Normal Fuzz testing.
+        run: cargo +nightly fuzz  run  --fuzz-dir zune-png/fuzz decode_buffer  zune-png/tests/png_suite -- -runs=10000
