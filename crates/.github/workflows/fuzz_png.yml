@@ -1,4 +1,4 @@
-name: Fuzz PPM
+name: Fuzz PNG
 
 on:
   push:
