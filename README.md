@@ -2,17 +2,15 @@
 
 This is pre alpha pre beta, think of it like a leaked code.
 
-<small>How I think image libraries should be </small>
-
 This contains a POC code of some image stuff, very much WIP and has too many things not working,
 and some working.
 
 It aims to have the following features
 
 - Safety(unsafe is allowed, but used sparingly)
-- Fast decode speeds(JPEG decode speeds to match libjpeg-turbo)
-- Fast image operation speed(probably some of the fastest image operation algorithms out there)
-- Use explicit SIMD where applicable(for speed cases)
+- Fast decode speeds
+- Fast image operation speeds
+- Use explicit SIMD where applicable(for cases where speed is important)
 - Otherwise, trust the compiler.
 - Small dependency footprint.
 
@@ -39,33 +37,28 @@ compared to other implementations.
   allows one to slice , dice and splice images and create whatever suits you.
 - `zune-core`: Core routines required by(and shared with) multiple image formats.
 
-## What you can currently do
+## Benchmarks.
 
-| IMAGE | Decoder          | Encoder              |
-|-------|------------------|----------------------|
-| JPEG  | Full support     | None                 |
-| PNG   | Partial          | None                 |
-| PPM   | 8 and 16 bit     | 8 and 16 bit support |
-| PAL   | None             | 8 and 16 bit support |
-| PSD   | 8 and 16 bit RGB | None                 |
+Library benchmarks are available [online] and also reproducible offline
 
-`zune -i ([img].jpg | [img].ppm) -o [img].ppm`
+To reproduce benchmarks you can run the following commands
 
-i.e decode a jpg image,apply operations and encode it into
-a ppm image.
+Tested, on Linux, but should work for most operating systems
 
-## Timeline
+```shell
+git clone https://github.com/etemesi254/zune-image
+cd ./zune-image
+cargo bench --workspace
+```
 
-- Things that we'll work in 1-2 months
-    - PNG decoding
-    - Image resizing
-    - PAM decoding
-    - Gaussian and box blurring
-    - Unsharpen
-- Things that will work in 2-4 months
-    - JPEG encoding
-    - PNG encoding
-    - Blend modes
-    - Edge detection
-    - Erode
-    - Sobel
+This will create a criterion directory in target which will contain benchmark
+results of most image decoding operations.
+
+
+[online]:https://etemesi254.github.io/posts/Zune-Benchmarks/
+
+## Fuzzing
+
+Most decoders are tested in CI to ensure new changes do not introduce regressions.
+
+Critical decoders are fuzz tested in CI once every day to catch any potential issue/bug.
