@@ -31,5 +31,5 @@ jobs:
       - name: Test jpeg
         run: cargo test --verbose --package=zune-jpeg
       - name: Fuzz jpeg
-        run: cargo +nightly fuzz run --fuzz-dir zune-jpeg/fuzz decode_buffer -- -runs=1000
+        run: cargo +nightly fuzz run --fuzz-dir zune-jpeg/fuzz decode_buffer -- -runs=2000
 
