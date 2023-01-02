@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - 'zune-ppm/**'
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   CARGO_TERM_COLOR: always

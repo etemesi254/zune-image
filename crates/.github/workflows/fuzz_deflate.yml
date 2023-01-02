@@ -5,6 +5,12 @@ on:
     branches: [ "main" ]
     paths:
       - 'zune-inflate/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'zune-inflate/**'
+  schedule:
+    - cron: '0 0 * * *'
 
 env:
   CARGO_TERM_COLOR: always
