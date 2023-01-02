@@ -20,6 +20,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Build
-
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install
+        run: cargo install cargo-fuzz
+      - name: Test jpeg
         run: cargo test --verbose --package=zune-jpeg
+      - name: Fuzz jpeg
+        run: cargo +nightly fuzz run --fuzz-dir zune-jpeg/fuzz decode_buffer -- -runs=200000
+
