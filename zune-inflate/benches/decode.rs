@@ -70,7 +70,7 @@ fn decode_test(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("ZLIB decoding");
+    let mut group = c.benchmark_group("enwiki zlib decoding");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("FLATE-[zlib-ng]", |b| {
