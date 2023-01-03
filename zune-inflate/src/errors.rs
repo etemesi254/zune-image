@@ -5,7 +5,7 @@ pub struct InflateDecodeErrors
 {
     /// reason why decompression fails
     pub error: DecodeErrorStatus,
-    /// Data up until that decompression stage
+    /// Decoded data up until that decompression error
     pub data:  Vec<u8>
 }
 
@@ -34,12 +34,24 @@ impl Debug for InflateDecodeErrors
 
 pub enum DecodeErrorStatus
 {
+    /// Input data is not enough to construct
+    /// a full output
     InsufficientData,
+    /// Anything that isn't significant
     Generic(&'static str),
     GenericStr(String),
+    ///Input data was malformed.
     CorruptData,
+    /// Limit set by the user was exceeded by
+    /// decompressed output
     OutputLimitExceeded(usize, usize),
+    /// Output CRC does not match stored CRC.
+    ///
+    /// Only present for zlib
     MismatchedCRC(u32, u32),
+    /// Output Adler does not match stored adler
+    ///
+    /// Only present for gzip
     MismatchedAdler(u32, u32)
 }
 
