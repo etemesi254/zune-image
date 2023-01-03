@@ -713,7 +713,13 @@ impl<'a> DeflateDecoder<'a>
 
                             self.stream.drop_bits(entry as u8);
 
-                            out_block[dest_offset] = literal as u8;
+                            let out: &mut [u8; 2] = out_block
+                                .get_mut(dest_offset..dest_offset + 2)
+                                .unwrap()
+                                .try_into()
+                                .unwrap();
+
+                            out[0] = literal as u8;
                             dest_offset += 1;
 
                             if (entry & HUFFDEC_LITERAL) != 0
@@ -728,7 +734,7 @@ impl<'a> DeflateDecoder<'a>
                                 literal = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
-                                out_block[dest_offset] = literal as u8;
+                                out[1] = literal as u8;
                                 dest_offset += 1;
 
                                 continue;
@@ -758,7 +764,7 @@ impl<'a> DeflateDecoder<'a>
                             saved_bitbuf = self.stream.buffer;
 
                             pos += self.stream.peek_var_bits(entry_position);
-                            entry = litlen_decode_table[pos];
+                            entry = litlen_decode_table[pos.min(LITLEN_ENOUGH - 1)];
 
                             self.stream.drop_bits(entry as u8);
 
@@ -770,7 +776,9 @@ impl<'a> DeflateDecoder<'a>
                                 literal = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
-                                out_block[dest_offset] = (literal & 0xFF) as u8;
+                                *out_block.get_mut(dest_offset).unwrap_or(&mut 0) =
+                                    (literal & 0xFF) as u8;
+
                                 dest_offset += 1;
 
                                 continue;
