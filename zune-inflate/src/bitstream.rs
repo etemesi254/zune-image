@@ -7,7 +7,7 @@ pub struct BitStreamReader<'src>
 {
     // buffer from which we are pulling in bits from
     // used in decompression.
-    src:           &'src [u8],
+    pub src:       &'src [u8],
     // position in our buffer,
     pub position:  usize,
     pub bits_left: u8,
