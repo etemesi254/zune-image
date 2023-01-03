@@ -371,6 +371,7 @@ impl<'a> DeflateDecoder<'a>
                 {
                     if *byte == 0
                     {
+                        self.position += 1;
                         break;
                     }
                 }
@@ -392,6 +393,7 @@ impl<'a> DeflateDecoder<'a>
                 {
                     if *byte == 0
                     {
+                        self.position += 1;
                         break;
                     }
                 }
@@ -671,14 +673,14 @@ impl<'a> DeflateDecoder<'a>
                         // recheck after every sequence
                         // when we hit continue, we need to recheck this
                         // as we are trying to emulate a do while
-                        let new_check = 2 * FASTCOPY_BYTES > self.stream.remaining_bytes();
+                        let new_check = self.stream.src.len() < self.stream.position + 8;
 
                         if new_check
                         {
                             break 'sequence;
                         }
 
-                        self.stream.refill();
+                        self.stream.refill_inner_loop();
                         /*
                          * Consume the bits for the litlen decode table entry.  Save the
                          * original bit-buf for later, in case the extra match length
@@ -705,9 +707,10 @@ impl<'a> DeflateDecoder<'a>
                              * that happens later while decoding the match offset).
                              */
 
+                            literal = entry >> 16;
+
                             let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
-                            literal = entry >> 16;
                             entry = litlen_decode_table[new_pos];
                             saved_bitbuf = self.stream.buffer;
 
@@ -728,10 +731,12 @@ impl<'a> DeflateDecoder<'a>
                                  * Another fast literal, but this one is in lieu of the
                                  * primary item, so it doesn't count as one of the extras.
                                  */
-                                let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
                                 // load in the next entry.
                                 literal = entry >> 16;
+
+                                let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
+
                                 entry = litlen_decode_table[new_pos];
 
                                 out[1] = literal as u8;
@@ -803,21 +808,20 @@ impl<'a> DeflateDecoder<'a>
                          * fast loop where it's already been verified that the output
                          * buffer has enough space remaining to copy a max-length match.
                          */
-                        length = (entry >> 16) as usize;
-
-                        let mask = (1 << entry as u8) - 1;
-
-                        length += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+                        let entry_dup = entry;
 
                         entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
+                        length = (entry_dup >> 16) as usize;
+
+                        let mask = (1 << entry_dup as u8) - 1;
+
+                        length += (saved_bitbuf & mask) as usize >> ((entry_dup >> 8) as u8);
 
                         // offset requires a subtable
                         if (entry & HUFFDEC_EXCEPTIONAL) != 0
                         {
                             self.stream.drop_bits(OFFSET_TABLEBITS as u8);
-
                             let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
-
                             entry = offset_decode_table[((entry >> 16) as usize + extra) & 511];
                         }
 
@@ -964,7 +968,7 @@ impl<'a> DeflateDecoder<'a>
                             return Err(error);
                         }
 
-                        if 2 * FASTCOPY_BYTES > self.stream.remaining_bytes()
+                        if self.stream.src.len() < self.stream.position + 8
                         {
                             // close to input end, move to the slower one
                             break 'sequence;
