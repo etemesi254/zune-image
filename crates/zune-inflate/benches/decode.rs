@@ -129,11 +129,33 @@ fn decode_test_gzip(c: &mut Criterion)
         b.iter(|| black_box(decode_writer_libdeflate_gz(data.as_slice())))
     });
 }
+
+fn decode_test_gzip_json(c: &mut Criterion)
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/gzip/image.json.gz";
+
+    let data = read(path).unwrap();
+
+    let mut group = c.benchmark_group("Gzip decoding, image-rs rustdoc json");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("FLATE/zlib-ng", |b| {
+        b.iter(|| black_box(decode_writer_flate_gz(data.as_slice())))
+    });
+
+    group.bench_function("ZUNE", |b| {
+        b.iter(|| black_box(decode_writer_zune_gz(data.as_slice())))
+    });
+
+    group.bench_function("libdeflate", |b| {
+        b.iter(|| black_box(decode_writer_libdeflate_gz(data.as_slice())))
+    });
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=decode_test_crow,decode_test,decode_test_gzip);
+    targets=decode_test_crow,decode_test,decode_test_gzip,decode_test_gzip_json);
 
 criterion_main!(benches);
