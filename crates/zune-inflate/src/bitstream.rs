@@ -65,6 +65,34 @@ impl<'src> BitStreamReader<'src>
             None => self.refill_slow()
         }
     }
+    #[inline(always)]
+    pub fn refill_inner_loop(&mut self)
+    {
+        /*
+         * The refill always guarantees refills between 56-63
+         *
+         * Bits stored will never go above 63 and if bits are in the range 56-63 no refills occur.
+         */
+        let mut buf = [0; 8];
+
+        if let Some(bytes) = self.src.get(self.position..self.position + 8)
+        {
+            {
+                buf.copy_from_slice(bytes);
+                // create a u64 from an array of u8's
+                let new_buffer = u64::from_le_bytes(buf);
+                // num indicates how many bytes we actually consumed.
+                let num = 63 ^ self.bits_left;
+                // offset position
+                self.position += (num >> 3) as usize;
+                // shift number of bits
+                self.buffer |= new_buffer << self.bits_left;
+                // update bits left
+                // bits left are now between 56-63
+                self.bits_left |= 56;
+            }
+        }
+    }
     #[inline(never)]
     fn refill_slow(&mut self)
     {
