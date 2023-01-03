@@ -649,7 +649,7 @@ impl<'a> DeflateDecoder<'a>
 
                 if close_src
                 {
-                    self.stream.refill();
+                    self.stream.refill_inner_loop();
 
                     let lit_mask = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
