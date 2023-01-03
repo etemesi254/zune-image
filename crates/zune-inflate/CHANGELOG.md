@@ -13,3 +13,8 @@
 ## Version 0.2.3
 
 - Small performance improvements, especially on files with a lot of RLE redundant data
+
+## Version 0.2.4
+
+- Fix bug with some gzip that would cause errors during decoding
+- Small performance improvement
