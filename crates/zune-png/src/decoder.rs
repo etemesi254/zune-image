@@ -380,7 +380,7 @@ impl<'a> PngDecoder<'a>
     /// This does gamma correction
     pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
     {
-        let mut out = self.decode_raw()?;
+        let out = self.decode_raw()?;
 
         if self.png_info.depth <= 8
         {
@@ -389,7 +389,7 @@ impl<'a> PngDecoder<'a>
         if self.png_info.depth == 16
         {
             // https://github.com/etemesi254/zune-image/issues/36
-            let mut new_array: Vec<u16> = out
+            let new_array: Vec<u16> = out
                 .chunks_exact(2)
                 .map(|chunk| {
                     let value: [u8; 2] = chunk.try_into().unwrap();
