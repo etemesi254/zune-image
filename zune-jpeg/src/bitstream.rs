@@ -211,7 +211,6 @@ impl BitStream
                                         next_byte
                                     ))
                                 })?);
-                            self.bits_left = 63;
                             return Ok(false);
                         }
                     }
