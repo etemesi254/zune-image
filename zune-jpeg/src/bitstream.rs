@@ -255,11 +255,6 @@ impl BitStream
             // Construct an MSB buffer whose top bits are the bitstream we are currently holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
         }
-        else if self.marker.is_some()
-        {
-            // fill with zeroes
-            self.bits_left = 63;
-        }
 
         return Ok(true);
     }
