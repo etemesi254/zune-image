@@ -196,7 +196,7 @@ impl BitStream
                         if next_byte != 0x00
                         {
                             // Undo the byte append and return
-                            self.buffer >>= 8;
+                            $buffer >>= 8;
                             $bits_left -= 8;
 
                             if $bits_left != 0
