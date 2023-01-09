@@ -381,7 +381,6 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-        debug_assert!(LOOKAHEAD <= self.bits_left);
         (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
@@ -389,7 +388,6 @@ impl BitStream
     #[inline]
     fn drop_bits(&mut self, n: u8)
     {
-        debug_assert!(self.bits_left >= n);
         self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
     }
@@ -399,8 +397,6 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     fn get_bits(&mut self, n_bits: u8) -> i32
     {
-        debug_assert!(self.bits_left >= n_bits);
-
         let mask = (1_u64 << n_bits) - 1;
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
