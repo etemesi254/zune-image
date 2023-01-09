@@ -71,11 +71,11 @@ pub(crate) fn color_convert_no_sampling(
                 output
             );
         }
-        (ColorSpace::CYMK, ColorSpace::RGB) =>
+        (ColorSpace::CMYK, ColorSpace::RGB) =>
         {
             color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
         }
-        (ColorSpace::CYMK, ColorSpace::RGBA | ColorSpace::RGBX) =>
+        (ColorSpace::CMYK, ColorSpace::RGBA | ColorSpace::RGBX) =>
         {
             color_convert_cymk_to_rgb::<4>(unprocessed, width, padded_width, output);
         }
@@ -126,7 +126,7 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
 {
     // TODO: Find file that implements cymk.
     // This is not tested
-    for ((((pix_w, c_w), y_w), m_w), k_w) in output
+    for ((((pix_w, c_w), m_w), y_w), k_w) in output
         .chunks_exact_mut(width * NUM_COMPONENTS)
         .zip(mcu_block[0].chunks_exact(padded_width))
         .zip(mcu_block[1].chunks_exact(padded_width))
@@ -136,8 +136,8 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
         for ((((pix, c), y), m), k) in pix_w
             .chunks_exact_mut(3)
             .zip(c_w)
-            .zip(y_w)
             .zip(m_w)
+            .zip(y_w)
             .zip(k_w)
         {
             let k = *k as u8;
@@ -145,9 +145,9 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
             let y = *y as u8;
             let m = *m as u8;
 
-            pix[0] = blinn_8x8(255 - c, k);
-            pix[1] = blinn_8x8(255 - y, k);
-            pix[2] = blinn_8x8(255 - m, k);
+            pix[0] = blinn_8x8(c, k);
+            pix[1] = blinn_8x8(m, k);
+            pix[2] = blinn_8x8(y, k);
         }
     }
 }

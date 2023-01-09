@@ -141,7 +141,7 @@ impl<'a> JpegDecoder<'a>
             // components.
             if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
                 || self.input_colorspace == ColorSpace::YCCK
-                || self.input_colorspace == ColorSpace::CYMK
+                || self.input_colorspace == ColorSpace::CMYK
             {
                 let mut len = comp.width_stride * DCT_BLOCK / 8;
 

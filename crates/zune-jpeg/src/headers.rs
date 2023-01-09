@@ -439,7 +439,7 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
         let transform = decoder.stream.get_u8();
         match transform
         {
-            0 => decoder.input_colorspace = ColorSpace::CYMK,
+            0 => decoder.input_colorspace = ColorSpace::CMYK,
             2 => decoder.input_colorspace = ColorSpace::YCCK,
             _ =>
             {
