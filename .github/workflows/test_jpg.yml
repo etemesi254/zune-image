@@ -2,11 +2,11 @@ name: Test JPEG
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main","dev" ]
     paths:
       - 'zune-jpeg/**'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main","dev" ]
     paths:
       - 'zune-jpeg/**'
   schedule:

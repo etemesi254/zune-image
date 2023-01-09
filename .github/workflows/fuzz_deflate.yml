@@ -2,7 +2,7 @@ name: Fuzz Deflate
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main","dev" ]
     paths:
       - 'zune-inflate/**'
   pull_request:
