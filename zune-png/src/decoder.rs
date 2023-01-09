@@ -10,7 +10,6 @@ use crate::error::PngErrors;
 use crate::filters::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
-use crate::gamma_correct::gamma_correct;
 use crate::options::PngOptions;
 
 #[derive(Copy, Clone)]
@@ -385,11 +384,6 @@ impl<'a> PngDecoder<'a>
 
         if self.png_info.depth <= 8
         {
-            if self.gama != 0 && self.options.gama_correct
-            {
-                let val = (self.gama as f32) / 100000.0;
-                gamma_correct(&mut out, val, 255);
-            }
             return Ok(DecodingResult::U8(out));
         }
         if self.png_info.depth == 16
@@ -403,11 +397,6 @@ impl<'a> PngDecoder<'a>
                 })
                 .collect();
 
-            if self.gama != 0 && self.options.gama_correct
-            {
-                let val = (self.gama as f32) / 100000.0;
-                gamma_correct(&mut new_array, val, 65535);
-            }
             return Ok(DecodingResult::U16(new_array));
         }
         Err(PngErrors::GenericStatic("Not implemented"))
