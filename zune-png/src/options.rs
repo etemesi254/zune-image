@@ -39,8 +39,7 @@ pub struct PngOptions
     pub(crate) max_height:        usize,
     pub(crate) chunk_handler:     UnkownChunkHandler,
     pub(crate) strict_mode:       bool,
-    pub(crate) confirm_checksums: bool,
-    pub(crate) gama_correct:      bool
+    pub(crate) confirm_checksums: bool
 }
 
 impl Default for PngOptions
@@ -52,8 +51,7 @@ impl Default for PngOptions
             max_height:        1 << 17,
             chunk_handler:     default_chunk_handler,
             strict_mode:       false,
-            confirm_checksums: true,
-            gama_correct:      true
+            confirm_checksums: true
         }
     }
 }
