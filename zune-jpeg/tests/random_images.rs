@@ -141,3 +141,16 @@ fn test_four_components()
     // Grayscale
     let _ = decoder.decode().expect("Test failed decoding");
 }
+
+#[test]
+fn test_large_component_number()
+{
+    //
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huge_sof_number.jpg";
+
+    let data = &std::fs::read(path).unwrap();
+
+    let mut decoder = JpegDecoder::new(data);
+    // Grayscale
+    let _ = decoder.decode().expect("Test failed decoding");
+}

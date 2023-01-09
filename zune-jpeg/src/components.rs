@@ -56,7 +56,7 @@ impl Components
 {
     /// Create a new instance from three bytes from the start of frame
     #[inline]
-    pub fn from(a: [u8; 3]) -> Result<Components, DecodeErrors>
+    pub fn from(a: [u8; 3], pos: u8) -> Result<Components, DecodeErrors>
     {
         let id = match a[0]
         {
@@ -66,9 +66,25 @@ impl Components
             4 => ComponentID::Q,
             r =>
             {
-                return Err(DecodeErrors::Format(format!(
-                    "Unknown component id found,{r}, expected value between 1 and 4"
-                )));
+                // it's a unique identifier.
+                // doesn't have to be ascending
+                // see tests/inputs/huge_sof_number
+                //
+                // For such cases, use the position of the component
+                // to determine width
+                match pos
+                {
+                    0 => ComponentID::Y,
+                    1 => ComponentID::Cb,
+                    2 => ComponentID::Cr,
+                    3 => ComponentID::Q,
+                    _ =>
+                    {
+                        return Err(DecodeErrors::Format(format!(
+                            "Unknown component id found,{r}, expected value between 1 and 4"
+                        )))
+                    }
+                }
             }
         };
 

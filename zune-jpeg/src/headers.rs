@@ -269,14 +269,14 @@ pub(crate) fn parse_start_of_frame(
     let mut components = Vec::with_capacity(num_components as usize);
     let mut temp = [0; 3];
 
-    for _ in 0..num_components
+    for pos in 0..num_components
     {
         // read 3 bytes for each component
         img.stream
             .read_exact(&mut temp)
             .map_err(|x| DecodeErrors::Format(format!("Could not read component data\n{x}")))?;
         // create a component.
-        let component = Components::from(temp)?;
+        let component = Components::from(temp, pos)?;
 
         components.push(component);
     }
@@ -295,7 +295,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     // Number of image components in scan
     let ns = image.stream.get_u8_err()?;
 
-    let mut seen = [false; { MAX_COMPONENTS + 1 }];
+    let mut seen = [-1; { MAX_COMPONENTS + 1 }];
 
     image.num_scans = ns;
 
@@ -327,21 +327,14 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
         // CS_i parameter, I don't need it so I might as well delete it
         let id = image.stream.get_u8_err()?;
 
-        if usize::from(id) > image.components.len()
-        {
-            return Err(DecodeErrors::SofError(format!(
-                "Too large component ID {}, expected value between 0 and {}",
-                id,
-                image.components.len()
-            )));
-        }
-        if seen[usize::from(id)]
+        if seen.contains(&i32::from(id))
         {
             return Err(DecodeErrors::SofError(format!(
                 "Duplicate ID {id} seen twice in the same component"
             )));
         }
-        seen[usize::from(id)] = true;
+
+        seen[usize::from(i)] = i32::from(id);
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
         // lower four bits contain ac huffman destination table
