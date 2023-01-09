@@ -7,7 +7,7 @@ use zune_core::colorspace::ColorSpace;
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
-use crate::headers::{parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
+use crate::headers::{parse_app14, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
@@ -110,7 +110,7 @@ pub struct JpegDecoder<'a>
     pub(crate) idct_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
-    pub(crate) z_order:          [usize; 4],
+    pub(crate) z_order:          [usize; MAX_COMPONENTS],
     /// restart markers
     pub(crate) restart_interval: usize,
     pub(crate) todo:             usize,
@@ -393,6 +393,10 @@ impl<'a> JpegDecoder<'a>
 
                 self.restart_interval = usize::from(self.stream.get_u16_be_err()?);
                 self.todo = self.restart_interval;
+            }
+            Marker::APP(14) =>
+            {
+                parse_app14(self)?;
             }
             _ =>
             {

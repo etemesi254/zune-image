@@ -89,6 +89,7 @@
 )]
 #![cfg_attr(not(feature = "x86"), forbid(unsafe_code))]
 
+extern crate core;
 #[macro_use]
 extern crate log;
 

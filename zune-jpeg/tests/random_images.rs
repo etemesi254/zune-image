@@ -128,3 +128,16 @@ fn google_pixel_progressive()
         OutColorSpace::JCS_GRAYSCALE
     );
 }
+
+#[test]
+fn test_four_components()
+{
+    //
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/four_components.jpg";
+
+    let data = &std::fs::read(path).unwrap();
+
+    let mut decoder = JpegDecoder::new(data);
+    // Grayscale
+    let _ = decoder.decode().expect("Test failed decoding");
+}
