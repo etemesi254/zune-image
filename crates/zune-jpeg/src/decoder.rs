@@ -251,10 +251,27 @@ impl<'a> JpegDecoder<'a>
             {
                 let marker = Marker::from_u8(m);
 
-                bytes_before_marker = 0;
-
                 if let Some(n) = marker
                 {
+                    if bytes_before_marker > 3
+                    {
+                        if self.options.get_strict_mode()
+                        /*No reason to use this*/
+                        {
+                            return Err(DecodeErrors::FormatStatic(
+                                "[strict-mode]: Extra bytes between headers"
+                            ));
+                        }
+
+                        error!(
+                            "Extra bytes {} before marker 0xFF{:X}",
+                            bytes_before_marker - 3,
+                            m
+                        );
+                    }
+
+                    bytes_before_marker = 0;
+
                     self.parse_marker_inner(n)?;
 
                     if n == Marker::SOS
@@ -282,23 +299,6 @@ impl<'a> JpegDecoder<'a>
             }
             last_byte = m;
             bytes_before_marker += 1;
-
-            if bytes_before_marker > 3
-            {
-                if self.options.get_strict_mode()
-                /*No reason to use this*/
-                {
-                    return Err(DecodeErrors::FormatStatic(
-                        "[strict-mode]: Extra bytes between headers"
-                    ));
-                }
-
-                error!(
-                    "Extra bytes {} before marker 0xFF{:X}",
-                    bytes_before_marker - 3,
-                    m
-                );
-            }
         }
     }
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors>
