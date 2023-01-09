@@ -440,6 +440,7 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
         match transform
         {
             0 => decoder.input_colorspace = ColorSpace::CMYK,
+            1 => decoder.input_colorspace = ColorSpace::YCbCr,
             2 => decoder.input_colorspace = ColorSpace::YCCK,
             _ =>
             {
