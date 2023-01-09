@@ -246,7 +246,7 @@ pub(crate) fn upsample_and_color_convert(
     unprocessed: &[Vec<i16>; MAX_COMPONENTS], component_data: &mut [Components],
     padded_width: usize, color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
     output_colorspace: ColorSpace, output: &mut [u8], width: usize, scratch_space: &mut [i16]
-)
+) -> Result<(), DecodeErrors>
 {
     let v_samp = component_data[0].vertical_sample;
     let out_stride = width * output_colorspace.num_components() * v_samp;
@@ -297,6 +297,7 @@ pub(crate) fn upsample_and_color_convert(
             out,
             width,
             padded_width
-        );
+        )?;
     }
+    Ok(())
 }

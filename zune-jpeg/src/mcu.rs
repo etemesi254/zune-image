@@ -319,7 +319,7 @@ impl<'a> JpegDecoder<'a>
                         chunks.next().unwrap(),
                         width,
                         &mut upsampler_scratch_space
-                    );
+                    )?;
                 }
             }
             else
