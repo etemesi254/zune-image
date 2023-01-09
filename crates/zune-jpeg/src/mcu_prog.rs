@@ -348,7 +348,7 @@ impl<'a> JpegDecoder<'a>
 
         let mut pixels = vec![0; capacity * out_colorspace_components + extra];
         let mut chunks = pixels.chunks_mut(chunks_size);
-        let mut temporary = [vec![], vec![], vec![]];
+        let mut temporary: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
@@ -508,7 +508,7 @@ impl<'a> JpegDecoder<'a>
                     component.idct_pos = 0;
                 }
                 // color convert expects a reference.
-                let mut temporary_ref: [&[i16]; 3] = [&[]; 3];
+                let mut temporary_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
 
                 temporary
                     .iter()
@@ -524,7 +524,7 @@ impl<'a> JpegDecoder<'a>
                     chunks.next().unwrap(),
                     width,
                     padded_width
-                );
+                )?;
             }
         }
 

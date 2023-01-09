@@ -295,7 +295,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     // Number of image components in scan
     let ns = image.stream.get_u8_err()?;
 
-    let mut seen = [false; MAX_COMPONENTS];
+    let mut seen = [false; { MAX_COMPONENTS + 1 }];
 
     image.num_scans = ns;
 
@@ -307,8 +307,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     }
 
     // Check number of components.
-    // Currently ths library doesn't support images with more than 4 components
-    if !(1..4).contains(&ns)
+    if !(1..5).contains(&ns)
     {
         return Err(DecodeErrors::SosError(format!(
             "Number of components in start of scan should be less than 3 but more than 0. Found {ns}"
@@ -417,6 +416,50 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
         image.succ_high,
         image.succ_low
     );
+
+    Ok(())
+}
+
+/// Parse Adobe App14 segment
+pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+{
+    // skip length
+    let length = usize::from(decoder.stream.get_u16_be());
+
+    if length < 2 || !decoder.stream.has(length - 2)
+    {
+        return Err(DecodeErrors::ExhaustedData);
+    }
+    if length < 14
+    {
+        return Err(DecodeErrors::FormatStatic(
+            "Too short of a length for App14 segment"
+        ));
+    }
+    if decoder.stream.peek_at(0, 5) == Ok(b"Adobe")
+    {
+        // move sream 6 bytes to remove adobe id
+        decoder.stream.skip(6);
+        // skip version, flags0 and flags1
+        decoder.stream.skip(5);
+        // get color transform
+        let transform = decoder.stream.get_u8();
+        match transform
+        {
+            0 => decoder.input_colorspace = ColorSpace::CYMK,
+            2 => decoder.input_colorspace = ColorSpace::YCCK,
+            _ =>
+            {
+                return Err(DecodeErrors::Format(format!(
+                    "Unknown Adobe colorspace {transform}"
+                )))
+            }
+        }
+    }
+    else
+    {
+        return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
+    }
 
     Ok(())
 }

@@ -4,12 +4,26 @@ use zune_core::colorspace::ColorSpace;
 
 use crate::color_convert::ycbcr_to_grayscale;
 use crate::components::{ComponentID, Components};
-use crate::decoder::ColorConvert16Ptr;
+use crate::decoder::{ColorConvert16Ptr, MAX_COMPONENTS};
+use crate::errors::DecodeErrors;
 
+/// fast 0..255 * 0..255 => 0..255 rounded multiplication
+///
+/// Borrowed from stb
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+#[inline]
+fn blinn_8x8(in_val: u8, y: u8) -> u8
+{
+    let t = i32::from(in_val) * i32::from(y) + 128;
+    return ((t + (t >> 8)) >> 8) as u8;
+}
+
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn color_convert_no_sampling(
-    unprocessed: &[&[i16]; 3], color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
-    output_colorspace: ColorSpace, output: &mut [u8], width: usize, padded_width: usize
-) // so many parameters..
+    unprocessed: &[&[i16]; MAX_COMPONENTS], color_convert_16: ColorConvert16Ptr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
+    padded_width: usize
+) -> Result<(), DecodeErrors> // so many parameters..
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
 
@@ -34,9 +48,107 @@ pub(crate) fn color_convert_no_sampling(
                 output
             );
         }
+        (ColorSpace::YCCK, ColorSpace::RGB) =>
+        {
+            color_convert_ycck_to_rgb::<3>(
+                unprocessed,
+                width,
+                padded_width,
+                output_colorspace,
+                color_convert_16,
+                output
+            );
+        }
+
+        (ColorSpace::YCCK, ColorSpace::RGBA | ColorSpace::RGBX) =>
+        {
+            color_convert_ycck_to_rgb::<4>(
+                unprocessed,
+                width,
+                padded_width,
+                output_colorspace,
+                color_convert_16,
+                output
+            );
+        }
+        (ColorSpace::CYMK, ColorSpace::RGB) =>
+        {
+            color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
+        }
+        (ColorSpace::CYMK, ColorSpace::RGBA | ColorSpace::RGBX) =>
+        {
+            color_convert_cymk_to_rgb::<4>(unprocessed, width, padded_width, output);
+        }
         // For the other components we do nothing(currently)
         _ =>
-        {}
+        {
+            let msg = format!(
+                    "Unimplemented colorspace mapping from {input_colorspace:?} to {output_colorspace:?}");
+
+            return Err(DecodeErrors::Format(msg));
+        }
+    }
+    Ok(())
+}
+
+/// Convert YCCK image to rgb
+fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
+    output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8]
+)
+{
+    color_convert_ycbcr(
+        mcu_block,
+        width,
+        padded_width,
+        output_colorspace,
+        color_convert_16,
+        output
+    );
+    for (pix_w, m_w) in output
+        .chunks_exact_mut(width * 3)
+        .zip(mcu_block[3].chunks_exact(padded_width))
+    {
+        for (pix, m) in pix_w.chunks_exact_mut(NUM_COMPONENTS).zip(m_w)
+        {
+            let m = (*m) as u8;
+            pix[0] = blinn_8x8(255 - pix[0], m);
+            pix[1] = blinn_8x8(255 - pix[1], m);
+            pix[2] = blinn_8x8(255 - pix[2], m);
+        }
+    }
+}
+
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
+)
+{
+    // TODO: Find file that implements cymk.
+    // This is not tested
+    for ((((pix_w, c_w), y_w), m_w), k_w) in output
+        .chunks_exact_mut(width * NUM_COMPONENTS)
+        .zip(mcu_block[0].chunks_exact(padded_width))
+        .zip(mcu_block[1].chunks_exact(padded_width))
+        .zip(mcu_block[2].chunks_exact(padded_width))
+        .zip(mcu_block[3].chunks_exact(padded_width))
+    {
+        for ((((pix, c), y), m), k) in pix_w
+            .chunks_exact_mut(3)
+            .zip(c_w)
+            .zip(y_w)
+            .zip(m_w)
+            .zip(k_w)
+        {
+            let k = *k as u8;
+            let c = *c as u8;
+            let y = *y as u8;
+            let m = *m as u8;
+
+            pix[0] = blinn_8x8(255 - c, k);
+            pix[1] = blinn_8x8(255 - y, k);
+            pix[2] = blinn_8x8(255 - m, k);
+        }
     }
 }
 
@@ -48,8 +160,8 @@ pub(crate) fn color_convert_no_sampling(
     clippy::unwrap_used
 )]
 fn color_convert_ycbcr(
-    mcu_block: &[&[i16]; 3], width: usize, padded_width: usize, output_colorspace: ColorSpace,
-    color_convert_16: ColorConvert16Ptr, output: &mut [u8]
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
+    output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8]
 )
 {
     let num_components = output_colorspace.num_components();
@@ -131,8 +243,8 @@ fn color_convert_ycbcr(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn upsample_and_color_convert(
-    unprocessed: &[Vec<i16>; 3], component_data: &mut [Components], padded_width: usize,
-    color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
+    unprocessed: &[Vec<i16>; MAX_COMPONENTS], component_data: &mut [Components],
+    padded_width: usize, color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
     output_colorspace: ColorSpace, output: &mut [u8], width: usize, scratch_space: &mut [i16]
 )
 {
@@ -168,8 +280,17 @@ pub(crate) fn upsample_and_color_convert(
         let cb_stride = &component_data[1].upsample_dest;
         let cr_stride = &component_data[2].upsample_dest;
 
+        let iq_stride: &[i16] = if let Some(component) = component_data.get(3)
+        {
+            &component.upsample_dest
+        }
+        else
+        {
+            &[]
+        };
+
         color_convert_no_sampling(
-            &[y_stride, cb_stride, cr_stride],
+            &[y_stride, cb_stride, cr_stride, iq_stride],
             color_convert_16,
             input_colorspace,
             output_colorspace,

@@ -63,11 +63,12 @@ impl Components
             1 => ComponentID::Y,
             2 => ComponentID::Cb,
             3 => ComponentID::Cr,
+            4 => ComponentID::Q,
             r =>
             {
                 return Err(DecodeErrors::Format(format!(
-                        "Unknown component id found,{r}, expected value between 1 and 3\nNote I and Q components are not supported yet"
-                    )));
+                    "Unknown component id found,{r}, expected value between 1 and 4"
+                )));
             }
         };
 
@@ -151,7 +152,9 @@ pub enum ComponentID
     /// Blue chrominance
     Cb,
     /// Red chrominance
-    Cr
+    Cr,
+    /// Q or fourth component
+    Q
 }
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]

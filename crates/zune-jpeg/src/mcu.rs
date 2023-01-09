@@ -4,6 +4,7 @@ use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
+use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
@@ -127,7 +128,7 @@ impl<'a> JpegDecoder<'a>
         let mut stream = BitStream::new();
         let mut pixels = vec![128; capacity * out_colorspace_components];
         let mut chunks = pixels.chunks_mut(chunks_size);
-        let mut channels = [vec![], vec![], vec![]];
+        let mut channels: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
         let mut bias = 0;
@@ -135,7 +136,12 @@ impl<'a> JpegDecoder<'a>
         for (pos, comp) in self.components.iter_mut().enumerate()
         {
             // Allocate only needed components.
+            //
+            // For special colorspaces i.e YCCK and CYMK, just allocate all of the needed
+            // components.
             if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
+                || self.input_colorspace == ColorSpace::YCCK
+                || self.input_colorspace == ColorSpace::CYMK
             {
                 let mut len = comp.width_stride * DCT_BLOCK / 8;
 
@@ -179,18 +185,17 @@ impl<'a> JpegDecoder<'a>
             for j in 0..mcu_width
             {
                 // iterate over components
-                for pos in 0..self.input_colorspace.num_components()
+                for (pos, component) in self.components.iter_mut().enumerate()
                 {
-                    let component = &mut self.components[pos];
-                    let dc_table = self.dc_huffman_tables[component.dc_huff_table & 3]
+                    let dc_table = self.dc_huffman_tables[component.dc_huff_table]
                         .as_ref()
                         .ok_or(DecodeErrors::FormatStatic("No DC table for a component"))?;
-                    let ac_table = self.ac_huffman_tables[component.ac_huff_table & 3]
+                    let ac_table = self.ac_huffman_tables[component.ac_huff_table]
                         .as_ref()
                         .ok_or(DecodeErrors::FormatStatic("No AC table for component"))?;
 
                     let qt_table = &component.quantization_table;
-                    let channel = &mut channels[pos & 3];
+                    let channel = &mut channels[pos];
                     // If image is interleaved iterate over scan  components,
                     // otherwise if it-s non-interleaved, these routines iterate in
                     // trivial scanline order(Y,Cb,Cr)
@@ -321,7 +326,7 @@ impl<'a> JpegDecoder<'a>
             {
                 // color convert expects a reference to channel data, so convert
                 // it here.
-                let mut channels_ref: [&[i16]; 3] = [&[]; 3];
+                let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
 
                 channels
                     .iter()
@@ -337,7 +342,7 @@ impl<'a> JpegDecoder<'a>
                     chunks.next().unwrap(),
                     width,
                     padded_width
-                );
+                )?;
 
                 bias = 0;
             }
