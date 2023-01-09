@@ -2,7 +2,7 @@ name: Fuzz PNG
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main","dev" ]
     paths:
       - 'zune-png/**'
   schedule:
