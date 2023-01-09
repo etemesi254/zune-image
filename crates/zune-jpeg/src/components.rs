@@ -58,33 +58,24 @@ impl Components
     #[inline]
     pub fn from(a: [u8; 3], pos: u8) -> Result<Components, DecodeErrors>
     {
-        let id = match a[0]
+        // it's a unique identifier.
+        // doesn't have to be ascending
+        // see tests/inputs/huge_sof_number
+        //
+        // For such cases, use the position of the component
+        // to determine width
+
+        let id = match pos
         {
-            1 => ComponentID::Y,
-            2 => ComponentID::Cb,
-            3 => ComponentID::Cr,
-            4 => ComponentID::Q,
-            r =>
+            0 => ComponentID::Y,
+            1 => ComponentID::Cb,
+            2 => ComponentID::Cr,
+            3 => ComponentID::Q,
+            _ =>
             {
-                // it's a unique identifier.
-                // doesn't have to be ascending
-                // see tests/inputs/huge_sof_number
-                //
-                // For such cases, use the position of the component
-                // to determine width
-                match pos
-                {
-                    0 => ComponentID::Y,
-                    1 => ComponentID::Cb,
-                    2 => ComponentID::Cr,
-                    3 => ComponentID::Q,
-                    _ =>
-                    {
-                        return Err(DecodeErrors::Format(format!(
-                            "Unknown component id found,{r}, expected value between 1 and 4"
-                        )))
-                    }
-                }
+                return Err(DecodeErrors::Format(format!(
+                    "Unknown component id found,{pos}, expected value between 1 and 4"
+                )))
             }
         };
 
