@@ -14,7 +14,7 @@ pub enum ColorSpace
     LumaA,
     RGBX,
     YCCK,
-    CYMK,
+    CMYK,
     Unknown
 }
 impl ColorSpace
@@ -24,7 +24,7 @@ impl ColorSpace
         match self
         {
             Self::RGB | Self::YCbCr => 3,
-            Self::RGBX | Self::RGBA | Self::YCCK | Self::CYMK => 4,
+            Self::RGBX | Self::RGBA | Self::YCCK | Self::CMYK => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
             Self::Unknown => 0
@@ -50,6 +50,6 @@ pub static ALL_COLORSPACES: [ColorSpace; 7] = [
     ColorSpace::RGBX,
     ColorSpace::LumaA,
     ColorSpace::Luma,
-    ColorSpace::CYMK,
+    ColorSpace::CMYK,
     ColorSpace::YCbCr
 ];
