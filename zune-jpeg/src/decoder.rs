@@ -305,11 +305,11 @@ impl<'a> JpegDecoder<'a>
     {
         match m
         {
-            Marker::SOF(0 | 2) =>
+            Marker::SOF(0 | 1 | 2) =>
             {
                 let marker = {
                     // choose marker
-                    if m == Marker::SOF(0)
+                    if m == Marker::SOF(0) || m == Marker::SOF(1)
                     {
                         SOFMarkers::BaselineDct
                     }
@@ -371,7 +371,7 @@ impl<'a> JpegDecoder<'a>
                 // what follows is the image data
                 return Ok(());
             }
-            Marker::EOI => return Err(DecodeErrors::Format("Premature End of image".to_string())),
+            Marker::EOI => return Err(DecodeErrors::FormatStatic("Premature End of image")),
 
             Marker::DAC | Marker::DNL =>
             {
