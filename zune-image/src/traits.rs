@@ -89,7 +89,7 @@ pub trait OperationsTrait
             ColorSpace::RGB,
             ColorSpace::LumaA,
             ColorSpace::Luma,
-            ColorSpace::CYMK,
+            ColorSpace::CMYK,
             ColorSpace::RGBX,
             ColorSpace::YCbCr,
             ColorSpace::YCCK

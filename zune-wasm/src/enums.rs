@@ -33,7 +33,7 @@ impl WasmColorspace
             ColorSpace::LumaA => Self::LumaA,
             ColorSpace::RGBX => Self::RGBX,
             ColorSpace::YCCK => Self::YCCK,
-            ColorSpace::CYMK => Self::CYMK,
+            ColorSpace::CMYK => Self::CYMK,
             ColorSpace::Unknown => Self::Unknown,
             _ => panic!("Unknown new colorspace {:?}", colorspace)
         }

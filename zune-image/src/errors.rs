@@ -97,7 +97,7 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
 {
     fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
     {
-        let err = format!("psd: {from:?}");
+        let err = format!("jpg: {from:?}");
 
         ImgErrors::ImageDecodeErrors(err)
     }
@@ -119,7 +119,7 @@ impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
 {
     fn from(from: zune_ppm::PPMDecodeErrors) -> Self
     {
-        let err = format!("psd: {from:?}");
+        let err = format!("ppm: {from:?}");
 
         ImgErrors::ImageDecodeErrors(err)
     }
