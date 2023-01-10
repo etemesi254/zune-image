@@ -1,6 +1,7 @@
 pub mod bit_depth;
 pub mod bytestream;
 pub mod colorspace;
+pub mod options;
 
 /// A simple enum that can hold either
 /// u8's or u16's used for decoding pixels
@@ -12,8 +13,8 @@ pub enum DecodingResult
 
 impl DecodingResult
 {
-    /// Return the contents if the enum stores Vec<u8> or otherwise
-    /// return None.
+    /// Return the contents if the enum stores `Vec<u8>` or otherwise
+    /// return `None`.
     ///
     /// Useful for de-sugaring the result of a decoding operation
     /// into raw bytes
@@ -39,8 +40,8 @@ impl DecodingResult
         }
     }
 
-    /// Return the contents if the enum stores Vec<u16> or otherwise
-    /// return None.
+    /// Return the contents if the enum stores `Vec<u16>` or otherwise
+    /// return `None`.
     ///
     /// Useful for de-sugaring the result of a decoding operation
     /// into raw bytes
