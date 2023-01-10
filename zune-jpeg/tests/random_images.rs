@@ -146,8 +146,8 @@ fn test_four_components()
 fn test_large_component_number()
 {
     //
-    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huge_sof_number.jpg";
-
+    //let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huge_sof_number.jpg";
+    let path = "/home/caleb/jpeg/error.jpg/zune-jpeg-failures/ae9e28b184d2f459bf53b08c19af9121.jpg";
     let data = &std::fs::read(path).unwrap();
 
     let mut decoder = JpegDecoder::new(data);
