@@ -1,12 +1,32 @@
+/// Errors possible during decoding.
 use std::fmt::{Debug, Formatter};
 
+/// Possible Errors that may occur during decoding
 pub enum QoiErrors
 {
+    /// The image does not start with QOI magic bytes `qoif`
+    ///
+    /// Indicates that image is not a qoi file
     WrongMagicBytes,
+    /// The input buffer doesn't have enough bytes to fully
+    /// reconstruct the image
+    ///
+    /// # Arguments
+    /// - 1st argument is the number of bytes we expected
+    /// - 2nd argument is number of bytes actually left
     InsufficientData(usize, usize),
+    /// The header contains an invalid channel number
+    ///
+    /// The only supported types are `3` and `4`
     UnknownChannels(u8),
+    /// The header contains an invalid colorspace value
+    ///
+    /// The should be `0` or `1`
+    /// but this can be ignored if strict is set to false
     UnknownColorspace(u8),
+    /// Generic message
     Generic(String),
+    /// Generic message does not need heap allocation
     GenericStatic(&'static str)
 }
 
