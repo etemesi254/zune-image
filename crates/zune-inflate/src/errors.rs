@@ -1,6 +1,18 @@
+//! Errors possible when decoding deflate/zlib/gzip
+//! streams
+
 use std::fmt::{Debug, Formatter};
 
 /// A struct returned when decompression fails
+///
+/// This struct contains two fields,
+///
+/// - `error`:Tells you the error that actually occured.
+/// - `data`: Gives you decoded data up until that point when
+/// the error was encountered.
+///
+/// One can recover data up to the error if they so wish but
+/// guarantees about data state is not given
 pub struct InflateDecodeErrors
 {
     /// reason why decompression fails
@@ -13,11 +25,21 @@ impl InflateDecodeErrors
 {
     /// Create a new decode wrapper with data being
     /// how many bytes we actually decoded before hitting an error
+    ///
+    /// # Arguments
+    /// - `error`: Error encountered during decoding
+    /// - `data`:  Data up to that point of decoding
+    ///
+    /// # Returns
+    /// Itself
     pub fn new(error: DecodeErrorStatus, data: Vec<u8>) -> InflateDecodeErrors
     {
         InflateDecodeErrors { error, data }
     }
     /// Create a new decode wrapper with an empty vector
+    ///
+    /// # Arguments
+    /// - `error`: Error encountered during decoding.
     pub fn new_with_error(error: DecodeErrorStatus) -> InflateDecodeErrors
     {
         InflateDecodeErrors::new(error, vec![])
@@ -39,6 +61,8 @@ pub enum DecodeErrorStatus
     InsufficientData,
     /// Anything that isn't significant
     Generic(&'static str),
+    /// Anything that isn't significant but we need to
+    /// pass back information to the user as to what went wrong
     GenericStr(String),
     ///Input data was malformed.
     CorruptData,

@@ -38,7 +38,7 @@ impl Default for DeflateHeaderTables
 }
 
 /// Options that can influence decompression
-/// in Deflate/Zlib
+/// in Deflate/Zlib/Gzip
 ///
 /// To use them, pass a customized options to
 /// the deflate decoder.
@@ -69,8 +69,11 @@ impl DeflateOptions
     /// The decoder won't extend the inbuilt limit and will
     /// return an error if the limit is exceeded
     ///
+    /// # Returns
+    ///  The currently set limit of the instance
+    /// # Note
     /// This is provided as a best effort, correctly quiting
-    /// is detrimental to speed and hence this should not be relied too much
+    /// is detrimental to speed and hence this should not be relied too much.
     pub const fn get_limit(&self) -> usize
     {
         self.limit
@@ -107,7 +110,7 @@ impl DeflateOptions
     ///
     /// # Arguments
     /// - yes: When true, the decoder will confirm checksum
-    /// when false, the decoder will skip checksum confirm
+    /// when false, the decoder will skip checksum verification
     /// # Notes
     /// This does not have an influence for deflate decoding as
     /// it does not have a checksum
@@ -138,12 +141,17 @@ impl DeflateOptions
     }
 }
 
-/// A deflate decoder with wings.
+/// A deflate decoder instance.
 ///
-/// This one manages it's memory, it pre-allocates a buffer which
+/// The decoder manages output buffer as opposed to requiring the caller to provide a pre-allocated buffer
 /// it tracks number of bytes written and on successfully reaching the
 /// end of the block, will return a vector with exactly
-/// the number of bytes.
+/// the number of decompressed bytes.
+///
+/// This means that it may use up huge amounts of memory if not checked, but
+/// there are [options] that can prevent that
+///
+/// [options]: DeflateOptions
 pub struct DeflateDecoder<'a>
 {
     data:                  &'a [u8],
@@ -160,6 +168,12 @@ impl<'a> DeflateDecoder<'a>
     /// Create a new decompressor that will read compressed
     /// data from `data` and return a new vector containing new data
     ///
+    /// # Arguments
+    /// - `data`: The compressed data. Data can be of any type
+    /// gzip,zlib or raw deflate.
+    ///
+    /// # Returns
+    /// A decoder instance which will pull compressed data from `data` to inflate the output output
     ///
     ///  # Note
     ///
@@ -182,6 +196,27 @@ impl<'a> DeflateDecoder<'a>
     /// This can be used to fine tune the decoder to the user's
     /// needs.
     ///
+    ///
+    /// # Arguments
+    /// - `data`: The compressed data. Data can be of any format i.e
+    /// gzip, zlib or raw deflate.
+    /// - `options` : A set of user defined options which tune how the decompressor
+    ///
+    ///  # Returns
+    /// A decoder instance which will pull compressed data from `data` to inflate output
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_inflate::{DeflateDecoder, DeflateOptions};
+    /// let data  = [37];
+    /// let options = DeflateOptions::default()
+    ///     .set_confirm_checksum(true) // confirm the checksum for zlib and gzip
+    ///     .set_limit(1000); // how big I think the input will be    
+    /// let mut decoder = DeflateDecoder::new_with_options(&data,options);
+    /// // do some stuff and then call decode
+    /// let data = decoder.decode_zlib();
+    ///
+    /// ```
     pub fn new_with_options(data: &'a [u8], options: DeflateOptions) -> DeflateDecoder<'a>
     {
         // create stream
@@ -196,7 +231,29 @@ impl<'a> DeflateDecoder<'a>
         }
     }
     /// Decode zlib-encoded data returning the uncompressed in a `Vec<u8>`
-    /// or an error if something went wrong
+    /// or an error if something went wrong.
+    ///
+    /// Bytes consumed will be from the data passed when the
+    /// `new` method was called.
+    ///
+    /// # Arguments
+    /// - None
+    /// # Returns
+    /// Result type containing the decoded data.
+    ///
+    /// - `Ok(Vec<u8>)`: Decoded vector containing the uncompressed bytes
+    /// - `Err(InflateDecodeErrors)`: Error that occurred during decoding
+    ///
+    /// It's possible to recover bytes even after an error occurred, bytes up
+    /// to when error was encountered are stored in [InflateDecodeErrors]
+    ///
+    ///
+    /// # Note
+    /// This needs the `zlib` feature enabled to be available otherwise it's a
+    /// compile time error
+    ///
+    /// [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
+    ///
     #[cfg(feature = "zlib")]
     pub fn decode_zlib(&mut self) -> Result<Vec<u8>, InflateDecodeErrors>
     {
@@ -295,6 +352,27 @@ impl<'a> DeflateDecoder<'a>
 
     /// Decode a gzip encoded data and return the uncompressed data in a
     /// `Vec<u8>` or an error if something went wrong
+    ///
+    /// Bytes consumed will be from the data passed when the
+    /// `new` method was called.
+    ///
+    /// # Arguments
+    /// - None
+    /// # Returns
+    /// Result type containing the decoded data.
+    ///
+    /// - `Ok(Vec<u8>)`: Decoded vector containing the uncompressed bytes
+    /// - `Err(InflateDecodeErrors)`: Error that occurred during decoding
+    ///
+    /// It's possible to recover bytes even after an error occurred, bytes up
+    /// to when error was encountered are stored in [InflateDecodeErrors]
+    ///
+    /// # Note
+    /// This needs the `gzip` feature enabled to be available, otherwise it's a
+    /// compile time error
+    ///
+    /// [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
+    ///
     #[cfg(feature = "gzip")]
     pub fn decode_gzip(&mut self) -> Result<Vec<u8>, InflateDecodeErrors>
     {
@@ -369,9 +447,10 @@ impl<'a> DeflateDecoder<'a>
             {
                 if let Some(byte) = self.data.get(self.position)
                 {
+                    self.position += 1;
+
                     if *byte == 0
                     {
-                        self.position += 1;
                         break;
                     }
                 }
@@ -381,7 +460,6 @@ impl<'a> DeflateDecoder<'a>
                         DecodeErrorStatus::InsufficientData
                     ));
                 }
-                self.position += 1;
             }
         }
         // File comment zero terminated
@@ -391,9 +469,10 @@ impl<'a> DeflateDecoder<'a>
             {
                 if let Some(byte) = self.data.get(self.position)
                 {
+                    self.position += 1;
+
                     if *byte == 0
                     {
-                        self.position += 1;
                         break;
                     }
                 }
@@ -403,7 +482,6 @@ impl<'a> DeflateDecoder<'a>
                         DecodeErrorStatus::InsufficientData
                     ));
                 }
-                self.position += 1;
             }
         }
         // crc16 for gzip header
@@ -478,12 +556,27 @@ impl<'a> DeflateDecoder<'a>
     }
     /// Decode a deflate stream returning the data as `Vec<u8>` or an error
     /// indicating what went wrong.
+    /// # Arguments
+    /// - None
+    /// # Returns
+    /// Result type containing the decoded data.
+    ///
+    /// - `Ok(Vec<u8>)`: Decoded vector containing the uncompressed bytes
+    /// - `Err(InflateDecodeErrors)`: Error that occurred during decoding
+    ///
+    /// It's possible to recover bytes even after an error occurred, bytes up
+    /// to when error was encountered are stored in [InflateDecodeErrors]
+    ///
     ///
     /// # Example
     /// ```no_run
-    /// let mut decoder = zune_inflate::DeflateDecoder::new(&[42]);
+    /// let data = [42]; // answer to life, the universe and everything
+    ///
+    /// let mut decoder = zune_inflate::DeflateDecoder::new(&data);
     /// let bytes = decoder.decode_deflate().unwrap();
     /// ```
+    ///
+    ///  [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
     pub fn decode_deflate(&mut self) -> Result<Vec<u8>, InflateDecodeErrors>
     {
         self.start_deflate_block()
