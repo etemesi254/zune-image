@@ -46,7 +46,7 @@ fn decode_no_samp(c: &mut Criterion)
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
-    let mut group = c.benchmark_group("No sampling");
+    let mut group = c.benchmark_group("[jpeg]: No sampling");
 
     group.throughput(Throughput::Bytes(data.len() as u64));
 
@@ -69,7 +69,7 @@ fn decode_h_samp(c: &mut Criterion)
             + "/benches/images/speed_bench_horizontal_subsampling.jpg"
     )
     .unwrap();
-    let mut group = c.benchmark_group("Horizontal Sub Sampling");
+    let mut group = c.benchmark_group("[jpeg]: Horizontal Sub Sampling");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("Horizontal sampling JPEG Decoding zune-jpeg", |b| {
@@ -93,7 +93,7 @@ fn decode_v_samp(c: &mut Criterion)
             + "/benches/images/speed_bench_vertical_subsampling.jpg"
     )
     .unwrap();
-    let mut group = c.benchmark_group("Vertical sub sampling");
+    let mut group = c.benchmark_group("[jpeg]: Vertical sub sampling");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("Vertical sub-sampling JPEG Decoding zune-jpeg", |b| {
@@ -116,7 +116,7 @@ fn decode_hv_samp(c: &mut Criterion)
         env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench_hv_subsampling.jpg"
     )
     .unwrap();
-    let mut group = c.benchmark_group("HV sampling");
+    let mut group = c.benchmark_group("[jpeg]: HV sampling");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("HV sampling JPEG Decoding zune-jpeg", |b| {
