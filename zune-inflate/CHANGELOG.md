@@ -18,3 +18,7 @@
 
 - Fix bug with some gzip that would cause errors during decoding
 - Small performance improvement
+
+## Version 0.2.41
+
+- Improve documentation of exposed values
