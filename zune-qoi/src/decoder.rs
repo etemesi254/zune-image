@@ -1,54 +1,13 @@
-use log::{debug, info};
+use log::{debug, error, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
 
 use crate::constants::{
     QOI_MASK_2, QOI_OP_DIFF, QOI_OP_INDEX, QOI_OP_LUMA, QOI_OP_RGB, QOI_OP_RGBA, QOI_OP_RUN
 };
 use crate::errors::QoiErrors;
-
-/// Configuration options for the decoder
-#[derive(Copy, Clone, Debug)]
-pub struct ZuneQoiOptions
-{
-    max_width:  usize,
-    max_height: usize
-}
-
-impl ZuneQoiOptions
-{
-    pub fn set_max_width(mut self, width: usize) -> Self
-    {
-        self.max_width = width;
-        self
-    }
-    pub fn set_max_height(mut self, height: usize) -> Self
-    {
-        self.max_height = height;
-
-        self
-    }
-    pub const fn get_max_width(&self) -> usize
-    {
-        self.max_width
-    }
-    pub const fn get_max_height(&self) -> usize
-    {
-        self.max_height
-    }
-}
-
-impl Default for ZuneQoiOptions
-{
-    fn default() -> Self
-    {
-        Self {
-            max_height: 1 << 17,
-            max_width:  1 << 17
-        }
-    }
-}
 
 #[allow(non_camel_case_types)]
 enum QoiColorspace
@@ -59,6 +18,17 @@ enum QoiColorspace
 }
 
 /// A Quite OK Image decoder
+///
+/// The decoder is initialized by calling `new`
+/// and either of [`decode_headers`] to decode headers
+/// or [`decode`] to return uncompressed pixels
+///
+/// Additional methods are provided that give more
+/// details of the compressed image like width and height
+/// are accessible after decoding headers
+///
+/// [`decode_headers`]:QoiDecoder::decode_headers
+/// [`decode`]:QoiDecoder::decode
 pub struct QoiDecoder<'a>
 {
     width:             usize,
@@ -67,13 +37,20 @@ pub struct QoiDecoder<'a>
     colorspace_layout: QoiColorspace,
     decoded_headers:   bool,
     stream:            ZByteReader<'a>,
-    options:           ZuneQoiOptions
+    options:           DecoderOptions
 }
 
 impl<'a> QoiDecoder<'a>
 {
-    /// Create a new QOI format decoder
+    /// Create a new QOI format decoder with the default options
     ///
+    /// # Arguments
+    /// - `data`: The compressed qoi data
+    ///
+    /// # Returns
+    /// - A decoder instance which will on calling `decode` will decode
+    /// data
+    /// # Example
     ///
     /// ```no_run
     /// let mut decoder = zune_qoi::QoiDecoder::new(&[]);
@@ -81,22 +58,30 @@ impl<'a> QoiDecoder<'a>
     /// ```
     pub fn new(data: &'a [u8]) -> QoiDecoder<'a>
     {
-        QoiDecoder::new_with_options(ZuneQoiOptions::default(), data)
+        QoiDecoder::new_with_options(DecoderOptions::default(), data)
     }
     /// Create a new QOI format decoder that obeys specified restrictions
     ///
     /// E.g can be used to set width and height limits to prevent OOM attacks
     ///
-    /// #Example
-    /// ```
-    /// use zune_qoi::{QoiDecoder, ZuneQoiOptions};
-    /// // only decode images less than 10 in bytes
+    /// # Arguments
+    /// - `data`: The compressed qoi data
+    /// - `options`: Decoder options that the decoder should respect
     ///
-    /// let options = ZuneQoiOptions::default().set_max_height(10);
+    /// # Example
+    /// ```
+    /// use zune_core::options::DecoderOptions;
+    /// use zune_qoi::{QoiDecoder};
+    /// let mut options = DecoderOptions::default();
+    ///
+    /// // only decode images less than 10 in both width and height
+    /// options.max_width = 10;
+    /// options.max_height = 10;
+    ///
     /// let mut decoder=QoiDecoder::new_with_options(options,&[]);
     /// ```
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(options: ZuneQoiOptions, data: &'a [u8]) -> QoiDecoder<'a>
+    pub fn new_with_options(options: DecoderOptions, data: &'a [u8]) -> QoiDecoder<'a>
     {
         QoiDecoder {
             width:             0,
@@ -109,7 +94,16 @@ impl<'a> QoiDecoder<'a>
         }
     }
     /// Decode a QOI header storing needed information into
-    /// the headers
+    /// the decoder instance
+    ///
+    ///
+    /// # Returns
+    ///
+    /// - On success: Nothing
+    /// - On error: The error encountered when decoding headers
+    ///     error type will be an instance of [QoiErrors]
+    ///
+    /// [QoiErrors]:crate::errors::QoiErrors
     pub fn decode_headers(&mut self) -> Result<(), QoiErrors>
     {
         let header_bytes = 4/*magic*/ + 8/*Width+height*/ + 1/*channels*/ + 1 /*colorspace*/;
@@ -164,7 +158,18 @@ impl<'a> QoiDecoder<'a>
         {
             0 => QoiColorspace::sRGB,
             1 => QoiColorspace::Linear,
-            _ => return Err(QoiErrors::UnknownColorspace(colorspace_layout))
+            _ =>
+            {
+                if self.options.strict_mode
+                {
+                    return Err(QoiErrors::UnknownColorspace(colorspace_layout));
+                }
+                else
+                {
+                    error!("Unknown/invalid colorspace value {colorspace_layout}, expected 0 or 1");
+                    QoiColorspace::sRGB
+                }
+            }
         };
         self.width = width;
         self.height = height;
@@ -176,7 +181,21 @@ impl<'a> QoiDecoder<'a>
 
         Ok(())
     }
-    /// Decode the bytes of a QOI image into
+    /// Decode the bytes of a QOI image data, returning the
+    /// uncompressed bytes or  the error encountered during decoding
+    ///
+    /// Additional details about the encoded image can be found after calling this/[`decode_headers`]
+    ///
+    /// i.e the width and height. can be accessed by [`get_dimensions`] method.
+    ///
+    /// # Returns
+    /// - On success: The decoded bytes. The length of the bytes will be
+    /// - On error: An instance of [QoiErrors] which gives a reason why the image could not
+    /// be decoded
+    ///
+    /// [`decode_headers`]:Self::decode_headers
+    /// [`get_dimensions`]:Self::get_dimensions
+    /// [QoiErrors]:crate::errors::QoiErrors
     #[allow(clippy::identity_op)]
     pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors>
     {
@@ -201,10 +220,11 @@ impl<'a> QoiDecoder<'a>
             {
                 run -= 1;
             }
-            else if !self.stream.has(4)
+            else if !self.stream.has(5)
             {
+                // worst case should be chunk type + RGBA
                 // too little bytes
-                return Err(QoiErrors::InsufficientData(4, self.stream.remaining()));
+                return Err(QoiErrors::InsufficientData(5, self.stream.remaining()));
             }
             else
             {
@@ -275,8 +295,15 @@ impl<'a> QoiDecoder<'a>
 
     /// Returns QOI colorspace or none if the headers haven't been
     ///
+    /// Colorspace returned can either be [RGB] or [RGBA]
     ///
-    /// Colorspace returned can either be 8 or 16
+    /// # Returns
+    /// - `Some(Colorspace)`: The colorspace present
+    /// -  `None` : This indicates the image header wasn't decoded hence
+    ///   colorspace is unknown
+    ///
+    /// [RGB]: zune_core::colorspace::ColorSpace::RGB
+    /// [RGBA]: zune_core::colorspace::ColorSpace::RGB
     pub const fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if self.decoded_headers
@@ -292,12 +319,19 @@ impl<'a> QoiDecoder<'a>
     ///
     /// This is always 8
     ///
+    /// # Returns
+    /// - [`BitDepth::Eight`]
+    ///
+    /// # Example
+    ///
     /// ```
     /// use zune_core::bit_depth::BitDepth;
     /// use zune_qoi::QoiDecoder;
     /// let decoder = QoiDecoder::new(&[]);
     /// assert_eq!(decoder.get_bit_depth(),BitDepth::Eight)
     /// ```
+    ///
+    /// [`BitDepth::Eight`]:zune_core::bit_depth::BitDepth::Eight
     pub const fn get_bit_depth(&self) -> BitDepth
     {
         BitDepth::Eight
@@ -306,6 +340,13 @@ impl<'a> QoiDecoder<'a>
     /// Return the width and height of the image
     ///
     /// Or none if the headers haven't been decoded
+    ///
+    /// # Returns
+    /// - `Some(width,height)` - If headers are decoded, this will return the stored
+    /// width and height for that image
+    /// - `None`: This indicates the image headers weren't decoded or an error
+    /// occurred when decoding headers
+    /// # Example
     ///
     /// ```no_run
     /// use zune_qoi::QoiDecoder;
