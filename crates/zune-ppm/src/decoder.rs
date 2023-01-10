@@ -4,7 +4,7 @@ use log::info;
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
-use zune_core::DecodingResult;
+use zune_core::result::DecodingResult;
 
 /// PPM options one can use to influence PPM decoding
 #[derive(Copy, Clone)]

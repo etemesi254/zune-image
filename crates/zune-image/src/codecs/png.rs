@@ -2,7 +2,7 @@
 //! Represents an png image decoder
 use log::debug;
 use zune_core::colorspace::ColorSpace;
-use zune_core::DecodingResult;
+use zune_core::result::DecodingResult;
 use zune_png::error::PngErrors;
 pub use zune_png::PngDecoder;
 

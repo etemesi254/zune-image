@@ -14,7 +14,7 @@ use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
-use zune_core::DecodingResult;
+use zune_core::result::DecodingResult;
 
 use crate::constants::{ColorModes, CompressionMethod, PSD_IDENTIFIER_BE};
 use crate::errors::PSDDecodeErrors;

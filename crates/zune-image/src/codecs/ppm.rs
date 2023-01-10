@@ -4,7 +4,7 @@ use std::io::Write;
 
 use log::debug;
 use zune_core::colorspace::ColorSpace;
-use zune_core::DecodingResult;
+use zune_core::result::DecodingResult;
 pub use zune_ppm::PPMDecoder;
 use zune_ppm::PPMEncoder as PPMEnc;
 
