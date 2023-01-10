@@ -252,10 +252,12 @@ impl<'a> PngDecoder<'a>
         self.idat_chunks = Vec::new();
 
         let info = self.png_info;
+        let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_n = usize::from(info.color.num_components());
 
-        let mut new_len = info.width * info.height * usize::from(info.color.num_components());
+        let mut new_len =
+            info.width * info.height * usize::from(info.color.num_components()) * bytes;
 
         if info.interlace_method == InterlaceMethod::Standard
         {
@@ -277,8 +279,6 @@ impl<'a> PngDecoder<'a>
         {
             // A mad idea would be to make this multithreaded :)
             // They called me a mad man - Thanos
-
-            let bytes = if info.depth == 16 { 2 } else { 1 };
             let out_bytes = out_n * bytes;
             let new_len_ex = new_len * bytes;
 
@@ -415,7 +415,6 @@ impl<'a> PngDecoder<'a>
     ) -> Result<(), PngErrors>
     {
         let info = &self.png_info;
-
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let mut img_width_bytes;
@@ -423,10 +422,9 @@ impl<'a> PngDecoder<'a>
         img_width_bytes = usize::from(info.component) * width;
         img_width_bytes *= usize::from(info.depth);
         img_width_bytes += 7;
-        img_width_bytes >>= 3;
+        img_width_bytes /= 8;
 
         let image_len = img_width_bytes * height;
-
         let out_n = usize::from(info.color.num_components());
         let out = &mut self.out[0..image_len];
 
@@ -442,7 +440,6 @@ impl<'a> PngDecoder<'a>
         }
         // do png  un-filtering
         let mut chunk_size;
-
         let mut components = usize::from(info.color.num_components()) * bytes;
 
         if info.depth < 8
@@ -460,22 +457,14 @@ impl<'a> PngDecoder<'a>
         // filter type
         chunk_size += 1;
 
+        // each chunk is a width stride of unfiltered data
         let chunks = deflate_data.chunks_exact(chunk_size);
 
-        //
-        // ┌─────┬─────┐
-        // │ c   │  b  │
-        // ├─────┼─────┤
-        // │ a   │ x   │
-        // └─────┴─────┘
-        //
         // Begin doing loop un-filtering.
-
-        let mut prev_row_start = 0;
         let width_stride = chunk_size - 1;
 
+        let mut prev_row_start = 0;
         let mut first_row = true;
-
         let mut out_position = 0;
 
         for in_stride in chunks.take(height)
@@ -500,7 +489,6 @@ impl<'a> PngDecoder<'a>
 
             // take filter
             let filter_byte = in_stride[0];
-
             // raw image bytes
             let raw = &in_stride[1..];
 
