@@ -44,7 +44,7 @@ fn criterion_benchmark(c: &mut Criterion)
 
     let data = read(a).unwrap();
 
-    let mut group = c.benchmark_group("Grayscale decoding");
+    let mut group = c.benchmark_group("[jpeg]: Grayscale decoding");
 
     group.throughput(Throughput::Bytes(data.len() as u64));
 
