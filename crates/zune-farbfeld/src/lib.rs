@@ -1,4 +1,5 @@
 //! farbfeld is a lossless image format which is easy to parse, pipe and compress. It has the following format:
+//! ```text
 //! ╔════════╤═════════════════════════════════════════════════════════╗
 //! ║ Bytes  │ Description                                             ║
 //! ╠════════╪═════════════════════════════════════════════════════════╣
@@ -11,7 +12,7 @@
 //! ║ [2222] │ 4x16-Bit BE unsigned integers [RGBA] / pixel, row-major ║
 //! ╚════════╧═════════════════════════════════════════════════════════╝
 //! The RGB-data should be sRGB for best interoperability and not alpha-premultiplied.
-//!
+//!```
 
 pub use decoder::*;
 
