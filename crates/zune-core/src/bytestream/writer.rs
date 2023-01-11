@@ -26,6 +26,7 @@ impl<'a> Write for ZByteWriter<'a>
         let min = buf.len().min(self.bytes_left());
         // write
         self.buffer[self.position..self.position + min].copy_from_slice(&buf[0..min]);
+        self.position += min;
 
         Ok(min)
     }
