@@ -1,6 +1,8 @@
 /// Errors possible during decoding.
 use std::fmt::{Debug, Formatter};
 
+use zune_core::colorspace::ColorSpace;
+
 /// Possible Errors that may occur during decoding
 pub enum QoiErrors
 {
@@ -79,4 +81,17 @@ impl From<&'static str> for QoiErrors
     {
         Self::GenericStatic(r)
     }
+}
+
+pub enum QoiEncodeErrors
+{
+    /// Unsupported colorspace
+    ///
+    /// The first argument is the colorspace encountered
+    /// The second argument is list of supported colorspaces
+    UnsupportedColorspace(ColorSpace, &'static [ColorSpace]),
+
+    /// Too large dimensions
+    /// The dimensions cannot be correctly encoded to a width
+    TooLargeDimensions(usize)
 }
