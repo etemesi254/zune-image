@@ -199,10 +199,20 @@ impl<'a> QoiDecoder<'a>
     #[allow(clippy::identity_op)]
     pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors>
     {
+        self.decode_headers()?;
+
+        match self.colorspace.num_components()
+        {
+            3 => self.decode_inner_generic::<3>(),
+            4 => self.decode_inner_generic::<4>(),
+            _ => unreachable!()
+        }
+    }
+    fn decode_inner_generic<const SIZE: usize>(&mut self) -> Result<Vec<u8>, QoiErrors>
+    {
         const LAST_BYTES: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
 
-        self.decode_headers()?;
-        let size = self.height * self.width * self.colorspace.num_components();
+        let size = self.height * self.width * SIZE;
 
         let mut pixels = vec![0; size];
 
@@ -210,15 +220,14 @@ impl<'a> QoiDecoder<'a>
         // starting pixel
         let mut px = [0, 0, 0, 255];
 
-        let channel_count = self.colorspace.num_components();
-
         let mut run = 0;
 
-        for pix_chunk in pixels.chunks_exact_mut(self.colorspace.num_components())
+        for pix_chunk in pixels.chunks_exact_mut(SIZE)
         {
             if run > 0
             {
                 run -= 1;
+                pix_chunk.copy_from_slice(&px[0..SIZE]);
             }
             else if !self.stream.has(5)
             {
@@ -230,7 +239,7 @@ impl<'a> QoiDecoder<'a>
             {
                 let chunk = self.stream.get_u8();
 
-                if chunk == QOI_OP_RGB
+                if SIZE == 3 && chunk == QOI_OP_RGB
                 {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<3>();
 
@@ -238,7 +247,7 @@ impl<'a> QoiDecoder<'a>
                     px[1] = packed_bytes[1];
                     px[2] = packed_bytes[2];
                 }
-                else if chunk == QOI_OP_RGBA
+                else if SIZE == 4 && chunk == QOI_OP_RGBA
                 {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<4>();
 
@@ -268,16 +277,19 @@ impl<'a> QoiDecoder<'a>
                     run = usize::from(chunk & 0x3f);
                 }
 
-                let color_hash = (usize::from(px[0]) * 3
-                    + usize::from(px[1]) * 5
-                    + usize::from(px[2]) * 7
-                    + usize::from(px[3]) * 11)
-                    % 64;
+                // copy pixel
+                pix_chunk.copy_from_slice(&px[0..SIZE]);
 
+                let color_hash = {
+                    // faster hash function
+                    // Stolen from https://github.com/zakarumych/rapid-qoi/blob/c5359a53476001d8d170c3733e6ab22e8173f40f/src/lib.rs#L474-L478
+                    let v = u64::from(u32::from_ne_bytes(px));
+                    let s = ((v << 32) | v) & 0xFF00FF0000FF00FF;
+
+                    (s.wrapping_mul(0x030007000005000Bu64.to_le()).swap_bytes() as u8 & 63) as usize
+                };
                 index[color_hash] = px;
             }
-            // copy pixel
-            pix_chunk.copy_from_slice(&px[0..channel_count]);
         }
         let remaining = self.stream.remaining_bytes();
 
