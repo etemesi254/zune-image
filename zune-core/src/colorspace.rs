@@ -53,3 +53,14 @@ pub static ALL_COLORSPACES: [ColorSpace; 7] = [
     ColorSpace::CMYK,
     ColorSpace::YCbCr
 ];
+
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ColorTransferCharacteristics
+{
+    /// Normal default gamma setting
+    /// The float contains gamma present
+    sRGB(f32),
+    /// Linear transfer characteristics
+    Linear
+}
