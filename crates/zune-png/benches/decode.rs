@@ -47,7 +47,7 @@ fn decode_test(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("[png]: PNG decoding baseline");
+    let mut group = c.benchmark_group("png: PNG decoding baseline");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("zune-png", |b| {
@@ -74,7 +74,7 @@ fn decode_test_interlaced(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("[png]: PNG decoding interlaced 8bpp");
+    let mut group = c.benchmark_group("png: PNG decoding interlaced 8bpp");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("zune-png", |b| {

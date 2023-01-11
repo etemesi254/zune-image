@@ -18,7 +18,7 @@ fn bench_decode(c: &mut Criterion)
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/test_images/wikipedia_008.qoi";
 
     let data = read(a).unwrap();
-    let mut group = c.benchmark_group("[qoi]: Simple decode");
+    let mut group = c.benchmark_group("qoi: Simple decode");
 
     group.throughput(Throughput::Bytes(data.len() as u64));
 
