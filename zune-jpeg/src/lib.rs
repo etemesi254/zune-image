@@ -112,15 +112,3 @@ mod options;
 mod unsafe_utils;
 mod upsampler;
 mod worker;
-
-#[must_use]
-pub fn get_git_hash() -> &'static str
-{
-    // set in build.rs
-    env!("ZUNE_JPEG_GIT_HASH")
-}
-#[must_use]
-pub fn get_version() -> &'static str
-{
-    env!("CARGO_PKG_VERSION")
-}
