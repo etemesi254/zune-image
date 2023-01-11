@@ -1,4 +1,5 @@
 pub use decoder::*;
+pub use encoder::*;
 pub use errors::*;
 
 mod constants;
