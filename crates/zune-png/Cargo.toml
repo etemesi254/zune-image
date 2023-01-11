@@ -23,7 +23,7 @@ zune-inflate = { path = "../zune-inflate", default-features = false, features = 
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
 png = "0.17.7"
 spng = "0.1.0"
-
+lodepng = "3.7.2"
 
 
 [dev-dependencies.criterion]

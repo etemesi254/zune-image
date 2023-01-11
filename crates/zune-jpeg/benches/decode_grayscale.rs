@@ -48,11 +48,11 @@ fn criterion_benchmark(c: &mut Criterion)
 
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("Baseline JPEG Decoding zune-jpeg-Grayscale", |b| {
+    group.bench_function("zune-jpeg", |b| {
         b.iter(|| black_box(decode_jpeg(data.as_slice())))
     });
 
-    group.bench_function("Baseline JPEG Decoding  mozjpeg-Grayscale", |b| {
+    group.bench_function("mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 }

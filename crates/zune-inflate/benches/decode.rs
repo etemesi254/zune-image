@@ -73,11 +73,11 @@ fn decode_test(c: &mut Criterion)
     let mut group = c.benchmark_group("[inflate]: enwiki zlib decoding");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("FLATE-[zlib-ng]", |b| {
+    group.bench_function("flate-[zlib-ng]", |b| {
         b.iter(|| black_box(decode_writer_flate(data.as_slice())))
     });
 
-    group.bench_function("ZUNE", |b| {
+    group.bench_function("zune-inflate", |b| {
         b.iter(|| black_box(decode_writer_zune(data.as_slice())))
     });
 
@@ -92,14 +92,14 @@ fn decode_test_crow(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("[inflate]: ZLIB decoding-png zlib");
+    let mut group = c.benchmark_group("[inflate]: zlib decoding-png zlib");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("FLATE/zlib-ng", |b| {
+    group.bench_function("flate-[zlib-ng]", |b| {
         b.iter(|| black_box(decode_writer_flate(data.as_slice())))
     });
 
-    group.bench_function("ZUNE", |b| {
+    group.bench_function("zune-inflate", |b| {
         b.iter(|| black_box(decode_writer_zune(data.as_slice())))
     });
 
@@ -114,14 +114,14 @@ fn decode_test_gzip(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("[inflate]: Gzip decoding, tokio-rs source code");
+    let mut group = c.benchmark_group("[inflate]: gzip decoding, tokio-rs source code");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("FLATE/zlib-ng", |b| {
+    group.bench_function("flate-[zlib-ng]", |b| {
         b.iter(|| black_box(decode_writer_flate_gz(data.as_slice())))
     });
 
-    group.bench_function("ZUNE", |b| {
+    group.bench_function("zune-inflate", |b| {
         b.iter(|| black_box(decode_writer_zune_gz(data.as_slice())))
     });
 
@@ -136,14 +136,14 @@ fn decode_test_gzip_json(c: &mut Criterion)
 
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("[inflate]: Gzip decoding, image-rs rustdoc json");
+    let mut group = c.benchmark_group("[inflate]: gzip decoding, image-rs rustdoc json");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("FLATE/zlib-ng", |b| {
+    group.bench_function("flate-[zlib-ng]", |b| {
         b.iter(|| black_box(decode_writer_flate_gz(data.as_slice())))
     });
 
-    group.bench_function("ZUNE", |b| {
+    group.bench_function("zune-inflate", |b| {
         b.iter(|| black_box(decode_writer_zune_gz(data.as_slice())))
     });
 

@@ -18,17 +18,17 @@ fn decode_no_samp(c: &mut Criterion)
     let a = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/images/speed_bench.jpg";
 
     let data = read(a).unwrap();
-    let mut group = c.benchmark_group("[jpeg]: Intrinsics");
+    let mut group = c.benchmark_group("[jpeg]: zune-jpeg Intrinsics");
 
     group.throughput(Throughput::Bytes(data.len() as u64));
 
-    group.bench_function("Baseline JPEG Decoding zune-jpeg Allowed intrinsics", |b| {
+    group.bench_function("intrinsics", |b| {
         b.iter(|| {
             let opt = ZuneJpegOptions::new();
             black_box(decode_jpeg(data.as_slice(), opt));
         })
     });
-    group.bench_function("Baseline JPEG Decoding zune-jpeg no intrinsics", |b| {
+    group.bench_function("no intrinsics", |b| {
         b.iter(|| {
             let opt = ZuneJpegOptions::new().set_use_unsafe(false);
             black_box(decode_jpeg(data.as_slice(), opt));
