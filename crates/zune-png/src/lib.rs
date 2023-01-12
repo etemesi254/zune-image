@@ -5,7 +5,7 @@
 //! Below is an example of how to decode images
 //! ```no_run
 //! use zune_png::PngDecoder;
-//! use zune_core::DecodingResult;
+//! use zune_core::result::DecodingResult;
 //! let mut decoder = PngDecoder::new(&[]);
 //!
 //! let pixels = decoder.decode().unwrap();
