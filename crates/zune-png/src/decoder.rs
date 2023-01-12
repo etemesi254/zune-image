@@ -314,7 +314,7 @@ impl<'a> PngDecoder<'a>
                 image_len += 1;
                 image_len *= max_height;
 
-                self.out = vec![0; image_len];
+                self.out = vec![0; image_len * usize::from(8 / info.depth)];
             }
 
             for p in 0..7
@@ -382,6 +382,13 @@ impl<'a> PngDecoder<'a>
     {
         let out = self.decode_raw()?;
 
+        if self.png_info.depth < 8
+        {
+            let info = &self.png_info;
+            let out_n = usize::from(info.color.num_components());
+
+            self.expand_bits_to_byte(info.width, info.height, out_n)
+        }
         if self.png_info.depth <= 8
         {
             return Ok(DecodingResult::U8(out));
@@ -545,7 +552,8 @@ impl<'a> PngDecoder<'a>
 
         Ok(())
     }
-    fn _expand_bits_to_byte(&mut self, height: usize, width: usize, stride: usize, out_n: usize)
+    /// Expand bits to bytes expand images with less than 8 bpp
+    fn expand_bits_to_byte(&mut self, height: usize, width: usize, out_n: usize)
     {
         const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
@@ -562,27 +570,25 @@ impl<'a> PngDecoder<'a>
 
         let mut in_offset = 0;
 
-        for i in 0..height
-        {
-            let mut current = stride * i;
+        let mut current = 0;
 
-            let scale = if info.color == PngColor::Luma
-            {
-                DEPTH_SCALE_TABLE[usize::from(info.depth)]
-            }
-            else
-            {
-                1
-            };
+        for _ in 0..height
+        {
+            let scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
 
             let mut k = width * out_n;
-            let mut in_val = self.out[in_offset];
 
             if info.depth == 1
             {
                 while k >= 8
                 {
-                    let cur: &mut [u8; 8] = &mut new_out[current..current + 8].try_into().unwrap();
+                    let cur: &mut [u8; 8] = new_out
+                        .get_mut(current..current + 8)
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+
+                    let in_val = self.out[in_offset];
 
                     cur[0] = scale * ((in_val >> 7) & 0x01);
                     cur[1] = scale * ((in_val >> 6) & 0x01);
@@ -596,22 +602,31 @@ impl<'a> PngDecoder<'a>
                     in_offset += 1;
                     current += 8;
 
-                    in_val = self.out[in_offset];
-
                     k -= 8;
                 }
-                for p in 0..k
+                if k > 0
                 {
-                    let shift = (7_usize).wrapping_sub(p);
-                    new_out[current] = scale * ((in_val >> shift) & 0x01);
-                    current += 1;
+                    let in_val = self.out[in_offset];
+
+                    for p in 0..k
+                    {
+                        let shift = (7_usize).wrapping_sub(p);
+                        new_out[current] = scale * ((in_val >> shift) & 0x01);
+                        current += 1;
+                    }
                 }
             }
             else if info.depth == 2
             {
                 while k >= 4
                 {
-                    let cur: &mut [u8; 4] = &mut self.out[current..current + 4].try_into().unwrap();
+                    let cur: &mut [u8; 4] = new_out
+                        .get_mut(current..current + 4)
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+
+                    let in_val = self.out[in_offset];
 
                     cur[0] = scale * ((in_val >> 6) & 0x03);
                     cur[1] = scale * ((in_val >> 4) & 0x03);
@@ -622,22 +637,29 @@ impl<'a> PngDecoder<'a>
 
                     in_offset += 1;
                     current += 4;
-
-                    in_val = self.out[in_offset];
                 }
-
-                for p in 0..k
+                if k > 0
                 {
-                    let shift = (6_usize).wrapping_sub(p * 2);
-                    new_out[current] = scale * ((in_val >> shift) & 0x03);
-                    current += 1;
+                    let in_val = self.out[in_offset];
+
+                    for p in 0..k
+                    {
+                        let shift = (6_usize).wrapping_sub(p * 2);
+                        new_out[current] = scale * ((in_val >> shift) & 0x03);
+                        current += 1;
+                    }
                 }
             }
             else if info.depth == 4
             {
                 while k >= 2
                 {
-                    let cur: &mut [u8; 2] = &mut self.out[current..current + 2].try_into().unwrap();
+                    let cur: &mut [u8; 2] = new_out
+                        .get_mut(current..current + 2)
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+                    let in_val = self.out[in_offset];
 
                     cur[0] = scale * ((in_val >> 4) & 0x0f);
                     cur[1] = scale * ((in_val) & 0x0f);
@@ -646,20 +668,26 @@ impl<'a> PngDecoder<'a>
 
                     in_offset += 1;
                     current += 2;
-
-                    in_val = self.out[in_offset];
                 }
 
-                // leftovers
-                for p in 0..k
+                if k > 0
                 {
-                    let shift = (4_usize).wrapping_sub(p * 4);
-                    new_out[current] = scale * ((in_val >> shift) & 0x0f);
-                    current += 1;
+                    let in_val = self.out[in_offset];
+
+                    // leftovers
+                    for p in 0..k
+                    {
+                        let shift = (4_usize).wrapping_sub(p * 4);
+                        new_out[current] = scale * ((in_val >> shift) & 0x0f);
+                        current += 1;
+                    }
                 }
             }
-            in_offset += 1;
         }
+        // ensure we are in the right position
+        // assert_eq!(in_offset, image_length);
+        // assert_eq!(current, image_length * usize::from(8 / info.depth));
+
         self.out = new_out;
     }
     /// Undo deflate decoding
