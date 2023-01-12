@@ -142,10 +142,6 @@ impl<'a> PngDecoder<'a>
 
     pub(crate) fn parse_plt(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
     {
-        if chunk.length != 256 * 3
-        {
-            return Err(PngErrors::GenericStatic("Invalid pLTE length, corrupt PNG"));
-        }
         if chunk.length % 3 != 0
         {
             return Err(PngErrors::GenericStatic("Invalid pLTE length, corrupt PNG"));
@@ -154,7 +150,7 @@ impl<'a> PngDecoder<'a>
         // allocate palette
         self.palette.resize(256 * 3, 0);
 
-        for pal_chunk in self.palette.chunks_exact_mut(3)
+        for pal_chunk in self.palette.chunks_exact_mut(3).take(chunk.length / 3)
         {
             pal_chunk[0] = self.stream.get_u8();
             pal_chunk[1] = self.stream.get_u8();
