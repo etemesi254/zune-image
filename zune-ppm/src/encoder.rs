@@ -85,7 +85,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
 
     /// Write headers for P7 format
     fn write_headers_pam(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, depth: usize
+        &mut self, width: usize, height: usize, colorspace: ColorSpace, max_val: usize
     ) -> Result<(), PPMErrors>
     {
         let tuple_type = convert_tuple_type_to_pam(colorspace);
@@ -95,7 +95,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
             width,
             height,
             colorspace.num_components(),
-            depth,
+            max_val,
             tuple_type
         );
         self.writer.write_all(header.as_bytes())?;
@@ -116,7 +116,7 @@ impl<'a, W: Write> PPMEncoder<'a, W>
         &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
     ) -> Result<(), PPMErrors>
     {
-        self.write_headers_pam(width, height, colorspace, 255)?;
+        self.write_headers_pam(width, height, colorspace, 65535)?;
 
         // Create big endian bytes from data
         let owned_data = data
