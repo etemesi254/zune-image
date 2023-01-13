@@ -460,15 +460,13 @@ impl<'a> PPMDecoder<'a>
                 // size is divided by 2 since sizeof added 2 for u16
                 // and when channel stores u16 it uses double the size
                 // as that of u8
-                let mut data = vec![0_u16; size / 2];
 
-                for datum in data.iter_mut()
-                {
-                    // 16 bit ppm happens to be written in big-endian
-                    // i.e that's what is supported by netbpm
-                    // So we also do emulate that.
-                    *datum = self.reader.get_u16_be();
-                }
+                // Get bytes from heaven.
+                // This saves us the memset part of vec![0;size/2]; by
+                // borrowing uninitialized memory from the heap
+                let data = (0..size / 2)
+                    .map(|_| self.reader.get_u16_be())
+                    .collect::<Vec<u16>>();
 
                 Ok(DecodingResult::U16(data))
             }
