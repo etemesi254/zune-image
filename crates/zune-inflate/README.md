@@ -85,24 +85,28 @@ decompression settings.
 
 I'll compare this with `flate2` with `miniz-oxide` backend.
 
-| feature                 | `zune-inflate` | `flate2` |
-|-------------------------|----------------|----------|
-| zlib decompression      | yes            | yes      |
-| delfate decompression   | yes            | yes      |
-| gzip                    | yes            | yes      |
-| compression             | soon           | yes      |
-| streaming decompression | no             | yes      |
-| **unsafe**              | no             | yes      |
+| feature                 | `zune-inflate` | `flate2`          |
+|-------------------------|----------------|-------------------|
+| zlib decompression      | yes            | yes               |
+| delfate decompression   | yes            | yes               |
+| gzip                    | yes            | yes               |
+| compression             | soon           | yes               |
+| streaming decompression | no             | yes               |
+| **unsafe**              | no             | yes<sup>[1]</sup> |
 
-As you can see, there are a lot of features we currently lack when compared to
+<sup>[1]</sup> Flate writes to an uninitialized buffer
+
+As you can see, there are some concrete features we currently lack when compared to
 flate2/miniz-oxide.
 
 There's actually nothing riding in for us, except...it's wickedly fast...
 
 ### Benchmarks
 
-Up-to date benchmarks are done using criterion and hosted online at [zune-inflate] site,
-but we're generally usually faster than flate even with zlib-ng as backend and slower than libdeflate(C)
+Up-to date benchmarks are done using criterion and hosted online at [zune-benchmarks] site,
+benchmarks for this library have the `inflate: ` prefix.
+
+But we're generally usually faster than flate even with zlib-ng as backend and slower than libdeflate(C)
 
 ## Fuzzing
 
@@ -114,4 +118,4 @@ The decoder is currently fuzzed for correctness by both `miniz-oxide` and `zlib-
 
 [criterion]:https://github.com/bheisler/criterion.rs
 
-[zune-inflate]:https://etemesi254.github.io/assets/criterion/ZLIB%20decoding/report/index.html
+[zune-benchmarks]:https://etemesi254.github.io/posts/Zune-Benchmarks/
