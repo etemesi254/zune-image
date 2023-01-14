@@ -12,7 +12,6 @@ pub enum ColorSpace
     YCbCr,
     Luma,
     LumaA,
-    RGBX,
     YCCK,
     CMYK,
     Unknown
@@ -24,7 +23,7 @@ impl ColorSpace
         match self
         {
             Self::RGB | Self::YCbCr => 3,
-            Self::RGBX | Self::RGBA | Self::YCCK | Self::CMYK => 4,
+            Self::RGBA | Self::YCCK | Self::CMYK => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
             Self::Unknown => 0
@@ -44,10 +43,9 @@ impl ColorSpace
 
 /// Encapsulates all colorspaces supported by
 /// the library
-pub static ALL_COLORSPACES: [ColorSpace; 7] = [
+pub static ALL_COLORSPACES: [ColorSpace; 6] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
-    ColorSpace::RGBX,
     ColorSpace::LumaA,
     ColorSpace::Luma,
     ColorSpace::CMYK,
