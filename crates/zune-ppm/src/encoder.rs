@@ -2,36 +2,49 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::{Error, Write};
 
+use zune_core::bit_depth::BitType;
+use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::EncoderOptions;
 
 /// Errors occurring during encoding
-pub enum PPMErrors
+pub enum PPMEncodeErrors
 {
     Static(&'static str),
+    TooShortInput(usize, usize),
+    UnsupportedColorspace(ColorSpace),
     IOErrors(io::Error)
 }
 
-impl From<io::Error> for PPMErrors
+impl From<io::Error> for PPMEncodeErrors
 {
     fn from(err: Error) -> Self
     {
-        PPMErrors::IOErrors(err)
+        PPMEncodeErrors::IOErrors(err)
     }
 }
 
-impl Debug for PPMErrors
+impl Debug for PPMEncodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
         match self
         {
-            PPMErrors::Static(ref errors) =>
+            PPMEncodeErrors::Static(ref errors) =>
             {
                 writeln!(f, "{errors}")
             }
-            PPMErrors::IOErrors(ref err) =>
+            PPMEncodeErrors::IOErrors(ref err) =>
             {
                 writeln!(f, "{err}")
+            }
+            PPMEncodeErrors::TooShortInput(expected, found) =>
+            {
+                writeln!(f, "Expected input of length {expected} but found {found}")
+            }
+            PPMEncodeErrors::UnsupportedColorspace(colorspace) =>
+            {
+                writeln!(f, "Unsupported colorspace {colorspace:?} for ppm")
             }
         }
     }
@@ -58,147 +71,98 @@ impl Display for PPMVersions
 }
 
 /// A PPM encoder
-pub struct PPMEncoder<'a, W: Write>
+pub struct PPMEncoder<'a>
 {
-    writer: &'a mut W
+    data:    &'a [u8],
+    options: EncoderOptions
 }
 
-impl<'a, W: Write> PPMEncoder<'a, W>
+impl<'a> PPMEncoder<'a>
 {
-    /// Create a new PPM encoder that writes to `writer`
-    pub fn new(writer: &'a mut W) -> PPMEncoder<'a, W>
-    {
-        Self { writer }
-    }
-
-    /// Write Headers for P5 and P6 formats
-    fn write_headers(
-        &mut self, version: PPMVersions, width: usize, height: usize, max_val: usize
-    ) -> Result<(), PPMErrors>
-    {
-        let header = format!("{version}\n{width}\n{height}\n{max_val}\n");
-
-        self.writer.write_all(header.as_bytes())?;
-
-        Ok(())
-    }
-
-    /// Write headers for P7 format
-    fn write_headers_pam(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, max_val: usize
-    ) -> Result<(), PPMErrors>
-    {
-        let tuple_type = convert_tuple_type_to_pam(colorspace);
-
-        let header = format!(
-            "P7\nWIDTH {}\nHEIGHT {}\nDEPTH {}\nMAXVAL {}\nTUPLTYPE {}\n ENDHDR\n",
-            width,
-            height,
-            colorspace.num_components(),
-            max_val,
-            tuple_type
-        );
-        self.writer.write_all(header.as_bytes())?;
-
-        Ok(())
-    }
-    fn encode_pam_u8(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u8]
-    ) -> Result<(), PPMErrors>
-    {
-        self.write_headers_pam(width, height, colorspace, 255)?;
-
-        self.writer.write_all(data)?;
-
-        Ok(())
-    }
-    fn encode_pam_u16(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
-    ) -> Result<(), PPMErrors>
-    {
-        self.write_headers_pam(width, height, colorspace, 65535)?;
-
-        // Create big endian bytes from data
-        let owned_data = data
-            .iter()
-            .flat_map(|x| x.to_be_bytes())
-            .collect::<Vec<u8>>();
-
-        self.writer.write_all(&owned_data)?;
-
-        Ok(())
-    }
-
-    /// Encode`data` as 8 bit PPM file
+    /// Create a new encoder which will encode the specified
+    /// data whose format is contained in the options.
     ///
-    /// Recommended version is P6, which allows one to save RGB
-    pub fn encode_u8(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, version: PPMVersions,
-        data: &[u8]
-    ) -> Result<(), PPMErrors>
+    /// # Note
+    /// To encode 16 bit data,it still must be provided as u8 bytes
+    /// in native endian.
+    ///
+    /// One can use [`u16::to_ne_bytes`] for this if data is in a u16 slice
+    ///
+    /// [`u16::to_ne_bytes`]:u16::to_ne_bytes
+    pub fn new(data: &'a [u8], options: EncoderOptions) -> PPMEncoder<'a>
     {
-        if width * height * colorspace.num_components() != data.len()
-        {
-            return Err(PPMErrors::Static(
-                "Data length does not match image dimensions"
-            ));
-        }
-        match version
+        PPMEncoder { data, options }
+    }
+
+    fn encode_headers(&mut self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors>
+    {
+        let version = version_for_colorspace(self.options.colorspace).ok_or(
+            PPMEncodeErrors::UnsupportedColorspace(self.options.colorspace)
+        )?;
+
+        let width = self.options.width;
+        let height = self.options.height;
+        let components = self.options.colorspace.num_components();
+        let max_val = self.options.depth.max_value();
+        let colorspace = self.options.colorspace;
+
+        let header = match version
         {
             PPMVersions::P5 | PPMVersions::P6 =>
             {
-                let version = get_ppm_version(colorspace)?;
-
-                self.write_headers(version, width, height, 255)?;
-                self.writer.write_all(data)?;
+                format!("{version}\n{width}\n{height}\n{max_val}\n")
             }
             PPMVersions::P7 =>
             {
-                self.encode_pam_u8(width, height, colorspace, data)?;
+                let tuple_type = convert_tuple_type_to_pam(colorspace);
+
+                format!(
+                        "P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {components}\nMAXVAL {max_val}\nTUPLTYPE {tuple_type}\n ENDHDR\n",
+                    )
             }
-        }
+        };
+
+        stream.write_all(header.as_bytes()).unwrap();
 
         Ok(())
     }
-
-    /// Encode data as 16 bit PPM
-    fn encode_ppm_u16(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, data: &[u16]
-    ) -> Result<(), PPMErrors>
+    pub fn encode(&mut self) -> Result<Vec<u8>, PPMEncodeErrors>
     {
-        let version = get_ppm_version(colorspace)?;
+        let expected = calc_expected_size(self.options);
+        let found = self.data.len();
 
-        self.write_headers(version, width, height, 65535)?;
-
-        // NOTE: Cae we can save memory here, but it becomes slow
-        // so we cheat by having our own copy
-
-        // Convert to big endian since netbpm uses big endian
-        // so we emulate that
-        let owned_data = data
-            .iter()
-            .flat_map(|x| x.to_be_bytes())
-            .collect::<Vec<u8>>();
-
-        self.writer.write_all(&owned_data)?;
-
-        Ok(())
-    }
-
-    pub fn encode_u16(
-        &mut self, width: usize, height: usize, colorspace: ColorSpace, version: PPMVersions,
-        data: &[u16]
-    ) -> Result<(), PPMErrors>
-    {
-        match version
+        if expected != found
         {
-            PPMVersions::P5 | PPMVersions::P6 =>
-            {
-                self.encode_ppm_u16(width, height, colorspace, data)
-            }
-
-            PPMVersions::P7 => self.encode_pam_u16(width, height, colorspace, data)
+            return Err(PPMEncodeErrors::TooShortInput(expected, found));
         }
+        let out_size = calc_out_size(self.options);
+
+        let mut out = vec![0; out_size];
+
+        let mut stream = ZByteWriter::new(&mut out);
+
+        self.encode_headers(&mut stream)?;
+
+        match self.options.depth.bit_type()
+        {
+            BitType::Eight => stream.write_all(self.data).unwrap(),
+            BitType::Sixteen =>
+            {
+                // chunk in two and write to stream
+                for slice in self.data.chunks_exact(2)
+                {
+                    let byte = u16::from_ne_bytes(slice.try_into().unwrap());
+                    stream.write_u16_be(byte)
+                }
+            }
+        }
+        assert!(!stream.eof());
+        let position = stream.position();
+
+        // truncate to how many bytes we wrote
+        out.truncate(position);
+
+        Ok(out)
     }
 }
 
@@ -208,7 +172,7 @@ pub fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
     {
         ColorSpace::Luma => Some(PPMVersions::P5),
         ColorSpace::RGB => Some(PPMVersions::P6),
-        ColorSpace::RGBA | ColorSpace::RGBX | ColorSpace::LumaA => Some(PPMVersions::P7),
+        ColorSpace::RGBA | ColorSpace::LumaA => Some(PPMVersions::P7),
         _ => None
     }
 }
@@ -225,18 +189,24 @@ fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str
     }
 }
 
-fn get_ppm_version(colorspace: ColorSpace) -> Result<PPMVersions, PPMErrors>
+const PPM_HEADER_SIZE: usize = 100;
+
+#[inline]
+fn calc_out_size(options: EncoderOptions) -> usize
 {
-    if colorspace == ColorSpace::Luma
-    {
-        Ok(PPMVersions::P5)
-    }
-    else if colorspace == ColorSpace::RGB
-    {
-        Ok(PPMVersions::P6)
-    }
-    else
-    {
-        Err(PPMErrors::Static("Unsupported colorspace for PPM"))
-    }
+    options
+        .width
+        .checked_mul(options.depth.size_of())
+        .unwrap()
+        .checked_mul(options.height)
+        .unwrap()
+        .checked_mul(options.colorspace.num_components())
+        .unwrap()
+        .checked_add(PPM_HEADER_SIZE)
+        .unwrap()
+}
+
+fn calc_expected_size(options: EncoderOptions) -> usize
+{
+    calc_out_size(options).checked_sub(PPM_HEADER_SIZE).unwrap()
 }
