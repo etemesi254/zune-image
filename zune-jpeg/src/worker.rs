@@ -34,10 +34,7 @@ pub(crate) fn color_convert_no_sampling(
         {
             ycbcr_to_grayscale(unprocessed[0], width, padded_width, output);
         }
-        (
-            ColorSpace::YCbCr,
-            ColorSpace::YCbCr | ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::RGBX
-        ) =>
+        (ColorSpace::YCbCr, ColorSpace::YCbCr | ColorSpace::RGB | ColorSpace::RGBA) =>
         {
             color_convert_ycbcr(
                 unprocessed,
@@ -60,7 +57,7 @@ pub(crate) fn color_convert_no_sampling(
             );
         }
 
-        (ColorSpace::YCCK, ColorSpace::RGBA | ColorSpace::RGBX) =>
+        (ColorSpace::YCCK, ColorSpace::RGBA) =>
         {
             color_convert_ycck_to_rgb::<4>(
                 unprocessed,
@@ -75,7 +72,7 @@ pub(crate) fn color_convert_no_sampling(
         {
             color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
         }
-        (ColorSpace::CMYK, ColorSpace::RGBA | ColorSpace::RGBX) =>
+        (ColorSpace::CMYK, ColorSpace::RGBA) =>
         {
             color_convert_cymk_to_rgb::<4>(unprocessed, width, padded_width, output);
         }

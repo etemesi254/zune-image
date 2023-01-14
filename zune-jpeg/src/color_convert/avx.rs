@@ -40,7 +40,7 @@ pub union YmmRegister
     // both are 32 when using std::mem::size_of
     mm256: __m256i,
     // for avx color conversion
-    array: [i16; 16],
+    array: [i16; 16]
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ pub union YmmRegister
 /// - `offset`: The position from 0 where we write these RGB values
 #[inline(always)]
 pub fn ycbcr_to_rgb_avx2(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 )
 {
     // call this in another function to tell RUST to vectorize this
@@ -79,7 +79,7 @@ pub fn ycbcr_to_rgb_avx2(
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
 unsafe fn ycbcr_to_rgb_avx2_1(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 )
 {
     // Load output buffer
@@ -121,7 +121,7 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "avx")]
 unsafe fn ycbcr_to_rgb_baseline(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16]
 ) -> (YmmRegister, YmmRegister, YmmRegister)
 {
     // Load values into a register
@@ -153,7 +153,7 @@ unsafe fn ycbcr_to_rgb_baseline(
     //y+r2
 
     let r = YmmRegister {
-        mm256: clamp_avx(_mm256_add_epi16(y_c, r2)),
+        mm256: clamp_avx(_mm256_add_epi16(y_c, r2))
     };
 
     // g = Y - (11 * Cb + 23 * Cr) / 32 ;
@@ -173,7 +173,7 @@ unsafe fn ycbcr_to_rgb_baseline(
 
     // Y - (11 * Cb + 23 * Cr) / 32 ;
     let g = YmmRegister {
-        mm256: clamp_avx(_mm256_sub_epi16(y_c, g4)),
+        mm256: clamp_avx(_mm256_sub_epi16(y_c, g4))
     };
 
     // b = Y + 113 * Cb / 64
@@ -185,7 +185,7 @@ unsafe fn ycbcr_to_rgb_baseline(
 
     // b = Y + 113 * Cb / 64 ;
     let b = YmmRegister {
-        mm256: clamp_avx(_mm256_add_epi16(b2, y_c)),
+        mm256: clamp_avx(_mm256_add_epi16(b2, y_c))
     };
 
     return (r, g, b);
@@ -199,7 +199,7 @@ unsafe fn ycbcr_to_rgb_baseline(
 /// This is used by the `ycbcr_to_rgba_avx` and `ycbcr_to_rgbx` conversion
 /// routines
 unsafe fn ycbcr_to_rgb_baseline_no_clamp(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16]
 ) -> (__m256i, __m256i, __m256i)
 {
     // Load values into a register
@@ -263,7 +263,7 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 
 #[inline(always)]
 pub fn ycbcr_to_rgba_avx2(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 )
 {
     unsafe {
@@ -316,75 +316,6 @@ unsafe fn ycbcr_to_rgba_unsafe(
 
     // Store
     // Use streaming instructions to prevent polluting the cache?
-    _mm256_storeu_si256(tmp.as_mut_ptr().cast(), m);
-
-    _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);
-
-    *offset += 64;
-}
-
-/// YCbCr to RGBX conversion
-///
-/// The X in RGBX stands for `anything`, the compiler will make X anything it
-/// sees fit, although most implementations use
-///
-/// This is meant to match libjpeg-turbo RGBX conversion and since its
-/// a 4 way interleave instead of a three way interleave, the code is simple
-/// to vectorize hence this is slightly faster than YCbCr -> RGB conversion
-#[inline(always)]
-pub fn ycbcr_to_rgbx_avx2(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize,
-)
-{
-    unsafe {
-        ycbcr_to_rgbx_unsafe(y, cb, cr, out, offset);
-    }
-}
-
-#[inline]
-#[allow(clippy::cast_possible_wrap)]
-#[target_feature(enable = "avx2")]
-#[rustfmt::skip]
-unsafe fn ycbcr_to_rgbx_unsafe(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16],
-    out: &mut [u8],
-    offset: &mut usize,
-)
-{
-    let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).unwrap().try_into().unwrap();
-
-    let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
-
-    // Pack the integers into u8's using signed saturation.
-    let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
-    // Set alpha channel to random things, Mostly I see it using the b values
-    let d = _mm256_packus_epi16(b, _mm256_undefined_si256()); // cccccc_dddddd_ccccccc_ddddd
-    // transpose_u16 and interleave channels
-    let e = _mm256_unpacklo_epi8(c, d); //ab_ab_ab_ab_ab_ab_ab_ab
-    let f = _mm256_unpackhi_epi8(c, d); //cd_cd_cd_cd_cd_cd_cd_cd
-    // final transpose_u16
-    let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
-    let h = _mm256_unpackhi_epi8(e, f);
-
-    // undo packus shuffling...
-    // This only applies to AVX because it's packus is a bit weird
-    // and PLEASE DO NOT CHANGE SHUFFLE CONSTANTS.
-    // COMING UP WITH THEM TOOK SOO LONG...
-    let i = _mm256_permute2x128_si256::<{ shuffle(3, 2, 1, 0) }>(g, h);
-
-    let j = _mm256_permute2x128_si256::<{ shuffle(1, 2, 3, 0) }>(g, h);
-
-    let k = _mm256_permute2x128_si256::<{ shuffle(3, 2, 0, 1) }>(g, h);
-
-    let l = _mm256_permute2x128_si256::<{ shuffle(0, 3, 2, 1) }>(g, h);
-
-    let m = _mm256_blend_epi32::<0b1111_0000>(i, j);
-
-    let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
-
-    // check if we have enough space to write.
-    // Store
-    // Use streaming instructions to prevent polluting the cache
     _mm256_storeu_si256(tmp.as_mut_ptr().cast(), m);
 
     _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);

@@ -39,9 +39,12 @@
 //!
 //! Therefore if your looking to optimize some routines, probably start there.
 
+pub use scalar::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
+use zune_core::colorspace::ColorSpace;
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
-pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2, ycbcr_to_rgbx_avx2};
+pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2};
 #[cfg(feature = "x86")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub use crate::color_convert::sse::{ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
@@ -51,14 +54,11 @@ mod avx;
 mod scalar;
 mod sse;
 
-pub use scalar::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
-use zune_core::colorspace::ColorSpace;
-
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
 
 pub fn choose_ycbcr_to_rgb_convert_func(
-    type_need: ColorSpace, use_unsafe: bool,
+    type_need: ColorSpace, use_unsafe: bool
 ) -> Option<ColorConvert16Ptr>
 {
     if use_unsafe
@@ -77,8 +77,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                     ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
                     ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
                     ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
-                    ColorSpace::RGBX => Some(ycbcr_to_rgbx_avx2),
-                    _ => None,
+                    _ => None
                 };
             }
             // try sse
@@ -91,9 +90,9 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 return match type_need
                 {
                     ColorSpace::RGB => Some(ycbcr_to_rgb_sse_16),
-                    ColorSpace::RGBA | ColorSpace::RGBX => Some(ycbcr_to_rgba_sse_16),
+                    ColorSpace::RGBA => Some(ycbcr_to_rgba_sse_16),
                     ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
-                    _ => None,
+                    _ => None
                 };
             }
         }
@@ -102,9 +101,9 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     return match type_need
     {
         ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
-        ColorSpace::RGBA | ColorSpace::RGBX => Some(scalar::ycbcr_to_rgba_16_scalar),
+        ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_16_scalar),
         ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
 
-        _ => None,
+        _ => None
     };
 }
