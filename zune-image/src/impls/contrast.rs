@@ -53,7 +53,6 @@ impl OperationsTrait for Contrast
     {
         &[
             ColorSpace::RGBA,
-            ColorSpace::RGBX,
             ColorSpace::RGB,
             ColorSpace::LumaA,
             ColorSpace::Luma
