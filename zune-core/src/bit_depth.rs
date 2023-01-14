@@ -11,13 +11,42 @@
 #[non_exhaustive]
 pub enum BitDepth
 {
-    // Most common images
+    /// Eight bit depth.
+    ///
+    /// Images with such bit depth use [`u8`] to store
+    /// pixels and use the whole range from 0-255.
+    ///
+    /// It is currently the smallest supported bit depth
+    /// by the library.
+    ///
+    /// For images with bit depths lower than this, they will be scaled
+    /// to this bit depth
     Eight,
-    // AV1
+    /// Ten bit depth
+    ///
+    /// Images with such bit depth use [`u16`] to store values but they
+    /// only use 10 bits, i.e from 0-1024.
+    ///
+    /// Preserved across image operations
+    ///
+    /// This is provided as a compatibility to allow decoding and encoding of av1 images
+    /// (when fully supported)
+    ///
+    /// Data is stored and processed in native endian
     Ten,
-    // HDR
+    /// Twelve bit depth
+    ///
+    /// Images with such bit depths use [`u16`] to store values but they
+    /// only use 12 bits.
+    ///
+    /// Data is stored and processed in native endian
     Twelve,
-    // PPM/PNM, 16 bit png.
+    /// Sixteen bit depth
+    ///
+    /// Images with such bit depths use [`u16`] to store values and use the whole range
+    /// i.e 0-65535
+    ///
+    /// Data is stored and processed in native endian.
     Sixteen
 }
 
