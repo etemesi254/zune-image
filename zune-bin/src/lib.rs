@@ -31,6 +31,6 @@ pub fn main()
             result.err().unwrap()
         );
         println!();
-        exit(1);
+        exit(-1);
     }
 }
