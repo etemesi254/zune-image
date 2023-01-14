@@ -31,7 +31,6 @@ impl WasmColorspace
             ColorSpace::YCbCr => Self::YCbCr,
             ColorSpace::Luma => Self::Luma,
             ColorSpace::LumaA => Self::LumaA,
-            ColorSpace::RGBX => Self::RGBX,
             ColorSpace::YCCK => Self::YCCK,
             ColorSpace::CMYK => Self::CYMK,
             ColorSpace::Unknown => Self::Unknown,
