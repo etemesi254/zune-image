@@ -27,6 +27,7 @@
       <sourceFolder url="file://$MODULE_DIR$/zune-png/benches" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/zune-png/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/zune-farbfeld/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/zune-qoi/benches" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/zune-jpeg/target" />
     </content>

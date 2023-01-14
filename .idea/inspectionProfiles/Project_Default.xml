@@ -6,5 +6,6 @@
         <language minSize="306" name="Rust" />
       </Languages>
     </inspection_tool>
+    <inspection_tool class="RsFieldInitShorthand" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
   </profile>
 </component>
