@@ -218,7 +218,7 @@ impl<'a> PngDecoder<'a>
                 }
                 PngChunkType::PLTE =>
                 {
-                    self.parse_plt(header)?;
+                    self.parse_plte(header)?;
                 }
                 PngChunkType::IDAT =>
                 {
@@ -376,19 +376,10 @@ impl<'a> PngDecoder<'a>
     ///
     /// This does one extra allocation when compared to `decode_raw` for 16 bit images to create the
     /// necessary representation of 16 bit images.
-    ///
-    /// This does gamma correction
     pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
     {
         let out = self.decode_raw()?;
 
-        if self.png_info.depth < 8
-        {
-            let info = &self.png_info;
-            let out_n = usize::from(info.color.num_components());
-
-            self.expand_bits_to_byte(info.width, info.height, out_n)
-        }
         if self.png_info.depth <= 8
         {
             return Ok(DecodingResult::U8(out));
@@ -548,6 +539,10 @@ impl<'a> PngDecoder<'a>
 
                 FilterMethod::Unknown => unreachable!()
             }
+        }
+        if self.png_info.depth < 8
+        {
+            self.expand_bits_to_byte(height, width, out_n)
         }
 
         Ok(())
@@ -741,7 +736,7 @@ impl<'a> PngDecoder<'a>
         {
             for (px, entry) in out.chunks_exact_mut(3).zip(data)
             {
-                let entry_start = usize::from(*entry) * 3;
+                let entry_start = usize::from(*entry);
 
                 px[0] = self.palette[entry_start];
                 px[1] = self.palette[entry_start + 1];
@@ -751,4 +746,13 @@ impl<'a> PngDecoder<'a>
 
         self.out = out;
     }
+}
+
+#[test]
+fn test_black_and_white()
+{
+    let path = "/home/caleb/jpeg/png/vt.png";
+    let data = std::fs::read(path).unwrap();
+    let mut decoder = PngDecoder::new(&data);
+    let px = decoder.decode().unwrap();
 }
