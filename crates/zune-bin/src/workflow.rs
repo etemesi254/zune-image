@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
-use std::io::{stdin, BufRead, BufWriter, Read};
+use std::io::{stdin, BufRead, Read, Write};
 use std::ops::Deref;
 use std::path::Path;
 use std::string::String;
@@ -57,7 +57,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         };
         // workflow
 
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .create(true)
@@ -66,7 +66,6 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         // Rust was pretty good to catch this.
         // Thank you compiler gods.
-        let mut buf_writer = BufWriter::new(file);
 
         let mut workflow = WorkFlow::new();
 
@@ -89,12 +88,24 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if ext == OsStr::new("ppm") || ext == OsStr::new("pam")
             {
                 debug!("Treating {:?} as a ppm file", out_file);
-                let encoder = zune_image::codecs::ppm::PPMEncoder::new(&mut buf_writer);
+                let encoder = zune_image::codecs::ppm::PPMEncoder::new();
                 workflow.add_encoder(Box::new(encoder));
             }
         }
 
         workflow.advance_to_end()?;
+        let results = workflow.get_results();
+        //write to file
+        for result in results.iter().take(1)
+        {
+            info!(
+                "Writing data as {:?} format to file {:?}",
+                result.get_format(),
+                out_file
+            );
+
+            file.write_all(result.get_data()).unwrap();
+        }
 
         if let Some(view) = args.value_source("view")
         {
