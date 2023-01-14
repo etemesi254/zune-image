@@ -53,7 +53,6 @@ impl OperationsTrait for Brighten
     {
         &[
             ColorSpace::RGBA,
-            ColorSpace::RGBX,
             ColorSpace::RGB,
             ColorSpace::LumaA,
             ColorSpace::Luma

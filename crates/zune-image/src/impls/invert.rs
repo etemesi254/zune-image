@@ -45,7 +45,6 @@ impl OperationsTrait for Invert
             ColorSpace::RGB,
             ColorSpace::RGBA,
             ColorSpace::LumaA,
-            ColorSpace::RGBX,
             ColorSpace::Luma
         ]
     }

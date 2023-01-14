@@ -129,8 +129,7 @@ impl OperationsTrait for RgbToGrayScale
             ColorSpace::RGBA,
             ColorSpace::RGB,
             ColorSpace::LumaA,
-            ColorSpace::Luma,
-            ColorSpace::RGBX
+            ColorSpace::Luma
         ]
     }
 }
