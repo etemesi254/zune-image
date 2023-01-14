@@ -306,7 +306,7 @@ impl Channel
         {
             unsafe {
                 // extend
-                self.realloc(self.capacity.saturating_add(size));
+                self.realloc(self.capacity.saturating_add((size * 3) / 2));
             }
         }
         unsafe {
