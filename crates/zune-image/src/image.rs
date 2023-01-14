@@ -19,7 +19,7 @@ use zune_imageprocs::traits::NumOps;
 use crate::channel::Channel;
 use crate::errors::ImgErrors;
 use crate::impls::depth::Depth;
-use crate::traits::OperationsTrait;
+use crate::traits::{OperationsTrait, ZuneInts};
 
 /// Maximum supported color channels
 pub const MAX_CHANNELS: usize = 4;
@@ -301,5 +301,89 @@ impl Image
         let img = Image::new(channels, depth, width, height, colorspace);
 
         Ok(img)
+    }
+    /// Create an image from a function
+    ///
+    /// The image width , height and colorspace need to be specified
+    ///
+    /// The function will receive two parameters, the first is the current x offset and y offset
+    /// and for each it's expected to return  an array with `MAX_CHANNELS`
+    ///
+    /// # Limitations.
+    ///
+    /// Due to constrains imposed by the library, the response has to be an array containing
+    /// [MAX_CHANNELS], depending on the number of components the colorspace uses
+    /// some elements may be ignored.
+    ///
+    /// E.g for the following code
+    ///
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::{Image, MAX_CHANNELS};
+    ///
+    /// fn dead_simple(x:usize,y:usize)->[u8;MAX_CHANNELS]
+    /// {    
+    ///     let mut arr = [0;MAX_CHANNELS];
+    ///     // this will create a linear band of colors from black to white and repeats
+    ///     // until the whole image is visited
+    ///     let luma = ((x+y) % 256) as u8;
+    ///     arr[0] = luma;
+    ///     // then return it
+    ///     arr    
+    /// }
+    /// let img  = Image::from_fn(30,20,ColorSpace::Luma,dead_simple);
+    /// ```
+    /// We only set one element in our array but need to return an array with
+    /// [MAX_CHANNELS] elements
+    ///
+    /// [MAX_CHANNELS]:MAX_CHANNELS
+    pub fn from_fn<F, T>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
+    where
+        F: Fn(usize, usize) -> [T; MAX_CHANNELS],
+        T: ZuneInts<T> + Copy + Clone
+    {
+        match colorspace.num_components()
+        {
+            1 => Image::from_fn_inner::<_, _, 1>(width, height, func, colorspace),
+            2 => Image::from_fn_inner::<_, _, 2>(width, height, func, colorspace),
+            3 => Image::from_fn_inner::<_, _, 3>(width, height, func, colorspace),
+            4 => Image::from_fn_inner::<_, _, 4>(width, height, func, colorspace),
+            _ => unreachable!()
+        }
+    }
+
+    /// Template code to use with from_fn which engraves component number
+    /// as a constant in compile time.
+    ///
+    /// This allows further optimizations by the compiler
+    /// like removing bounds check in the inner loop
+    fn from_fn_inner<F, T, const COMPONENTS: usize>(
+        width: usize, height: usize, func: F, colorspace: ColorSpace
+    ) -> Image
+    where
+        F: Fn(usize, usize) -> [T; MAX_CHANNELS],
+        T: ZuneInts<T> + Copy + Clone
+    {
+        let size = width * height * COMPONENTS * T::depth().size_of();
+
+        let mut channels = vec![Channel::new_with_capacity(size); COMPONENTS];
+
+        let channels_ref: &mut [Channel; COMPONENTS] =
+            channels.get_mut(0..COMPONENTS).unwrap().try_into().unwrap();
+
+        for y in 0..height
+        {
+            for x in 0..width
+            {
+                let value = (func)(x, y);
+
+                for i in 0..COMPONENTS
+                {
+                    channels_ref[i].push(value[i]);
+                }
+            }
+        }
+
+        Image::new(channels, T::depth(), width, height, colorspace)
     }
 }
