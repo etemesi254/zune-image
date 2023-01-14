@@ -1,4 +1,4 @@
-use log::info;
+use log::{error, info};
 
 use crate::decoder::PngChunk;
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
@@ -64,10 +64,17 @@ impl<'a> PngDecoder<'a>
             {
                 if !matches!(self.png_info.color, PngColor::Luma | PngColor::LumaA)
                 {
-                    let err_msg=format!("Bit depth of {} only allows Greyscale or Indexed color types, but found {:?}",
-                                        self.png_info.depth,self.png_info.color);
+                    let err_msg = format!("Bit depth of {} only allows Greyscale or Indexed color types, but found {:?}",
+                                          self.png_info.depth, self.png_info.color);
 
-                    return Err(PngErrors::Generic(err_msg));
+                    if self.options.strict_mode
+                    {
+                        return Err(PngErrors::Generic(err_msg));
+                    }
+                    else
+                    {
+                        error!("{}", err_msg);
+                    }
                 }
             }
             8 =>
@@ -140,7 +147,7 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
-    pub(crate) fn parse_plt(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_plte(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
     {
         if chunk.length % 3 != 0
         {
@@ -149,7 +156,6 @@ impl<'a> PngDecoder<'a>
 
         // allocate palette
         self.palette.resize(256 * 3, 0);
-
         for pal_chunk in self.palette.chunks_exact_mut(3).take(chunk.length / 3)
         {
             pal_chunk[0] = self.stream.get_u8();
