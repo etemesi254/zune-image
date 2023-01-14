@@ -10,8 +10,7 @@ use crate::constants::{
 };
 use crate::QoiEncodeErrors;
 
-const SUPPORTED_COLORSPACES: [ColorSpace; 3] =
-    [ColorSpace::RGB, ColorSpace::RGBA, ColorSpace::RGBX];
+const SUPPORTED_COLORSPACES: [ColorSpace; 2] = [ColorSpace::RGB, ColorSpace::RGBA];
 
 pub struct QoiEncoder<'a>
 {
@@ -74,7 +73,7 @@ impl<'a> QoiEncoder<'a>
             let channel = match self.options.colorspace
             {
                 ColorSpace::RGB => 3,
-                ColorSpace::RGBA | ColorSpace::RGBX => 4,
+                ColorSpace::RGBA => 4,
 
                 _ =>
                 {
