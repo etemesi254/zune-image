@@ -736,7 +736,7 @@ impl<'a> PngDecoder<'a>
         {
             for (px, entry) in out.chunks_exact_mut(3).zip(data)
             {
-                let entry_start = usize::from(*entry);
+                let entry_start = usize::from(*entry) * 3;
 
                 px[0] = self.palette[entry_start];
                 px[1] = self.palette[entry_start + 1];
