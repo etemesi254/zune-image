@@ -134,6 +134,32 @@ impl<'a> ZByteWriter<'a>
     {
         self.position.saturating_add(bytes) <= self.buffer.len()
     }
+
+    /// Get length of the underlying buffer.
+    ///
+    /// To get the number of bytes left in the buffer,
+    /// use [remaining] method
+    ///
+    /// [remaining]: Self::remaining
+    #[inline]
+    pub const fn len(&self) -> usize
+    {
+        self.buffer.len()
+    }
+    /// Return true if the underlying buffer stream is empty
+    #[inline]
+    pub const fn is_empty(&self) -> bool
+    {
+        self.len() == 0
+    }
+
+    /// Return true whether or not we read to the end of the
+    /// buffer and have no more bytes left.
+    #[inline]
+    pub const fn eof(&self) -> bool
+    {
+        self.position >= self.len()
+    }
 }
 
 macro_rules! write_single_type {
