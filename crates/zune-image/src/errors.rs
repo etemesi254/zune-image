@@ -171,9 +171,9 @@ impl Debug for ImgOperationsErrors
 }
 
 #[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMErrors> for ImgEncodeErrors
+impl From<zune_ppm::PPMEncodeErrors> for ImgEncodeErrors
 {
-    fn from(error: zune_ppm::PPMErrors) -> Self
+    fn from(error: zune_ppm::PPMEncodeErrors) -> Self
     {
         let err = format!("ppm: {error:?}");
 
