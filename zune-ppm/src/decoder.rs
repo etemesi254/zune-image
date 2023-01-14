@@ -25,8 +25,13 @@ pub enum PPMDecodeErrors
 {
     Generic(String),
     GenericStatic(&'static str),
+    /// There is a problem with the header
+    /// of a ppm file.
     InvalidHeader(String),
+    /// The PPM format is not supported
     UnsupportedImpl(String),
+    /// The PPM file in question has larger dimensions(width,height)
+    /// than the accepted one
     LargeDimensions(usize, usize)
 }
 
@@ -107,7 +112,16 @@ impl<'a> PPMDecoder<'a>
     }
     /// Read PPM headers and store them in internal state
     ///
-    /// Return Err on Error otherwise return nothing,
+    /// After this, information about the image can be accessed by other
+    /// accessors like [`get_dimensions`] to get image dimensions
+    ///
+    /// # Returns
+    /// - `()` : On successful decode, items can be accessed by accessors
+    ///
+    /// - `Err(PPMDecodeErrors)`: This will return an `InvalidHeader`  enum, the string
+    /// will more information about what went wrong
+    ///
+    /// [`get_dimensions`]:Self::get_dimensions
     pub fn read_headers(&mut self) -> Result<(), PPMDecodeErrors>
     {
         if self.reader.has(3)
@@ -119,7 +133,7 @@ impl<'a> PPMDecoder<'a>
             {
                 let msg = format!("Expected P as first PPM byte but got '{}' ", p as char);
 
-                return Err(PPMDecodeErrors::Generic(msg));
+                return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
 
             if version != b'5' && version != b'6' && version != b'7'
@@ -129,7 +143,7 @@ impl<'a> PPMDecoder<'a>
                     version as char
                 );
 
-                return Err(PPMDecodeErrors::Generic(msg));
+                return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
 
             if version == b'5' || version == b'6'
@@ -146,11 +160,12 @@ impl<'a> PPMDecoder<'a>
             let len = self.reader.remaining();
             let msg = format!("Expected at least 3 bytes in header but stream has {len}");
 
-            return Err(PPMDecodeErrors::Generic(msg));
+            return Err(PPMDecodeErrors::InvalidHeader(msg));
         }
 
         Ok(())
     }
+    /// Decode header types from P7 format
     fn decode_p7_header(&mut self) -> Result<(), PPMDecodeErrors>
     {
         let mut seen_depth = false;
@@ -163,7 +178,7 @@ impl<'a> PPMDecoder<'a>
         {
             if self.reader.eof()
             {
-                return Err(PPMDecodeErrors::GenericStatic("No more bytes"));
+                return Err(PPMDecodeErrors::InvalidHeader("No more bytes".to_string()));
             }
             skip_spaces(&mut self.reader);
 
@@ -285,10 +300,12 @@ impl<'a> PPMDecoder<'a>
         }
         if !seen_max_val || !seen_tuple_type || !seen_height || !seen_width || !seen_depth
         {
-            return Err(PPMDecodeErrors::GenericStatic(
-                "Not all expected headers were found"
+            return Err(PPMDecodeErrors::InvalidHeader(
+                "Not all expected headers were found".to_string()
             ));
         }
+
+        self.decoded_headers = true;
 
         info!("Width: {}", self.width);
         info!("Height: {}", self.height);
@@ -389,7 +406,15 @@ impl<'a> PPMDecoder<'a>
     }
 
     /// Return the image bit depth or none if headers
-    /// are not decoded
+    /// are not decoded.
+    ///
+    /// # Returns
+    /// - `Some(BitDepth)`: The image bit depth, can be [Eight] or [Sixteen]
+    /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
+    /// in parsing
+    ///
+    /// [Eight]: BitDepth::Eight,
+    /// [Sixteen]: BitDepth::Sixteen
     pub const fn get_bit_depth(&self) -> Option<BitDepth>
     {
         if self.decoded_headers
@@ -403,6 +428,11 @@ impl<'a> PPMDecoder<'a>
     }
     /// Return the image colorspace or none if
     /// headers aren't decoded
+    ///
+    /// # Returns
+    /// - `Some(ColorSpace)`: The colorspace of the input image
+    /// - None: Indicates headers weren't decoded or an unhandled error occurred
+    /// during header decoding
     pub const fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if self.decoded_headers
@@ -415,6 +445,24 @@ impl<'a> PPMDecoder<'a>
         }
     }
     /// Return image dimensions or none if image isn't decoded
+    ///
+    /// # Returns
+    /// - `Some(width,height)`: The image width and height as a usize
+    /// -  None: Indicates the image headers weren't decoded or an error occured
+    ///
+    ///  # Example
+    /// ```
+    /// use zune_core::bit_depth::BitDepth;
+    /// use zune_ppm::PPMDecoder;
+    /// // a simple ppm header
+    /// let data = b"P6 34 32 255";
+    /// let mut decoder = PPMDecoder::new(data);
+    ///
+    /// decoder.read_headers().unwrap();
+    ///
+    /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Eight));
+    /// assert_eq!(decoder.get_dimensions(),Some((34,32)))
+    /// ```
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if self.decoded_headers
@@ -430,9 +478,38 @@ impl<'a> PPMDecoder<'a>
     ///
     /// DecodingResult is an enum that can have either Vec<u8> or Vec<u16>,
     /// and that depends on image bit depth.
+    ///
+    /// # Returns
+    /// - `Ok(DecodingResult)`: This is a simple enum that can hold either
+    /// eight or 16 bits ([`u8`] or [`u16`]) singe ppm images can either be 8 bit or 16 bit.
+    ///
+    ///  -  Err(PPMDecodeErrors)`: There was a problem
+    /// # Example
+    /// ```
+    /// use zune_ppm::PPMDecoder;
+    /// use zune_core::bit_depth::BitDepth;
+    /// // a 1 by 1 grayscale 16 bit ppm
+    /// let data = b"P5 1 1 65535 23";
+    ///
+    /// let mut decoder = PPMDecoder::new(data);
+    ///
+    /// decoder.read_headers().unwrap();
+    ///
+    /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Sixteen));
+    /// assert_eq!(decoder.get_dimensions(),Some((1,1)));
+    /// let bytes = decoder.decode().unwrap();
+    ///
+    /// assert_eq!(&bytes.u16().unwrap(),&[12851]); // 23 in ascii is 12851
+    ///
+    /// ```
     pub fn decode(&mut self) -> Result<DecodingResult, PPMDecodeErrors>
     {
-        self.read_headers()?;
+        // decode headers only if no previous call was made.
+        if !self.decoded_headers
+        {
+            self.read_headers()?;
+        }
+
         // okay check if the stream is large enough for the bit depth
         let size =
             self.width * self.height * self.colorspace.num_components() * self.bit_depth.size_of();
