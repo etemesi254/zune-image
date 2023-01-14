@@ -3,6 +3,7 @@ use std::time::Instant;
 use log::Level::Info;
 use log::{info, log_enabled};
 
+use crate::codecs::SupportedEncoders;
 use crate::errors::ImgErrors;
 use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
@@ -30,13 +31,33 @@ impl WorkFlowState
         }
     }
 }
+
+pub struct EncodeResult
+{
+    pub(crate) format: SupportedEncoders,
+    pub(crate) data:   Vec<u8>
+}
+
+impl EncodeResult
+{
+    pub fn get_data(&self) -> &[u8]
+    {
+        &self.data
+    }
+    pub fn get_format(&self) -> SupportedEncoders
+    {
+        self.format
+    }
+}
+
 pub struct WorkFlow<'a>
 {
-    state:      Option<WorkFlowState>,
-    decode:     Option<Box<dyn DecoderTrait<'a> + 'a>>,
-    image:      Option<Image>,
-    operations: Vec<Box<dyn OperationsTrait>>,
-    encode:     Vec<Box<dyn EncoderTrait + 'a>>
+    state:         Option<WorkFlowState>,
+    decode:        Option<Box<dyn DecoderTrait<'a> + 'a>>,
+    image:         Option<Image>,
+    operations:    Vec<Box<dyn OperationsTrait>>,
+    encode:        Vec<Box<dyn EncoderTrait + 'a>>,
+    encode_result: Vec<EncodeResult>
 }
 
 impl<'a> WorkFlow<'a>
@@ -46,11 +67,12 @@ impl<'a> WorkFlow<'a>
     pub fn new() -> WorkFlow<'a>
     {
         WorkFlow {
-            image:      None,
-            state:      Some(WorkFlowState::Initialized),
-            decode:     None,
-            operations: vec![],
-            encode:     vec![]
+            image:         None,
+            state:         Some(WorkFlowState::Initialized),
+            decode:        None,
+            operations:    vec![],
+            encode:        vec![],
+            encode_result: vec![]
         }
     }
     /// Add a single encoder for this image
@@ -65,7 +87,7 @@ impl<'a> WorkFlow<'a>
     /// use zune_image::codecs::ppm::PPMEncoder;
     /// use zune_image::workflow::WorkFlow;
     /// let mut buf = BufWriter::new(File::open(".").unwrap());
-    /// let encoder = PPMEncoder::new(&mut buf);
+    /// let encoder = PPMEncoder::new();
     /// let x= WorkFlow::new().add_encoder(Box::new(encoder));
     /// ```
     pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait + 'a>)
@@ -228,8 +250,8 @@ impl<'a> WorkFlow<'a>
 
                             let start = Instant::now();
 
-                            encoder.encode_to_file(image)?;
-
+                            let result = encoder.encode_to_result(image)?;
+                            self.encode_result.push(result);
                             let stop = Instant::now();
 
                             info!(
@@ -274,5 +296,9 @@ impl<'a> WorkFlow<'a>
             }
         }
         Ok(())
+    }
+    pub fn get_results(&self) -> &[EncodeResult]
+    {
+        &self.encode_result
     }
 }
