@@ -80,12 +80,9 @@ The library tries to be at fast as [libjpeg-turbo] while being as safe as possib
 Platform specific intrinsics help get speed up intensive operations ensuring we can almost
 match [libjpeg-turbo] speeds but speeds are always +- 10 ms of this library.
 
-For more up-to-date benchmarks, see [Benches.md](/zune-jpeg/Benches.md).
+For more up-to-date benchmarks, see the online repo with
+benchmarks [here]:https://etemesi254.github.io/assets/criterion/report/index.html.
 
-# TODO
-
-- [ ] Add support for Adobe APP14 images.
-- [ ] Support more colorspace options. It would not be too bad if we support all color options libjpeg/mozjpeg supports.
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo/
 
