@@ -1,7 +1,10 @@
+use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 
+use crate::codecs::SupportedEncoders;
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
+use crate::workflow::EncodeResult;
 
 /// Encapsulates an image decoder.
 ///
@@ -90,7 +93,6 @@ pub trait OperationsTrait
             ColorSpace::LumaA,
             ColorSpace::Luma,
             ColorSpace::CMYK,
-            ColorSpace::RGBX,
             ColorSpace::YCbCr,
             ColorSpace::YCCK
         ]
@@ -173,7 +175,7 @@ pub trait EncoderTrait
     /// # Arguments
     /// - image: An image which we are trying to encode.
     ///
-    fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>;
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>;
 
     /// Return all colorspaces supported by this encoder.
     ///
@@ -181,7 +183,7 @@ pub trait EncoderTrait
     /// an unknown colorspace
     fn supported_colorspaces(&self) -> &'static [ColorSpace];
 
-    fn encode(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>
+    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
     {
         // check colorspace is correct.
         let colorspace = image.get_colorspace();
@@ -195,6 +197,40 @@ pub trait EncoderTrait
             ));
         }
 
-        self.encode_to_file(image)
+        self.encode_inner(image)
+    }
+    fn format(&self) -> SupportedEncoders;
+
+    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgEncodeErrors>
+    {
+        let data = self.encode(image)?;
+
+        Ok(EncodeResult {
+            data,
+            format: self.format()
+        })
+    }
+}
+
+pub trait ZuneInts<T>
+{
+    fn depth() -> BitDepth;
+}
+
+impl ZuneInts<u8> for u8
+{
+    #[inline(always)]
+    fn depth() -> BitDepth
+    {
+        BitDepth::Eight
+    }
+}
+
+impl ZuneInts<u16> for u16
+{
+    #[inline(always)]
+    fn depth() -> BitDepth
+    {
+        BitDepth::Sixteen
     }
 }

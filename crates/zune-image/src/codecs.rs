@@ -42,12 +42,10 @@ pub enum SupportedDecoders
 }
 
 /// All supported encoders
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum SupportedEncoders
 {
-    PPM,
-    //PPM encoder
-    PAM // PAM encoder
+    PPM
 }
 
 // stolen from imagers
