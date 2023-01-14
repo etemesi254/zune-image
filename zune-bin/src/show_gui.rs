@@ -1,6 +1,6 @@
 use std::env::temp_dir;
 use std::fs::OpenOptions;
-use std::io::BufWriter;
+use std::io::Write;
 use std::time::UNIX_EPOCH;
 
 use zune_image::codecs::ppm::PPMEncoder;
@@ -20,16 +20,15 @@ pub fn open_in_default_app(image: &Image)
 
     path.push(time);
 
-    let mut file = BufWriter::new(
-        OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(&path)
-            .unwrap()
-    );
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(&path)
+        .unwrap();
 
-    PPMEncoder::new(&mut file).encode_to_file(image).unwrap();
+    let data = PPMEncoder::new().encode(image).unwrap();
+    file.write_all(&data).unwrap();
 
     #[cfg(target_os = "linux")]
     {
