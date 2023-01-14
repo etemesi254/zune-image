@@ -1,65 +1,58 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
-use std::io::Write;
-
 use log::debug;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
 pub use zune_ppm::PPMDecoder;
-use zune_ppm::PPMEncoder as PPMEnc;
+use zune_ppm::{PPMEncodeErrors, PPMEncoder as PPMEnc};
 
+use crate::codecs::SupportedEncoders;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-pub struct PPMEncoder<'a, W: Write>
-{
-    file: &'a mut W
-}
+#[derive(Copy, Clone, Default)]
+pub struct PPMEncoder;
 
-impl<'a, W> PPMEncoder<'a, W>
-where
-    W: Write
+impl PPMEncoder
 {
-    pub fn new(file: &'a mut W) -> PPMEncoder<W>
+    pub fn new() -> PPMEncoder
     {
-        Self { file }
+        PPMEncoder {}
     }
 }
 
-impl<'a, W> EncoderTrait for PPMEncoder<'a, W>
-where
-    W: Write
+impl EncoderTrait for PPMEncoder
 {
     fn get_name(&self) -> &'static str
     {
         "PPM Encoder"
     }
 
-    fn encode_to_file(&mut self, image: &Image) -> Result<(), ImgEncodeErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
     {
         let (width, height) = image.get_dimensions();
-        let writer = &mut self.file;
-
         let colorspace = image.get_colorspace();
+        let depth = image.depth;
 
-        let mut ppm_encoder = PPMEnc::new(writer);
+        let options = EncoderOptions {
+            width,
+            height,
+            colorspace,
+            quality: 0,
+            depth
+        };
+        let data = image.flatten::<u8>();
 
-        let version = zune_ppm::version_for_colorspace(colorspace).unwrap();
+        let mut ppm_encoder = PPMEnc::new(&data, options);
 
-        if image.get_depth().max_value() > 255
-        {
-            debug!("Encoding PPM as 16 bit image");
-            ppm_encoder.encode_u16(width, height, colorspace, version, &image.flatten::<u16>())?;
-        }
-        else
-        {
-            debug!("Encoding PPM as 8 bit image");
-            ppm_encoder.encode_u8(width, height, colorspace, version, &image.flatten::<u8>())?;
-        }
+        let data = ppm_encoder
+            .encode()
+            .map_err(<PPMEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
-        Ok(())
+        Ok(data)
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace]
@@ -68,9 +61,13 @@ where
             ColorSpace::RGB,  // p7
             ColorSpace::Luma, // p7
             ColorSpace::RGBA, // p7
-            ColorSpace::RGBX, // p7
             ColorSpace::LumaA
         ]
+    }
+
+    fn format(&self) -> SupportedEncoders
+    {
+        SupportedEncoders::PPM
     }
 }
 
