@@ -1,6 +1,6 @@
 use log::{error, info};
 
-use crate::decoder::PngChunk;
+use crate::decoder::{PLTEEntry, PngChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngErrors;
 use crate::PngDecoder;
@@ -155,12 +155,13 @@ impl<'a> PngDecoder<'a>
         }
 
         // allocate palette
-        self.palette.resize(256 * 3, 0);
-        for pal_chunk in self.palette.chunks_exact_mut(3).take(chunk.length / 3)
+        self.palette.resize(256, PLTEEntry::default());
+
+        for pal_chunk in self.palette.iter_mut().take(chunk.length / 3)
         {
-            pal_chunk[0] = self.stream.get_u8();
-            pal_chunk[1] = self.stream.get_u8();
-            pal_chunk[2] = self.stream.get_u8();
+            pal_chunk.red = self.stream.get_u8();
+            pal_chunk.green = self.stream.get_u8();
+            pal_chunk.blue = self.stream.get_u8();
         }
 
         // skip crc chunk
@@ -205,13 +206,13 @@ impl<'a> PngDecoder<'a>
                 {
                     return Err(PngErrors::GenericStatic("tRNS chunk before plTE"));
                 }
-                if self.palette.len() <= chunk.length * 4
+                if self.palette.len() <= chunk.length
                 {
                     return Err(PngErrors::GenericStatic("tRNS chunk with too long entries"));
                 }
                 for i in 0..chunk.length
                 {
-                    self.palette[i * 4 + 3] = self.stream.get_u8();
+                    self.palette[i].alpha = self.stream.get_u8();
                 }
             }
             _ =>
@@ -223,6 +224,7 @@ impl<'a> PngDecoder<'a>
         }
         // skip crc
         self.stream.skip(4);
+        self.seen_trns = true;
 
         Ok(())
     }
