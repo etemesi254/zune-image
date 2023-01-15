@@ -91,7 +91,7 @@ impl<'a> PPMDecoder<'a>
     /// # Example
     /// ```
     /// use zune_core::options::DecoderOptions;
-    /// use zune_ppm::{PPMDecoder, ZunePPMOptions};
+    /// use zune_ppm::PPMDecoder;
     /// let mut decoder = PPMDecoder::new_with_options(DecoderOptions::default(),b"NOT VALID PPM");
     ///
     /// assert!(decoder.decode().is_err());
