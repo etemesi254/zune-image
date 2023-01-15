@@ -11,7 +11,8 @@
 //! And that's how we represent images.
 //! Fully supported bit depths are 8 and 16, see channels for how that happens
 //!
-use log::info;
+use std::mem::size_of;
+
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::traits::NumOps;
@@ -110,7 +111,9 @@ impl Image
     /// Flatten can be used to interleave all channels into one vector
     pub fn flatten<T: Default + Copy>(&self) -> Vec<T>
     {
-        info!("Called flatten operation");
+        //
+        assert_eq!(self.depth.size_of(), size_of::<T>());
+
         let dims = self.width * self.height * self.colorspace.num_components();
 
         let mut out_pixel = vec![T::default(); dims];
@@ -174,6 +177,77 @@ impl Image
         out_pixel
     }
 
+    pub fn to_u8(&self) -> Vec<u8>
+    {
+        if self.depth == BitDepth::Eight
+        {
+            self.flatten::<u8>()
+        }
+        else
+        {
+            let dims = self.width * self.height * self.colorspace.num_components() * 2;
+
+            let mut out_pixel = vec![u8::default(); dims];
+
+            match self.colorspace.num_components()
+            {
+                1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<u8>().unwrap()),
+
+                2 =>
+                {
+                    let luma_channel = self.channels[0].reinterpret_as::<u16>().unwrap();
+                    let alpha_channel = self.channels[1].reinterpret_as::<u16>().unwrap();
+
+                    for ((out, luma), alpha) in out_pixel
+                        .chunks_exact_mut(4)
+                        .zip(luma_channel)
+                        .zip(alpha_channel)
+                    {
+                        out[0..2].copy_from_slice(&luma.to_ne_bytes());
+                        out[2..4].copy_from_slice(&alpha.to_ne_bytes());
+                    }
+                }
+                3 =>
+                {
+                    let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
+                    let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
+                    let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
+
+                    for (((out, first), second), third) in
+                        out_pixel.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
+                    {
+                        out[0..2].copy_from_slice(&first.to_ne_bytes());
+                        out[2..4].copy_from_slice(&second.to_ne_bytes());
+                        out[4..6].copy_from_slice(&third.to_ne_bytes());
+                    }
+                }
+                4 =>
+                {
+                    let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
+                    let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
+                    let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
+                    let c4 = self.channels[3].reinterpret_as::<u16>().unwrap();
+
+                    for ((((out, first), second), third), fourth) in out_pixel
+                        .chunks_exact_mut(8)
+                        .zip(c1)
+                        .zip(c2)
+                        .zip(c3)
+                        .zip(c4)
+                    {
+                        out[0..2].copy_from_slice(&first.to_ne_bytes());
+                        out[2..4].copy_from_slice(&second.to_ne_bytes());
+                        out[4..6].copy_from_slice(&third.to_ne_bytes());
+                        out[6..8].copy_from_slice(&fourth.to_ne_bytes());
+                    }
+                }
+                // panics, all the way down
+                _ => unreachable!()
+            }
+
+            out_pixel
+        }
+    }
     /// Force flattening to RGBA
     ///
     /// This internally converts channel to a u8 representation if it's not
