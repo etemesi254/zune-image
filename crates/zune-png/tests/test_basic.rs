@@ -39,74 +39,55 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 #[test]
 fn test_1bpp_basic()
 {
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
 
-        test_decoding(path);
-    }
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
-
-        test_decoding(path);
-    }
+    test_decoding(path);
 }
 
 #[test]
 fn test_2bpp_basic()
 {
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g02.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g02.png";
 
-        test_decoding(path);
-    }
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g02.png";
-
-        test_decoding(path);
-    }
+    test_decoding(path);
 }
 
 #[test]
 fn test_4bpp_basic()
 {
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g04.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g04.png";
 
-        test_decoding(path);
-    }
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g04.png";
-
-        test_decoding(path);
-    }
+    test_decoding(path);
 }
 
 #[test]
 fn test_8bpp_basic()
 {
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g08.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g08.png";
 
-        test_decoding(path);
-    }
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g08.png";
-
-        test_decoding(path);
-    }
+    test_decoding(path);
 }
 
 #[test]
 fn test_16bpp_basic()
 {
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g16.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g16.png";
 
-        test_decoding(path);
-    }
-    {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g16.png";
+    test_decoding(path);
+}
 
-        test_decoding(path);
-    }
+#[test]
+fn test_8bpp_luma_basic()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn2c08.png";
+
+    test_decoding(path);
+}
+
+#[test]
+fn test_16bpp_luma_basic()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn2c16.png";
+
+    test_decoding(path);
 }
