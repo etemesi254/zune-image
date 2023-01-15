@@ -106,7 +106,6 @@ There's actually nothing riding in for us, except...it's wickedly fast...
 Up-to date benchmarks are done using criterion and hosted online at [zune-benchmarks] site,
 benchmarks for this library have the `inflate: ` prefix.
 
-But we're generally usually faster than flate even with zlib-ng as backend and slower than libdeflate(C)
 
 ## Fuzzing
 
