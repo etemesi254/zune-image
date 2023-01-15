@@ -323,8 +323,19 @@ impl<'a> PngDecoder<'a>
             // get the maximum height and width for the whole interlace part
             for p in 0..7
             {
-                let x = (info.width - XORIG[p] + XSPC[p] - 1) / XSPC[p];
-                let y = (info.height - YORIG[p] + YSPC[p] - 1) / YSPC[p];
+                let x = (info
+                    .width
+                    .saturating_sub(XORIG[p])
+                    .saturating_add(XSPC[p])
+                    .saturating_sub(1))
+                    / XSPC[p];
+
+                let y = (info
+                    .height
+                    .saturating_sub(YORIG[p])
+                    .saturating_add(YSPC[p])
+                    .saturating_sub(1))
+                    / YSPC[p];
 
                 max_height = max_height.max(y);
                 max_width = max_width.max(x);
@@ -344,8 +355,19 @@ impl<'a> PngDecoder<'a>
 
             for p in 0..7
             {
-                let x = (info.width - XORIG[p] + XSPC[p] - 1) / XSPC[p];
-                let y = (info.height - YORIG[p] + YSPC[p] - 1) / YSPC[p];
+                let x = (info
+                    .width
+                    .saturating_sub(XORIG[p])
+                    .saturating_add(XSPC[p])
+                    .saturating_sub(1))
+                    / XSPC[p];
+
+                let y = (info
+                    .height
+                    .saturating_sub(YORIG[p])
+                    .saturating_add(YSPC[p])
+                    .saturating_sub(1))
+                    / YSPC[p];
 
                 if x != 0 && y != 0
                 {
