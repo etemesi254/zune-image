@@ -13,6 +13,30 @@ use crate::filters::{
 use crate::options::PngOptions;
 
 #[derive(Copy, Clone)]
+pub(crate) struct PLTEEntry
+{
+    pub red:   u8,
+    pub green: u8,
+    pub blue:  u8,
+    pub alpha: u8
+}
+
+impl Default for PLTEEntry
+{
+    fn default() -> Self
+    {
+        // but a tRNS chunk may contain fewer values than there are palette entries.
+        // In this case, the alpha value for all remaining palette entries is assumed to be 255
+        PLTEEntry {
+            red:   0,
+            green: 0,
+            blue:  0,
+            alpha: 255
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub(crate) struct PngChunk
 {
     pub length:     usize,
@@ -39,11 +63,12 @@ pub struct PngDecoder<'a>
     pub(crate) stream:       ZByteReader<'a>,
     pub(crate) options:      PngOptions,
     pub(crate) png_info:     PngInfo,
-    pub(crate) palette:      Vec<u8>,
+    pub(crate) palette:      Vec<PLTEEntry>,
     pub(crate) idat_chunks:  Vec<u8>,
     pub(crate) out:          Vec<u8>,
     pub(crate) gama:         u32,
-    pub(crate) un_palettize: bool
+    pub(crate) un_palettize: bool,
+    pub(crate) seen_trns:    bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -65,7 +90,8 @@ impl<'a> PngDecoder<'a>
             idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
             out: Vec::new(),
             gama: 0, // used also to indicate if we should do gama unfiltering
-            un_palettize: false
+            un_palettize: false,
+            seen_trns: false
         }
     }
 
@@ -356,15 +382,31 @@ impl<'a> PngDecoder<'a>
             self.out = final_out;
         }
 
-        if self.un_palettize && !self.palette.is_empty()
+        if self.un_palettize
         {
-            // for palettized data, always use RGB
-            // may change for future versions
-            self.expand_palette(3);
-            self.png_info.color = PngColor::RGB;
-            // initially it was 1, since palette num_components is 1, so multiply
-            // by three since for palettized images we turn it to RGB
-            new_len *= 3;
+            if self.palette.is_empty()
+            {
+                return Err(PngErrors::EmptyPalette);
+            }
+            if self.seen_trns
+            {
+                // if tRNS chunk is present in paletted images, it contains
+                // alpha byte values, so that means we create alpha data from
+                // raw bytes
+                self.expand_palette(4);
+                self.png_info.color = PngColor::RGBA;
+                // initially it was 1, since palette num_components is 1, so multiply
+                // by 4 since for palettized images we turn it to RGBA
+                new_len *= 4;
+            }
+            else
+            {
+                self.expand_palette(3);
+                self.png_info.color = PngColor::RGB;
+                // initially it was 1, since palette num_components is 1, so multiply
+                // by three since for palettized images we turn it to RGB
+                new_len *= 3;
+            }
         }
         self.out.truncate(new_len);
         let out = std::mem::take(&mut self.out);
@@ -729,30 +771,45 @@ impl<'a> PngDecoder<'a>
 
         let info = self.png_info;
         let out_size = info.width * info.height * components;
-
+        // this is safe because we resized palette to be 256
+        // in self.parse_plte()
+        let palette: &[PLTEEntry; 256] = &self.palette[0..256].try_into().unwrap();
         let mut out = vec![0; out_size];
 
         if components == 3
         {
             for (px, entry) in out.chunks_exact_mut(3).zip(data)
             {
-                let entry_start = usize::from(*entry) * 3;
+                // the & 255 may be removed as the compiler can see u8 can never be
+                // above 255, but for safety
+                let entry = palette[usize::from(*entry) & 255];
 
-                px[0] = self.palette[entry_start];
-                px[1] = self.palette[entry_start + 1];
-                px[2] = self.palette[entry_start + 2];
+                px[0] = entry.red;
+                px[1] = entry.green;
+                px[2] = entry.blue;
             }
         }
+        else if components == 4
+        {
+            for (px, entry) in out.chunks_exact_mut(4).zip(data)
+            {
+                let entry = palette[usize::from(*entry) & 255];
 
+                px[0] = entry.red;
+                px[1] = entry.green;
+                px[2] = entry.blue;
+                px[3] = entry.alpha;
+            }
+        }
         self.out = out;
     }
 }
 
-#[test]
-fn test_black_and_white()
-{
-    let path = "/home/caleb/jpeg/png/vt.png";
-    let data = std::fs::read(path).unwrap();
-    let mut decoder = PngDecoder::new(&data);
-    let px = decoder.decode().unwrap();
-}
+// #[test]
+// fn test_black_and_white()
+// {
+//     let path = "/home/caleb/jpeg/png/t.png";
+//     let data = std::fs::read(path).unwrap();
+//     let mut decoder = PngDecoder::new(&data);
+//     let px = decoder.decode().unwrap();
+// }
