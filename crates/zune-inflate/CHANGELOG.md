@@ -22,3 +22,8 @@
 ## Version 0.2.41
 
 - Improve documentation of exposed values
+
+## Version 0.2.42
+
+- Remove broken links in README.
+
