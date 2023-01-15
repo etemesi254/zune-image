@@ -44,7 +44,7 @@ impl EncoderTrait for PPMEncoder
             quality: 0,
             depth
         };
-        let data = image.flatten::<u8>();
+        let data = image.to_u8();
 
         let mut ppm_encoder = PPMEnc::new(&data, options);
 
