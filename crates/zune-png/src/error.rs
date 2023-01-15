@@ -6,7 +6,8 @@ pub enum PngErrors
     GenericStatic(&'static str),
     Generic(String),
     BadCrc(u32, u32),
-    ZlibDecodeErrors(zune_inflate::errors::InflateDecodeErrors)
+    ZlibDecodeErrors(zune_inflate::errors::InflateDecodeErrors),
+    EmptyPalette
 }
 impl Debug for PngErrors
 {
@@ -24,6 +25,10 @@ impl Debug for PngErrors
             Self::ZlibDecodeErrors(err) =>
             {
                 writeln!(f, "Error decoding idat chunks {err:?}")
+            }
+            Self::EmptyPalette =>
+            {
+                writeln!(f, "Empty palette but image is indexed")
             }
         }
     }
