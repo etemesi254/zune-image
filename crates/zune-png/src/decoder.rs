@@ -306,9 +306,8 @@ impl<'a> PngDecoder<'a>
             // A mad idea would be to make this multithreaded :)
             // They called me a mad man - Thanos
             let out_bytes = out_n * bytes;
-            let new_len_ex = new_len * bytes;
 
-            let mut final_out = vec![0_u8; new_len_ex];
+            let mut final_out = vec![0_u8; new_len];
 
             const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
             const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
@@ -340,7 +339,7 @@ impl<'a> PngDecoder<'a>
                 image_len += 1;
                 image_len *= max_height;
 
-                self.out = vec![0; image_len * usize::from(8 / info.depth)];
+                self.out = vec![0; image_len];
             }
 
             for p in 0..7
@@ -408,6 +407,7 @@ impl<'a> PngDecoder<'a>
                 new_len *= 3;
             }
         }
+
         self.out.truncate(new_len);
         let out = std::mem::take(&mut self.out);
 
@@ -561,11 +561,7 @@ impl<'a> PngDecoder<'a>
 
             match filter
             {
-                FilterMethod::None =>
-                {
-                    // Memcpy
-                    current[0..width_stride].copy_from_slice(raw)
-                }
+                FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
 
                 FilterMethod::Average => handle_avg(prev_row, raw, current, components),
 
@@ -759,8 +755,6 @@ impl<'a> PngDecoder<'a>
     }
 
     /// Expand a palettized image to the number of components
-    ///
-    /// Currently the number of expected components is three
     fn expand_palette(&mut self, components: usize)
     {
         if components == 0
