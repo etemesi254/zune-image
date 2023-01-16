@@ -59,16 +59,17 @@ pub struct PngInfo
 
 pub struct PngDecoder<'a>
 {
-    pub(crate) seen_hdr:     bool,
-    pub(crate) stream:       ZByteReader<'a>,
-    pub(crate) options:      PngOptions,
-    pub(crate) png_info:     PngInfo,
-    pub(crate) palette:      Vec<PLTEEntry>,
-    pub(crate) idat_chunks:  Vec<u8>,
-    pub(crate) out:          Vec<u8>,
-    pub(crate) gama:         u32,
-    pub(crate) un_palettize: bool,
-    pub(crate) seen_trns:    bool
+    pub(crate) seen_hdr:    bool,
+    pub(crate) stream:      ZByteReader<'a>,
+    pub(crate) options:     PngOptions,
+    pub(crate) png_info:    PngInfo,
+    pub(crate) palette:     Vec<PLTEEntry>,
+    pub(crate) idat_chunks: Vec<u8>,
+    pub(crate) out:         Vec<u8>,
+    pub(crate) gama:        u32,
+    pub(crate) seen_ptle:   bool,
+    pub(crate) seen_trns:   bool,
+    pub(crate) trns_bytes:  [u16; 4]
 }
 
 impl<'a> PngDecoder<'a>
@@ -90,8 +91,9 @@ impl<'a> PngDecoder<'a>
             idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
             out: Vec::new(),
             gama: 0, // used also to indicate if we should do gama unfiltering
-            un_palettize: false,
-            seen_trns: false
+            seen_ptle: false,
+            seen_trns: false,
+            trns_bytes: [0; 4]
         }
     }
 
@@ -280,8 +282,6 @@ impl<'a> PngDecoder<'a>
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = usize::from(info.color.num_components());
-
         let mut new_len =
             info.width * info.height * usize::from(info.color.num_components()) * bytes;
 
@@ -303,107 +303,27 @@ impl<'a> PngDecoder<'a>
         }
         else if info.interlace_method == InterlaceMethod::Adam7
         {
-            // A mad idea would be to make this multithreaded :)
-            // They called me a mad man - Thanos
-            let out_bytes = out_n * bytes;
-
-            let mut final_out = vec![0_u8; new_len];
-
-            const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
-            const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
-
-            const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
-            const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
-
-            let mut image_offset = 0;
-
-            let mut max_height = 0;
-            let mut max_width = 0;
-
-            // get the maximum height and width for the whole interlace part
-            for p in 0..7
-            {
-                let x = (info
-                    .width
-                    .saturating_sub(XORIG[p])
-                    .saturating_add(XSPC[p])
-                    .saturating_sub(1))
-                    / XSPC[p];
-
-                let y = (info
-                    .height
-                    .saturating_sub(YORIG[p])
-                    .saturating_add(YSPC[p])
-                    .saturating_sub(1))
-                    / YSPC[p];
-
-                max_height = max_height.max(y);
-                max_width = max_width.max(x);
-            }
-            {
-                // then allocate a vector big enough to hold the largest pass
-                let mut image_len = usize::from(info.color.num_components()) * max_width;
-
-                image_len *= usize::from(info.depth);
-                image_len += 7;
-                image_len /= 8;
-                image_len += 1;
-                image_len *= max_height;
-
-                self.out = vec![0; image_len];
-            }
-
-            for p in 0..7
-            {
-                let x = (info
-                    .width
-                    .saturating_sub(XORIG[p])
-                    .saturating_add(XSPC[p])
-                    .saturating_sub(1))
-                    / XSPC[p];
-
-                let y = (info
-                    .height
-                    .saturating_sub(YORIG[p])
-                    .saturating_add(YSPC[p])
-                    .saturating_sub(1))
-                    / YSPC[p];
-
-                if x != 0 && y != 0
-                {
-                    let mut image_len = usize::from(info.color.num_components()) * x;
-
-                    image_len *= usize::from(info.depth);
-                    image_len += 7;
-                    image_len /= 8;
-                    image_len += 1; // filter byte
-                    image_len *= y;
-
-                    let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
-
-                    self.create_png_image_raw(deflate_slice, x, y)?;
-
-                    for j in 0..y
-                    {
-                        for i in 0..x
-                        {
-                            let out_y = j * YSPC[p] + YORIG[p];
-                            let out_x = i * XSPC[p] + XORIG[p];
-
-                            let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
-                            let out_start = (j * x + i) * out_bytes;
-
-                            final_out[final_start..final_start + out_bytes]
-                                .copy_from_slice(&self.out[out_start..out_start + out_bytes]);
-                        }
-                    }
-                    image_offset += image_len;
-                }
-            }
-            self.out = final_out;
+            self.decode_interlaced(&deflate_data)?;
         }
 
-        if self.un_palettize
+        if self.seen_trns && self.png_info.color != PngColor::Palette
+        {
+            if info.depth == 8
+            {
+                self.compute_transparency();
+            }
+            else if info.depth == 16
+            {
+                // todo, add test for 16 bit transparency
+                self.compute_transparency_16();
+            }
+
+            new_len = info.width
+                * info.height
+                * usize::from(self.png_info.color.num_components())
+                * bytes;
+        }
+        if self.seen_ptle
         {
             if self.palette.is_empty()
             {
@@ -434,6 +354,244 @@ impl<'a> PngDecoder<'a>
         let out = std::mem::take(&mut self.out);
 
         Ok(out)
+    }
+
+    fn decode_interlaced(&mut self, deflate_data: &[u8]) -> Result<(), PngErrors>
+    {
+        let info = self.png_info;
+        let bytes = if info.depth == 16 { 2 } else { 1 };
+
+        let new_len = info.width * info.height * usize::from(info.color.num_components()) * bytes;
+
+        let out_n = usize::from(info.color.num_components());
+
+        // A mad idea would be to make this multithreaded :)
+        // They called me a mad man - Thanos
+        let out_bytes = out_n * bytes;
+
+        let mut final_out = vec![0_u8; new_len];
+
+        const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
+        const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
+
+        const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
+        const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
+
+        let mut image_offset = 0;
+
+        let mut max_height = 0;
+        let mut max_width = 0;
+
+        // get the maximum height and width for the whole interlace part
+        for p in 0..7
+        {
+            let x = (info
+                .width
+                .saturating_sub(XORIG[p])
+                .saturating_add(XSPC[p])
+                .saturating_sub(1))
+                / XSPC[p];
+
+            let y = (info
+                .height
+                .saturating_sub(YORIG[p])
+                .saturating_add(YSPC[p])
+                .saturating_sub(1))
+                / YSPC[p];
+
+            max_height = max_height.max(y);
+            max_width = max_width.max(x);
+        }
+        {
+            // then allocate a vector big enough to hold the largest pass
+            let mut image_len = usize::from(info.color.num_components()) * max_width;
+
+            image_len *= usize::from(info.depth);
+            image_len += 7;
+            image_len /= 8;
+            image_len += 1;
+            image_len *= max_height;
+
+            self.out = vec![0; image_len];
+        }
+
+        for p in 0..7
+        {
+            let x = (info
+                .width
+                .saturating_sub(XORIG[p])
+                .saturating_add(XSPC[p])
+                .saturating_sub(1))
+                / XSPC[p];
+
+            let y = (info
+                .height
+                .saturating_sub(YORIG[p])
+                .saturating_add(YSPC[p])
+                .saturating_sub(1))
+                / YSPC[p];
+
+            if x != 0 && y != 0
+            {
+                let mut image_len = usize::from(info.color.num_components()) * x;
+
+                image_len *= usize::from(info.depth);
+                image_len += 7;
+                image_len /= 8;
+                image_len += 1; // filter byte
+                image_len *= y;
+
+                let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
+
+                self.create_png_image_raw(deflate_slice, x, y)?;
+
+                for j in 0..y
+                {
+                    for i in 0..x
+                    {
+                        let out_y = j * YSPC[p] + YORIG[p];
+                        let out_x = i * XSPC[p] + XORIG[p];
+
+                        let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
+                        let out_start = (j * x + i) * out_bytes;
+
+                        final_out[final_start..final_start + out_bytes]
+                            .copy_from_slice(&self.out[out_start..out_start + out_bytes]);
+                    }
+                }
+                image_offset += image_len;
+            }
+        }
+        self.out = final_out;
+        Ok(())
+    }
+    fn compute_transparency(&mut self)
+    {
+        // for images whose color types are not paletted
+        // presence of a tRNS chunk indicates that the image
+        // has transparency.
+        // When the pixel specified  in the tRNS chunk is encountered in the resulting stream,
+        // it is to be treated as fully transparent.
+        // We indicate that by replacing the pixel with pixel+alpha and setting alpha to be zero;
+        // to indicate fully transparent.
+        //
+        //
+        // OPTIMIZATION: This can be done in place, stb does it in place.
+        // but it needs some complexity in the de-filtering, which I won't do.
+        // but anyone reading this is free to do it
+
+        let info = &self.png_info;
+
+        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
+
+        let mut new_out = vec![0; new_size];
+        match info.color
+        {
+            PngColor::Luma =>
+            {
+                let trns_byte = ((self.trns_bytes[0]) & 255) as u8;
+                for (chunk, old) in new_out.chunks_exact_mut(2).zip(&self.out)
+                {
+                    chunk[0] = *old;
+                    chunk[1] = u8::from(*old != trns_byte) * 255;
+                }
+                // change color type to be the one with alpha
+                self.png_info.color = PngColor::LumaA;
+            }
+            PngColor::RGB =>
+            {
+                let r = (self.trns_bytes[0] & 255) as u8;
+                let g = (self.trns_bytes[1] & 255) as u8;
+                let b = (self.trns_bytes[2] & 255) as u8;
+
+                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks_exact(3))
+                {
+                    chunk[0] = old[0];
+                    chunk[1] = old[1];
+                    chunk[2] = old[2];
+                    if r == old[0] && g == old[1] && b == old[2]
+                    {
+                        chunk[3] = 0;
+                    }
+                }
+                // change color type to be the one with alpha
+                self.png_info.color = PngColor::RGBA;
+            }
+            _ => unreachable!()
+        }
+        self.out = new_out;
+    }
+    fn compute_transparency_16(&mut self)
+    {
+        // for explanation see compute_transparency
+        //
+        // OPT_GUIDE:
+        //
+        // There is a quirky optimization here, and it has something
+        // to do with the _to_ne_bytes.
+        // The tRNS items were read as big endian but the data is
+        // currently in native endian, so matching won't work across byte
+        // boundaries.
+        // But if we convert the tRNS data to native endian, the two endianess
+        // match and we can do comparisions
+
+        let info = &self.png_info;
+
+        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
+
+        let mut new_out = vec![0; new_size];
+        match info.color
+        {
+            PngColor::Luma =>
+            {
+                let trns_byte = self.trns_bytes[0].to_ne_bytes();
+
+                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks(2))
+                {
+                    chunk[0] = old[0];
+                    chunk[1] = old[1];
+
+                    if trns_byte == old
+                    {
+                        chunk[2] = 255;
+                        chunk[3] = 255;
+                    }
+                }
+                // change color type to be the one with alpha
+                self.png_info.color = PngColor::LumaA;
+            }
+            PngColor::RGB =>
+            {
+                let r = self.trns_bytes[0].to_ne_bytes();
+                let g = self.trns_bytes[1].to_ne_bytes();
+                let b = self.trns_bytes[2].to_ne_bytes();
+
+                // copy all trns chunks into one big vector
+                let mut all: [u8; 6] = [0; 6];
+
+                all[0..2].copy_from_slice(&r);
+                all[2..4].copy_from_slice(&g);
+                all[4..6].copy_from_slice(&b);
+
+                for (chunk, old) in new_out.chunks_exact_mut(8).zip(self.out.chunks_exact(6))
+                {
+                    // copy R,G and B part
+                    chunk[0..6].copy_from_slice(old);
+
+                    // the read does not match the bytes
+                    // so set it to opaque
+                    if all != old
+                    {
+                        chunk[6] = 255;
+                        chunk[7] = 255;
+                    }
+                }
+                // change color type to be the one with alpha
+                self.png_info.color = PngColor::RGBA;
+            }
+            _ => unreachable!()
+        }
+        self.out = new_out;
     }
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a Vec<u16>
