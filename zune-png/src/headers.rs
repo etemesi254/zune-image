@@ -166,7 +166,7 @@ impl<'a> PngDecoder<'a>
 
         // skip crc chunk
         self.stream.skip(4);
-        self.un_palettize = true;
+        self.seen_ptle = true;
         Ok(())
     }
 
@@ -192,13 +192,14 @@ impl<'a> PngDecoder<'a>
         {
             PngColor::Luma =>
             {
-                let _grey_sample = self.stream.get_u16_be();
+                let grey_sample = self.stream.get_u16_be();
+                self.trns_bytes[0] = grey_sample;
             }
             PngColor::RGB =>
             {
-                let _red_sample = self.stream.get_u16_be();
-                let _blue_sample = self.stream.get_u16_be();
-                let _green_sample = self.stream.get_u16_be();
+                self.trns_bytes[0] = self.stream.get_u16_be();
+                self.trns_bytes[1] = self.stream.get_u16_be();
+                self.trns_bytes[2] = self.stream.get_u16_be();
             }
             PngColor::Palette =>
             {
