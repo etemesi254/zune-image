@@ -97,6 +97,11 @@ pub(crate) struct BitStream
 {
     /// A MSB type buffer that is used for some certain operations
     pub buffer:           u64,
+    /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
+    /// peek_bits and get_bits.
+    ///
+    /// By top aligned, I mean the top bit (63) represents the top bit in the buffer.
+    aligned_buffer:       u64,
     /// Tell us the bits left the two buffer
     pub(crate) bits_left: u8,
     /// Did we find a marker(RST/EOF) during decoding?
@@ -118,6 +123,7 @@ impl BitStream
     {
         BitStream {
             buffer:          0,
+            aligned_buffer:  0,
             bits_left:       0,
             marker:          None,
             successive_high: 0,
@@ -135,6 +141,7 @@ impl BitStream
     {
         BitStream {
             buffer:          0,
+            aligned_buffer:  0,
             bits_left:       0,
             marker:          None,
             successive_high: ah,
@@ -192,6 +199,11 @@ impl BitStream
                             $buffer >>= 8;
                             $bits_left -= 8;
 
+                            if $bits_left != 0
+                            {
+                                self.aligned_buffer = $buffer << (64 - $bits_left);
+                            }
+
                             self.marker =
                                 Some(Marker::from_u8(next_byte as u8).ok_or_else(|| {
                                     DecodeErrors::Format(format!(
@@ -223,6 +235,7 @@ impl BitStream
                     self.bits_left += 32;
                     self.buffer <<= 32;
                     self.buffer |= u64::from(msb_buf);
+                    self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     return Ok(true);
                 }
                 // not there, rewind the read
@@ -240,6 +253,7 @@ impl BitStream
             refill!(self.buffer, byte, self.bits_left);
             refill!(self.buffer, byte, self.bits_left);
             // Construct an MSB buffer whose top bits are the bitstream we are currently holding.
+            self.aligned_buffer = self.buffer << (64 - self.bits_left);
         }
 
         return Ok(true);
@@ -367,10 +381,7 @@ impl BitStream
     #[allow(clippy::cast_possible_truncation)]
     const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
     {
-        let start = self.bits_left.wrapping_sub(LOOKAHEAD) as u32;
-        let mask = (1 << LOOKAHEAD) - 1;
-
-        (self.buffer.wrapping_shr(start) & mask) as i32
+        (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
     /// Discard the next `N` bits without checking
@@ -378,6 +389,7 @@ impl BitStream
     fn drop_bits(&mut self, n: u8)
     {
         self.bits_left = self.bits_left.saturating_sub(n);
+        self.aligned_buffer <<= n;
     }
 
     /// Read `n_bits` from the buffer  and discard them
@@ -387,9 +399,10 @@ impl BitStream
     {
         let mask = (1_u64 << n_bits) - 1;
 
+        self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
+        let bits = (self.aligned_buffer & mask) as i32;
         self.bits_left = self.bits_left.wrapping_sub(n_bits);
-
-        ((self.buffer >> self.bits_left) & mask) as i32
+        bits
     }
 
     /// Decode a DC block
@@ -426,7 +439,10 @@ impl BitStream
     /// Get a single bit from the bitstream
     fn get_bit(&mut self) -> u8
     {
-        self.get_bits(1) as u8
+        let k = (self.aligned_buffer >> 63) as u8;
+        // discard a bit
+        self.drop_bits(1);
+        return k;
     }
     pub(crate) fn decode_mcu_ac_first(
         &mut self, reader: &mut ZByteReader, ac_table: &HuffmanTable, block: &mut [i16; 64]
@@ -663,6 +679,7 @@ impl BitStream
         self.bits_left = 0;
         self.marker = None;
         self.buffer = 0;
+        self.aligned_buffer = 0;
         self.eob_run = 0;
     }
 }
