@@ -39,6 +39,22 @@ pub fn deinterleave_u8(
 
         return Ok(vec![c1]);
     }
+    else if colorspace.num_components() == 2
+    {
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+
+        let c1_mut = c1.reinterpret_as_mut::<u8>().unwrap();
+        let c2_mut = c2.reinterpret_as_mut::<u8>().unwrap();
+
+        for ((chunk, c1), c2) in interleaved_pixels.chunks_exact(2).zip(c1_mut).zip(c2_mut)
+        {
+            *c1 = chunk[0];
+            *c2 = chunk[1];
+        }
+
+        return Ok(vec![c1, c2]);
+    }
     // three component de-interleave
     else if colorspace.num_components() == 3
     {
@@ -95,6 +111,22 @@ pub fn deinterleave_u16(
         c1.extend(interleaved_pixels);
 
         return Ok(vec![c1]);
+    }
+    else if colorspace.num_components() == 2
+    {
+        let mut c1 = Channel::new_with_length(size);
+        let mut c2 = Channel::new_with_length(size);
+
+        let c1_mut = c1.reinterpret_as_mut::<u16>().unwrap();
+        let c2_mut = c2.reinterpret_as_mut::<u16>().unwrap();
+
+        for ((chunk, c1), c2) in interleaved_pixels.chunks_exact(2).zip(c1_mut).zip(c2_mut)
+        {
+            *c1 = chunk[0];
+            *c2 = chunk[1];
+        }
+
+        return Ok(vec![c1, c2]);
     }
     // three component de-interleave
     else if colorspace.num_components() == 3
