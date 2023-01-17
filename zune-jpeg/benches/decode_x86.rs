@@ -1,12 +1,14 @@
 //! Benchmarks for
+#![allow(clippy::field_reassign_with_default)]
 
 use std::fs::read;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
-fn decode_jpeg(buf: &[u8], options: ZuneJpegOptions) -> Vec<u8>
+fn decode_jpeg(buf: &[u8], options: DecoderOptions) -> Vec<u8>
 {
     let mut d = JpegDecoder::new_with_options(options, buf);
 
@@ -24,13 +26,15 @@ fn decode_no_samp(c: &mut Criterion)
 
     group.bench_function("intrinsics", |b| {
         b.iter(|| {
-            let opt = ZuneJpegOptions::new();
+            let opt = DecoderOptions::default();
             black_box(decode_jpeg(data.as_slice(), opt));
         })
     });
     group.bench_function("no intrinsics", |b| {
         b.iter(|| {
-            let opt = ZuneJpegOptions::new().set_use_unsafe(false);
+            let mut opt = DecoderOptions::default();
+
+            opt.use_unsafe = false;
             black_box(decode_jpeg(data.as_slice(), opt));
         })
     });

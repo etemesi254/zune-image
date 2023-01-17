@@ -1,18 +1,20 @@
 //! Benchmarks for grayscale decoding
+#![allow(clippy::field_reassign_with_default)]
 
 use std::fs::read;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use zune_core::colorspace::ColorSpace;
-use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
-    let mut d = JpegDecoder::new_with_options(
-        ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma),
-        buf
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+
+    let mut d = JpegDecoder::new_with_options(options, buf);
 
     d.decode().unwrap()
 }
