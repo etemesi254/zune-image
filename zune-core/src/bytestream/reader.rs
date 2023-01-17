@@ -129,7 +129,7 @@ impl<'a> ZByteReader<'a>
     ///
     /// This increments the position to point past the bytestream
     /// if position+num is in bounds
-    pub fn get_as_ref(&mut self, num: usize) -> Result<&'a [u8], &'static str>
+    pub fn get(&mut self, num: usize) -> Result<&'a [u8], &'static str>
     {
         match self.stream.get(self.position..self.position + num)
         {

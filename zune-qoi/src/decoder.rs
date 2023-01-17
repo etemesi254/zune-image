@@ -116,7 +116,7 @@ impl<'a> QoiDecoder<'a>
             ));
         }
         // match magic bytes.
-        let magic = self.stream.get_as_ref(4).unwrap();
+        let magic = self.stream.get(4).unwrap();
 
         if magic != b"qoif"
         {
