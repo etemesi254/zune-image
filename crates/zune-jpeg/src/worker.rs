@@ -255,14 +255,14 @@ pub(crate) fn upsample_and_color_convert(
         .enumerate()
         .zip(unprocessed[0].chunks(width_stride))
     {
-        for component in component_data.iter_mut()
+        for (component_position, component) in component_data.iter_mut().enumerate()
         {
             if component.component_id == ComponentID::Y || !component.needed
             {
                 continue;
             }
             // read a down-sampled stride and upsample it
-            let raw_data = &unprocessed[usize::from(component.id.saturating_sub(1))];
+            let raw_data = &unprocessed[component_position];
             let comp_stride_start = pos * component.width_stride;
             let comp_stride_stop = comp_stride_start + component.width_stride;
             let comp_stride = &raw_data[comp_stride_start..comp_stride_stop];
