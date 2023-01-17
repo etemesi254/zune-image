@@ -152,3 +152,18 @@ fn test_large_component_number()
     // Grayscale
     let _ = decoder.decode().expect("Test failed decoding");
 }
+
+#[test]
+fn test_basic()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/test-images/weird_components.jpg";
+
+    let data = &std::fs::read(path).unwrap();
+
+    let result = [
+        70, 71, 66, 47, 48, 43, 50, 51, 46, 54, 55, 50, 53, 54, 49, 55, 56, 51, 50, 51, 46, 50, 51,
+        46, 50, 51, 46, 49, 50, 45
+    ];
+    let decoder = JpegDecoder::new(data).decode().unwrap();
+    assert_eq!(&result, &decoder[0..30]);
+}
