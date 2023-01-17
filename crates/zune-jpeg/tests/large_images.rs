@@ -1,40 +1,9 @@
-use std::fs::OpenOptions;
-use std::io::Write;
+#![allow(clippy::field_reassign_with_default)]
 
-use mozjpeg::ColorSpace as OutColorSpace;
+use xxhash_rust::xxh3::xxh3_128;
 use zune_core::colorspace::ColorSpace;
-use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
-
-fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspace: OutColorSpace)
-{
-    let output: String = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/outputs/large/";
-    std::fs::create_dir_all(&output).unwrap();
-
-    std::panic::catch_unwind(|| {
-        let mut comp = mozjpeg::Compress::new(colorspace);
-
-        comp.set_size(width, height);
-        comp.set_mem_dest();
-        comp.start_compress();
-
-        assert!(comp.write_scanlines(pixels));
-
-        comp.finish_compress();
-
-        let jpeg_bytes = comp.data_to_vec().unwrap();
-
-        let mut v = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(output.clone() + "/" + name)
-            .unwrap();
-
-        v.write_all(&jpeg_bytes).unwrap();
-
-        // write to file, etc.
-    })
-    .unwrap();
-}
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
 /// Decodes a large image
 #[test]
@@ -43,18 +12,12 @@ fn large_no_sampling_factors_rgb()
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_no_samp_7680_4320.jpg";
     let data = std::fs::read(path).unwrap();
-    let mut decoder = JpegDecoder::new(&data);
-    // RGB
-    {
-        let pixels = decoder.decode().expect("Test failed decoding");
-        write_output(
-            "large_no_samp_rgb_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_RGB
-        );
-    }
+    let pixels = JpegDecoder::new(&data).decode().unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 72227651583886420023815834092904494086;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 /// Decodes a large image
@@ -65,41 +28,30 @@ fn large_vertical_sampling_factors_rgb()
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_vertical_samp_7680_4320.jpg";
     let data = std::fs::read(path).unwrap();
-    let mut decoder = JpegDecoder::new(&data);
-    // RGB
-    {
-        let pixels = decoder.decode().expect("Test failed decoding");
-        write_output(
-            "large_vertical_samp_rgb_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_RGB
-        );
-    }
+    let pixels = JpegDecoder::new(&data).decode().unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 89624073440418279124423614502641624055;
+
+    assert_eq!(hash, EXPECTED);
 }
 #[test]
 fn large_no_sampling_factors_grayscale()
 {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_no_samp_7680_4320.jpg";
 
-    let data = std::fs::read(path).unwrap();
+    let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma),
-        &data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let pixels = JpegDecoder::new_with_options(options, data)
+        .decode()
+        .unwrap();
 
-    {
-        let pixels = decoder.decode().expect("Test failed decoding");
-        write_output(
-            "large_no_samp_grayscale_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_GRAYSCALE
-        );
-    }
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 250332075509747503823959729866758307162;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -109,21 +61,16 @@ fn large_no_sampling_factors_ycbcr()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::new().set_out_colorspace(ColorSpace::YCbCr),
-        data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::YCbCr;
+    let pixels = JpegDecoder::new_with_options(options, data)
+        .decode()
+        .unwrap();
 
-    {
-        let pixels = decoder.decode().expect("Test failed decoding");
-        write_output(
-            "large_no_samp_ycbcr_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_YCbCr
-        );
-    }
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 72227651583886420023815834092904494086;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -132,41 +79,36 @@ fn large_horizontal_sampling_rgb()
     //
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
-    let data = std::fs::read(path).unwrap();
+    let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new(&data);
-    // RGB
-    {
-        let pixels = decoder.decode().expect("Test failed decoding");
-        write_output(
-            "large_horiz_samp_rgb_7680_4320.jpg",
-            &pixels,
-            decoder.width() as usize,
-            decoder.height() as usize,
-            OutColorSpace::JCS_RGB
-        );
-    }
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::RGB;
+    let pixels = JpegDecoder::new_with_options(options, data)
+        .decode()
+        .unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 156938646890602880804753012205027071578;
+
+    assert_eq!(hash, EXPECTED);
 }
 #[test]
 fn large_horizontal_sampling_grayscale()
 {
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
-    let data = std::fs::read(path).unwrap();
+    let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::new().set_out_colorspace(ColorSpace::Luma),
-        &data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let pixels = JpegDecoder::new_with_options(options, data)
+        .decode()
+        .unwrap();
 
-    let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "large_horiz_samp_grayscale_7680_4320.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 273130140778234680792798421363572621515;
+
+    assert_eq!(hash, EXPECTED);
 }
 #[test]
 fn large_horizontal_sampling_ycbcr()
@@ -174,19 +116,16 @@ fn large_horizontal_sampling_ycbcr()
     let path =
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
 
-    let data = std::fs::read(path).unwrap();
+    let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::new().set_out_colorspace(ColorSpace::YCbCr),
-        &data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::YCbCr;
+    let pixels = JpegDecoder::new_with_options(options, data)
+        .decode()
+        .unwrap();
 
-    let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "large_horiz_samp_ycbcr_7680_4320.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_YCbCr
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 156938646890602880804753012205027071578;
+
+    assert_eq!(hash, EXPECTED);
 }
