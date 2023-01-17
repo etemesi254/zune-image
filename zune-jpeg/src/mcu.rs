@@ -282,17 +282,19 @@ impl<'a> JpegDecoder<'a>
             {
                 // copy first row of idct to the upsampler
                 // Needed for HV and V upsampling.
-                self.components.iter_mut().for_each(|x| {
-                    if x.needed && x.component_id != ComponentID::Y
-                    {
-                        //copy
-                        let length = x.upsample_scanline.len();
+                self.components
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(pos, comp)| {
+                        if comp.needed && comp.component_id != ComponentID::Y
+                        {
+                            //copy
+                            let length = comp.upsample_scanline.len();
 
-                        x.upsample_scanline.copy_from_slice(
-                            &channels[usize::from(x.id.saturating_sub(1))][0..length]
-                        );
-                    }
-                });
+                            comp.upsample_scanline
+                                .copy_from_slice(&channels[pos][0..length]);
+                        }
+                    });
             }
 
             if self.is_interleaved
