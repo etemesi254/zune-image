@@ -528,7 +528,7 @@ impl<'a> PPMDecoder<'a>
             {
                 let mut data = vec![0; size];
                 // get the bytes
-                data.copy_from_slice(self.reader.get_as_ref(size).unwrap());
+                data.copy_from_slice(self.reader.get(size).unwrap());
 
                 Ok(DecodingResult::U8(data))
             }

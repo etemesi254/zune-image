@@ -176,7 +176,7 @@ impl<'a> PngDecoder<'a>
         // we will later pass these to the deflate decoder as a whole, to get the whole
         // uncompressed stream.
 
-        let idat_stream = self.stream.get_as_ref(png_chunk.length)?;
+        let idat_stream = self.stream.get(png_chunk.length)?;
 
         self.idat_chunks.extend_from_slice(idat_stream);
 
