@@ -31,9 +31,11 @@
 //! ## Decode a JPEG file to RGBA format
 //!```no_run
 //! use zune_core::colorspace::ColorSpace;
-//! use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
+//! use zune_core::options::DecoderOptions;
+//! use zune_jpeg::JpegDecoder;
 //!
-//! let options = ZuneJpegOptions::new().set_out_colorspace(ColorSpace::RGBA);
+//! let mut options = DecoderOptions::default();
+//! options.out_colorspace = ColorSpace::RGBA;
 //!
 //! let mut decoder = JpegDecoder::new_with_options(options,&[]);
 //! let pixels = decoder.decode().unwrap();
@@ -41,18 +43,13 @@
 //!
 //! ## Decode an image and get it's width and height.
 //!```no_run
-//! use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
-//! use zune_core::colorspace::ColorSpace::Luma;
+//! use zune_jpeg::JpegDecoder;
 //!
-//! let options = ZuneJpegOptions::new().set_out_colorspace(Luma);
-//!
-//! let mut decoder = JpegDecoder::new_with_options(options,&[]);
+//! let mut decoder = JpegDecoder::new(&[]);
 //! decoder.decode_headers().unwrap();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)
 //! ```
-//!
-//!
 //! # Crate features.
 //! This crate tries to be as minimal as possible while being extensible
 //! enough to handle the complexities arising from parsing different types

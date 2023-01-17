@@ -1,41 +1,9 @@
-use std::fs::OpenOptions;
-use std::io::Write;
+#![allow(clippy::field_reassign_with_default)]
 
-use mozjpeg::ColorSpace as OutColorSpace;
+use xxhash_rust::xxh3::xxh3_128;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
-
-fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspace: OutColorSpace)
-{
-    let output: String = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/outputs/random/";
-    std::fs::create_dir_all(&output).unwrap();
-
-    std::panic::catch_unwind(|| {
-        let mut comp = mozjpeg::Compress::new(colorspace);
-
-        comp.set_size(width, height);
-        comp.set_mem_dest();
-        comp.start_compress();
-
-        assert!(comp.write_scanlines(pixels));
-
-        comp.finish_compress();
-
-        let jpeg_bytes = comp.data_to_vec().unwrap();
-
-        let mut v = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(output.clone() + "/" + name)
-            .unwrap();
-
-        v.write_all(&jpeg_bytes).unwrap();
-
-        // write to file, etc.
-    })
-    .unwrap();
-}
 
 #[test]
 fn huffman_third_index()
@@ -48,13 +16,10 @@ fn huffman_third_index()
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "huffman_third_index.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 133175253843308546331686378179836169848;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -66,18 +31,14 @@ fn single_qt()
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/single_qt.jpeg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default();
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "single_qt.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 39914510576233829517731889017478170875;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -88,18 +49,14 @@ fn google_pixel()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default();
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "google_pixel.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 297723773723904045145011723267592936554;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -111,18 +68,14 @@ fn google_pixel_progressive()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default();
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
-    write_output(
-        "google_pixel_progressive.jpg",
-        &pixels,
-        decoder.width() as usize,
-        decoder.height() as usize,
-        OutColorSpace::JCS_GRAYSCALE
-    );
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 119912241572774598124330387855642941476;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -135,7 +88,12 @@ fn test_four_components()
 
     let mut decoder = JpegDecoder::new(data);
     // Grayscale
-    let _ = decoder.decode().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 33350711354489254164962650813791563794;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -146,7 +104,12 @@ fn test_large_component_number()
 
     let mut decoder = JpegDecoder::new(data);
     // Grayscale
-    let _ = decoder.decode().expect("Test failed decoding");
+    let pixels = decoder.decode().expect("Test failed decoding");
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 46029048520010428617927201003495890872;
+
+    assert_eq!(hash, EXPECTED);
 }
 
 #[test]
@@ -156,10 +119,10 @@ fn test_basic()
 
     let data = &std::fs::read(path).unwrap();
 
-    let result = [
-        70, 71, 66, 47, 48, 43, 50, 51, 46, 54, 55, 50, 53, 54, 49, 55, 56, 51, 50, 51, 46, 50, 51,
-        46, 50, 51, 46, 49, 50, 45
-    ];
-    let decoder = JpegDecoder::new(data).decode().unwrap();
-    assert_eq!(&result, &decoder[0..30]);
+    let pixels = JpegDecoder::new(data).decode().unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 56242265237748686029496710371134854998;
+
+    assert_eq!(hash, EXPECTED);
 }

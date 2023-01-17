@@ -22,7 +22,7 @@ log = "0.4.11" # logging facilities
 zune-core = { path = "../zune-core" }
 
 [dev-dependencies]
-zune-tests = { path = "../zune-tests" }
+xxhash-rust = { version = "0.8.6", default-features = false, features = ["xxh3"] }
 mozjpeg = "0.9.2"
 jpeg-decoder = "0.2.6"
 
