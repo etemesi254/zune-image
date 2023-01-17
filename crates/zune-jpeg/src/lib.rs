@@ -94,7 +94,6 @@ extern crate core;
 extern crate log;
 
 pub use crate::decoder::{ImageInfo, JpegDecoder};
-pub use crate::options::ZuneJpegOptions;
 
 mod bitstream;
 mod color_convert;
@@ -108,7 +107,6 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
-mod options;
 mod unsafe_utils;
 mod upsampler;
 mod worker;

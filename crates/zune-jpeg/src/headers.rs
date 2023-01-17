@@ -217,14 +217,14 @@ pub(crate) fn parse_start_of_frame(
     info!("Image width  :{}", img_width);
     info!("Image height :{}", img_height);
 
-    if img_width > img.options.get_max_width()
+    if usize::from(img_width) > img.options.max_width
     {
-        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.get_max_width())));
+        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.max_width)));
     }
 
-    if img_height > img.options.get_max_height()
+    if usize::from(img_height) > img.options.max_height
     {
-        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.get_max_height())));
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.max_height)));
     }
 
     // Check image width or height is zero
@@ -260,7 +260,8 @@ pub(crate) fn parse_start_of_frame(
         // and that to us translates to setting input and output
         // colorspaces to zero
         img.input_colorspace = ColorSpace::Luma;
-        img.options = img.options.set_out_colorspace(ColorSpace::Luma);
+        img.options.out_colorspace = ColorSpace::Luma;
+        debug!("Overriding default colorspace set to Luma");
     }
 
     // set number of components
