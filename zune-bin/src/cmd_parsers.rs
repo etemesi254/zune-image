@@ -1,4 +1,7 @@
 use clap::ArgMatches;
+use zune_core::options::DecoderOptions;
+
+use crate::cmd_args::arg_parsers::IColorSpace;
 
 pub mod global_options;
 
@@ -32,4 +35,25 @@ pub fn fill_args(options: &ArgMatches) -> Vec<String>
         map.push(argument)
     }
     map
+}
+
+pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
+{
+    let max_width = *options.get_one::<usize>("max-width").unwrap();
+    let max_height = *options.get_one::<usize>("max-height").unwrap();
+    let use_unsafe = *options.get_one::<bool>("use-unsafe").unwrap();
+    let strict_mode = *options.get_one::<bool>("strict").unwrap();
+    let out_colorspace = options
+        .get_one::<IColorSpace>("colorspace")
+        .unwrap()
+        .to_colorspace();
+
+    DecoderOptions {
+        max_width,
+        max_height,
+        use_unsafe,
+        strict_mode,
+        out_colorspace,
+        ..Default::default()
+    }
 }

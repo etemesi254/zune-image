@@ -49,7 +49,7 @@ pub fn create_cmd_args() -> Command {
             .short('i')
             .help("Input file to read data from")
             .long("input")
-            .action(ArgAction::Append)
+            .action(ArgAction::Set)
             .value_parser(value_parser!(OsString))
             .required(true))
         .arg(Arg::new("out")
@@ -126,6 +126,7 @@ fn add_settings() -> Vec<Arg>
             .help("Change the image colorspace during decoding")
             .long_help(COLORSPACE_HELP)
             .value_parser(value_parser!(IColorSpace))
+            .default_value("rgb")
             .hide_possible_values(true),
         Arg::new("max-width")
             .long("max-width")
@@ -145,11 +146,13 @@ fn add_settings() -> Vec<Arg>
             .help("Treat most warnings as errors")
             .action(ArgAction::SetTrue)
             .default_value("false"),
-        Arg::new("depth")
-            .long("depth")
+        Arg::new("use-unsafe")
+            .long("use-unsafe")
             .help_heading(HELP_HEADING)
-            .help("Adjust the depth of the image")
-            .value_parser(value_parser!(u8))
+            .help("Use unsafe paths routines where possible")
+            .long_help("Use unsafe paths routines where possible\nMainly used for debugging and testing purposes")
+            .action(ArgAction::SetTrue)
+            .default_value("false")
     ];
     // list them in order
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));

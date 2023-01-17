@@ -16,6 +16,7 @@ use zune_image::errors::ImgErrors;
 use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
 
+use crate::cmd_parsers::get_decoder_options;
 use crate::cmd_parsers::global_options::CmdOptions;
 use crate::show_gui::open_in_default_app;
 use crate::MmapOptions;
@@ -26,6 +27,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 ) -> Result<(), ImgErrors>
 {
     info!("Creating workflows from input");
+
+    let decoder_options = get_decoder_options(args);
 
     let mut buf = Vec::with_capacity(1 << 20);
     for (in_file, out_file) in args
@@ -73,7 +76,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(format) = guess_format(data)
         {
-            let decoder: Box<dyn DecoderTrait> = zune_image::codecs::get_decoder(format, data);
+            let decoder: Box<dyn DecoderTrait> =
+                zune_image::codecs::get_decoder_with_options(format, data, decoder_options);
 
             if decoder.is_experimental() && !cmd_opts.experimental_formats
             {
