@@ -282,6 +282,8 @@ impl<'a> JpegDecoder<'a>
                 }
                 else
                 {
+                    bytes_before_marker = 0;
+
                     warn!("Marker 0xFF{:X} not known", m);
 
                     let length = self.stream.get_u16_be_err()?;
