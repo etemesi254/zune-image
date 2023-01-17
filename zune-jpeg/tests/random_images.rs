@@ -3,7 +3,8 @@ use std::io::Write;
 
 use mozjpeg::ColorSpace as OutColorSpace;
 use zune_core::colorspace::ColorSpace;
-use zune_jpeg::{JpegDecoder, ZuneJpegOptions};
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
 fn write_output(name: &str, pixels: &[u8], width: usize, height: usize, colorspace: OutColorSpace)
 {
@@ -42,11 +43,9 @@ fn huffman_third_index()
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huffman_third_index.jpg";
     let data = &std::fs::read(path).unwrap();
-
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
@@ -67,10 +66,9 @@ fn single_qt()
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/single_qt.jpeg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
@@ -90,10 +88,9 @@ fn google_pixel()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
     write_output(
@@ -114,10 +111,9 @@ fn google_pixel_progressive()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut decoder = JpegDecoder::new_with_options(
-        ZuneJpegOptions::default().set_out_colorspace(ColorSpace::Luma),
-        data
-    );
+    let mut options = DecoderOptions::default();
+    options.out_colorspace = ColorSpace::Luma;
+    let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
     write_output(

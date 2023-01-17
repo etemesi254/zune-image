@@ -98,10 +98,10 @@ impl<'a> JpegDecoder<'a>
                         // extract marker, might either indicate end of image or we continue
                         // scanning(hence the continue statement to determine).
                         marker = get_marker(&mut self.stream, &mut stream)?;
-                        seen_scans+=1;
+                        seen_scans += 1;
 
-                        if seen_scans >  self.options.get_max_scans(){
-                            return Err(DecodeErrors::Format(format!("Too many scans, exceeded limit of {}", self.options.get_max_scans())))
+                        if seen_scans > self.options.max_scans {
+                            return Err(DecodeErrors::Format(format!("Too many scans, exceeded limit of {}", self.options.max_scans)))
                         }
 
                         stream.reset();
@@ -306,6 +306,24 @@ impl<'a> JpegDecoder<'a>
         &mut self, block: &[Vec<i16>; 3], _mcu_width: usize
     ) -> Result<Vec<u8>, DecodeErrors>
     {
+        // This function is complicated because we need to replicate
+        // the function in mcu.rs
+        //
+        // The advantage is that we do very little allocation and very lot
+        // channel reusing.
+        // The trick is to notice that we repeat the same procedure per MCU
+        // width.
+        //
+        // So we can set it up that we only allocate temporary storage large enough
+        // to store a single mcu width, then reuse it per invocation.
+        //
+        // This is advantageous to us.
+        //
+        // Remember we need to have the whole MCU buffer so we store 3 unprocessed
+        // channels in memory, and then we allocate the whole output buffer in memory, both of
+        // which are huge.
+        //
+        //
         let mut mcu_height;
 
         if self.is_interleaved
@@ -324,7 +342,7 @@ impl<'a> JpegDecoder<'a>
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
-            if self.options.get_strict_mode()
+            if self.options.strict_mode
             {
                 return Err(DecodeErrors::FormatStatic(
                     "[strict-mode]: Grayscale image with down-sampled component."
@@ -340,7 +358,7 @@ impl<'a> JpegDecoder<'a>
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
-        let out_colorspace_components = self.options.get_out_colorspace().num_components();
+        let out_colorspace_components = self.options.out_colorspace.num_components();
         let width = usize::from(self.info.width);
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
@@ -355,7 +373,7 @@ impl<'a> JpegDecoder<'a>
         for (pos, comp) in self.components.iter_mut().enumerate()
         {
             // Allocate only needed components.
-            if min(self.options.get_out_colorspace().num_components() - 1, pos) == pos
+            if min(self.options.out_colorspace.num_components() - 1, pos) == pos
             {
                 let mut len = comp.width_stride * DCT_BLOCK / 8;
 
@@ -493,7 +511,7 @@ impl<'a> JpegDecoder<'a>
                         padded_width,
                         self.color_convert_16,
                         self.input_colorspace,
-                        self.options.get_out_colorspace(),
+                        self.options.out_colorspace,
                         chunks.next().unwrap(),
                         width,
                         &mut upsampler_scratch_space
@@ -519,7 +537,7 @@ impl<'a> JpegDecoder<'a>
                     &temporary_ref,
                     self.color_convert_16,
                     self.input_colorspace,
-                    self.options.get_out_colorspace(),
+                    self.options.out_colorspace,
                     chunks.next().unwrap(),
                     width,
                     padded_width
@@ -531,7 +549,7 @@ impl<'a> JpegDecoder<'a>
 
         let actual_dims = usize::from(self.width())
             * usize::from(self.height())
-            * self.options.get_out_colorspace().num_components();
+            * self.options.out_colorspace.num_components();
 
         pixels.truncate(actual_dims);
 
@@ -548,7 +566,7 @@ impl<'a> JpegDecoder<'a>
         a non-sampled image to ensure decoding works
         */
         self.h_max = 1;
-        self.options = self.options.set_out_colorspace(ColorSpace::Luma);
+        self.options.out_colorspace = ColorSpace::Luma;
         self.v_max = 1;
         self.sub_sample_ratio = SampleRatios::None;
         self.is_interleaved = false;
