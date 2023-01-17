@@ -12,6 +12,8 @@
 //! | Farbfeld|16 bit support|None|
 //!
 //!
+use zune_core::options::DecoderOptions;
+
 #[allow(unused_imports)]
 use crate::traits::DecoderTrait;
 
@@ -80,13 +82,20 @@ pub fn guess_format(bytes: &[u8]) -> Option<SupportedDecoders>
 /// for decoders
 pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn DecoderTrait + 'a>
 {
+    get_decoder_with_options(codec, data, DecoderOptions::default())
+}
+
+pub fn get_decoder_with_options<'a>(
+    codec: SupportedDecoders, data: &'a [u8], options: DecoderOptions
+) -> Box<dyn DecoderTrait + 'a>
+{
     match codec
     {
         SupportedDecoders::Jpeg =>
         {
             #[cfg(feature = "jpeg")]
             {
-                Box::new(zune_jpeg::JpegDecoder::new(data))
+                Box::new(zune_jpeg::JpegDecoder::new_with_options(options, data))
             }
             #[cfg(not(feature = "jpeg"))]
             {
@@ -109,7 +118,7 @@ pub fn get_decoder<'a>(codec: SupportedDecoders, data: &'a [u8]) -> Box<dyn Deco
         {
             #[cfg(feature = "ppm")]
             {
-                Box::new(zune_ppm::PPMDecoder::new(data))
+                Box::new(zune_ppm::PPMDecoder::new_with_options(options, data))
             }
             #[cfg(not(feature = "ppm"))]
             {
