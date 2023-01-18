@@ -220,7 +220,7 @@ impl BitStream
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
-        if self.bits_left <= 32 && self.marker.is_none()
+        if self.bits_left < 32 && self.marker.is_none()
         {
             // So before we do anything, check if we have a 0xFF byte
 

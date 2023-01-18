@@ -803,14 +803,14 @@ impl<'a> PngDecoder<'a>
 
                     let in_val = self.out[in_offset];
 
-                    cur[0] = scale * ((in_val >> 7) & 0x01);
-                    cur[1] = scale * ((in_val >> 6) & 0x01);
-                    cur[2] = scale * ((in_val >> 5) & 0x01);
-                    cur[3] = scale * ((in_val >> 4) & 0x01);
-                    cur[4] = scale * ((in_val >> 3) & 0x01);
-                    cur[5] = scale * ((in_val >> 2) & 0x01);
-                    cur[6] = scale * ((in_val >> 1) & 0x01);
-                    cur[7] = scale * ((in_val) & 0x01);
+                    cur[0] = 255 * ((in_val >> 7) & 0x01);
+                    cur[1] = 255 * ((in_val >> 6) & 0x01);
+                    cur[2] = 255 * ((in_val >> 5) & 0x01);
+                    cur[3] = 255 * ((in_val >> 4) & 0x01);
+                    cur[4] = 255 * ((in_val >> 3) & 0x01);
+                    cur[5] = 255 * ((in_val >> 2) & 0x01);
+                    cur[6] = 255 * ((in_val >> 1) & 0x01);
+                    cur[7] = 255 * ((in_val) & 0x01);
 
                     in_offset += 1;
                     current += 8;
