@@ -39,7 +39,7 @@
 //!
 //! Therefore if your looking to optimize some routines, probably start there.
 
-pub use scalar::{ycbcr_to_grayscale, ycbcr_to_ycbcr};
+pub use scalar::ycbcr_to_grayscale;
 use zune_core::colorspace::ColorSpace;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -76,7 +76,6 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 {
                     ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
                     ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
-                    ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
                     _ => None
                 };
             }
@@ -91,7 +90,6 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 {
                     ColorSpace::RGB => Some(ycbcr_to_rgb_sse_16),
                     ColorSpace::RGBA => Some(ycbcr_to_rgba_sse_16),
-                    ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
                     _ => None
                 };
             }
@@ -102,8 +100,6 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     {
         ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
         ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_16_scalar),
-        ColorSpace::YCbCr => Some(ycbcr_to_ycbcr),
-
         _ => None
     };
 }
