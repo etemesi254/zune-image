@@ -250,10 +250,21 @@ impl<'a> JpegDecoder<'a>
             // bitstreams because why not.
             //
             // I am disappointed as a man.
-            if m == 0xFF && last_byte == 0xFF
+            if (m == 0xFF || m == 0) && last_byte == 0xFF
             {
-                while m == 0xFF
+                // This handles the edge case where
+                // images have markers with fill bytes(0xFF)
+                // or byte stuffing (0)
+                // I.e 0xFF 0xFF 0xDA
+                // and
+                // 0xFF 0 0xDA
+                // It should ignore those fill bytes and take 0xDA
+                // I don't know why such images exist
+                // but they do.
+                // so this is for you (with love)
+                while m == 0xFF || m == 0x0
                 {
+                    last_byte = m;
                     m = self.stream.get_u8_err()?;
                 }
             }
