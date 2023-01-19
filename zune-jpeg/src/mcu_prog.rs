@@ -45,7 +45,7 @@ impl<'a> JpegDecoder<'a>
         let mcu_height;
 
         // memory location for decoded pixels for components
-        let mut block = [vec![], vec![], vec![]];
+        let mut block: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut mcu_width;
 
         let mut seen_scans = 1;
@@ -122,7 +122,7 @@ impl<'a> JpegDecoder<'a>
     #[rustfmt::skip]
     #[allow(clippy::too_many_lines,clippy::cast_sign_loss)]
     fn parse_entropy_coded_data(
-        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; 3],
+        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors>
     {
         self.check_component_dimensions()?;
@@ -303,7 +303,7 @@ impl<'a> JpegDecoder<'a>
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; 3], _mcu_width: usize
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize
     ) -> Result<Vec<u8>, DecodeErrors>
     {
         // This function is complicated because we need to replicate
@@ -374,6 +374,8 @@ impl<'a> JpegDecoder<'a>
         {
             // Allocate only needed components.
             if min(self.options.out_colorspace.num_components() - 1, pos) == pos
+                || self.input_colorspace == ColorSpace::YCCK
+                || self.input_colorspace == ColorSpace::CMYK
             {
                 let mut len = comp.width_stride * DCT_BLOCK / 8;
 
