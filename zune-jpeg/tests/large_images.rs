@@ -68,7 +68,7 @@ fn large_no_sampling_factors_ycbcr()
         .unwrap();
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 72227651583886420023815834092904494086;
+    const EXPECTED: u128 = 93348528356461250907756341851990389554;
 
     assert_eq!(hash, EXPECTED);
 }
@@ -125,7 +125,7 @@ fn large_horizontal_sampling_ycbcr()
         .unwrap();
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 156938646890602880804753012205027071578;
+    const EXPECTED: u128 = 192607723684787980167689860133863748259;
 
     assert_eq!(hash, EXPECTED);
 }

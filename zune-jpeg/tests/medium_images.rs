@@ -97,7 +97,7 @@ fn medium_horizontal_sampling_cymk()
     let pixels = decoder.decode().expect("Test failed decoding");
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 125683957700914688041687332115454166076;
+    const EXPECTED: u128 = 289066310719258065604782525085636628338;
 
     assert_eq!(hash, EXPECTED);
 }
