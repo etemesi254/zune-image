@@ -99,32 +99,3 @@ pub fn ycbcr_to_grayscale(y: &[i16], width: usize, padded_width: usize, output: 
         }
     }
 }
-
-/// Convert YCbCr to YCbCr
-///
-/// Basically all we do is remove fill bytes (if there) in the edges
-pub fn ycbcr_to_ycbcr(
-    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
-)
-{
-    // let mut p = 0;
-    let (_, output_position) = output.split_at_mut(*pos);
-
-    // Convert into a slice with 48 elements
-    let opt: &mut [u8; 48] = output_position
-        .get_mut(0..48)
-        .expect("Slice to small cannot write")
-        .try_into()
-        .unwrap();
-
-    for (((y, cb), cr), out) in y
-        .iter()
-        .zip(cb.iter())
-        .zip(cr.iter())
-        .zip(opt.chunks_exact_mut(3))
-    {
-        out[0] = *y as u8;
-        out[1] = *cb as u8;
-        out[2] = *cr as u8;
-    }
-}
