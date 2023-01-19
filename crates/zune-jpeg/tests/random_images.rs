@@ -132,13 +132,27 @@ fn test_four_components_progressive_jpeg()
 {
     let path = env!("CARGO_MANIFEST_DIR").to_string()
         + "/test-images/Kiara_limited_progressive_four_components.jpg";
-
     let data = &std::fs::read(path).unwrap();
 
     let pixels = JpegDecoder::new(data).decode().unwrap();
 
     let hash = xxh3_128(&pixels);
     const EXPECTED: u128 = 327899417203221693667684823644765405315;
+
+    assert_eq!(hash, EXPECTED);
+}
+
+#[test]
+fn test_fill_bytes_before_marker()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string()
+        + "/test-images/rebuilt_relax_fill_bytes_before_marker.jpg";
+    let data = &std::fs::read(path).unwrap();
+
+    let pixels = JpegDecoder::new(data).decode().unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 293398073876105658422289501725766251280;
 
     assert_eq!(hash, EXPECTED);
 }
