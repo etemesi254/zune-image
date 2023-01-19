@@ -418,7 +418,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
 pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
 {
     // skip length
-    let length = usize::from(decoder.stream.get_u16_be());
+    let mut length = usize::from(decoder.stream.get_u16_be());
 
     if length < 2 || !decoder.stream.has(length - 2)
     {
@@ -432,7 +432,7 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
     }
     if decoder.stream.peek_at(0, 5) == Ok(b"Adobe")
     {
-        // move sream 6 bytes to remove adobe id
+        // move stream 6 bytes to remove adobe id
         decoder.stream.skip(6);
         // skip version, flags0 and flags1
         decoder.stream.skip(5);
@@ -450,11 +450,19 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
                 )))
             }
         }
+        // length   = 2
+        // adobe id = 6
+        // version =  5
+        // transform = 1
+        length = length.saturating_sub(14);
     }
     else
     {
         return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
     }
+    // skip any proceeding lengths.
+    // we do not need them
+    decoder.stream.skip(length);
 
     Ok(())
 }
