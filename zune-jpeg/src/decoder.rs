@@ -244,13 +244,24 @@ impl<'a> JpegDecoder<'a>
         loop
         {
             // read a byte
-            let m = self.stream.get_u8_err()?;
+            let mut m = self.stream.get_u8_err()?;
+
+            // AND OF COURSE some images will have fill bytes in their marker
+            // bitstreams because why not.
+            //
+            // I am disappointed as a man.
+            if m == 0xFF && last_byte == 0xFF
+            {
+                while m == 0xFF
+                {
+                    m = self.stream.get_u8_err()?;
+                }
+            }
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
             if last_byte == 0xFF
             {
                 let marker = Marker::from_u8(m);
-
                 if let Some(n) = marker
                 {
                     if bytes_before_marker > 3
