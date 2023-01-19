@@ -27,6 +27,12 @@ pub(crate) fn color_convert_no_sampling(
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
 
+    if input_colorspace.num_components() == 3 && input_colorspace == output_colorspace
+    {
+        // sort things like RGB to RGB conversion
+        copy_removing_padding(unprocessed, width, padded_width, output);
+        return Ok(());
+    }
     // color convert
     match (input_colorspace, output_colorspace)
     {
@@ -86,6 +92,28 @@ pub(crate) fn color_convert_no_sampling(
         }
     }
     Ok(())
+}
+
+/// Copy a block to output removing padding bytes from input
+/// if necessary
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+fn copy_removing_padding(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
+)
+{
+    for (((pix_w, c_w), m_w), y_w) in output
+        .chunks_exact_mut(width * 3)
+        .zip(mcu_block[0].chunks_exact(padded_width))
+        .zip(mcu_block[1].chunks_exact(padded_width))
+        .zip(mcu_block[2].chunks_exact(padded_width))
+    {
+        for (((pix, c), y), m) in pix_w.chunks_exact_mut(3).zip(c_w).zip(m_w).zip(y_w)
+        {
+            pix[0] = *c as u8;
+            pix[1] = *y as u8;
+            pix[2] = *m as u8;
+        }
+    }
 }
 
 /// Convert YCCK image to rgb
