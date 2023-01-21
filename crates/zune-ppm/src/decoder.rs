@@ -541,8 +541,12 @@ impl<'a> PPMDecoder<'a>
                 // Get bytes from heaven.
                 // This saves us the memset part of vec![0;size/2]; by
                 // borrowing uninitialized memory from the heap
-                let data = (0..size / 2)
-                    .map(|_| self.reader.get_u16_be())
+                let remaining = self.reader.remaining_bytes();
+
+                let data = remaining
+                    .chunks_exact(2)
+                    .take(size / 2)
+                    .map(|b| u16::from_be_bytes(b.try_into().unwrap()))
                     .collect::<Vec<u16>>();
 
                 Ok(DecodingResult::U16(data))
