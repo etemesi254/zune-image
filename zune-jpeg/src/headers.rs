@@ -462,6 +462,7 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
     }
     else
     {
+        length = length.saturating_sub(2);
         error!("Not a valid Adobe APP14 Segment");
     }
     // skip any proceeding lengths.
