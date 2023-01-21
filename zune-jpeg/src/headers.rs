@@ -456,9 +456,13 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
         // transform = 1
         length = length.saturating_sub(14);
     }
-    else
+    else if decoder.options.strict_mode
     {
         return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
+    }
+    else
+    {
+        error!("Not a valid Adobe APP14 Segment");
     }
     // skip any proceeding lengths.
     // we do not need them
