@@ -1,6 +1,7 @@
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
 use zune_inflate::DeflateOptions;
 
@@ -10,7 +11,7 @@ use crate::error::PngErrors;
 use crate::filters::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
-use crate::options::PngOptions;
+use crate::options::{default_chunk_handler, UnkownChunkHandler};
 
 #[derive(Copy, Clone)]
 pub(crate) struct PLTEEntry
@@ -59,29 +60,51 @@ pub struct PngInfo
 
 pub struct PngDecoder<'a>
 {
-    pub(crate) seen_hdr:    bool,
-    pub(crate) stream:      ZByteReader<'a>,
-    pub(crate) options:     PngOptions,
-    pub(crate) png_info:    PngInfo,
-    pub(crate) palette:     Vec<PLTEEntry>,
-    pub(crate) idat_chunks: Vec<u8>,
-    pub(crate) out:         Vec<u8>,
-    pub(crate) gama:        u32,
-    pub(crate) seen_ptle:   bool,
-    pub(crate) seen_trns:   bool,
-    pub(crate) trns_bytes:  [u16; 4]
+    pub(crate) stream:        ZByteReader<'a>,
+    pub(crate) options:       DecoderOptions,
+    pub(crate) png_info:      PngInfo,
+    pub(crate) palette:       Vec<PLTEEntry>,
+    pub(crate) idat_chunks:   Vec<u8>,
+    pub(crate) out:           Vec<u8>,
+    pub(crate) gama:          u32,
+    pub(crate) trns_bytes:    [u16; 4],
+    pub(crate) chunk_handler: UnkownChunkHandler,
+    pub(crate) seen_hdr:      bool,
+    pub(crate) seen_ptle:     bool,
+    pub(crate) seen_trns:     bool,
+    pub(crate) use_sse2:      bool,
+    pub(crate) use_sse4:      bool,
+    pub(crate) confirm_crc:   bool
 }
 
 impl<'a> PngDecoder<'a>
 {
     pub fn new(data: &'a [u8]) -> PngDecoder<'a>
     {
-        let default_opt = PngOptions::default();
+        let default_opt = DecoderOptions::default();
 
         PngDecoder::new_with_options(data, default_opt)
     }
-    pub fn new_with_options(data: &'a [u8], options: PngOptions) -> PngDecoder<'a>
+    #[allow(unused_mut)]
+    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
     {
+        let mut use_sse2 = false;
+        let mut use_sse4 = false;
+        // check for sse support here
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if options.use_unsafe
+            {
+                if is_x86_feature_detected!("sse2")
+                {
+                    use_sse2 = true
+                }
+                if is_x86_feature_detected!("sse4.1")
+                {
+                    use_sse4 = true
+                }
+            }
+        }
         PngDecoder {
             seen_hdr: false,
             stream: ZByteReader::new(data),
@@ -93,7 +116,11 @@ impl<'a> PngDecoder<'a>
             gama: 0, // used also to indicate if we should do gama unfiltering
             seen_ptle: false,
             seen_trns: false,
-            trns_bytes: [0; 4]
+            trns_bytes: [0; 4],
+            use_sse2,
+            use_sse4,
+            confirm_crc: false,
+            chunk_handler: default_chunk_handler
         }
     }
 
@@ -176,7 +203,7 @@ impl<'a> PngDecoder<'a>
         // Confirm the CRC here.
         #[cfg(feature = "crc")]
         {
-            if self.options.confirm_checksums
+            if self.confirm_crc
             {
                 use crate::crc::crc32_slice8;
 
@@ -265,12 +292,10 @@ impl<'a> PngDecoder<'a>
                 {
                     break;
                 }
-                _ => (self.options.chunk_handler)(
-                    header.length,
-                    header.chunk,
-                    &mut self.stream,
-                    header.crc
-                )?
+                _ =>
+                {
+                    (self.chunk_handler)(header.length, header.chunk, &mut self.stream, header.crc)?
+                }
             }
         }
         // go parse IDAT chunks returning the inflate
@@ -634,6 +659,8 @@ impl<'a> PngDecoder<'a>
         &mut self, deflate_data: &[u8], width: usize, height: usize
     ) -> Result<(), PngErrors>
     {
+        let use_sse4 = self.use_sse4;
+        let use_sse2 = self.use_sse2;
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
@@ -743,13 +770,13 @@ impl<'a> PngDecoder<'a>
             {
                 FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
 
-                FilterMethod::Average => handle_avg(prev_row, raw, current, components),
+                FilterMethod::Average => handle_avg(prev_row, raw, current, components, use_sse4),
 
-                FilterMethod::Sub => handle_sub(raw, current, components),
+                FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
 
                 FilterMethod::Up => handle_up(prev_row, raw, current),
 
-                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components),
+                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components, use_sse4),
 
                 FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
 
@@ -927,7 +954,7 @@ impl<'a> PngDecoder<'a>
 
         let option = DeflateOptions::default()
             .set_size_hint(size_hint)
-            .set_confirm_checksum(self.options.confirm_checksums);
+            .set_confirm_checksum(self.confirm_crc);
 
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
