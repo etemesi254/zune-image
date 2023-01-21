@@ -299,6 +299,7 @@ impl<'a> JpegDecoder<'a>
                     if n == Marker::SOS
                     {
                         self.headers_decoded = true;
+                        info!("Input colorspace {:?}", self.input_colorspace);
                         return Ok(());
                     }
                 }
