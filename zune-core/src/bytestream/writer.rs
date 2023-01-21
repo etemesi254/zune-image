@@ -136,11 +136,6 @@ impl<'a> ZByteWriter<'a>
     }
 
     /// Get length of the underlying buffer.
-    ///
-    /// To get the number of bytes left in the buffer,
-    /// use [remaining] method
-    ///
-    /// [remaining]: Self::remaining
     #[inline]
     pub const fn len(&self) -> usize
     {
