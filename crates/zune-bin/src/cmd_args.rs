@@ -87,7 +87,7 @@ pub fn create_cmd_args() -> Command {
             .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast", "resize"])
             .multiple(true))
         .group(ArgGroup::new("filters")
-            .args(["box-blur", "blur", "unsharpen"])
+            .args(["box-blur", "blur", "unsharpen", "mean-blur"])
             .multiple(true))
 }
 
@@ -282,7 +282,14 @@ fn add_filters() -> Vec<Arg>
             .long("statistic")
             .help("Replace each pixel with corresponding statistic from the neighbourhood")
             .help_heading("Filters")
-            .value_name("radius:statistic")
+            .value_name("radius:statistic"),
+        Arg::new("mean-blur")
+            .long("mean-blur")
+            .help("Perform a mean blur")
+            .value_name("radius")
+            .help_heading("Filters")
+            .value_parser(value_parser!(usize))
+            .group("filters")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
