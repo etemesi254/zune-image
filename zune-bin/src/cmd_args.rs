@@ -231,7 +231,7 @@ fn add_operations() -> Vec<Arg>
             .value_parser(value_parser!(f32))
             .group("operations"),
         Arg::new("stretch_contrast")
-            .long("stretch_contrast")
+            .long("stretch-contrast")
             .value_name("lower:upper")
             .help_heading(HELP_HEADING)
             .help("Linearly stretch contrast in an image")
