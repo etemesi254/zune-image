@@ -149,8 +149,6 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
 )
 {
-    // TODO: Find file that implements cymk.
-    // This is not tested
     for ((((pix_w, c_w), m_w), y_w), k_w) in output
         .chunks_exact_mut(width * NUM_COMPONENTS)
         .zip(mcu_block[0].chunks_exact(padded_width))
@@ -158,17 +156,17 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
         .zip(mcu_block[2].chunks_exact(padded_width))
         .zip(mcu_block[3].chunks_exact(padded_width))
     {
-        for ((((pix, c), y), m), k) in pix_w
+        for ((((pix, c), m), y), k) in pix_w
             .chunks_exact_mut(3)
             .zip(c_w)
             .zip(m_w)
             .zip(y_w)
             .zip(k_w)
         {
-            let k = *k as u8;
             let c = *c as u8;
-            let y = *y as u8;
             let m = *m as u8;
+            let y = *y as u8;
+            let k = *k as u8;
 
             pix[0] = blinn_8x8(c, k);
             pix[1] = blinn_8x8(m, k);
