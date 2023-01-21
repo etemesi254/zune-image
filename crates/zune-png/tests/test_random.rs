@@ -9,6 +9,7 @@ fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
 fn decode_ref(data: &[u8]) -> Vec<u8>
 {
     let decoder = png::Decoder::new(data);
+
     let mut reader = decoder.read_info().unwrap();
 
     // Allocate the output buffer.
