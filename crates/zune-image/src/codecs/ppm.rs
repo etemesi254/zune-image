@@ -107,3 +107,25 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         "PPM Decoder"
     }
 }
+
+#[cfg(feature = "ppm")]
+impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
+{
+    fn from(from: zune_ppm::PPMDecodeErrors) -> Self
+    {
+        let err = format!("ppm: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
+    }
+}
+
+#[cfg(feature = "ppm")]
+impl From<zune_ppm::PPMEncodeErrors> for ImgEncodeErrors
+{
+    fn from(error: zune_ppm::PPMEncodeErrors) -> Self
+    {
+        let err = format!("ppm: {error:?}");
+
+        ImgEncodeErrors::ImageEncodeErrors(err)
+    }
+}

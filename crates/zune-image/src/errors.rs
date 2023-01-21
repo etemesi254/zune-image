@@ -92,38 +92,6 @@ impl Debug for ImgErrors
         }
     }
 }
-#[cfg(feature = "zune-jpeg")]
-impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
-{
-    fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
-    {
-        let err = format!("jpg: {from:?}");
-
-        ImgErrors::ImageDecodeErrors(err)
-    }
-}
-
-#[cfg(feature = "zune-png")]
-impl From<zune_png::error::PngErrors> for ImgErrors
-{
-    fn from(from: zune_png::error::PngErrors) -> Self
-    {
-        let err = format!("png: {from:?}");
-
-        ImgErrors::ImageDecodeErrors(err)
-    }
-}
-
-#[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
-{
-    fn from(from: zune_ppm::PPMDecodeErrors) -> Self
-    {
-        let err = format!("ppm: {from:?}");
-
-        ImgErrors::ImageDecodeErrors(err)
-    }
-}
 
 impl From<ImgOperationsErrors> for ImgErrors
 {
@@ -167,39 +135,6 @@ impl Debug for ImgOperationsErrors
                 writeln!(f, "Expected {expected} components and found {found}")
             }
         }
-    }
-}
-
-#[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMEncodeErrors> for ImgEncodeErrors
-{
-    fn from(error: zune_ppm::PPMEncodeErrors) -> Self
-    {
-        let err = format!("ppm: {error:?}");
-
-        ImgEncodeErrors::ImageEncodeErrors(err)
-    }
-}
-
-#[cfg(feature = "psd")]
-impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
-{
-    fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
-    {
-        let err = format!("psd: {error:?}");
-
-        ImgErrors::ImageDecodeErrors(err)
-    }
-}
-
-#[cfg(feature = "qoi")]
-impl From<zune_qoi::QoiErrors> for ImgErrors
-{
-    fn from(error: zune_qoi::QoiErrors) -> Self
-    {
-        let err = format!("qoi: {error:?}");
-
-        ImgErrors::ImageDecodeErrors(err)
     }
 }
 

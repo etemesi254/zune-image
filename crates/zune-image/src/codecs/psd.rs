@@ -51,3 +51,13 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         true
     }
 }
+
+impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
+{
+    fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
+    {
+        let err = format!("psd: {error:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
+    }
+}
