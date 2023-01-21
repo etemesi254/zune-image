@@ -107,7 +107,7 @@ pub fn get_decoder_with_options<'a>(
         {
             #[cfg(feature = "png")]
             {
-                Box::new(zune_png::PngDecoder::new(data))
+                Box::new(zune_png::PngDecoder::new_with_options(data, options))
             }
             #[cfg(not(feature = "png"))]
             {
