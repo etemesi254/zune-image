@@ -1,3 +1,4 @@
+use log::debug;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -92,17 +93,24 @@ impl<'a> PngDecoder<'a>
         let mut use_sse4 = false;
         // check for sse support here
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(feature = "sse")]
         {
             if options.use_unsafe
             {
                 if is_x86_feature_detected!("sse2")
                 {
+                    debug!("Using SSE 2 instructions where possible");
                     use_sse2 = true
                 }
                 if is_x86_feature_detected!("sse4.1")
                 {
+                    debug!("Using SSE 4 instructions where possible");
                     use_sse4 = true
                 }
+            }
+            else
+            {
+                debug!("Using scalar instructions where possible")
             }
         }
         PngDecoder {
