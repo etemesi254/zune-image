@@ -166,7 +166,7 @@ impl<'a> PPMEncoder<'a>
     }
 }
 
-pub fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
+fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
 {
     match colorspace
     {
