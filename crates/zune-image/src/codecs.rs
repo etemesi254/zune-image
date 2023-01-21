@@ -14,8 +14,11 @@
 //!
 use zune_core::options::DecoderOptions;
 
+use crate::codecs::ppm::PPMEncoder;
+use crate::codecs::qoi::QoiEncoder;
 #[allow(unused_imports)]
 use crate::traits::DecoderTrait;
+use crate::traits::EncoderTrait;
 
 pub mod farbfeld;
 pub mod jpeg;
@@ -165,5 +168,21 @@ pub fn get_decoder_with_options<'a>(
         {
             panic!("Unknown format encountered")
         }
+    }
+}
+
+/// Get encoder that can encode an image to a specific extension
+pub fn get_encoder_for_extension<P: AsRef<str>>(
+    extension: P
+) -> Option<(SupportedEncoders, Box<dyn EncoderTrait>)>
+{
+    match extension.as_ref()
+    {
+        "qoi" => Some((SupportedEncoders::QOI, Box::new(QoiEncoder::new()))),
+        "ppm" | "pam" | "pgm" | "pbm" =>
+        {
+            Some((SupportedEncoders::PPM, Box::new(PPMEncoder::new())))
+        }
+        _ => None
     }
 }
