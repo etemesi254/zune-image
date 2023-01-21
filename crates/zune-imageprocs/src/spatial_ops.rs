@@ -95,19 +95,21 @@ fn find_max<T: Ord + Copy + NumOps<T>>(data: &[T]) -> T
     maximum
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn find_mean<T>(data: &[T]) -> T
 where
     T: Ord + Default + Copy + NumOps<T> + Add<Output = T> + Div<Output = T>,
-    usize: std::convert::From<T>
+    u32: std::convert::From<T>
 {
-    let mut maximum = usize::default();
-    let len = data.len();
+    //https://godbolt.org/z/6Y8ncehd5
+    let mut maximum = u32::default();
+    let len = data.len() as u32;
 
     for datum in data
     {
-        maximum += usize::from(*datum);
+        maximum += u32::from(*datum);
     }
-    T::from_usize(maximum / len)
+    T::from_u32(maximum / len)
 }
 
 pub fn spatial_ops<T>(
@@ -115,7 +117,8 @@ pub fn spatial_ops<T>(
     operations: StatisticOperations
 ) where
     T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
-    usize: std::convert::From<T>
+    usize: std::convert::From<T>,
+    u32: std::convert::From<T>
 {
     //pad here
     let padded_stuff = pad(
