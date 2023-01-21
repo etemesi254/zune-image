@@ -47,7 +47,8 @@ pub enum SupportedDecoders
 #[derive(Debug, Copy, Clone)]
 pub enum SupportedEncoders
 {
-    PPM
+    PPM,
+    QOI
 }
 
 // stolen from imagers
