@@ -95,3 +95,25 @@ pub enum QoiEncodeErrors
     /// The dimensions cannot be correctly encoded to a width
     TooLargeDimensions(usize)
 }
+
+impl Debug for QoiEncodeErrors
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    {
+        match self
+        {
+            QoiEncodeErrors::UnsupportedColorspace(found, supported) =>
+            {
+                writeln!(f, "Cannot encode image with colorspace {found:?} into QOI, supported ones are {supported:?}")
+            }
+            QoiEncodeErrors::TooLargeDimensions(found) =>
+            {
+                writeln!(
+                    f,
+                    "Too large image dimensions {found}, QOI can only encode images less than {}",
+                    u32::MAX
+                )
+            }
+        }
+    }
+}
