@@ -9,9 +9,9 @@ use clap::parser::ValueSource;
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::Level::Debug;
-use log::{debug, info, log_enabled};
+use log::{debug, error, info, log_enabled};
 use memmap2::Mmap;
-use zune_image::codecs::guess_format;
+use zune_image::codecs::{get_encoder_for_extension, guess_format};
 use zune_image::errors::ImgErrors;
 use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
@@ -89,17 +89,14 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(ext) = Path::new(out_file).extension()
         {
-            if ext == OsStr::new("ppm") || ext == OsStr::new("pam")
+            if let Some((encode_type, encoder)) = get_encoder_for_extension(ext.to_str().unwrap())
             {
-                debug!("Treating {:?} as a ppm file", out_file);
-                let encoder = zune_image::codecs::ppm::PPMEncoder::new();
-                workflow.add_encoder(Box::new(encoder));
+                debug!("Treating {:?} as a {:?} format", out_file, encode_type);
+                workflow.add_encoder(encoder);
             }
-            if ext == OsStr::new("qoi")
+            else
             {
-                debug!("Treating {:?} as a qoi file", out_file);
-                let encoder = zune_image::codecs::qoi::QoiEncoder::new();
-                workflow.add_encoder(Box::new(encoder));
+                error!("Unknown or unsupported format {:?}", out_file)
             }
         }
 
