@@ -95,6 +95,12 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 let encoder = zune_image::codecs::ppm::PPMEncoder::new();
                 workflow.add_encoder(Box::new(encoder));
             }
+            if ext == OsStr::new("qoi")
+            {
+                debug!("Treating {:?} as a qoi file", out_file);
+                let encoder = zune_image::codecs::qoi::QoiEncoder::new();
+                workflow.add_encoder(Box::new(encoder));
+            }
         }
 
         workflow.advance_to_end()?;
