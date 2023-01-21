@@ -49,3 +49,13 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
         "Png Decoder"
     }
 }
+
+impl From<zune_png::error::PngErrors> for ImgErrors
+{
+    fn from(from: zune_png::error::PngErrors) -> Self
+    {
+        let err = format!("png: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
+    }
+}

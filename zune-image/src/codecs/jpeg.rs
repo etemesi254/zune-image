@@ -55,3 +55,13 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
         "Jpeg decoder"
     }
 }
+
+impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
+{
+    fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
+    {
+        let err = format!("jpg: {from:?}");
+
+        ImgErrors::ImageDecodeErrors(err)
+    }
+}
