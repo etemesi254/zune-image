@@ -2,48 +2,10 @@ use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
 
 const FARBFELD_COLORSPACE: ColorSpace = ColorSpace::RGBA;
 const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
-
-/// Configuration options for the decoder
-#[derive(Copy, Clone, Debug)]
-pub struct ZuneFarbFeldOptions
-{
-    max_width:  usize,
-    max_height: usize
-}
-
-impl ZuneFarbFeldOptions
-{
-    pub fn set_max_width(&mut self, width: usize)
-    {
-        self.max_width = width;
-    }
-    pub fn set_max_height(&mut self, height: usize)
-    {
-        self.max_height = height;
-    }
-    pub const fn get_max_width(&self) -> usize
-    {
-        self.max_width
-    }
-    pub const fn get_max_height(&self) -> usize
-    {
-        self.max_height
-    }
-}
-
-impl Default for ZuneFarbFeldOptions
-{
-    fn default() -> Self
-    {
-        Self {
-            max_height: 1 << 17,
-            max_width:  1 << 17
-        }
-    }
-}
 
 /// A simple Farbfeld lossless decoder.
 ///
@@ -55,7 +17,7 @@ pub struct FarbFeldDecoder<'a>
     width:           usize,
     height:          usize,
     decoded_headers: bool,
-    options:         ZuneFarbFeldOptions
+    options:         DecoderOptions
 }
 
 impl<'a> FarbFeldDecoder<'a>
@@ -65,12 +27,12 @@ impl<'a> FarbFeldDecoder<'a>
     /// Data is the raw compressed farbfeld data
     pub fn new(data: &'a [u8]) -> FarbFeldDecoder<'a>
     {
-        Self::new_with_options(data, ZuneFarbFeldOptions::default())
+        Self::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new decoder with non default options as opposed to
     /// `new`
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(data: &'a [u8], option: ZuneFarbFeldOptions) -> FarbFeldDecoder<'a>
+    pub fn new_with_options(data: &'a [u8], option: DecoderOptions) -> FarbFeldDecoder<'a>
     {
         FarbFeldDecoder {
             stream:          ZByteReader::new(data),
