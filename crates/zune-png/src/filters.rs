@@ -12,7 +12,9 @@
 mod sse4;
 
 #[allow(clippy::manual_memcpy)]
-pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize)
+pub fn handle_avg(
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, _use_sse4: bool
+)
 {
     if raw.len() < components || current.len() < components
     {
@@ -23,7 +25,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // use sse features where applicable
-        if is_x86_feature_detected!("sse2")
+        if _use_sse4
         {
             if components == 3
             {
@@ -63,7 +65,7 @@ pub fn handle_avg(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: u
 }
 
 #[allow(clippy::manual_memcpy)]
-pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
+pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, _use_sse2: bool)
 {
     if current.len() < components || raw.len() < components
     {
@@ -72,7 +74,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("sse2")
+        if _use_sse2
         {
             if components == 3
             {
@@ -100,7 +102,9 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize)
 }
 
 #[allow(clippy::manual_memcpy)]
-pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize)
+pub fn handle_paeth(
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, _use_sse4: bool
+)
 {
     if raw.len() < components || current.len() < components
     {
@@ -110,7 +114,7 @@ pub fn handle_paeth(prev_row: &[u8], raw: &[u8], current: &mut [u8], components:
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("sse4.1")
+        if _use_sse4
         {
             if components == 3
             {
