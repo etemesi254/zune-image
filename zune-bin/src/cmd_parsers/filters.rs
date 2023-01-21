@@ -2,6 +2,7 @@ use clap::ArgMatches;
 use log::debug;
 use zune_image::impls::box_blur::BoxBlur;
 use zune_image::impls::gaussian_blur::GaussianBlur;
+use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::unsharpen::Unsharpen;
 use zune_image::workflow::WorkFlow;
 
@@ -50,6 +51,14 @@ pub fn parse_options(
 
             let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, 0);
             workflow.add_operation(Box::new(unsharpen))
+        }
+        else if argument == "mean-blur"
+        {
+            let radius = *args.get_one::<usize>(argument).unwrap();
+            debug!("Added mean blur filter with radius {}", radius);
+
+            let mean_blur = StatisticsOps::new(radius, StatisticOperations::Mean);
+            workflow.add_operation(Box::new(mean_blur));
         }
     }
     Ok(())
