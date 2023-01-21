@@ -41,7 +41,7 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
 {
     let max_width = *options.get_one::<usize>("max-width").unwrap();
     let max_height = *options.get_one::<usize>("max-height").unwrap();
-    let use_unsafe = *options.get_one::<bool>("use-unsafe").unwrap();
+    let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
     let strict_mode = *options.get_one::<bool>("strict").unwrap();
     let out_colorspace = options
         .get_one::<IColorSpace>("colorspace")

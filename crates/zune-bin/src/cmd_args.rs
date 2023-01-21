@@ -146,11 +146,11 @@ fn add_settings() -> Vec<Arg>
             .help("Treat most warnings as errors")
             .action(ArgAction::SetTrue)
             .default_value("false"),
-        Arg::new("use-unsafe")
-            .long("use-unsafe")
+        Arg::new("safe")
+            .long("safe")
             .help_heading(HELP_HEADING)
-            .help("Use unsafe paths routines where possible")
-            .long_help("Use unsafe paths routines where possible\nMainly used for debugging and testing purposes")
+            .help("Do not use unsafe paths routines where possible")
+            .long_help("Do not use unsafe paths routines where possible\nMainly used for debugging and testing purposes")
             .action(ArgAction::SetTrue)
             .default_value("false")
     ];
