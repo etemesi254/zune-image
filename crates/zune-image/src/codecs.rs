@@ -55,14 +55,15 @@ pub enum SupportedEncoders
 }
 
 // stolen from imagers
-static MAGIC_BYTES: [(&[u8], SupportedDecoders); 7] = [
+static MAGIC_BYTES: [(&[u8], SupportedDecoders); 8] = [
     (&[137, 80, 78, 71, 13, 10, 26, 10], SupportedDecoders::Png),
     // Of course with jpg we need to relax our definition of what is a jpeg
     // the best identifier would be 0xFF,0xd8 0xff but nop, some images exist
     // which do not have that
     (&[0xff, 0xd8], SupportedDecoders::Jpeg),
-    (b"P6", SupportedDecoders::PPM),
     (b"P5", SupportedDecoders::PPM),
+    (b"P6", SupportedDecoders::PPM),
+    (b"P7", SupportedDecoders::PPM),
     (b"8BPS", SupportedDecoders::PSD),
     (b"farbfeld", SupportedDecoders::Farbfeld),
     (b"qoif", SupportedDecoders::QOI)
