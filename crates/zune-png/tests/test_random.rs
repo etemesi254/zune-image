@@ -1,6 +1,8 @@
 use std::fs::read;
 use std::path::Path;
 
+use png::Transformations;
+
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
 {
     read(path).unwrap()
@@ -8,7 +10,9 @@ fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
 
 fn decode_ref(data: &[u8]) -> Vec<u8>
 {
-    let decoder = png::Decoder::new(data);
+    let mut decoder = png::Decoder::new(data);
+    let expand = Transformations::EXPAND;
+    decoder.set_transformations(expand);
 
     let mut reader = decoder.read_info().unwrap();
 
