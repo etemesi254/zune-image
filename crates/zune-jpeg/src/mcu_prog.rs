@@ -119,18 +119,22 @@ impl<'a> JpegDecoder<'a>
         self.finish_progressive_decoding(&block, mcu_width)
     }
 
-    #[rustfmt::skip]
-    #[allow(clippy::too_many_lines,clippy::cast_sign_loss)]
+    #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data(
-        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors>
     {
         self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 
-        if usize::from(self.num_scans) > self.input_colorspace.num_components() {
-            return Err(Format(format!("Number of scans {} cannot be greater than number of components, {}", self.num_scans, self.input_colorspace.num_components())));
+        if usize::from(self.num_scans) > self.input_colorspace.num_components()
+        {
+            return Err(Format(format!(
+                "Number of scans {} cannot be greater than number of components, {}",
+                self.num_scans,
+                self.input_colorspace.num_components()
+            )));
         }
 
         if self.num_scans == 1
@@ -146,8 +150,11 @@ impl<'a> JpegDecoder<'a>
 
             let k = self.z_order[0];
 
-            if k >= self.components.len() {
-                return Err(DecodeErrors::Format(format!("Cannot find component {k}, corrupt image")));
+            if k >= self.components.len()
+            {
+                return Err(DecodeErrors::Format(format!(
+                    "Cannot find component {k}, corrupt image"
+                )));
             }
 
             let (mcu_width, mcu_height);
@@ -158,7 +165,9 @@ impl<'a> JpegDecoder<'a>
                 // mcu's is the image dimensions divided by 8
                 mcu_width = ((self.info.width + 7) / 8) as usize;
                 mcu_height = ((self.info.height + 7) / 8) as usize;
-            } else {
+            }
+            else
+            {
                 // For other channels, in an interleaved mcu, number of MCU's
                 // are determined by some weird maths done in headers.rs->parse_sos()
                 mcu_width = self.mcu_x;
@@ -171,36 +180,63 @@ impl<'a> JpegDecoder<'a>
                 {
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
 
-
-                    let data: &mut [i16; 64] = buffer.get_mut(k)
-                        .unwrap().get_mut(start..start + 64)
-                        .unwrap().try_into().unwrap();
+                    let data: &mut [i16; 64] = buffer
+                        .get_mut(k)
+                        .unwrap()
+                        .get_mut(start..start + 64)
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
 
                     if self.spec_start == 0
                     {
                         let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
-                        let dc_table = self.dc_huffman_tables.get(pos)
-                            .ok_or(DecodeErrors::FormatStatic("No huffman table for DC component"))?
+                        let dc_table = self
+                            .dc_huffman_tables
+                            .get(pos)
+                            .ok_or(DecodeErrors::FormatStatic(
+                                "No huffman table for DC component"
+                            ))?
                             .as_ref()
-                            .ok_or(DecodeErrors::FormatStatic("Huffman table at index  {} not initialized"))?;
+                            .ok_or(DecodeErrors::FormatStatic(
+                                "Huffman table at index  {} not initialized"
+                            ))?;
 
                         let dc_pred = &mut self.components[k].dc_pred;
 
                         if self.succ_high == 0
                         {
                             // first scan for this mcu
-                            stream.decode_prog_dc_first(&mut self.stream, dc_table, &mut data[0], dc_pred)?;
-                        } else {
+                            stream.decode_prog_dc_first(
+                                &mut self.stream,
+                                dc_table,
+                                &mut data[0],
+                                dc_pred
+                            )?;
+                        }
+                        else
+                        {
                             // refining scans for this MCU
                             stream.decode_prog_dc_refine(&mut self.stream, &mut data[0])?;
                         }
-
-                    } else {
+                    }
+                    else
+                    {
                         let pos = self.components[k].ac_huff_table;
-                        let ac_table = self.ac_huffman_tables.get(pos)
-                            .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{pos}")))?
+                        let ac_table = self
+                            .ac_huffman_tables
+                            .get(pos)
+                            .ok_or_else(|| {
+                                DecodeErrors::Format(format!(
+                                    "No huffman table for component:{pos}"
+                                ))
+                            })?
                             .as_ref()
-                            .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {pos} not initialized")))?;
+                            .ok_or_else(|| {
+                                DecodeErrors::Format(format!(
+                                    "Huffman table at index  {pos} not initialized"
+                                ))
+                            })?;
 
                         if self.succ_high == 0
                         {
@@ -208,10 +244,14 @@ impl<'a> JpegDecoder<'a>
                             if stream.eob_run > 0
                             {
                                 stream.eob_run -= 1;
-                            } else {
+                            }
+                            else
+                            {
                                 stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
                             }
-                        } else {
+                        }
+                        else
+                        {
                             // refinement scan
                             stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
                         }
@@ -225,11 +265,13 @@ impl<'a> JpegDecoder<'a>
                     }
                 }
             }
-        } else {
+        }
+        else
+        {
             if self.spec_end != 0
             {
                 return Err(DecodeErrors::HuffmanDecode(
-                    "Can't merge dc and AC corrupt jpeg".to_string(),
+                    "Can't merge dc and AC corrupt jpeg".to_string()
                 ));
             }
             // process scan n elements in order
@@ -240,17 +282,32 @@ impl<'a> JpegDecoder<'a>
             {
                 let n = self.z_order[k as usize];
 
-                if n >= self.components.len() {
-                    return Err(DecodeErrors::Format(format!("Cannot find component {n}, corrupt image")));
+                if n >= self.components.len()
+                {
+                    return Err(DecodeErrors::Format(format!(
+                        "Cannot find component {n}, corrupt image"
+                    )));
                 }
 
                 let component = &mut self.components[n];
-                let _ = self.dc_huffman_tables.get(component.dc_huff_table)
-                    .ok_or_else(|| DecodeErrors::Format(format!("No huffman table for component:{}", component.dc_huff_table)))?
+                let _ = self
+                    .dc_huffman_tables
+                    .get(component.dc_huff_table)
+                    .ok_or_else(|| {
+                        DecodeErrors::Format(format!(
+                            "No huffman table for component:{}",
+                            component.dc_huff_table
+                        ))
+                    })?
                     .as_ref()
-                    .ok_or_else(|| DecodeErrors::Format(format!("Huffman table at index  {} not initialized", component.dc_huff_table)))?;
+                    .ok_or_else(|| {
+                        DecodeErrors::Format(format!(
+                            "Huffman table at index  {} not initialized",
+                            component.dc_huff_table
+                        ))
+                    })?;
             }
-                // Interleaved scan
+            // Interleaved scan
 
             // Components shall not be interleaved in progressive mode, except for
             // the DC coefficients in the first scan for each component of a progressive frame.
@@ -263,10 +320,14 @@ impl<'a> JpegDecoder<'a>
                     {
                         let n = self.z_order[k as usize];
                         let component = &mut self.components[n];
-                        let huff_table = self.dc_huffman_tables.get(component.dc_huff_table)
+                        let huff_table = self
+                            .dc_huffman_tables
+                            .get(component.dc_huff_table)
                             .ok_or(DecodeErrors::FormatStatic("No huffman table for component"))?
                             .as_ref()
-                            .ok_or(DecodeErrors::FormatStatic("Huffman table at index not initialized"))?;
+                            .ok_or(DecodeErrors::FormatStatic(
+                                "Huffman table at index not initialized"
+                            ))?;
 
                         for v_samp in 0..component.vertical_sample
                         {
@@ -280,8 +341,15 @@ impl<'a> JpegDecoder<'a>
 
                                 if self.succ_high == 0
                                 {
-                                    stream.decode_prog_dc_first(&mut self.stream, huff_table, data, &mut component.dc_pred)?;
-                                } else {
+                                    stream.decode_prog_dc_first(
+                                        &mut self.stream,
+                                        huff_table,
+                                        data,
+                                        &mut component.dc_pred
+                                    )?;
+                                }
+                                else
+                                {
                                     stream.decode_prog_dc_refine(&mut self.stream, data)?;
                                 }
                             }
@@ -291,7 +359,8 @@ impl<'a> JpegDecoder<'a>
                     // we get a higher number in the case this underflows
                     self.todo = self.todo.wrapping_sub(1);
                     // after every scan that's a mcu, count down restart markers.
-                    if self.todo == 0 {
+                    if self.todo == 0
+                    {
                         self.handle_rst(stream)?;
                     }
                 }
