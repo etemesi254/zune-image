@@ -46,14 +46,10 @@ use zune_core::colorspace::ColorSpace;
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2};
 #[cfg(feature = "x86")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub use crate::color_convert::sse::{ycbcr_to_rgb_sse, ycbcr_to_rgb_sse_16, ycbcr_to_rgba_sse_16};
 use crate::decoder::ColorConvert16Ptr;
 
 mod avx;
 mod scalar;
-mod sse;
-
 /// This function determines the best color-convert function to carry out
 /// based on the colorspace needed
 
@@ -76,20 +72,6 @@ pub fn choose_ycbcr_to_rgb_convert_func(
                 {
                     ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
                     ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
-                    _ => None
-                };
-            }
-            // try sse
-            else if is_x86_feature_detected!("sse4.1")
-            {
-                // I believe avx2 means sse4 is also available
-                // match colorspace
-                debug!("No support for avx2 switching to sse");
-                debug!("Using sse color convert functions");
-                return match type_need
-                {
-                    ColorSpace::RGB => Some(ycbcr_to_rgb_sse_16),
-                    ColorSpace::RGBA => Some(ycbcr_to_rgba_sse_16),
                     _ => None
                 };
             }
