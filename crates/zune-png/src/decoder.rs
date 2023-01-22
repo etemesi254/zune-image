@@ -862,6 +862,7 @@ impl<'a> PngDecoder<'a>
                         new_out[current] = scale * ((in_val >> shift) & 0x01);
                         current += 1;
                     }
+                    in_offset += 1;
                 }
             }
             else if info.depth == 2
@@ -896,6 +897,7 @@ impl<'a> PngDecoder<'a>
                         new_out[current] = scale * ((in_val >> shift) & 0x03);
                         current += 1;
                     }
+                    in_offset += 1;
                 }
             }
             else if info.depth == 4
@@ -929,6 +931,7 @@ impl<'a> PngDecoder<'a>
                         new_out[current] = scale * ((in_val >> shift) & 0x0f);
                         current += 1;
                     }
+                    in_offset += 1;
                 }
             }
         }
