@@ -24,7 +24,7 @@ let mut decoder = JpegDecoder::new( & data);
 let pixels = decoder.decode().unwrap();
 ```
 
-The decoder supports more manipulations via `ZuneJpegOptions`,
+The decoder supports more manipulations via `DecoderOptions`,
 see additional documentation in the library.
 
 ## Goals
@@ -56,6 +56,7 @@ in order of importance
 - [x] Fast color convert functions.
 - [x] Support for extended colorspaces like GrayScale and RGBA
 - [X] Single-threaded decoding.
+- [X] Support for four component JPEGs, and esoteric color schemes like CYMK
 
 # Crate Features
 
@@ -81,7 +82,7 @@ Platform specific intrinsics help get speed up intensive operations ensuring we 
 match [libjpeg-turbo] speeds but speeds are always +- 10 ms of this library.
 
 For more up-to-date benchmarks, see the online repo with
-benchmarks [here]:https://etemesi254.github.io/assets/criterion/report/index.html.
+benchmarks [here](https://etemesi254.github.io/assets/criterion/report/index.html.)
 
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo/

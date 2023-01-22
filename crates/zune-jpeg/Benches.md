@@ -1,7 +1,7 @@
 # Benchmarks of popular jpeg libraries
 
 Here I compare how long it takes popular JPEG decoders to decode the below 7680*4320 image
-of [Cutefish OS](https://en.cutefishos.com/) default wallpaper.
+of (now defunct ?) [Cutefish OS](https://en.cutefishos.com/) default wallpaper.
 ![img](benches/images/speed_bench.jpg)
 
 ## About benchmarks
@@ -57,45 +57,20 @@ To reproduce them
 
 # Finally benchmarks
 
-## x86_64
+[here]
 
-#### Machine Specs
+## Notes
 
-- Model name:          AMD Ryzen 5 4500U with Radeon Graphics
-- CPU family:          23
-- Model:               96
+Benchmarks are ran at least once a week to catch regressions early and
+are uploaded to Github pages.
 
+Machine specs can be found on the other [landing page]
 
-- Thread(s) per core:  1
-- Core(s) per socket:  6
+Benchmarks may not reflect real world usage(threads, other I/O machine bottlenecks)
 
+[landing page]:https://etemesi254.github.io/posts/Zune-Benchmarks/
 
-- L1d:                   192 KiB (6 instances)
-- L1i:                   192 KiB (6 instances)
-- L2:                    3 MiB (6 instances)
-- L3:                    8 MiB (2 instances)
-
-###     
-
-| Benchmark name                      | zune-jpeg | mozjpeg   | image-rs/jpeg-decoder |
-|-------------------------------------|-----------|-----------|-----------------------|
-| No sampling/Baseline JPEG Decoding  | 101.15 ms | 100.56 ms | 177.20 ms             |
-| Horizontal Sub sampling 2V1         | 93.501 ms | 92.514 ms | 123.50 ms             |
-| Vertical sub sampling 2V1           | 98.996 ms | 138.03 ms | 120.05 ms             |
-| HV sampling (2V2)                   | 96.982 ms | 89.644ms  | 107.61 ms             |
-| Grayscale                           | 54.420 ms | 43.094 ms | -                     |
-| Progressive 1V1                     | 312.68 ms | 302.02 ms | 468.63 ms             |
-| Progressive Horizontal sub-sampling | 235.19 ms | 214.50 ms | 352.94 ms             |
-| Progressive Vertical Sub Sampling   | 238.71 ms | 269.79 ms | 333.90 ms             |
-| Progressive HV sampling             | 224.46 ms | 265.36 ms | 350.00 ms             |
-| APPROX TOTAL                        | 1451 ms   | 1512 ms   | 2030 ms*              |
-
-* Without grayscale sum
-
-| Benchmark          | zune-jpeg |
-|--------------------|-----------|
-| allowed intrinsics | 107.03 ms |
-| no-intrinsics      | 132.43 ms |
+[here]:https://etemesi254.github.io/assets/criterion/report/index.html
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo
 
