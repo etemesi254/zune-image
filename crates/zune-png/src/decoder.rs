@@ -324,9 +324,7 @@ impl<'a> PngDecoder<'a>
             let mut img_width_bytes;
 
             img_width_bytes = usize::from(info.component) * info.width;
-            img_width_bytes *= usize::from(info.depth);
-            img_width_bytes += 7;
-            img_width_bytes /= 8;
+            img_width_bytes *= bytes;
 
             let image_len = img_width_bytes * info.height;
 
@@ -439,9 +437,7 @@ impl<'a> PngDecoder<'a>
             // then allocate a vector big enough to hold the largest pass
             let mut image_len = usize::from(info.color.num_components()) * max_width;
 
-            image_len *= usize::from(info.depth);
-            image_len += 7;
-            image_len /= 8;
+            image_len *= bytes;
             image_len += 1;
             image_len *= max_height;
 
@@ -813,7 +809,7 @@ impl<'a> PngDecoder<'a>
         // So just allocate a new byte, write to that and set it to be
         // out later on
         let info = &self.png_info;
-        let new_size = height * width * out_n;
+        let new_size = self.out.len();
         let mut new_out = vec![0; new_size];
 
         let mut in_offset = 0;
@@ -822,7 +818,15 @@ impl<'a> PngDecoder<'a>
 
         for _ in 0..height
         {
-            let scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
+            let mut scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
+
+            // for pLTE chunks with lower bit depths
+            // do not scale values just expand.
+            // The palette pass will expand values to the right pixels.
+            if self.seen_ptle && self.png_info.depth < 8
+            {
+                scale = 1;
+            }
 
             let mut k = width * out_n;
 
@@ -838,14 +842,14 @@ impl<'a> PngDecoder<'a>
 
                     let in_val = self.out[in_offset];
 
-                    cur[0] = 255 * ((in_val >> 7) & 0x01);
-                    cur[1] = 255 * ((in_val >> 6) & 0x01);
-                    cur[2] = 255 * ((in_val >> 5) & 0x01);
-                    cur[3] = 255 * ((in_val >> 4) & 0x01);
-                    cur[4] = 255 * ((in_val >> 3) & 0x01);
-                    cur[5] = 255 * ((in_val >> 2) & 0x01);
-                    cur[6] = 255 * ((in_val >> 1) & 0x01);
-                    cur[7] = 255 * ((in_val) & 0x01);
+                    cur[0] = scale * ((in_val >> 7) & 0x01);
+                    cur[1] = scale * ((in_val >> 6) & 0x01);
+                    cur[2] = scale * ((in_val >> 5) & 0x01);
+                    cur[3] = scale * ((in_val >> 4) & 0x01);
+                    cur[4] = scale * ((in_val >> 3) & 0x01);
+                    cur[5] = scale * ((in_val >> 2) & 0x01);
+                    cur[6] = scale * ((in_val >> 1) & 0x01);
+                    cur[7] = scale * ((in_val) & 0x01);
 
                     in_offset += 1;
                     current += 8;
