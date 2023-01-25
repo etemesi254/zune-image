@@ -127,9 +127,14 @@ impl<'a> PngDecoder<'a>
             trns_bytes: [0; 4],
             use_sse2,
             use_sse4,
-            confirm_crc: false,
+            confirm_crc: true,
             chunk_handler: default_chunk_handler
         }
+    }
+
+    pub fn confirm_checksums(&mut self, yes: bool)
+    {
+        self.confirm_crc = yes;
     }
 
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
@@ -470,6 +475,11 @@ impl<'a> PngDecoder<'a>
                 image_len += 1; // filter byte
                 image_len *= y;
 
+                if image_offset + image_len > deflate_data.len()
+                {
+                    return Err(PngErrors::GenericStatic("Too short data"));
+                }
+
                 let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
 
                 self.create_png_image_raw(deflate_slice, x, y)?;
@@ -538,6 +548,7 @@ impl<'a> PngDecoder<'a>
                     chunk[0] = old[0];
                     chunk[1] = old[1];
                     chunk[2] = old[2];
+
                     if r == old[0] && g == old[1] && b == old[2]
                     {
                         chunk[3] = 0;
@@ -1019,4 +1030,30 @@ impl<'a> PngDecoder<'a>
         }
         self.out = out;
     }
+}
+
+#[test]
+fn test_black_and_white()
+{
+    let path = "/home/caleb/jpeg/png/t.png";
+    let data = [
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 32, 0, 0, 0, 32, 16,
+        0, 0, 0, 1, 113, 134, 201, 253, 0, 0, 0, 4, 103, 65, 77, 65, 0, 1, 134, 160, 49, 232, 150,
+        95, 0, 0, 0, 226, 73, 68, 65, 84, 120, 156, 181, 145, 59, 14, 194, 48, 16, 68, 199, 73, 10,
+        168, 248, 93, 129, 195, 228, 48, 28, 143, 83, 164, 202, 13, 168, 144, 44, 129, 68, 179,
+        146, 11, 64, 67, 17, 18, 130, 35, 188, 73, 86, 104, 26, 107, 245, 252, 60, 90, 59, 160, 68,
+        137, 18, 217, 26, 77, 226, 195, 141, 216, 227, 128, 35, 30, 237, 228, 196, 247, 161, 70,
+        119, 112, 11, 236, 123, 217, 177, 211, 68, 104, 147, 21, 163, 65, 141, 26, 110, 251, 229,
+        184, 48, 91, 160, 31, 143, 244, 128, 140, 6, 62, 38, 198, 13, 92, 129, 237, 207, 108, 88,
+        197, 53, 226, 82, 131, 158, 147, 128, 27, 21, 192, 167, 13, 129, 10, 224, 211, 6, 178, 5,
+        220, 50, 177, 135, 39, 43, 100, 5, 126, 71, 32, 255, 5, 2, 21, 64, 52, 131, 21, 32, 21, 64,
+        52, 195, 223, 129, 64, 5, 16, 205, 240, 1, 92, 134, 229, 204, 92, 121, 198, 57, 253, 219,
+        169, 220, 181, 69, 107, 81, 215, 152, 14, 181, 45, 142, 125, 127, 166, 32, 167, 81, 32, 59,
+        6, 70, 65, 160, 81, 32, 182, 6, 119, 26, 5, 98, 107, 64, 26, 5, 241, 245, 137, 130, 124,
+        240, 254, 68, 193, 240, 186, 224, 5, 86, 152, 238, 137, 20, 255, 255, 254, 0, 0, 0, 0, 73,
+        69, 78, 68, 174, 66, 96, 130
+    ];
+    let mut decoder = PngDecoder::new(&data);
+    decoder.confirm_checksums(false);
+    let px = decoder.decode().unwrap();
 }
