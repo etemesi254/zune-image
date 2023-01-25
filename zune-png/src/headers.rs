@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::info;
 
 use crate::decoder::{PLTEEntry, PngChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
@@ -60,24 +60,7 @@ impl<'a> PngDecoder<'a>
         // verify colors plus bit depths
         match self.png_info.depth
         {
-            1 | 2 | 4 =>
-            {
-                if !matches!(self.png_info.color, PngColor::Luma | PngColor::LumaA)
-                {
-                    let err_msg = format!("Bit depth of {} only allows Greyscale or Indexed color types, but found {:?}",
-                                          self.png_info.depth, self.png_info.color);
-
-                    if self.options.strict_mode
-                    {
-                        return Err(PngErrors::Generic(err_msg));
-                    }
-                    else
-                    {
-                        error!("{}", err_msg);
-                    }
-                }
-            }
-            8 =>
+            1 | 2 | 4 | 8 =>
             { /*silent pass through since all color types support it */ }
             16 =>
             {
