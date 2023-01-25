@@ -14,6 +14,10 @@ use crate::filters::{
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
 
+/// A palette entry.
+///
+/// The alpha field is used if the image has a tRNS
+/// chunk and pLTE chunk.
 #[derive(Copy, Clone)]
 pub(crate) struct PLTEEntry
 {
@@ -47,6 +51,11 @@ pub(crate) struct PngChunk
     pub crc:        u32
 }
 
+/// Represents PNG information that can be extracted
+/// from a png file.
+///
+/// The properties are read from IHDR chunk,
+/// but may be changed by decoder during decoding
 #[derive(Default, Debug, Copy, Clone)]
 pub struct PngInfo
 {
@@ -59,6 +68,18 @@ pub struct PngInfo
     pub interlace_method: InterlaceMethod
 }
 
+/// A PNG decoder instance.
+///
+/// This is the main decoder for png image decoding.
+///
+/// Instantiate the decoder with either the [new](PngDecoder::new)
+/// or [new_with_options](PngDecoder::new_with_options) and
+/// using either  of the [`decode_raw`](PngDecoder::decode_raw) or
+/// [`decode`](PngDecoder::decode) will return pixels present in that image
+///
+/// # Note
+/// The decoder currently expands images less than 8 bits per pixels to 8 bits per pixel
+/// if this is not desired, then I'd suggest another png decoder
 pub struct PngDecoder<'a>
 {
     pub(crate) stream:        ZByteReader<'a>,
@@ -577,7 +598,7 @@ impl<'a> PngDecoder<'a>
 
         let info = &self.png_info;
 
-        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
+        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1) * 2;
 
         let mut new_out = vec![0; new_size];
         match info.color
