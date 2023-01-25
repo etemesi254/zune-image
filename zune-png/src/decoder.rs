@@ -1020,12 +1020,3 @@ impl<'a> PngDecoder<'a>
         self.out = out;
     }
 }
-
-// #[test]
-// fn test_black_and_white()
-// {
-//     let path = "/home/caleb/jpeg/png/t.png";
-//     let data = std::fs::read(path).unwrap();
-//     let mut decoder = PngDecoder::new(&data);
-//     let px = decoder.decode().unwrap();
-// }
