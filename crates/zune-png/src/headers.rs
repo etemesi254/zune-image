@@ -190,9 +190,12 @@ impl<'a> PngDecoder<'a>
                 {
                     return Err(PngErrors::GenericStatic("tRNS chunk before plTE"));
                 }
-                if self.palette.len() <= chunk.length
+                if self.palette.len() < chunk.length
                 {
-                    return Err(PngErrors::GenericStatic("tRNS chunk with too long entries"));
+                    return Err(PngErrors::Generic(format!(
+                        "tRNS chunk with too long entries {}",
+                        chunk.length
+                    )));
                 }
                 for i in 0..chunk.length
                 {
