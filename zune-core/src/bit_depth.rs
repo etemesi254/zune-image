@@ -55,7 +55,7 @@ pub enum BitDepth
 /// This represents the minimum rust type that
 /// can be used to represent image data, required
 /// by `Channel` struct in zune-image
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BitType
 {
     /// Images represented using a [`u8`] as their
