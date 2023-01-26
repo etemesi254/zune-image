@@ -176,7 +176,13 @@ impl Image
 
         out_pixel
     }
-
+    /// Convert image to a byte representation interleaving
+    /// image pixels where necessary
+    ///
+    /// # Note
+    /// For images using anything larger than 8 bit,
+    /// u8 as native endian is used
+    /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
     pub fn to_u8(&self) -> Vec<u8>
     {
         if self.depth == BitDepth::Eight
