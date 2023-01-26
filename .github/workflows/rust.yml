@@ -15,8 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace
+      - uses: actions/checkout@v3
+      - name: Build
+        run: cargo build --verbose
+      - name: Run tests
+        run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace
+      - name: Build with no features
+        run: cargo c --no-default-features --workspace
+
