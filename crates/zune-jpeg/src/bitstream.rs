@@ -38,7 +38,9 @@
 //! (or learn something cool)
 //!
 //! Knock yourself out.
-use std::cmp::min;
+use alloc::format;
+use alloc::string::ToString;
+use core::cmp::min;
 
 use zune_core::bytestream::ZByteReader;
 

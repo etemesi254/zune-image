@@ -85,7 +85,9 @@
     clippy::missing_errors_doc
 )]
 #![cfg_attr(not(feature = "x86"), forbid(unsafe_code))]
-
+#![cfg_attr(not(feature = "std"), no_std)]
+#![macro_use]
+extern crate alloc;
 extern crate core;
 #[macro_use]
 extern crate log;

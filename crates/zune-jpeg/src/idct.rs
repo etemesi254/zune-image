@@ -34,7 +34,7 @@ mod avx2;
 mod scalar;
 
 /// Choose an appropriate IDCT function
-
+#[cfg(feature = "std")]
 pub fn choose_idct_func(use_unsafe: bool) -> IDCTPtr
 {
     if use_unsafe
@@ -48,6 +48,35 @@ pub fn choose_idct_func(use_unsafe: bool) -> IDCTPtr
                 return crate::idct::avx2::idct_avx2;
             }
         }
+    }
+    debug!("Using scalar integer IDCT");
+    // use generic one
+    return idct_int;
+}
+
+// no std with no avx target compile, use the normal
+// scalar idct
+#[cfg(not(feature = "std"))]
+pub fn choose_idct_func(_use_unsafe: bool) -> IDCTPtr
+{
+    debug!("Using scalar integer IDCT");
+    // use generic one
+    return idct_int;
+}
+
+// no std but with avx, choose depending on `use_unsafe`
+#[cfg(all(
+    target_feature = "avx2",
+    not(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))
+))]
+#[cfg(feature = "std")]
+pub fn choose_idct_func(use_unsafe: bool) -> IDCTPtr
+{
+    if use_unsafe
+    {
+        debug!("Using AVX optimized integer IDCT");
+        // use avx one
+        return crate::idct::avx2::idct_avx2;
     }
     debug!("Using scalar integer IDCT");
     // use generic one

@@ -1,8 +1,8 @@
 //! Contains most common errors that may be encountered in decoding a Decoder
 //! image
 
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use alloc::string::String;
+use core::fmt::{Debug, Display, Formatter};
 
 use crate::decoder::MAX_DIMENSIONS;
 use crate::misc::{
@@ -50,7 +50,7 @@ impl From<&'static str> for DecodeErrors
 }
 impl Debug for DecodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match &self
         {
@@ -85,7 +85,7 @@ impl Debug for DecodeErrors
 
 impl Display for DecodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match &self
         {
@@ -118,24 +118,6 @@ impl Display for DecodeErrors
     }
 }
 
-impl Error for DecodeErrors {}
-
-impl From<Box<dyn Error>> for DecodeErrors
-{
-    fn from(err: Box<dyn Error>) -> Self
-    {
-        DecodeErrors::Format(format!("Error decoding an image:\n {err}"))
-    }
-}
-
-impl From<std::io::Error> for DecodeErrors
-{
-    fn from(err: std::io::Error) -> Self
-    {
-        DecodeErrors::Format(format!("Error decoding an image:\n {err}"))
-    }
-}
-
 /// Contains Unsupported/Yet-to-be supported Decoder image encoding types.
 #[derive(Eq, PartialEq, Copy, Clone)]
 
@@ -155,17 +137,17 @@ pub enum UnsupportedSchemes
 
 impl Debug for UnsupportedSchemes
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match &self
         {
             Self::ExtendedSequentialHuffman =>
             {
-                write!(f,"The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
+                write!(f, "The library cannot yet decode images encoded using Extended Sequential Huffman  encoding scheme yet.")
             }
             Self::LosslessHuffman =>
             {
-                write!(f,"The library cannot yet decode images encoded with Lossless Huffman encoding scheme")
+                write!(f, "The library cannot yet decode images encoded with Lossless Huffman encoding scheme")
             }
             Self::ExtendedSequentialDctArithmetic =>
             {

@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use core::convert::TryInto;
 
 /// Limit values to 0 and 255
 #[inline]

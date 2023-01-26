@@ -15,7 +15,9 @@ crate-type = ["cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 x86 = []
-default = ["x86"]
+std = []
+default = ["x86", "std"]
+
 
 [dependencies]
 log = "0.4.11" # logging facilities

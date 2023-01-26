@@ -11,7 +11,10 @@ Half of the complexity comes from the jpeg spec, because progressive decoding,
 is one hell of a ride.
 
 */
-use std::cmp::min;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use alloc::{format, vec};
+use core::cmp::min;
 
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;

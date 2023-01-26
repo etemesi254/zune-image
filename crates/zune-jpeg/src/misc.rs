@@ -1,8 +1,9 @@
 //!Miscellaneous stuff
 #![allow(dead_code)]
 
-use std::cmp::max;
-use std::fmt;
+use alloc::format;
+use core::cmp::max;
+use core::fmt;
 
 use zune_core::bytestream::ZByteReader;
 
