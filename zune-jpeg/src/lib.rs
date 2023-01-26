@@ -84,6 +84,8 @@
     clippy::missing_panics_doc,
     clippy::missing_errors_doc
 )]
+// no_std compatibility
+#![deny(clippy::std_instead_of_alloc, clippy::alloc_instead_of_core)]
 #![cfg_attr(not(feature = "x86"), forbid(unsafe_code))]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![macro_use]
