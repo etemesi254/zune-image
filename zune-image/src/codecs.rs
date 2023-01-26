@@ -12,13 +12,12 @@
 //! | Farbfeld|16 bit support|None|
 //!
 //!
+#![allow(unused_imports, unused_variables)]
+
 use zune_core::options::DecoderOptions;
 
-use crate::codecs::ppm::PPMEncoder;
-use crate::codecs::qoi::QoiEncoder;
-#[allow(unused_imports)]
-use crate::traits::DecoderTrait;
-use crate::traits::EncoderTrait;
+use crate::codecs;
+use crate::traits::{DecoderTrait, EncoderTrait};
 
 pub mod farbfeld;
 pub mod jpeg;
@@ -26,6 +25,7 @@ pub mod png;
 pub mod ppm;
 pub mod psd;
 pub mod qoi;
+
 /// All supported decoders
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SupportedDecoders
@@ -179,10 +179,33 @@ pub fn get_encoder_for_extension<P: AsRef<str>>(
 {
     match extension.as_ref()
     {
-        "qoi" => Some((SupportedEncoders::QOI, Box::new(QoiEncoder::new()))),
+        "qoi" =>
+        {
+            #[cfg(feature = "qoi")]
+            {
+                Some((
+                    SupportedEncoders::QOI,
+                    Box::new(codecs::qoi::QoiEncoder::new())
+                ))
+            }
+            #[cfg(not(feature = "qoi"))]
+            {
+                unimplemented!("Qoi feature is not included")
+            }
+        }
         "ppm" | "pam" | "pgm" | "pbm" =>
         {
-            Some((SupportedEncoders::PPM, Box::new(PPMEncoder::new())))
+            #[cfg(feature = "ppm")]
+            {
+                Some((
+                    SupportedEncoders::PPM,
+                    Box::new(codecs::ppm::PPMEncoder::new())
+                ))
+            }
+            #[cfg(not(feature = "ppm"))]
+            {
+                unimplemented!("PPM feature not included")
+            }
         }
         _ => None
     }
