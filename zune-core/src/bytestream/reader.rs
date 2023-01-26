@@ -1,7 +1,6 @@
-use std::cmp::min;
-use std::io::Read;
+use core::cmp::min;
 
-static ERROR_MSG: &str = "No more bytes";
+const ERROR_MSG: &str = "No more bytes";
 
 /// An encapsulation of a byte stream reader
 ///
@@ -17,7 +16,7 @@ static ERROR_MSG: &str = "No more bytes";
 /// eg by using [`has`] method or you are okay with returning zero if the underlying
 /// buffer has been completely read.
 ///
-/// [std::io::Cursor]: std::io::Cursor
+/// [std::io::Cursor]: https://doc.rust-lang.org/std/io/struct.Cursor.html
 /// [`has`]: Self::has
 pub struct ZByteReader<'a>
 {
@@ -37,6 +36,14 @@ enum Mode
 impl<'a> ZByteReader<'a>
 {
     /// Create a new instance of the byte stream
+    ///
+    /// Bytes will be read from the start of `buf`.
+    ///
+    /// `buf` is expected to live as long as this and
+    /// all references to it live
+    ///
+    /// # Returns
+    /// A byte reader which will pull bits from bye
     pub const fn new(buf: &'a [u8]) -> ZByteReader<'a>
     {
         ZByteReader {
@@ -45,6 +52,30 @@ impl<'a> ZByteReader<'a>
         }
     }
     /// Skip `num` bytes ahead of the stream.
+    ///
+    /// This bumps up the internal cursor wit a wrapping addition
+    /// The bytes between current position and `num` will be skipped
+    ///
+    /// # Arguments
+    /// `num`: How many bytes to skip
+    ///
+    /// # Note
+    /// This does not consider length of the buffer, so skipping more bytes
+    /// than possible and then reading bytes will return an error if using error variants
+    /// or zero if using non-error variants
+    ///
+    /// # Example
+    /// ```
+    /// use zune_core::bytestream::ZByteReader;
+    /// let zero_to_hundred:Vec<u8> = (0..100).collect();
+    /// let mut stream = ZByteReader::new(&zero_to_hundred);
+    /// // skip 37 bytes
+    /// stream.skip(37);
+    ///
+    /// assert_eq!(stream.get_u8(),37);
+    /// ```
+    ///
+    /// See [`rewind`](ZByteReader::rewind) for moving the internal cursor back
     pub fn skip(&mut self, num: usize)
     {
         // Can this overflow ??
@@ -263,11 +294,8 @@ impl<'a> ZByteReader<'a>
     {
         &self.stream[self.position..]
     }
-}
 
-impl<'a> Read for ZByteReader<'a>
-{
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, &'static str>
     {
         let buf_length = buf.len();
         let start = self.position;
@@ -279,6 +307,17 @@ impl<'a> Read for ZByteReader<'a>
         self.skip(diff);
 
         Ok(diff)
+    }
+
+    pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), &'static str>
+    {
+        let size = self.read(buf)?;
+
+        if size != buf.len()
+        {
+            return Err("Could not read into the whole buffer");
+        }
+        Ok(())
     }
 }
 

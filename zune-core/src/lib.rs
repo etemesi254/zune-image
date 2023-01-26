@@ -1,8 +1,21 @@
 //! Core routines shared by all libraries
 //!
 //! This crate provides a set of core routines shared
-//! by the decoders and encoders under `zune`
+//! by the decoders and encoders under `zune` umbrella
 //!
+//! It currently contains
+//!
+//! - A bytestream reader and writer with endian aware reads and writes
+//! - Colorspace and bit depth information shared by images
+//! - Image decoder and encoder options
+//! - A simple enum type to hold image decoding results.
+//!
+//! This library is `#[no_std]` with `alloc` feature needed for defining `Vec` 
+//! which we need for dcoding results
+#![no_std]
+#![macro_use]
+extern crate alloc;
+
 pub mod bit_depth;
 pub mod bytestream;
 pub mod colorspace;
