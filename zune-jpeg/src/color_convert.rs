@@ -45,7 +45,6 @@ use zune_core::colorspace::ColorSpace;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
 pub use crate::color_convert::avx::{ycbcr_to_rgb_avx2, ycbcr_to_rgba_avx2};
-#[cfg(feature = "x86")]
 use crate::decoder::ColorConvert16Ptr;
 
 mod avx;
