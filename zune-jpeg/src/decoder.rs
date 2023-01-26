@@ -1,6 +1,10 @@
 //! Main image logic.
 #![allow(clippy::doc_markdown)]
 
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use alloc::{format, vec};
+
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;

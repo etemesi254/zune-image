@@ -2,7 +2,9 @@
 //!
 //! This file deals with decoding header information in a jpeg file
 //!
-use std::io::Read;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 use zune_core::colorspace::ColorSpace;
 
@@ -477,7 +479,7 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
 fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
 where
     T: Default + Copy,
-    i32: std::convert::From<T>
+    i32: core::convert::From<T>
 {
     let mut output = [i32::default(); 64];
 

@@ -4,19 +4,18 @@
 #![allow(clippy::wildcard_imports)]
 
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use core::arch::x86_64::*;
+use core::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
-
 #[derive(Clone, Copy)]
 pub struct YmmRegister
 {
     /// An AVX register
-    pub(crate) mm256: __m256i,
+    pub(crate) mm256: __m256i
 }
 
 impl Add for YmmRegister
@@ -28,7 +27,7 @@ impl Add for YmmRegister
     {
         unsafe {
             return YmmRegister {
-                mm256: _mm256_add_epi32(self.mm256, rhs.mm256),
+                mm256: _mm256_add_epi32(self.mm256, rhs.mm256)
             };
         }
     }
@@ -45,7 +44,7 @@ impl Add<i32> for YmmRegister
             let tmp = _mm256_set1_epi32(rhs);
 
             return YmmRegister {
-                mm256: _mm256_add_epi32(self.mm256, tmp),
+                mm256: _mm256_add_epi32(self.mm256, tmp)
             };
         }
     }
@@ -60,7 +59,7 @@ impl Sub for YmmRegister
     {
         unsafe {
             return YmmRegister {
-                mm256: _mm256_sub_epi32(self.mm256, rhs.mm256),
+                mm256: _mm256_sub_epi32(self.mm256, rhs.mm256)
             };
         }
     }
@@ -99,7 +98,7 @@ impl Mul for YmmRegister
     {
         unsafe {
             YmmRegister {
-                mm256: _mm256_mullo_epi32(self.mm256, rhs.mm256),
+                mm256: _mm256_mullo_epi32(self.mm256, rhs.mm256)
             }
         }
     }
@@ -116,7 +115,7 @@ impl Mul<i32> for YmmRegister
             let tmp = _mm256_set1_epi32(rhs);
 
             YmmRegister {
-                mm256: _mm256_mullo_epi32(self.mm256, tmp),
+                mm256: _mm256_mullo_epi32(self.mm256, tmp)
             }
         }
     }
