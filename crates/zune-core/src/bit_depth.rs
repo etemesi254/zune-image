@@ -58,7 +58,11 @@ pub enum BitDepth
 #[derive(Copy, Clone, Debug)]
 pub enum BitType
 {
+    /// Images represented using a [`u8`] as their
+    /// underlying pixel storage
     Eight,
+    /// Images represented using a [`u16`] as their
+    /// underlying pixel storage.
     Sixteen
 }
 
@@ -90,7 +94,26 @@ impl BitDepth
         }
     }
 
-    /// Return the bit type that can be used to represent
+    /// Return the minimum number of bits that can be used to represent
+    /// each pixel in the image
+    ///
+    /// All bit depths below 8 return a bit type of `BitType::Eight`.
+    ///  and all those above 8 and below 16 return a bit type of `BitType::SixTeen`
+    ///
+    /// # Returns
+    /// An enum whose variants represent the minimum size for an unsigned integer
+    /// which can store the image pixels without overflow
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use zune_core::bit_depth::{BitDepth, BitType};
+    /// assert_eq!(BitDepth::Eight.bit_type(),BitType::Eight);
+    ///
+    /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::Sixteen);
+    /// ```
+    ///
+    /// See also [size_of](BitDepth::size_of)
     pub const fn bit_type(self) -> BitType
     {
         match self
@@ -99,7 +122,21 @@ impl BitDepth
             Self::Ten | Self::Twelve | Self::Sixteen => BitType::Sixteen
         }
     }
-
+    /// Get the number of bytes needed to store a specific bit depth
+    ///
+    ///  
+    /// # Example
+    /// For images less than or equal to 8 bits(1 byte), we can use a [`u8`] to store
+    /// the pixels, and a size_of [`u8`] is 1
+    ///
+    /// For images greater than 8  bits and less than 16 bits(2 bytes), we can use a [`u16`] to
+    /// store the pixels, a size_of [`u16`] is 2.
+    /// ```
+    /// use zune_core::bit_depth::BitDepth;
+    /// let depth = BitDepth::Twelve;
+    /// // greater 12 bits is greater than 8 and less than 16
+    /// assert_eq!(depth.size_of(),2);
+    /// ```
     pub const fn size_of(self) -> usize
     {
         match self

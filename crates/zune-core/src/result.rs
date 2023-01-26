@@ -1,5 +1,7 @@
 /// A simple enum that can hold either
 /// u8's or u16's used for decoding pixels
+use alloc::vec::Vec;
+
 pub enum DecodingResult
 {
     U8(Vec<u8>),

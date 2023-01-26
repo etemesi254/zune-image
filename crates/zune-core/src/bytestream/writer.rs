@@ -1,5 +1,4 @@
-use std::io::Write;
-use std::mem::size_of;
+use core::mem::size_of;
 
 enum Mode
 {
@@ -19,9 +18,9 @@ pub struct ZByteWriter<'a>
     position: usize
 }
 
-impl<'a> Write for ZByteWriter<'a>
+impl<'a> ZByteWriter<'a>
 {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>
+    pub fn write(&mut self, buf: &[u8]) -> Result<usize, &'static str>
     {
         let min = buf.len().min(self.bytes_left());
         // write
@@ -30,16 +29,16 @@ impl<'a> Write for ZByteWriter<'a>
 
         Ok(min)
     }
-
-    fn flush(&mut self) -> std::io::Result<()>
+    pub fn write_all(&mut self, data: &[u8]) -> Result<(), &'static str>
     {
-        // no need to do anything
+        let size = self.write(data)?;
+
+        if size != data.len()
+        {
+            return Err("Could not write the whole buffer");
+        }
         Ok(())
     }
-}
-
-impl<'a> ZByteWriter<'a>
-{
     /// Create a new writer for the stream
     pub fn new(data: &'a mut [u8]) -> ZByteWriter<'a>
     {
