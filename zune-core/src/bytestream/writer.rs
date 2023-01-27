@@ -20,6 +20,20 @@ pub struct ZByteWriter<'a>
 
 impl<'a> ZByteWriter<'a>
 {
+    /// Write bytes from the buf into the bytestream
+    /// and return how many bytes were written
+    ///
+    /// # Arguments
+    /// - `buf`: The bytes to be written to the bytestream
+    ///
+    /// # Returns
+    /// - `Ok(usize)` - Number of bytes written
+    /// This number may be less than `buf.len()` if the length of the buffer is greater
+    /// than the internal bytestream length
+    ///  
+    /// If you want to be sure that all bytes were written, see [`write_all`](Self::write_all)
+    ///
+    #[inline]
     pub fn write(&mut self, buf: &[u8]) -> Result<usize, &'static str>
     {
         let min = buf.len().min(self.bytes_left());
@@ -29,17 +43,31 @@ impl<'a> ZByteWriter<'a>
 
         Ok(min)
     }
-    pub fn write_all(&mut self, data: &[u8]) -> Result<(), &'static str>
+    /// Write all bytes from `buf` into the bytestream and return
+    /// and panic if not all bytes were written to the bytestream
+    ///
+    /// # Arguments
+    /// - `buf`: The bytes to be written into the bytestream
+    ///
+    ///# Returns
+    /// - `Ok(())`: Indicates all bytes were written into the bytestream
+    /// - `Err(&static str)`: In case all the bytes could not be written
+    /// to the stream
+    pub fn write_all(&mut self, buf: &[u8]) -> Result<(), &'static str>
     {
-        let size = self.write(data)?;
+        let size = self.write(buf)?;
 
-        if size != data.len()
+        if size != buf.len()
         {
             return Err("Could not write the whole buffer");
         }
         Ok(())
     }
-    /// Create a new writer for the stream
+    /// Create a new bytestream writer
+    /// Bytes are written from the start to the end and not assumptions
+    /// are made of the nature of the underlying stream
+    ///
+    /// # Arguments
     pub fn new(data: &'a mut [u8]) -> ZByteWriter<'a>
     {
         ZByteWriter {
@@ -149,10 +177,37 @@ impl<'a> ZByteWriter<'a>
 
     /// Return true whether or not we read to the end of the
     /// buffer and have no more bytes left.
+    ///
+    /// If this is true, all non error variants will silently discard the
+    /// byte and all error variants will return an error on writing a byte
+    /// if any write occurs
+    ///
+    ///
     #[inline]
     pub const fn eof(&self) -> bool
     {
         self.position >= self.len()
+    }
+
+    /// Rewind the position of the internal cursor back by `by` bytes
+    ///
+    /// The position saturates at zero
+    ///
+    /// # Example
+    /// ```
+    /// use zune_core::bytestream::ZByteWriter;
+    /// let bytes = &mut [1,2,4];
+    /// let mut stream = ZByteWriter::new(bytes);
+    /// stream.write_u16_be(23);
+    /// // now internal cursor is at position 2.
+    /// // lets rewind it
+    /// stream.rewind(usize::MAX);
+    /// assert_eq!(stream.position(),0);
+    /// ```
+    #[inline]
+    pub fn rewind(&mut self, by: usize)
+    {
+        self.position = self.position.saturating_sub(by);
     }
 }
 
