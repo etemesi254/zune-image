@@ -970,8 +970,6 @@ impl<'a> DeflateDecoder<'a>
                             fill_area.chunks_exact_mut(COPY_SIZE).for_each(|chunk| {
                                 chunk.copy_from_slice(rep_byte);
                             });
-                            // bump the current position now that the area is filled
-                            current_position += sloppy_fill_length;
                         }
                         else if offset <= FASTCOPY_BYTES
                             && current_position + offset < dest_offset
