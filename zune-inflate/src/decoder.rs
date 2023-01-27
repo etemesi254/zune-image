@@ -958,8 +958,8 @@ impl<'a> DeflateDecoder<'a>
                         {
                             // RLE match, repeat the byte in batches of 8
                             const COPY_SIZE: usize = 8;
-                            let rep_num = u64::from(out_block[src_offset]) * 0x0101010101010101;
-                            let rep_byte = &rep_num.to_ne_bytes();
+                            let byte_to_repeat = out_block[src_offset];
+                            let slice_to_repeat = [byte_to_repeat; COPY_SIZE];
                             // compute much should be filled with this value
                             let fill_length = usize::saturating_sub(dest_offset, current_position);
                             // round the fill length up to increments of COPY_SIZE
@@ -968,7 +968,7 @@ impl<'a> DeflateDecoder<'a>
                             let fill_area = &mut out_block[current_position..][..sloppy_fill_length];
                             // perform the actual fill
                             fill_area.chunks_exact_mut(COPY_SIZE).for_each(|chunk| {
-                                chunk.copy_from_slice(rep_byte);
+                                chunk.copy_from_slice(&slice_to_repeat);
                             });
                         }
                         else if offset <= FASTCOPY_BYTES
