@@ -11,7 +11,7 @@
 //! - A simple enum type to hold image decoding results.
 //!
 //! This library is `#[no_std]` with `alloc` feature needed for defining `Vec` 
-//! which we need for dcoding results
+//! which we need for storing decoded  bytes.
 #![no_std]
 #![macro_use]
 extern crate alloc;
