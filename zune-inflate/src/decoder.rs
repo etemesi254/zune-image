@@ -956,21 +956,22 @@ impl<'a> DeflateDecoder<'a>
 
                         if offset == 1
                         {
-                            // RLE match, copy it in groups of 8
+                            // RLE match, repeat the byte in batches of 8
+                            const COPY_SIZE: usize = 8;
                             let rep_num = u64::from(out_block[src_offset]) * 0x0101010101010101;
                             let rep_byte = &rep_num.to_ne_bytes();
-
-                            loop
-                            {
-                                fixed_copy::<8>(rep_byte, &mut out_block, 0, current_position);
-
-                                current_position += 8;
-
-                                if current_position > dest_offset
-                                {
-                                    break;
-                                }
-                            }
+                            // compute much should be filled with this value
+                            let fill_length = usize::saturating_sub(dest_offset, current_position);
+                            // round the fill length up to increments of COPY_SIZE
+                            // optimized solution for powers of two from https://stackoverflow.com/a/26379140/585725
+                            let sloppy_fill_length = (fill_length + COPY_SIZE - 1) & !(COPY_SIZE - 1);
+                            let fill_area = &mut out_block[current_position..][..sloppy_fill_length];
+                            // perform the actual fill
+                            fill_area.chunks_exact_mut(COPY_SIZE).for_each(|chunk| {
+                                chunk.copy_from_slice(rep_byte);
+                            });
+                            // bump the current position now that the area is filled
+                            current_position += sloppy_fill_length;
                         }
                         else if offset <= FASTCOPY_BYTES
                             && current_position + offset < dest_offset
