@@ -234,6 +234,21 @@ impl<'a> JpegDecoder<'a>
             warn!("Headers decoded!");
             return Ok(());
         }
+        // match output colorspace here
+        // we know this will only be called once per image
+        // so makes sense
+        // We only care for ycbcr to rgb/rgba here
+        // in case one is using another colorspace.
+        // May god help you
+        if self.options.out_colorspace == ColorSpace::RGB
+            || self.options.out_colorspace == ColorSpace::RGBA
+        {
+            self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
+                self.options.out_colorspace,
+                self.options.use_unsafe
+            )
+            .unwrap();
+        }
         // First two bytes should be jpeg soi marker
         let magic_bytes = self.stream.get_u16_be_err()?;
 
