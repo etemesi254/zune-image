@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, error};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -380,7 +380,11 @@ impl<'a> PngDecoder<'a>
                 * usize::from(self.png_info.color.num_components())
                 * bytes;
         }
-        if self.seen_ptle
+        // only un-palettize images if color type type is indexed
+        // palette entries for true color and true color with alpha
+        // are a suggestion for image viewers.
+        // See https://www.w3.org/TR/2003/REC-PNG-20031110/#11PLTE
+        if self.seen_ptle && self.png_info.color == PngColor::Palette
         {
             if self.palette.is_empty()
             {
