@@ -125,6 +125,10 @@ pub fn handle_paeth(
             {
                 return crate::filters::sse4::de_filter_paeth4_sse41(prev_row, raw, current);
             }
+            if components == 6
+            {
+                return crate::filters::sse4::de_filter_paeth6_sse41(prev_row, raw, current);
+            }
             if components == 8
             {
                 return crate::filters::sse4::de_filter_paeth8_sse41(prev_row, raw, current);
