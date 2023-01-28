@@ -27,7 +27,6 @@ pub fn bilinear_impl<T>(
     let x_ratio = ((in_width - 1) as f64) / ((out_width - 1) as f64);
     let y_ratio = ((in_height - 1) as f64) / ((out_height - 1) as f64);
 
-    dbg!(x_ratio, y_ratio);
     for i in 0..out_height
     {
         let i_f64 = i as f64;
@@ -43,9 +42,6 @@ pub fn bilinear_impl<T>(
         let x_top = &in_image[(y_l * in_width as f64) as usize..];
         let x_bottom = &in_image[(y_h * in_width as f64) as usize..];
 
-        dbg!(y_l * in_width as f64);
-        dbg!(y_h * in_width as f64);
-        println!();
         for j in 0..out_width
         {
             let xl_floor = x_l.floor();
