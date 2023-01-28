@@ -6,7 +6,7 @@ on:
     paths:
       - 'zune-inflate/**'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" ,"dev" ]
     paths:
       - 'zune-inflate/**'
   schedule:
