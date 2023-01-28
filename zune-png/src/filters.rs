@@ -53,6 +53,7 @@ pub fn handle_avg(
         // optimizer hint to tell the compiler that we don't see this ever happening
         return;
     }
+
     for i in components..end
     {
         let a = u16::from(current[i - components]);
@@ -123,6 +124,10 @@ pub fn handle_paeth(
             if components == 4
             {
                 return crate::filters::sse4::de_filter_paeth4_sse41(prev_row, raw, current);
+            }
+            if components == 8
+            {
+                return crate::filters::sse4::de_filter_paeth8_sse41(prev_row, raw, current);
             }
         }
     }
