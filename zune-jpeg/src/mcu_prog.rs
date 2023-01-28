@@ -64,7 +64,7 @@ impl<'a> JpegDecoder<'a>
 
         mcu_width *= 64;
 
-        if self.input_colorspace.num_components() >= self.components.len() {
+        if self.input_colorspace.num_components() > self.components.len() {
             let msg = format!(" Expected {} number of components but found {}", self.input_colorspace.num_components(), self.components.len());
             return Err(DecodeErrors::Format(msg));
         }
