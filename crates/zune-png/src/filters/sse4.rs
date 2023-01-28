@@ -159,12 +159,16 @@ unsafe fn store3(x: &mut [u8; 3], v: __m128i)
     x[0..3].copy_from_slice(&tmp_x[0..3]);
 }
 
+#[target_feature(enable = "sse2")]
+#[inline]
 unsafe fn store4(x: &mut [u8; 4], v: __m128i)
 {
     let tmp = _mm_cvtsi128_si32(v);
     x.copy_from_slice(&tmp.to_le_bytes());
 }
 
+#[target_feature(enable = "sse2")]
+#[inline]
 unsafe fn load3(x: &[u8; 3]) -> __m128i
 {
     let mut tmp_bytes = [0_u8; 4];
@@ -172,6 +176,26 @@ unsafe fn load3(x: &[u8; 3]) -> __m128i
 
     let tmp = i32::from_le_bytes(tmp_bytes);
     _mm_cvtsi32_si128(tmp)
+}
+
+#[target_feature(enable = "sse2")]
+#[inline]
+unsafe fn load6(x: &[u8; 6]) -> __m128i
+{
+    let mut tmp_bytes = [0_u8; 8];
+    tmp_bytes[0..6].copy_from_slice(x);
+
+    let tmp = i64::from_le_bytes(tmp_bytes);
+    _mm_cvtsi64_si128(tmp)
+}
+
+#[target_feature(enable = "sse2")]
+#[inline]
+unsafe fn store6(x: &mut [u8; 6], v: __m128i)
+{
+    let tmp = _mm_cvtsi128_si64x(v);
+    let tmp_x = tmp.to_le_bytes();
+    x[0..6].copy_from_slice(&tmp_x[0..6]);
 }
 
 unsafe fn load4(x: &[u8; 4]) -> __m128i
@@ -240,6 +264,73 @@ unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i
 
     // SSE 2
     //return _mm_or_si128(_mm_and_si128(c, t), _mm_andnot_si128(c, e));
+}
+
+#[allow(unused_assignments)]
+#[target_feature(enable = "sse4.1")]
+unsafe fn de_filter_paeth6_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+{
+    /* Paeth tries to predict pixel d using the pixel to the left of it, a,
+     * and two pixels from the previous row, b and c:
+     *   prev: c b
+     *   row:  a d
+     * The Paeth function predicts d to be whichever of a, b, or c is nearest to
+     * p=a+b-c.
+     *
+     * The first pixel has no left context, and so uses an Up filter, p = b.
+     * This works naturally with our main loop's p = a+b-c if we force a and c
+     * to zero.
+     * Here we zero b and d, which become c and a respectively at the start of
+     * the loop.
+     */
+
+    let zero = _mm_setzero_si128();
+
+    let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
+
+    let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
+
+    for ((prev, raw), current_row) in prev_row
+        .chunks_exact(6)
+        .zip(raw.chunks_exact(6))
+        .zip(current.chunks_exact_mut(6))
+    {
+        /*
+         * It's easiest to do this math (particularly, deal with pc) with 16-bit
+         * intermediates.
+         */
+        c = b;
+        b = _mm_unpacklo_epi8(load6(prev.try_into().unwrap()), zero);
+        a = d;
+        d = _mm_unpacklo_epi8(load6(raw.try_into().unwrap()), zero);
+
+        /* (p-a) == (a+b-c - a) == (b-c) */
+        pa = _mm_sub_epi16(b, c);
+
+        /* (p-b) == (a+b-c - b) == (a-c) */
+        pb = _mm_sub_epi16(a, c);
+
+        /* (p-c) == (a+b-c - c) == (a+b-c-c) == (b-c)+(a-c) */
+        pc = _mm_add_epi16(pa, pb);
+
+        pa = _mm_abs_epi16(pa); /* |p-a| */
+        pb = _mm_abs_epi16(pb); /* |p-b| */
+        pc = _mm_abs_epi16(pc); /* |p-c| */
+
+        smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
+
+        /* Paeth breaks ties favoring a over b over c. */
+        nearest = if_then_else(
+            _mm_cmpeq_epi16(smallest, pa),
+            a,
+            if_then_else(_mm_cmpeq_epi16(smallest, pb), b, c)
+        );
+
+        /* Note `_epi8`: we need addition to wrap modulo 255. */
+        d = _mm_add_epi8(d, nearest);
+
+        store6(current_row.try_into().unwrap(), _mm_packus_epi16(d, d));
+    }
 }
 
 #[allow(unused_assignments)]
@@ -433,6 +524,18 @@ pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
         }
 
         de_filter_paeth4_sse41_inner(prev_row, raw, current);
+    }
+}
+
+pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+{
+    unsafe {
+        if !is_x86_feature_detected!("sse4.1")
+        {
+            panic!("SSE feature not found, this is unsound,please file an issue")
+        }
+
+        de_filter_paeth6_sse41_inner(prev_row, raw, current);
     }
 }
 
