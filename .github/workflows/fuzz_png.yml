@@ -5,6 +5,11 @@ on:
     branches: [ "main","dev" ]
     paths:
       - 'zune-png/**'
+  pull_request:
+    branches: [ "main" ,"dev" ]
+    paths:
+      - 'zune-png/**'
+
   schedule:
     - cron: '0 0 * * *'
 
