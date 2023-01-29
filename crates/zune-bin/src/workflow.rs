@@ -99,6 +99,10 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 error!("Unknown or unsupported format {:?}", out_file)
             }
         }
+        else
+        {
+            error!("Could not determine extension from {:?}", out_file)
+        }
 
         workflow.advance_to_end()?;
         let results = workflow.get_results();
