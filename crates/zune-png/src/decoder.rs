@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::debug;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
