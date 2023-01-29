@@ -26,11 +26,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
 
 fn decode_zune(data: &[u8]) -> Vec<u8>
 {
-    zune_png::PngDecoder::new(data)
-        .decode()
-        .unwrap()
-        .u8()
-        .unwrap()
+    zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
 
 fn test_decoding<P: AsRef<Path>>(path: P)
