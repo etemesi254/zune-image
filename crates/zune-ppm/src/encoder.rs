@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::io::{Error, Write};
+use std::io::Error;
 
 use zune_core::bit_depth::BitType;
 use zune_core::bytestream::ZByteWriter;
