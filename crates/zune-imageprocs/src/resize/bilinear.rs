@@ -29,42 +29,33 @@ pub fn bilinear_impl<T>(
 
     for i in 0..out_height
     {
-        let i_f64 = i as f64;
-        let y_l = (y_ratio * i_f64).floor();
-        let y_h = (y_ratio * i_f64).ceil();
-
-        let mut x_l: f64 = 0.0;
-
-        let y_weight = (y_ratio * i_f64) - y_l;
-        let y_weight_sub = 1.0 - y_weight;
-        let y_weight_mul = y_weight * y_weight_sub;
-
-        let x_top = &in_image[(y_l * in_width as f64) as usize..];
-        let x_bottom = &in_image[(y_h * in_width as f64) as usize..];
-
+        let y_l = (y_ratio * i as f64).floor();
+        let y_h = (y_ratio * i as f64).ceil();
+        let y_weight = (y_ratio * i as f64) - y_l;
+        let y_l = y_l as usize;
+        let y_h = y_h as usize;
+        let y_l_stride = y_l * in_height;
+        let y_h_stride = y_h * in_height;
         for j in 0..out_width
         {
-            let xl_floor = x_l.floor();
-            let x_weight = x_l - xl_floor;
+            let x_l = (x_ratio * j as f64).floor();
+            let x_h = (x_ratio * j as f64).ceil();
+            let x_weight = (x_ratio * j as f64) - x_l;
 
-            let xc_usize = x_l.ceil() as usize;
+            let x_l = x_l as usize;
+            let x_h = x_h as usize;
 
-            let xf_usize = xl_floor as usize;
+            let a = f64::from(in_image[y_l_stride + x_l]);
+            let b = f64::from(in_image[y_l_stride + x_h]);
+            let c = f64::from(in_image[y_h_stride + x_l]);
+            let d = f64::from(in_image[y_h_stride + x_h]);
 
-            let a = f64::from(x_top[xf_usize]);
-            let b = f64::from(x_top[xc_usize]);
-
-            let c = f64::from(x_bottom[xf_usize]);
-            let d = f64::from(x_bottom[xc_usize]);
-
-            let pixel = a * (1.0 - x_weight) * y_weight_sub
-                + b * x_weight * y_weight_sub
-                + c * y_weight_mul
+            let pixel = a * (1.0 - x_weight) * (1.0 - y_weight)
+                + b * x_weight * (1.0 - y_weight)
+                + c * y_weight * (1.0 - x_weight)
                 + d * x_weight * y_weight;
 
             out_image[i * out_width + j] = T::from_f64(pixel);
-
-            x_l += x_ratio;
         }
     }
 }
