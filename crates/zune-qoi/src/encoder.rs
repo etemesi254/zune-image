@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::{ColorSpace, ColorTransferCharacteristics};
 use zune_core::options::EncoderOptions;
