@@ -641,11 +641,11 @@ impl BitStream
                         {
                             if *coefficient >= 0
                             {
-                                *coefficient += bit;
+                                *coefficient = coefficient.wrapping_add(bit);
                             }
                             else
                             {
-                                *coefficient -= bit;
+                                *coefficient = coefficient.wrapping_sub(bit);
                             }
                         }
                     }
