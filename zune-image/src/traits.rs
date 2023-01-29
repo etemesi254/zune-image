@@ -132,34 +132,50 @@ pub trait OperationsTrait
                 self.supported_colorspaces()
             ));
         }
-        // Ensure dimensions are correct
-        let components = image.get_channels_mut(true).len();
+        confirm_invariants(image)?;
 
-        if components != image.get_colorspace().num_components()
-        {
-            return Err(ImgErrors::GenericString(
-                format!("Components mismatch, expected {} channels since image format is {:?}, but found {}",
-                        image.get_colorspace().num_components(),
-                        image.get_colorspace(), components)));
-        }
-        let (width, height) = image.get_dimensions();
-        // check the number of channels match the length
+        self.execute_impl(image)
+            .map_err(<ImgOperationsErrors as Into<ImgErrors>>::into)?;
 
-        let expected_length = image.get_depth().size_of() * width * height;
+        confirm_invariants(image)?;
 
-        for channel in image.get_channels_ref(true)
-        {
-            if channel.len() != expected_length
-            {
-                return Err(ImgErrors::DimensionsMisMatch(
-                    expected_length,
-                    channel.len()
-                ));
-            }
-        }
-
-        self.execute_impl(image).map_err(|x| x.into())
+        Ok(())
     }
+}
+
+/// Confirm that image invariants have been respected across image
+/// operations
+fn confirm_invariants(image: &Image) -> Result<(), ImgErrors>
+{
+    // Ensure dimensions are correct
+    let components = image.get_channels_ref(true).len();
+
+    if components != image.get_colorspace().num_components()
+    {
+        return Err(ImgErrors::GenericString(format!(
+            "Components mismatch, expected {} channels since image format is {:?}, but found {}",
+            image.get_colorspace().num_components(),
+            image.get_colorspace(),
+            components
+        )));
+    }
+    let (width, height) = image.get_dimensions();
+    // check the number of channels match the length
+
+    let expected_length = image.get_depth().size_of() * width * height;
+
+    for channel in image.get_channels_ref(true)
+    {
+        if channel.len() != expected_length
+        {
+            return Err(ImgErrors::DimensionsMisMatch(
+                expected_length,
+                channel.len()
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 pub trait EncoderTrait
