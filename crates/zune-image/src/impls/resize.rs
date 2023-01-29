@@ -58,6 +58,7 @@ impl OperationsTrait for Resize
                         self.new_width,
                         self.new_height
                     );
+                    *old_channel = new_channel;
                 }
             }
             BitType::Sixteen =>
@@ -75,6 +76,7 @@ impl OperationsTrait for Resize
                         self.new_width,
                         self.new_height
                     );
+                    *old_channel = new_channel;
                 }
             }
         }
