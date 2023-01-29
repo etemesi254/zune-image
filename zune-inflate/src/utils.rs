@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 /// make_decode_table_entry() creates a decode table entry for the given symbol
 /// by combining the static part 'decode_results[sym]' with the dynamic part
 /// 'len', which is the remaining codeword length (the codeword length for main
@@ -51,54 +53,30 @@ pub fn fixed_copy_within<const SIZE: usize>(dest: &mut [u8], src_offset: usize, 
 #[inline(always)]
 pub fn copy_rep_matches(dest: &mut [u8], offset: usize, dest_offset: usize, length: usize)
 {
-    // REP MATCHES (LITERAL + REP MATCH).
-    //
-    // As in most LZ77-based compressors, the length can be larger than the offset,
-    // yielding a form of run-length encoding (RLE). For instance,
-    // "xababab" could be encoded as
-    //
-    //   <literal: "xab"> <copy: offset=2 length=4>
-    //
-    // To decode this, we want to always bump up dest_src by 1 on every 1 byte copy.
-    //
-    //
-    // Iteration 1.
-    // ┌───────────────────────────┐ ┌────────┐
-    // │dest_src(len 3)            │ │dest_ptr│
-    // └───────────────────────────┘ └────────┘
-    //                               ┌───────────────┐
-    //                               │ copy one byte │
-    //                               └───────────────┘
-    // Iteration 2.
-    // ┌─────────────────────────────────────────────┐ ┌────────┐
-    // │dest_src    (len 4)                          │ │dest_ptr│
-    // └─────────────────────────────────────────────┘ └────────┘
-    //                                                  ┌───────────────┐
-    //                                                  │ copy one byte │
-    //                                                  └───────────────┘
-    // etc. etc.
-    //
-    // I.e after every byte copy of a match bump dest_src so that a future copy operation
-    // will contain the byte.
-    //
-    // E.g for the example above
-    //
-    //  dest_src   │
-    //─────────────│───────────────
-    // [x{a}b]     │  [copy at = 1]
-    // [xa{b}a]    │  [copy at = 2]
-    // [xab{a}b]   │  [copy at = 3]
-    // [xaba{b}a]  │  [copy at = 4]
+    // This is a slightly complicated rep match copier that has
+    // no bounds check.
 
-    for i in 0..length
+    // The only invariant we need to uphold is dest[dest_offset] should
+    // copy from dest[offset]
+    // i.e in the first iteration, the first entry in the window will point
+    // to dest[offset] and the
+    // last entry will point to dest[dest_offset]
+    // it's easy to prove dest[offset] since we take our slice
+    // from offset.
+    // but proving dest[dest_offset] is trickier
+    // If we were at offset, to get to dest_offset, we could
+    // 1. Get difference between dest_offset and offset
+    // 2. Add that difference to offset.
+    //
+
+    let diff = dest_offset - offset + 1;
+
+    // note
+    for window in Cell::from_mut(&mut dest[offset..dest_offset + length + 2])
+        .as_slice_of_cells()
+        .windows(diff)
     {
-        // Safety: We assert the worst possible length is in place
-        // before the loop for both src and dest.
-        //
-        // Reason: This is perf sensitive, we can't afford such slowdowns
-        // and it activates optimizations i.e see
-        let byte = dest[offset + i];
-        dest[dest_offset + i] = byte;
+        window.last().unwrap().set(window[0].get());
     }
 }
 
