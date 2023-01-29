@@ -102,6 +102,16 @@ impl<'a> JpegDecoder<'a>
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
+        if self.input_colorspace.num_components() > self.components.len()
+        {
+            let msg = format!(
+                " Expected {} number of components but found {}",
+                self.input_colorspace.num_components(),
+                self.components.len()
+            );
+            return Err(DecodeErrors::Format(msg));
+        }
+
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
             if self.options.strict_mode
