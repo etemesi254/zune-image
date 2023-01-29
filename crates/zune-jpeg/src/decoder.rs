@@ -624,14 +624,19 @@ impl<'a> JpegDecoder<'a>
                 return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width, comp.width_stride)));
             }
 
-            if (comp.horizontal_sample != 1 || comp.vertical_sample != 1)
-                && comp.component_id != ComponentID::Y
-            {
-                return Err(DecodeErrors::Format(format!(
-                    "Invalid component sample for component {:?}, expected (1,1), found ({},{})",
-                    comp.component_id, comp.vertical_sample, comp.horizontal_sample
-                )));
-            }
+            // this was usually there until it was reported that Cb and Cr
+            //
+            // may have different sampling factors ??.
+            // Ideally those images aren't right, but edge cases
+            //
+            // if (comp.horizontal_sample != 1 || comp.vertical_sample != 1)
+            //     && comp.component_id != ComponentID::Y
+            // {
+            //     return Err(DecodeErrors::Format(format!(
+            //         "Invalid component sample for component {:?}, expected (1,1), found ({},{})",
+            //         comp.component_id, comp.vertical_sample, comp.horizontal_sample
+            //     )));
+            // }
         }
 
         Ok(())
