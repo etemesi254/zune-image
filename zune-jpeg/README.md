@@ -11,7 +11,7 @@ and an ability to add options to influence decoding
 
 ### Example
 
-```rust
+```Rust
 // Import the library
 use zune_jpeg::JpegDecoder;
 use std::fs::read;
@@ -57,15 +57,24 @@ in order of importance
 - [x] Support for extended colorspaces like GrayScale and RGBA
 - [X] Single-threaded decoding.
 - [X] Support for four component JPEGs, and esoteric color schemes like CYMK
+- [X] Support for `no_std`
 
-# Crate Features
+## Crate Features
 
 | feature | on  | Capabilities                                                                                |
 |---------|-----|---------------------------------------------------------------------------------------------|
 | `x86`   | yes | Enables `x86` specific instructions, specifically `avx` and `sse` for accelerated decoding. |
+| `std`   | yes | Enable linking to the `std` crate                                                           |
 
 Note that the `x86` features are automatically disabled on platforms that aren't x86 during compile
 time hence there is no need to disable them explicitly if you are targeting such a platform.
+
+## Using in a `no_std` environment
+
+The crate can be used in a `no_std` environment with the `alloc` feature.
+
+But one is required to link to a working allocator for whatever environment the decoder
+will be running on
 
 ## Debug vs release
 
