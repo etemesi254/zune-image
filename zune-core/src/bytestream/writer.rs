@@ -209,6 +209,15 @@ impl<'a> ZByteWriter<'a>
     {
         self.position = self.position.saturating_sub(by);
     }
+    /// Move the internal cursor forward some bytes
+    ///
+    ///
+    /// This saturates at maximum value of usize in your platform.
+    #[inline]
+    pub fn skip(&mut self, by: usize)
+    {
+        self.position = self.position.saturating_add(by);
+    }
 }
 
 macro_rules! write_single_type {
