@@ -66,7 +66,7 @@ pub enum ColorCharacteristics
     /// The default gamma value is 2.2 but for
     /// decoders that allow specifying gamma values,e.g PNG,
     /// the gamma value becomes the specified value by the decoder
-    sRGB(f32),
+    sRGB,
     /// Linear transfer characteristics
     /// The image is in linear colorspace
     Linear
