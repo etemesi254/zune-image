@@ -27,7 +27,7 @@ impl Default for ImageMetadata
     {
         ImageMetadata {
             color_trc:     ColorCharacteristics::sRGB,
-            default_gamma: 2.2,
+            default_gamma: 1.0 / 2.2,
             width:         0,
             height:        0,
             colorspace:    ColorSpace::Unknown,
