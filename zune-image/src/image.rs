@@ -14,12 +14,13 @@
 use std::mem::size_of;
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_imageprocs::traits::NumOps;
 
 use crate::channel::Channel;
 use crate::errors::ImgErrors;
 use crate::impls::depth::Depth;
+use crate::metadata::ImageMetadata;
 use crate::traits::{OperationsTrait, ZuneInts};
 
 /// Maximum supported color channels
@@ -29,11 +30,8 @@ pub const MAX_CHANNELS: usize = 4;
 #[derive(Clone)]
 pub struct Image
 {
-    pub(crate) channels:   Vec<Channel>,
-    pub(crate) depth:      BitDepth,
-    pub(crate) width:      usize,
-    pub(crate) height:     usize,
-    pub(crate) colorspace: ColorSpace
+    pub(crate) channels: Vec<Channel>,
+    pub(crate) metadata: ImageMetadata
 }
 
 impl Image
@@ -44,39 +42,68 @@ impl Image
         colorspace: ColorSpace
     ) -> Image
     {
+        // setup metadata information
+        let mut meta = ImageMetadata::default();
+
+        meta.set_dimensions(width, height);
+        meta.set_depth(depth);
+        meta.set_colorspace(colorspace);
+
         Image {
             channels,
-            depth,
-            width,
-            height,
-            colorspace
+            metadata: meta
         }
     }
     /// Get image dimensions as a tuple of (width,height)
     pub const fn get_dimensions(&self) -> (usize, usize)
     {
-        (self.width, self.height)
+        self.metadata.get_dimensions()
     }
+
     /// Get the image depth of this image
     pub const fn get_depth(&self) -> BitDepth
     {
-        self.depth
+        self.metadata.get_depth()
+    }
+    /// Set image depth
+    pub fn set_depth(&mut self, depth: BitDepth)
+    {
+        self.metadata.set_depth(depth)
+    }
+    pub fn set_color_trc(&mut self, color_trc: ColorCharacteristics)
+    {
+        self.metadata.set_color_trc(color_trc);
+    }
+    /// Set default gamma for this image
+    ///
+    /// For more information see [ImageMetadata::set_gamma](crate::metadata::ImageMetadata::set_default_gamma)
+    pub fn set_default_gamma(&mut self, gamma: f32)
+    {
+        self.metadata.set_default_gamma(gamma)
+    }
+    /// Return the image's  gamma value.
+    ///
+    ///This is the value that will be used to convert images to linear
+    ///image in case
+    pub const fn get_default_gamma(&self) -> f32
+    {
+        self.metadata.default_gamma
     }
     /// Return a reference to the underlying channels
     pub fn get_channels_ref(&self, alpha: bool) -> &[Channel]
     {
         // check if alpha channel is present in colorspace
-        if alpha && self.colorspace.has_alpha()
+        if alpha && self.metadata.colorspace.has_alpha()
         {
             // do not take the last one,
             // we assume the last one contains the alpha channel
             // in it.
             // TODO: Is this a bad assumption
-            &self.channels[0..self.colorspace.num_components() - 1]
+            &self.channels[0..self.metadata.colorspace.num_components() - 1]
         }
         else
         {
-            &self.channels[0..self.colorspace.num_components()]
+            &self.channels[0..self.metadata.colorspace.num_components()]
         }
     }
 
@@ -87,24 +114,24 @@ impl Image
     pub fn get_channels_mut(&mut self, alpha: bool) -> &mut [Channel]
     {
         // check if alpha channel is present in colorspace
-        if !alpha && self.colorspace.has_alpha()
+        if !alpha && self.metadata.colorspace.has_alpha()
         {
             // do not take the last one,
             // we assume the last one contains the alpha channel
             // in it.
             // TODO: Is this a bad assumption
-            &mut self.channels[0..self.colorspace.num_components() - 1]
+            &mut self.channels[0..self.metadata.colorspace.num_components() - 1]
         }
         else
         {
-            &mut self.channels[0..self.colorspace.num_components()]
+            &mut self.channels[0..self.metadata.colorspace.num_components()]
         }
     }
     /// Get the colorspace this image is stored
     /// in
     pub const fn get_colorspace(&self) -> ColorSpace
     {
-        self.colorspace
+        self.metadata.colorspace
     }
     /// Flatten channels in this image.
     ///
@@ -112,13 +139,14 @@ impl Image
     pub fn flatten<T: Default + Copy>(&self) -> Vec<T>
     {
         //
-        assert_eq!(self.depth.size_of(), size_of::<T>());
+        assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
 
-        let dims = self.width * self.height * self.colorspace.num_components();
+        let dims =
+            self.metadata.width * self.metadata.height * self.metadata.colorspace.num_components();
 
         let mut out_pixel = vec![T::default(); dims];
 
-        match self.colorspace.num_components()
+        match self.metadata.colorspace.num_components()
         {
             1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<T>().unwrap()),
 
@@ -185,17 +213,20 @@ impl Image
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
     pub fn to_u8(&self) -> Vec<u8>
     {
-        if self.depth == BitDepth::Eight
+        if self.metadata.get_depth() == BitDepth::Eight
         {
             self.flatten::<u8>()
         }
         else
         {
-            let dims = self.width * self.height * self.colorspace.num_components() * 2;
+            let dims = self.metadata.width
+                * self.metadata.height
+                * self.metadata.colorspace.num_components()
+                * 2;
 
             let mut out_pixel = vec![u8::default(); dims];
 
-            match self.colorspace.num_components()
+            match self.metadata.colorspace.num_components()
             {
                 1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<u8>().unwrap()),
 
@@ -260,7 +291,7 @@ impl Image
     /// in that value
     pub fn flatten_rgba(&mut self, out_pixel: &mut [u8])
     {
-        if self.depth != BitDepth::Eight
+        if self.metadata.depth != BitDepth::Eight
         {
             // convert depth if it doesn't match
             let operation = Depth::new(BitDepth::Eight);
@@ -268,7 +299,7 @@ impl Image
             operation.execute(self).unwrap();
         }
 
-        match self.colorspace.num_components()
+        match self.metadata.colorspace.num_components()
         {
             1 =>
             {
@@ -337,25 +368,14 @@ impl Image
             _ => unreachable!()
         }
     }
-    /// Flatten channels in this image
-    ///
-    /// This represents all image channels in
-    /// one continuous vector of unsigned 8 bits
-    /// ( 1 byte implementation),
-    ///
-    /// Channels are interleaved according to the colorspace
-    /// i.e if colorspace is RGB, the vector will contain
-    /// data in the format `[R,G,B,R,G,B,R,G,B,R,G,B]`
-
     pub fn set_dimensions(&mut self, width: usize, height: usize)
     {
-        self.width = width;
-        self.height = height;
+        self.metadata.set_dimensions(width, height);
     }
 
     pub fn set_colorspace(&mut self, colorspace: ColorSpace)
     {
-        self.colorspace = colorspace;
+        self.metadata.set_colorspace(colorspace);
     }
 
     pub fn set_channels(&mut self, channels: Vec<Channel>)
