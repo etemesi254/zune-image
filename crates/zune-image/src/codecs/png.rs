@@ -34,7 +34,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
         let mut image = Image::new(channel, depth, width, height, colorspace);
 
         // set gamma value or 2.2 if image has none.
-        let gamma = self.get_gamma().unwrap_or(2.2);
+        let gamma = self.get_gamma().unwrap_or(1.0 / 2.2);
         info!("Setting gama value to be {}", gamma);
         image.set_default_gamma(gamma);
         Ok(image)
