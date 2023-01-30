@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 
 use crate::decoder::{PLTEEntry, PngChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
@@ -223,7 +223,16 @@ impl<'a> PngDecoder<'a>
             return Err(PngErrors::Generic(error));
         }
 
-        self.gama = self.stream.get_u32_be();
+        self.gama = (self.stream.get_u32_be() as f64 / 100000.0) as f32;
+        self.seen_gamma = true;
+        if self.gama == 0.0
+        {
+            // this is invalid gama
+            // warn and set it to 2.2 which is the default gama
+            warn!("Gamma value of 0.0 is invalid, setting it to 2.2");
+
+            self.gama = 1.0 / 2.2;
+        }
 
         // skip crc
         self.stream.skip(4);
