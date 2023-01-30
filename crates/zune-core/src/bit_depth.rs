@@ -47,7 +47,9 @@ pub enum BitDepth
     /// i.e 0-65535
     ///
     /// Data is stored and processed in native endian.
-    Sixteen
+    Sixteen,
+    /// Bit depth information is unknown
+    Unknown
 }
 
 /// The underlying bit representation of the image
@@ -70,7 +72,7 @@ impl Default for BitDepth
 {
     fn default() -> Self
     {
-        Self::Eight
+        Self::Unknown
     }
 }
 
@@ -91,6 +93,7 @@ impl BitDepth
             Self::Ten => (1 << 10) - 1,
             Self::Twelve => (1 << 12) - 1,
             Self::Sixteen => u16::MAX,
+            Self::Unknown => 0,
         }
     }
 
@@ -119,7 +122,8 @@ impl BitDepth
         match self
         {
             Self::Eight => BitType::Eight,
-            Self::Ten | Self::Twelve | Self::Sixteen => BitType::Sixteen
+            Self::Ten | Self::Twelve | Self::Sixteen => BitType::Sixteen,
+            Self::Unknown => panic!("Unknown bit type")
         }
     }
     /// Get the number of bytes needed to store a specific bit depth
@@ -142,7 +146,8 @@ impl BitDepth
         match self
         {
             Self::Eight => 1,
-            Self::Ten | Self::Twelve | Self::Sixteen => 2
+            Self::Ten | Self::Twelve | Self::Sixteen => 2,
+            Self::Unknown => panic!("Unknown bit type")
         }
     }
 }
