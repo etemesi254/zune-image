@@ -91,7 +91,7 @@ impl OperationsTrait for Depth
         }
         trace!("Image depth changed to {:?}", self.depth);
 
-        image.depth = self.depth;
+        image.set_depth(self.depth);
 
         Ok(())
     }
