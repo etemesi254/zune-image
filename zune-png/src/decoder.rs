@@ -88,9 +88,10 @@ pub struct PngDecoder<'a>
     pub(crate) palette:       Vec<PLTEEntry>,
     pub(crate) idat_chunks:   Vec<u8>,
     pub(crate) out:           Vec<u8>,
-    pub(crate) gama:          u32,
+    pub(crate) gama:          f32,
     pub(crate) trns_bytes:    [u16; 4],
     pub(crate) chunk_handler: UnkownChunkHandler,
+    pub(crate) seen_gamma:    bool,
     pub(crate) seen_hdr:      bool,
     pub(crate) seen_ptle:     bool,
     pub(crate) seen_trns:     bool,
@@ -107,7 +108,7 @@ impl<'a> PngDecoder<'a>
 
         PngDecoder::new_with_options(data, default_opt)
     }
-    #[allow(unused_mut)]
+    #[allow(unused_mut, clippy::redundant_field_names)]
     pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
     {
         let mut use_sse2 = false;
@@ -135,20 +136,21 @@ impl<'a> PngDecoder<'a>
             }
         }
         PngDecoder {
-            seen_hdr: false,
-            stream: ZByteReader::new(data),
-            options,
-            palette: Vec::new(),
-            png_info: PngInfo::default(),
-            idat_chunks: Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out: Vec::new(),
-            gama: 0, // used also to indicate if we should do gama unfiltering
-            seen_ptle: false,
-            seen_trns: false,
-            trns_bytes: [0; 4],
-            use_sse2,
-            use_sse4,
-            confirm_crc: true,
+            seen_hdr:      false,
+            stream:        ZByteReader::new(data),
+            options:       options,
+            palette:       Vec::new(),
+            png_info:      PngInfo::default(),
+            idat_chunks:   Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            out:           Vec::new(),
+            gama:          0.0,
+            seen_ptle:     false,
+            seen_trns:     false,
+            seen_gamma:    false,
+            trns_bytes:    [0; 4],
+            use_sse2:      use_sse2,
+            use_sse4:      use_sse4,
+            confirm_crc:   true,
             chunk_handler: default_chunk_handler
         }
     }
@@ -158,6 +160,7 @@ impl<'a> PngDecoder<'a>
         self.confirm_crc = yes;
     }
 
+    /// Get image dimensions or none if they aren't decoded
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if !self.seen_hdr
@@ -180,6 +183,19 @@ impl<'a> PngDecoder<'a>
             _ => unreachable!()
         }
     }
+    /// Get image gamma
+    pub const fn get_gamma(&self) -> Option<f32>
+    {
+        if self.seen_gamma
+        {
+            Some(self.gama)
+        }
+        else
+        {
+            None
+        }
+    }
+    /// Get image colorspace
     pub fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if !self.seen_hdr
