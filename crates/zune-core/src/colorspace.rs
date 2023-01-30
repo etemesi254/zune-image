@@ -52,13 +52,22 @@ pub static ALL_COLORSPACES: [ColorSpace; 6] = [
     ColorSpace::YCbCr
 ];
 
+/// Color characteristics
+///
+/// Gives more information about values in a certain
+/// colorspace
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ColorTransferCharacteristics
+pub enum ColorCharacteristics
 {
     /// Normal default gamma setting
     /// The float contains gamma present
+    ///
+    /// The default gamma value is 2.2 but for
+    /// decoders that allow specifying gamma values,e.g PNG,
+    /// the gamma value becomes the specified value by the decoder
     sRGB(f32),
     /// Linear transfer characteristics
+    /// The image is in linear colorspace
     Linear
 }
