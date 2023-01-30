@@ -1,6 +1,6 @@
 #![cfg(feature = "png")]
 //! Represents an png image decoder
-use log::debug;
+use log::{debug, info};
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 use zune_png::error::PngErrors;
@@ -31,7 +31,13 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
             DecodingResult::U16(data) => deinterleave_u16(&data, colorspace).unwrap()
         };
 
-        Ok(Image::new(channel, depth, width, height, colorspace))
+        let mut image = Image::new(channel, depth, width, height, colorspace);
+
+        // set gamma value or 2.2 if image has none.
+        let gamma = self.get_gamma().unwrap_or(2.2);
+        info!("Setting gama value to be {}", gamma);
+        image.set_default_gamma(gamma);
+        Ok(image)
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>
