@@ -1,5 +1,5 @@
 use zune_core::bytestream::ZByteWriter;
-use zune_core::colorspace::{ColorSpace, ColorTransferCharacteristics};
+use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_core::options::EncoderOptions;
 
 use crate::constants::{
@@ -15,7 +15,7 @@ pub struct QoiEncoder<'a>
     // raw pixels, in RGB or RBGA
     pixel_data:            &'a [u8],
     options:               EncoderOptions,
-    color_characteristics: ColorTransferCharacteristics
+    color_characteristics: ColorCharacteristics
 }
 
 impl<'a> QoiEncoder<'a>
@@ -27,10 +27,10 @@ impl<'a> QoiEncoder<'a>
         QoiEncoder {
             pixel_data:            data,
             options:               options,
-            color_characteristics: ColorTransferCharacteristics::sRGB(2.2)
+            color_characteristics: ColorCharacteristics::sRGB
         }
     }
-    pub fn set_color_characteristics(&mut self, characteristics: ColorTransferCharacteristics)
+    pub fn set_color_characteristics(&mut self, characteristics: ColorCharacteristics)
     {
         self.color_characteristics = characteristics;
     }
@@ -84,7 +84,7 @@ impl<'a> QoiEncoder<'a>
 
             writer.write_u8(channel);
             // colorspace
-            let xtic = u8::from(self.color_characteristics == ColorTransferCharacteristics::Linear);
+            let xtic = u8::from(self.color_characteristics == ColorCharacteristics::Linear);
             writer.write_u8(xtic);
         }
         else
