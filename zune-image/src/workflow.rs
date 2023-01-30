@@ -49,12 +49,17 @@ impl EncodeResult
         self.format
     }
 }
-
+/// Workflow, batch image processing
+///
+/// A workflow provides an idiomatic way to do batch image processing
+/// it can load multiple images (by queing decoders) and batch apply an operation
+/// to all the images and then encode images to a specified format.
+///
 pub struct WorkFlow<'a>
 {
     state:         Option<WorkFlowState>,
     decode:        Option<Box<dyn DecoderTrait<'a> + 'a>>,
-    image:         Option<Image>,
+    image:         Vec<Image>,
     operations:    Vec<Box<dyn OperationsTrait>>,
     encode:        Vec<Box<dyn EncoderTrait + 'a>>,
     encode_result: Vec<EncodeResult>
@@ -67,7 +72,7 @@ impl<'a> WorkFlow<'a>
     pub fn new() -> WorkFlow<'a>
     {
         WorkFlow {
-            image:         None,
+            image:         vec![],
             state:         Some(WorkFlowState::Initialized),
             decode:        None,
             operations:    vec![],
@@ -107,7 +112,7 @@ impl<'a> WorkFlow<'a>
     /// Add an image to this chain.
     pub fn chain_image(&mut self, image: Image)
     {
-        self.image = Some(image);
+        self.image.push(image);
     }
 
     pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<'a>
@@ -154,9 +159,14 @@ impl<'a> WorkFlow<'a>
         self.operations.push(operations);
         self
     }
-    pub fn get_image(&self) -> Option<&Image>
+    pub fn get_images(&self) -> &[Image]
     {
         self.image.as_ref()
+    }
+    /// Return all images in the workflow as mutable references
+    pub fn get_image_mut(&mut self) -> &mut [Image]
+    {
+        self.image.as_mut()
     }
     /// Advance the workflow one state forward
     ///
@@ -187,7 +197,7 @@ impl<'a> WorkFlow<'a>
                     if self.decode.is_none()
                     {
                         // we have an image, no need to decode a new one
-                        if self.image.is_some()
+                        if self.image.is_empty()
                         {
                             info!("Image already present, no need to decode");
                             // move to the next state
@@ -202,7 +212,7 @@ impl<'a> WorkFlow<'a>
 
                     let img = decode_op.decode()?;
 
-                    self.image = Some(img);
+                    self.image.push(img);
 
                     let stop = Instant::now();
 
@@ -212,7 +222,12 @@ impl<'a> WorkFlow<'a>
                 }
                 WorkFlowState::Operations =>
                 {
-                    if let Some(image) = &mut self.image
+                    if self.image.is_empty()
+                    {
+                        return Err(ImgErrors::NoImageForOperations);
+                    }
+
+                    for image in self.image.iter_mut()
                     {
                         for operation in &self.operations
                         {
@@ -233,14 +248,14 @@ impl<'a> WorkFlow<'a>
                         }
                         self.state = state.next();
                     }
-                    else
-                    {
-                        return Err(ImgErrors::NoImageForOperations);
-                    }
                 }
                 WorkFlowState::Encode =>
                 {
-                    if let Some(image) = self.image.as_ref()
+                    if self.image.is_empty()
+                    {
+                        return Err(ImgErrors::NoImageForOperations);
+                    }
+                    for image in self.image.iter()
                     {
                         for encoder in self.encode.iter_mut()
                         {
@@ -260,10 +275,7 @@ impl<'a> WorkFlow<'a>
                             );
                         }
                     }
-                    else
-                    {
-                        return Err(ImgErrors::NoImageForOperations);
-                    }
+
                     self.state = state.next();
                 }
                 WorkFlowState::Finished =>
