@@ -39,7 +39,7 @@ impl OperationsTrait for Resize
         let (old_w, old_h) = image.get_dimensions();
         let depth = image.get_depth().bit_type();
 
-        let new_length = self.new_width * self.new_height * image.depth.size_of();
+        let new_length = self.new_width * self.new_height * image.get_depth().size_of();
 
         match depth
         {
