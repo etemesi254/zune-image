@@ -35,7 +35,7 @@ impl EncoderTrait for PPMEncoder
     {
         let (width, height) = image.get_dimensions();
         let colorspace = image.get_colorspace();
-        let depth = image.depth;
+        let depth = image.get_depth();
 
         let options = EncoderOptions {
             width,
