@@ -122,9 +122,9 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         {
             if view == CommandLine
             {
-                if let Some(x) = workflow.get_image()
+                for image in workflow.get_images()
                 {
-                    open_in_default_app(x);
+                    open_in_default_app(image);
                 }
             }
         }
