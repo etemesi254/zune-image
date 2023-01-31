@@ -1,3 +1,6 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
@@ -10,7 +13,7 @@ const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 /// A simple Farbfeld lossless decoder.
 ///
 /// One can modify the decoder accepted dimensions
-/// via `ZuneFarbFeldOptions`
+/// via `DecoderOptions`
 pub struct FarbFeldDecoder<'a>
 {
     stream:          ZByteReader<'a>,

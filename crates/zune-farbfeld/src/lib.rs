@@ -13,7 +13,12 @@
 //! ╚════════╧═════════════════════════════════════════════════════════╝
 //! The RGB-data should be sRGB for best interoperability and not alpha-premultiplied.
 //!```
+#![no_std]
+#![macro_use]
+extern crate alloc;
 
 pub use decoder::*;
+pub use encoder::*;
 
 mod decoder;
+mod encoder;
