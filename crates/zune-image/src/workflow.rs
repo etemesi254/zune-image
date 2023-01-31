@@ -3,9 +3,9 @@ use std::time::Instant;
 use log::Level::Info;
 use log::{info, log_enabled};
 
-use crate::codecs::SupportedEncoders;
 use crate::errors::ImgErrors;
 use crate::image::Image;
+use crate::image_format::ImageFormat;
 use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
@@ -34,7 +34,7 @@ impl WorkFlowState
 
 pub struct EncodeResult
 {
-    pub(crate) format: SupportedEncoders,
+    pub(crate) format: ImageFormat,
     pub(crate) data:   Vec<u8>
 }
 
@@ -44,7 +44,7 @@ impl EncodeResult
     {
         &self.data
     }
-    pub fn get_format(&self) -> SupportedEncoders
+    pub fn get_format(&self) -> ImageFormat
     {
         self.format
     }

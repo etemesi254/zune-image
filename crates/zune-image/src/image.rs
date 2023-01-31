@@ -18,6 +18,7 @@ use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_imageprocs::traits::NumOps;
 
 use crate::channel::Channel;
+use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImgErrors;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
@@ -486,4 +487,90 @@ impl Image
 
         Image::new(channels, T::depth(), width, height, colorspace)
     }
+}
+
+// Conversions
+impl Image
+{
+    /// Create a new image from a raw pixels
+    ///
+    /// The image depth is treated as [BitDepth::Eight](zune_core::bit_depth::BitDepth::Eight)
+    /// and formats which pack images into lower bit-depths are expected to expand them before
+    /// using this function
+    ///
+    /// Pixels are expected to be interleaved according to the colorspace
+    /// I.e if the image is RGB, pixel layout should be `[R,G,B,R,G,B]`
+    /// if it's Luma with alpha, pixel layout should be `[L,A,L,A]`
+    ///
+    /// # Returns
+    /// An [`Image`](crate::image::Image) struct
+    ///
+    /// # Panics
+    /// - In case calculating image dimensions overflows a [`usize`]
+    /// this indicates that the array cannot be indexed by usize,hence values are invalid
+    ///
+    /// - If the length of pixels doesn't match the expected length
+    pub fn from_u8(pixels: &[u8], width: usize, height: usize, colorspace: ColorSpace) -> Image
+    {
+        let expected_len = checked_mul(width, height, 1, colorspace.num_components());
+
+        assert_eq!(
+            pixels.len(),
+            expected_len,
+            "Length mismatch, expected {expected_len} but found {} ",
+            pixels.len()
+        );
+
+        let pixels = deinterleave_u8(pixels, colorspace).unwrap();
+
+        Image::new(pixels, BitDepth::Eight, width, height, colorspace)
+    }
+    /// Create an image from raw u16 pixels
+    ///
+    /// Pixels are expected to be interleaved according to number of components in the colorspace
+    ///
+    /// e.g if image is RGBA, pixels should be in the form of `[R,G,B,A,R,G,B,A]`
+    ///
+    /// The bit depth should not be [BitDepth::Eight](zune_core::bit_depth::BitDepth::Eight), this
+    /// function will panic if so
+    ///
+    /// # Returns
+    /// An [`Image`](crate::image::Image) struct
+    ///
+    ///
+    /// # Panics
+    /// - If calculating image dimensions will overflow [`usize`]
+    ///
+    /// - If image `depth.size_of()` is not 2
+    ///
+    /// - If pixels length is not equal to expected length
+    pub fn from_u16(
+        pixels: &[u16], width: usize, height: usize, depth: BitDepth, colorspace: ColorSpace
+    ) -> Image
+    {
+        let expected_len = checked_mul(width, height, depth.size_of(), colorspace.num_components());
+
+        assert_eq!(
+            pixels.len(),
+            expected_len,
+            "Length mismatch, expected {expected_len} but found {} ",
+            pixels.len()
+        );
+        assert_eq!(depth.size_of(), 2);
+
+        let pixels = deinterleave_u16(pixels, colorspace).unwrap();
+
+        Image::new(pixels, depth, width, height, colorspace)
+    }
+}
+
+fn checked_mul(width: usize, height: usize, depth: usize, colorspace_components: usize) -> usize
+{
+    width
+        .checked_mul(height)
+        .unwrap()
+        .checked_mul(depth)
+        .unwrap()
+        .checked_mul(colorspace_components)
+        .unwrap()
 }
