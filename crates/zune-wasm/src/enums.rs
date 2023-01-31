@@ -2,7 +2,7 @@
 
 use wasm_bindgen::prelude::wasm_bindgen;
 use zune_core::colorspace::ColorSpace;
-use zune_image::codecs::SupportedDecoders;
+use zune_image::image_format::ImageFormat;
 
 /// A 1 to 1 mapping of supported colorspaces
 /// but with the `wasm_bindgen` attribute.
@@ -62,17 +62,18 @@ pub enum WasmImageDecodeFormats
 
 impl WasmImageDecodeFormats
 {
-    pub fn from_formats(format: SupportedDecoders) -> WasmImageDecodeFormats
+    pub fn from_formats(format: ImageFormat) -> WasmImageDecodeFormats
     {
         match format
         {
-            SupportedDecoders::Jpeg => Self::Jpeg,
-            SupportedDecoders::Png => Self::Png,
-            SupportedDecoders::PPM => Self::PPM,
-            SupportedDecoders::PSD => Self::PSD,
-            SupportedDecoders::Farbfeld => Self::Farbfeld,
-            SupportedDecoders::QOI => Self::QOI,
-            SupportedDecoders::Unknown => Self::Unknown
+            ImageFormat::Jpeg => Self::Jpeg,
+            ImageFormat::Png => Self::Png,
+            ImageFormat::PPM => Self::PPM,
+            ImageFormat::PSD => Self::PSD,
+            ImageFormat::Farbfeld => Self::Farbfeld,
+            ImageFormat::QOI => Self::QOI,
+            ImageFormat::Unknown => Self::Unknown,
+            _ => todo!("Support format {:?}", format)
         }
     }
 }
