@@ -3,8 +3,8 @@ use std::ops::{Deref, DerefMut};
 use log::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use zune_core::bit_depth::BitDepth;
-use zune_image::codecs::{get_decoder, guess_format as guess_format_zimage};
 use zune_image::image::Image;
+use zune_image::image_format::ImageFormat;
 use zune_image::impls::brighten::Brighten;
 use zune_image::impls::contrast::Contrast;
 use zune_image::impls::depth::Depth;
@@ -189,9 +189,9 @@ impl WasmImage
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Option<WasmImage>
 {
-    if let Some(format) = guess_format_zimage(bytes)
+    if let Some(format) = ImageFormat::guess_format(bytes)
     {
-        let mut decoder = get_decoder(format, bytes);
+        let mut decoder = format.get_decoder(bytes);
 
         let mut image = decoder.decode().unwrap();
 
@@ -209,7 +209,7 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage>
 #[wasm_bindgen]
 pub fn guess_format(bytes: &[u8]) -> Option<WasmImageDecodeFormats>
 {
-    if let Some(format) = guess_format_zimage(bytes)
+    if let Some(format) = ImageFormat::guess_format(bytes)
     {
         return Some(WasmImageDecodeFormats::from_formats(format));
     }
