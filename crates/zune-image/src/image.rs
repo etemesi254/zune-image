@@ -90,10 +90,10 @@ impl Image
         self.metadata.default_gamma
     }
     /// Return a reference to the underlying channels
-    pub fn get_channels_ref(&self, alpha: bool) -> &[Channel]
+    pub fn get_channels_ref(&self, ignore_alpha: bool) -> &[Channel]
     {
         // check if alpha channel is present in colorspace
-        if alpha && self.metadata.colorspace.has_alpha()
+        if ignore_alpha && self.metadata.colorspace.has_alpha()
         {
             // do not take the last one,
             // we assume the last one contains the alpha channel
@@ -111,10 +111,10 @@ impl Image
     ///
     /// This gives mutable access to the chanel data allowing
     /// single or multithreaded manipulation of images
-    pub fn get_channels_mut(&mut self, alpha: bool) -> &mut [Channel]
+    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> &mut [Channel]
     {
         // check if alpha channel is present in colorspace
-        if !alpha && self.metadata.colorspace.has_alpha()
+        if ignore_alpha && self.metadata.colorspace.has_alpha()
         {
             // do not take the last one,
             // we assume the last one contains the alpha channel
