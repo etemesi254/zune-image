@@ -11,8 +11,8 @@ use clap::ArgMatches;
 use log::Level::Debug;
 use log::{debug, error, info, log_enabled};
 use memmap2::Mmap;
-use zune_image::codecs::{get_encoder_for_extension, guess_format};
 use zune_image::errors::ImgErrors;
+use zune_image::image_format::ImageFormat;
 use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
 
@@ -74,10 +74,10 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         add_operations(args, options, &mut workflow)?;
 
-        if let Some(format) = guess_format(data)
+        if let Some(format) = ImageFormat::guess_format(data)
         {
             let decoder: Box<dyn DecoderTrait> =
-                zune_image::codecs::get_decoder_with_options(format, data, decoder_options);
+                format.get_decoder_with_options(data, decoder_options);
 
             if decoder.is_experimental() && !cmd_opts.experimental_formats
             {
@@ -89,7 +89,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(ext) = Path::new(out_file).extension()
         {
-            if let Some((encode_type, encoder)) = get_encoder_for_extension(ext.to_str().unwrap())
+            if let Some((encode_type, encoder)) =
+                ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
             {
                 debug!("Treating {:?} as a {:?} format", out_file, encode_type);
                 workflow.add_encoder(encoder);
