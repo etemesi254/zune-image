@@ -387,7 +387,7 @@ impl<'a> PngDecoder<'a>
             }
             else if info.depth == 16
             {
-                // todo, add test for 16 bit transparency
+                // Tested by test_palette_trns_16bit.
                 self.compute_transparency_16();
             }
 
@@ -632,7 +632,7 @@ impl<'a> PngDecoder<'a>
                     chunk[0] = old[0];
                     chunk[1] = old[1];
 
-                    if trns_byte == old
+                    if trns_byte != old
                     {
                         chunk[2] = 255;
                         chunk[3] = 255;
