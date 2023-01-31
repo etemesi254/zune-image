@@ -35,12 +35,14 @@ impl<'a> JpegDecoder<'a>
     /// Decode a progressive image
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
-    #[rustfmt::skip]
-    #[allow(clippy::needless_range_loop,clippy::cast_sign_loss)]
+    #[allow(
+        clippy::needless_range_loop,
+        clippy::cast_sign_loss,
+        clippy::redundant_else,
+        clippy::too_many_lines
+    )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_progressive(
-        &mut self
-    ) -> Result<Vec<u8>, DecodeErrors>
+    pub(crate) fn decode_mcu_ycbcr_progressive(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
         setup_component_params(self)?;
 
@@ -57,15 +59,22 @@ impl<'a> JpegDecoder<'a>
         {
             mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;
-        } else {
+        }
+        else
+        {
             mcu_width = (self.info.width as usize + 7) / 8;
             mcu_height = (self.info.height as usize + 7) / 8;
         }
 
         mcu_width *= 64;
 
-        if self.input_colorspace.num_components() > self.components.len() {
-            let msg = format!(" Expected {} number of components but found {}", self.input_colorspace.num_components(), self.components.len());
+        if self.input_colorspace.num_components() > self.components.len()
+        {
+            let msg = format!(
+                " Expected {} number of components but found {}",
+                self.input_colorspace.num_components(),
+                self.components.len()
+            );
             return Err(DecodeErrors::Format(msg));
         }
         for i in 0..self.input_colorspace.num_components()
@@ -76,51 +85,99 @@ impl<'a> JpegDecoder<'a>
             block[i] = vec![0; len];
         }
 
-        let mut stream = BitStream::new_progressive(self.succ_high, self.succ_low,
-                                                    self.spec_start, self.spec_end);
+        let mut stream = BitStream::new_progressive(
+            self.succ_high,
+            self.succ_low,
+            self.spec_start,
+            self.spec_end
+        );
 
         // there are multiple scans in the stream, this should resolve the first scan
         self.parse_entropy_coded_data(&mut stream, &mut block)?;
 
         // extract marker
-        let mut marker = stream.marker.take().ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
+        let mut marker = stream
+            .marker
+            .take()
+            .ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
+
         // if marker is EOI, we are done, otherwise continue scanning.
+        //
+        // In case we have a premature image, we print a warning or return
+        // an error, depending on the strictness of the decoder, so there
+        // is that logic to handle too
         'eoi: while marker != Marker::EOI
         {
-
             match marker
             {
-                Marker::DHT => {
+                Marker::DHT =>
+                {
                     parse_huffman(self)?;
                 }
                 Marker::SOS =>
+                {
+                    parse_sos(self)?;
+
+                    stream.update_progressive_params(
+                        self.succ_high,
+                        self.succ_low,
+                        self.spec_start,
+                        self.spec_end
+                    );
+
+                    // after every SOS, marker, parse data for that scan.
+                    self.parse_entropy_coded_data(&mut stream, &mut block)?;
+                    // extract marker, might either indicate end of image or we continue
+                    // scanning(hence the continue statement to determine).
+                    match get_marker(&mut self.stream, &mut stream)
                     {
-                        parse_sos(self)?;
+                        Ok(marker_n) =>
+                        {
+                            marker = marker_n;
+                            seen_scans += 1;
+                            if seen_scans > self.options.max_scans
+                            {
+                                return Err(DecodeErrors::Format(format!(
+                                    "Too many scans, exceeded limit of {}",
+                                    self.options.max_scans
+                                )));
+                            }
 
-                        stream.update_progressive_params(self.succ_high, self.succ_low,
-                                                         self.spec_start, self.spec_end);
-
-                        // after every SOS, marker, parse data for that scan.
-                        self.parse_entropy_coded_data(&mut stream, &mut block)?;
-                        // extract marker, might either indicate end of image or we continue
-                        // scanning(hence the continue statement to determine).
-                        marker = get_marker(&mut self.stream, &mut stream)?;
-                        seen_scans += 1;
-
-                        if seen_scans > self.options.max_scans {
-                            return Err(DecodeErrors::Format(format!("Too many scans, exceeded limit of {}", self.options.max_scans)))
+                            stream.reset();
+                            continue 'eoi;
                         }
-
-                        stream.reset();
-                        continue 'eoi;
+                        Err(msg) =>
+                        {
+                            if self.options.strict_mode
+                            {
+                                return Err(msg);
+                            }
+                            error!("{:?}", msg);
+                            break 'eoi;
+                        }
                     }
+                }
                 _ =>
-                    {
-                        break 'eoi;
-                    }
+                {
+                    break 'eoi;
+                }
             }
 
-            marker = get_marker(&mut self.stream, &mut stream)?;
+            match get_marker(&mut self.stream, &mut stream)
+            {
+                Ok(marker_n) =>
+                {
+                    marker = marker_n;
+                }
+                Err(e) =>
+                {
+                    if self.options.strict_mode
+                    {
+                        return Err(e);
+                    }
+                    error!("{}", e);
+                }
+            }
         }
 
         self.finish_progressive_decoding(&block, mcu_width)
@@ -687,5 +744,5 @@ fn get_marker(reader: &mut ZByteReader, stream: &mut BitStream) -> Result<Marker
             }
         }
     }
-    return Err(DecodeErrors::from("No more bytes"));
+    return Err(DecodeErrors::ExhaustedData);
 }
