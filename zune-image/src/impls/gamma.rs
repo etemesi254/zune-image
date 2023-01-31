@@ -49,7 +49,8 @@ impl OperationsTrait for Gamma
                         channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.value,
                         max_value
-                    )
+                    ),
+                    _ => todo!()
                 }
             }
         }
@@ -71,7 +72,8 @@ impl OperationsTrait for Gamma
                             channel.reinterpret_as_mut::<u8>().unwrap(),
                             self.value,
                             max_value
-                        )
+                        ),
+                        _ => todo!()
                     });
                 }
             });

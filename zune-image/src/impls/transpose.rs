@@ -36,7 +36,7 @@ impl OperationsTrait for Transpose
 
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(true)
+        for channel in image.get_channels_mut(false)
         {
             let mut out_channel = Channel::new_with_length(out_dim);
 
@@ -62,6 +62,7 @@ impl OperationsTrait for Transpose
                     );
                     *channel = out_channel;
                 }
+                _ => todo!()
             };
         }
 

@@ -27,7 +27,7 @@ impl OperationsTrait for Flip
     {
         let depth = image.get_depth();
 
-        for inp in image.get_channels_mut(true)
+        for inp in image.get_channels_mut(false)
         {
             match depth.bit_type()
             {
@@ -39,6 +39,7 @@ impl OperationsTrait for Flip
                 {
                     flip(inp.reinterpret_as_mut::<u16>().unwrap());
                 }
+                _ => todo!()
             }
         }
 

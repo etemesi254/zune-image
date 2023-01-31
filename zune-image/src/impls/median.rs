@@ -61,7 +61,8 @@ impl OperationsTrait for Median
                         self.radius,
                         width,
                         height
-                    )
+                    ),
+                    _ => todo!()
                 }
                 *channel = new_channel;
             }
@@ -71,7 +72,7 @@ impl OperationsTrait for Median
             trace!("Running median filter multithreaded mode");
 
             std::thread::scope(|s| {
-                for channel in image.get_channels_mut(false)
+                for channel in image.get_channels_mut(true)
                 {
                     s.spawn(|| {
                         let mut new_channel = Channel::new_with_length(channel.len());
@@ -91,7 +92,8 @@ impl OperationsTrait for Median
                                 self.radius,
                                 width,
                                 height
-                            )
+                            ),
+                            _ => todo!()
                         }
                         *channel = new_channel;
                     });

@@ -33,7 +33,7 @@ impl OperationsTrait for StretchContrast
     {
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(false)
+        for channel in image.get_channels_mut(true)
         {
             match depth.bit_type()
             {
@@ -46,7 +46,8 @@ impl OperationsTrait for StretchContrast
                     channel.reinterpret_as_mut::<u16>().unwrap(),
                     self.lower,
                     self.upper
-                )
+                ),
+                _ => todo!()
             }
         }
         Ok(())

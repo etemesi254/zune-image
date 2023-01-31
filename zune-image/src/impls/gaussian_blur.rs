@@ -69,6 +69,7 @@ impl OperationsTrait for GaussianBlur
                         );
                     }
                 }
+                _ => todo!()
             }
         }
 
@@ -105,6 +106,7 @@ impl OperationsTrait for GaussianBlur
                                 self.sigma
                             );
                         }
+                        _ => todo!()
                     });
                 }
             });

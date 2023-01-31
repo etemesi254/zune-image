@@ -40,7 +40,7 @@ impl OperationsTrait for Depth
             return Ok(());
         }
 
-        for channel in image.get_channels_mut(true)
+        for channel in image.get_channels_mut(false)
         {
             match (image_depth, self.depth)
             {

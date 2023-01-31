@@ -40,7 +40,7 @@ impl OperationsTrait for Convolve
             trace!("Running convolve in multithreaded mode");
 
             std::thread::scope(|s| {
-                for channel in image.get_channels_mut(false)
+                for channel in image.get_channels_mut(true)
                 {
                     s.spawn(|| {
                         // Hello
@@ -75,6 +75,7 @@ impl OperationsTrait for Convolve
                                 );
                                 *channel = out_channel;
                             }
+                            _ => todo!()
                         }
                     });
                 }
@@ -116,6 +117,7 @@ impl OperationsTrait for Convolve
                         );
                         *channel = out_channel;
                     }
+                    _ => todo!()
                 }
             }
         }

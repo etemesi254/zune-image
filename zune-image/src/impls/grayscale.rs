@@ -120,6 +120,7 @@ impl OperationsTrait for RgbToGrayScale
 
                 Ok(())
             }
+            _ => todo!()
         }
     }
 

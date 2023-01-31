@@ -35,7 +35,7 @@ impl OperationsTrait for Threshold
         }
 
         let depth = image.get_depth();
-        for channel in image.get_channels_mut(false)
+        for channel in image.get_channels_mut(true)
         {
             match depth.bit_type()
             {
@@ -44,12 +44,12 @@ impl OperationsTrait for Threshold
                     self.threshold,
                     self.method
                 ),
-
                 BitType::Eight => threshold(
                     channel.reinterpret_as_mut::<u8>().unwrap(),
                     self.threshold as u8,
                     self.method
-                )
+                ),
+                _ => todo!()
             }
         }
 

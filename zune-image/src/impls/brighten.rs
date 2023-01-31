@@ -44,7 +44,8 @@ impl OperationsTrait for Brighten
                     channel.reinterpret_as_mut::<u16>().unwrap(),
                     self.value as u16,
                     max_val
-                )
+                ),
+                _ => todo!()
             }
         }
         Ok(())

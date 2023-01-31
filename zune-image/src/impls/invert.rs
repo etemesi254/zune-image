@@ -27,12 +27,13 @@ impl OperationsTrait for Invert
     {
         let depth = image.get_depth().bit_type();
 
-        for channel in image.get_channels_mut(false)
+        for channel in image.get_channels_mut(true)
         {
             match depth
             {
                 BitType::Eight => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
-                BitType::Sixteen => invert(channel.reinterpret_as_mut::<u16>().unwrap())
+                BitType::Sixteen => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
+                _ => todo!()
             }
         }
 
