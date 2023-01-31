@@ -148,7 +148,8 @@ pub trait OperationsTrait
 fn confirm_invariants(image: &Image) -> Result<(), ImgErrors>
 {
     // Ensure dimensions are correct
-    let components = image.get_channels_ref(true).len();
+
+    let components = image.get_channels_ref(false).len();
 
     if components != image.get_colorspace().num_components()
     {
