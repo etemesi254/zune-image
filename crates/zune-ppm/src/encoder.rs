@@ -94,7 +94,7 @@ impl<'a> PPMEncoder<'a>
         PPMEncoder { data, options }
     }
 
-    fn encode_headers(&mut self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors>
+    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors>
     {
         let version = version_for_colorspace(self.options.colorspace).ok_or(
             PPMEncodeErrors::UnsupportedColorspace(self.options.colorspace)
@@ -117,8 +117,8 @@ impl<'a> PPMEncoder<'a>
                 let tuple_type = convert_tuple_type_to_pam(colorspace);
 
                 format!(
-                        "P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {components}\nMAXVAL {max_val}\nTUPLTYPE {tuple_type}\n ENDHDR\n",
-                    )
+                    "P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {components}\nMAXVAL {max_val}\nTUPLTYPE {tuple_type}\n ENDHDR\n",
+                )
             }
         };
 
@@ -126,7 +126,7 @@ impl<'a> PPMEncoder<'a>
 
         Ok(())
     }
-    pub fn encode(&mut self) -> Result<Vec<u8>, PPMEncodeErrors>
+    pub fn encode(&self) -> Result<Vec<u8>, PPMEncodeErrors>
     {
         let expected = calc_expected_size(self.options);
         let found = self.data.len();
