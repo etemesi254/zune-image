@@ -18,11 +18,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
 
 fn decode_zune(data: &[u8]) -> Vec<u8>
 {
-    zune_png::PngDecoder::new(data)
-        .decode()
-        .unwrap()
-        .u8()
-        .unwrap()
+    zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
 
 fn decode_spng(data: &[u8]) -> Vec<u8>
@@ -93,11 +89,37 @@ fn decode_test_interlaced(c: &mut Criterion)
         b.iter(|| black_box(decode_lodepng(data.as_slice())))
     });
 }
+
+fn decode_test_16_bit(c: &mut Criterion)
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/benchmarks/speed_bench_16.png";
+
+    let data = read(path).unwrap();
+
+    let mut group = c.benchmark_group("png: PNG decoding  16 bpp");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("zune-png", |b| {
+        b.iter(|| black_box(decode_zune(data.as_slice())))
+    });
+
+    group.bench_function("image-rs/png", |b| {
+        b.iter(|| black_box(decode_ref(data.as_slice())))
+    });
+
+    group.bench_function("spng", |b| {
+        b.iter(|| black_box(decode_spng(data.as_slice())))
+    });
+
+    group.bench_function("lodepng", |b| {
+        b.iter(|| black_box(decode_lodepng(data.as_slice())))
+    });
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=decode_test,decode_test_interlaced);
+    targets=decode_test_16_bit);
 
 criterion_main!(benches);
