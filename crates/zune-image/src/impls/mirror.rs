@@ -31,7 +31,7 @@ impl OperationsTrait for Mirror
         let (width, height) = image.get_dimensions();
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(true)
+        for channel in image.get_channels_mut(false)
         {
             match depth.bit_type()
             {
@@ -54,6 +54,7 @@ impl OperationsTrait for Mirror
                         self.mode
                     );
                 }
+                _ => todo!()
             }
         }
 

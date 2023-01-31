@@ -1,3 +1,4 @@
+use zune_core::bit_depth::BitType;
 use zune_imageprocs::crop::crop;
 
 use crate::channel::Channel;
@@ -37,23 +38,44 @@ impl OperationsTrait for Crop
     {
         let new_dims = self.width * self.height * image.get_depth().size_of();
         let (old_width, _) = image.get_dimensions();
+        let depth = image.get_depth().bit_type();
 
-        for channel in image.get_channels_mut(true)
+        for channel in image.get_channels_mut(false)
         {
             let mut new_vec = Channel::new_with_length(new_dims);
 
             // since crop is just bytewise copies, we can use the lowest common denominator for it
             // and it will still work
-            crop(
-                channel.reinterpret_as::<u8>().unwrap(),
-                old_width,
-                new_vec.reinterpret_as_mut::<u8>().unwrap(),
-                self.width,
-                self.height,
-                self.x,
-                self.y
-            );
-            *channel = new_vec;
+            match depth
+            {
+                BitType::Eight =>
+                {
+                    crop::<u8>(
+                        channel.reinterpret_as().unwrap(),
+                        old_width,
+                        new_vec.reinterpret_as_mut().unwrap(),
+                        self.width,
+                        self.height,
+                        self.x,
+                        self.y
+                    );
+                    *channel = new_vec;
+                }
+                BitType::Sixteen =>
+                {
+                    crop::<u16>(
+                        channel.reinterpret_as().unwrap(),
+                        old_width,
+                        new_vec.reinterpret_as_mut().unwrap(),
+                        self.width,
+                        self.height,
+                        self.x,
+                        self.y
+                    );
+                    *channel = new_vec;
+                }
+                _ => todo!()
+            }
         }
 
         image.set_dimensions(self.width, self.height);

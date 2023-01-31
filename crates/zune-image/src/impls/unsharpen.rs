@@ -51,7 +51,7 @@ impl OperationsTrait for Unsharpen
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false)
+                    for channel in image.get_channels_mut(true)
                     {
                         unsharpen_u16(
                             channel.reinterpret_as_mut::<u16>().unwrap(),
@@ -71,7 +71,7 @@ impl OperationsTrait for Unsharpen
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false)
+                    for channel in image.get_channels_mut(true)
                     {
                         unsharpen_u8(
                             channel.reinterpret_as_mut::<u8>().unwrap(),
@@ -85,6 +85,7 @@ impl OperationsTrait for Unsharpen
                         );
                     }
                 }
+                _ => todo!()
             }
         }
         #[cfg(feature = "threads")]
@@ -92,7 +93,7 @@ impl OperationsTrait for Unsharpen
             trace!("Running unsharpen in multithreaded mode");
             std::thread::scope(|s| {
                 // blur each channel on a separate thread
-                for channel in image.get_channels_mut(false)
+                for channel in image.get_channels_mut(true)
                 {
                     s.spawn(|| match depth.bit_type()
                     {
@@ -129,6 +130,7 @@ impl OperationsTrait for Unsharpen
                                 height
                             );
                         }
+                        _ => todo!()
                     });
                 }
             });

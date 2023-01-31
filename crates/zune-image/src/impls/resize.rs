@@ -45,7 +45,7 @@ impl OperationsTrait for Resize
         {
             BitType::Eight =>
             {
-                for old_channel in image.get_channels_mut(true)
+                for old_channel in image.get_channels_mut(false)
                 {
                     let mut new_channel = Channel::new_with_length(new_length);
 
@@ -79,6 +79,7 @@ impl OperationsTrait for Resize
                     *old_channel = new_channel;
                 }
             }
+            _ => todo!()
         }
         image.set_dimensions(self.new_width, self.new_height);
 

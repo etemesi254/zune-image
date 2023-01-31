@@ -31,7 +31,7 @@ impl OperationsTrait for Contrast
     {
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(false)
+        for channel in image.get_channels_mut(true)
         {
             match depth.bit_type()
             {
@@ -45,6 +45,7 @@ impl OperationsTrait for Contrast
                         "Contrast for 16 bit depth is not yet implemented"
                     ));
                 }
+                _ => todo!()
             }
         }
         Ok(())

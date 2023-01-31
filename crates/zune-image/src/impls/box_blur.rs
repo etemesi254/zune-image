@@ -60,6 +60,7 @@ impl OperationsTrait for BoxBlur
                             let data = channel.reinterpret_as_mut::<u8>().unwrap();
                             box_blur_u8(data, &mut scratch_space, width, height, self.radius);
                         }
+                        _ => todo!()
                     });
                 }
             });
@@ -90,6 +91,7 @@ impl OperationsTrait for BoxBlur
                         box_blur_u8(data, &mut scratch_space, width, height, self.radius);
                     }
                 }
+                _ => todo!()
             }
         }
 

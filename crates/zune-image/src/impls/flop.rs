@@ -28,7 +28,7 @@ impl OperationsTrait for Flop
         let (width, _) = image.get_dimensions();
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(true)
+        for channel in image.get_channels_mut(false)
         {
             match depth.bit_type()
             {
@@ -40,6 +40,7 @@ impl OperationsTrait for Flop
                 {
                     flop(channel.reinterpret_as_mut::<u16>().unwrap(), width);
                 }
+                _ => todo!()
             }
         }
 

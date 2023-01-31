@@ -43,7 +43,7 @@ impl OperationsTrait for StatisticsOps
         {
             trace!("Running erode filter in single threaded mode");
 
-            for channel in image.get_channels_mut(false)
+            for channel in image.get_channels_mut(true)
             {
                 let mut new_channel = Channel::new_with_length(channel.len());
 
@@ -64,7 +64,8 @@ impl OperationsTrait for StatisticsOps
                         width,
                         height,
                         self.operation
-                    )
+                    ),
+                    _ => todo!()
                 }
                 *channel = new_channel;
             }
@@ -99,7 +100,8 @@ impl OperationsTrait for StatisticsOps
                                 width,
                                 height,
                                 self.operation
-                            )
+                            ),
+                            _ => todo!()
                         }
                         *channel = new_channel;
                     });
