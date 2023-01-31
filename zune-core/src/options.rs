@@ -84,6 +84,12 @@ pub struct DecoderOptions
     pub max_scans: usize
 }
 
+impl DecoderOptions
+{
+    /// Get maximum width supported for the decoder
+    pub const fn get_max_width() {}
+}
+
 impl Default for DecoderOptions
 {
     fn default() -> Self
@@ -162,5 +168,30 @@ impl Default for EncoderOptions
             quality:    100,
             depth:      BitDepth::Eight
         }
+    }
+}
+
+impl EncoderOptions
+{
+    pub const fn get_width(&self) -> usize
+    {
+        self.width
+    }
+
+    pub const fn get_height(&self) -> usize
+    {
+        self.height
+    }
+    pub const fn get_depth(&self) -> BitDepth
+    {
+        self.depth
+    }
+    pub const fn get_quality(&self) -> u8
+    {
+        self.quality
+    }
+    pub const fn get_colorspace(&self) -> ColorSpace
+    {
+        self.colorspace
     }
 }
