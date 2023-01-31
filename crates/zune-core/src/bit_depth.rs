@@ -58,6 +58,7 @@ pub enum BitDepth
 /// can be used to represent image data, required
 /// by `Channel` struct in zune-image
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum BitType
 {
     /// Images represented using a [`u8`] as their
