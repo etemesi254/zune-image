@@ -46,7 +46,7 @@ impl EncoderTrait for PPMEncoder
         };
         let data = image.to_u8();
 
-        let mut ppm_encoder = PPMEnc::new(&data, options);
+        let ppm_encoder = PPMEnc::new(&data, options);
 
         let data = ppm_encoder
             .encode()
