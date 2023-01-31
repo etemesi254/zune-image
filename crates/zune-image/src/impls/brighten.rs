@@ -31,7 +31,7 @@ impl OperationsTrait for Brighten
         let max_val = image.get_depth().max_value();
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(false)
+        for channel in image.get_channels_mut(true)
         {
             match depth.bit_type()
             {
