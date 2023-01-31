@@ -1,9 +1,9 @@
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 
-use crate::codecs::SupportedEncoders;
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
+use crate::image_format::ImageFormat;
 use crate::workflow::EncodeResult;
 
 /// Encapsulates an image decoder.
@@ -216,7 +216,7 @@ pub trait EncoderTrait
 
         self.encode_inner(image)
     }
-    fn format(&self) -> SupportedEncoders;
+    fn format(&self) -> ImageFormat;
 
     fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgEncodeErrors>
     {

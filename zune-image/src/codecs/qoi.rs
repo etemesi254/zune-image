@@ -4,10 +4,10 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
 
-use crate::codecs::SupportedEncoders;
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
+use crate::image_format::ImageFormat;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
@@ -93,9 +93,9 @@ impl EncoderTrait for QoiEncoder
         &[ColorSpace::RGBA, ColorSpace::RGB]
     }
 
-    fn format(&self) -> SupportedEncoders
+    fn format(&self) -> ImageFormat
     {
-        SupportedEncoders::QOI
+        ImageFormat::QOI
     }
 }
 
