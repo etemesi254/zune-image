@@ -155,6 +155,7 @@ impl<'a> PPMEncoder<'a>
                     stream.write_u16_be(byte)
                 }
             }
+            _ => unreachable!()
         }
         assert!(!stream.eof());
         let position = stream.position();

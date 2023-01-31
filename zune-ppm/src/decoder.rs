@@ -551,6 +551,7 @@ impl<'a> PPMDecoder<'a>
 
                 Ok(DecodingResult::U16(data))
             }
+            _ => unreachable!()
         };
     }
 }
