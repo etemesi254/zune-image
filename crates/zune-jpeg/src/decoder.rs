@@ -131,7 +131,7 @@ impl<'a> JpegDecoder<'a>
     fn default(options: DecoderOptions, buffer: &'a [u8]) -> Self
     {
         let color_convert =
-            choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, options.use_unsafe).unwrap();
+            choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, options.get_use_unsafe()).unwrap();
         JpegDecoder {
             info: ImageInfo::default(),
             qt_tables: [None, None, None, None],
@@ -157,7 +157,7 @@ impl<'a> JpegDecoder<'a>
             num_scans: 0,
 
             // Function pointers
-            idct_func: choose_idct_func(options.use_unsafe),
+            idct_func: choose_idct_func(options.get_use_unsafe()),
             color_convert_16: color_convert,
 
             // Colorspace
@@ -240,12 +240,12 @@ impl<'a> JpegDecoder<'a>
         // We only care for ycbcr to rgb/rgba here
         // in case one is using another colorspace.
         // May god help you
-        if self.options.out_colorspace == ColorSpace::RGB
-            || self.options.out_colorspace == ColorSpace::RGBA
+        if self.options.jpeg_get_out_colorspace() == ColorSpace::RGB
+            || self.options.jpeg_get_out_colorspace() == ColorSpace::RGBA
         {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
-                self.options.out_colorspace,
-                self.options.use_unsafe
+                self.options.jpeg_get_out_colorspace(),
+                self.options.get_use_unsafe()
             )
             .unwrap();
         }
@@ -296,7 +296,7 @@ impl<'a> JpegDecoder<'a>
                 {
                     if bytes_before_marker > 3
                     {
-                        if self.options.strict_mode
+                        if self.options.get_strict_mode()
                         /*No reason to use this*/
                         {
                             return Err(DecodeErrors::FormatStatic(
@@ -468,7 +468,7 @@ impl<'a> JpegDecoder<'a>
     #[must_use]
     pub fn get_output_colorspace(&self) -> ColorSpace
     {
-        return self.options.out_colorspace;
+        return self.options.jpeg_get_out_colorspace();
     }
 
     fn decode_internal(&mut self) -> Result<Vec<u8>, DecodeErrors>
@@ -534,7 +534,7 @@ impl<'a> JpegDecoder<'a>
                 // horizontal sub-sampling
                 info!("Horizontal sub-sampling (2,1)");
 
-                let up_sampler = choose_horizontal_samp_function(self.options.use_unsafe);
+                let up_sampler = choose_horizontal_samp_function(self.options.get_use_unsafe());
 
                 self.components[1..].iter_mut().for_each(|x| {
                     x.up_sampler = up_sampler;
@@ -548,7 +548,7 @@ impl<'a> JpegDecoder<'a>
                 info!("Vertical sub-sampling (1,2)");
 
                 self.components[1..].iter_mut().for_each(|x| {
-                    x.up_sampler = choose_v_samp_function(self.options.use_unsafe);
+                    x.up_sampler = choose_v_samp_function(self.options.get_use_unsafe());
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
             }
@@ -559,7 +559,7 @@ impl<'a> JpegDecoder<'a>
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
                 self.components[1..].iter_mut().for_each(|x| {
-                    x.up_sampler = choose_hv_samp_function(self.options.use_unsafe);
+                    x.up_sampler = choose_hv_samp_function(self.options.get_use_unsafe());
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
             }
