@@ -2,21 +2,46 @@ use bitflags::bitflags;
 
 use crate::colorspace::ColorSpace;
 
-/// Whether the decoder is in strict mode
-///
-/// This enables all flags which correspond to the `HiddenDecoderOptions` that would
-/// cause decoder to be in strict mode
-///
-/// png - Enables crc32 and adler checks
-/// jpg -  Makes the decoder less tolerant to errors.
-const DECODER_STRICT_MODE: u64 = 0b0000_0000_0000_0000_0000_0000_0000_0111;
+fn decoder_strict_mode() -> DecoderFlags
+{
+    let mut flags = DecoderFlags::empty();
+
+    flags.set(DecoderFlags::INFLATE_CONFIRM_ADLER, true);
+    flags.set(DecoderFlags::PNG_CONFIRM_CRC, true);
+    flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, true);
+
+    flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+
+    flags
+}
+
 /// Fast decoder options
 ///
 /// Enables all intrinsics + unsafe routines
 ///
 /// Disables png adler and crc checking.
-#[rustfmt::skip]
-const FAST_OPTIONS: u64 = 0b0000_0000_0000_0000_0000_0001_1111_0100;
+fn fast_options() -> DecoderFlags
+{
+    let mut flags = DecoderFlags::empty();
+
+    flags.set(DecoderFlags::INFLATE_CONFIRM_ADLER, false);
+    flags.set(DecoderFlags::PNG_CONFIRM_CRC, false);
+    flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, false);
+
+    flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+
+    flags
+}
 
 /// Command line options error resilient and fast
 ///
@@ -24,11 +49,29 @@ const FAST_OPTIONS: u64 = 0b0000_0000_0000_0000_0000_0001_1111_0100;
 /// - Ignore CRC and Adler in png
 /// - Do not error out on non-conformance in jpg
 /// - Use unsafe paths
-#[rustfmt::skip]
-const CMD_OPTIONS: u64 = 0b0000_0000_0000_0000_0000_0001_1111_1000;
+fn cmd_options() -> DecoderFlags
+{
+    let mut flags = DecoderFlags::empty();
+
+    flags.set(DecoderFlags::INFLATE_CONFIRM_ADLER, false);
+    flags.set(DecoderFlags::PNG_CONFIRM_CRC, false);
+    flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, false);
+
+    flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX, true);
+    flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
+    flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+
+    flags
+}
 
 bitflags! {
     /// Decoder options that are flags
+    ///
+    /// NOTE: When you extend this, add true or false to
+    /// all options above that return a `DecoderFlag`
     pub struct  DecoderFlags:u64{
         /// Whether the decoder should confirm and report adler mismatch
         const INFLATE_CONFIRM_ADLER         = 0b0000_0000_0000_0000_0000_0000_0000_0001;
@@ -125,13 +168,13 @@ impl DecoderOptions
     /// This enables platform specific code paths and disables intrinsics
     pub fn new_fast() -> DecoderOptions
     {
-        let flag = DecoderFlags::from_bits_truncate(FAST_OPTIONS);
+        let flag = fast_options();
         DecoderOptions::default().set_decoder_flags(flag)
     }
 
     pub fn new_cmd() -> DecoderOptions
     {
-        let flag = DecoderFlags::from_bits_truncate(CMD_OPTIONS);
+        let flag = cmd_options();
         DecoderOptions::default().set_decoder_flags(flag)
     }
 }
@@ -158,10 +201,13 @@ impl DecoderOptions
     }
     /// Return true whether the decoder should be in strict mode
     /// And reject most errors
-    pub const fn get_strict_mode(&self) -> bool
+    pub fn get_strict_mode(&self) -> bool
     {
-        self.flags
-            .contains(DecoderFlags::from_bits_truncate(DECODER_STRICT_MODE))
+        let flags = DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE
+            | DecoderFlags::PNG_CONFIRM_CRC
+            | DecoderFlags::INFLATE_CONFIRM_ADLER;
+
+        self.flags.contains(flags)
     }
     /// Return true if the decoder should use unsafe
     /// routines where possible
@@ -229,8 +275,11 @@ impl DecoderOptions
     /// Set whether the decoder should be in strict mode
     pub fn set_strict_mode(mut self, yes: bool) -> Self
     {
-        self.flags
-            .set(DecoderFlags::from_bits_truncate(DECODER_STRICT_MODE), yes);
+        let flags = DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE
+            | DecoderFlags::PNG_CONFIRM_CRC
+            | DecoderFlags::INFLATE_CONFIRM_ADLER;
+
+        self.flags.set(flags, yes);
         self
     }
     /// Whether the inflate decoder should confirm
@@ -270,7 +319,7 @@ impl Default for DecoderOptions
             max_width:      1 << 14,
             max_height:     1 << 14,
             max_scans:      100,
-            flags:          DecoderFlags::from_bits_truncate(DECODER_STRICT_MODE)
+            flags:          decoder_strict_mode()
         }
     }
 }
