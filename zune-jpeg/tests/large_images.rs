@@ -42,8 +42,8 @@ fn large_no_sampling_factors_grayscale()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+
     let pixels = JpegDecoder::new_with_options(options, data)
         .decode()
         .unwrap();
@@ -61,8 +61,7 @@ fn large_no_sampling_factors_ycbcr()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::YCbCr;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::YCbCr);
     let pixels = JpegDecoder::new_with_options(options, data)
         .decode()
         .unwrap();
@@ -81,8 +80,8 @@ fn large_horizontal_sampling_rgb()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::RGB;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGB);
+
     let pixels = JpegDecoder::new_with_options(options, data)
         .decode()
         .unwrap();
@@ -99,8 +98,8 @@ fn large_horizontal_sampling_grayscale()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/large_horiz_samp_7680_4320.jpg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+
     let pixels = JpegDecoder::new_with_options(options, data)
         .decode()
         .unwrap();
@@ -118,8 +117,8 @@ fn large_horizontal_sampling_ycbcr()
 
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::YCbCr;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::YCbCr);
+
     let pixels = JpegDecoder::new_with_options(options, data)
         .decode()
         .unwrap();

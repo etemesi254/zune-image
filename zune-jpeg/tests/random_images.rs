@@ -11,8 +11,8 @@ fn huffman_third_index()
     //
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/huffman_third_index.jpg";
     let data = &std::fs::read(path).unwrap();
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");

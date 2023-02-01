@@ -34,8 +34,7 @@
 //! use zune_core::options::DecoderOptions;
 //! use zune_jpeg::JpegDecoder;
 //!
-//! let mut options = DecoderOptions::default();
-//! options.out_colorspace = ColorSpace::RGBA;
+//! let mut options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
 //!
 //! let mut decoder = JpegDecoder::new_with_options(options,&[]);
 //! let pixels = decoder.decode().unwrap();
