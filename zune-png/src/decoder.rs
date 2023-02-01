@@ -583,9 +583,9 @@ impl<'a> PngDecoder<'a>
                     chunk[1] = old[1];
                     chunk[2] = old[2];
 
-                    if r == old[0] && g == old[1] && b == old[2]
+                    if r != old[0] && g != old[1] && b != old[2]
                     {
-                        chunk[3] = 0;
+                        chunk[3] = 255;
                     }
                 }
                 // change color type to be the one with alpha
