@@ -48,12 +48,10 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
         .unwrap()
         .to_colorspace();
 
-    DecoderOptions {
-        max_width,
-        max_height,
-        use_unsafe,
-        strict_mode,
-        out_colorspace,
-        ..Default::default()
-    }
+    DecoderOptions::new_cmd()
+        .set_max_height(max_height)
+        .set_max_width(max_width)
+        .set_use_unsafe(use_unsafe)
+        .jpeg_set_out_colorspace(out_colorspace)
+        .set_strict_mode(strict_mode)
 }
