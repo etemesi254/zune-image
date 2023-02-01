@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let mut decoder = zune_png::PngDecoder::new(data);
-    decoder.confirm_checksums(false);
+    let opts = zune_core::options::DecoderOptions::new_fast();
+    let mut decoder = zune_png::PngDecoder::new_with_options(data, options);
     let _ = decoder.decode();
 });
