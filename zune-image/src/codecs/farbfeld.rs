@@ -1,5 +1,6 @@
 #![cfg(feature = "farbfeld")]
 
+use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 pub use zune_farbfeld::*;
 
@@ -16,9 +17,8 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
         let colorspace = self.get_colorspace();
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth();
-        let channels = deinterleave_u16(&pixels, colorspace)?;
 
-        Ok(Image::new(channels, depth, width, height, colorspace))
+        Ok(Image::from_u16(&pixels, width, height, depth, colorspace))
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>

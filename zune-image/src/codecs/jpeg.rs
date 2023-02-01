@@ -21,18 +21,14 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 {
     fn decode(&mut self) -> Result<Image, crate::errors::ImgErrors>
     {
-        // Jpeg's bit depth is always 8
-        const JPEG_BIT_DEPTH: BitDepth = BitDepth::Eight;
-
-        let pixel_data = self
+        let pixels = self
             .decode()
             .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;
 
         let colorspace = self.get_out_colorspace();
-        let pixels = deinterleave_u8(&pixel_data, colorspace)?;
         let (width, height) = self.get_dimensions().unwrap();
 
-        let image = Image::new(pixels, JPEG_BIT_DEPTH, width, height, colorspace);
+        let image = Image::from_u8(&pixels, width, height, colorspace);
 
         Ok(image)
     }
