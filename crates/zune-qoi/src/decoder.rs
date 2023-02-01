@@ -72,11 +72,9 @@ impl<'a> QoiDecoder<'a>
     /// ```
     /// use zune_core::options::DecoderOptions;
     /// use zune_qoi::{QoiDecoder};
-    /// let mut options = DecoderOptions::default();
-    ///
     /// // only decode images less than 10 in both width and height
-    /// options.max_width = 10;
-    /// options.max_height = 10;
+    ///
+    /// let  options = DecoderOptions::default().set_max_width(10).set_max_height(10);
     ///
     /// let mut decoder=QoiDecoder::new_with_options(options,&[]);
     /// ```

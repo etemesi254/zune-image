@@ -31,8 +31,8 @@ fn medium_no_sampling_factors_grayscale()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_no_samp_2500x1786.jpg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
+
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // Grayscale
 
@@ -70,8 +70,7 @@ fn medium_horizontal_sampling_grayscale()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
     let mut decoder = JpegDecoder::new_with_options(options, data);
 
     let pixels = decoder.decode().expect("Test failed decoding");
@@ -89,8 +88,8 @@ fn medium_horizontal_sampling_cymk()
         env!("CARGO_MANIFEST_DIR").to_string() + "/tests/inputs/medium_horiz_samp_2500x1786.jpg";
     let data = &std::fs::read(path).unwrap();
 
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::YCbCr;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::YCbCr);
+
     let mut decoder = JpegDecoder::new_with_options(options, data);
     // cymk
 
