@@ -135,11 +135,11 @@ impl<'a> JpegDecoder<'a>
                         {
                             marker = marker_n;
                             seen_scans += 1;
-                            if seen_scans > self.options.max_scans
+                            if seen_scans > self.options.jpeg_get_max_scans()
                             {
                                 return Err(DecodeErrors::Format(format!(
                                     "Too many scans, exceeded limit of {}",
-                                    self.options.max_scans
+                                    self.options.jpeg_get_max_scans()
                                 )));
                             }
 
@@ -148,7 +148,7 @@ impl<'a> JpegDecoder<'a>
                         }
                         Err(msg) =>
                         {
-                            if self.options.strict_mode
+                            if self.options.get_strict_mode()
                             {
                                 return Err(msg);
                             }
@@ -171,7 +171,7 @@ impl<'a> JpegDecoder<'a>
                 }
                 Err(e) =>
                 {
-                    if self.options.strict_mode
+                    if self.options.get_strict_mode()
                     {
                         return Err(e);
                     }
@@ -475,7 +475,7 @@ impl<'a> JpegDecoder<'a>
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
-            if self.options.strict_mode
+            if self.options.get_strict_mode()
             {
                 return Err(DecodeErrors::FormatStatic(
                     "[strict-mode]: Grayscale image with down-sampled component."
@@ -491,7 +491,7 @@ impl<'a> JpegDecoder<'a>
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
-        let out_colorspace_components = self.options.out_colorspace.num_components();
+        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
@@ -506,7 +506,10 @@ impl<'a> JpegDecoder<'a>
         for (pos, comp) in self.components.iter_mut().enumerate()
         {
             // Allocate only needed components.
-            if min(self.options.out_colorspace.num_components() - 1, pos) == pos
+            if min(
+                self.options.jpeg_get_out_colorspace().num_components() - 1,
+                pos
+            ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
             {
@@ -646,7 +649,7 @@ impl<'a> JpegDecoder<'a>
                         padded_width,
                         self.color_convert_16,
                         self.input_colorspace,
-                        self.options.out_colorspace,
+                        self.options.jpeg_get_out_colorspace(),
                         chunks.next().unwrap(),
                         width,
                         &mut upsampler_scratch_space
@@ -672,7 +675,7 @@ impl<'a> JpegDecoder<'a>
                     &temporary_ref,
                     self.color_convert_16,
                     self.input_colorspace,
-                    self.options.out_colorspace,
+                    self.options.jpeg_get_out_colorspace(),
                     chunks.next().unwrap(),
                     width,
                     padded_width
@@ -684,7 +687,7 @@ impl<'a> JpegDecoder<'a>
 
         let actual_dims = usize::from(self.width())
             * usize::from(self.height())
-            * self.options.out_colorspace.num_components();
+            * self.options.jpeg_get_out_colorspace().num_components();
 
         pixels.truncate(actual_dims);
 
@@ -701,7 +704,7 @@ impl<'a> JpegDecoder<'a>
         a non-sampled image to ensure decoding works
         */
         self.h_max = 1;
-        self.options.out_colorspace = ColorSpace::Luma;
+        self.options = self.options.jpeg_set_out_colorspace(ColorSpace::Luma);
         self.v_max = 1;
         self.sub_sample_ratio = SampleRatios::None;
         self.is_interleaved = false;

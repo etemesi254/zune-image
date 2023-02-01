@@ -68,11 +68,11 @@ impl<'a> FarbFeldDecoder<'a>
         info!("Image width: {}", self.width);
         info!("Image height: {}", self.height);
 
-        if self.height > self.options.max_height
+        if self.height > self.options.get_max_height()
         {
             return Err("Image Height is greater than max height. Bump up max_height to support such images");
         }
-        if self.width > self.options.max_width
+        if self.width > self.options.get_max_width()
         {
             return Err("Image width is greater than max width. Bump up max_width in options to support such images");
         }

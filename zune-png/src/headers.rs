@@ -29,19 +29,21 @@ impl<'a> PngDecoder<'a>
             return Err(PngErrors::GenericStatic("Width or height cannot be zero"));
         }
 
-        if self.png_info.width > self.options.max_width
+        if self.png_info.width > self.options.get_max_width()
         {
             return Err(PngErrors::Generic(format!(
                 "Image width {}, larger than maximum configured width {}, aborting",
-                self.png_info.width, self.options.max_width
+                self.png_info.width,
+                self.options.get_max_width()
             )));
         }
 
-        if self.png_info.height > self.options.max_height
+        if self.png_info.height > self.options.get_max_height()
         {
             return Err(PngErrors::Generic(format!(
                 "Image height {}, larger than maximum configured height {}, aborting",
-                self.png_info.height, self.options.max_height
+                self.png_info.height,
+                self.options.get_max_height()
             )));
         }
 
@@ -217,7 +219,7 @@ impl<'a> PngDecoder<'a>
     }
     pub(crate) fn parse_gama(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
     {
-        if self.options.strict_mode && chunk.length != 4
+        if self.options.get_strict_mode() && chunk.length != 4
         {
             let error = format!("Gama chunk length is not 4 but {}", chunk.length);
             return Err(PngErrors::Generic(error));

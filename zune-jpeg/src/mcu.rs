@@ -114,7 +114,7 @@ impl<'a> JpegDecoder<'a>
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
-            if self.options.strict_mode
+            if self.options.get_strict_mode()
             {
                 return Err(DecodeErrors::FormatStatic(
                     "[strict-mode]: Grayscale image with down-sampled component."
@@ -132,7 +132,7 @@ impl<'a> JpegDecoder<'a>
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
-        let out_colorspace_components = self.options.out_colorspace.num_components();
+        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
         let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
@@ -151,7 +151,10 @@ impl<'a> JpegDecoder<'a>
             //
             // For special colorspaces i.e YCCK and CYMK, just allocate all of the needed
             // components.
-            if min(self.options.out_colorspace.num_components() - 1, pos) == pos
+            if min(
+                self.options.jpeg_get_out_colorspace().num_components() - 1,
+                pos
+            ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
             {
@@ -186,7 +189,7 @@ impl<'a> JpegDecoder<'a>
             if stream.overread_by > 37
             // favourite number :)
             {
-                if self.options.strict_mode
+                if self.options.get_strict_mode()
                 {
                     return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
                 };
@@ -273,7 +276,7 @@ impl<'a> JpegDecoder<'a>
                     }
                     else
                     {
-                        if self.options.strict_mode
+                        if self.options.get_strict_mode()
                         {
                             return Err(DecodeErrors::Format(format!(
                                 "Marker {m:?} found where not expected"
@@ -329,7 +332,7 @@ impl<'a> JpegDecoder<'a>
                         padded_width,
                         self.color_convert_16,
                         self.input_colorspace,
-                        self.options.out_colorspace,
+                        self.options.jpeg_get_out_colorspace(),
                         chunks.next().unwrap(),
                         width,
                         &mut upsampler_scratch_space
@@ -352,7 +355,7 @@ impl<'a> JpegDecoder<'a>
                     &channels_ref,
                     self.color_convert_16,
                     self.input_colorspace,
-                    self.options.out_colorspace,
+                    self.options.jpeg_get_out_colorspace(),
                     chunks.next().unwrap(),
                     width,
                     padded_width
@@ -365,7 +368,7 @@ impl<'a> JpegDecoder<'a>
         // remove excess allocation for images.
         let actual_dims = usize::from(self.width())
             * usize::from(self.height())
-            * self.options.out_colorspace.num_components();
+            * self.options.jpeg_get_out_colorspace().num_components();
 
         pixels.truncate(actual_dims);
 

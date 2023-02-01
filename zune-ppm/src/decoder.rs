@@ -192,10 +192,10 @@ impl<'a> PPMDecoder<'a>
                 {
                     self.width = self.get_integer();
 
-                    if self.width > self.options.max_width
+                    if self.width > self.options.get_max_width()
                     {
                         return Err(PPMDecodeErrors::LargeDimensions(
-                            self.options.max_width,
+                            self.options.get_max_width(),
                             self.width
                         ));
                     }
@@ -205,10 +205,10 @@ impl<'a> PPMDecoder<'a>
                 {
                     self.height = self.get_integer();
 
-                    if self.height > self.options.max_height
+                    if self.height > self.options.get_max_height()
                     {
                         return Err(PPMDecodeErrors::LargeDimensions(
-                            self.options.max_height,
+                            self.options.get_max_height(),
                             self.height
                         ));
                     }
@@ -332,11 +332,12 @@ impl<'a> PPMDecoder<'a>
         // read width
         self.width = self.get_integer();
 
-        if self.width > self.options.max_width
+        if self.width > self.options.get_max_width()
         {
             let msg = format!(
                 "Width {} greater than max width {}",
-                self.width, self.options.max_width
+                self.width,
+                self.options.get_max_width()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -345,11 +346,12 @@ impl<'a> PPMDecoder<'a>
 
         self.height = self.get_integer();
 
-        if self.height > self.options.max_height
+        if self.height > self.options.get_max_height()
         {
             let msg = format!(
                 "Height {} greater than max height {}",
-                self.width, self.options.max_height
+                self.width,
+                self.options.get_max_height()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }

@@ -130,20 +130,22 @@ impl<'a> QoiDecoder<'a>
         let colorspace = self.stream.get_u8();
         let colorspace_layout = self.stream.get_u8();
 
-        if width > self.options.max_width
+        if width > self.options.get_max_width()
         {
             let msg = format!(
                 "Width {} greater than max configured width {}",
-                width, self.options.max_width
+                width,
+                self.options.get_max_width()
             );
             return Err(QoiErrors::Generic(msg));
         }
 
-        if height > self.options.max_height
+        if height > self.options.get_max_height()
         {
             let msg = format!(
                 "Height {} greater than max configured height {}",
-                height, self.options.max_height
+                height,
+                self.options.get_max_height()
             );
             return Err(QoiErrors::Generic(msg));
         }
@@ -160,7 +162,7 @@ impl<'a> QoiDecoder<'a>
             1 => QoiColorspace::Linear,
             _ =>
             {
-                if self.options.strict_mode
+                if self.options.get_strict_mode()
                 {
                     return Err(QoiErrors::UnknownColorspace(colorspace_layout));
                 }

@@ -96,8 +96,7 @@ pub struct PngDecoder<'a>
     pub(crate) seen_ptle:     bool,
     pub(crate) seen_trns:     bool,
     pub(crate) use_sse2:      bool,
-    pub(crate) use_sse4:      bool,
-    pub(crate) confirm_crc:   bool
+    pub(crate) use_sse4:      bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -117,7 +116,7 @@ impl<'a> PngDecoder<'a>
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[cfg(feature = "sse")]
         {
-            if options.use_unsafe
+            if options.get_use_unsafe()
             {
                 if is_x86_feature_detected!("sse2")
                 {
@@ -150,14 +149,8 @@ impl<'a> PngDecoder<'a>
             trns_bytes:    [0; 4],
             use_sse2:      use_sse2,
             use_sse4:      use_sse4,
-            confirm_crc:   true,
             chunk_handler: default_chunk_handler
         }
-    }
-
-    pub fn confirm_checksums(&mut self, yes: bool)
-    {
-        self.confirm_crc = yes;
     }
 
     /// Get image dimensions or none if they aren't decoded
@@ -253,7 +246,7 @@ impl<'a> PngDecoder<'a>
         // Confirm the CRC here.
         #[cfg(feature = "crc")]
         {
-            if self.confirm_crc
+            if self.options.png_get_confirm_crc()
             {
                 use crate::crc::crc32_slice8;
 
@@ -1021,7 +1014,7 @@ impl<'a> PngDecoder<'a>
 
         let option = DeflateOptions::default()
             .set_size_hint(size_hint)
-            .set_confirm_checksum(self.confirm_crc);
+            .set_confirm_checksum(self.options.inflate_get_confirm_adler());
 
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
