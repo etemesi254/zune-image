@@ -14,6 +14,8 @@ png = "0.17.7"
 
 [dependencies.zune-png]
 path = ".."
+[dependencies.zune-core]
+path = "../../zune-core"
 
 # Prevent this from interfering with workspaces
 [workspace]
