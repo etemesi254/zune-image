@@ -22,13 +22,13 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 
         debug!("De-Interleaving image channel");
 
-        let channel = match pixels
+        let image = match pixels
         {
-            DecodingResult::U8(data) => deinterleave_u8(&data, colorspace).unwrap(),
-            DecodingResult::U16(data) => deinterleave_u16(&data, colorspace).unwrap()
+            DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
+            DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace)
         };
 
-        Ok(Image::new(channel, depth, width, height, colorspace))
+        Ok(image)
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>

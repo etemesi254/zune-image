@@ -20,9 +20,10 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
 
         let depth = self.get_bit_depth();
-        let channels = deinterleave_u8(&pixels, colorspace)?;
 
-        Ok(Image::new(channels, depth, width, height, colorspace))
+        let image = Image::from_u8(&pixels, width, height, colorspace);
+
+        Ok(image)
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>

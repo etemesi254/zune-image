@@ -1,6 +1,7 @@
 #![cfg(feature = "png")]
 //! Represents an png image decoder
 use log::{debug, info};
+use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 use zune_png::error::PngErrors;
@@ -25,13 +26,14 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 
         debug!("De-Interleaving image channel");
 
-        let channel = match pixels
+        let mut image = match pixels
         {
-            DecodingResult::U8(data) => deinterleave_u8(&data, colorspace).unwrap(),
-            DecodingResult::U16(data) => deinterleave_u16(&data, colorspace).unwrap()
+            DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
+            DecodingResult::U16(data) =>
+            {
+                Image::from_u16(&data, width, height, BitDepth::Sixteen, colorspace)
+            }
         };
-
-        let mut image = Image::new(channel, depth, width, height, colorspace);
 
         // set gamma value or 2.2 if image has none.
         let gamma = self.get_gamma().unwrap_or(1.0 / 2.2);
