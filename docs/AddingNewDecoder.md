@@ -1,6 +1,19 @@
-## Adding a new decoder
+# Adding a new decoder
 
-Adding a new decoder is easy and straightforward.
+## If it's an external decoder.
+
+Just hook it up and define `DecoderTrait` and watch everything fall into place
+
+If the format returns `&[u8]` bytes as decoded results,
+use `Image::from_u8`.
+
+Remember to match colorspace information from image to the mapping this image understands
+
+See the example below for decoders distributed inside `zune` especially the third step.
+
+## If it is to be distributed inside `zune`
+
+This one takes some time
 
 Image decoders usually gets an array of  `[u8]` from the decoder
 from which it is supposed to return an `image`
@@ -68,7 +81,3 @@ You also need to provide magic bytes which will be used to identify this image.
 Furthermore, you'll need to fill in values in the methods of `ImageFormat`, e.g whether the format
 has an encoder present, and whether it has a decoder present, and provide image decoder and encoder that
 achieves this as a `Box<dyn DecoderTrait<'a>+'a>`
-
-### If it's an external decoder.
-
-Just hook it up and define `DecoderTrait` and watch everything fall into place
