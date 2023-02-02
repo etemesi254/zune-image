@@ -32,4 +32,4 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: Normal Fuzz testing.
-        run: cargo +nightly fuzz run --fuzz-dir zune-ppm/fuzz decode_buffer  -- -runs=100000
+        run: cargo +nightly fuzz run --fuzz-dir zune-ppm/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=60
