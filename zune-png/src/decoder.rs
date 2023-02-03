@@ -558,6 +558,7 @@ impl<'a> PngDecoder<'a>
         let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
 
         let mut new_out = vec![0; new_size];
+
         match info.color
         {
             PngColor::Luma =>
@@ -620,7 +621,7 @@ impl<'a> PngDecoder<'a>
             {
                 let trns_byte = self.trns_bytes[0].to_ne_bytes();
 
-                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks(2))
+                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks_exact(2))
                 {
                     chunk[0] = old[0];
                     chunk[1] = old[1];
