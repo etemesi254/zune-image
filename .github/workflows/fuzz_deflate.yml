@@ -30,8 +30,8 @@ jobs:
     - name: Install
       run: cargo install cargo-fuzz
     - name: Fuzz deflate
-      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip -j2 -- -timeout=10s -max_total_time=60
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip fuzz-corpus/inflate -j2 -- -timeout=10s -max_total_time=120
     - name: Fuzz zlib
-      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib -j2 -- -timeout=10s -max_total_time=30
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz roundtrip_zlib fuzz-corpus/inflate -j2 -- -timeout=10s -max_total_time=120
     - name: Normal Fuzz testing.
-      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=30
+      run: cargo +nightly fuzz run --fuzz-dir zune-inflate/fuzz decode_buffer fuzz-corpus/inflate -j2 -- -timeout=10s -max_total_time=120
