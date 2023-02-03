@@ -120,6 +120,6 @@ criterion_group!(name=benches;
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(20))
       };
-    targets=decode_test_16_bit);
+    targets=decode_test_16_bit,decode_test,decode_test_interlaced);
 
 criterion_main!(benches);
