@@ -956,21 +956,9 @@ impl<'a> DeflateDecoder<'a>
 
                         if offset == 1
                         {
-                            // RLE match, copy it in groups of 8
-                            let rep_num = u64::from(out_block[src_offset]) * 0x0101010101010101;
-                            let rep_byte = &rep_num.to_ne_bytes();
-
-                            loop
-                            {
-                                fixed_copy::<8>(rep_byte, &mut out_block, 0, current_position);
-
-                                current_position += 8;
-
-                                if current_position > dest_offset
-                                {
-                                    break;
-                                }
-                            }
+                            // RLE fill with a single byte
+                            let byte_to_repeat = out_block[src_offset];
+                            out_block[current_position..dest_offset].fill(byte_to_repeat);
                         }
                         else if offset <= FASTCOPY_BYTES
                             && current_position + offset < dest_offset
