@@ -45,4 +45,8 @@ impl OperationsTrait for Flip
 
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

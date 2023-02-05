@@ -82,4 +82,8 @@ impl OperationsTrait for Crop
 
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

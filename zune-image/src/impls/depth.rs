@@ -1,5 +1,5 @@
 use log::trace;
-use zune_core::bit_depth::BitDepth;
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_imageprocs::depth::{depth_u16_to_u8, depth_u8_to_u16};
 
 use crate::channel::Channel;
@@ -94,5 +94,9 @@ impl OperationsTrait for Depth
         image.set_depth(self.depth);
 
         Ok(())
+    }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
     }
 }
