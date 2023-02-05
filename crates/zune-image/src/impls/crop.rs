@@ -48,7 +48,7 @@ impl OperationsTrait for Crop
             // and it will still work
             match depth
             {
-                BitType::Eight =>
+                BitType::U8 =>
                 {
                     crop::<u8>(
                         channel.reinterpret_as().unwrap(),
@@ -84,6 +84,6 @@ impl OperationsTrait for Crop
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

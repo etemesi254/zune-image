@@ -494,7 +494,7 @@ impl Image
 {
     /// Create a new image from a raw pixels
     ///
-    /// The image depth is treated as [BitDepth::Eight](zune_core::bit_depth::BitDepth::Eight)
+    /// The image depth is treated as [BitDepth::U8](zune_core::bit_depth::BitDepth::Eight)
     /// and formats which pack images into lower bit-depths are expected to expand them before
     /// using this function
     ///
@@ -531,7 +531,7 @@ impl Image
     ///
     /// e.g if image is RGBA, pixels should be in the form of `[R,G,B,A,R,G,B,A]`
     ///
-    /// The bit depth should not be [BitDepth::Eight](zune_core::bit_depth::BitDepth::Eight), this
+    /// The bit depth should not be [BitDepth::U8](zune_core::bit_depth::BitDepth::Eight), this
     /// function will panic if so
     ///
     /// # Returns

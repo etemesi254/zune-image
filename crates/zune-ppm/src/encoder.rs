@@ -145,7 +145,7 @@ impl<'a> PPMEncoder<'a>
 
         match self.options.depth.bit_type()
         {
-            BitType::Eight => stream.write_all(self.data).unwrap(),
+            BitType::U8 => stream.write_all(self.data).unwrap(),
             BitType::Sixteen =>
             {
                 // chunk in two and write to stream

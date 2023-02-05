@@ -68,7 +68,7 @@ impl OperationsTrait for Gamma
                             self.value,
                             max_value
                         ),
-                        BitType::Eight => gamma(
+                        BitType::U8 => gamma(
                             channel.reinterpret_as_mut::<u8>().unwrap(),
                             self.value,
                             max_value
@@ -82,6 +82,6 @@ impl OperationsTrait for Gamma
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

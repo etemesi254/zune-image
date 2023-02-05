@@ -82,7 +82,7 @@ impl OperationsTrait for GaussianBlur
                 {
                     s.spawn(|| match depth.bit_type()
                     {
-                        BitType::Eight =>
+                        BitType::U8 =>
                         {
                             let mut temp = vec![0; width * height];
 
@@ -116,6 +116,6 @@ impl OperationsTrait for GaussianBlur
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

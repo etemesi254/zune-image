@@ -54,7 +54,7 @@ impl OperationsTrait for BoxBlur
                             let data = channel.reinterpret_as_mut::<u16>().unwrap();
                             box_blur_u16(data, &mut scratch_space, width, height, self.radius);
                         }
-                        BitType::Eight =>
+                        BitType::U8 =>
                         {
                             let mut scratch_space = vec![0; width * height];
                             let data = channel.reinterpret_as_mut::<u8>().unwrap();
@@ -99,6 +99,6 @@ impl OperationsTrait for BoxBlur
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

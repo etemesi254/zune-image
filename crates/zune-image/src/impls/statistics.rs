@@ -93,7 +93,7 @@ impl OperationsTrait for StatisticsOps
                                 height,
                                 self.operation
                             ),
-                            BitType::Eight => spatial_ops(
+                            BitType::U8 => spatial_ops(
                                 channel.reinterpret_as::<u8>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u8>().unwrap(),
                                 self.radius,
@@ -112,6 +112,6 @@ impl OperationsTrait for StatisticsOps
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

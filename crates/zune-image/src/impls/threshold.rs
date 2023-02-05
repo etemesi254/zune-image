@@ -44,7 +44,7 @@ impl OperationsTrait for Threshold
                     self.threshold,
                     self.method
                 ),
-                BitType::Eight => threshold(
+                BitType::U8 => threshold(
                     channel.reinterpret_as_mut::<u8>().unwrap(),
                     self.threshold as u8,
                     self.method
@@ -57,6 +57,6 @@ impl OperationsTrait for Threshold
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

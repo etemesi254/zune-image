@@ -35,7 +35,7 @@ impl OperationsTrait for Mirror
         {
             match depth.bit_type()
             {
-                BitType::Eight =>
+                BitType::U8 =>
                 {
                     mirror(
                         channel.reinterpret_as_mut::<u8>().unwrap(),
@@ -62,6 +62,6 @@ impl OperationsTrait for Mirror
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

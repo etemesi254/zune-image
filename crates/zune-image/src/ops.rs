@@ -51,7 +51,7 @@ impl Add for Image
 
         match self.get_depth().bit_type()
         {
-            BitType::Eight =>
+            BitType::U8 =>
             {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
@@ -101,7 +101,7 @@ impl Sub for Image
 
         match self.get_depth().bit_type()
         {
-            BitType::Eight =>
+            BitType::U8 =>
             {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)

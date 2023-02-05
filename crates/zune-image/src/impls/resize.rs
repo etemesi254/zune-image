@@ -43,7 +43,7 @@ impl OperationsTrait for Resize
 
         match depth
         {
-            BitType::Eight =>
+            BitType::U8 =>
             {
                 for old_channel in image.get_channels_mut(false)
                 {
@@ -87,6 +87,6 @@ impl OperationsTrait for Resize
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

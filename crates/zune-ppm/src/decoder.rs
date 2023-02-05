@@ -411,11 +411,11 @@ impl<'a> PPMDecoder<'a>
     /// are not decoded.
     ///
     /// # Returns
-    /// - `Some(BitDepth)`: The image bit depth, can be [Eight] or [Sixteen]
+    /// - `Some(BitDepth)`: The image bit depth, can be [U8] or [Sixteen]
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
-    /// [Eight]: BitDepth::Eight,
+    /// [U8]: BitDepth::U8,
     /// [Sixteen]: BitDepth::Sixteen
     pub const fn get_bit_depth(&self) -> Option<BitDepth>
     {
@@ -526,7 +526,7 @@ impl<'a> PPMDecoder<'a>
         }
         return match self.bit_depth.bit_type()
         {
-            BitType::Eight =>
+            BitType::U8 =>
             {
                 let mut data = vec![0; size];
                 // get the bytes
