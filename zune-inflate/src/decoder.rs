@@ -18,7 +18,7 @@ use crate::gzip_constants::{
     GZIP_CM_DEFLATE, GZIP_FCOMMENT, GZIP_FEXTRA, GZIP_FHCRC, GZIP_FNAME, GZIP_FOOTER_SIZE,
     GZIP_FRESERVED, GZIP_ID1, GZIP_ID2
 };
-use crate::utils::{copy_rep_matches, fixed_copy, fixed_copy_within, make_decode_table_entry};
+use crate::utils::{copy_rep_matches, fixed_copy_within, make_decode_table_entry};
 
 struct DeflateHeaderTables
 {
