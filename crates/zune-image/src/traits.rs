@@ -1,4 +1,4 @@
-use zune_core::bit_depth::BitDepth;
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
@@ -97,6 +97,12 @@ pub trait OperationsTrait
             ColorSpace::YCCK
         ]
     }
+    /// Get supported bit types for this operation
+    ///
+    /// Not all operations are supported for all bit types and
+    /// o each support requires careful analysis to ensure it's doing
+    /// the right things
+    fn supported_types(&self) -> &'static [BitType];
 
     /// Execute an operation
     ///
@@ -132,6 +138,16 @@ pub trait OperationsTrait
                 self.supported_colorspaces()
             ));
         }
+        // check we support the bit depth
+        let bit_type = image.metadata.get_depth().bit_type();
+
+        let supported = self.supported_types().iter().any(|x| *x == bit_type);
+
+        if !supported
+        {
+            return Err(ImgOperationsErrors::UnsupportedType(self.get_name(), bit_type).into());
+        }
+
         confirm_invariants(image)?;
 
         self.execute_impl(image)

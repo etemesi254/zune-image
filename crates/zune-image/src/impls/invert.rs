@@ -49,4 +49,8 @@ impl OperationsTrait for Invert
             ColorSpace::Luma
         ]
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

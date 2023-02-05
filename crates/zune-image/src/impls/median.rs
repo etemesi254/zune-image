@@ -102,4 +102,8 @@ impl OperationsTrait for Median
         }
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

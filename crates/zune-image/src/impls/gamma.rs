@@ -80,4 +80,8 @@ impl OperationsTrait for Gamma
         }
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

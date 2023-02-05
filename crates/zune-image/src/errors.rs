@@ -1,6 +1,7 @@
 //! PSDDecodeErrors possible during image processing
 use std::fmt::{Debug, Formatter};
 
+use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 
 /// All possible image errors that can occur.
@@ -30,6 +31,10 @@ pub enum ImgOperationsErrors
     WrongComponents(usize, usize),
     /// Channel layout does not match expected
     InvalidChannelLayout(&'static str),
+    /// Unsupported bit depth for an operation
+    ///
+    /// The current operation does not support the bit depth
+    UnsupportedType(&'static str, BitType),
     /// Generic errors
     Generic(&'static str),
     /// Generic errors which have more context
@@ -114,6 +119,13 @@ impl Debug for ImgOperationsErrors
     {
         match self
         {
+            Self::UnsupportedType(operation, depth) =>
+            {
+                writeln!(
+                    f,
+                    "Unsupported bit type {depth:?} for operation {operation}"
+                )
+            }
             Self::InvalidChannelLayout(reason) =>
             {
                 writeln!(f, "{reason:}")

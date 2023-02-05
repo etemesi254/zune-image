@@ -52,4 +52,8 @@ impl OperationsTrait for StretchContrast
         }
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

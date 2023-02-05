@@ -114,4 +114,8 @@ impl OperationsTrait for GaussianBlur
 
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }

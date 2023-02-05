@@ -60,4 +60,8 @@ impl OperationsTrait for Mirror
 
         Ok(())
     }
+    fn supported_types(&self) -> &'static [BitType]
+    {
+        &[BitType::Eight, BitType::Sixteen]
+    }
 }
