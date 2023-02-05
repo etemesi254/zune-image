@@ -62,7 +62,7 @@ impl OperationsTrait for Convolve
                                 );
                                 *channel = out_channel;
                             }
-                            BitType::Sixteen =>
+                            BitType::U16 =>
                             {
                                 convolve_1d(
                                     channel.reinterpret_as::<u16>().unwrap(),
@@ -125,6 +125,6 @@ impl OperationsTrait for Convolve
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

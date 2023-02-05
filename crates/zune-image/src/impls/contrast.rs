@@ -39,7 +39,7 @@ impl OperationsTrait for Contrast
                 {
                     contrast_u8(channel.reinterpret_as_mut::<u8>().unwrap(), self.contrast)
                 }
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     return Err(ImgOperationsErrors::Generic(
                         "Contrast for 16 bit depth is not yet implemented"

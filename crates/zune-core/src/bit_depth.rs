@@ -41,7 +41,7 @@ pub enum BitDepth
     ///
     /// Data is stored and processed in native endian
     Twelve,
-    /// Sixteen bit depth
+    /// U16 bit depth
     ///
     /// Images with such bit depths use [`u16`] to store values and use the whole range
     /// i.e 0-65535
@@ -66,7 +66,7 @@ pub enum BitType
     U8,
     /// Images represented using a [`u16`] as their
     /// underlying pixel storage.
-    Sixteen
+    U16
 }
 
 impl Default for BitDepth
@@ -114,7 +114,7 @@ impl BitDepth
     /// use zune_core::bit_depth::{BitDepth, BitType};
     /// assert_eq!(BitDepth::U8.bit_type(),BitType::U8);
     ///
-    /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::Sixteen);
+    /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::U16);
     /// ```
     ///
     /// See also [size_of](BitDepth::size_of)
@@ -123,7 +123,7 @@ impl BitDepth
         match self
         {
             Self::Eight => BitType::U8,
-            Self::Ten | Self::Twelve | Self::Sixteen => BitType::Sixteen,
+            Self::Ten | Self::Twelve | Self::Sixteen => BitType::U16,
             Self::Unknown => panic!("Unknown bit type")
         }
     }

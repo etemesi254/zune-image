@@ -79,7 +79,7 @@ impl OperationsTrait for Median
 
                         match depth.bit_type()
                         {
-                            BitType::Sixteen => median(
+                            BitType::U16 => median(
                                 channel.reinterpret_as::<u16>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u16>().unwrap(),
                                 self.radius,
@@ -104,6 +104,6 @@ impl OperationsTrait for Median
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

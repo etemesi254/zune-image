@@ -97,6 +97,6 @@ impl OperationsTrait for Depth
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

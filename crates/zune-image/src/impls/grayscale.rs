@@ -92,7 +92,7 @@ impl OperationsTrait for RgbToGrayScale
 
                 Ok(())
             }
-            BitType::Sixteen =>
+            BitType::U16 =>
             {
                 let r = channel[0].reinterpret_as::<u16>().unwrap();
                 let g = channel[1].reinterpret_as::<u16>().unwrap();
@@ -135,6 +135,6 @@ impl OperationsTrait for RgbToGrayScale
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

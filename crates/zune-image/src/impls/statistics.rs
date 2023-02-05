@@ -85,7 +85,7 @@ impl OperationsTrait for StatisticsOps
 
                         match depth.bit_type()
                         {
-                            BitType::Sixteen => spatial_ops(
+                            BitType::U16 => spatial_ops(
                                 channel.reinterpret_as::<u16>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u16>().unwrap(),
                                 self.radius,
@@ -112,6 +112,6 @@ impl OperationsTrait for StatisticsOps
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

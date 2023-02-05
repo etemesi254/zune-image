@@ -94,7 +94,7 @@ impl OperationsTrait for GaussianBlur
                                 self.sigma
                             );
                         }
-                        BitType::Sixteen =>
+                        BitType::U16 =>
                         {
                             let mut temp = vec![0; width * height];
 
@@ -116,6 +116,6 @@ impl OperationsTrait for GaussianBlur
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }
