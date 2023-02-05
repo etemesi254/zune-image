@@ -91,7 +91,7 @@ impl OperationsTrait for Convolve
 
                 match depth.bit_type()
                 {
-                    BitType::Eight =>
+                    BitType::U8 =>
                     {
                         convolve_1d(
                             channel.reinterpret_as::<u8>().unwrap(),
@@ -104,7 +104,7 @@ impl OperationsTrait for Convolve
                         );
                         *channel = out_channel;
                     }
-                    BitType::Sixteen =>
+                    BitType::U16 =>
                     {
                         convolve_1d(
                             channel.reinterpret_as::<u16>().unwrap(),

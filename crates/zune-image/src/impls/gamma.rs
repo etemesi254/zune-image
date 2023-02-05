@@ -40,12 +40,12 @@ impl OperationsTrait for Gamma
             {
                 match depth.bit_type()
                 {
-                    BitType::Sixteen => gamma(
+                    BitType::U16 => gamma(
                         channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.value,
                         max_value
                     ),
-                    BitType::Eight => gamma(
+                    BitType::U8 => gamma(
                         channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.value,
                         max_value

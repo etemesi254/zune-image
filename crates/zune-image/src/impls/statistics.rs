@@ -49,7 +49,7 @@ impl OperationsTrait for StatisticsOps
 
                 match depth.bit_type()
                 {
-                    BitType::Sixteen => spatial_ops(
+                    BitType::U16 => spatial_ops(
                         channel.reinterpret_as::<u16>().unwrap(),
                         new_channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.radius,
@@ -57,7 +57,7 @@ impl OperationsTrait for StatisticsOps
                         height,
                         self.operation
                     ),
-                    BitType::Eight => spatial_ops(
+                    BitType::U8 => spatial_ops(
                         channel.reinterpret_as::<u8>().unwrap(),
                         new_channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.radius,

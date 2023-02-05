@@ -46,7 +46,7 @@ impl OperationsTrait for Unsharpen
 
             match depth.bit_type()
             {
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];
@@ -66,7 +66,7 @@ impl OperationsTrait for Unsharpen
                     }
                 }
 
-                BitType::Eight =>
+                BitType::U8 =>
                 {
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];

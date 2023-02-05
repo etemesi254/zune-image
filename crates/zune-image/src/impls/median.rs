@@ -48,14 +48,14 @@ impl OperationsTrait for Median
 
                 match depth.bit_type()
                 {
-                    BitType::Sixteen => median(
+                    BitType::U16 => median(
                         channel.reinterpret_as::<u16>().unwrap(),
                         new_channel.reinterpret_as_mut::<u16>().unwrap(),
                         self.radius,
                         width,
                         height
                     ),
-                    BitType::Eight => median(
+                    BitType::U8 => median(
                         channel.reinterpret_as::<u8>().unwrap(),
                         new_channel.reinterpret_as_mut::<u8>().unwrap(),
                         self.radius,
