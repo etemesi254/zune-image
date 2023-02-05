@@ -35,7 +35,7 @@ impl OperationsTrait for Contrast
         {
             match depth.bit_type()
             {
-                BitType::Eight =>
+                BitType::U8 =>
                 {
                     contrast_u8(channel.reinterpret_as_mut::<u8>().unwrap(), self.contrast)
                 }
@@ -61,6 +61,6 @@ impl OperationsTrait for Contrast
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight]
+        &[BitType::U8]
     }
 }

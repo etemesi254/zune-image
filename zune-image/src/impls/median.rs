@@ -86,7 +86,7 @@ impl OperationsTrait for Median
                                 width,
                                 height
                             ),
-                            BitType::Eight => median(
+                            BitType::U8 => median(
                                 channel.reinterpret_as::<u8>().unwrap(),
                                 new_channel.reinterpret_as_mut::<u8>().unwrap(),
                                 self.radius,
@@ -104,6 +104,6 @@ impl OperationsTrait for Median
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

@@ -11,7 +11,7 @@
 #[non_exhaustive]
 pub enum BitDepth
 {
-    /// Eight bit depth.
+    /// U8 bit depth.
     ///
     /// Images with such bit depth use [`u8`] to store
     /// pixels and use the whole range from 0-255.
@@ -63,7 +63,7 @@ pub enum BitType
 {
     /// Images represented using a [`u8`] as their
     /// underlying pixel storage
-    Eight,
+    U8,
     /// Images represented using a [`u16`] as their
     /// underlying pixel storage.
     Sixteen
@@ -101,7 +101,7 @@ impl BitDepth
     /// Return the minimum number of bits that can be used to represent
     /// each pixel in the image
     ///
-    /// All bit depths below 8 return a bit type of `BitType::Eight`.
+    /// All bit depths below 8 return a bit type of `BitType::U8`.
     ///  and all those above 8 and below 16 return a bit type of `BitType::SixTeen`
     ///
     /// # Returns
@@ -112,7 +112,7 @@ impl BitDepth
     ///
     /// ```
     /// use zune_core::bit_depth::{BitDepth, BitType};
-    /// assert_eq!(BitDepth::Eight.bit_type(),BitType::Eight);
+    /// assert_eq!(BitDepth::U8.bit_type(),BitType::U8);
     ///
     /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::Sixteen);
     /// ```
@@ -122,7 +122,7 @@ impl BitDepth
     {
         match self
         {
-            Self::Eight => BitType::Eight,
+            Self::Eight => BitType::U8,
             Self::Ten | Self::Twelve | Self::Sixteen => BitType::Sixteen,
             Self::Unknown => panic!("Unknown bit type")
         }

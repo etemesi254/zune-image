@@ -332,7 +332,7 @@ impl<'a> QoiDecoder<'a>
     /// This is always 8
     ///
     /// # Returns
-    /// - [`BitDepth::Eight`]
+    /// - [`BitDepth::U8`]
     ///
     /// # Example
     ///
@@ -340,10 +340,10 @@ impl<'a> QoiDecoder<'a>
     /// use zune_core::bit_depth::BitDepth;
     /// use zune_qoi::QoiDecoder;
     /// let decoder = QoiDecoder::new(&[]);
-    /// assert_eq!(decoder.get_bit_depth(),BitDepth::Eight)
+    /// assert_eq!(decoder.get_bit_depth(),BitDepth::U8)
     /// ```
     ///
-    /// [`BitDepth::Eight`]:zune_core::bit_depth::BitDepth::Eight
+    /// [`BitDepth::U8`]:zune_core::bit_depth::BitDepth::Eight
     pub const fn get_bit_depth(&self) -> BitDepth
     {
         BitDepth::Eight

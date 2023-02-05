@@ -49,7 +49,7 @@ impl OperationsTrait for Convolve
 
                         match depth.bit_type()
                         {
-                            BitType::Eight =>
+                            BitType::U8 =>
                             {
                                 convolve_1d(
                                     channel.reinterpret_as::<u8>().unwrap(),
@@ -125,6 +125,6 @@ impl OperationsTrait for Convolve
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

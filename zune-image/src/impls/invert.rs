@@ -31,7 +31,7 @@ impl OperationsTrait for Invert
         {
             match depth
             {
-                BitType::Eight => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
+                BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
                 BitType::Sixteen => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
                 _ => todo!()
             }
@@ -51,6 +51,6 @@ impl OperationsTrait for Invert
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }

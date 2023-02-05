@@ -37,7 +37,7 @@ impl OperationsTrait for StretchContrast
         {
             match depth.bit_type()
             {
-                BitType::Eight => stretch_contrast(
+                BitType::U8 => stretch_contrast(
                     channel.reinterpret_as_mut::<u8>().unwrap(),
                     self.lower as u8,
                     self.upper as u8
@@ -54,6 +54,6 @@ impl OperationsTrait for StretchContrast
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::Eight, BitType::Sixteen]
+        &[BitType::U8, BitType::Sixteen]
     }
 }
