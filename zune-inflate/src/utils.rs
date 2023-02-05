@@ -13,28 +13,6 @@ pub(crate) fn make_decode_table_entry(decode_results: &[u32], sym: usize, len: u
     decode_results[sym] + (len << 8) + len
 }
 
-/// Copy SIZE amount of bytes from src, starting from `src_offset` into dest starting from
-/// `dest_offset`.
-pub fn fixed_copy<const SIZE: usize>(
-    src: &[u8], dest: &mut [u8], src_offset: usize, dest_offset: usize
-)
-{
-    // for debug builds, ensure we don't go out of bounds
-    debug_assert!(
-        src_offset + SIZE - 1 <= src.len(),
-        "[src]: End position {} out of range for slice of length {}",
-        src_offset + SIZE,
-        src.len()
-    );
-    debug_assert!(
-        dest_offset + SIZE <= dest.len(),
-        "[dst]: End position {} out of range for slice of length {}",
-        dest_offset + SIZE,
-        dest.len()
-    );
-    dest[dest_offset..dest_offset + SIZE].copy_from_slice(&src[src_offset..src_offset + SIZE]);
-}
-
 /// A safe version of src.copy_within that helps me because I tend to always
 /// confuse the arguments
 pub fn fixed_copy_within<const SIZE: usize>(dest: &mut [u8], src_offset: usize, dest_offset: usize)
