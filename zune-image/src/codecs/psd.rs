@@ -20,12 +20,11 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace();
 
-        debug!("De-Interleaving image channel");
-
         let image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-            DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace)
+            DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace),
+            _ => unreachable!()
         };
 
         Ok(image)

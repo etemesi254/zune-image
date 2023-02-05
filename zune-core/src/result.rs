@@ -2,6 +2,7 @@
 /// u8's or u16's used for decoding pixels
 use alloc::vec::Vec;
 
+#[non_exhaustive]
 pub enum DecodingResult
 {
     U8(Vec<u8>),

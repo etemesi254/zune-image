@@ -351,6 +351,7 @@ impl<'a> PSDDecoder<'a>
                         }
                     }
                 }
+                _ => unreachable!()
             }
         }
 

@@ -33,6 +33,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
             {
                 Image::from_u16(&data, width, height, BitDepth::Sixteen, colorspace)
             }
+            _ => unreachable!()
         };
 
         // set gamma value or 2.2 if image has none.
