@@ -40,7 +40,7 @@ impl OperationsTrait for Brighten
                     self.value as u8,
                     max_val as u8
                 ),
-                BitType::Sixteen => brighten(
+                BitType::U16 => brighten(
                     channel.reinterpret_as_mut::<u16>().unwrap(),
                     self.value as u16,
                     max_val
@@ -62,6 +62,6 @@ impl OperationsTrait for Brighten
 
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

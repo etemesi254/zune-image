@@ -411,12 +411,12 @@ impl<'a> PPMDecoder<'a>
     /// are not decoded.
     ///
     /// # Returns
-    /// - `Some(BitDepth)`: The image bit depth, can be [U8] or [Sixteen]
+    /// - `Some(BitDepth)`: The image bit depth, can be [U8] or [U16]
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
     /// [U8]: BitDepth::U8,
-    /// [Sixteen]: BitDepth::Sixteen
+    /// [U16]: BitDepth::Sixteen
     pub const fn get_bit_depth(&self) -> Option<BitDepth>
     {
         if self.decoded_headers
@@ -534,7 +534,7 @@ impl<'a> PPMDecoder<'a>
 
                 Ok(DecodingResult::U8(data))
             }
-            BitType::Sixteen =>
+            BitType::U16 =>
             {
                 // size is divided by 2 since sizeof added 2 for u16
                 // and when channel stores u16 it uses double the size

@@ -61,7 +61,7 @@ impl OperationsTrait for Crop
                     );
                     *channel = new_vec;
                 }
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     crop::<u16>(
                         channel.reinterpret_as().unwrap(),
@@ -84,6 +84,6 @@ impl OperationsTrait for Crop
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

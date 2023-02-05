@@ -52,7 +52,7 @@ impl OperationsTrait for Transpose
                     );
                     *channel = out_channel;
                 }
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     transpose_u16(
                         channel.reinterpret_as::<u16>().unwrap(),
@@ -72,6 +72,6 @@ impl OperationsTrait for Transpose
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

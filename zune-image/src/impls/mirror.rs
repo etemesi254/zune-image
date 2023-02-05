@@ -45,7 +45,7 @@ impl OperationsTrait for Mirror
                     );
                 }
 
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     mirror(
                         channel.reinterpret_as_mut::<u16>().unwrap(),
@@ -62,6 +62,6 @@ impl OperationsTrait for Mirror
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

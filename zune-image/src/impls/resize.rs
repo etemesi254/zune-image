@@ -61,7 +61,7 @@ impl OperationsTrait for Resize
                     *old_channel = new_channel;
                 }
             }
-            BitType::Sixteen =>
+            BitType::U16 =>
             {
                 for old_channel in image.get_channels_mut(true)
                 {
@@ -87,6 +87,6 @@ impl OperationsTrait for Resize
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

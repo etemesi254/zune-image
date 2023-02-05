@@ -67,7 +67,7 @@ impl Add for Image
                         .for_each(|(x, y)| *x = x.saturating_add(*y));
                 }
             }
-            BitType::Sixteen =>
+            BitType::U16 =>
             {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
@@ -117,7 +117,7 @@ impl Sub for Image
                         .for_each(|(x, y)| *x = x.saturating_sub(*y));
                 }
             }
-            BitType::Sixteen =>
+            BitType::U16 =>
             {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)

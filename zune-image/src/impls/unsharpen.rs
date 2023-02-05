@@ -97,7 +97,7 @@ impl OperationsTrait for Unsharpen
                 {
                     s.spawn(|| match depth.bit_type()
                     {
-                        BitType::Sixteen =>
+                        BitType::U16 =>
                         {
                             let mut blur_buffer = vec![0; width * height];
                             let mut blur_scratch = vec![0; width * height];
@@ -140,6 +140,6 @@ impl OperationsTrait for Unsharpen
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }

@@ -36,7 +36,7 @@ impl OperationsTrait for Flop
                 {
                     flop(channel.reinterpret_as_mut::<u8>().unwrap(), width);
                 }
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     flop(channel.reinterpret_as_mut::<u16>().unwrap(), width);
                 }
@@ -48,6 +48,6 @@ impl OperationsTrait for Flop
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::Sixteen]
+        &[BitType::U8, BitType::U16]
     }
 }
