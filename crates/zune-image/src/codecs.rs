@@ -15,7 +15,6 @@
 #![allow(unused_imports, unused_variables)]
 
 use zune_core::options::DecoderOptions;
-use zune_jpeg::JpegDecoder;
 
 use crate::codecs;
 use crate::image_format::ImageFormat;

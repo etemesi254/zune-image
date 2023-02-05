@@ -12,6 +12,7 @@
 //! All are seen as u8 to it.
 //!
 use std::alloc::{alloc, dealloc, realloc, Layout};
+use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 
@@ -67,7 +68,9 @@ pub struct Channel
 {
     ptr:      *mut u8,
     length:   usize,
-    capacity: usize
+    capacity: usize,
+    // type id for which the channel was created with
+    type_id:  Option<TypeId>
 }
 
 unsafe impl Send for Channel {}
@@ -181,14 +184,15 @@ impl Channel
             Self {
                 ptr,
                 length: 0,
-                capacity
+                capacity,
+                type_id: None
             }
         }
     }
 
     /// Creates  a new channel capable of storing T*length items and
     /// fill it with elm symbols
-    pub fn from_elm<T: Copy>(length: usize, elm: T) -> Channel
+    pub fn from_elm<T: Copy + 'static>(length: usize, elm: T) -> Channel
     {
         // new currently zeroes memory
         let mut new_chan = Channel::new_with_length(length * size_of::<T>());
@@ -237,7 +241,7 @@ impl Channel
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default>(&self) -> Option<&[T]>
+    pub fn reinterpret_as<T: Default + 'static>(&self) -> Option<&[T]>
     {
         // Get size of pointer
         let size = core::mem::size_of::<T>();
@@ -259,7 +263,7 @@ impl Channel
         Some(new_slice)
     }
 
-    pub fn reinterpret_as_mut<T: Default>(&mut self) -> Option<&mut [T]>
+    pub fn reinterpret_as_mut<T: Default + 'static>(&mut self) -> Option<&mut [T]>
     {
         // Get size of pointer
         let size = core::mem::size_of::<T>();
@@ -322,7 +326,7 @@ impl Channel
         self.length += size;
     }
     /// Fill this channel with the element `T`
-    pub fn fill<T: Copy>(&mut self, element: T) -> Result<(), ChannelErrors>
+    pub fn fill<T: Copy + 'static>(&mut self, element: T) -> Result<(), ChannelErrors>
     {
         let size = core::mem::size_of::<T>();
 
@@ -357,7 +361,7 @@ impl Channel
     /// Confirm that data is aligned and
     ///
     /// the type T can evenly divide length
-    fn confirm_suspicions<T>(&self) -> Result<(), ChannelErrors>
+    fn confirm_suspicions<T: 'static>(&self) -> Result<(), ChannelErrors>
     {
         // confirm the data is aligned for T
         if !is_aligned::<T>(self.ptr)
@@ -372,6 +376,13 @@ impl Channel
         if self.length % size_of::<T>() != 0
         {
             return Err(ChannelErrors::UnevenLength(self.length, size_of::<T>()));
+        }
+        if let Some(id) = self.type_id
+        {
+            if id != TypeId::of::<T>()
+            {
+                panic!();
+            }
         }
 
         Ok(())
