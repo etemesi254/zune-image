@@ -71,7 +71,7 @@ impl OperationsTrait for BoxBlur
 
             match depth.bit_type()
             {
-                BitType::Sixteen =>
+                BitType::U16 =>
                 {
                     let mut scratch_space = vec![0; width * height];
 
@@ -81,7 +81,7 @@ impl OperationsTrait for BoxBlur
                         box_blur_u16(data, &mut scratch_space, width, height, self.radius);
                     }
                 }
-                BitType::Eight =>
+                BitType::U8 =>
                 {
                     let mut scratch_space = vec![0; width * height];
 
