@@ -493,12 +493,10 @@ impl<'a> JpegDecoder<'a>
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
-        let chunks_size = width * out_colorspace_components * 8 * self.h_max * self.v_max;
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
         let extra = usize::from(self.info.width) * 8;
 
         let mut pixels = vec![0; capacity * out_colorspace_components + extra];
-        let mut chunks = pixels.chunks_mut(chunks_size);
         let mut temporary: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
@@ -515,7 +513,7 @@ impl<'a> JpegDecoder<'a>
             {
                 let mut len = comp.width_stride * DCT_BLOCK / 8;
 
-                len *= comp.vertical_sample * comp.horizontal_sample;
+                len *= comp.vertical_sample * comp.horizontal_sample * mcu_height;
 
                 if (self.sub_sample_ratio == SampleRatios::H
                     || self.sub_sample_ratio == SampleRatios::HV)
@@ -606,81 +604,41 @@ impl<'a> JpegDecoder<'a>
                     component.idct_pos += 7 * component.width_stride;
                 }
             }
+        }
+        if self.is_interleaved
+        {
+            let height = usize::from(self.height());
+            upsample_and_color_convert(
+                &temporary,
+                &mut self.components,
+                padded_width,
+                self.color_convert_16,
+                self.input_colorspace,
+                self.options.jpeg_get_out_colorspace(),
+                &mut pixels,
+                width,
+                height,
+                &mut upsampler_scratch_space
+            )?;
+        }
+        else
+        {
+            let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
 
-            if i == 0 && self.is_interleaved && self.sub_sample_ratio != SampleRatios::H
-            {
-                // copy first row of idct to the upsampler
-                // Needed for HV and V upsampling.
-                self.components
-                    .iter_mut()
-                    .enumerate()
-                    .for_each(|(pos, comp)| {
-                        if comp.needed && comp.component_id != ComponentID::Y
-                        {
-                            //copy
-                            let length = comp.upsample_scanline.len();
+            temporary
+                .iter()
+                .enumerate()
+                .for_each(|(pos, x)| channels_ref[pos] = x);
 
-                            comp.upsample_scanline
-                                .copy_from_slice(&temporary[pos][0..length]);
-                        }
-                    });
-            }
-
-            if self.is_interleaved
-            {
-                if i == mcu_height - 1 // take last row even if it doesn't evenly divide it
-                    || (self.sub_sample_ratio == SampleRatios::H && i % 2 == 1)
-                    || (self.sub_sample_ratio == SampleRatios::V)
-                    || (self.sub_sample_ratio == SampleRatios::HV && i % 2 == 1)
-                {
-                    // We have done a complete mcu width, we can upsample.
-
-                    // reset counter.
-                    // The next iteration will reuse the temporary channel
-                    // so reset here.
-                    for component in &mut self.components
-                    {
-                        component.idct_pos = 0;
-                    }
-
-                    upsample_and_color_convert(
-                        &temporary,
-                        &mut self.components,
-                        padded_width,
-                        self.color_convert_16,
-                        self.input_colorspace,
-                        self.options.jpeg_get_out_colorspace(),
-                        chunks.next().unwrap(),
-                        width,
-                        &mut upsampler_scratch_space
-                    )?;
-                }
-            }
-            else
-            {
-                for component in &mut self.components
-                {
-                    component.idct_pos = 0;
-                }
-                // color convert expects a reference.
-                let mut temporary_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
-
-                temporary
-                    .iter()
-                    .enumerate()
-                    .for_each(|(pos, x)| temporary_ref[pos] = x);
-
-                // Color convert.
-                color_convert_no_sampling(
-                    &temporary_ref,
-                    self.color_convert_16,
-                    self.input_colorspace,
-                    self.options.jpeg_get_out_colorspace(),
-                    chunks.next().unwrap(),
-                    width,
-                    padded_width
-                )?;
-            }
+            color_convert_no_sampling(
+                &channels_ref,
+                self.color_convert_16,
+                self.input_colorspace,
+                self.options.jpeg_get_out_colorspace(),
+                &mut pixels,
+                width,
+                padded_width
+            )?;
         }
 
         debug!("Finished decoding image");
