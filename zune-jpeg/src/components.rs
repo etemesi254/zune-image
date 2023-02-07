@@ -13,8 +13,13 @@ use crate::upsampler::upsample_no_op;
 /// Represents an up-sampler function, this function will be called to upsample
 /// a down-sampled image
 
-pub type UpSampler =
-    fn(input: &[i16], in_ref: &mut [i16], scratch_space: &mut [i16], output: &mut [i16]);
+pub type UpSampler = fn(
+    input: &[i16],
+    in_near: &[i16],
+    in_far: &[i16],
+    scratch_space: &mut [i16],
+    output: &mut [i16]
+);
 
 /// Component Data from start of frame
 #[derive(Clone)]
