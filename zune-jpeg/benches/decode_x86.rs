@@ -32,9 +32,7 @@ fn decode_no_samp(c: &mut Criterion)
     });
     group.bench_function("no intrinsics", |b| {
         b.iter(|| {
-            let mut opt = DecoderOptions::default();
-
-            opt.use_unsafe = false;
+            let opt = DecoderOptions::default().set_use_unsafe(false);
             black_box(decode_jpeg(data.as_slice(), opt));
         })
     });

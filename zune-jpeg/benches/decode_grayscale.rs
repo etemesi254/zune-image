@@ -11,8 +11,7 @@ use zune_jpeg::JpegDecoder;
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8>
 {
-    let mut options = DecoderOptions::default();
-    options.out_colorspace = ColorSpace::Luma;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
 
     let mut d = JpegDecoder::new_with_options(options, buf);
 
