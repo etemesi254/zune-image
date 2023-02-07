@@ -89,7 +89,8 @@ pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler
 /// Upsample nothing
 
 pub fn upsample_no_op(
-    _input: &[i16], _in_ref: &mut [i16], _scratch_space: &mut [i16], _output: &mut [i16]
+    _input: &[i16], _in_ref: &[i16], _in_near: &[i16], _scratch_space: &mut [i16],
+    _output: &mut [i16]
 )
 {
 }

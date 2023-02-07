@@ -1,5 +1,5 @@
 pub fn upsample_horizontal(
-    input: &[i16], _ref: &mut [i16], _scratch: &mut [i16], output: &mut [i16]
+    input: &[i16], _ref: &[i16], _in_near: &[i16], _scratch: &mut [i16], output: &mut [i16]
 )
 {
     assert_eq!(
@@ -48,26 +48,31 @@ pub fn upsample_horizontal(
     f_out[1] = i_last[1];
 }
 pub fn upsample_vertical(
-    input: &[i16], in_ref: &mut [i16], _scratch_space: &mut [i16], output: &mut [i16]
+    input: &[i16], in_near: &[i16], in_far: &[i16], _scratch_space: &mut [i16], output: &mut [i16]
 )
 {
     let middle = output.len() / 2;
 
     let (out_top, out_bottom) = output.split_at_mut(middle);
 
-    for (((near, far), ot), ob) in in_ref.iter().zip(input.iter()).zip(out_top).zip(out_bottom)
+    // for the first row, closest row is in_near
+    for ((near, far), x) in input.iter().zip(in_near.iter()).zip(out_top)
     {
-        *ot = (((3 * near) + 2) + far) >> 2;
-        *ob = (((3 * far) + 2) + near) >> 2;
+        *x = (((3 * near) + 2) + far) >> 2;
     }
-    // copy input to ref to be used for the next row
-    in_ref.copy_from_slice(input);
+    // for the second row, the closest row to input is in_far
+    for ((near, far), x) in input.iter().zip(in_far.iter()).zip(out_bottom)
+    {
+        *x = (((3 * near) + 2) + far) >> 2;
+    }
 }
 
-pub fn upsample_hv(input: &[i16], in_ref: &mut [i16], scratch_space: &mut [i16], output: &mut [i16])
+pub fn upsample_hv(
+    input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
+)
 {
     let mut t = [0];
-    upsample_vertical(input, in_ref, &mut t, scratch_space);
+    upsample_vertical(input, in_near, in_far, &mut t, scratch_space);
     // horizontal upsampling must be done separate for every line
     // Otherwise it introduces artifacts that may cause the edge colors
     // to appear on the other line.
@@ -76,20 +81,21 @@ pub fn upsample_hv(input: &[i16], in_ref: &mut [i16], scratch_space: &mut [i16],
     // splitting the inputs and outputs into half ensures we only handle
     // one scanline per iteration
     let scratch_half = scratch_space.len() / 2;
-    let in_ref_half = in_ref.len() / 2;
 
     let output_half = output.len() / 2;
 
     upsample_horizontal(
         &scratch_space[..scratch_half],
-        &mut in_ref[..in_ref_half],
+        &[],
+        &[],
         &mut t,
         &mut output[..output_half]
     );
 
     upsample_horizontal(
         &scratch_space[scratch_half..],
-        &mut in_ref[in_ref_half..],
+        &[],
+        &[],
         &mut t,
         &mut output[output_half..]
     );
