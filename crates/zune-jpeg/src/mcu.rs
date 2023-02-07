@@ -5,7 +5,7 @@ use core::cmp::min;
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
-use crate::components::{ComponentID, SampleRatios};
+use crate::components::SampleRatios;
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
