@@ -51,8 +51,8 @@ pub(crate) struct Components
     /// Whether we need to decode this image component.
     pub needed: bool,
     /// Upsample scanline
-    pub upsample_scanline: Vec<i16>,
-    /// Upsample destination, stores a scanline
+    pub raw_coeff: Vec<i16>,
+    /// Upsample destination, stores a scanline worth of sub sampled data
     pub upsample_dest: Vec<i16>,
     pub idct_pos: usize,
     pub x: usize,
@@ -133,7 +133,7 @@ impl Components
             width_stride: horizontal_sample,
             id: a[0],
             needed: true,
-            upsample_scanline: vec![],
+            raw_coeff: vec![],
             upsample_dest: vec![],
             idct_pos: 0,
             x: 0,
@@ -153,7 +153,6 @@ impl Components
     ///  - width stride of this element is set for the component.
     pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize)
     {
-        self.upsample_scanline = vec![0; self.width_stride];
         self.upsample_dest = vec![128; self.width_stride * h_max * v_max];
     }
 }
