@@ -1013,7 +1013,10 @@ impl<'a> PngDecoder<'a>
         //
         let depth_scale = if self.png_info.depth == 16 { 2 } else { 1 };
 
-        let size_hint = (self.png_info.width + 1) * self.png_info.height * depth_scale;
+        let size_hint = (self.png_info.width + 1)
+            * self.png_info.height
+            * depth_scale
+            * usize::from(self.png_info.color.num_components());
 
         let option = DeflateOptions::default()
             .set_size_hint(size_hint)
