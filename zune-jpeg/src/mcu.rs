@@ -5,11 +5,12 @@ use core::cmp::min;
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
+use crate::components::SampleRatios;
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
-use crate::worker::color_convert_no_sampling;
+use crate::worker::{color_convert_no_sampling, upsample_and_color_convert_h};
 use crate::JpegDecoder;
 
 /// The size of a DC block for a MCU.
@@ -131,6 +132,8 @@ impl<'a> JpegDecoder<'a>
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
+        let height = usize::from(self.info.width);
+
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
 
         let mut stream = BitStream::new();
@@ -187,7 +190,30 @@ impl<'a> JpegDecoder<'a>
 
             if self.is_interleaved
             {
-                panic!();
+                if self.sub_sample_ratio == SampleRatios::H
+                {
+                    // H sample has it easy since it doesn't require the rows below or above
+                    // so we can simply pass it as is with no complications
+                    let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
+
+                    self.components
+                        .iter()
+                        .enumerate()
+                        .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
+
+                    upsample_and_color_convert_h(
+                        &mut self.components,
+                        self.color_convert_16,
+                        self.input_colorspace,
+                        self.options.jpeg_get_out_colorspace(),
+                        &mut pixels[pixels_written..],
+                        width,
+                        padded_width
+                    )?;
+
+                    // increment pointer to number of pixels written
+                    pixels_written += width * out_colorspace_components * 8;
+                }
             }
             else
             {
