@@ -1011,11 +1011,13 @@ impl<'a> PngDecoder<'a>
         // because it controls the allocation and doesn't have to check for near EOB
         // runs.
         //
-        let size_hint = (self.png_info.width + 1) * self.png_info.height;
+        let depth_scale = if self.png_info.depth == 16 { 2 } else { 1 };
+
+        let size_hint = (self.png_info.width + 1) * self.png_info.height * depth_scale;
 
         let option = DeflateOptions::default()
             .set_size_hint(size_hint)
-            .set_limit(size_hint + 2 * (self.png_info.height))
+            .set_limit(size_hint + 4 * (self.png_info.height))
             .set_confirm_checksum(self.options.inflate_get_confirm_adler());
 
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
