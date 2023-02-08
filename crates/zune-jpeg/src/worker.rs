@@ -355,6 +355,65 @@ pub(crate) fn upsample_and_color_convert(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn upsample_and_color_convert_h(
+    component_data: &mut [Components], color_convert_16: ColorConvert16Ptr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
+    padded_width: usize
+) -> Result<(), DecodeErrors>
+{
+    let v_samp = component_data[0].vertical_sample;
+
+    let out_stride = width * output_colorspace.num_components() * v_samp;
+    // Width of image which takes into account fill bytes
+    let width_stride = component_data[0].width_stride * v_samp;
+
+    let (y, remainder) = component_data.split_at_mut(1);
+    for ((pos, out), y_stride) in output
+        .chunks_mut(out_stride)
+        .enumerate()
+        .zip(y[0].raw_coeff.chunks(width_stride))
+    {
+        for component in remainder.iter_mut()
+        {
+            let raw_data = &component.raw_coeff;
+
+            let comp_stride_start = pos * component.width_stride;
+            let comp_stride_stop = comp_stride_start + component.width_stride;
+
+            let comp_stride = &raw_data[comp_stride_start..comp_stride_stop];
+            let out_stride = &mut component.upsample_dest;
+
+            // upsample using the fn pointer, can either be h,v or hv upsampling.
+            (component.up_sampler)(comp_stride, &[], &[], &mut [], out_stride);
+        }
+
+        // by here, each component has been up-sampled, so let's color convert a row(s)
+        let cb_stride = &remainder[0].upsample_dest;
+        let cr_stride = &remainder[1].upsample_dest;
+
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
+        {
+            &component.upsample_dest
+        }
+        else
+        {
+            &[]
+        };
+
+        color_convert_no_sampling(
+            &[y_stride, cb_stride, cr_stride, iq_stride],
+            color_convert_16,
+            input_colorspace,
+            output_colorspace,
+            out,
+            width,
+            padded_width
+        )?;
+    }
+    Ok(())
+}
+
 #[test]
 fn test_jpg()
 {
