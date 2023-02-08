@@ -142,7 +142,10 @@ pub struct DecoderOptions
     ///
     /// - Default value:100
     /// - Respected by: `jpeg`
-    max_scans: usize,
+    max_scans:     usize,
+    /// Maximum size for deflate.
+    /// Respected by all decoders that use inflate/deflate
+    deflate_limit: usize,
 
     flags: DecoderFlags
 }
@@ -233,6 +236,10 @@ impl DecoderOptions
         self
     }
     /// Set expected colorspace for which the jpeg output is expected to be in
+    ///
+    /// This is mainly provided as is, we do not guarantee the decoder can convert to all colorspaces
+    /// and the decoder can change it internally when it sees fit.
+    #[must_use]
     pub fn jpeg_set_out_colorspace(mut self, colorspace: ColorSpace) -> Self
     {
         self.out_colorspace = colorspace;
@@ -295,6 +302,20 @@ impl DecoderOptions
         self.flags.set(DecoderFlags::INFLATE_CONFIRM_ADLER, yes);
         self
     }
+    /// Get default inflate limit for which the decoder
+    /// will not try to decompress further
+    pub const fn inflate_get_limit(&self) -> usize
+    {
+        self.deflate_limit
+    }
+    /// Set the default inflate limit for which decompressors
+    /// relying on inflate won't surpass this limit
+    #[must_use]
+    pub fn inflate_set_limit(mut self, limit: usize) -> Self
+    {
+        self.deflate_limit = limit;
+        self
+    }
     /// Whether the inflate decoder should confirm
     /// crc 32 checksums
     pub const fn png_get_confirm_crc(&self) -> bool
@@ -303,6 +324,7 @@ impl DecoderOptions
     }
     /// Set whether the png decoder should confirm
     /// CRC 32 checksums
+    #[must_use]
     pub fn png_set_confirm_crc(mut self, yes: bool) -> Self
     {
         self.flags.set(DecoderFlags::PNG_CONFIRM_CRC, yes);
@@ -319,6 +341,7 @@ impl Default for DecoderOptions
             max_width:      1 << 14,
             max_height:     1 << 14,
             max_scans:      100,
+            deflate_limit:  1 << 30,
             flags:          decoder_strict_mode()
         }
     }
