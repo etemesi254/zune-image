@@ -28,7 +28,6 @@ use crate::headers::{parse_huffman, parse_sos};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
-use crate::worker::{color_convert_no_sampling, upsample_and_color_convert};
 
 impl<'a> JpegDecoder<'a>
 {
@@ -497,13 +496,15 @@ impl<'a> JpegDecoder<'a>
         let extra = usize::from(self.info.width) * 8;
 
         let mut pixels = vec![0; capacity * out_colorspace_components + extra];
-        let mut temporary: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
         for (pos, comp) in self.components.iter_mut().enumerate()
         {
             // Allocate only needed components.
+            //
+            // For special colorspaces i.e YCCK and CYMK, just allocate all of the needed
+            // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
                 pos
@@ -511,38 +512,27 @@ impl<'a> JpegDecoder<'a>
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
             {
-                let mut len = comp.width_stride * DCT_BLOCK / 8;
-
-                len *= comp.vertical_sample * comp.horizontal_sample * mcu_height;
-
-                if (self.sub_sample_ratio == SampleRatios::H
-                    || self.sub_sample_ratio == SampleRatios::HV)
-                    && comp.component_id != ComponentID::Y
-                {
-                    len *= 2;
-                }
+                // allocate enough space to hold a whole MCU width
+                // this means we should take into account sampling ratios
+                // `*8` is because each MCU spans 8 widths.
+                let len = comp.width_stride * comp.vertical_sample * 8;
 
                 comp.needed = true;
-                temporary[pos] = vec![0; len];
+                comp.raw_coeff = vec![0; len];
             }
             else
             {
                 comp.needed = false;
             }
-
-            if comp.needed && self.is_interleaved && (comp.component_id != ComponentID::Y)
-            {
-                comp.setup_upsample_scanline(self.h_max, self.v_max);
-            }
         }
+
+        let mut pixels_written = 0;
 
         // dequantize, idct and color convert.
         for i in 0..mcu_height
         {
-            'component: for position in 0..self.input_colorspace.num_components()
+            'component: for (position, component) in &mut self.components.iter_mut().enumerate()
             {
-                let component = &mut self.components[position];
-
                 if !component.needed
                 {
                     continue 'component;
@@ -562,7 +552,7 @@ impl<'a> JpegDecoder<'a>
 
                 let slice = &block[position][start..start + step];
 
-                let temp_channel = &mut temporary[position];
+                let temp_channel = &mut component.raw_coeff;
 
                 // The next logical step is to iterate width wise.
                 // To figure out how many pixels we iterate by we use effective pixels
@@ -603,41 +593,18 @@ impl<'a> JpegDecoder<'a>
                     // and component.idct_pos is one stride long
                     component.idct_pos += 7 * component.width_stride;
                 }
+                component.idct_pos = 0;
             }
-        }
-        if self.is_interleaved
-        {
-            let height = usize::from(self.height());
-            upsample_and_color_convert(
-                &temporary,
-                &mut self.components,
+
+            // process that width up until it's impossible
+            self.post_process(
+                &mut pixels,
+                i,
+                mcu_height,
+                width,
                 padded_width,
-                self.color_convert_16,
-                self.input_colorspace,
-                self.options.jpeg_get_out_colorspace(),
-                &mut pixels,
-                width,
-                height,
+                &mut pixels_written,
                 &mut upsampler_scratch_space
-            )?;
-        }
-        else
-        {
-            let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
-
-            temporary
-                .iter()
-                .enumerate()
-                .for_each(|(pos, x)| channels_ref[pos] = x);
-
-            color_convert_no_sampling(
-                &channels_ref,
-                self.color_convert_16,
-                self.input_colorspace,
-                self.options.jpeg_get_out_colorspace(),
-                &mut pixels,
-                width,
-                padded_width
             )?;
         }
 
