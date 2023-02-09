@@ -514,12 +514,3 @@ pub(crate) fn upsample_and_color_convert_v(
     }
     Ok(())
 }
-
-#[test]
-fn test_jpg()
-{
-    use crate::JpegDecoder;
-
-    let data = std::fs::read("/home/caleb/jpeg/1243955694.ultraviolet_evilwallpaper.jpg").unwrap();
-    let _ = JpegDecoder::new(&data).decode().unwrap();
-}
