@@ -384,7 +384,8 @@ pub(crate) fn upsample_and_color_convert_h(
             let comp_stride = &raw_data[comp_stride_start..comp_stride_stop];
             let out_stride = &mut component.upsample_dest;
 
-            // upsample using the fn pointer, can either be h,v or hv upsampling.
+            // upsample using the fn pointer, should only be H, so no need for
+            // row up and row down
             (component.up_sampler)(comp_stride, &[], &[], &mut [], out_stride);
         }
 
@@ -414,11 +415,200 @@ pub(crate) fn upsample_and_color_convert_h(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub(crate) fn upsample_and_color_convert_v(
+    component_data: &mut [Components], color_convert_16: ColorConvert16Ptr,
+    input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
+    padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16], i: usize,
+    mcu_height: usize
+) -> Result<(), DecodeErrors>
+{
+    // HV and V sampling are a bust.
+    // They suck because we need top row and bottom row.
+    // but we haven't decoded the whole image, we only did a single
+    // MCU width.
+    //
+    // So to make it work,  we have to upsample and color
+    // convert line by line with some math only understandable by a wizard
+
+    let (y_component, remainder) = component_data.split_at_mut(1);
+
+    let out_stride = width * output_colorspace.num_components() * 2;
+
+    let width_stride = y_component[0].width_stride * 2;
+    let stop_offset = y_component[0].raw_coeff.len() / width_stride;
+
+    if i > 0
+    {
+        // Handle the last MCU of the previous row
+        // This wasn't up-sampled as we didn't have the row after
+        // so we do it now
+        for c in remainder.iter_mut()
+        {
+            let stride = c.width_stride;
+
+            let dest = &mut c.upsample_dest;
+            // Note this does not handle mcu edge shenanigans
+
+            // get current row
+            let row = &c.current_row[..];
+            let row_up = &c.prev_row[..];
+            let row_down = &c.raw_coeff[0..stride];
+
+            // upsample
+            (c.up_sampler)(row, row_up, row_down, upsampler_scratch_space, dest);
+        }
+        // by here, each component has been up-sampled, so let's color convert a row(s)
+        let cb_stride = &remainder[0].upsample_dest;
+        let cr_stride = &remainder[1].upsample_dest;
+
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
+        {
+            &component.upsample_dest
+        }
+        else
+        {
+            &[]
+        };
+        // color convert row
+        color_convert_no_sampling(
+            &[&y_component[0].current_row, cb_stride, cr_stride, iq_stride],
+            color_convert_16,
+            input_colorspace,
+            output_colorspace,
+            &mut output[*pixels_written..*pixels_written + out_stride],
+            width,
+            padded_width
+        )?;
+        *pixels_written += out_stride;
+    }
+    'top: for ((pos, out), y_stride) in output[*pixels_written..]
+        .chunks_mut(out_stride)
+        .enumerate()
+        .zip(y_component[0].raw_coeff.chunks_exact(width_stride))
+    {
+        // we have the Y component width stride.
+        // this may be higher than the actual width,(2x because vertical sampling)
+        //
+        // This will not upsample the last row
+
+        // if false, do not upsample.
+        // set to false on the last row of an mcu
+        let mut upsample = true;
+
+        for c in remainder.iter_mut()
+        {
+            let stride = c.width_stride;
+            let mut row_up: &[i16] = &[];
+            // row below current sample
+            let mut row_down: &[i16] = &[];
+            let dest = &mut c.upsample_dest;
+
+            // get current row
+            let row = &c.raw_coeff[pos * stride..(pos + 1) * stride];
+
+            if i == 0 && pos == 0
+            {
+                // first IMAGE row, row_up is the same as current row
+                // row_down is the row below.
+                row_up = &c.raw_coeff[pos * stride..(pos + 1) * stride];
+                row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
+            }
+            else if pos == 0
+            {
+                // first row of a new mcu, previous row was copied so use that
+                row_up = &c.prev_row;
+                row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
+            }
+            else if pos > 0 && pos < stop_offset - 1
+            {
+                // other rows, get row up and row down relative to our current row
+                row_up = &c.raw_coeff[(pos - 1) * stride..pos * stride];
+                row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
+            }
+            else if i == mcu_height.saturating_sub(1) && pos == stop_offset - 1
+            {
+                // last IMAGE row, adjust pointer to use previous row and current row
+
+                // other rows, get row up and row down relative to our current row
+                row_up = &c.raw_coeff[(pos - 1) * stride..pos * stride];
+                row_down = &c.raw_coeff[pos * stride..(pos + 1) * stride];
+            }
+            else
+            {
+                // the only fallthrough to this point is the last MCU in a row
+                // we need a row at the next MCU but we haven't decoded that MCU yet
+                // so we should save this and when we have the next MCU,
+                // do the due diligence
+
+                // store the current row and previous row in a buffer
+                let prev_row = &c.raw_coeff[(pos - 1) * stride..pos * stride];
+
+                c.prev_row.copy_from_slice(prev_row);
+                c.current_row.copy_from_slice(row);
+                upsample = false;
+            }
+
+            if upsample
+            {
+                // upsample
+                (c.up_sampler)(row, row_up, row_down, upsampler_scratch_space, dest);
+            }
+            if pos == stop_offset - 1
+            {
+                // copy current last MCU row to be used in the next mcu row
+                c.prev_row.copy_from_slice(row);
+            }
+        }
+        // if we didn't upsample,means we are in the last row, so then there is no need
+        // to color convert
+        if !upsample
+        {
+            break 'top;
+        }
+        // by here, each component has been up-sampled, so let's color convert a row(s)
+        let cb_stride = &remainder[0].upsample_dest;
+        let cr_stride = &remainder[1].upsample_dest;
+
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
+        {
+            &component.upsample_dest
+        }
+        else
+        {
+            &[]
+        };
+        // color convert row
+        color_convert_no_sampling(
+            &[y_stride, cb_stride, cr_stride, iq_stride],
+            color_convert_16,
+            input_colorspace,
+            output_colorspace,
+            out,
+            width,
+            padded_width
+        )?;
+        *pixels_written += out_stride;
+    }
+    // copy last row of current y to be used in the next invocation
+    if i < mcu_height - 1
+    {
+        let last_row = y_component[0]
+            .raw_coeff
+            .rchunks_exact(width_stride)
+            .next()
+            .unwrap();
+
+        y_component[0].current_row.copy_from_slice(last_row);
+    }
+    Ok(())
+}
+
 #[test]
 fn test_jpg()
 {
     use crate::JpegDecoder;
 
-    let data = std::fs::read("/home/caleb/jpeg/milad.jpg").unwrap();
+    let data = std::fs::read("/home/caleb/jpeg/1243955694.ultraviolet_evilwallpaper.jpg").unwrap();
     let _ = JpegDecoder::new(&data).decode().unwrap();
 }
