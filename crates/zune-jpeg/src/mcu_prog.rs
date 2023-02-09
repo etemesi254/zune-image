@@ -45,6 +45,12 @@ impl<'a> JpegDecoder<'a>
     {
         setup_component_params(self)?;
 
+        if self.is_interleaved
+        {
+            // this helps us catch component errors.
+            self.set_upsampling()?;
+        }
+
         self.check_component_dimensions()?;
         let mcu_height;
 
@@ -460,9 +466,6 @@ impl<'a> JpegDecoder<'a>
 
         if self.is_interleaved
         {
-            // set upsampling functions
-            self.set_upsampling()?;
-
             mcu_height = self.mcu_y;
         }
         else
