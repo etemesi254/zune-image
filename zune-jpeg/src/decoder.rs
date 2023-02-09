@@ -547,7 +547,7 @@ impl<'a> JpegDecoder<'a>
                 // Vertical sub-sampling
                 info!("Vertical sub-sampling (1,2)");
 
-                self.components[1..].iter_mut().for_each(|x| {
+                self.components[..].iter_mut().for_each(|x| {
                     x.up_sampler = choose_v_samp_function(self.options.get_use_unsafe());
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
@@ -558,7 +558,7 @@ impl<'a> JpegDecoder<'a>
                 // vertical and horizontal sub sampling
                 info!("Vertical and horizontal sub-sampling(2,2)");
 
-                self.components[1..].iter_mut().for_each(|x| {
+                self.components[..].iter_mut().for_each(|x| {
                     x.up_sampler = choose_hv_samp_function(self.options.get_use_unsafe());
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
