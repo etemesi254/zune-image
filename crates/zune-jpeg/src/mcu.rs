@@ -354,7 +354,7 @@ impl<'a> JpegDecoder<'a>
         Ok(())
     }
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    fn post_process(
+    pub(crate) fn post_process(
         &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
         padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
     ) -> Result<(), DecodeErrors>
