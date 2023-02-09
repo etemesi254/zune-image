@@ -379,17 +379,31 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
     // Page 42
 
     // Start of spectral / predictor selection. (between 0 and 63)
-    image.spec_start = image.stream.get_u8_err()? & 63;
+    image.spec_start = image.stream.get_u8_err()?;
     // End of spectral selection
-    image.spec_end = image.stream.get_u8_err()? & 63;
+    image.spec_end = image.stream.get_u8_err()?;
 
     let bit_approx = image.stream.get_u8_err()?;
     // successive approximation bit position high
     image.succ_high = bit_approx >> 4;
 
+    if image.spec_end > 63
+    {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid Se parameter {}, range should be 0-63",
+            image.spec_end
+        )));
+    }
+    if image.spec_start > 63
+    {
+        return Err(DecodeErrors::SosError(format!(
+            "Invalid Ss parameter {}, range should be 0-63",
+            image.spec_start
+        )));
+    }
     if image.succ_high > 13
     {
-        return Err(DecodeErrors::SofError(format!(
+        return Err(DecodeErrors::SosError(format!(
             "Invalid Ah parameter {}, range should be 0-13",
             image.succ_low
         )));
@@ -399,7 +413,7 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
 
     if image.succ_low > 13
     {
-        return Err(DecodeErrors::SofError(format!(
+        return Err(DecodeErrors::SosError(format!(
             "Invalid Al parameter {}, range should be 0-13",
             image.succ_low
         )));
