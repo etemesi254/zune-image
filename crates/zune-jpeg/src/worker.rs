@@ -1,11 +1,10 @@
 use alloc::format;
-use alloc::vec::Vec;
 use core::convert::TryInto;
 
 use zune_core::colorspace::ColorSpace;
 
 use crate::color_convert::ycbcr_to_grayscale;
-use crate::components::{ComponentID, Components};
+use crate::components::Components;
 use crate::decoder::{ColorConvert16Ptr, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 
@@ -266,95 +265,6 @@ fn color_convert_ycbcr(
         rem.copy_from_slice(&temp[0..rem.len()]);
     }
 }
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn upsample_and_color_convert(
-    unprocessed: &[Vec<i16>; MAX_COMPONENTS], component_data: &mut [Components],
-    padded_width: usize, color_convert_16: ColorConvert16Ptr, input_colorspace: ColorSpace,
-    output_colorspace: ColorSpace, output: &mut [u8], width: usize, height: usize,
-    scratch_space: &mut [i16]
-) -> Result<(), DecodeErrors>
-{
-    let v_samp = component_data[0].vertical_sample;
-
-    let out_stride = width * output_colorspace.num_components() * v_samp;
-    // Width of image which takes into account fill bytes
-    let width_stride = component_data[0].width_stride * v_samp;
-
-    let last_row = height / v_samp;
-
-    for ((pos, out), y_stride) in output
-        .chunks_mut(out_stride)
-        .enumerate()
-        .zip(unprocessed[0].chunks(width_stride))
-    {
-        for (component_position, component) in component_data.iter_mut().enumerate()
-        {
-            if component.component_id == ComponentID::Y || !component.needed
-            {
-                continue;
-            }
-            // read a down-sampled stride and upsample it
-            // we need to also take the nearest row and the furthest
-
-            let raw_data = &unprocessed[component_position];
-
-            let comp_stride_start = pos * component.width_stride;
-            let comp_stride_stop = comp_stride_start + component.width_stride;
-
-            // take a slice of the row above and the row below
-            let row_up = if pos == 0
-            {
-                &raw_data[0..component.width_stride]
-            }
-            else
-            {
-                &raw_data[comp_stride_start - component.width_stride..comp_stride_start]
-            };
-
-            let row_down = if pos + 1 >= last_row
-            {
-                // last row, the raw data is the same as the input
-                &raw_data[comp_stride_start..comp_stride_stop]
-            }
-            else
-            {
-                &raw_data[comp_stride_stop..comp_stride_stop + component.width_stride]
-            };
-
-            let comp_stride = &raw_data[comp_stride_start..comp_stride_stop];
-            let out_stride = &mut component.upsample_dest;
-
-            // upsample using the fn pointer, can either be h,v or hv upsampling.
-            (component.up_sampler)(comp_stride, row_up, row_down, scratch_space, out_stride);
-        }
-
-        // by here, each component has been up-sampled, so let's color convert a row(s)
-        let cb_stride = &component_data[1].upsample_dest;
-        let cr_stride = &component_data[2].upsample_dest;
-
-        let iq_stride: &[i16] = if let Some(component) = component_data.get(3)
-        {
-            &component.upsample_dest
-        }
-        else
-        {
-            &[]
-        };
-
-        color_convert_no_sampling(
-            &[y_stride, cb_stride, cr_stride, iq_stride],
-            color_convert_16,
-            input_colorspace,
-            output_colorspace,
-            out,
-            width,
-            padded_width
-        )?;
-    }
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn upsample_and_color_convert_h(
     component_data: &mut [Components], color_convert_16: ColorConvert16Ptr,
@@ -482,6 +392,7 @@ pub(crate) fn upsample_and_color_convert_v(
         )?;
         *pixels_written += out_stride;
     }
+
     'top: for ((pos, out), y_stride) in output[*pixels_written..]
         .chunks_mut(out_stride)
         .enumerate()
