@@ -338,8 +338,32 @@ pub(crate) fn upsample_and_color_convert_v(
     // but we haven't decoded the whole image, we only did a single
     // MCU width.
     //
-    // So to make it work,  we have to upsample and color
-    // convert line by line with some math only understandable by a wizard
+    // So to make it work we upsample and color convert in two steps
+    //
+    // These are the special conditions
+    // 1. First row of image
+    //  row_up points to the current row, since there is no row above it
+    //
+    // 2. Last row of MCU
+    //    We can't upsample yet since we don't have row_down , we haven't decoded it
+    //    - Save the row above us, which we will use
+    //    - Save the current row.
+    //
+    // 3. Before decoding a new  MCU.
+    //   We already had saved the last row, we now currently have the row_down
+    //   which is the first row of this MCU, so we can upsample the last row of the previous
+    //   MCU.
+    //
+    // 4. Decoding a new line for MCU
+    //      Previous row is provided by component.prev_row, the rest can be accessed
+    //      via stride calculations.
+    //  5. Decoding normal lines with no MCU boundary handling.
+    //     Use `component.raw_coeffs` to get raw coefficient data stride wise
+
+    // Most of the logic flows in the following:
+    // 1. Handle the previous MCU
+    // 2. Handle current MCU.
+    // 3. Prepare for future MCU
 
     let (y_component, remainder) = component_data.split_at_mut(1);
 
@@ -351,14 +375,13 @@ pub(crate) fn upsample_and_color_convert_v(
     if i > 0
     {
         // Handle the last MCU of the previous row
-        // This wasn't up-sampled as we didn't have the row after
+        // This wasn't up-sampled as we didn't have the row_down
         // so we do it now
         for c in remainder.iter_mut()
         {
             let stride = c.width_stride;
 
             let dest = &mut c.upsample_dest;
-            // Note this does not handle mcu edge shenanigans
 
             // get current row
             let row = &c.current_row[..];
