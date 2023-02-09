@@ -10,7 +10,9 @@ use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
-use crate::worker::{color_convert_no_sampling, upsample_and_color_convert_h};
+use crate::worker::{
+    color_convert_no_sampling, upsample_and_color_convert_h, upsample_and_color_convert_v
+};
 use crate::JpegDecoder;
 
 /// The size of a DC block for a MCU.
@@ -132,7 +134,6 @@ impl<'a> JpegDecoder<'a>
         let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
-        let height = usize::from(self.info.width);
 
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
 
@@ -155,8 +156,8 @@ impl<'a> JpegDecoder<'a>
             {
                 // allocate enough space to hold a whole MCU width
                 // this means we should take into account sampling ratios
-                // `*8` is because each MCU spans 8 widths
-                let len = comp.width_stride * self.h_max * self.v_max * 8;
+                // `*8` is because each MCU spans 8 widths.
+                let len = comp.width_stride * comp.vertical_sample * 8;
 
                 comp.needed = true;
                 comp.raw_coeff = vec![0; len];
@@ -168,7 +169,12 @@ impl<'a> JpegDecoder<'a>
         }
 
         let mut pixels_written = 0;
-        for _ in 0..mcu_height
+
+        let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
+        let upsampler_scratch_size = is_hv * self.components[0].width_stride;
+        let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
+
+        for i in 0..mcu_height
         {
             // Report if we have no more bytes
             // This may generate false negatives since we over-read bytes
@@ -187,56 +193,16 @@ impl<'a> JpegDecoder<'a>
             // decode a whole MCU width,
             // this takes into account interleaved components.
             self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
-
-            if self.is_interleaved
-            {
-                if self.sub_sample_ratio == SampleRatios::H
-                {
-                    // H sample has it easy since it doesn't require the rows below or above
-                    // so we can simply pass it as is with no complications
-                    let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
-
-                    self.components
-                        .iter()
-                        .enumerate()
-                        .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
-
-                    upsample_and_color_convert_h(
-                        &mut self.components,
-                        self.color_convert_16,
-                        self.input_colorspace,
-                        self.options.jpeg_get_out_colorspace(),
-                        &mut pixels[pixels_written..],
-                        width,
-                        padded_width
-                    )?;
-
-                    // increment pointer to number of pixels written
-                    pixels_written += width * out_colorspace_components * 8;
-                }
-            }
-            else
-            {
-                let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
-
-                self.components
-                    .iter()
-                    .enumerate()
-                    .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
-
-                color_convert_no_sampling(
-                    &channels_ref,
-                    self.color_convert_16,
-                    self.input_colorspace,
-                    self.options.jpeg_get_out_colorspace(),
-                    &mut pixels[pixels_written..],
-                    width,
-                    padded_width
-                )?;
-
-                // increment pointer to number of pixels written
-                pixels_written += width * out_colorspace_components * 8;
-            }
+            // process that width up until it's impossible
+            self.post_process(
+                &mut pixels,
+                i,
+                mcu_height,
+                width,
+                padded_width,
+                &mut pixels_written,
+                &mut upsampler_scratch_space
+            )?;
         }
 
         info!("Finished decoding image");
@@ -258,17 +224,18 @@ impl<'a> JpegDecoder<'a>
             // iterate over components
             for component in &mut self.components
             {
-                let dc_table = self.dc_huffman_tables[component.dc_huff_table]
+                let dc_table = self.dc_huffman_tables[component.dc_huff_table % MAX_COMPONENTS]
                     .as_ref()
-                    .ok_or(DecodeErrors::FormatStatic("No DC table for a component"))?;
-                let ac_table = self.ac_huffman_tables[component.ac_huff_table]
+                    .unwrap();
+
+                let ac_table = self.ac_huffman_tables[component.ac_huff_table % MAX_COMPONENTS]
                     .as_ref()
-                    .ok_or(DecodeErrors::FormatStatic("No AC table for component"))?;
+                    .unwrap();
 
                 let qt_table = &component.quantization_table;
                 let channel = &mut component.raw_coeff;
 
-                // If image is interleaved iterate over scan  components,
+                // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
                 for v_samp in 0..component.vertical_sample
@@ -384,6 +351,76 @@ impl<'a> JpegDecoder<'a>
                 }
             }
         }
+        Ok(())
+    }
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    fn post_process(
+        &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
+        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+    ) -> Result<(), DecodeErrors>
+    {
+        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
+
+        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma
+        {
+            if self.sub_sample_ratio == SampleRatios::H
+            {
+                // H sample has it easy since it doesn't require the rows below or above
+
+                upsample_and_color_convert_h(
+                    &mut self.components,
+                    self.color_convert_16,
+                    self.input_colorspace,
+                    self.options.jpeg_get_out_colorspace(),
+                    &mut pixels[*pixels_written..],
+                    width,
+                    padded_width
+                )?;
+
+                // increment pointer to number of pixels written
+                *pixels_written += width * out_colorspace_components * 8;
+            }
+            else
+            {
+                // an abomination this one ...
+                upsample_and_color_convert_v(
+                    &mut self.components,
+                    self.color_convert_16,
+                    self.input_colorspace,
+                    self.options.jpeg_get_out_colorspace(),
+                    pixels,
+                    width,
+                    padded_width,
+                    pixels_written,
+                    upsampler_scratch_space,
+                    i,
+                    mcu_height
+                )?;
+            }
+        }
+        else
+        {
+            let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
+
+            self.components
+                .iter()
+                .enumerate()
+                .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
+
+            color_convert_no_sampling(
+                &channels_ref,
+                self.color_convert_16,
+                self.input_colorspace,
+                self.options.jpeg_get_out_colorspace(),
+                &mut pixels[*pixels_written..],
+                width,
+                padded_width
+            )?;
+
+            // increment pointer to number of pixels written
+            *pixels_written += width * out_colorspace_components * 8;
+        }
+
         Ok(())
     }
 }
