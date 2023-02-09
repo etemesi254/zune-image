@@ -54,6 +54,10 @@ pub(crate) struct Components
     pub raw_coeff: Vec<i16>,
     /// Upsample destination, stores a scanline worth of sub sampled data
     pub upsample_dest: Vec<i16>,
+    /// previous row, used to handle MCU boundaries
+    pub prev_row: Vec<i16>,
+    /// current row, used to handle MCU boundaries again
+    pub current_row: Vec<i16>,
     pub idct_pos: usize,
     pub x: usize,
     pub w2: usize,
@@ -135,6 +139,8 @@ impl Components
             needed: true,
             raw_coeff: vec![],
             upsample_dest: vec![],
+            prev_row: vec![],
+            current_row: vec![],
             idct_pos: 0,
             x: 0,
             y: 0,
@@ -153,6 +159,8 @@ impl Components
     ///  - width stride of this element is set for the component.
     pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize)
     {
+        self.current_row = vec![0; self.width_stride * self.vertical_sample];
+        self.prev_row = vec![0; self.width_stride];
         self.upsample_dest = vec![128; self.width_stride * h_max * v_max];
     }
 }
