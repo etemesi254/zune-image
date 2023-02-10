@@ -160,7 +160,7 @@ impl Components
     pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize)
     {
         self.current_row = vec![0; self.width_stride * self.vertical_sample];
-        self.prev_row = vec![0; self.width_stride];
+        self.prev_row = vec![0; self.width_stride * self.vertical_sample];
         self.upsample_dest = vec![128; self.width_stride * h_max * v_max];
     }
 }
