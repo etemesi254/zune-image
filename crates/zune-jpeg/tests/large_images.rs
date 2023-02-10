@@ -31,7 +31,7 @@ fn large_vertical_sampling_factors_rgb()
     let pixels = JpegDecoder::new(&data).decode().unwrap();
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 89624073440418279124423614502641624055;
+    const EXPECTED: u128 = 323492540810346221780682098592444605928;
 
     assert_eq!(hash, EXPECTED);
 }

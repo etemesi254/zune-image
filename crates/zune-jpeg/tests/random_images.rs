@@ -54,7 +54,7 @@ fn google_pixel()
     // Grayscale
     let pixels = decoder.decode().expect("Test failed decoding");
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 297723773723904045145011723267592936554;
+    const EXPECTED: u128 = 158482192280972061563719916550984998338;
 
     assert_eq!(hash, EXPECTED);
 }
@@ -122,7 +122,7 @@ fn test_basic()
     let pixels = JpegDecoder::new(data).decode().unwrap();
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 56242265237748686029496710371134854998;
+    const EXPECTED: u128 = 112456425865248678156223247131152675256;
 
     assert_eq!(hash, EXPECTED);
 }
@@ -152,7 +152,21 @@ fn test_fill_bytes_before_marker()
     let pixels = JpegDecoder::new(data).decode().unwrap();
 
     let hash = xxh3_128(&pixels);
-    const EXPECTED: u128 = 293398073876105658422289501725766251280;
+    const EXPECTED: u128 = 276193446258615553450600887344416839261;
+
+    assert_eq!(hash, EXPECTED);
+}
+
+#[test]
+fn test_weird_sampling_factors()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/test-images/weid_sampling_factors.jpg";
+    let data = &std::fs::read(path).unwrap();
+
+    let pixels = JpegDecoder::new(data).decode().unwrap();
+
+    let hash = xxh3_128(&pixels);
+    const EXPECTED: u128 = 290923794124024565485763288568005295883;
 
     assert_eq!(hash, EXPECTED);
 }
