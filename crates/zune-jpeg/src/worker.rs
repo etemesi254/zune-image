@@ -432,7 +432,7 @@ pub(crate) fn upsample_and_color_convert_v(
 
         for c in remainder.iter_mut()
         {
-            let stride = c.width_stride;
+            let stride = c.width_stride * c.vertical_sample;
             let mut row_up: &[i16] = &[];
             // row below current sample
             let mut row_down: &[i16] = &[];
