@@ -39,9 +39,7 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 #[test]
 fn test_1bpp_basic()
 {
-    //let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
-    let path =
-        "/home/caleb/Downloads/manebooru_decoding_discrepancies/1603496065745928026252137.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
     test_decoding(path);
 }
 
