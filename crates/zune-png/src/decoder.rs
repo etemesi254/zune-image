@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -94,6 +94,7 @@ pub struct PngDecoder<'a>
     pub(crate) seen_gamma:    bool,
     pub(crate) seen_hdr:      bool,
     pub(crate) seen_ptle:     bool,
+    pub(crate) seen_headers:  bool,
     pub(crate) seen_trns:     bool,
     pub(crate) use_sse2:      bool,
     pub(crate) use_sse4:      bool
@@ -145,6 +146,7 @@ impl<'a> PngDecoder<'a>
             gama:          0.0,
             seen_ptle:     false,
             seen_trns:     false,
+            seen_headers:  false,
             seen_gamma:    false,
             trns_bytes:    [0; 4],
             use_sse2:      use_sse2,
@@ -195,14 +197,31 @@ impl<'a> PngDecoder<'a>
         {
             return None;
         }
-        match self.png_info.color
+        if !self.seen_trns
         {
-            PngColor::Palette => Some(ColorSpace::RGB),
-            PngColor::Luma => Some(ColorSpace::Luma),
-            PngColor::LumaA => Some(ColorSpace::LumaA),
-            PngColor::RGB => Some(ColorSpace::RGB),
-            PngColor::RGBA => Some(ColorSpace::RGBA),
-            PngColor::Unknown => unreachable!()
+            match self.png_info.color
+            {
+                PngColor::Palette => Some(ColorSpace::RGB),
+                PngColor::Luma => Some(ColorSpace::Luma),
+                PngColor::LumaA => Some(ColorSpace::LumaA),
+                PngColor::RGB => Some(ColorSpace::RGB),
+                PngColor::RGBA => Some(ColorSpace::RGBA),
+                PngColor::Unknown => unreachable!()
+            }
+        }
+        else
+        {
+            // for tRNS chunks, RGB=>RGBA
+            // Luma=>LumaA, but if we are already in RGB and RGBA, just return
+            // them
+            match self.png_info.color
+            {
+                PngColor::Palette | PngColor::RGB => Some(ColorSpace::RGBA),
+                PngColor::Luma => Some(ColorSpace::LumaA),
+                PngColor::LumaA => Some(ColorSpace::LumaA),
+                PngColor::RGBA => Some(ColorSpace::RGBA),
+                _ => unreachable!()
+            }
         }
     }
     fn read_chunk_header(&mut self) -> Result<PngChunk, PngErrors>
@@ -276,18 +295,7 @@ impl<'a> PngDecoder<'a>
             crc
         })
     }
-
-    /// Decode PNG encoded images and return the vector of raw
-    /// pixels
-    ///
-    /// The resulting vec may be bigger or smaller than expected
-    /// depending on the bit depth of the image.
-    ///
-    /// The endianness is big endian for 16 bit images represented as two u8 slices
-    ///
-    /// This does not do gamma correction as opposed to decode,but may change
-    /// in the future.
-    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
+    pub fn decode_headers(&mut self) -> Result<(), PngErrors>
     {
         // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
@@ -341,6 +349,29 @@ impl<'a> PngDecoder<'a>
                 }
             }
         }
+        self.seen_headers = true;
+        Ok(())
+    }
+
+    /// Decode PNG encoded images and return the vector of raw
+    /// pixels
+    ///
+    /// The resulting vec may be bigger or smaller than expected
+    /// depending on the bit depth of the image.
+    ///
+    /// The endianness is big endian for 16 bit images represented as two u8 slices
+    ///
+    /// This does not do gamma correction as opposed to decode,but may change
+    /// in the future.
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
+    {
+        // decode headers
+        if !self.seen_headers
+        {
+            self.decode_headers()?;
+        }
+        info!("Colorspace: {:?} ", self.get_colorspace().unwrap());
+
         // go parse IDAT chunks returning the inflate
         let deflate_data = self.inflate()?;
         // remove idat chunks from memory

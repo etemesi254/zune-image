@@ -122,7 +122,6 @@ impl<'a> PngDecoder<'a>
 
         info!("Width: {}", self.png_info.width);
         info!("Height: {}", self.png_info.height);
-        info!("Color type: {:?}", self.png_info.color);
         info!("Filter type:{:?}", self.png_info.filter_method);
         info!("Depth: {:?}", self.png_info.depth);
         info!("Interlace :{:?}", self.png_info.interlace_method);
