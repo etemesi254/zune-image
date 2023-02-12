@@ -14,48 +14,11 @@ use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
 
 use crate::constants::{ColorModes, CompressionMethod, PSD_IDENTIFIER_BE};
 use crate::errors::PSDDecodeErrors;
-
-#[derive(Copy, Clone)]
-pub struct ZunePSDOptions
-{
-    max_width:  usize,
-    max_height: usize
-}
-
-impl Default for ZunePSDOptions
-{
-    fn default() -> Self
-    {
-        ZunePSDOptions {
-            max_height: 30000, // Supported width
-            max_width:  30000
-        }
-    }
-}
-
-impl ZunePSDOptions
-{
-    pub fn set_max_width(&mut self, width: usize)
-    {
-        self.max_width = width;
-    }
-    pub fn set_max_height(&mut self, height: usize)
-    {
-        self.max_height = height;
-    }
-    pub const fn get_max_width(&self) -> usize
-    {
-        self.max_width
-    }
-    pub const fn get_max_height(&self) -> usize
-    {
-        self.max_height
-    }
-}
 
 /// A simple Photoshop PSD reader.
 ///
@@ -71,7 +34,7 @@ pub struct PSDDecoder<'a>
     height:         usize,
     decoded_header: bool,
     stream:         ZByteReader<'a>,
-    options:        ZunePSDOptions,
+    options:        DecoderOptions,
     depth:          BitDepth,
     compression:    CompressionMethod,
     channel_count:  usize
@@ -81,10 +44,10 @@ impl<'a> PSDDecoder<'a>
 {
     pub fn new(data: &'a [u8]) -> PSDDecoder<'a>
     {
-        Self::new_with_options(data, ZunePSDOptions::default())
+        Self::new_with_options(data, DecoderOptions::default())
     }
 
-    pub fn new_with_options(data: &'a [u8], options: ZunePSDOptions) -> PSDDecoder<'a>
+    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PSDDecoder<'a>
     {
         PSDDecoder {
             width: 0,
@@ -130,18 +93,18 @@ impl<'a> PSDDecoder<'a>
         let height = self.stream.get_u32_be_err()? as usize;
         let width = self.stream.get_u32_be_err()? as usize;
 
-        if width > self.options.max_width
+        if width > self.options.get_max_width()
         {
             return Err(PSDDecodeErrors::LargeDimensions(
-                self.options.max_width,
+                self.options.get_max_width(),
                 width
             ));
         }
 
-        if height > self.options.max_height
+        if height > self.options.get_max_height()
         {
             return Err(PSDDecodeErrors::LargeDimensions(
-                self.options.max_height,
+                self.options.get_max_height(),
                 height
             ));
         }
