@@ -12,7 +12,8 @@
 //!
 //! This library is `#[no_std]` with `alloc` feature needed for defining `Vec` 
 //! which we need for storing decoded  bytes.
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 #![macro_use]
 extern crate alloc;
 

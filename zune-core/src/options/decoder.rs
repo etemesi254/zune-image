@@ -330,6 +330,176 @@ impl DecoderOptions
         self.flags.set(DecoderFlags::PNG_CONFIRM_CRC, yes);
         self
     }
+
+    /// Use SSE 2 code paths where possible
+    #[allow(unreachable_code)]
+    pub fn use_sse2(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_SSE2 | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        {
+            // where we can do runtime check if feature is present
+            #[cfg(feature = "std")]
+            {
+                if is_x86_feature_detected!("sse2")
+                {
+                    return true;
+                }
+            }
+            // where we can't do runtime check if feature is present
+            // check if the compile feature had it enabled
+            #[cfg(all(not(feature = "std"), target_feature = "sse2"))]
+            {
+                return true;
+            }
+        }
+        // everything failed return false
+        false
+    }
+
+    /// Use SSE 3 paths where possible
+    #[allow(unreachable_code)]
+    pub fn use_sse3(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_SSE3 | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        {
+            // where we can do runtime check if feature is present
+            #[cfg(feature = "std")]
+            {
+                if is_x86_feature_detected!("sse3")
+                {
+                    return true;
+                }
+            }
+            // where we can't do runtime check if feature is present
+            // check if the compile feature had it enabled
+            #[cfg(all(not(feature = "std"), target_feature = "sse3"))]
+            {
+                return true;
+            }
+        }
+        // everything failed return false
+        false
+    }
+
+    /// Use SSE4 paths where possible
+    #[allow(unreachable_code)]
+    pub fn use_sse41(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_SSE41 | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        {
+            // where we can do runtime check if feature is present
+            #[cfg(feature = "std")]
+            {
+                if is_x86_feature_detected!("sse4.1")
+                {
+                    return true;
+                }
+            }
+            // where we can't do runtime check if feature is present
+            // check if the compile feature had it enabled
+            #[cfg(all(not(feature = "std"), target_feature = "sse4.1"))]
+            {
+                return true;
+            }
+        }
+        // everything failed return false
+        false
+    }
+
+    /// Use AVX paths where possible
+    #[allow(unreachable_code)]
+    pub fn use_avx(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_AVX | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        {
+            // where we can do runtime check if feature is present
+            #[cfg(feature = "std")]
+            {
+                if is_x86_feature_detected!("avx")
+                {
+                    return true;
+                }
+            }
+            // where we can't do runitme check if feature is present
+            // check if the compile feature had it enabled
+            #[cfg(all(not(feature = "std"), target_feature = "avx"))]
+            {
+                return true;
+            }
+        }
+        // everything failed return false
+        false
+    }
+
+    /// Use avx2 paths where possible
+    #[allow(unreachable_code)]
+    pub fn use_avx2(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_AVX2 | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+        {
+            // where we can do runtime check if feature is present
+            #[cfg(feature = "std")]
+            {
+                if is_x86_feature_detected!("avx2")
+                {
+                    return true;
+                }
+            }
+            // where we can't do runitme check if feature is present
+            // check if the compile feature had it enabled
+            #[cfg(all(not(feature = "std"), target_feature = "avx2"))]
+            {
+                return true;
+            }
+        }
+        // everything failed return false
+        false
+    }
 }
 
 impl Default for DecoderOptions
