@@ -532,8 +532,13 @@ pub(crate) fn upsample_and_color_convert_v(
             .rchunks_exact(width_stride)
             .next()
             .unwrap();
+        let start = last_row
+            .len()
+            .saturating_sub(y_component[0].current_row.len());
 
-        y_component[0].current_row.copy_from_slice(last_row);
+        y_component[0]
+            .current_row
+            .copy_from_slice(&last_row[start..]);
     }
     Ok(())
 }
