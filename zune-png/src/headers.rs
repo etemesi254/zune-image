@@ -1,4 +1,6 @@
-use log::{info, warn};
+use alloc::format;
+
+use log::{error, info, warn};
 
 use crate::decoder::{PLTEEntry, PngChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
@@ -237,6 +239,23 @@ impl<'a> PngDecoder<'a>
 
         // skip crc
         self.stream.skip(4);
+
+        Ok(())
+    }
+
+    /// Parse the animation control chunk
+    pub(crate) fn parse_actl(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    {
+        if self.options.get_strict_mode()
+        {
+            return Err(PngErrors::UnsupportedAPNGImage);
+        }
+        else
+        {
+            error!("APNG support is not yet present,this will only decode the first frame of the image");
+        }
+        // skip bytes plus CRC
+        self.stream.skip(chunk.length + 4);
 
         Ok(())
     }
