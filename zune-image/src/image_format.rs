@@ -106,7 +106,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "ppm")]
                 {
-                    Box::new(zune_psd::PSDDecoder::new(data))
+                    Box::new(zune_psd::PSDDecoder::new_with_options(data, options))
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
@@ -118,7 +118,9 @@ impl ImageFormat
             {
                 #[cfg(feature = "farbfeld")]
                 {
-                    Box::new(zune_farbfeld::FarbFeldDecoder::new(data))
+                    Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
+                        data, options
+                    ))
                 }
                 #[cfg(not(feature = "farbfeld"))]
                 {
@@ -130,7 +132,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "qoi")]
                 {
-                    Box::new(zune_qoi::QoiDecoder::new(data))
+                    Box::new(zune_qoi::QoiDecoder::new_with_options(options, data))
                 }
                 #[cfg(not(feature = "qoi"))]
                 {
