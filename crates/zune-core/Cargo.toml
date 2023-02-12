@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 
-
+[features]
+# When present, we can use std facilities to detect
+# if a specific feature exists
+std = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
