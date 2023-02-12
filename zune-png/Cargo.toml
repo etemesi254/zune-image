@@ -11,6 +11,7 @@ edition = "2021"
 ## Note, this can be disabled manually using options
 crc = []
 sse = []
+std = ["zune-core/std"]
 default = ["crc", "sse"]
 
 [dependencies]

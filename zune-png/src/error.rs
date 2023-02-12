@@ -1,4 +1,5 @@
-use std::fmt::{Debug, Formatter};
+use alloc::string::String;
+use core::fmt::{Debug, Formatter};
 
 pub enum PngErrors
 {
@@ -7,11 +8,12 @@ pub enum PngErrors
     Generic(String),
     BadCrc(u32, u32),
     ZlibDecodeErrors(zune_inflate::errors::InflateDecodeErrors),
-    EmptyPalette
+    EmptyPalette,
+    UnsupportedAPNGImage
 }
 impl Debug for PngErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
@@ -29,6 +31,10 @@ impl Debug for PngErrors
             Self::EmptyPalette =>
             {
                 writeln!(f, "Empty palette but image is indexed")
+            }
+            Self::UnsupportedAPNGImage =>
+            {
+                writeln!(f, "Unsupported APNG format")
             }
         }
     }

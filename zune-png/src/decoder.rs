@@ -1,4 +1,7 @@
-use log::{debug, info};
+use alloc::vec::Vec;
+use alloc::{format, vec};
+
+use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -111,30 +114,9 @@ impl<'a> PngDecoder<'a>
     #[allow(unused_mut, clippy::redundant_field_names)]
     pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
     {
-        let mut use_sse2 = false;
-        let mut use_sse4 = false;
-        // check for sse support here
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        #[cfg(feature = "sse")]
-        {
-            if options.get_use_unsafe()
-            {
-                if is_x86_feature_detected!("sse2")
-                {
-                    debug!("Using SSE 2 instructions where possible");
-                    use_sse2 = true
-                }
-                if is_x86_feature_detected!("sse4.1")
-                {
-                    debug!("Using SSE 4 instructions where possible");
-                    use_sse4 = true
-                }
-            }
-            else
-            {
-                debug!("Using scalar instructions where possible")
-            }
-        }
+        let mut use_sse2 = options.use_sse2();
+        let mut use_sse4 = options.use_sse41();
+
         PngDecoder {
             seen_hdr:      false,
             stream:        ZByteReader::new(data),
@@ -248,6 +230,7 @@ impl<'a> PngDecoder<'a>
             b"pHYs" => PngChunkType::pHYs,
             b"tIME" => PngChunkType::tIME,
             b"gAMA" => PngChunkType::gAMA,
+            b"acTL" => PngChunkType::acTL,
             _ => PngChunkType::unkn
         };
 
@@ -338,6 +321,10 @@ impl<'a> PngDecoder<'a>
                 PngChunkType::gAMA =>
                 {
                     self.parse_gama(header)?;
+                }
+                PngChunkType::acTL =>
+                {
+                    self.parse_actl(header)?;
                 }
                 PngChunkType::IEND =>
                 {
@@ -452,7 +439,7 @@ impl<'a> PngDecoder<'a>
         }
 
         self.out.truncate(new_len);
-        let out = std::mem::take(&mut self.out);
+        let out = core::mem::take(&mut self.out);
 
         Ok(out)
     }

@@ -2,7 +2,6 @@
 
 use crate::crc::crc_tables::{CRC32_SLICE1_TABLE, CRC32_SLICE8_TABLE};
 
-mod crc32_pclmul;
 mod crc_tables;
 
 /// Calculate crc for a data and an initial crc value
@@ -49,6 +48,8 @@ pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32
 #[test]
 fn test_crc_same()
 {
+    use alloc::vec;
+
     use nanorand::Rng;
 
     let mut rng = nanorand::WyRand::new();
