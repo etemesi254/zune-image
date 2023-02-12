@@ -41,6 +41,7 @@
 
 pub use scalar::ycbcr_to_grayscale;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
@@ -50,29 +51,11 @@ use crate::decoder::ColorConvert16Ptr;
 mod avx;
 mod scalar;
 
-// no std version, use scalar
-#[cfg(not(feature = "std"))]
 pub fn choose_ycbcr_to_rgb_convert_func(
-    type_need: ColorSpace, _use_unsafe: bool
+    type_need: ColorSpace, options: &DecoderOptions
 ) -> Option<ColorConvert16Ptr>
 {
-    // when there is no x86 or we haven't returned by here, resort to scalar
-    return match type_need
-    {
-        ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
-        ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_16_scalar),
-        _ => None
-    };
-}
-
-// no std but with avx, choose depending on `use_unsafe`
-#[cfg(all(
-    target_feature = "avx2",
-    not(all(feature = "std", any(target_arch = "x86", target_arch = "x86_64")))
-))]
-fn choose_ycbcr_to_rgb_convert_func(use_unsafe: bool) -> Option<ColorConvert16Ptr>
-{
-    if use_unsafe
+    if options.use_avx2()
     {
         debug!("Using AVX optimised color conversion functions");
 
@@ -84,40 +67,6 @@ fn choose_ycbcr_to_rgb_convert_func(use_unsafe: bool) -> Option<ColorConvert16Pt
             ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
             _ => None
         };
-    }
-    return match type_need
-    {
-        ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
-        ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_16_scalar),
-        _ => None
-    };
-}
-
-// normal with std so we know we have x86 macro
-#[cfg(feature = "std")]
-pub fn choose_ycbcr_to_rgb_convert_func(
-    type_need: ColorSpace, use_unsafe: bool
-) -> Option<ColorConvert16Ptr>
-{
-    if use_unsafe
-    {
-        #[cfg(feature = "x86")]
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2")
-            {
-                debug!("Using AVX optimised color conversion functions");
-
-                // I believe avx2 means sse4 is also available
-                // match colorspace
-                return match type_need
-                {
-                    ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
-                    ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
-                    _ => None
-                };
-            }
-        }
     }
     // when there is no x86 or we haven't returned by here, resort to scalar
     return match type_need

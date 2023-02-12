@@ -128,48 +128,40 @@ pub struct JpegDecoder<'a>
 
 impl<'a> JpegDecoder<'a>
 {
+    #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: &'a [u8]) -> Self
     {
-        let color_convert =
-            choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, options.get_use_unsafe()).unwrap();
+        let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info: ImageInfo::default(),
-            qt_tables: [None, None, None, None],
+            info:              ImageInfo::default(),
+            qt_tables:         [None, None, None, None],
             dc_huffman_tables: [None, None, None, None],
             ac_huffman_tables: [None, None, None, None],
-            components: vec![],
+            components:        vec![],
             // Interleaved information
-            h_max: 1,
-            v_max: 1,
-            mcu_height: 0,
-            mcu_width: 0,
-            mcu_x: 0,
-            mcu_y: 0,
-            is_interleaved: false,
-            sub_sample_ratio: SampleRatios::None,
-
-            // Progressive information
-            is_progressive: false,
-            spec_start: 0,
-            spec_end: 0,
-            succ_high: 0,
-            succ_low: 0,
-            num_scans: 0,
-
-            // Function pointers
-            idct_func: choose_idct_func(options.get_use_unsafe()),
-            color_convert_16: color_convert,
-
-            // Colorspace
-            input_colorspace: ColorSpace::YCbCr,
-
-            z_order: [0; MAX_COMPONENTS],
-            restart_interval: 0,
-            todo: 0x7fff_ffff,
-            // options
-            options,
-            stream: ZByteReader::new(buffer),
-            headers_decoded: false
+            h_max:             1,
+            v_max:             1,
+            mcu_height:        0,
+            mcu_width:         0,
+            mcu_x:             0,
+            mcu_y:             0,
+            is_interleaved:    false,
+            sub_sample_ratio:  SampleRatios::None,
+            is_progressive:    false,
+            spec_start:        0,
+            spec_end:          0,
+            succ_high:         0,
+            succ_low:          0,
+            num_scans:         0,
+            idct_func:         choose_idct_func(&options),
+            color_convert_16:  color_convert,
+            input_colorspace:  ColorSpace::YCbCr,
+            z_order:           [0; MAX_COMPONENTS],
+            restart_interval:  0,
+            todo:              0x7fff_ffff,
+            options:           options,
+            stream:            ZByteReader::new(buffer),
+            headers_decoded:   false
         }
     }
     /// Decode a buffer already in memory
@@ -245,7 +237,7 @@ impl<'a> JpegDecoder<'a>
         {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
                 self.options.jpeg_get_out_colorspace(),
-                self.options.get_use_unsafe()
+                &self.options
             )
             .unwrap();
         }
