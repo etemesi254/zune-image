@@ -3,9 +3,9 @@ use std::time::Instant;
 use log::Level::Info;
 use log::{info, log_enabled};
 
+use crate::codecs::ImageFormat;
 use crate::errors::ImgErrors;
 use crate::image::Image;
-use crate::image_format::ImageFormat;
 use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]

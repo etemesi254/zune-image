@@ -11,8 +11,8 @@ use clap::ArgMatches;
 use log::Level::Debug;
 use log::{debug, error, info, log_enabled};
 use memmap2::Mmap;
+use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImgErrors;
-use zune_image::image_format::ImageFormat;
 use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
 

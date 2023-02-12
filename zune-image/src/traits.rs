@@ -1,9 +1,9 @@
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
+use crate::codecs::ImageFormat;
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
-use crate::image_format::ImageFormat;
 use crate::workflow::EncodeResult;
 
 /// Encapsulates an image decoder.
