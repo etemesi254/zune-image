@@ -50,6 +50,9 @@
 //!
 //! E.g one can make it that 16 bit images are scaled to 8 bit images.
 //!
+#![cfg_attr(feature = "std", no_std)]
+extern crate alloc;
+
 pub use decoder::PngDecoder;
 
 mod constants;

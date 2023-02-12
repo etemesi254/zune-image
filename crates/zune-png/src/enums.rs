@@ -24,6 +24,7 @@ pub enum PngChunkType
     iTXt,
     tEXt,
     zTxt,
+    acTL,
     unkn
 }
 
