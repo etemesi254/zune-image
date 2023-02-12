@@ -2,7 +2,7 @@
 
 use wasm_bindgen::prelude::wasm_bindgen;
 use zune_core::colorspace::ColorSpace;
-use zune_image::image_format::ImageFormat;
+use zune_image::codecs::ImageFormat;
 
 /// A 1 to 1 mapping of supported colorspaces
 /// but with the `wasm_bindgen` attribute.

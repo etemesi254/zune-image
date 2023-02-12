@@ -7,10 +7,10 @@ use zune_core::result::DecodingResult;
 pub use zune_ppm::PPMDecoder;
 use zune_ppm::{PPMEncodeErrors, PPMEncoder as PPMEnc};
 
+use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
-use crate::image_format::ImageFormat;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 #[derive(Copy, Clone, Default)]
