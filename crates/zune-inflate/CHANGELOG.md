@@ -27,3 +27,7 @@
 
 - Remove broken links in README.
 
+## Version 0.2.50
+
+- Mark library as `#[no_std]`
+- Impl `std::error::Error` for library
