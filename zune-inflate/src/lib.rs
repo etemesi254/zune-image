@@ -80,6 +80,9 @@
 //! [libdeflater]: https://github.com/adamkewley/libdeflater
 //! [flate2-rs]: https://github.com/rust-lang/flate2-rs
 //!
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
+
 pub use crate::decoder::{DeflateDecoder, DeflateOptions};
 
 mod bitstream;

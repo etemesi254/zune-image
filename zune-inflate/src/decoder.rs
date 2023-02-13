@@ -1,5 +1,8 @@
 #![allow(unused_imports)]
 
+use alloc::vec::Vec;
+use alloc::{format, vec};
+
 use crate::bitstream::BitStreamReader;
 use crate::constants::{
     DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_RESERVED, DEFLATE_BLOCKTYPE_STATIC,
