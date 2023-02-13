@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use core::cell::Cell;
 
 /// make_decode_table_entry() creates a decode table entry for the given symbol
 /// by combining the static part 'decode_results[sym]' with the dynamic part

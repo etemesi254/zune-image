@@ -1,7 +1,10 @@
 //! Errors possible when decoding deflate/zlib/gzip
 //! streams
 
-use std::fmt::{Debug, Formatter};
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::{Debug, Display, Formatter};
 
 /// A struct returned when decompression fails
 ///
@@ -48,7 +51,7 @@ impl InflateDecodeErrors
 
 impl Debug for InflateDecodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         writeln!(f, "{:?}", self.error)
     }
@@ -81,7 +84,7 @@ pub enum DecodeErrorStatus
 
 impl Debug for DecodeErrorStatus
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
@@ -104,3 +107,15 @@ impl Debug for DecodeErrorStatus
         }
     }
 }
+
+impl Display for InflateDecodeErrors
+{
+    #[allow(clippy::uninlined_format_args)]
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
+    {
+        writeln!(f, "{:?}", self)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for InflateDecodeErrors {}
