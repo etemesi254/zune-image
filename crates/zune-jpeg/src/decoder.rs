@@ -123,7 +123,8 @@ pub struct JpegDecoder<'a>
     // byte-stream
     pub(crate) stream:           ZByteReader<'a>,
     // Indicate whether headers have been decoded
-    pub(crate) headers_decoded:  bool
+    pub(crate) headers_decoded:  bool,
+    pub(crate) seen_sof:         bool
 }
 
 impl<'a> JpegDecoder<'a>
@@ -161,7 +162,8 @@ impl<'a> JpegDecoder<'a>
             todo:              0x7fff_ffff,
             options:           options,
             stream:            ZByteReader::new(buffer),
-            headers_decoded:   false
+            headers_decoded:   false,
+            seen_sof:          false
         }
     }
     /// Decode a buffer already in memory

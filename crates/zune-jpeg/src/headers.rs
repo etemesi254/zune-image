@@ -193,6 +193,12 @@ pub(crate) fn parse_start_of_frame(
     sof: SOFMarkers, img: &mut JpegDecoder
 ) -> Result<(), DecodeErrors>
 {
+    if img.seen_sof
+    {
+        return Err(DecodeErrors::SofError(
+            "Two Start of Frame Markers".to_string()
+        ));
+    }
     // Get length of the frame header
     let length = img.stream.get_u16_be_err()?;
     // usually 8, but can be 12 and 16, we currently support only 8
@@ -283,6 +289,7 @@ pub(crate) fn parse_start_of_frame(
 
         components.push(component);
     }
+    img.seen_sof = true;
 
     img.info.set_sof_marker(sof);
 
