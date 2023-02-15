@@ -7,9 +7,9 @@ use crate::workflow::create_and_exec_workflow_from_cmd;
 
 mod cmd_args;
 mod cmd_parsers;
+mod serde;
 mod show_gui;
 mod workflow;
-
 pub fn main()
 {
     let cmd = cmd_args::create_cmd_args();

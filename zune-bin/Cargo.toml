@@ -11,6 +11,8 @@ log = "0.4.17"
 zune-image = { version = "0.1.0", path = "../zune-image", features = ["all"] }
 zune-core = { path = "../zune-core" }
 memmap2 = "0.5.7"
+serde_json = "1.0.93"
+serde = "1.0.152"
 glob = "0.3.0"
 
 [dependencies.simple_logger]

@@ -1,11 +1,9 @@
-use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
-use std::io::{stdin, BufRead, Read, Write};
+use std::io::{Read, Write};
 use std::ops::Deref;
 use std::path::Path;
 use std::string::String;
 
-use clap::parser::ValueSource;
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::Level::Debug;
@@ -31,13 +29,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     let decoder_options = get_decoder_options(args);
 
     let mut buf = Vec::with_capacity(1 << 20);
-    for (in_file, out_file) in args
-        .get_raw("in")
-        .unwrap()
-        .zip(args.get_raw("out").unwrap())
+    for in_file in args.get_raw("in").unwrap()
     {
-        verify_file_paths(in_file, out_file, args)?;
-
         // file i/o
         let mut fd = File::open(in_file).unwrap();
         let mmap = unsafe { Mmap::map(&fd).unwrap() };
@@ -60,13 +53,6 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         };
         // workflow
 
-        let mut file = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(out_file)
-            .unwrap();
-
         // Rust was pretty good to catch this.
         // Thank you compiler gods.
 
@@ -87,36 +73,74 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             workflow.add_decoder(decoder);
         }
 
-        if let Some(ext) = Path::new(out_file).extension()
+        if let Some(source) = args.value_source("out")
         {
-            if let Some((encode_type, encoder)) =
-                ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
+            if source == CommandLine
             {
-                debug!("Treating {:?} as a {:?} format", out_file, encode_type);
-                workflow.add_encoder(encoder);
+                for out_file in args.get_raw("out").unwrap()
+                {
+                    if let Some(ext) = Path::new(out_file).extension()
+                    {
+                        if let Some((encode_type, encoder)) =
+                            ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
+                        {
+                            debug!("Treating {:?} as a {:?} format", out_file, encode_type);
+                            workflow.add_encoder(encoder);
+                        }
+                        else
+                        {
+                            error!("Unknown or unsupported format {:?}", out_file)
+                        }
+                    }
+                    else
+                    {
+                        error!("Could not determine extension from {:?}", out_file)
+                    }
+                }
             }
-            else
-            {
-                error!("Unknown or unsupported format {:?}", out_file)
-            }
-        }
-        else
-        {
-            error!("Could not determine extension from {:?}", out_file)
         }
 
         workflow.advance_to_end()?;
         let results = workflow.get_results();
-        //write to file
-        for result in results.iter().take(1)
+        if let Some(view) = args.value_source("probe")
         {
-            info!(
-                "Writing data as {:?} format to file {:?}",
-                result.get_format(),
-                out_file
-            );
+            if view == CommandLine
+            {
+                for image in workflow.get_images()
+                {
+                    let metadata = image.get_metadata();
+                    let real_metadata =
+                        crate::serde::Metadata::new(in_file.to_os_string(), metadata);
+                    println!("{}", serde_json::to_string_pretty(&real_metadata).unwrap())
+                }
+            }
+        }
+        if let Some(source) = args.value_source("out")
+        {
+            if source == CommandLine
+            {
+                for out_file in args.get_raw("out").unwrap()
+                {
+                    let mut file = OpenOptions::new()
+                        .create(true)
+                        .append(false)
+                        .truncate(true)
+                        .write(true)
+                        .open(out_file)
+                        .unwrap();
+                    //write to file
+                    for result in results.iter().take(1)
+                    {
+                        info!(
+                            "Writing data as {:?} format to file {:?}",
+                            result.get_format(),
+                            out_file
+                        );
 
-            file.write_all(result.get_data()).unwrap();
+                        file.write_all(result.get_data()).unwrap();
+                    }
+                }
+            }
         }
 
         if let Some(view) = args.value_source("view")
@@ -134,60 +158,11 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     Ok(())
 }
 
-fn verify_file_paths(p0: &OsStr, p1: &OsStr, args: &ArgMatches) -> Result<(), ImgErrors>
-{
-    if p0 == p1
-    {
-        return Err(ImgErrors::GenericString(format!(
-            "Cannot use {p0:?} as both input and output"
-        )));
-    }
-    let in_path = Path::new(p0);
-    let out_path = Path::new(p1);
-
-    if !in_path.exists()
-    {
-        return Err(ImgErrors::GenericString(format!(
-            "Path {in_path:?}, does not exist"
-        )));
-    }
-
-    if !in_path.is_file()
-    {
-        return Err(ImgErrors::GenericString(format!(
-            "Path {in_path:?} is not a file"
-        )));
-    }
-
-    if out_path.exists()
-    {
-        if args.value_source("all-yes") == Some(ValueSource::CommandLine)
-        {
-            info!("Overwriting path {:?} ", p1);
-        }
-        else
-        {
-            println!("File {out_path:?} exists, overwrite [y/N]");
-            let mut result = String::new();
-
-            stdin().lock().read_line(&mut result).unwrap();
-
-            if result.trim() != "y"
-            {
-                return Err(ImgErrors::GenericString(format!(
-                    "Not overwriting file {out_path:?}"
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
 pub fn add_operations(
     args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow
 ) -> Result<(), String>
 {
-    if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
+    if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
     {
         println!();
     }
@@ -197,7 +172,7 @@ pub fn add_operations(
 
     debug!("Arranging options as specified in cmd");
 
-    if log_enabled!(Debug) && args.value_source("operations") == Some(ValueSource::CommandLine)
+    if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
     {
         println!();
     }
