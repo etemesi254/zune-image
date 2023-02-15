@@ -5,12 +5,13 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
 pub use zune_ppm::PPMDecoder;
-use zune_ppm::{PPMEncodeErrors, PPMEncoder as PPMEnc};
+use zune_ppm::{PPMDecodeErrors, PPMEncodeErrors, PPMEncoder as PPMEnc};
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 #[derive(Copy, Clone, Default)]
@@ -107,6 +108,27 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
     fn get_name(&self) -> &'static str
     {
         "PPM Decoder"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    {
+        self.read_headers()
+            .map_err(<PPMDecodeErrors as Into<ImgErrors>>::into)?;
+
+        let (width, height) = self.get_dimensions().unwrap();
+        let depth = self.get_bit_depth().unwrap();
+
+        let metadata = ImageMetadata {
+            format:        Some(ImageFormat::PPM),
+            colorspace:    self.get_colorspace().unwrap(),
+            depth:         depth,
+            width:         width,
+            height:        height,
+            color_trc:     None,
+            default_gamma: None
+        };
+
+        Ok(Some(metadata))
     }
 }
 

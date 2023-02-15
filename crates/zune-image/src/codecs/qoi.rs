@@ -8,6 +8,7 @@ use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImgEncodeErrors, ImgErrors};
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
@@ -47,6 +48,27 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
     fn is_experimental(&self) -> bool
     {
         true
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    {
+        self.decode_headers()
+            .map_err(<QoiErrors as Into<ImgErrors>>::into)?;
+
+        let (width, height) = self.get_dimensions().unwrap();
+        let depth = self.get_bit_depth();
+
+        let metadata = ImageMetadata {
+            format:        Some(ImageFormat::QOI),
+            colorspace:    self.get_colorspace().unwrap(),
+            depth:         depth,
+            width:         width,
+            height:        height,
+            color_trc:     None,
+            default_gamma: None
+        };
+
+        Ok(Some(metadata))
     }
 }
 

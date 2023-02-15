@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_field_names)]
 extern crate core;
 
 pub mod channel;

@@ -11,6 +11,7 @@ use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImgErrors;
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<'a> DecoderTrait<'a> for PngDecoder<'a>
@@ -43,7 +44,6 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 
         Ok(image)
     }
-
     fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         self.get_dimensions()
@@ -57,6 +57,27 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
     fn get_name(&self) -> &'static str
     {
         "PNG Decoder"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    {
+        self.decode_headers()
+            .map_err(<PngErrors as Into<ImgErrors>>::into)?;
+
+        let (width, height) = self.get_dimensions().unwrap();
+        let depth = self.get_depth().unwrap();
+
+        let metadata = ImageMetadata {
+            format:        Some(ImageFormat::PNG),
+            colorspace:    self.get_colorspace().unwrap(),
+            depth:         depth,
+            width:         width,
+            height:        height,
+            color_trc:     None,
+            default_gamma: self.get_gamma()
+        };
+
+        Ok(Some(metadata))
     }
 }
 
