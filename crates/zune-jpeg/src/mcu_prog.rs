@@ -247,6 +247,12 @@ impl<'a> JpegDecoder<'a>
             {
                 for j in 0..mcu_width
                 {
+                    if self.spec_start != 0 && self.succ_high == 0 && stream.eob_run > 0
+                    {
+                        // handle EOB runs here.
+                        stream.eob_run -= 1;
+                        continue;
+                    }
                     let start = 64 * (j + i * (self.components[k].width_stride / 8));
 
                     let data: &mut [i16; 64] = buffer
@@ -309,15 +315,9 @@ impl<'a> JpegDecoder<'a>
 
                         if self.succ_high == 0
                         {
-                            // first scan for this MCU
-                            if stream.eob_run > 0
-                            {
-                                stream.eob_run -= 1;
-                            }
-                            else
-                            {
-                                stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
-                            }
+                            debug_assert!(stream.eob_run == 0, "EOB run is not zero");
+
+                            stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
                         }
                         else
                         {
