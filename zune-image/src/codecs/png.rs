@@ -7,6 +7,7 @@ use zune_core::result::DecodingResult;
 use zune_png::error::PngErrors;
 pub use zune_png::PngDecoder;
 
+use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImgErrors;
 use crate::image::Image;
@@ -36,10 +37,10 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
             _ => unreachable!()
         };
 
-        // set gamma value or 2.2 if image has none.
-        let gamma = self.get_gamma().unwrap_or(1.0 / 2.2);
-        info!("Setting gama value to be {}", gamma);
-        image.set_default_gamma(gamma);
+        // set metadata details
+        image.metadata.format = Some(ImageFormat::PNG);
+        image.metadata.default_gamma = self.get_gamma();
+
         Ok(image)
     }
 
@@ -55,7 +56,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 
     fn get_name(&self) -> &'static str
     {
-        "Png Decoder"
+        "PNG Decoder"
     }
 }
 

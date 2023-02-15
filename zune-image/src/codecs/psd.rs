@@ -5,6 +5,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 pub use zune_psd::PSDDecoder;
 
+use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImgErrors;
 use crate::image::Image;
@@ -20,12 +21,14 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace();
 
-        let image = match pixels
+        let mut image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
             DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace),
             _ => unreachable!()
         };
+        // set metadata details
+        image.metadata.format = Some(ImageFormat::PSD);
 
         Ok(image)
     }

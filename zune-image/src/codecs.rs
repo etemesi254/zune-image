@@ -32,9 +32,9 @@ pub mod qoi;
 pub enum ImageFormat
 {
     /// Fully complete
-    Jpeg,
+    JPEG,
     /// Not yet complete
-    Png,
+    PNG,
     /// Fully complete
     PPM,
     /// Partial support
@@ -92,7 +92,7 @@ impl ImageFormat
     {
         match self
         {
-            ImageFormat::Jpeg =>
+            ImageFormat::JPEG =>
             {
                 #[cfg(feature = "jpeg")]
                 {
@@ -104,7 +104,7 @@ impl ImageFormat
                 }
             }
 
-            ImageFormat::Png =>
+            ImageFormat::PNG =>
             {
                 #[cfg(feature = "png")]
                 {
@@ -204,11 +204,11 @@ impl ImageFormat
     {
         // stolen from imagers
         static MAGIC_BYTES: [(&[u8], ImageFormat); 8] = [
-            (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::Png),
+            (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
             // Of course with jpg we need to relax our definition of what is a jpeg
             // the best identifier would be 0xFF,0xd8 0xff but nop, some images exist
             // which do not have that
-            (&[0xff, 0xd8], ImageFormat::Jpeg),
+            (&[0xff, 0xd8], ImageFormat::JPEG),
             (b"P5", ImageFormat::PPM),
             (b"P6", ImageFormat::PPM),
             (b"P7", ImageFormat::PPM),

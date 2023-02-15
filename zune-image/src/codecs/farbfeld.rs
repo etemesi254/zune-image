@@ -4,6 +4,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 pub use zune_farbfeld::*;
 
+use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u16;
 use crate::errors::ImgErrors;
 use crate::image::Image;
@@ -18,7 +19,11 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth();
 
-        Ok(Image::from_u16(&pixels, width, height, depth, colorspace))
+        let mut image = Image::from_u16(&pixels, width, height, depth, colorspace);
+
+        image.metadata.format = Some(ImageFormat::Farbfeld);
+
+        Ok(image)
     }
 
     fn get_dimensions(&self) -> Option<(usize, usize)>

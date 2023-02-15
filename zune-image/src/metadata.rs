@@ -5,6 +5,8 @@
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 
+use crate::codecs::ImageFormat;
+
 /// Image metadata
 ///
 /// Each image type has this information present
@@ -13,12 +15,15 @@ use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 #[derive(Copy, Clone, Debug)]
 pub struct ImageMetadata
 {
-    pub(crate) color_trc:     ColorCharacteristics,
-    pub(crate) default_gamma: f32,
+    // REMEMBER: If you add a field here add it's serialization
+    // to mod file
+    pub(crate) color_trc:     Option<ColorCharacteristics>,
+    pub(crate) default_gamma: Option<f32>,
     pub(crate) width:         usize,
     pub(crate) height:        usize,
     pub(crate) colorspace:    ColorSpace,
-    pub(crate) depth:         BitDepth
+    pub(crate) depth:         BitDepth,
+    pub(crate) format:        Option<ImageFormat>
 }
 
 impl Default for ImageMetadata
@@ -26,12 +31,13 @@ impl Default for ImageMetadata
     fn default() -> Self
     {
         ImageMetadata {
-            color_trc:     ColorCharacteristics::sRGB,
-            default_gamma: 1.0 / 2.2,
+            color_trc:     None,
+            default_gamma: None,
             width:         0,
             height:        0,
             colorspace:    ColorSpace::Unknown,
-            depth:         BitDepth::default()
+            depth:         BitDepth::default(),
+            format:        None
         }
     }
 }
@@ -86,14 +92,14 @@ impl ImageMetadata
     /// Color transfer characteristics tell us more about how
     /// the colorspace values are represented
     /// whether they are linear or gamma encoded
-    pub const fn get_color_trc(&self) -> ColorCharacteristics
+    pub const fn get_color_trc(&self) -> Option<ColorCharacteristics>
     {
         self.color_trc
     }
     /// Set color transfer characteristics for this image
     pub fn set_color_trc(&mut self, trc: ColorCharacteristics)
     {
-        self.color_trc = trc;
+        self.color_trc = Some(trc);
     }
     /// Get the image bit depth
     ///
@@ -124,6 +130,14 @@ impl ImageMetadata
     /// - gamma : The new gamma value
     pub fn set_default_gamma(&mut self, gamma: f32)
     {
-        self.default_gamma = gamma;
+        self.default_gamma = Some(gamma);
+    }
+
+    /// Get the image for which this metadata was fetched from
+    ///
+    /// May be None if the caller didn't set a format
+    pub const fn get_image_format(&self) -> Option<ImageFormat>
+    {
+        self.format
     }
 }
