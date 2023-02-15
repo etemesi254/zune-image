@@ -58,7 +58,7 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// A JPEG Decoder Instance.
-#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
 pub struct JpegDecoder<'a>
 {
     /// Struct to hold image information from SOI
