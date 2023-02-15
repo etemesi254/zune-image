@@ -10,10 +10,9 @@
 //! - Image decoder and encoder options
 //! - A simple enum type to hold image decoding results.
 //!
-//! This library is `#[no_std]` with `alloc` feature needed for defining `Vec` 
+//! This library is `#[no_std]` with `alloc` feature needed for defining `Vec`
 //! which we need for storing decoded  bytes.
 #![cfg_attr(not(feature = "std"), no_std)]
-
 #![macro_use]
 extern crate alloc;
 
@@ -22,3 +21,4 @@ pub mod bytestream;
 pub mod colorspace;
 pub mod options;
 pub mod result;
+pub mod serde;
