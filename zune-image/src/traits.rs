@@ -59,9 +59,9 @@ pub trait DecoderTrait<'a>
     }
     /// Read image metadata returning the values as
     /// a struct
-    fn read_headers(&mut self) -> Option<ImageMetadata>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
     {
-        None
+        Ok(None)
     }
 }
 

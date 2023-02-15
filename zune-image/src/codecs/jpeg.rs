@@ -16,6 +16,7 @@ use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::ImgErrors;
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
@@ -51,6 +52,26 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
     fn get_name(&self) -> &'static str
     {
         "JPEG decoder"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    {
+        self.decode_headers()
+            .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;
+
+        let (width, height) = self.get_dimensions().unwrap();
+
+        let metadata = ImageMetadata {
+            format:        Some(ImageFormat::JPEG),
+            colorspace:    self.get_output_colorspace(),
+            depth:         BitDepth::Eight,
+            width:         width,
+            height:        height,
+            color_trc:     None,
+            default_gamma: None
+        };
+
+        Ok(Some(metadata))
     }
 }
 
