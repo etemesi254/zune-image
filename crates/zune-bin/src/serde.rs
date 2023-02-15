@@ -7,14 +7,19 @@ use zune_image::metadata::ImageMetadata;
 pub struct Metadata<'a>
 {
     file:     OsString,
+    size:     u64,
     metadata: &'a ImageMetadata
 }
 
 impl<'a> Metadata<'a>
 {
-    pub fn new(file: OsString, metadata: &ImageMetadata) -> Metadata
+    pub fn new(file: OsString, size: u64, metadata: &ImageMetadata) -> Metadata
     {
-        Metadata { file, metadata }
+        Metadata {
+            file,
+            size,
+            metadata
+        }
     }
 }
 
@@ -27,6 +32,8 @@ impl<'a> Serialize for Metadata<'a>
         let mut state = serializer.serialize_struct("ImageMetadata", 2)?;
 
         state.serialize_field("file", &self.file.to_string_lossy())?;
+        state.serialize_field("length", &self.size)?;
+
         state.serialize_field("metadata", &self.metadata)?;
 
         state.end()
