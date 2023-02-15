@@ -78,6 +78,7 @@ pub fn create_cmd_args() -> Command {
         .arg(Arg::new("probe")
             .long("probe")
             .help("Probe file for details")
+            .long_help("Probe files to extract information, this has the highest priority and overrides all the other options")
             .action(ArgAction::SetTrue))
         .arg(Arg::new("experimental")
             .long("experimental")

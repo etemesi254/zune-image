@@ -16,6 +16,7 @@ use zune_image::workflow::WorkFlow;
 
 use crate::cmd_parsers::get_decoder_options;
 use crate::cmd_parsers::global_options::CmdOptions;
+use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
 use crate::MmapOptions;
 
@@ -24,6 +25,15 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions
 ) -> Result<(), ImgErrors>
 {
+    if let Some(view) = args.value_source("probe")
+    {
+        if view == CommandLine
+        {
+            probe_input_files(args);
+            return Ok(());
+        }
+    }
+
     info!("Creating workflows from input");
 
     let decoder_options = get_decoder_options(args);
@@ -102,19 +112,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         workflow.advance_to_end()?;
         let results = workflow.get_results();
-        if let Some(view) = args.value_source("probe")
-        {
-            if view == CommandLine
-            {
-                for image in workflow.get_images()
-                {
-                    let metadata = image.get_metadata();
-                    let real_metadata =
-                        crate::serde::Metadata::new(in_file.to_os_string(), metadata);
-                    println!("{}", serde_json::to_string_pretty(&real_metadata).unwrap())
-                }
-            }
-        }
+
         if let Some(source) = args.value_source("out")
         {
             if source == CommandLine
