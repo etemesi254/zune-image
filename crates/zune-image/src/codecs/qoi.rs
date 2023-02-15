@@ -21,7 +21,10 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
 
         let depth = self.get_bit_depth();
 
-        let image = Image::from_u8(&pixels, width, height, colorspace);
+        let mut image = Image::from_u8(&pixels, width, height, colorspace);
+
+        // set metadata details
+        image.metadata.format = Some(ImageFormat::QOI);
 
         Ok(image)
     }

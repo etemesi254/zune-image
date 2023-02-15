@@ -4,6 +4,7 @@ use zune_core::colorspace::ColorSpace;
 use crate::codecs::ImageFormat;
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::workflow::EncodeResult;
 
 /// Encapsulates an image decoder.
@@ -55,6 +56,12 @@ pub trait DecoderTrait<'a>
     fn is_experimental(&self) -> bool
     {
         false
+    }
+    /// Read image metadata returning the values as
+    /// a struct
+    fn read_headers(&mut self) -> Option<ImageMetadata>
+    {
+        None
     }
 }
 

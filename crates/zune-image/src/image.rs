@@ -86,9 +86,13 @@ impl Image
     ///
     ///This is the value that will be used to convert images to linear
     ///image in case
-    pub const fn get_default_gamma(&self) -> f32
+    pub const fn get_default_gamma(&self) -> Option<f32>
     {
         self.metadata.default_gamma
+    }
+    pub const fn get_metadata(&self) -> &ImageMetadata
+    {
+        &self.metadata
     }
     /// Return a reference to the underlying channels
     pub fn get_channels_ref(&self, ignore_alpha: bool) -> &[Channel]
@@ -548,7 +552,7 @@ impl Image
         pixels: &[u16], width: usize, height: usize, depth: BitDepth, colorspace: ColorSpace
     ) -> Image
     {
-        let expected_len = checked_mul(width, height, depth.size_of(), colorspace.num_components());
+        let expected_len = checked_mul(width, height, 1, colorspace.num_components());
 
         assert_eq!(
             pixels.len(),

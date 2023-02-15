@@ -11,11 +11,12 @@ png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
+serde-support = ["zune-core/serde", "serde"]
 image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi"]
 default = []
 threads = []
 
-all = ["threads", "image_formats"]
+all = ["threads", "image_formats", "serde-support"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
@@ -27,3 +28,4 @@ zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 log = "0.4.17"
+serde = { version = "1.0.152", optional = true }

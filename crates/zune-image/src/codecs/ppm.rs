@@ -81,12 +81,15 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
-        let image = match pixels
+        let mut image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
             DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace),
             _ => unreachable!()
         };
+
+        // set metadata details
+        image.metadata.format = Some(ImageFormat::PPM);
 
         Ok(image)
     }

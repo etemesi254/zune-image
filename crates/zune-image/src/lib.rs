@@ -8,5 +8,6 @@ pub mod image;
 pub mod impls;
 pub mod metadata;
 pub mod ops;
+mod serde;
 pub mod traits;
 pub mod workflow;

@@ -12,6 +12,7 @@ use zune_jpeg::errors::DecodeErrors;
 /// Re-expose jpeg crate here
 pub use zune_jpeg::*;
 
+use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::ImgErrors;
 use crate::image::Image;
@@ -28,7 +29,8 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
         let colorspace = self.get_out_colorspace();
         let (width, height) = self.get_dimensions().unwrap();
 
-        let image = Image::from_u8(&pixels, width, height, colorspace);
+        let mut image = Image::from_u8(&pixels, width, height, colorspace);
+        image.metadata.format = Some(ImageFormat::JPEG);
 
         Ok(image)
     }
@@ -48,7 +50,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
     fn get_name(&self) -> &'static str
     {
-        "Jpeg decoder"
+        "JPEG decoder"
     }
 }
 
