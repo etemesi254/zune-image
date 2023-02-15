@@ -66,8 +66,8 @@ impl WasmImageDecodeFormats
     {
         match format
         {
-            ImageFormat::Jpeg => Self::Jpeg,
-            ImageFormat::Png => Self::Png,
+            ImageFormat::JPEG => Self::Jpeg,
+            ImageFormat::PNG => Self::Png,
             ImageFormat::PPM => Self::PPM,
             ImageFormat::PSD => Self::PSD,
             ImageFormat::Farbfeld => Self::Farbfeld,
