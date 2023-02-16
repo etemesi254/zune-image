@@ -13,7 +13,9 @@ use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngErrors;
 use crate::filters::{
-    handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
+    handle_avg, handle_avg_first, handle_avg_special, handle_avg_special_first,
+    handle_none_special, handle_paeth, handle_paeth_first, handle_paeth_special,
+    handle_paeth_special_first, handle_sub, handle_sub_special, handle_up, handle_up_special
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
 
@@ -733,6 +735,8 @@ impl<'a> PngDecoder<'a>
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
+        let out_components = self.get_colorspace().unwrap().num_components();
+
         let mut img_width_bytes;
 
         img_width_bytes = usize::from(info.component) * width;
@@ -788,8 +792,9 @@ impl<'a> PngDecoder<'a>
             // Split output into current and previous
             // current points to the start of the row where we are writing de-filtered output to
             // prev is all rows we already wrote output to.
-            let (prev, current) = out.split_at_mut(out_position);
+            let (prev, mut current) = out.split_at_mut(out_position);
 
+            current = &mut current[0..width_stride];
             // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
@@ -834,24 +839,73 @@ impl<'a> PngDecoder<'a>
 
                 first_row = false;
             }
-
-            match filter
+            if components == out_components
             {
-                FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
+                match filter
+                {
+                    FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
 
-                FilterMethod::Average => handle_avg(prev_row, raw, current, components, use_sse4),
+                    FilterMethod::Average =>
+                    {
+                        handle_avg(prev_row, raw, current, components, use_sse4)
+                    }
 
-                FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
+                    FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
 
-                FilterMethod::Up => handle_up(prev_row, raw, current),
+                    FilterMethod::Up => handle_up(prev_row, raw, current),
 
-                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components, use_sse4),
+                    FilterMethod::Paeth =>
+                    {
+                        handle_paeth(prev_row, raw, current, components, use_sse4)
+                    }
 
-                FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
+                    FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
 
-                FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
+                    FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
 
-                FilterMethod::Unknown => unreachable!()
+                    FilterMethod::Unknown => unreachable!()
+                }
+            }
+            else if components < out_components
+            {
+                // in and out don't match. Like palleted images, images with tRNS chunks that
+                // we will expand later on.
+                match filter
+                {
+                    FilterMethod::Average =>
+                    {
+                        handle_avg_special(raw, prev_row, current, components, out_components)
+                    }
+                    FilterMethod::AvgFirst =>
+                    {
+                        handle_avg_special_first(raw, current, components, out_components)
+                    }
+                    FilterMethod::None =>
+                    {
+                        handle_none_special(raw, current, components, out_components)
+                    }
+                    FilterMethod::Up =>
+                    {
+                        handle_up_special(raw, prev_row, current, components, out_components)
+                    }
+                    FilterMethod::Sub =>
+                    {
+                        handle_sub_special(raw, current, components, out_components)
+                    }
+                    FilterMethod::PaethFirst =>
+                    {
+                        handle_paeth_special_first(raw, current, components, out_components)
+                    }
+                    FilterMethod::Paeth =>
+                    {
+                        handle_paeth_special(raw, prev_row, current, components, out_components)
+                    }
+
+                    FilterMethod::Unknown =>
+                    {
+                        unreachable!()
+                    }
+                }
             }
         }
         if self.png_info.depth < 8
