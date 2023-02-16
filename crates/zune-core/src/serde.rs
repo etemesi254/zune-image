@@ -1,5 +1,7 @@
 #![cfg(feature = "serde")]
 
+use alloc::format;
+
 use serde::ser::*;
 
 use crate::bit_depth::BitDepth;
