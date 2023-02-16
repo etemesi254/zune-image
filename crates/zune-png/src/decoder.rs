@@ -595,6 +595,7 @@ impl<'a> PngDecoder<'a>
                 let r = (self.trns_bytes[0] & 255) as u8;
                 let g = (self.trns_bytes[1] & 255) as u8;
                 let b = (self.trns_bytes[2] & 255) as u8;
+                let r_matrix = [r, g, b];
 
                 for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks_exact(3))
                 {
@@ -602,7 +603,7 @@ impl<'a> PngDecoder<'a>
                     chunk[1] = old[1];
                     chunk[2] = old[2];
 
-                    if r != old[0] && g != old[1] && b != old[2]
+                    if &old != &r_matrix
                     {
                         chunk[3] = 255;
                     }
