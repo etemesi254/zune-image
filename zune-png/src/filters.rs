@@ -9,6 +9,9 @@
 //! The special first scanlines have a suffix _first on them and are only called
 //! for the first scanline.
 
+pub use special_filters::*;
+
+mod special_filters;
 mod sse4;
 
 #[allow(clippy::manual_memcpy)]
