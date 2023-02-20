@@ -45,3 +45,11 @@ fn test_palette_trns_16bit()
 
     test_decoding(path);
 }
+
+#[test]
+fn test_palette_trns_8bit()
+{
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/tbgn3p08.png";
+
+    test_decoding(path);
+}
