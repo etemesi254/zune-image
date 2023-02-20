@@ -228,7 +228,10 @@ impl<'a> JpegDecoder<'a>
 
             let (mcu_width, mcu_height);
 
-            if self.components[k].component_id == ComponentID::Y || !self.is_interleaved
+            if self.components[k].component_id == ComponentID::Y
+                && (self.components[k].vertical_sample != 1
+                    || self.components[k].horizontal_sample != 1)
+                || !self.is_interleaved
             {
                 // For Y channel  or non interleaved scans ,
                 // mcu's is the image dimensions divided by 8
