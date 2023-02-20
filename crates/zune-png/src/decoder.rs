@@ -87,22 +87,23 @@ pub struct PngInfo
 /// if this is not desired, then I'd suggest another png decoder
 pub struct PngDecoder<'a>
 {
-    pub(crate) stream:        ZByteReader<'a>,
-    pub(crate) options:       DecoderOptions,
-    pub(crate) png_info:      PngInfo,
-    pub(crate) palette:       Vec<PLTEEntry>,
-    pub(crate) idat_chunks:   Vec<u8>,
-    pub(crate) out:           Vec<u8>,
-    pub(crate) gama:          f32,
-    pub(crate) trns_bytes:    [u16; 4],
-    pub(crate) chunk_handler: UnkownChunkHandler,
-    pub(crate) seen_gamma:    bool,
-    pub(crate) seen_hdr:      bool,
-    pub(crate) seen_ptle:     bool,
-    pub(crate) seen_headers:  bool,
-    pub(crate) seen_trns:     bool,
-    pub(crate) use_sse2:      bool,
-    pub(crate) use_sse4:      bool
+    pub(crate) stream:               ZByteReader<'a>,
+    pub(crate) options:              DecoderOptions,
+    pub(crate) png_info:             PngInfo,
+    pub(crate) palette:              Vec<PLTEEntry>,
+    pub(crate) idat_chunks:          Vec<u8>,
+    pub(crate) out:                  Vec<u8>,
+    pub(crate) gama:                 f32,
+    pub(crate) trns_bytes:           [u16; 4],
+    pub(crate) chunk_handler:        UnkownChunkHandler,
+    pub(crate) seen_gamma:           bool,
+    pub(crate) seen_hdr:             bool,
+    pub(crate) seen_ptle:            bool,
+    pub(crate) seen_headers:         bool,
+    pub(crate) expand_bits_to_bytes: bool,
+    pub(crate) seen_trns:            bool,
+    pub(crate) use_sse2:             bool,
+    pub(crate) use_sse4:             bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -120,22 +121,23 @@ impl<'a> PngDecoder<'a>
         let mut use_sse4 = options.use_sse41();
 
         PngDecoder {
-            seen_hdr:      false,
-            stream:        ZByteReader::new(data),
-            options:       options,
-            palette:       Vec::new(),
-            png_info:      PngInfo::default(),
-            idat_chunks:   Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out:           Vec::new(),
-            gama:          0.0,
-            seen_ptle:     false,
-            seen_trns:     false,
-            seen_headers:  false,
-            seen_gamma:    false,
-            trns_bytes:    [0; 4],
-            use_sse2:      use_sse2,
-            use_sse4:      use_sse4,
-            chunk_handler: default_chunk_handler
+            seen_hdr:             false,
+            stream:               ZByteReader::new(data),
+            options:              options,
+            palette:              Vec::new(),
+            png_info:             PngInfo::default(),
+            idat_chunks:          Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            out:                  Vec::new(),
+            gama:                 0.0,
+            seen_ptle:            false,
+            seen_trns:            false,
+            seen_headers:         false,
+            expand_bits_to_bytes: false,
+            seen_gamma:           false,
+            trns_bytes:           [0; 4],
+            use_sse2:             use_sse2,
+            use_sse4:             use_sse4,
+            chunk_handler:        default_chunk_handler
         }
     }
 
@@ -370,17 +372,28 @@ impl<'a> PngDecoder<'a>
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let mut new_len =
-            info.width * info.height * usize::from(info.color.num_components()) * bytes;
+        let colorspace = self.get_colorspace().unwrap();
+
+        let new_len = info.width * info.height * colorspace.num_components() * bytes;
 
         if info.interlace_method == InterlaceMethod::Standard
         {
             // allocate out to be enough to hold raw decoded bytes
             let mut img_width_bytes;
 
-            img_width_bytes = usize::from(info.component) * info.width;
+            img_width_bytes = colorspace.num_components() * info.width;
             img_width_bytes *= bytes;
 
+            if !self.expand_bits_to_bytes
+            {
+                // do not expand bits to bytes, so don't allocate for that expansion
+                if info.depth < 8
+                {
+                    img_width_bytes *= usize::from(info.depth);
+                    img_width_bytes += 7;
+                    img_width_bytes /= 8;
+                }
+            }
             let image_len = img_width_bytes * info.height;
 
             self.out = vec![0; image_len];
@@ -403,11 +416,6 @@ impl<'a> PngDecoder<'a>
                 // Tested by test_palette_trns_16bit.
                 self.compute_transparency_16();
             }
-
-            new_len = info.width
-                * info.height
-                * usize::from(self.png_info.color.num_components())
-                * bytes;
         }
         // only un-palettize images if color type type is indexed
         // palette entries for true color and true color with alpha
@@ -425,10 +433,10 @@ impl<'a> PngDecoder<'a>
                 // alpha byte values, so that means we create alpha data from
                 // raw bytes
                 self.expand_palette(4);
-                self.png_info.color = PngColor::RGBA;
+                // self.png_info.color = PngColor::RGBA;
                 // initially it was 1, since palette num_components is 1, so multiply
                 // by 4 since for palettized images we turn it to RGBA
-                new_len *= 4;
+                //new_len *= 4;
             }
             else
             {
@@ -436,7 +444,7 @@ impl<'a> PngDecoder<'a>
                 self.png_info.color = PngColor::RGB;
                 // initially it was 1, since palette num_components is 1, so multiply
                 // by three since for palettized images we turn it to RGB
-                new_len *= 3;
+                //new_len *= 3;
             }
         }
 
@@ -577,45 +585,36 @@ impl<'a> PngDecoder<'a>
 
         let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
 
-        let mut new_out = vec![0; new_size];
-
         match info.color
         {
             PngColor::Luma =>
             {
                 let trns_byte = ((self.trns_bytes[0]) & 255) as u8;
-                for (chunk, old) in new_out.chunks_exact_mut(2).zip(&self.out)
+
+                for chunk in self.out.chunks_exact_mut(2)
                 {
-                    chunk[0] = *old;
-                    chunk[1] = u8::from(*old != trns_byte) * 255;
+                    chunk[1] = u8::from(chunk[0] != trns_byte) * 255;
                 }
                 // change color type to be the one with alpha
-                self.png_info.color = PngColor::LumaA;
             }
             PngColor::RGB =>
             {
                 let r = (self.trns_bytes[0] & 255) as u8;
                 let g = (self.trns_bytes[1] & 255) as u8;
                 let b = (self.trns_bytes[2] & 255) as u8;
+
                 let r_matrix = [r, g, b];
 
-                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks_exact(3))
+                for chunk in self.out.chunks_exact_mut(4)
                 {
-                    chunk[0] = old[0];
-                    chunk[1] = old[1];
-                    chunk[2] = old[2];
-
-                    if &old != &r_matrix
+                    if &chunk[0..3] != &r_matrix
                     {
                         chunk[3] = 255;
                     }
                 }
-                // change color type to be the one with alpha
-                self.png_info.color = PngColor::RGBA;
             }
             _ => unreachable!()
         }
-        self.out = new_out;
     }
     fn compute_transparency_16(&mut self)
     {
@@ -633,21 +632,15 @@ impl<'a> PngDecoder<'a>
 
         let info = &self.png_info;
 
-        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1) * 2;
-
-        let mut new_out = vec![0; new_size];
         match info.color
         {
             PngColor::Luma =>
             {
                 let trns_byte = self.trns_bytes[0].to_ne_bytes();
 
-                for (chunk, old) in new_out.chunks_exact_mut(4).zip(self.out.chunks_exact(2))
+                for chunk in self.out.chunks_exact_mut(4)
                 {
-                    chunk[0] = old[0];
-                    chunk[1] = old[1];
-
-                    if trns_byte != old
+                    if trns_byte != &chunk[0..2]
                     {
                         chunk[2] = 255;
                         chunk[3] = 255;
@@ -669,14 +662,11 @@ impl<'a> PngDecoder<'a>
                 all[2..4].copy_from_slice(&g);
                 all[4..6].copy_from_slice(&b);
 
-                for (chunk, old) in new_out.chunks_exact_mut(8).zip(self.out.chunks_exact(6))
+                for chunk in self.out.chunks_exact_mut(8)
                 {
-                    // copy R,G and B part
-                    chunk[0..6].copy_from_slice(old);
-
                     // the read does not match the bytes
                     // so set it to opaque
-                    if all != old
+                    if all != &chunk[0..6]
                     {
                         chunk[6] = 255;
                         chunk[7] = 255;
@@ -687,7 +677,7 @@ impl<'a> PngDecoder<'a>
             }
             _ => unreachable!()
         }
-        self.out = new_out;
+        //self.out = new_out;
     }
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a Vec<u16>
@@ -735,7 +725,8 @@ impl<'a> PngDecoder<'a>
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_components = self.get_colorspace().unwrap().num_components();
+        let out_colorspace = self.get_colorspace().unwrap();
+        let mut out_components = out_colorspace.num_components() * bytes;
 
         let mut img_width_bytes;
 
@@ -744,9 +735,17 @@ impl<'a> PngDecoder<'a>
         img_width_bytes += 7;
         img_width_bytes /= 8;
 
-        let image_len = img_width_bytes * height;
         let out_n = usize::from(info.color.num_components());
-        let out = &mut self.out[0..image_len];
+
+        let mut out_bytes;
+        out_bytes = usize::from(out_colorspace.num_components()) * width;
+        out_bytes *= usize::from(info.depth);
+        out_bytes += 7;
+        out_bytes /= 8;
+
+        let image_len = img_width_bytes * height;
+
+        let out = &mut self.out[0..out_bytes * height];
 
         if deflate_data.len() < image_len + height
         // account for filter bytes
@@ -769,6 +768,13 @@ impl<'a> PngDecoder<'a>
             components = 1;
         }
 
+        if info.depth < 8
+        {
+            // for bit packed components, do not allocate space, do it the normal way
+            out_bytes = img_width_bytes;
+            out_components = components;
+        }
+
         // add width plus colour component, this gives us number of bytes per every scan line
         chunk_size = width * out_n;
         chunk_size *= usize::from(info.depth);
@@ -776,6 +782,13 @@ impl<'a> PngDecoder<'a>
         chunk_size /= 8;
         // filter type
         chunk_size += 1;
+
+        let mut out_chunk_size;
+
+        out_chunk_size = width * out_colorspace.num_components();
+        out_chunk_size *= usize::from(info.depth);
+        out_chunk_size += 7;
+        out_chunk_size /= 8;
 
         // each chunk is a width stride of unfiltered data
         let chunks = deflate_data.chunks_exact(chunk_size);
@@ -792,9 +805,10 @@ impl<'a> PngDecoder<'a>
             // Split output into current and previous
             // current points to the start of the row where we are writing de-filtered output to
             // prev is all rows we already wrote output to.
+
             let (prev, mut current) = out.split_at_mut(out_position);
 
-            current = &mut current[0..width_stride];
+            current = &mut current[0..out_chunk_size];
             // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
@@ -806,7 +820,7 @@ impl<'a> PngDecoder<'a>
                 prev_row_start += width_stride;
             }
 
-            out_position += width_stride;
+            out_position += out_chunk_size;
 
             // take filter
             let filter_byte = in_stride[0];
@@ -910,7 +924,7 @@ impl<'a> PngDecoder<'a>
         }
         if self.png_info.depth < 8
         {
-            self.expand_bits_to_byte(height, width, out_n)
+            panic!();
         }
 
         Ok(())
@@ -1115,15 +1129,14 @@ impl<'a> PngDecoder<'a>
         // this is safe because we resized palette to be 256
         // in self.parse_plte()
         let palette: &[PLTEEntry; 256] = &self.palette[0..256].try_into().unwrap();
-        let mut out = vec![0; out_size];
 
         if components == 3
         {
-            for (px, entry) in out.chunks_exact_mut(3).zip(data)
+            for px in self.out.chunks_exact_mut(3)
             {
                 // the & 255 may be removed as the compiler can see u8 can never be
                 // above 255, but for safety
-                let entry = palette[usize::from(*entry) & 255];
+                let entry = palette[usize::from(px[0]) & 255];
 
                 px[0] = entry.red;
                 px[1] = entry.green;
@@ -1132,9 +1145,9 @@ impl<'a> PngDecoder<'a>
         }
         else if components == 4
         {
-            for (px, entry) in out.chunks_exact_mut(4).zip(data)
+            for px in self.out.chunks_exact_mut(4)
             {
-                let entry = palette[usize::from(*entry) & 255];
+                let entry = palette[usize::from(px[0]) & 255];
 
                 px[0] = entry.red;
                 px[1] = entry.green;
@@ -1142,6 +1155,5 @@ impl<'a> PngDecoder<'a>
                 px[3] = entry.alpha;
             }
         }
-        self.out = out;
     }
 }
