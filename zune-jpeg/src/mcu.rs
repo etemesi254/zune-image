@@ -25,41 +25,41 @@ impl<'a> JpegDecoder<'a>
     pub(crate) fn check_tables(&self) -> Result<(), DecodeErrors>
     {
         // check that dc and AC tables exist outside the hot path
-        for i in 0..self.input_colorspace.num_components()
+        for component in &self.components
         {
             let _ = &self
                 .dc_huffman_tables
-                .get(self.components[i].dc_huff_table)
+                .get(component.dc_huff_table)
                 .as_ref()
                 .ok_or_else(|| {
                     DecodeErrors::HuffmanDecode(format!(
                         "No Huffman DC table for component {:?} ",
-                        self.components[i].component_id
+                        component.component_id
                     ))
                 })?
                 .as_ref()
                 .ok_or_else(|| {
                     DecodeErrors::HuffmanDecode(format!(
                         "No DC table for component {:?}",
-                        self.components[i].component_id
+                        component.component_id
                     ))
                 })?;
 
             let _ = &self
                 .ac_huffman_tables
-                .get(self.components[i].ac_huff_table)
+                .get(component.ac_huff_table)
                 .as_ref()
                 .ok_or_else(|| {
                     DecodeErrors::HuffmanDecode(format!(
                         "No Huffman AC table for component {:?} ",
-                        self.components[i].component_id
+                        component.component_id
                     ))
                 })?
                 .as_ref()
                 .ok_or_else(|| {
                     DecodeErrors::HuffmanDecode(format!(
                         "No AC table for component {:?}",
-                        self.components[i].component_id
+                        component.component_id
                     ))
                 })?;
         }
