@@ -93,6 +93,7 @@ pub struct PngDecoder<'a>
     pub(crate) palette:              Vec<PLTEEntry>,
     pub(crate) idat_chunks:          Vec<u8>,
     pub(crate) out:                  Vec<u8>,
+    pub(crate) single_stride:        Vec<u8>,
     pub(crate) gama:                 f32,
     pub(crate) trns_bytes:           [u16; 4],
     pub(crate) chunk_handler:        UnkownChunkHandler,
@@ -129,6 +130,7 @@ impl<'a> PngDecoder<'a>
             idat_chunks:          Vec::with_capacity(37), // randomly chosen size, my favourite number,
             out:                  Vec::new(),
             gama:                 0.0,
+            single_stride:        vec![],
             seen_ptle:            false,
             seen_trns:            false,
             seen_headers:         false,
@@ -361,7 +363,41 @@ impl<'a> PngDecoder<'a>
         {
             self.decode_headers()?;
         }
+
+        if self.single_stride.len() == 0 && self.png_info.depth < 8
+        {
+            // add space for single stride
+            // this will be used for small bit depths of less than 8 to expand
+            // to 8 bits
+            self.single_stride.resize(
+                self.png_info.width * self.get_colorspace().unwrap().num_components(),
+                0
+            );
+        }
         info!("Colorspace: {:?} ", self.get_colorspace().unwrap());
+
+        let colorspace = self.get_colorspace().unwrap();
+        let info = self.png_info;
+        let bytes = if info.depth == 16 { 2 } else { 1 };
+
+        let mut img_width_bytes;
+
+        img_width_bytes = colorspace.num_components() * info.width;
+        img_width_bytes *= bytes;
+
+        if !self.expand_bits_to_bytes
+        {
+            // do not expand bits to bytes, so don't allocate for that expansion
+            if info.depth < 8 || self.png_info.color == PngColor::Palette
+            {
+                img_width_bytes *= usize::from(info.depth);
+                img_width_bytes += 7;
+                img_width_bytes /= 8;
+            }
+        }
+        let image_len = img_width_bytes * info.height;
+
+        self.out = vec![0; image_len];
 
         // go parse IDAT chunks returning the inflate
         let deflate_data = self.inflate()?;
@@ -369,34 +405,11 @@ impl<'a> PngDecoder<'a>
         // we are already done with them.
         self.idat_chunks = Vec::new();
 
-        let info = self.png_info;
-        let bytes = if info.depth == 16 { 2 } else { 1 };
-
-        let colorspace = self.get_colorspace().unwrap();
-
         let new_len = info.width * info.height * colorspace.num_components() * bytes;
 
         if info.interlace_method == InterlaceMethod::Standard
         {
             // allocate out to be enough to hold raw decoded bytes
-            let mut img_width_bytes;
-
-            img_width_bytes = colorspace.num_components() * info.width;
-            img_width_bytes *= bytes;
-
-            if !self.expand_bits_to_bytes
-            {
-                // do not expand bits to bytes, so don't allocate for that expansion
-                if info.depth < 8
-                {
-                    img_width_bytes *= usize::from(info.depth);
-                    img_width_bytes += 7;
-                    img_width_bytes /= 8;
-                }
-            }
-            let image_len = img_width_bytes * info.height;
-
-            self.out = vec![0; image_len];
 
             self.create_png_image_raw(&deflate_data, info.width, info.height)?;
         }
@@ -459,9 +472,9 @@ impl<'a> PngDecoder<'a>
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let new_len = info.width * info.height * usize::from(info.color.num_components()) * bytes;
+        let out_n = usize::from(self.get_colorspace().unwrap().num_components());
 
-        let out_n = usize::from(info.color.num_components());
+        let new_len = info.width * info.height * usize::from(out_n) * bytes;
 
         // A mad idea would be to make this multithreaded :)
         // They called me a mad man - Thanos
@@ -477,40 +490,7 @@ impl<'a> PngDecoder<'a>
 
         let mut image_offset = 0;
 
-        let mut max_height = 0;
-        let mut max_width = 0;
-
         // get the maximum height and width for the whole interlace part
-        for p in 0..7
-        {
-            let x = (info
-                .width
-                .saturating_sub(XORIG[p])
-                .saturating_add(XSPC[p])
-                .saturating_sub(1))
-                / XSPC[p];
-
-            let y = (info
-                .height
-                .saturating_sub(YORIG[p])
-                .saturating_add(YSPC[p])
-                .saturating_sub(1))
-                / YSPC[p];
-
-            max_height = max_height.max(y);
-            max_width = max_width.max(x);
-        }
-        {
-            // then allocate a vector big enough to hold the largest pass
-            let mut image_len = usize::from(info.color.num_components()) * max_width;
-
-            image_len *= bytes;
-            image_len += 1;
-            image_len *= max_height;
-
-            self.out = vec![0; image_len];
-        }
-
         for p in 0..7
         {
             let x = (info
@@ -809,6 +789,10 @@ impl<'a> PngDecoder<'a>
             let (prev, mut current) = out.split_at_mut(out_position);
 
             current = &mut current[0..out_chunk_size];
+            if info.depth < 8
+            {
+                current = &mut self.single_stride;
+            }
             // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
@@ -853,7 +837,7 @@ impl<'a> PngDecoder<'a>
 
                 first_row = false;
             }
-            if components == out_components
+            if components == out_components || info.depth < 8
             {
                 match filter
                 {
@@ -921,16 +905,20 @@ impl<'a> PngDecoder<'a>
                     }
                 }
             }
-        }
-        if self.png_info.depth < 8
-        {
-            panic!();
+
+            if info.depth < 8
+            {
+                {
+                    self.expand_bits_to_byte(width, out_n);
+                }
+                todo!("Add small depth cancelling");
+            }
         }
 
         Ok(())
     }
     /// Expand bits to bytes expand images with less than 8 bpp
-    fn expand_bits_to_byte(&mut self, height: usize, width: usize, out_n: usize)
+    fn expand_bits_to_byte(&mut self, width: usize, out_n: usize)
     {
         const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
@@ -943,140 +931,134 @@ impl<'a> PngDecoder<'a>
         // out later on
         let info = &self.png_info;
         let new_size = self.out.len();
-        let mut new_out = vec![0; new_size];
 
         let mut in_offset = 0;
 
         let mut current = 0;
 
-        for _ in 0..height
+        let mut scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
+
+        // for pLTE chunks with lower bit depths
+        // do not scale values just expand.
+        // The palette pass will expand values to the right pixels.
+        if self.seen_ptle && self.png_info.depth < 8
         {
-            let mut scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
+            scale = 1;
+        }
 
-            // for pLTE chunks with lower bit depths
-            // do not scale values just expand.
-            // The palette pass will expand values to the right pixels.
-            if self.seen_ptle && self.png_info.depth < 8
+        let mut k = width * out_n;
+
+        if info.depth == 1
+        {
+            while k >= 8
             {
-                scale = 1;
+                let cur: &mut [u8; 8] = self
+                    .single_stride
+                    .get_mut(current..current + 8)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+
+                let in_val = self.out[in_offset];
+
+                cur[0] = scale * ((in_val >> 7) & 0x01);
+                cur[1] = scale * ((in_val >> 6) & 0x01);
+                cur[2] = scale * ((in_val >> 5) & 0x01);
+                cur[3] = scale * ((in_val >> 4) & 0x01);
+                cur[4] = scale * ((in_val >> 3) & 0x01);
+                cur[5] = scale * ((in_val >> 2) & 0x01);
+                cur[6] = scale * ((in_val >> 1) & 0x01);
+                cur[7] = scale * ((in_val) & 0x01);
+
+                in_offset += 1;
+                current += 8;
+
+                k -= 8;
             }
-
-            let mut k = width * out_n;
-
-            if info.depth == 1
+            if k > 0
             {
-                while k >= 8
+                let in_val = self.out[in_offset];
+
+                for p in 0..k
                 {
-                    let cur: &mut [u8; 8] = new_out
-                        .get_mut(current..current + 8)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-
-                    let in_val = self.out[in_offset];
-
-                    cur[0] = scale * ((in_val >> 7) & 0x01);
-                    cur[1] = scale * ((in_val >> 6) & 0x01);
-                    cur[2] = scale * ((in_val >> 5) & 0x01);
-                    cur[3] = scale * ((in_val >> 4) & 0x01);
-                    cur[4] = scale * ((in_val >> 3) & 0x01);
-                    cur[5] = scale * ((in_val >> 2) & 0x01);
-                    cur[6] = scale * ((in_val >> 1) & 0x01);
-                    cur[7] = scale * ((in_val) & 0x01);
-
-                    in_offset += 1;
-                    current += 8;
-
-                    k -= 8;
+                    let shift = (7_usize).wrapping_sub(p);
+                    self.single_stride[current] = scale * ((in_val >> shift) & 0x01);
+                    current += 1;
                 }
-                if k > 0
-                {
-                    let in_val = self.out[in_offset];
-
-                    for p in 0..k
-                    {
-                        let shift = (7_usize).wrapping_sub(p);
-                        new_out[current] = scale * ((in_val >> shift) & 0x01);
-                        current += 1;
-                    }
-                    in_offset += 1;
-                }
-            }
-            else if info.depth == 2
-            {
-                while k >= 4
-                {
-                    let cur: &mut [u8; 4] = new_out
-                        .get_mut(current..current + 4)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-
-                    let in_val = self.out[in_offset];
-
-                    cur[0] = scale * ((in_val >> 6) & 0x03);
-                    cur[1] = scale * ((in_val >> 4) & 0x03);
-                    cur[2] = scale * ((in_val >> 2) & 0x03);
-                    cur[3] = scale * ((in_val) & 0x03);
-
-                    k -= 4;
-
-                    in_offset += 1;
-                    current += 4;
-                }
-                if k > 0
-                {
-                    let in_val = self.out[in_offset];
-
-                    for p in 0..k
-                    {
-                        let shift = (6_usize).wrapping_sub(p * 2);
-                        new_out[current] = scale * ((in_val >> shift) & 0x03);
-                        current += 1;
-                    }
-                    in_offset += 1;
-                }
-            }
-            else if info.depth == 4
-            {
-                while k >= 2
-                {
-                    let cur: &mut [u8; 2] = new_out
-                        .get_mut(current..current + 2)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-                    let in_val = self.out[in_offset];
-
-                    cur[0] = scale * ((in_val >> 4) & 0x0f);
-                    cur[1] = scale * ((in_val) & 0x0f);
-
-                    k -= 2;
-
-                    in_offset += 1;
-                    current += 2;
-                }
-
-                if k > 0
-                {
-                    let in_val = self.out[in_offset];
-
-                    // leftovers
-                    for p in 0..k
-                    {
-                        let shift = (4_usize).wrapping_sub(p * 4);
-                        new_out[current] = scale * ((in_val >> shift) & 0x0f);
-                        current += 1;
-                    }
-                    in_offset += 1;
-                }
+                in_offset += 1;
             }
         }
-        // ensure we are in the right position
-        // assert_eq!(in_offset, image_length);
-        // assert_eq!(current, image_length * usize::from(8 / info.depth));
+        else if info.depth == 2
+        {
+            while k >= 4
+            {
+                let cur: &mut [u8; 4] = self
+                    .single_stride
+                    .get_mut(current..current + 4)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
 
-        self.out = new_out;
+                let in_val = self.out[in_offset];
+
+                cur[0] = scale * ((in_val >> 6) & 0x03);
+                cur[1] = scale * ((in_val >> 4) & 0x03);
+                cur[2] = scale * ((in_val >> 2) & 0x03);
+                cur[3] = scale * ((in_val) & 0x03);
+
+                k -= 4;
+
+                in_offset += 1;
+                current += 4;
+            }
+            if k > 0
+            {
+                let in_val = self.out[in_offset];
+
+                for p in 0..k
+                {
+                    let shift = (6_usize).wrapping_sub(p * 2);
+                    self.single_stride[current] = scale * ((in_val >> shift) & 0x03);
+                    current += 1;
+                }
+                in_offset += 1;
+            }
+        }
+        else if info.depth == 4
+        {
+            while k >= 2
+            {
+                let cur: &mut [u8; 2] = self
+                    .single_stride
+                    .get_mut(current..current + 2)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+                let in_val = self.out[in_offset];
+
+                cur[0] = scale * ((in_val >> 4) & 0x0f);
+                cur[1] = scale * ((in_val) & 0x0f);
+
+                k -= 2;
+
+                in_offset += 1;
+                current += 2;
+            }
+
+            if k > 0
+            {
+                let in_val = self.out[in_offset];
+
+                // leftovers
+                for p in 0..k
+                {
+                    let shift = (4_usize).wrapping_sub(p * 4);
+                    self.single_stride[current] = scale * ((in_val >> shift) & 0x0f);
+                    current += 1;
+                }
+                in_offset += 1;
+            }
+        }
     }
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
