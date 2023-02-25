@@ -1,6 +1,13 @@
+### Version 0.3.0
+
+- Overhaul to the whole decoder.
+- Single threaded version
+- Lightweight.
+
 ### Version 0.2.0
-- New `ZuneJpegOptions` struct, this is the now recommended way to set up  decoding options for
-decoding
+
+- New `ZuneJpegOptions` struct, this is the now recommended way to set up decoding options for
+  decoding
 - Deprecated previous options setting functions.
 - More code cleanups
 - Fixed new bugs discovered by fuzzing
@@ -29,8 +36,6 @@ decoding
 - Fix rgba/rgbx decoding when avx optimized functions were used
 - Initial support for fuzzing 
 - Remove `align_alloc` method which was unsound (Thanks to @[HeroicKatora] for pointing that out)
-
-
 
 [Shnatsel]:https://github.com/Shnatsel
 [HeroicKatora]:https://github.com/HeroicKatora
