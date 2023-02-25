@@ -12,6 +12,14 @@
 //!
 //! This library is `#[no_std]` with `alloc` feature needed for defining `Vec`
 //! which we need for storing decoded  bytes.
+//!
+//!
+//! # Features
+//!  - `no_std`: Enables `#[no_std]` compilation support.
+//!
+//!  - `serde`: Enables serializing of some of the data structures
+//!     present in the crate
+//!
 #![cfg_attr(not(feature = "std"), no_std)]
 #![macro_use]
 extern crate alloc;
