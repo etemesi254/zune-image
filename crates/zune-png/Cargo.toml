@@ -15,7 +15,7 @@ std = ["zune-core/std"]
 default = ["crc", "sse"]
 
 [dependencies]
-zune-core = { path = "../zune-core" }
+zune-core = { version = "0.2.1" }
 log = "0.4.17"
 zune-inflate = { path = "../zune-inflate", default-features = false, features = ["zlib"] }
 
