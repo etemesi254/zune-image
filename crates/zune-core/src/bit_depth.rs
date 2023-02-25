@@ -112,7 +112,7 @@ impl BitDepth
     ///
     /// ```
     /// use zune_core::bit_depth::{BitDepth, BitType};
-    /// assert_eq!(BitDepth::U8.bit_type(),BitType::U8);
+    /// assert_eq!(BitDepth::Eight.bit_type(),BitType::U8);
     ///
     /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::U16);
     /// ```
