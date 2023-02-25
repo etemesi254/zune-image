@@ -20,7 +20,7 @@ all = ["threads", "image_formats", "serde-support"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
-zune-core = { path = "../zune-core" }
+zune-core = { version = "0.2.1" }
 zune-png = { path = "../zune-png", optional = true }
 zune-jpeg = { path = "../zune-jpeg", optional = true }
 zune-ppm = { path = "../zune-ppm", optional = true }
