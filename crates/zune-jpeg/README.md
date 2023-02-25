@@ -1,8 +1,8 @@
 # Zune-JPEG
 
-A fast and safe jpeg decoder.
+A fast, correct and safe jpeg decoder.
 
-This repo contains a pure Rust jpeg decoder
+This crate contains a pure Rust jpeg decoder
 
 ## Usage
 
