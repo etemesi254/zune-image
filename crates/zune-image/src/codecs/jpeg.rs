@@ -38,15 +38,13 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
     fn get_dimensions(&self) -> Option<(usize, usize)>
     {
-        let width = usize::from(self.width());
-        let height = usize::from(self.height());
-
-        Some((width, height))
+        self.dimensions()
+            .map(|dims| (usize::from(dims.0), usize::from(dims.1)))
     }
 
     fn get_out_colorspace(&self) -> ColorSpace
     {
-        self.get_output_colorspace()
+        self.get_output_colorspace().unwrap()
     }
 
     fn get_name(&self) -> &'static str
@@ -63,7 +61,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
         let metadata = ImageMetadata {
             format:        Some(ImageFormat::JPEG),
-            colorspace:    self.get_output_colorspace(),
+            colorspace:    self.get_output_colorspace().unwrap(),
             depth:         BitDepth::Eight,
             width:         width,
             height:        height,
