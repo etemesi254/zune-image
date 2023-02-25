@@ -1,3 +1,4 @@
+//! Global Decoder options
 use bitflags::bitflags;
 
 use crate::colorspace::ColorSpace;
@@ -101,11 +102,7 @@ bitflags! {
 
 /// Decoder options
 ///
-/// Not all options are respected by decoders
-/// Each option specifies decoders that respect it
-///
-/// To remove the annoyance of getters and setters
-/// all exposed options are declared public.
+/// Not all options are respected by decoders all decoders
 #[derive(Debug, Copy, Clone)]
 pub struct DecoderOptions
 {
@@ -150,6 +147,7 @@ pub struct DecoderOptions
     flags: DecoderFlags
 }
 
+/// Initializers
 impl DecoderOptions
 {
     /// Create the decoder with options  setting most configurable
@@ -168,13 +166,18 @@ impl DecoderOptions
     /// Create the decoder with options setting the configurable options
     /// to the fast  counterparts
     ///
-    /// This enables platform specific code paths and disables intrinsics
+    /// This enables platform specific code paths and enable use of unsafe
     pub fn new_fast() -> DecoderOptions
     {
         let flag = fast_options();
         DecoderOptions::default().set_decoder_flags(flag)
     }
 
+    /// Create the decoder options with the following characteristics
+    ///
+    /// - Use unsafe paths.
+    /// - Ignore error checksuming, e.g in png we do not confirm adler and crc in this mode
+    /// - Enable fast intrinsics paths
     pub fn new_cmd() -> DecoderOptions
     {
         let flag = cmd_options();
@@ -182,26 +185,23 @@ impl DecoderOptions
     }
 }
 
+/// Global options respected by all decoders
 impl DecoderOptions
 {
-    /// Get maximum width configured by the decoder
+    /// Get maximum width configured for which the decoder
+    /// should not try to decode images greater than this width
     pub const fn get_max_width(&self) -> usize
     {
         self.max_width
     }
 
-    /// Get maximum width configured by the decoder
+    /// Get maximum height configured for which the decoder should
+    /// not try to decode images greater than this height
     pub const fn get_max_height(&self) -> usize
     {
         self.max_height
     }
 
-    /// Get maximum scans for which the jpeg decoder
-    /// should not go above for progressive images
-    pub const fn jpeg_get_max_scans(&self) -> usize
-    {
-        self.max_width
-    }
     /// Return true whether the decoder should be in strict mode
     /// And reject most errors
     pub fn get_strict_mode(&self) -> bool
@@ -218,11 +218,8 @@ impl DecoderOptions
     {
         self.flags.contains(DecoderFlags::ZUNE_USE_UNSAFE)
     }
-    pub const fn jpeg_get_out_colorspace(&self) -> ColorSpace
-    {
-        self.out_colorspace
-    }
-
+    /// Set maximum width for which the decoder should not try
+    /// decoding images greater than that width
     pub fn set_max_width(mut self, width: usize) -> Self
     {
         self.max_width = width;
@@ -233,16 +230,6 @@ impl DecoderOptions
     pub fn set_max_height(mut self, height: usize) -> Self
     {
         self.max_height = height;
-        self
-    }
-    /// Set expected colorspace for which the jpeg output is expected to be in
-    ///
-    /// This is mainly provided as is, we do not guarantee the decoder can convert to all colorspaces
-    /// and the decoder can change it internally when it sees fit.
-    #[must_use]
-    pub fn jpeg_set_out_colorspace(mut self, colorspace: ColorSpace) -> Self
-    {
-        self.out_colorspace = colorspace;
         self
     }
 
@@ -258,19 +245,11 @@ impl DecoderOptions
     /// Treat this with caution, disabling it will cause slowdowns but
     /// it's provided for mainly for debugging use.
     ///
-    /// -Default value : true
     /// - Respected by: `png` and `jpeg`(decoders with unsafe routines)
     pub fn set_use_unsafe(mut self, yes: bool) -> Self
     {
         // first clear the flag
         self.flags.set(DecoderFlags::ZUNE_USE_UNSAFE, yes);
-        self
-    }
-    /// Get maximum scans for which the jpeg decoder should
-    /// not exceed when reconstructing images.
-    pub fn jpeg_set_max_scans(mut self, max_scans: usize) -> Self
-    {
-        self.max_scans = max_scans;
         self
     }
 
@@ -289,14 +268,19 @@ impl DecoderOptions
         self.flags.set(flags, yes);
         self
     }
+}
+
+/// PNG specific options
+impl DecoderOptions
+{
     /// Whether the inflate decoder should confirm
-    /// adler  checksums
+    /// adler checksums
     pub const fn inflate_get_confirm_adler(&self) -> bool
     {
         self.flags.contains(DecoderFlags::INFLATE_CONFIRM_ADLER)
     }
     /// Set whether the inflate decoder should confirm
-    /// adler  checksums
+    /// adler checksums
     pub fn inflate_set_confirm_adler(mut self, yes: bool) -> Self
     {
         self.flags.set(DecoderFlags::INFLATE_CONFIRM_ADLER, yes);
@@ -330,8 +314,56 @@ impl DecoderOptions
         self.flags.set(DecoderFlags::PNG_CONFIRM_CRC, yes);
         self
     }
+}
 
+/// JPEG specific options
+impl DecoderOptions
+{
+    /// Get maximum scans for which the jpeg decoder
+    /// should not go above for progressive images
+    pub const fn jpeg_get_max_scans(&self) -> usize
+    {
+        self.max_scans
+    }
+
+    /// Set maximum scans for which the jpeg decoder should
+    /// not exceed when reconstructing images.
+    pub fn jpeg_set_max_scans(mut self, max_scans: usize) -> Self
+    {
+        self.max_scans = max_scans;
+        self
+    }
+    /// Get expected output colorspace set by the user for which the image
+    /// is expected to be reconstructed into.
+    ///
+    /// This may be different from the
+    pub const fn jpeg_get_out_colorspace(&self) -> ColorSpace
+    {
+        self.out_colorspace
+    }
+    /// Set expected colorspace for which the jpeg output is expected to be in
+    ///
+    /// This is mainly provided as is, we do not guarantee the decoder can convert to all colorspaces
+    /// and the decoder can change it internally when it sees fit.
+    #[must_use]
+    pub fn jpeg_set_out_colorspace(mut self, colorspace: ColorSpace) -> Self
+    {
+        self.out_colorspace = colorspace;
+        self
+    }
+}
+
+/// Intrinsics support
+///
+/// These routines are compiled depending
+/// on the platform they are used, if compiled for a platform
+/// it doesn't support,(e.g avx2 on Arm), it will always return `false`
+impl DecoderOptions
+{
     /// Use SSE 2 code paths where possible
+    ///
+    /// This checks for existence of SSE2 first and returns
+    /// false if it's not present
     #[allow(unreachable_code)]
     pub fn use_sse2(&self) -> bool
     {
@@ -366,6 +398,10 @@ impl DecoderOptions
     }
 
     /// Use SSE 3 paths where possible
+    ///
+    ///
+    /// This also checks for SSE3 support and returns false if
+    /// it's not present
     #[allow(unreachable_code)]
     pub fn use_sse3(&self) -> bool
     {
@@ -400,6 +436,9 @@ impl DecoderOptions
     }
 
     /// Use SSE4 paths where possible
+    ///
+    /// This also checks for sse 4.1 support and returns false if it
+    /// is not present
     #[allow(unreachable_code)]
     pub fn use_sse41(&self) -> bool
     {
@@ -434,6 +473,9 @@ impl DecoderOptions
     }
 
     /// Use AVX paths where possible
+    ///
+    /// This also checks for AVX support and returns false if it's
+    /// not present
     #[allow(unreachable_code)]
     pub fn use_avx(&self) -> bool
     {
@@ -468,6 +510,9 @@ impl DecoderOptions
     }
 
     /// Use avx2 paths where possible
+    ///
+    /// This also checks for AVX2 support and returns false if it's not
+    /// present
     #[allow(unreachable_code)]
     pub fn use_avx2(&self) -> bool
     {
@@ -501,7 +546,6 @@ impl DecoderOptions
         false
     }
 }
-
 impl Default for DecoderOptions
 {
     fn default() -> Self
