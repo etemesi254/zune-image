@@ -1,7 +1,8 @@
-/// A simple enum that can hold either
-/// u8's or u16's used for decoding pixels
+//! Decoding results for images
 use alloc::vec::Vec;
 
+/// A simple enum that can hold decode
+/// results of most images
 #[non_exhaustive]
 pub enum DecodingResult
 {

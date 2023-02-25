@@ -1,5 +1,11 @@
 #![cfg(feature = "serde")]
-
+//! Serde support for serializing
+//! crate datastructures
+//!
+//! Implements serialize for
+//!  - ColorSpace
+//!  - BitDepth
+//!  - ColorCharacteristics
 use alloc::format;
 
 use serde::ser::*;
