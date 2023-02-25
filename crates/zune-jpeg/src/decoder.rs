@@ -459,10 +459,31 @@ impl<'a> JpegDecoder<'a>
     }
 
     /// Get the output colorspace the image pixels will be decoded into
+    ///
+    /// # Note.
+    /// This field can only be regarded after decoding headers
+    /// as markers such as Adobe APP14 may dictate different colorspaces
+    /// than requested.
+    ///
+    /// Additionally not all input->output colorspace mappings are supported
+    /// but all input colorspaces can map to RGB colorspace, so that's a safe bet
+    /// if one is handling image formats
+    ///
+    ///# Returns
+    /// - `Some(Colorspace)`: If headers have been decoded, the colorspace the
+    ///output array will be in
+    ///- `None
     #[must_use]
-    pub fn get_output_colorspace(&self) -> ColorSpace
+    pub fn get_output_colorspace(&self) -> Option<ColorSpace>
     {
-        return self.options.jpeg_get_out_colorspace();
+        return if self.headers_decoded
+        {
+            Some(self.options.jpeg_get_out_colorspace())
+        }
+        else
+        {
+            None
+        };
     }
 
     fn decode_internal(&mut self) -> Result<Vec<u8>, DecodeErrors>
@@ -491,7 +512,7 @@ impl<'a> JpegDecoder<'a>
     /// let mut decoder = JpegDecoder::new(&img_data);
     /// decoder.decode_headers().unwrap();
     ///
-    /// println!("Total decoder dimensions are : {} pixels",usize::from(decoder.width()) * usize::from(decoder.height()));
+    /// println!("Total decoder dimensions are : {} pixels",decoder.dimensions());
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
     /// # Errors
@@ -572,19 +593,38 @@ impl<'a> JpegDecoder<'a>
     #[must_use]
     /// Get the width of the image as a u16
     ///
-    /// The width lies between 0 and 65535
-    pub fn width(&self) -> u16
+    /// The width lies between 1 and 65535
+    pub(crate) fn width(&self) -> u16
     {
         self.info.width
     }
 
     /// Get the height of the image as a u16
     ///
-    /// The height lies between 0 and 65535
+    /// The height lies between 1 and 65535
     #[must_use]
-    pub fn height(&self) -> u16
+    pub(crate) fn height(&self) -> u16
     {
         self.info.height
+    }
+
+    /// Get image dimensions as a tuple of width and height
+    /// or `None` if the image hasn't been decoded.
+    ///
+    /// # Returns
+    /// - `Some(width,height)`: Image dimensions
+    /// -  None : The image headers haven't been decoded
+    #[must_use]
+    pub const fn dimensions(&self) -> Option<(u16, u16)>
+    {
+        return if self.headers_decoded
+        {
+            Some((self.info.width, self.info.height))
+        }
+        else
+        {
+            None
+        };
     }
 
     /// Check that all components have the correct width and height

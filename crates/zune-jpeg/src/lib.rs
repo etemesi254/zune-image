@@ -5,7 +5,7 @@
 //!
 //! # Features
 //!  - SSE and AVX accelerated functions to speed up certain decoding operations
-//!  - Really fast and accurate 32 bit IDCT algorithm
+//!  - FAST and accurate 32 bit IDCT algorithm
 //!  - Fast color convert functions
 //!  - RGBA and RGBX (4-Channel) color conversion functions
 //!  - YCbCr to Luma(Grayscale) conversion.
@@ -92,6 +92,8 @@ extern crate alloc;
 extern crate core;
 #[macro_use]
 extern crate log;
+
+pub use zune_core;
 
 pub use crate::decoder::{ImageInfo, JpegDecoder};
 
