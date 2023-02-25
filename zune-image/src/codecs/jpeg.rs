@@ -10,7 +10,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_jpeg::errors::DecodeErrors;
 /// Re-expose jpeg crate here
-pub use zune_jpeg::*;
+pub use zune_jpeg::{ImageInfo, JpegDecoder};
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
