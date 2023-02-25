@@ -1,13 +1,13 @@
 [package]
 name = "zune-jpeg"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-jpeg"
 license = "MIT OR Apache-2.0"
 keywords = ["jpeg", "jpeg-decoder", "decoder"]
 categories = ["multimedia::images"]
-exclude = ["/benches/images/", "/tests/*", "/.idea/*", "/.gradle/*"]
+exclude = ["/benches/images/*", "/tests/*", "/.idea/*", "/.gradle/*", "/test-images/*"]
 description = "The fastest jpeg decoder in the west"
 
 [lib]
