@@ -1,8 +1,13 @@
 [package]
 name = "zune-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-
+description = "Core utilities for image processing in the zune family of crates"
+exclude = ["tests/"]
+homepage = "https://github.com/etemesi254/zune-image/tree/dev/zune-core"
+keywords = ["image"]
+categories = ["multimedia::images", "multimedia::encoding"]
+license = "MIT OR Apache-2.0"
 
 [features]
 # When present, we can use std facilities to detect
