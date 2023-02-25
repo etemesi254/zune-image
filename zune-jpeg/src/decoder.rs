@@ -512,7 +512,7 @@ impl<'a> JpegDecoder<'a>
     /// let mut decoder = JpegDecoder::new(&img_data);
     /// decoder.decode_headers().unwrap();
     ///
-    /// println!("Total decoder dimensions are : {} pixels",decoder.dimensions());
+    /// println!("Total decoder dimensions are : {:?} pixels",decoder.dimensions());
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
     /// # Errors
