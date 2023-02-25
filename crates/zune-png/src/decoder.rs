@@ -715,15 +715,7 @@ impl<'a> PngDecoder<'a>
 
         let out_n = usize::from(info.color.num_components());
 
-        let mut out_bytes;
-        out_bytes = usize::from(out_colorspace.num_components()) * width;
-        out_bytes *= usize::from(info.depth);
-        out_bytes += 7;
-        out_bytes /= 8;
-
         let image_len = img_width_bytes * height;
-
-        let out = &mut self.out[0..out_bytes * height];
 
         if deflate_data.len() < image_len + height
         // account for filter bytes
@@ -749,7 +741,6 @@ impl<'a> PngDecoder<'a>
         if info.depth < 8
         {
             // for bit packed components, do not allocate space, do it the normal way
-            out_bytes = img_width_bytes;
             out_components = components;
         }
 
@@ -761,7 +752,7 @@ impl<'a> PngDecoder<'a>
         // filter type
         chunk_size += 1;
 
-        let mut out_chunk_size;
+        let out_chunk_size;
 
         out_chunk_size = width * out_colorspace.num_components() * bytes;
 
@@ -982,7 +973,6 @@ impl<'a> PngDecoder<'a>
                     self.single_stride[current] = scale * ((in_val >> shift) & 0x01);
                     current += 1;
                 }
-                in_offset += 1;
             }
         }
         else if info.depth == 2
@@ -1018,7 +1008,6 @@ impl<'a> PngDecoder<'a>
                     self.single_stride[current] = scale * ((in_val >> shift) & 0x03);
                     current += 1;
                 }
-                in_offset += 1;
             }
         }
         else if info.depth == 4
@@ -1053,7 +1042,6 @@ impl<'a> PngDecoder<'a>
                     self.single_stride[current] = scale * ((in_val >> shift) & 0x0f);
                     current += 1;
                 }
-                in_offset += 1;
             }
         }
     }
@@ -1101,10 +1089,7 @@ impl<'a> PngDecoder<'a>
         {
             return;
         }
-        let data = &self.out;
 
-        let info = self.png_info;
-        let out_size = info.width * info.height * components;
         // this is safe because we resized palette to be 256
         // in self.parse_plte()
         let palette: &[PLTEEntry; 256] = &self.palette[0..256].try_into().unwrap();
