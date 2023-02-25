@@ -563,8 +563,6 @@ impl<'a> PngDecoder<'a>
 
         let info = &self.png_info;
 
-        let new_size = info.width * info.height * usize::from(info.color.num_components() + 1);
-
         match info.color
         {
             PngColor::Luma =>
@@ -702,7 +700,7 @@ impl<'a> PngDecoder<'a>
     {
         let use_sse4 = self.use_sse4;
         let use_sse2 = self.use_sse2;
-        let info = &self.png_info;
+        let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_colorspace = self.get_colorspace().unwrap();
@@ -765,10 +763,7 @@ impl<'a> PngDecoder<'a>
 
         let mut out_chunk_size;
 
-        out_chunk_size = width * out_colorspace.num_components();
-        out_chunk_size *= usize::from(info.depth);
-        out_chunk_size += 7;
-        out_chunk_size /= 8;
+        out_chunk_size = width * out_colorspace.num_components() * bytes;
 
         // each chunk is a width stride of unfiltered data
         let chunks = deflate_data.chunks_exact(chunk_size);
@@ -786,13 +781,10 @@ impl<'a> PngDecoder<'a>
             // current points to the start of the row where we are writing de-filtered output to
             // prev is all rows we already wrote output to.
 
-            let (prev, mut current) = out.split_at_mut(out_position);
+            let (prev, mut current) = self.out.split_at_mut(out_position);
 
             current = &mut current[0..out_chunk_size];
-            if info.depth < 8
-            {
-                current = &mut self.single_stride;
-            }
+
             // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
@@ -908,10 +900,16 @@ impl<'a> PngDecoder<'a>
 
             if info.depth < 8
             {
+                self.expand_bits_to_byte(width, out_n);
+
+                if out_n == out_components
                 {
-                    self.expand_bits_to_byte(width, out_n);
+                    //input components match output components.
+                    //simple memcpy
+                    let out_len = width * out_n;
+                    self.out[out_position - out_chunk_size..out_position]
+                        .copy_from_slice(&self.single_stride[0..out_len]);
                 }
-                todo!("Add small depth cancelling");
             }
         }
 
@@ -930,7 +928,6 @@ impl<'a> PngDecoder<'a>
         // So just allocate a new byte, write to that and set it to be
         // out later on
         let info = &self.png_info;
-        let new_size = self.out.len();
 
         let mut in_offset = 0;
 
