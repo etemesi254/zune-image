@@ -175,7 +175,7 @@ mod benchmarks
         let in_vec = vec![255_u16; dimensions];
         let mut out_vec = vec![255_u16; dimensions];
 
-        let radius = 20;
+        let radius = 3;
 
         b.iter(|| {
             spatial_ops(
@@ -199,7 +199,7 @@ mod benchmarks
         let in_vec = vec![255_u16; dimensions];
         let mut out_vec = vec![255_u16; dimensions];
 
-        let radius = 20;
+        let radius = 3;
 
         b.iter(|| {
             spatial_ops(

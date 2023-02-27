@@ -128,3 +128,55 @@ fn replicate<T: Copy + Default>(
     }
     out_pixels
 }
+
+#[cfg(all(feature = "benchmarks"))]
+#[cfg(test)]
+mod benchmarks
+{
+    extern crate test;
+
+    use crate::pad::{pad, PadMethod};
+
+    #[bench]
+    fn bench_pad_replicate(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+
+        let pixels = vec![0_u8; width * height];
+        let new_width = 960;
+        let new_height = 1000;
+
+        b.iter(|| {
+            pad(
+                &pixels,
+                width,
+                height,
+                new_width,
+                new_height,
+                PadMethod::Replicate
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_pad_constant(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+
+        let pixels = vec![0_u8; width * height];
+        let new_width = 960;
+        let new_height = 1000;
+        b.iter(|| {
+            pad(
+                &pixels,
+                width,
+                height,
+                new_width,
+                new_height,
+                PadMethod::Constant
+            )
+        });
+    }
+}
