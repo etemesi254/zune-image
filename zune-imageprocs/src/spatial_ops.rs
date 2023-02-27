@@ -156,3 +156,60 @@ pub fn spatial_ops<T>(
 
     spatial(&padded_stuff, out_channel, radius, width, height, ptr);
 }
+
+#[cfg(all(feature = "benchmarks"))]
+#[cfg(test)]
+mod benchmarks
+{
+    extern crate test;
+
+    use crate::spatial_ops::{spatial_ops, StatisticOperations};
+
+    #[bench]
+    fn bench_spatial_mean(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let in_vec = vec![255_u16; dimensions];
+        let mut out_vec = vec![255_u16; dimensions];
+
+        let radius = 20;
+
+        b.iter(|| {
+            spatial_ops(
+                &in_vec,
+                &mut out_vec,
+                radius,
+                width,
+                height,
+                StatisticOperations::Mean
+            );
+        });
+    }
+
+    #[bench]
+    fn bench_spatial_min(b: &mut test::Bencher)
+    {
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+
+        let in_vec = vec![255_u16; dimensions];
+        let mut out_vec = vec![255_u16; dimensions];
+
+        let radius = 20;
+
+        b.iter(|| {
+            spatial_ops(
+                &in_vec,
+                &mut out_vec,
+                radius,
+                width,
+                height,
+                StatisticOperations::Minimum
+            );
+        });
+    }
+}
