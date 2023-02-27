@@ -15,3 +15,32 @@ where
         *pixel = T::max_val() - *pixel;
     }
 }
+
+#[cfg(all(feature = "benchmarks"))]
+#[cfg(test)]
+mod benchmarks
+{
+    extern crate test;
+
+    use crate::invert::invert;
+
+    #[bench]
+    fn invert_u8(b: &mut test::Bencher)
+    {
+        let mut in_out = vec![0_u8; 800 * 800];
+
+        b.iter(|| {
+            invert(&mut in_out);
+        });
+    }
+
+    #[bench]
+    fn invert_u16(b: &mut test::Bencher)
+    {
+        let mut in_out = vec![0_u8; 800 * 800];
+
+        b.iter(|| {
+            invert(&mut in_out);
+        });
+    }
+}
