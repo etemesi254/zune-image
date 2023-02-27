@@ -1,13 +1,11 @@
 # Zune-JPEG
 
-A fast, correct and safe jpeg decoder.
-
-This crate contains a pure Rust jpeg decoder
+A fast, correct and safe jpeg decoder in pure Rust.
 
 ## Usage
 
 The library provides a simple-to-use API for jpeg decoding
-and an ability to add options to influence decoding
+and an ability to add options to influence decoding.
 
 ### Example
 
@@ -32,8 +30,9 @@ see additional documentation in the library.
 The implementation aims to have the following goals achieved,
 in order of importance
 
-1. Safety - Do not segfault on errors or invalid input, panics are okay, but
-   should be fixed when reported. `unsafe` should be used sparingly
+1. Safety - Do not segfault on errors or invalid input. Panics are okay, but
+   should be fixed when reported. `unsafe` is only used for SIMD intrinsics,
+   and can be turned off entirely both at compile time and at runtime.
 2. Speed - Get the data as quickly as possible, which means
     1. Platform intrinsics code where justifiable
     2. Carefully written platform independent code that allows the
@@ -45,9 +44,8 @@ in order of importance
 ## Non-Goals
 
 - Bit identical results with libjpeg/libjpeg-turbo will never be an aim of this library.
-  Jpeg is a lossy format with very few parts specified by the standard(
-  i.e it doesn't give a reference upsampling and color conversion algorithm)
-- Error recovery - This is not a recovery library, most errors are propagated up to the caller
+  Jpeg is a lossy format with very few parts specified by the standard
+  (i.e it doesn't give a reference upsampling and color conversion algorithm)
 
 ## Features
 
@@ -79,10 +77,14 @@ will be running on
 ## Debug vs release
 
 The decoder heavily relies on platform specific intrinsics, namely AVX2 and SSE to gain speed-ups in decoding,
-but in debug build rust generally [doesn't like platform specific intrinsics](https://godbolt.org/z/vPq57z13b) (try
-passing `-O` parameter to see optimized build) hence obviously speeds tank so bad during debug builds, and there is
-probably nothing
-we can do about that.
+but the [perform poorly](https://godbolt.org/z/vPq57z13b) in debug builds. To get reasonable performance even
+when compiling your program in debug mode, add this to your `Cargo.toml`:
+
+```toml
+# `zune-jpeg` package will be always built with optimizations
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+```
 
 ## Benchmarks
 
