@@ -1,3 +1,7 @@
+### Version 0.3.11
+
+- Add guards for SSE and AVX code paths(allows compiling for platforms that do not support it)
+
 ### Version 0.3.0
 
 - Overhaul to the whole decoder.
