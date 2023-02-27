@@ -93,7 +93,7 @@ Platform specific intrinsics help get speed up intensive operations ensuring we 
 match [libjpeg-turbo] speeds but speeds are always +- 10 ms of this library.
 
 For more up-to-date benchmarks, see the online repo with
-benchmarks [here](https://etemesi254.github.io/assets/criterion/report/index.html.)
+benchmarks [here](https://etemesi254.github.io/assets/criterion/report/index.html)
 
 
 [libjpeg-turbo]:https://github.com/libjpeg-turbo/libjpeg-turbo/
