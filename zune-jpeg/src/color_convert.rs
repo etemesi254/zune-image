@@ -50,23 +50,27 @@ use crate::decoder::ColorConvert16Ptr;
 
 mod avx;
 mod scalar;
-
+#[allow(unused_variables)]
 pub fn choose_ycbcr_to_rgb_convert_func(
     type_need: ColorSpace, options: &DecoderOptions
 ) -> Option<ColorConvert16Ptr>
 {
-    if options.use_avx2()
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
     {
-        debug!("Using AVX optimised color conversion functions");
-
-        // I believe avx2 means sse4 is also available
-        // match colorspace
-        return match type_need
+        if options.use_avx2()
         {
-            ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
-            ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
-            _ => None
-        };
+            debug!("Using AVX optimised color conversion functions");
+
+            // I believe avx2 means sse4 is also available
+            // match colorspace
+            return match type_need
+            {
+                ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
+                ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
+                _ => None
+            };
+        }
     }
     // when there is no x86 or we haven't returned by here, resort to scalar
     return match type_need
