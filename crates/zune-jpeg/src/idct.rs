@@ -36,13 +36,18 @@ mod avx2;
 mod scalar;
 
 /// Choose an appropriate IDCT function
+#[allow(unused_variables)]
 pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr
 {
-    if options.use_avx2()
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
     {
-        debug!("Using vector integer IDCT");
-        // use avx one
-        return crate::idct::avx2::idct_avx2;
+        if options.use_avx2()
+        {
+            debug!("Using vector integer IDCT");
+            // use avx one
+            return crate::idct::avx2::idct_avx2;
+        }
     }
     debug!("Using scalar integer IDCT");
     // use generic one
