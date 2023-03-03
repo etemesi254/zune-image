@@ -1,13 +1,17 @@
-#![cfg(feature = "x86")]
-#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// TODO can this be extended to armv7
+
 //! This module provides unsafe ways to do some things
 #![allow(clippy::wildcard_imports)]
 
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-use core::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+use std::arch::aarch64::*;
+use std::ops::{Add, AddAssign, BitOr, BitOrAssign, Mul, MulAssign, Sub};
+
+pub type VecType = uint32x4x2_t;
+
+pub unsafe fn loadu(src: *const i32) -> VecType
+{
+    vld1q_u32_x2(src as *const _)
+}
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
@@ -15,143 +19,270 @@ use core::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 pub struct YmmRegister
 {
     /// An AVX register
-    pub(crate) mm256: __m256i
+    pub(crate) mm256: VecType
 }
 
-impl Add for YmmRegister
+impl YmmRegister
 {
-    type Output = YmmRegister;
-
     #[inline]
-    fn add(self, rhs: Self) -> Self::Output
+    pub unsafe fn load(src: *const i32) -> Self
     {
-        unsafe {
-            return YmmRegister {
-                mm256: _mm256_add_epi32(self.mm256, rhs.mm256)
-            };
-        }
+        loadu(src).into()
     }
-}
-
-impl Add<i32> for YmmRegister
-{
-    type Output = YmmRegister;
 
     #[inline]
-    fn add(self, rhs: i32) -> Self::Output
+    pub fn multiply_accumulate(self, multiply: Self, add: Self) -> Self
     {
         unsafe {
-            let tmp = _mm256_set1_epi32(rhs);
+            let madd0 = vmlaq_u32(self.mm256.0, multiply.mm256.0, add.mm256.0);
+            let madd1 = vmlaq_u32(self.mm256.1, multiply.mm256.1, add.mm256.1);
 
-            return YmmRegister {
-                mm256: _mm256_add_epi32(self.mm256, tmp)
-            };
-        }
-    }
-}
-
-impl Sub for YmmRegister
-{
-    type Output = YmmRegister;
-
-    #[inline]
-    fn sub(self, rhs: Self) -> Self::Output
-    {
-        unsafe {
-            return YmmRegister {
-                mm256: _mm256_sub_epi32(self.mm256, rhs.mm256)
-            };
-        }
-    }
-}
-
-impl AddAssign for YmmRegister
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: Self)
-    {
-        unsafe {
-            self.mm256 = _mm256_add_epi32(self.mm256, rhs.mm256);
-        }
-    }
-}
-
-impl AddAssign<i32> for YmmRegister
-{
-    #[inline]
-    fn add_assign(&mut self, rhs: i32)
-    {
-        unsafe {
-            let tmp = _mm256_set1_epi32(rhs);
-
-            self.mm256 = _mm256_add_epi32(self.mm256, tmp);
-        }
-    }
-}
-
-impl Mul for YmmRegister
-{
-    type Output = YmmRegister;
-
-    #[inline]
-    fn mul(self, rhs: Self) -> Self::Output
-    {
-        unsafe {
             YmmRegister {
-                mm256: _mm256_mullo_epi32(self.mm256, rhs.mm256)
+                mm256: uint32x4x2_t(madd0, madd1)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn map2(self, other: Self, f: impl Fn(uint32x4_t, uint32x4_t) -> uint32x4_t) -> Self
+    {
+        let m0 = f(self.mm256.0, other.mm256.0);
+        let m1 = f(self.mm256.1, other.mm256.1);
+
+        YmmRegister {
+            mm256: uint32x4x2_t(m0, m1)
+        }
+    }
+
+    #[inline]
+    pub fn all_zero(self) -> bool
+    {
+        unsafe {
+            let both = vorrq_u32(self.mm256.0, self.mm256.1);
+            0 == vmaxvq_u32(both)
+        }
+    }
+
+    #[inline]
+    pub fn const_shl<const N: i32>(self) -> Self
+    {
+        unsafe {
+            let m0 = vshlq_n_u32::<N>(self.mm256.0);
+            let m1 = vshlq_n_u32::<N>(self.mm256.1);
+
+            YmmRegister {
+                mm256: uint32x4x2_t(m0, m1)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn const_shra<const N: i32>(self) -> Self
+    {
+        unsafe {
+            let i0 = vshrq_n_s32::<N>(vreinterpretq_s32_u32(self.mm256.0));
+            let i1 = vshrq_n_s32::<N>(vreinterpretq_s32_u32(self.mm256.1));
+
+            YmmRegister {
+                mm256: uint32x4x2_t(vreinterpretq_u32_s32(i0), vreinterpretq_u32_s32(i1))
             }
         }
     }
 }
 
-impl Mul<i32> for YmmRegister
+impl<T> Add<T> for YmmRegister
+where
+    T: Into<Self>
 {
     type Output = YmmRegister;
 
     #[inline]
-    fn mul(self, rhs: i32) -> Self::Output
+    fn add(self, rhs: T) -> Self::Output
+    {
+        let rhs = rhs.into();
+        unsafe { self.map2(rhs, |a, b| vaddq_u32(a, b)) }
+    }
+}
+
+impl<T> Sub<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    type Output = YmmRegister;
+
+    #[inline]
+    fn sub(self, rhs: T) -> Self::Output
+    {
+        let rhs = rhs.into();
+        unsafe { self.map2(rhs, |a, b| vsubq_u32(a, b)) }
+    }
+}
+
+impl<T> AddAssign<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: T)
+    {
+        let rhs: Self = rhs.into();
+        *self = *self + rhs;
+    }
+}
+
+impl<T> Mul<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    type Output = YmmRegister;
+
+    #[inline]
+    fn mul(self, rhs: T) -> Self::Output
+    {
+        let rhs = rhs.into();
+        unsafe { self.map2(rhs, |a, b| vmulq_u32(a, b)) }
+    }
+}
+
+impl<T> MulAssign<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: T)
+    {
+        let rhs: Self = rhs.into();
+        *self = *self * rhs;
+    }
+}
+
+impl<T> BitOr<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    type Output = YmmRegister;
+
+    #[inline]
+    fn bitor(self, rhs: T) -> Self::Output
+    {
+        let rhs = rhs.into();
+        unsafe { self.map2(rhs, |a, b| vorrq_u32(a, b)) }
+    }
+}
+
+impl<T> BitOrAssign<T> for YmmRegister
+where
+    T: Into<Self>
+{
+    #[inline]
+    fn bitor_assign(&mut self, rhs: T)
+    {
+        let rhs: Self = rhs.into();
+        *self = *self | rhs;
+    }
+}
+
+impl From<i32> for YmmRegister
+{
+    #[inline]
+    fn from(val: i32) -> Self
     {
         unsafe {
-            let tmp = _mm256_set1_epi32(rhs);
+            let dup = vdupq_n_u32(val as u32);
 
             YmmRegister {
-                mm256: _mm256_mullo_epi32(self.mm256, tmp)
+                mm256: uint32x4x2_t(dup, dup)
             }
         }
     }
 }
 
-impl MulAssign for YmmRegister
+impl From<VecType> for YmmRegister
 {
     #[inline]
-    fn mul_assign(&mut self, rhs: Self)
+    fn from(mm256: VecType) -> Self
     {
-        unsafe {
-            self.mm256 = _mm256_mullo_epi32(self.mm256, rhs.mm256);
-        }
+        YmmRegister { mm256 }
     }
 }
 
-impl MulAssign<i32> for YmmRegister
+#[allow(clippy::too_many_arguments)]
+#[inline]
+unsafe fn transpose4(
+    v0: &mut uint32x4_t, v1: &mut uint32x4_t, v2: &mut uint32x4_t, v3: &mut uint32x4_t
+)
 {
-    #[inline]
-    fn mul_assign(&mut self, rhs: i32)
-    {
-        unsafe {
-            let tmp = _mm256_set1_epi32(rhs);
+    let w0 = vtrnq_u32(
+        vreinterpretq_u32_u64(vtrn1q_u64(
+            vreinterpretq_u64_u32(*v0),
+            vreinterpretq_u64_u32(*v2)
+        )),
+        vreinterpretq_u32_u64(vtrn1q_u64(
+            vreinterpretq_u64_u32(*v1),
+            vreinterpretq_u64_u32(*v3)
+        ))
+    );
+    let w1 = vtrnq_u32(
+        vreinterpretq_u32_u64(vtrn2q_u64(
+            vreinterpretq_u64_u32(*v0),
+            vreinterpretq_u64_u32(*v2)
+        )),
+        vreinterpretq_u32_u64(vtrn2q_u64(
+            vreinterpretq_u64_u32(*v1),
+            vreinterpretq_u64_u32(*v3)
+        ))
+    );
 
-            self.mm256 = _mm256_mullo_epi32(self.mm256, tmp);
-        }
-    }
+    *v0 = w0.0;
+    *v1 = w0.1;
+    *v2 = w1.0;
+    *v3 = w1.1;
 }
 
-impl MulAssign<__m256i> for YmmRegister
+/// Transpose an array of 8 by 8 i32
+/// Arm has dedicated interleave/transpose instructions
+/// we:
+/// 1. Transpose the upper left and lower right quadrants
+/// 2. Swap and transpose the upper right and lower left quadrants
+#[allow(clippy::too_many_arguments)]
+#[inline]
+pub unsafe fn transpose(
+    v0: &mut YmmRegister, v1: &mut YmmRegister, v2: &mut YmmRegister, v3: &mut YmmRegister,
+    v4: &mut YmmRegister, v5: &mut YmmRegister, v6: &mut YmmRegister, v7: &mut YmmRegister
+)
 {
-    #[inline]
-    fn mul_assign(&mut self, rhs: __m256i)
-    {
-        unsafe {
-            self.mm256 = _mm256_mullo_epi32(self.mm256, rhs);
-        }
-    }
+    use std::mem::swap;
+
+    let ul0 = &mut v0.mm256.0;
+    let ul1 = &mut v1.mm256.0;
+    let ul2 = &mut v2.mm256.0;
+    let ul3 = &mut v3.mm256.0;
+
+    let ur0 = &mut v0.mm256.1;
+    let ur1 = &mut v1.mm256.1;
+    let ur2 = &mut v2.mm256.1;
+    let ur3 = &mut v3.mm256.1;
+
+    let ll0 = &mut v4.mm256.0;
+    let ll1 = &mut v5.mm256.0;
+    let ll2 = &mut v6.mm256.0;
+    let ll3 = &mut v7.mm256.0;
+
+    let lr0 = &mut v4.mm256.1;
+    let lr1 = &mut v5.mm256.1;
+    let lr2 = &mut v6.mm256.1;
+    let lr3 = &mut v7.mm256.1;
+
+    swap(ur0, ll0);
+    swap(ur1, ll1);
+    swap(ur2, ll2);
+    swap(ur3, ll3);
+
+    transpose4(ul0, ul1, ul2, ul3);
+
+    transpose4(ur0, ur1, ur2, ur3);
+
+    transpose4(ll0, ll1, ll2, ll3);
+
+    transpose4(lr0, lr1, lr2, lr3);
 }
