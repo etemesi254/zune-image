@@ -28,7 +28,7 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-use crate::unsafe_utils::YmmRegister;
+use crate::unsafe_utils::{transpose, YmmRegister};
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
@@ -272,79 +272,6 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
     let max_v = _mm256_max_epi16(reg, min_s); //max(a,0)
     let min_v = _mm256_min_epi16(max_v, max_s); //min(max(a,0),255)
     return min_v;
-}
-
-type Reg = YmmRegister;
-
-/// Transpose an array of 8 by 8 i32's using avx intrinsics
-///
-/// This was translated from [here](https://newbedev.com/transpose-an-8x8-float-using-avx-avx2)
-#[allow(unused_parens, clippy::too_many_arguments)]
-#[target_feature(enable = "avx2")]
-unsafe fn transpose(
-    v0: &mut Reg, v1: &mut Reg, v2: &mut Reg, v3: &mut Reg, v4: &mut Reg, v5: &mut Reg,
-    v6: &mut Reg, v7: &mut Reg
-)
-{
-    macro_rules! merge_epi32 {
-        ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-            let va = _mm256_permute4x64_epi64($v0, shuffle(3, 1, 2, 0));
-
-            let vb = _mm256_permute4x64_epi64($v1, shuffle(3, 1, 2, 0));
-
-            $v2 = _mm256_unpacklo_epi32(va, vb);
-
-            $v3 = _mm256_unpackhi_epi32(va, vb);
-        };
-    }
-
-    macro_rules! merge_epi64 {
-        ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-            let va = _mm256_permute4x64_epi64($v0, shuffle(3, 1, 2, 0));
-
-            let vb = _mm256_permute4x64_epi64($v1, shuffle(3, 1, 2, 0));
-
-            $v2 = _mm256_unpacklo_epi64(va, vb);
-
-            $v3 = _mm256_unpackhi_epi64(va, vb);
-        };
-    }
-
-    macro_rules! merge_si128 {
-        ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
-            $v2 = _mm256_permute2x128_si256($v0, $v1, shuffle(0, 2, 0, 0));
-
-            $v3 = _mm256_permute2x128_si256($v0, $v1, shuffle(0, 3, 0, 1));
-        };
-    }
-
-    let (w0, w1, w2, w3, w4, w5, w6, w7);
-
-    merge_epi32!((v0.mm256), (v1.mm256), w0, w1);
-
-    merge_epi32!((v2.mm256), (v3.mm256), w2, w3);
-
-    merge_epi32!((v4.mm256), (v5.mm256), w4, w5);
-
-    merge_epi32!((v6.mm256), (v7.mm256), w6, w7);
-
-    let (x0, x1, x2, x3, x4, x5, x6, x7);
-
-    merge_epi64!(w0, w2, x0, x1);
-
-    merge_epi64!(w1, w3, x2, x3);
-
-    merge_epi64!(w4, w6, x4, x5);
-
-    merge_epi64!(w5, w7, x6, x7);
-
-    merge_si128!(x0, x4, (v0.mm256), (v1.mm256));
-
-    merge_si128!(x1, x5, (v2.mm256), (v3.mm256));
-
-    merge_si128!(x2, x6, (v4.mm256), (v5.mm256));
-
-    merge_si128!(x3, x7, (v6.mm256), (v7.mm256));
 }
 
 /// A copy of `_MM_SHUFFLE()` that doesn't require

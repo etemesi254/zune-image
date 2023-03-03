@@ -32,6 +32,8 @@ use crate::idct::scalar::idct_int;
 
 #[cfg(feature = "x86")]
 mod avx2;
+#[cfg(feature = "neon")]
+mod neon;
 
 mod scalar;
 

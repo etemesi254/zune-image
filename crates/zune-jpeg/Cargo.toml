@@ -15,8 +15,9 @@ crate-type = ["cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 x86 = []
+neon = []
 std = ["zune-core/std"]
-default = ["x86", "std"]
+default = ["x86", "neon", "std"]
 
 
 [dependencies]
