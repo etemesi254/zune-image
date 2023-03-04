@@ -6,11 +6,11 @@
 use std::arch::aarch64::*;
 use std::ops::{Add, AddAssign, BitOr, BitOrAssign, Mul, MulAssign, Sub};
 
-pub type VecType = uint32x4x2_t;
+pub type VecType = int32x4x2_t;
 
 pub unsafe fn loadu(src: *const i32) -> VecType
 {
-    vld1q_u32_x2(src as *const _)
+    vld1q_s32_x2(src as *const _)
 }
 
 /// An abstraction of an AVX ymm register that
@@ -31,26 +31,13 @@ impl YmmRegister
     }
 
     #[inline]
-    pub fn multiply_accumulate(self, multiply: Self, add: Self) -> Self
-    {
-        unsafe {
-            let madd0 = vmlaq_u32(self.mm256.0, multiply.mm256.0, add.mm256.0);
-            let madd1 = vmlaq_u32(self.mm256.1, multiply.mm256.1, add.mm256.1);
-
-            YmmRegister {
-                mm256: uint32x4x2_t(madd0, madd1)
-            }
-        }
-    }
-
-    #[inline]
-    pub fn map2(self, other: Self, f: impl Fn(uint32x4_t, uint32x4_t) -> uint32x4_t) -> Self
+    pub fn map2(self, other: Self, f: impl Fn(int32x4_t, int32x4_t) -> int32x4_t) -> Self
     {
         let m0 = f(self.mm256.0, other.mm256.0);
         let m1 = f(self.mm256.1, other.mm256.1);
 
         YmmRegister {
-            mm256: uint32x4x2_t(m0, m1)
+            mm256: int32x4x2_t(m0, m1)
         }
     }
 
@@ -58,20 +45,21 @@ impl YmmRegister
     pub fn all_zero(self) -> bool
     {
         unsafe {
-            let both = vorrq_u32(self.mm256.0, self.mm256.1);
-            0 == vmaxvq_u32(both)
+            let both = vorrq_s32(self.mm256.0, self.mm256.1);
+            0 == vmaxvq_s32(both)
         }
     }
 
     #[inline]
     pub fn const_shl<const N: i32>(self) -> Self
     {
+        // Ensure that we logically shift left
         unsafe {
-            let m0 = vshlq_n_u32::<N>(self.mm256.0);
-            let m1 = vshlq_n_u32::<N>(self.mm256.1);
+            let m0 = vreinterpretq_s32_u32(vshlq_n_u32::<N>(vreinterpretq_u32_s32(self.mm256.0)));
+            let m1 = vreinterpretq_s32_u32(vshlq_n_u32::<N>(vreinterpretq_u32_s32(self.mm256.1)));
 
             YmmRegister {
-                mm256: uint32x4x2_t(m0, m1)
+                mm256: int32x4x2_t(m0, m1)
             }
         }
     }
@@ -80,11 +68,11 @@ impl YmmRegister
     pub fn const_shra<const N: i32>(self) -> Self
     {
         unsafe {
-            let i0 = vshrq_n_s32::<N>(vreinterpretq_s32_u32(self.mm256.0));
-            let i1 = vshrq_n_s32::<N>(vreinterpretq_s32_u32(self.mm256.1));
+            let i0 = vshrq_n_s32::<N>(self.mm256.0);
+            let i1 = vshrq_n_s32::<N>(self.mm256.1);
 
             YmmRegister {
-                mm256: uint32x4x2_t(vreinterpretq_u32_s32(i0), vreinterpretq_u32_s32(i1))
+                mm256: int32x4x2_t(i0, i1)
             }
         }
     }
@@ -100,7 +88,7 @@ where
     fn add(self, rhs: T) -> Self::Output
     {
         let rhs = rhs.into();
-        unsafe { self.map2(rhs, |a, b| vaddq_u32(a, b)) }
+        unsafe { self.map2(rhs, |a, b| vaddq_s32(a, b)) }
     }
 }
 
@@ -114,7 +102,7 @@ where
     fn sub(self, rhs: T) -> Self::Output
     {
         let rhs = rhs.into();
-        unsafe { self.map2(rhs, |a, b| vsubq_u32(a, b)) }
+        unsafe { self.map2(rhs, |a, b| vsubq_s32(a, b)) }
     }
 }
 
@@ -140,7 +128,7 @@ where
     fn mul(self, rhs: T) -> Self::Output
     {
         let rhs = rhs.into();
-        unsafe { self.map2(rhs, |a, b| vmulq_u32(a, b)) }
+        unsafe { self.map2(rhs, |a, b| vmulq_s32(a, b)) }
     }
 }
 
@@ -166,7 +154,7 @@ where
     fn bitor(self, rhs: T) -> Self::Output
     {
         let rhs = rhs.into();
-        unsafe { self.map2(rhs, |a, b| vorrq_u32(a, b)) }
+        unsafe { self.map2(rhs, |a, b| vorrq_s32(a, b)) }
     }
 }
 
@@ -188,10 +176,10 @@ impl From<i32> for YmmRegister
     fn from(val: i32) -> Self
     {
         unsafe {
-            let dup = vdupq_n_u32(val as u32);
+            let dup = vdupq_n_s32(val);
 
             YmmRegister {
-                mm256: uint32x4x2_t(dup, dup)
+                mm256: int32x4x2_t(dup, dup)
             }
         }
     }
@@ -208,28 +196,26 @@ impl From<VecType> for YmmRegister
 
 #[allow(clippy::too_many_arguments)]
 #[inline]
-unsafe fn transpose4(
-    v0: &mut uint32x4_t, v1: &mut uint32x4_t, v2: &mut uint32x4_t, v3: &mut uint32x4_t
-)
+unsafe fn transpose4(v0: &mut int32x4_t, v1: &mut int32x4_t, v2: &mut int32x4_t, v3: &mut int32x4_t)
 {
-    let w0 = vtrnq_u32(
-        vreinterpretq_u32_u64(vtrn1q_u64(
-            vreinterpretq_u64_u32(*v0),
-            vreinterpretq_u64_u32(*v2)
+    let w0 = vtrnq_s32(
+        vreinterpretq_s32_s64(vtrn1q_s64(
+            vreinterpretq_s64_s32(*v0),
+            vreinterpretq_s64_s32(*v2)
         )),
-        vreinterpretq_u32_u64(vtrn1q_u64(
-            vreinterpretq_u64_u32(*v1),
-            vreinterpretq_u64_u32(*v3)
+        vreinterpretq_s32_s64(vtrn1q_s64(
+            vreinterpretq_s64_s32(*v1),
+            vreinterpretq_s64_s32(*v3)
         ))
     );
-    let w1 = vtrnq_u32(
-        vreinterpretq_u32_u64(vtrn2q_u64(
-            vreinterpretq_u64_u32(*v0),
-            vreinterpretq_u64_u32(*v2)
+    let w1 = vtrnq_s32(
+        vreinterpretq_s32_s64(vtrn2q_s64(
+            vreinterpretq_s64_s32(*v0),
+            vreinterpretq_s64_s32(*v2)
         )),
-        vreinterpretq_u32_u64(vtrn2q_u64(
-            vreinterpretq_u64_u32(*v1),
-            vreinterpretq_u64_u32(*v3)
+        vreinterpretq_s32_s64(vtrn2q_s64(
+            vreinterpretq_s64_s32(*v1),
+            vreinterpretq_s64_s32(*v3)
         ))
     );
 
@@ -285,4 +271,79 @@ pub unsafe fn transpose(
     transpose4(ll0, ll1, ll2, ll3);
 
     transpose4(lr0, lr1, lr2, lr3);
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn test_transpose()
+    {
+        fn get_val(i: usize, j: usize) -> i32
+        {
+            ((i * 8) / (j + 1)) as i32
+        }
+        unsafe {
+            let mut vals: [i32; 8 * 8] = [0; 8 * 8];
+
+            for i in 0..8
+            {
+                for j in 0..8
+                {
+                    // some order-dependent value of i and j
+                    let value = get_val(i, j);
+                    vals[i * 8 + j] = value;
+                }
+            }
+
+            let mut regs: [YmmRegister; 8] = std::mem::transmute(vals);
+            let mut reg0 = regs[0];
+            let mut reg1 = regs[1];
+            let mut reg2 = regs[2];
+            let mut reg3 = regs[3];
+            let mut reg4 = regs[4];
+            let mut reg5 = regs[5];
+            let mut reg6 = regs[6];
+            let mut reg7 = regs[7];
+
+            transpose(
+                &mut reg0, &mut reg1, &mut reg2, &mut reg3, &mut reg4, &mut reg5, &mut reg6,
+                &mut reg7
+            );
+
+            regs[0] = reg0;
+            regs[1] = reg1;
+            regs[2] = reg2;
+            regs[3] = reg3;
+            regs[4] = reg4;
+            regs[5] = reg5;
+            regs[6] = reg6;
+            regs[7] = reg7;
+
+            let vals_from_reg: [i32; 8 * 8] = std::mem::transmute(regs);
+
+            for i in 0..8
+            {
+                for j in 0..i
+                {
+                    let orig = vals[i * 8 + j];
+                    vals[i * 8 + j] = vals[j * 8 + i];
+                    vals[j * 8 + i] = orig;
+                }
+            }
+
+            for i in 0..8
+            {
+                for j in 0..8
+                {
+                    assert_eq!(vals[j * 8 + i], get_val(i, j));
+                    assert_eq!(vals_from_reg[j * 8 + i], get_val(i, j));
+                }
+            }
+
+            assert_eq!(vals, vals_from_reg);
+        }
+    }
 }

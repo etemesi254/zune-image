@@ -4,7 +4,7 @@ pub enum MirrorMode
     North,
     South,
     East,
-    West,
+    West
 }
 /// Mirror an image by duplicating pixels from one edge to the other half
 ///
@@ -17,7 +17,7 @@ pub enum MirrorMode
 ///  │f g h i j│   │f g h g f │
 ///  └─────────┘   └──────────┘
 /// ```
-pub fn mirror<T:Copy>(in_pixels: &mut [T], width: usize, height: usize, mode: MirrorMode)
+pub fn mirror<T: Copy>(in_pixels: &mut [T], width: usize, height: usize, mode: MirrorMode)
 {
     if mode == MirrorMode::East || mode == MirrorMode::West
     {
