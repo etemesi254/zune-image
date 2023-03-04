@@ -101,9 +101,9 @@ pub unsafe fn idct_int_neon_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
     // Do another load for the first row, we don't want to check DC value, because
     // we only care about AC terms
     // TODO this should be a shift/shuffle, not a likely unaligned load
-    let rw8 = YmmRegister::load(in_vector[1..].as_ptr().cast());
+    let row8 = YmmRegister::load(in_vector[1..].as_ptr().cast());
 
-    let or_tree = (((row1 | rw8) | (row2 | row3)) | ((row4 | row5) | (row6 | row7)));
+    let or_tree = (((row1 | row8) | (row2 | row3)) | ((row4 | row5) | (row6 | row7)));
 
     if or_tree.all_zero()
     {

@@ -46,7 +46,8 @@ impl YmmRegister
     {
         unsafe {
             let both = vorrq_s32(self.mm256.0, self.mm256.1);
-            0 == vmaxvq_s32(both)
+            let both_unsigned = vreinterpretq_u32_s32(both);
+            0 == vmaxvq_u32(both_unsigned)
         }
     }
 
