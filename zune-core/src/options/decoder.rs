@@ -12,6 +12,7 @@ fn decoder_strict_mode() -> DecoderFlags
     flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, true);
 
     flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_NEON, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
@@ -35,6 +36,7 @@ fn fast_options() -> DecoderFlags
     flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, false);
 
     flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_NEON, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
@@ -59,6 +61,7 @@ fn cmd_options() -> DecoderFlags
     flags.set(DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE, false);
 
     flags.set(DecoderFlags::ZUNE_USE_UNSAFE, true);
+    flags.set(DecoderFlags::ZUNE_USE_NEON, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX, true);
     flags.set(DecoderFlags::ZUNE_USE_AVX2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
@@ -97,6 +100,8 @@ bitflags! {
         const ZUNE_USE_AVX                  =  0b0000_0000_0000_0000_0000_0000_1000_0000;
         /// Whether we should use avx2 instructions where possible.
         const ZUNE_USE_AVX2                 =  0b0000_0000_0000_0000_0000_0001_0000_0000;
+        /// Whether we should use neon instructions where possible.
+        const ZUNE_USE_NEON                 =  0b0000_0000_0000_0000_0000_0010_0000_0000;
     }
 }
 
@@ -541,6 +546,28 @@ impl DecoderOptions
             {
                 return true;
             }
+        }
+        // everything failed return false
+        false
+    }
+
+    #[allow(unreachable_code)]
+    pub fn use_neon(&self) -> bool
+    {
+        let opt = self
+            .flags
+            .contains(DecoderFlags::ZUNE_USE_NEON | DecoderFlags::ZUNE_USE_UNSAFE);
+        // options says no
+        if !opt
+        {
+            return false;
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            // aarch64 implies neon on a compliant cpu
+            // but for real prod should do something better here
+            return true;
         }
         // everything failed return false
         false

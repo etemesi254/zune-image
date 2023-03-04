@@ -51,61 +51,114 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr
             return crate::idct::avx2::idct_avx2;
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    {
+        if options.use_neon()
+        {
+            debug!("Using vector integer IDCT");
+            return crate::idct::neon::idct_neon;
+        }
+    }
     debug!("Using scalar integer IDCT");
     // use generic one
     return idct_int;
 }
 
-#[test]
-#[cfg(feature = "x86")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn idct_test0()
+#[cfg(test)]
+mod tests
 {
-    use crate::idct::avx2::idct_avx2;
-    use crate::idct::scalar::idct_int;
 
-    let stride = 8;
-    let mut coeff = [10; 64];
-    let mut coeff2 = [10; 64];
-    let mut output_scalar = [0; 64];
-    let mut output_vector = [0; 64];
-    idct_avx2(&mut coeff, &mut output_vector, stride);
-    idct_int(&mut coeff2, &mut output_scalar, stride);
-    assert_eq!(output_scalar, output_vector, "AVX and scalar do not match");
-}
+    use super::*;
+    fn do_idct_test0(idct: IDCTPtr)
+    {
+        let stride = 8;
+        let mut coeff = [10; 64];
+        let mut coeff2 = [10; 64];
+        let mut output_scalar = [0; 64];
+        let mut output_vector = [0; 64];
+        idct(&mut coeff, &mut output_vector, stride);
+        idct_int(&mut coeff2, &mut output_scalar, stride);
+        assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
+    }
 
-#[test]
-#[cfg(feature = "x86")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn idct_test1()
-{
-    use crate::idct::avx2::idct_avx2;
-    use crate::idct::scalar::idct_int;
+    fn do_idct_test1(idct: IDCTPtr)
+    {
+        let stride = 8;
+        let mut coeff = [14; 64];
+        let mut coeff2 = [14; 64];
+        let mut output_scalar = [0; 64];
+        let mut output_vector = [0; 64];
+        idct(&mut coeff, &mut output_vector, stride);
+        idct_int(&mut coeff2, &mut output_scalar, stride);
+        assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
+    }
 
-    let stride = 8;
-    let mut coeff = [14; 64];
-    let mut coeff2 = [14; 64];
-    let mut output_scalar = [0; 64];
-    let mut output_vector = [0; 64];
-    idct_avx2(&mut coeff, &mut output_vector, stride);
-    idct_int(&mut coeff2, &mut output_scalar, stride);
-    assert_eq!(output_scalar, output_vector, "AVX and scalar do not match");
-}
+    fn do_idct_zeros(idct: IDCTPtr)
+    {
+        let stride = 8;
+        let mut coeff = [0; 64];
+        let mut coeff2 = [0; 64];
+        let mut output_scalar = [0; 64];
+        let mut output_vector = [0; 64];
+        idct(&mut coeff, &mut output_vector, stride);
+        idct_int(&mut coeff2, &mut output_scalar, stride);
+        assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
+    }
 
-#[test]
-#[cfg(feature = "x86")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-fn idct_zeroes()
-{
-    use crate::idct::avx2::idct_avx2;
-    use crate::idct::scalar::idct_int;
+    #[cfg(feature = "x86")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    mod avx_tests
+    {
+        use super::*;
 
-    let stride = 8;
-    let mut coeff = [0; 64];
-    let mut coeff2 = [0; 64];
-    let mut output_scalar = [0; 64];
-    let mut output_vector = [0; 64];
-    idct_avx2(&mut coeff, &mut output_vector, stride);
-    idct_int(&mut coeff2, &mut output_scalar, stride);
-    assert_eq!(output_scalar, output_vector, "AVX and scalar do not match");
+        #[test]
+        fn idct_test0()
+        {
+            use crate::idct::avx2::idct_avx2;
+            do_idct_test0(idct_avx2);
+        }
+
+        #[test]
+        fn idct_test1()
+        {
+            use crate::idct::avx2::idct_avx2;
+            do_idct_test1(idct_avx2);
+        }
+
+        #[test]
+        fn idct_zeros()
+        {
+            use crate::idct::avx2::idct_avx2;
+            do_idct_zeros(idct_avx2);
+        }
+    }
+
+    #[cfg(feature = "neon")]
+    #[cfg(target_arch = "aarch64")]
+    mod avx_tests
+    {
+        use super::*;
+
+        #[test]
+        fn idct_test0()
+        {
+            use crate::idct::neon::idct_neon;
+            do_idct_test0(idct_neon);
+        }
+
+        #[test]
+        fn idct_test1()
+        {
+            use crate::idct::neon::idct_neon;
+            do_idct_test1(idct_neon);
+        }
+
+        #[test]
+        fn idct_zeros()
+        {
+            use crate::idct::neon::idct_neon;
+            do_idct_zeros(idct_neon);
+        }
+    }
 }
