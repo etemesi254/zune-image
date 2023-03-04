@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.zune-jpeg]
 path = ".."
+features =  ["neon", "x86"]
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -21,5 +22,11 @@ members = ["."]
 [[bin]]
 name = "decode_buffer"
 path = "fuzz_targets/decode_buffer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_idct"
+path = "fuzz_targets/fuzz_idct.rs"
 test = false
 doc = false

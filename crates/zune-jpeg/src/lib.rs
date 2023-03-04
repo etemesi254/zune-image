@@ -104,7 +104,10 @@ mod decoder;
 pub mod errors;
 mod headers;
 mod huffman;
+#[cfg(not(fuzzing))]
 mod idct;
+#[cfg(fuzzing)]
+pub mod idct;
 mod marker;
 mod mcu;
 mod mcu_prog;

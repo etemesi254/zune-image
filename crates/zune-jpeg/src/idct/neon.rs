@@ -110,12 +110,12 @@ pub unsafe fn idct_int_neon_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
         let clamped_16 = ((in_vector[0] >> 3) + 128).clamp(0, 255) as i16;
-        let idct_value = vdupq_n_u16(clamped_16 as u16);
+        let idct_value = vdupq_n_s16(clamped_16);
 
         macro_rules! store {
             ($pos:tt,$value:tt) => {
                 // store
-                vst1q_u16(
+                vst1q_s16(
                     out_vector
                         .get_mut($pos..$pos + 8)
                         .unwrap()
