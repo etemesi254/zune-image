@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use zune_core::bit_depth::BitType;
 
 //use zune_imageprocs::convolve::convolve_1d;
