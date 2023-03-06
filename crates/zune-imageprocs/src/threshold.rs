@@ -24,7 +24,7 @@ impl ThresholdMethod
 }
 
 #[rustfmt::skip]
-pub fn threshold<T>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
+pub fn threshold<T>(in_channel: &mut [T], threshold: T, method: ThresholdMethod)
     where
         T: NumOps<T> + Copy + Ord + PartialOrd
 {
@@ -34,28 +34,28 @@ pub fn threshold<T>(in_image: &mut [T], threshold: T, method: ThresholdMethod)
     {
         ThresholdMethod::Binary =>
             {
-                for x in in_image.iter_mut()
+                for x in in_channel.iter_mut()
                 {
                     *x = if *x > threshold { max } else { min };
                 }
             }
         ThresholdMethod::BinaryInv =>
             {
-                for x in in_image.iter_mut()
+                for x in in_channel.iter_mut()
                 {
                     *x = if *x > threshold { min } else { max };
                 }
             }
         ThresholdMethod::ThreshTrunc =>
             {
-                for x in in_image.iter_mut()
+                for x in in_channel.iter_mut()
                 {
                     *x = if *x > threshold { threshold } else { *x };
                 }
             }
         ThresholdMethod::ThreshToZero =>
             {
-                for x in in_image.iter_mut()
+                for x in in_channel.iter_mut()
                 {
                     *x = if *x > threshold { threshold } else { T::min_val() }
                 }
