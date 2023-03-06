@@ -21,7 +21,7 @@ default = ["x86", "std"]
 
 [dependencies]
 log = "0.4.11" # logging facilities
-zune-core = { version = "0.2.1" }
+zune-core = { path = "../zune-core", version = "0.2.1" }
 
 [dev-dependencies]
 xxhash-rust = { version = "0.8.6", default-features = false, features = ["xxh3"] }
