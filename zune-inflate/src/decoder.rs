@@ -670,7 +670,7 @@ impl<'a> DeflateDecoder<'a>
 
                     return Err(error);
                 }
-                if out_block.len() > self.options.limit
+                if dest_offset > self.options.limit
                 {
                     out_block.truncate(dest_offset);
 
