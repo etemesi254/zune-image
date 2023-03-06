@@ -1,3 +1,7 @@
+## Version 0.2.51
+
+- Correctly check for limits in the inner loop
+
 ## Version 0.2.0
 
 - Initial release
