@@ -21,7 +21,7 @@ impl CmdOptions
     pub fn new() -> CmdOptions
     {
         CmdOptions {
-            mmap:                 MmapOptions::Auto,
+            mmap:                 MmapOptions::No,
             max_width:            0,
             max_height:           0,
             strict_mode:          false,
