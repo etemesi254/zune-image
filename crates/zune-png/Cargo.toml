@@ -15,14 +15,14 @@ std = ["zune-core/std"]
 default = ["crc", "sse"]
 
 [dependencies]
-zune-core = { version = "0.2.1" }
+zune-core = { path = "../zune-core", version = "0.2.1" }
 log = "0.4.17"
 zune-inflate = { path = "../zune-inflate", default-features = false, features = ["zlib"] }
 
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
-png = "0.17.7"
+png = { git = "https://github.com/fintelia/image-png/", branch = "finflate-github" }
 spng = "0.1.0"
 lodepng = "3.7.2"
 
