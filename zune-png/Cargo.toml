@@ -1,30 +1,37 @@
 [package]
 name = "zune-png"
-version = "0.2.1"
-authors = ["caleb <etemesicaleb@gmail.com>"]
+version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/etemesi254/zune-image/tree/dev/zune-png"
-license = "MIT OR Apache-2.0 OR Zlib"
-keywords = ["png", "png-decoder", "decoder"]
-categories = ["multimedia::images"]
-exclude = ["/benches/images/*", "/tests/*", "/.idea/*", "/.gradle/*", "/test-images/*", "fuzz/*"]
-description = "A fast, correct and safe png decoder"
-
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+## Disabling this disables CRC checking and the associated code for that
+## Can save some bytes on images.
+## Note, this can be disabled manually using options
+crc = []
 sse = []
 std = ["zune-core/std"]
-default = ["sse", "std"]
+default = ["crc", "sse"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2" }
+zune-core = { path = "../zune-core", version = "0.2.1" }
 log = "0.4.17"
-zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
-bytemuck = { version = "1.13.1", default-features = false }
+zune-inflate = { path = "../zune-inflate", default-features = false, features = ["zlib"] }
+
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
-png = "0.17.8-rc"
+png = { git = "https://github.com/fintelia/image-png/", branch = "finflate-github" }
 spng = "0.1.0"
+lodepng = "3.7.2"
+
+
+[dev-dependencies.criterion]
+version = "0.4.0"
+default-features = false
+features = ["html_reports"]
+
+[[bench]]
+name = "decode"
+harness = false

@@ -5,60 +5,27 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-# Single based image decoders and encoders
 ppm = ["zune-ppm"]
-jpeg = ["zune-jpeg", "jpeg-encoder"]
+jpeg = ["zune-jpeg"]
 png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
-jpeg-xl = ["zune-jpegxl"]
-hdr = ["zune-hdr"]
-bmp = ["zune-bmp"]
-
-# Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
-# All image formats
-image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr", "bmp"]
-# External crates that help us handle metadata
-metadata = ["kamadak-exif"]
-# Image filters
-filters = ["zune-imageprocs"]
-# Every supported thing
-default = ["all"]
-# Whether to use threads or not for some operations
-threads = ["zune-jpegxl/threads"]
-# Simd support
-simd = ["zune-jpeg/x86", "zune-png/sse", "zune-imageprocs/avx2", "zune-imageprocs/sse2", "zune-imageprocs/sse3", "zune-imageprocs/sse41"]
+image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi"]
+default = []
+threads = []
 
-all = ["image_formats", "serde-support", "metadata", "threads", "filters", "simd"]
+all = ["threads", "image_formats", "serde-support"]
 
 [dependencies]
-zune-imageprocs = { path = "../zune-imageprocs", optional = true }
-# Core primitives
-zune-core = { path = "../zune-core", version = "0.2" }
-# Images
+zune-imageprocs = { path = "../zune-imageprocs" }
+zune-core = { path = "../zune-core", version = "0.2.1" }
 zune-png = { path = "../zune-png", optional = true }
 zune-jpeg = { path = "../zune-jpeg", optional = true }
 zune-ppm = { path = "../zune-ppm", optional = true }
 zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
-zune-jpegxl = { path = "../zune-jpegxl", optional = true }
-zune-hdr = { path = "../zune-hdr", optional = true }
-zune-bmp = { path = "../zune-bmp", optional = true }
-# Logging information
 log = "0.4.17"
-# Channel conversions in a safe way
-bytemuck = { version = "1.13.1", default-features = false }
-# Serializing info
 serde = { version = "1.0.152", optional = true }
-# External image APIs
-jpeg-encoder = { version = "0.5.1", optional = true, features = ["simd", "std"] }
-
-# metadata
-kamadak-exif = { version = "0.5.5", optional = true }
-
-
-[dev-dependencies]
-num-complex = "0.4.3" # Runs generate-fractals
