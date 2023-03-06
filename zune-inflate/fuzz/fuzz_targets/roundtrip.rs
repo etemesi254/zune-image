@@ -7,8 +7,10 @@ fuzz_target!(|data: &[u8]| {
     {
         let compression_level = data[0];
         let data = &data[1..];
+        let orig_len = data.len();
         let compressed = miniz_oxide::deflate::compress_to_vec(data, compression_level);
-        let mut decoder = zune_inflate::DeflateDecoder::new(&compressed);
+        let options = zune_inflate::DeflateOptions::default().set_limit(orig_len);
+        let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&compressed, options);
         let decoded = decoder
             .decode_deflate()
             .expect("Failed to decompress valid compressed data!");
