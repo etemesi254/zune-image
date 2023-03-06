@@ -87,24 +87,23 @@ pub struct PngInfo
 /// if this is not desired, then I'd suggest another png decoder
 pub struct PngDecoder<'a>
 {
-    pub(crate) stream:               ZByteReader<'a>,
-    pub(crate) options:              DecoderOptions,
-    pub(crate) png_info:             PngInfo,
-    pub(crate) palette:              Vec<PLTEEntry>,
-    pub(crate) idat_chunks:          Vec<u8>,
-    pub(crate) out:                  Vec<u8>,
-    pub(crate) single_stride:        Vec<u8>,
-    pub(crate) gama:                 f32,
-    pub(crate) trns_bytes:           [u16; 4],
-    pub(crate) chunk_handler:        UnkownChunkHandler,
-    pub(crate) seen_gamma:           bool,
-    pub(crate) seen_hdr:             bool,
-    pub(crate) seen_ptle:            bool,
-    pub(crate) seen_headers:         bool,
-    pub(crate) expand_bits_to_bytes: bool,
-    pub(crate) seen_trns:            bool,
-    pub(crate) use_sse2:             bool,
-    pub(crate) use_sse4:             bool
+    pub(crate) stream:        ZByteReader<'a>,
+    pub(crate) options:       DecoderOptions,
+    pub(crate) png_info:      PngInfo,
+    pub(crate) palette:       Vec<PLTEEntry>,
+    pub(crate) idat_chunks:   Vec<u8>,
+    pub(crate) out:           Vec<u8>,
+    pub(crate) single_stride: Vec<u8>,
+    pub(crate) gama:          f32,
+    pub(crate) trns_bytes:    [u16; 4],
+    pub(crate) chunk_handler: UnkownChunkHandler,
+    pub(crate) seen_gamma:    bool,
+    pub(crate) seen_hdr:      bool,
+    pub(crate) seen_ptle:     bool,
+    pub(crate) seen_headers:  bool,
+    pub(crate) seen_trns:     bool,
+    pub(crate) use_sse2:      bool,
+    pub(crate) use_sse4:      bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -122,24 +121,23 @@ impl<'a> PngDecoder<'a>
         let mut use_sse4 = options.use_sse41();
 
         PngDecoder {
-            seen_hdr:             false,
-            stream:               ZByteReader::new(data),
-            options:              options,
-            palette:              Vec::new(),
-            png_info:             PngInfo::default(),
-            idat_chunks:          Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out:                  Vec::new(),
-            gama:                 0.0,
-            single_stride:        vec![],
-            seen_ptle:            false,
-            seen_trns:            false,
-            seen_headers:         false,
-            expand_bits_to_bytes: false,
-            seen_gamma:           false,
-            trns_bytes:           [0; 4],
-            use_sse2:             use_sse2,
-            use_sse4:             use_sse4,
-            chunk_handler:        default_chunk_handler
+            seen_hdr:      false,
+            stream:        ZByteReader::new(data),
+            options:       options,
+            palette:       Vec::new(),
+            png_info:      PngInfo::default(),
+            idat_chunks:   Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            out:           Vec::new(),
+            gama:          0.0,
+            single_stride: vec![],
+            seen_ptle:     false,
+            seen_trns:     false,
+            seen_headers:  false,
+            seen_gamma:    false,
+            trns_bytes:    [0; 4],
+            use_sse2:      use_sse2,
+            use_sse4:      use_sse4,
+            chunk_handler: default_chunk_handler
         }
     }
 
@@ -385,16 +383,6 @@ impl<'a> PngDecoder<'a>
         img_width_bytes = colorspace.num_components() * info.width;
         img_width_bytes *= bytes;
 
-        if !self.expand_bits_to_bytes
-        {
-            // do not expand bits to bytes, so don't allocate for that expansion
-            if info.depth < 8 || self.png_info.color == PngColor::Palette
-            {
-                img_width_bytes *= usize::from(info.depth);
-                img_width_bytes += 7;
-                img_width_bytes /= 8;
-            }
-        }
         let image_len = img_width_bytes * info.height;
 
         self.out = vec![0; image_len];
@@ -700,11 +688,12 @@ impl<'a> PngDecoder<'a>
     {
         let use_sse4 = self.use_sse4;
         let use_sse2 = self.use_sse2;
+
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_colorspace = self.get_colorspace().unwrap();
-        let mut out_components = out_colorspace.num_components() * bytes;
+        let out_components = out_colorspace.num_components() * bytes;
 
         let mut img_width_bytes;
 
@@ -738,11 +727,11 @@ impl<'a> PngDecoder<'a>
             components = 1;
         }
 
-        if info.depth < 8
-        {
-            // for bit packed components, do not allocate space, do it the normal way
-            out_components = components;
-        }
+        // if info.depth < 8
+        // {
+        //     // for bit packed components, do not allocate space, do it the normal way
+        //     out_components = components;
+        // }
 
         // add width plus colour component, this gives us number of bytes per every scan line
         chunk_size = width * out_n;
@@ -849,7 +838,7 @@ impl<'a> PngDecoder<'a>
             }
             else if components < out_components
             {
-                // in and out don't match. Like palleted images, images with tRNS chunks that
+                // in and out don't match. Like paletted images, images with tRNS chunks that
                 // we will expand later on.
                 match filter
                 {
@@ -889,25 +878,51 @@ impl<'a> PngDecoder<'a>
                 }
             }
 
+            // Expand images less than 8 bit to 8 bpp
             if info.depth < 8
             {
-                self.expand_bits_to_byte(width, out_n);
+                let in_offset = out_position - out_chunk_size;
+                let out_len = width * out_n;
+
+                self.expand_bits_to_byte(width, in_offset, out_n);
 
                 if out_n == out_components
                 {
-                    //input components match output components.
-                    //simple memcpy
-                    let out_len = width * out_n;
+                    // This includes cases like 1bpp RGBA image which
+                    // has no tRNS or palette images
+
+                    //
+                    // input components match output components.
+                    // simple memory copy
                     self.out[out_position - out_chunk_size..out_position]
                         .copy_from_slice(&self.single_stride[0..out_len]);
                 }
+                else if out_n < out_components
+                {
+                    // For the case where we have images with less than 8 bpp and
+                    // also have more post processing steps.
+                    // E.g an image with 1 bpp that use palettes, or has a tRNS chunk
+
+                    // the output chunks, these are where we will be filling our
+                    // expanded bytes
+                    let out_chunks = self.out[out_position - out_chunk_size..out_position]
+                        .chunks_exact_mut(out_components);
+
+                    // where we are reading the expanded bytes from
+                    let in_chunks = self.single_stride[..out_len].chunks_exact(out_n);
+
+                    // loop copying from in_bytes to out bytes.
+                    for (out_c, in_c) in out_chunks.zip(in_chunks)
+                    {
+                        out_c[..in_c.len()].copy_from_slice(in_c);
+                    }
+                }
             }
         }
-
         Ok(())
     }
     /// Expand bits to bytes expand images with less than 8 bpp
-    fn expand_bits_to_byte(&mut self, width: usize, out_n: usize)
+    fn expand_bits_to_byte(&mut self, width: usize, mut in_offset: usize, out_n: usize)
     {
         const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
@@ -919,8 +934,6 @@ impl<'a> PngDecoder<'a>
         // So just allocate a new byte, write to that and set it to be
         // out later on
         let info = &self.png_info;
-
-        let mut in_offset = 0;
 
         let mut current = 0;
 

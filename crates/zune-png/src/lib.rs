@@ -43,6 +43,7 @@
 //!    DecodingResult::U16(_px)=>{
 //!        // do something with images with 16 bit depths
 //!    }
+//!    _=>unreachable!(),
 //!}
 //!```
 //! The above has a more complicated API, but it ensures that you
