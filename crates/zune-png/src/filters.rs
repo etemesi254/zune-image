@@ -59,10 +59,14 @@ pub fn handle_avg(
 
     for i in components..end
     {
-        let a = u16::from(current[i - components]);
-        let b = u16::from(prev_row[i]);
+        let a = current[i - components];
+        let b = prev_row[i];
 
-        let c = (((a + b) >> 1) & 0xFF) as u8;
+        // find average, with overflow handling
+        // from standford bit-hacks.
+        // This lets us keep the implementations using
+        // 8 bits, hence easier to vectorize
+        let c = (a & b) + ((a ^ b) >> 1);
 
         current[i] = raw[i].wrapping_add(c);
     }
