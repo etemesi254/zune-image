@@ -1,8 +1,6 @@
-use log::trace;
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::convolve::convolve_1d;
 
-use crate::channel::Channel;
+//use zune_imageprocs::convolve::convolve_1d;
 use crate::errors::ImgOperationsErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
@@ -29,98 +27,98 @@ impl OperationsTrait for Convolve
         "1D convolution"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
-        let (width, height) = image.get_dimensions();
-        let max_val = image.get_depth().max_value();
-        let depth = image.get_depth();
-
-        #[cfg(feature = "threads")]
-        {
-            trace!("Running convolve in multithreaded mode");
-
-            std::thread::scope(|s| {
-                for channel in image.get_channels_mut(true)
-                {
-                    s.spawn(|| {
-                        // Hello
-                        let mut out_channel =
-                            Channel::new_with_length(width * height * depth.size_of());
-
-                        match depth.bit_type()
-                        {
-                            BitType::U8 =>
-                            {
-                                convolve_1d(
-                                    channel.reinterpret_as::<u8>().unwrap(),
-                                    out_channel.reinterpret_as_mut::<u8>().unwrap(),
-                                    width,
-                                    height,
-                                    &self.weights,
-                                    self.weights.len() as f64,
-                                    max_val
-                                );
-                                *channel = out_channel;
-                            }
-                            BitType::U16 =>
-                            {
-                                convolve_1d(
-                                    channel.reinterpret_as::<u16>().unwrap(),
-                                    out_channel.reinterpret_as_mut::<u16>().unwrap(),
-                                    width,
-                                    height,
-                                    &self.weights,
-                                    self.weights.len() as f64,
-                                    max_val
-                                );
-                                *channel = out_channel;
-                            }
-                            _ => todo!()
-                        }
-                    });
-                }
-            });
-        }
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running convolve in single threaded mode");
-
-            for channel in image.get_channels_mut(false)
-            {
-                let mut out_channel = Channel::new_with_length(width * height * depth.size_of());
-
-                match depth.bit_type()
-                {
-                    BitType::U8 =>
-                    {
-                        convolve_1d(
-                            channel.reinterpret_as::<u8>().unwrap(),
-                            out_channel.reinterpret_as_mut::<u8>().unwrap(),
-                            width,
-                            height,
-                            &self.weights,
-                            self.weights.len() as f64,
-                            max_val
-                        );
-                        *channel = out_channel;
-                    }
-                    BitType::U16 =>
-                    {
-                        convolve_1d(
-                            channel.reinterpret_as::<u16>().unwrap(),
-                            out_channel.reinterpret_as_mut::<u16>().unwrap(),
-                            width,
-                            height,
-                            &self.weights,
-                            self.weights.len() as f64,
-                            max_val
-                        );
-                        *channel = out_channel;
-                    }
-                    _ => todo!()
-                }
-            }
-        }
+        // let (width, height) = image.get_dimensions();
+        // let max_val = image.get_depth().max_value();
+        // let depth = image.get_depth();
+        //
+        // #[cfg(feature = "threads")]
+        // {
+        //     trace!("Running convolve in multithreaded mode");
+        //
+        //     std::thread::scope(|s| {
+        //         for channel in image.get_channels_mut(true)
+        //         {
+        //             s.spawn(|| {
+        //                 // Hello
+        //                 let mut out_channel =
+        //                     Channel::new_with_length(width * height * depth.size_of());
+        //
+        //                 match depth.bit_type()
+        //                 {
+        //                     BitType::U8 =>
+        //                     {
+        //                         convolve_1d(
+        //                             channel.reinterpret_as::<u8>().unwrap(),
+        //                             out_channel.reinterpret_as_mut::<u8>().unwrap(),
+        //                             width,
+        //                             height,
+        //                             &self.weights,
+        //                             self.weights.len() as f64,
+        //                             max_val
+        //                         );
+        //                         *channel = out_channel;
+        //                     }
+        //                     BitType::U16 =>
+        //                     {
+        //                         convolve_1d(
+        //                             channel.reinterpret_as::<u16>().unwrap(),
+        //                             out_channel.reinterpret_as_mut::<u16>().unwrap(),
+        //                             width,
+        //                             height,
+        //                             &self.weights,
+        //                             self.weights.len() as f64,
+        //                             max_val
+        //                         );
+        //                         *channel = out_channel;
+        //                     }
+        //                     _ => todo!()
+        //                 }
+        //             });
+        //         }
+        //     });
+        // }
+        // #[cfg(not(feature = "threads"))]
+        // {
+        //     trace!("Running convolve in single threaded mode");
+        //
+        //     for channel in image.get_channels_mut(false)
+        //     {
+        //         let mut out_channel = Channel::new_with_length(width * height * depth.size_of());
+        //
+        //         match depth.bit_type()
+        //         {
+        //             BitType::U8 =>
+        //             {
+        //                 convolve_1d(
+        //                     channel.reinterpret_as::<u8>().unwrap(),
+        //                     out_channel.reinterpret_as_mut::<u8>().unwrap(),
+        //                     width,
+        //                     height,
+        //                     &self.weights,
+        //                     self.weights.len() as f64,
+        //                     max_val
+        //                 );
+        //                 *channel = out_channel;
+        //             }
+        //             BitType::U16 =>
+        //             {
+        //                 convolve_1d(
+        //                     channel.reinterpret_as::<u16>().unwrap(),
+        //                     out_channel.reinterpret_as_mut::<u16>().unwrap(),
+        //                     width,
+        //                     height,
+        //                     &self.weights,
+        //                     self.weights.len() as f64,
+        //                     max_val
+        //                 );
+        //                 *channel = out_channel;
+        //             }
+        //             _ => todo!()
+        //         }
+        //     }
+        // }
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType]
