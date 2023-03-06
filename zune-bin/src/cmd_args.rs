@@ -294,6 +294,18 @@ fn add_filters() -> Vec<Arg>
             .value_name("radius")
             .help_heading("Filters")
             .value_parser(value_parser!(usize))
+            .group("filters"),
+        Arg::new("sobel")
+            .long("sobel")
+            .help("Perform a 3x3 sobel convolution operation")
+            .action(ArgAction::SetTrue)
+            .help_heading("Filters")
+            .group("filters"),
+        Arg::new("scharr")
+            .long("scharr")
+            .help("Perform a 3x3 scharr convolution operation")
+            .action(ArgAction::SetTrue)
+            .help_heading("Filters")
             .group("filters")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
