@@ -117,11 +117,10 @@ pub fn spatial_ops<T>(
     operations: StatisticOperations
 ) where
     T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
-    usize: std::convert::From<T>,
     u32: std::convert::From<T>
 {
     //pad here
-    let padded_stuff = pad(
+    let padded_input = pad(
         in_channel,
         width,
         height,
@@ -154,7 +153,7 @@ pub fn spatial_ops<T>(
         StatisticOperations::Mean => find_mean::<T>
     };
 
-    spatial(&padded_stuff, out_channel, radius, width, height, ptr);
+    spatial(&padded_input, out_channel, radius, width, height, ptr);
 }
 
 #[cfg(all(feature = "benchmarks"))]
