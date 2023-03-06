@@ -17,6 +17,8 @@ pub mod invert;
 pub mod median;
 pub mod mirror;
 pub mod resize;
+pub mod scharr;
+pub mod sobel;
 pub mod statistics;
 pub mod stretch_contrast;
 pub mod threshold;
