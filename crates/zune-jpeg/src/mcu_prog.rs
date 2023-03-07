@@ -509,7 +509,7 @@ impl<'a> JpegDecoder<'a>
         {
             // Allocate only needed components.
             //
-            // For special colorspaces i.e YCCK and CYMK, just allocate all of the needed
+            // For special colorspaces i.e YCCK and CMYK, just allocate all of the needed
             // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
