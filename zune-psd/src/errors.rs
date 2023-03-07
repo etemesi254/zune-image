@@ -60,7 +60,7 @@ impl Debug for PSDDecodeErrors
                 {
                     writeln!(
                         f,
-                        "Unsupported color format  {color:?}, supported formats RGB,CYMK and Grayscale currently",
+                        "Unsupported color format  {color:?}, supported formats RGB,CMYK and Grayscale currently",
                     )
                 }
                 else

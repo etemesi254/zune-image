@@ -11,6 +11,7 @@
 use std::cmp::Ordering;
 
 use log::info;
+use zune_core::bit_depth;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -193,17 +194,8 @@ impl<'a> PSDDecoder<'a>
         Ok(())
     }
 
-    /// Decode a PSD file extracting the image only
-    ///
-    /// Currently this does it without respect to  layers
-    /// and such, only extracting the PSD image, hence might not be the
-    /// most useful one.
-    ///
-    /// But such functionality will be added soon.
-    pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors>
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors>
     {
-        self.decode_headers()?;
-
         let pixel_count = self.width * self.height;
 
         let mut result = match (self.compression, self.depth)
@@ -233,7 +225,7 @@ impl<'a> PSDDecoder<'a>
 
                 out_channel.truncate(pixel_count * self.channel_count);
 
-                DecodingResult::U8(out_channel)
+                out_channel
             }
             (CompressionMethod::NoCompression, BitDepth::Eight) =>
             {
@@ -264,7 +256,7 @@ impl<'a> PSDDecoder<'a>
                 }
 
                 out_channel.truncate(pixel_count * self.channel_count);
-                DecodingResult::U8(out_channel)
+                out_channel
             }
 
             (CompressionMethod::NoCompression, BitDepth::Sixteen) =>
@@ -275,8 +267,9 @@ impl<'a> PSDDecoder<'a>
 
                 // Read the data by channel.
 
-                let mut out_channel = vec![0; self.width * self.height * self.channel_count + 10];
-                let pixel_count = self.width * self.height;
+                let mut out_channel =
+                    vec![0; 2 * (self.width * self.height * self.channel_count + 10)];
+                let pixel_count = self.width * self.height * 2;
 
                 // check we have enough data
                 if !self.stream.has(pixel_count * self.channel_count)
@@ -290,38 +283,49 @@ impl<'a> PSDDecoder<'a>
 
                     while i < pixel_count
                     {
-                        out_channel[i] = self.stream.get_u16_be();
+                        out_channel[i] = self.stream.get_u8();
+                        out_channel[i + 1] = self.stream.get_u8();
                         i += self.channel_count;
                     }
                 }
                 out_channel.truncate(pixel_count * self.channel_count);
-                DecodingResult::U16(out_channel)
+                out_channel
             }
             _ => return Err(PSDDecodeErrors::Generic("Not implemented or Unknown"))
         };
         // remove white matte from psd
         if self.channel_count >= 4
         {
-            match result
+            match self.depth
             {
-                DecodingResult::U16(ref mut pixels) =>
+                BitDepth::Sixteen =>
                 {
-                    for pixel in pixels.chunks_exact_mut(4)
+                    for pixel in result.chunks_exact_mut(8)
                     {
-                        if pixel[3] != 0 && pixel[3] != 65535
+                        let px3 = u16::from_be_bytes(pixel[6..8].try_into().unwrap());
+                        if px3 != 0 && px3 != 65535
                         {
-                            let a = f32::from(pixel[3]) / 65535.0;
+                            let px0 = u16::from_be_bytes(pixel[0..2].try_into().unwrap());
+                            let px1 = u16::from_be_bytes(pixel[2..4].try_into().unwrap());
+                            let px2 = u16::from_be_bytes(pixel[4..6].try_into().unwrap());
+
+                            let a = f32::from(px3) / 65535.0;
                             let ra = 1.0 / a;
                             let inv_a = 65535.0 * (1.0 - ra);
-                            pixel[0] = (f32::from(pixel[0]) * ra + inv_a) as u16;
-                            pixel[1] = (f32::from(pixel[1]) * ra + inv_a) as u16;
-                            pixel[2] = (f32::from(pixel[2]) * ra + inv_a) as u16;
+
+                            let x = (f32::from(px0) * ra + inv_a) as u16;
+                            let y = (f32::from(px1) * ra + inv_a) as u16;
+                            let z = (f32::from(px2) * ra + inv_a) as u16;
+
+                            pixel[0..2].copy_from_slice(&x.to_ne_bytes());
+                            pixel[2..4].copy_from_slice(&y.to_ne_bytes());
+                            pixel[4..6].copy_from_slice(&z.to_ne_bytes());
                         }
                     }
                 }
-                DecodingResult::U8(ref mut pixels) =>
+                BitDepth::Eight =>
                 {
-                    for pixel in pixels.chunks_exact_mut(4)
+                    for pixel in result.chunks_exact_mut(4)
                     {
                         if pixel[3] != 0 && pixel[3] != 255
                         {
@@ -337,8 +341,40 @@ impl<'a> PSDDecoder<'a>
                 _ => unreachable!()
             }
         }
-
         Ok(result)
+    }
+    /// Decode a PSD file extracting the image only
+    ///
+    /// Currently this does it without respect to  layers
+    /// and such, only extracting the PSD image, hence might not be the
+    /// most useful one.
+    ///
+    /// But such functionality will be added soon.
+    pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors>
+    {
+        self.decode_headers()?;
+
+        let raw = self.decode_raw()?;
+
+        if self.depth == BitDepth::Eight
+        {
+            return Ok(DecodingResult::U8(raw));
+        }
+        if self.depth == BitDepth::Sixteen
+        {
+            // https://github.com/etemesi254/zune-image/issues/36
+            let new_array: Vec<u16> = raw
+                .chunks_exact(2)
+                .map(|chunk| {
+                    let value: [u8; 2] = chunk.try_into().unwrap();
+                    u16::from_be_bytes(value)
+                })
+                .collect();
+
+            return Ok(DecodingResult::U16(new_array));
+        }
+
+        Err(PSDDecodeErrors::Generic("Not implemented"))
     }
 
     fn psd_decode_rle(
