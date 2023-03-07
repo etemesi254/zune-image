@@ -1,3 +1,6 @@
+use std::env;
+use std::path::{Path, PathBuf};
+
 use zune_jpeg::JpegDecoder;
 
 #[test]
