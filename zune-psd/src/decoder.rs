@@ -36,6 +36,7 @@ pub struct PSDDecoder<'a>
     stream:         ZByteReader<'a>,
     options:        DecoderOptions,
     depth:          BitDepth,
+    color_type:     Option<ColorModes>,
     compression:    CompressionMethod,
     channel_count:  usize
 }
@@ -56,6 +57,7 @@ impl<'a> PSDDecoder<'a>
             stream: ZByteReader::new(data),
             options,
             depth: BitDepth::Eight,
+            color_type: None,
             compression: CompressionMethod::NoCompression,
             channel_count: 0
         }
@@ -136,10 +138,21 @@ impl<'a> PSDDecoder<'a>
 
         let color_enum = ColorModes::from_int(color_mode);
 
-        if color_enum != Some(ColorModes::RGB)
+        if let Some(color) = color_enum
         {
-            return Err(PSDDecodeErrors::UnsupportedColorFormat(color_enum));
+            if !matches!(
+                color,
+                ColorModes::RGB | ColorModes::Grayscale | ColorModes::CYMK
+            )
+            {
+                return Err(PSDDecodeErrors::UnsupportedColorFormat(color_enum));
+            }
         }
+        else
+        {
+            return Err(PSDDecodeErrors::Generic("Unknown color mode"));
+        }
+        self.color_type = color_enum;
 
         // skip mode data
         let bytes = self.stream.get_u32_be_err()? as usize;
@@ -159,6 +172,13 @@ impl<'a> PSDDecoder<'a>
         if compression > 1
         {
             return Err(PSDDecodeErrors::UnknownCompression);
+        }
+        if self.color_type == Some(ColorModes::Grayscale)
+        {
+            // PSD may have grayscale images with more than one
+            // channel and will specify channel_count as 3.
+            // So let's fix that here
+            self.channel_count = 1;
         }
 
         self.compression = CompressionMethod::from_int(compression).unwrap();
@@ -410,17 +430,42 @@ impl<'a> PSDDecoder<'a>
         }
         None
     }
-    /// Get image bit depth
-    pub const fn get_colorspace(&self) -> ColorSpace
+    /// Get image bit colorspace
+    pub fn get_colorspace(&self) -> Option<ColorSpace>
     {
-        // currently only RGB
-        if self.channel_count == 4
+        if let Some(color) = self.color_type
         {
-            ColorSpace::RGBA
+            if color == ColorModes::RGB
+            {
+                return if self.channel_count == 4
+                {
+                    Some(ColorSpace::RGBA)
+                }
+                else
+                {
+                    Some(ColorSpace::RGB)
+                };
+            }
+            else if color == ColorModes::Grayscale
+            {
+                return if self.channel_count == 1
+                {
+                    Some(ColorSpace::Luma)
+                }
+                else if self.channel_count == 2
+                {
+                    Some(ColorSpace::LumaA)
+                }
+                else
+                {
+                    None
+                };
+            }
+            if color == ColorModes::CYMK
+            {
+                return Some(ColorSpace::CMYK);
+            }
         }
-        else
-        {
-            ColorSpace::RGB
-        }
+        None
     }
 }
