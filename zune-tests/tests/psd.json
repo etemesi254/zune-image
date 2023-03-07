@@ -1,0 +1,12 @@
+[
+  {
+    "name": "cmyk_image.psd",
+    "hash": 204254712233039002205064565430793619839,
+    "comment": "CYMK image file, not confirmed, waiting for CYMK->RGB conversion"
+  },
+  {
+    "name": "grayscale_image.psd",
+    "hash": 204254712233039002205064565430793619839,
+    "comment": "Grayscale PSD file,confirmed"
+  }
+]

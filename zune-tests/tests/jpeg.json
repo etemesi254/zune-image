@@ -1,0 +1,88 @@
+[
+  {
+    "name": "weird_components.jpg",
+    "hash": 112456425865248678156223247131152675256
+  },
+  {
+    "name": "Kiara_limited_progressive_four_components.jpg",
+    "hash": 327899417203221693667684823644765405315
+  },
+  {
+    "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
+    "hash": 276193446258615553450600887344416839261
+  },
+  {
+    "name": "large_no_samp_7680_4320.jpg",
+    "hash": 72227651583886420023815834092904494086,
+    "comment": "Simple large image"
+  },
+  {
+    "name": "large_no_samp_7680_4320.jpg",
+    "hash": 93348528356461250907756341851990389554,
+    "colorspace": "ycbcr"
+  },
+  {
+    "name": "large_horiz_samp_7680_4320.jpg",
+    "hash": 273130140778234680792798421363572621515,
+    "colorspace": "luma",
+    "comment": "Convert YCbCr to grayscale"
+  },
+  {
+    "name": "large_horiz_samp_7680_4320.jpg",
+    "colorspace": "ycbcr",
+    "hash": 192607723684787980167689860133863748259
+  },
+  {
+    "name": "large_vertical_samp_7680_4320.jpg",
+    "hash": 323492540810346221780682098592444605928
+  },
+  {
+    "name": "medium_no_samp_2500x1786.jpg",
+    "hash": 279295790094485170156316723198300362939
+  },
+  {
+    "name": "medium_no_samp_2500x1786.jpg",
+    "hash": 291874786663895286460461230469345392126,
+    "colorspace": "luma"
+  },
+  {
+    "name": "medium_horiz_samp_2500x1786.jpg",
+    "hash": 125683957700914688041687332115454166076
+  },
+  {
+    "name": "medium_horiz_samp_2500x1786.jpg",
+    "hash": 291874786663895286460461230469345392126,
+    "colorspace": "luma"
+  },
+  {
+    "name": "medium_horiz_samp_2500x1786.jpg",
+    "hash": 289066310719258065604782525085636628338,
+    "colorspace": "ycbcr"
+  },
+  {
+    "name": "huffman_third_index.jpg",
+    "hash": 133175253843308546331686378179836169848,
+    "colorspace": "luma"
+  },
+  {
+    "name": "four_components.jpg",
+    "hash": 33350711354489254164962650813791563794
+  },
+  {
+    "name": "huge_sof_number.jpg",
+    "hash": 46029048520010428617927201003495890872
+  },
+  {
+    "name": "weird_components.jpg",
+    "hash": 112456425865248678156223247131152675256
+  },
+  {
+    "name": "weid_sampling_factors.jpg",
+    "hash": 290923794124024565485763288568005295883,
+    "comment": "Non normal sampling factors, h2v1 for all components"
+  },
+  {
+    "name": "2029.jpg",
+    "hash": 245564003473572773629988080984890939516
+  }
+]
