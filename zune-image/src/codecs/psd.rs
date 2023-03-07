@@ -21,7 +21,7 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 
         let depth = self.get_bit_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
-        let colorspace = self.get_colorspace();
+        let colorspace = self.get_colorspace().unwrap();
 
         let mut image = match pixels
         {
@@ -45,7 +45,7 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 
         let metadata = ImageMetadata {
             format:        Some(ImageFormat::PSD),
-            colorspace:    self.get_colorspace(),
+            colorspace:    self.get_colorspace().unwrap(),
             depth:         depth,
             width:         width,
             height:        height,
@@ -63,7 +63,7 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 
     fn get_out_colorspace(&self) -> ColorSpace
     {
-        self.get_colorspace()
+        self.get_colorspace().unwrap()
     }
 
     fn get_name(&self) -> &'static str
