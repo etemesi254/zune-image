@@ -1,0 +1,12 @@
+[
+  {
+    "name": "chess.indexede8.png",
+    "hash": 59021299520869841009832106745654043295,
+    "comment": "Indexed images for testing png expansion paths"
+  },
+  {
+    "name": "debug-corner-fill.png",
+    "hash": 114495703109176691107733980507755911199,
+    "comment": "Same as chess.indexede8.png"
+  }
+]
