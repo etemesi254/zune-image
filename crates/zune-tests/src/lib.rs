@@ -9,6 +9,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
 mod jpeg;
+mod png;
 mod psd;
 
 #[derive(Copy, Clone, Debug, Deserialize)]

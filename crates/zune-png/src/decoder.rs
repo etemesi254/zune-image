@@ -460,9 +460,9 @@ impl<'a> PngDecoder<'a>
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = usize::from(self.get_colorspace().unwrap().num_components());
+        let out_n = self.get_colorspace().unwrap().num_components();
 
-        let new_len = info.width * info.height * usize::from(out_n) * bytes;
+        let new_len = info.width * info.height * out_n * bytes;
 
         // A mad idea would be to make this multithreaded :)
         // They called me a mad man - Thanos
@@ -593,8 +593,8 @@ impl<'a> PngDecoder<'a>
         // The tRNS items were read as big endian but the data is
         // currently in native endian, so matching won't work across byte
         // boundaries.
-        // But if we convert the tRNS data to native endian, the two endianess
-        // match and we can do comparisions
+        // But if we convert the tRNS data to native endian, the two endianness
+        // match and we can do comparisons
 
         let info = &self.png_info;
 
@@ -681,7 +681,7 @@ impl<'a> PngDecoder<'a>
     /// This is to allow reuse e.g interlaced images use one big allocation
     /// to and since that ends up calling this multiple times, allocation was moved
     /// away from this method to the caller of this method
-    #[allow(clippy::manual_memcpy)]
+    #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
     fn create_png_image_raw(
         &mut self, deflate_data: &[u8], width: usize, height: usize
     ) -> Result<(), PngErrors>
@@ -741,9 +741,7 @@ impl<'a> PngDecoder<'a>
         // filter type
         chunk_size += 1;
 
-        let out_chunk_size;
-
-        out_chunk_size = width * out_colorspace.num_components() * bytes;
+        let out_chunk_size = width * out_colorspace.num_components() * bytes;
 
         // each chunk is a width stride of unfiltered data
         let chunks = deflate_data.chunks_exact(chunk_size);
