@@ -13,6 +13,7 @@
 use core::cell::Cell;
 
 use crate::filters::paeth;
+use crate::PngDecoder;
 
 pub fn handle_none_special(raw: &[u8], current: &mut [u8], components: usize, out_components: usize)
 {
@@ -58,7 +59,7 @@ pub fn handle_up_special(
     for ((current_chunk, raw_chunk), previous_chunk) in current
         .chunks_mut(out_components)
         .zip(raw.chunks_exact(components))
-        .zip(previous_row.chunks_exact(components))
+        .zip(previous_row.chunks_exact(out_components))
     {
         for ((raw_byte, current_byte), previous_byte) in
             raw_chunk.iter().zip(current_chunk).zip(previous_chunk)
@@ -93,7 +94,7 @@ pub fn handle_avg_special(
     for ((current_chunk, raw_chunk), prev_chunk) in current_windows[out_components..]
         .chunks(out_components)
         .zip(raw[components..].chunks_exact(components))
-        .zip(prev_row[components..].chunks_exact(components))
+        .zip(prev_row[out_components..].chunks_exact(out_components))
     {
         for ((raw_byte, current_byte), prev_row) in
             raw_chunk.iter().zip(current_chunk).zip(prev_chunk)
@@ -236,7 +237,7 @@ pub fn handle_paeth_special(
     let current_windows = Cell::from_mut(current).as_slice_of_cells();
 
     let mut previous = 0;
-    let mut up_previous = components;
+    let mut up_previous = out_components;
 
     for (current_chunk, raw_chunk) in current_windows[out_components..]
         .chunks(out_components)
@@ -246,13 +247,14 @@ pub fn handle_paeth_special(
         {
             let a = current_windows[previous].get();
             let b = prev_row[up_previous];
-            let c = prev_row[up_previous - components];
+            let c = prev_row[up_previous - out_components];
             let p = paeth(a, b, c);
 
             current_byte.set(raw_byte.wrapping_add(p));
             up_previous += 1;
             previous += 1;
         }
+        up_previous += diff;
         previous += diff;
     }
 }

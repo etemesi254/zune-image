@@ -772,8 +772,8 @@ impl<'a> PngDecoder<'a>
 
             if !first_row
             {
-                prev_row = &prev[prev_row_start..prev_row_start + width_stride];
-                prev_row_start += width_stride;
+                prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
+                prev_row_start += out_chunk_size;
             }
 
             out_position += out_chunk_size;
