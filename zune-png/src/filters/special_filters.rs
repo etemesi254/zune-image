@@ -13,7 +13,6 @@
 use core::cell::Cell;
 
 use crate::filters::paeth;
-use crate::PngDecoder;
 
 pub fn handle_none_special(raw: &[u8], current: &mut [u8], components: usize, out_components: usize)
 {
@@ -122,10 +121,7 @@ pub fn handle_avg_special_first(
         return;
     }
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
-        current[i] = raw[i];
-    }
+    current[..components].copy_from_slice(&raw[..components]);
 
     let diff = out_components.saturating_sub(components);
     let current_windows = Cell::from_mut(current).as_slice_of_cells();
@@ -156,10 +152,7 @@ pub fn handle_sub_special(raw: &[u8], current: &mut [u8], components: usize, out
         return;
     }
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
-        current[i] = raw[i];
-    }
+    current[..components].copy_from_slice(&raw[..components]);
 
     let diff = out_components.saturating_sub(components);
     let current_windows = Cell::from_mut(current).as_slice_of_cells();
@@ -192,10 +185,7 @@ pub fn handle_paeth_special_first(
         return;
     }
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
-        current[i] = raw[i];
-    }
+    current[..components].copy_from_slice(&raw[..components]);
 
     let diff = out_components.saturating_sub(components);
     let current_windows = Cell::from_mut(current).as_slice_of_cells();
