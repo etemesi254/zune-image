@@ -41,6 +41,9 @@ pub enum DecodeErrors
     /// Large image dimensions(Corrupted data)?
     LargeDimensions(usize)
 }
+
+impl std::error::Error for DecodeErrors {}
+
 impl From<&'static str> for DecodeErrors
 {
     fn from(data: &'static str) -> Self
