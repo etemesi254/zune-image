@@ -42,6 +42,7 @@ pub enum DecodeErrors
     LargeDimensions(usize)
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for DecodeErrors {}
 
 impl From<&'static str> for DecodeErrors
