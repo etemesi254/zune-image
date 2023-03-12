@@ -1,0 +1,35 @@
+name: Fuzz PSD
+
+on:
+  push:
+    branches: [ "main","dev" ]
+    paths:
+      - 'zune-psd/**'
+  schedule:
+    - cron: '0 0 * * *'
+  pull_request:
+    branches: [ "main" ,"dev" ]
+    paths:
+      - 'zune-psd/**'
+
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install
+        run: cargo install cargo-fuzz
+
+      - name: Normal Fuzz testing.
+        run: cargo +nightly fuzz run --fuzz-dir zune-psd/fuzz decode_buffer test-images/psd -j2 -- -timeout=10s -max_total_time=60
