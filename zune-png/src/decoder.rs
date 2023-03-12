@@ -558,7 +558,10 @@ impl<'a> PngDecoder<'a>
             PngColor::Luma =>
             {
                 let scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
-                let trns_byte = ((self.trns_bytes[0]) & 255) as u8 * scale;
+
+                let depth_mask = (1_u16 << info.depth) - 1;
+                // BUG: This overflowing is indicative of a wrong tRNS value
+                let trns_byte = (((self.trns_bytes[0]) & 255 & depth_mask) as u8) * scale;
 
                 for chunk in self.out.chunks_exact_mut(2)
                 {
