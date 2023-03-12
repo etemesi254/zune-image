@@ -15,7 +15,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! zune_jpeg = "0.2.0"
+//! zune_jpeg = "0.3"
 //! ```
 //! # Examples
 //!
@@ -55,7 +55,7 @@
 //! of jpeg images.
 //!
 //! Safety is a top concern that is why we provide both static ways to disable unsafe code,
-//! disabling x86 feature, and dynamic ,by using `ZuneJpegOptions::set_unsafe(false)`,
+//! disabling x86 feature, and dynamic ,by using [`DecoderOptions::set_use_unsafe(false)`],
 //! both of these disable platform specific optimizations, which reduce the speed of decompression.
 //!
 //! Please do note that careful consideration has been taken to ensure that the unsafe paths
@@ -64,6 +64,8 @@
 //! The crate tries to decode as many images as possible, as a best effort, even those violating the standard
 //! , this means a lot of images may  get silent warnings and wrong output, but if you are sure you will be handling
 //! images that follow the spec, set `ZuneJpegOptions::set_strict` to true.
+//!
+//![`DecoderOptions::set_use_unsafe(false)`]:  https://docs.rs/zune-core/0.2.1/zune_core/options/struct.DecoderOptions.html#method.set_use_unsafe
 
 #![warn(
     clippy::correctness,
