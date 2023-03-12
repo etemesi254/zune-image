@@ -902,7 +902,7 @@ impl<'a> PngDecoder<'a>
 
                 let out_slice = &mut self.out[out_position - out_chunk_size..out_position];
                 // save the previous row to be used in the next pass
-                self.previous_stride[..chunk_size].copy_from_slice(&out_slice[..chunk_size]);
+                self.previous_stride[..width_stride].copy_from_slice(&out_slice[..width_stride]);
 
                 if out_n == out_components
                 {
