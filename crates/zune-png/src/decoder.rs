@@ -444,7 +444,7 @@ impl<'a> PngDecoder<'a>
             }
             else
             {
-                /// Normal expansion
+                // Normal expansion
                 self.expand_palette(3);
             }
         }
