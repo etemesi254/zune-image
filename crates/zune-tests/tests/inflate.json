@@ -1,0 +1,27 @@
+[
+  {
+    "name": "gzip/image.json.gz",
+    "comment": "json compressed output of image-rs",
+    "hash": 54831555966858218208474103830556288406
+  },
+  {
+    "name": "gzip/image_compressed.tar.gz",
+    "comment": "Source code compressed for image-rs ",
+    "hash": 90713262819639170527390983143166463297
+  },
+  {
+    "name": "gzip/tokio.tar.gz",
+    "comment": "Tokio source code compressed",
+    "hash": 104708014998575759875285447586972917001
+  },
+  {
+    "name": "zlib/enwiki_part.zlib",
+    "comment": "Part of enwiki, approx 42 mb compressed",
+    "hash": 144461007280181541518473063671510198637
+  },
+  {
+    "name": "zlib/png_artwork.zlib",
+    "comment": "Tokio source code compressed",
+    "hash": 222503069940974493343577383917656456720
+  }
+]
