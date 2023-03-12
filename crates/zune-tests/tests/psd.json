@@ -1,12 +1,17 @@
 [
   {
     "name": "cmyk_image.psd",
-    "hash": 204254712233039002205064565430793619839,
+    "hash": 48789193055402294301548331661043836048,
     "comment": "CYMK image file, not confirmed, waiting for CYMK->RGB conversion"
   },
   {
     "name": "grayscale_image.psd",
-    "hash": 204254712233039002205064565430793619839,
+    "hash": 291599864896688079941221109731313354477,
     "comment": "Grayscale PSD file,confirmed"
+  },
+  {
+    "name": "rgb_16bits_image.psd",
+    "hash": 129328126997880286704249117042181795522,
+    "comment": "16 Bit RGB image"
   }
 ]
