@@ -778,7 +778,7 @@ impl<'a> PngDecoder<'a>
                     // But we backed up the unexpanded back row  in
                     // self.previous_stride (only for depth <8), and
                     // hence we use it here as our backup row
-                    prev_row = &self.previous_stride[0..chunk_size];
+                    prev_row = &self.previous_stride[0..width_stride];
                 }
                 else
                 {
