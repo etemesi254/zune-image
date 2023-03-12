@@ -179,6 +179,9 @@ impl<'a> JpegDecoder<'a>
     }
 
     /// Create a new Decoder instance
+    ///
+    /// # Arguments
+    ///  - `stream`: The raw bytes of a jpeg file.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new(stream: &'a [u8]) -> JpegDecoder
@@ -188,9 +191,15 @@ impl<'a> JpegDecoder<'a>
 
     /// Returns the image information
     ///
-    /// This **must** be called after a subsequent call to `decode_file` or
-    /// `decode_buffer` otherwise it will return None
+    /// This **must** be called after a subsequent call to [`decode`] or [`decode_headers`]
+    /// it will return `None`
     ///
+    /// # Returns
+    /// - `Some(info)`: Image information,width, height, number of components
+    /// - None: Indicates image headers haven't been decoded
+    ///
+    /// [`decode`]: JpegDecoder::decode
+    /// [`decode_headers`]: JpegDecoder::decode_headers
     #[must_use]
     pub fn info(&self) -> Option<ImageInfo>
     {
@@ -206,6 +215,57 @@ impl<'a> JpegDecoder<'a>
         return Some(self.info.clone());
     }
 
+    /// Get a mutable reference to the decoder options
+    /// for the decoder instance
+    ///
+    /// This can be used to modify options before actual decoding
+    /// but after initial creation
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let mut decoder = JpegDecoder::new(&[]);
+    /// // get current options
+    /// let mut options = decoder.get_options();
+    /// // modify it
+    ///  let new_options = options.set_max_width(10);
+    /// // set it back
+    /// decoder.set_options(new_options);
+    ///
+    /// ```
+    #[must_use]
+    pub const fn get_options(&self) -> &DecoderOptions
+    {
+        &self.options
+    }
+    /// Set decoder options
+    ///
+    /// This can be used to set new options even after initialization
+    /// but before decoding.
+    ///
+    /// This does not bear any significance after decoding an image
+    ///
+    /// # Arguments
+    /// - `options`: New decoder options
+    ///
+    /// # Example
+    /// Set maximum jpeg progressive passes to be 4
+    ///
+    /// ```no_run
+    /// use zune_jpeg::JpegDecoder;
+    /// let mut decoder =JpegDecoder::new(&[]);
+    /// // this works also because DecoderOptions implements `Copy`
+    /// let options = decoder.get_options().jpeg_set_max_scans(4);
+    /// // set the new options
+    /// decoder.set_options(options);
+    /// // now decode
+    /// decoder.decode().unwrap();
+    /// ```
+    pub fn set_options(&mut self, options: DecoderOptions)
+    {
+        self.options = options;
+    }
     /// Decode Decoder headers
     ///
     /// This routine takes care of parsing supported headers from a Decoder
@@ -460,10 +520,15 @@ impl<'a> JpegDecoder<'a>
 
     /// Get the output colorspace the image pixels will be decoded into
     ///
+    ///
     /// # Note.
-    /// This field can only be regarded after decoding headers
+    /// This field can only be regarded after decoding headers,
     /// as markers such as Adobe APP14 may dictate different colorspaces
     /// than requested.
+    ///
+    /// Calling `decode_headers` is sufficient to know what colorspace the
+    /// output is, if this is called after `decode` it indicates the colorspace
+    /// the output is currently in
     ///
     /// Additionally not all input->output colorspace mappings are supported
     /// but all input colorspaces can map to RGB colorspace, so that's a safe bet
