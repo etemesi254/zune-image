@@ -52,6 +52,7 @@
 //! E.g one can make it that 16 bit images are scaled to 8 bit images.
 //!
 #![cfg_attr(feature = "std", no_std)]
+#![allow(clippy::op_ref, clippy::identity_op)]
 extern crate alloc;
 
 pub use decoder::PngDecoder;

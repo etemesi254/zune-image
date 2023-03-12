@@ -87,23 +87,24 @@ pub struct PngInfo
 /// if this is not desired, then I'd suggest another png decoder
 pub struct PngDecoder<'a>
 {
-    pub(crate) stream:        ZByteReader<'a>,
-    pub(crate) options:       DecoderOptions,
-    pub(crate) png_info:      PngInfo,
-    pub(crate) palette:       Vec<PLTEEntry>,
-    pub(crate) idat_chunks:   Vec<u8>,
-    pub(crate) out:           Vec<u8>,
-    pub(crate) single_stride: Vec<u8>,
-    pub(crate) gama:          f32,
-    pub(crate) trns_bytes:    [u16; 4],
-    pub(crate) chunk_handler: UnkownChunkHandler,
-    pub(crate) seen_gamma:    bool,
-    pub(crate) seen_hdr:      bool,
-    pub(crate) seen_ptle:     bool,
-    pub(crate) seen_headers:  bool,
-    pub(crate) seen_trns:     bool,
-    pub(crate) use_sse2:      bool,
-    pub(crate) use_sse4:      bool
+    pub(crate) stream:          ZByteReader<'a>,
+    pub(crate) options:         DecoderOptions,
+    pub(crate) png_info:        PngInfo,
+    pub(crate) palette:         Vec<PLTEEntry>,
+    pub(crate) idat_chunks:     Vec<u8>,
+    pub(crate) out:             Vec<u8>,
+    pub(crate) expanded_stride: Vec<u8>,
+    pub(crate) previous_stride: Vec<u8>,
+    pub(crate) gama:            f32,
+    pub(crate) trns_bytes:      [u16; 4],
+    pub(crate) chunk_handler:   UnkownChunkHandler,
+    pub(crate) seen_gamma:      bool,
+    pub(crate) seen_hdr:        bool,
+    pub(crate) seen_ptle:       bool,
+    pub(crate) seen_headers:    bool,
+    pub(crate) seen_trns:       bool,
+    pub(crate) use_sse2:        bool,
+    pub(crate) use_sse4:        bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -121,23 +122,24 @@ impl<'a> PngDecoder<'a>
         let mut use_sse4 = options.use_sse41();
 
         PngDecoder {
-            seen_hdr:      false,
-            stream:        ZByteReader::new(data),
-            options:       options,
-            palette:       Vec::new(),
-            png_info:      PngInfo::default(),
-            idat_chunks:   Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out:           Vec::new(),
-            gama:          0.0,
-            single_stride: vec![],
-            seen_ptle:     false,
-            seen_trns:     false,
-            seen_headers:  false,
-            seen_gamma:    false,
-            trns_bytes:    [0; 4],
-            use_sse2:      use_sse2,
-            use_sse4:      use_sse4,
-            chunk_handler: default_chunk_handler
+            seen_hdr:        false,
+            stream:          ZByteReader::new(data),
+            options:         options,
+            palette:         Vec::new(),
+            png_info:        PngInfo::default(),
+            previous_stride: vec![],
+            idat_chunks:     Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            out:             Vec::new(),
+            gama:            0.0,
+            expanded_stride: vec![],
+            seen_ptle:       false,
+            seen_trns:       false,
+            seen_headers:    false,
+            seen_gamma:      false,
+            trns_bytes:      [0; 4],
+            use_sse2:        use_sse2,
+            use_sse4:        use_sse4,
+            chunk_handler:   default_chunk_handler
         }
     }
 
@@ -362,12 +364,16 @@ impl<'a> PngDecoder<'a>
             self.decode_headers()?;
         }
 
-        if self.single_stride.len() == 0 && self.png_info.depth < 8
+        if self.expanded_stride.is_empty() && self.png_info.depth < 8
         {
             // add space for single stride
             // this will be used for small bit depths of less than 8 to expand
             // to 8 bits
-            self.single_stride.resize(
+            self.expanded_stride.resize(
+                self.png_info.width * self.get_colorspace().unwrap().num_components(),
+                0
+            );
+            self.previous_stride.resize(
                 self.png_info.width * self.get_colorspace().unwrap().num_components(),
                 0
             );
@@ -389,6 +395,7 @@ impl<'a> PngDecoder<'a>
 
         // go parse IDAT chunks returning the inflate
         let deflate_data = self.inflate()?;
+
         // remove idat chunks from memory
         // we are already done with them.
         self.idat_chunks = Vec::new();
@@ -434,18 +441,11 @@ impl<'a> PngDecoder<'a>
                 // alpha byte values, so that means we create alpha data from
                 // raw bytes
                 self.expand_palette(4);
-                // self.png_info.color = PngColor::RGBA;
-                // initially it was 1, since palette num_components is 1, so multiply
-                // by 4 since for palettized images we turn it to RGBA
-                //new_len *= 4;
             }
             else
             {
+                /// Normal expansion
                 self.expand_palette(3);
-                self.png_info.color = PngColor::RGB;
-                // initially it was 1, since palette num_components is 1, so multiply
-                // by three since for palettized images we turn it to RGB
-                //new_len *= 3;
             }
         }
 
@@ -770,8 +770,22 @@ impl<'a> PngDecoder<'a>
 
             if !first_row
             {
-                prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
-                prev_row_start += out_chunk_size;
+                if info.depth < 8
+                {
+                    // for lower depths, we expanded the previous row,
+                    // so we can't use the previous row as expected.
+
+                    // But we backed up the unexpanded back row  in
+                    // self.previous_stride (only for depth <8), and
+                    // hence we use it here as our backup row
+                    prev_row = &self.previous_stride[0..chunk_size];
+                }
+                else
+                {
+                    // normal bit depth, use the previous row as normal
+                    prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
+                    prev_row_start += out_chunk_size;
+                }
             }
 
             out_position += out_chunk_size;
@@ -875,14 +889,20 @@ impl<'a> PngDecoder<'a>
                     }
                 }
             }
-
             // Expand images less than 8 bit to 8 bpp
+            //
+            // This has some complexity because we run it in the same scanline
+            // that we just decoded
             if info.depth < 8
             {
                 let in_offset = out_position - out_chunk_size;
                 let out_len = width * out_n;
 
                 self.expand_bits_to_byte(width, in_offset, out_n);
+
+                let out_slice = &mut self.out[out_position - out_chunk_size..out_position];
+                // save the previous row to be used in the next pass
+                self.previous_stride[..chunk_size].copy_from_slice(&out_slice[..chunk_size]);
 
                 if out_n == out_components
                 {
@@ -892,8 +912,7 @@ impl<'a> PngDecoder<'a>
                     //
                     // input components match output components.
                     // simple memory copy
-                    self.out[out_position - out_chunk_size..out_position]
-                        .copy_from_slice(&self.single_stride[0..out_len]);
+                    out_slice.copy_from_slice(&self.expanded_stride[0..out_len]);
                 }
                 else if out_n < out_components
                 {
@@ -903,11 +922,9 @@ impl<'a> PngDecoder<'a>
 
                     // the output chunks, these are where we will be filling our
                     // expanded bytes
-                    let out_chunks = self.out[out_position - out_chunk_size..out_position]
-                        .chunks_exact_mut(out_components);
-
+                    let out_chunks = out_slice.chunks_exact_mut(out_components);
                     // where we are reading the expanded bytes from
-                    let in_chunks = self.single_stride[..out_len].chunks_exact(out_n);
+                    let in_chunks = self.expanded_stride[..out_len].chunks_exact(out_n);
 
                     // loop copying from in_bytes to out bytes.
                     for (out_c, in_c) in out_chunks.zip(in_chunks)
@@ -922,15 +939,23 @@ impl<'a> PngDecoder<'a>
     /// Expand bits to bytes expand images with less than 8 bpp
     fn expand_bits_to_byte(&mut self, width: usize, mut in_offset: usize, out_n: usize)
     {
+        // How it works
+        // ------------
+        // We want to expand the current row, current row was written in
+        // self.out[in_offset..] up until ceil_div((width*depth),8)
+        //
+        // We want to write the expanded row to self.expanded_stride
+        //
+        // So we get in_offset from the caller, for lower bit depths,
+        // numbers are clumped up together, even if they have tRNS and PLTE chunks
+        //
+        // So we expand the lower bit depths starting from self.out[in_offset] incrementing
+        // it, until we have expanded a single row, then we return to the caller
+        //
+        //
+        //
         const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
-        // okay this depth up-scaling can be done in place
-        // stb_image does it, it's a performance benefit to do it that way
-        // but for GOD's sake, there are too many pointer arithmetic and implicit
-        // things I cannot even begin to wrap my head on how to go about it
-        //
-        // So just allocate a new byte, write to that and set it to be
-        // out later on
         let info = &self.png_info;
 
         let mut current = 0;
@@ -952,7 +977,7 @@ impl<'a> PngDecoder<'a>
             while k >= 8
             {
                 let cur: &mut [u8; 8] = self
-                    .single_stride
+                    .expanded_stride
                     .get_mut(current..current + 8)
                     .unwrap()
                     .try_into()
@@ -981,7 +1006,7 @@ impl<'a> PngDecoder<'a>
                 for p in 0..k
                 {
                     let shift = (7_usize).wrapping_sub(p);
-                    self.single_stride[current] = scale * ((in_val >> shift) & 0x01);
+                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x01);
                     current += 1;
                 }
             }
@@ -991,7 +1016,7 @@ impl<'a> PngDecoder<'a>
             while k >= 4
             {
                 let cur: &mut [u8; 4] = self
-                    .single_stride
+                    .expanded_stride
                     .get_mut(current..current + 4)
                     .unwrap()
                     .try_into()
@@ -1016,7 +1041,7 @@ impl<'a> PngDecoder<'a>
                 for p in 0..k
                 {
                     let shift = (6_usize).wrapping_sub(p * 2);
-                    self.single_stride[current] = scale * ((in_val >> shift) & 0x03);
+                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x03);
                     current += 1;
                 }
             }
@@ -1026,7 +1051,7 @@ impl<'a> PngDecoder<'a>
             while k >= 2
             {
                 let cur: &mut [u8; 2] = self
-                    .single_stride
+                    .expanded_stride
                     .get_mut(current..current + 2)
                     .unwrap()
                     .try_into()
@@ -1050,7 +1075,7 @@ impl<'a> PngDecoder<'a>
                 for p in 0..k
                 {
                     let shift = (4_usize).wrapping_sub(p * 4);
-                    self.single_stride[current] = scale * ((in_val >> shift) & 0x0f);
+                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x0f);
                     current += 1;
                 }
             }
