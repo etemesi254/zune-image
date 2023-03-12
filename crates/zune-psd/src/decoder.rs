@@ -11,7 +11,6 @@
 use std::cmp::Ordering;
 
 use log::info;
-use zune_core::bit_depth;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
@@ -196,6 +195,11 @@ impl<'a> PSDDecoder<'a>
 
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors>
     {
+        if !self.decoded_header
+        {
+            self.decode_headers()?;
+        }
+
         let pixel_count = self.width * self.height;
 
         let mut result = match (self.compression, self.depth)
@@ -267,9 +271,12 @@ impl<'a> PSDDecoder<'a>
 
                 // Read the data by channel.
 
-                let mut out_channel =
-                    vec![0; 2 * (self.width * self.height * self.channel_count + 10)];
-                let pixel_count = self.width * self.height * 2;
+                // size of a single channel
+                let channel_dimensions = self.width * self.height;
+
+                let mut out_channel = vec![0; 2 * (channel_dimensions * self.channel_count + 10)];
+
+                let pixel_count = channel_dimensions * 2;
 
                 // check we have enough data
                 if !self.stream.has(pixel_count * self.channel_count)
@@ -277,17 +284,21 @@ impl<'a> PSDDecoder<'a>
                     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
                 }
 
+                // iterate per channel
                 for channel in 0..self.channel_count
                 {
-                    let mut i = channel;
+                    let i = channel * 2;
+                    let out_chunks = out_channel[i..].chunks_exact_mut(self.channel_count * 2);
 
-                    while i < pixel_count
+                    // iterate only taking the image dimensions
+                    for out in out_chunks.take(channel_dimensions)
                     {
-                        out_channel[i] = self.stream.get_u8();
-                        out_channel[i + 1] = self.stream.get_u8();
-                        i += self.channel_count;
+                        let value = self.stream.get_u16_be();
+
+                        out[..2].copy_from_slice(&value.to_ne_bytes());
                     }
                 }
+
                 out_channel.truncate(pixel_count * self.channel_count);
                 out_channel
             }
@@ -352,8 +363,6 @@ impl<'a> PSDDecoder<'a>
     /// But such functionality will be added soon.
     pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors>
     {
-        self.decode_headers()?;
-
         let raw = self.decode_raw()?;
 
         if self.depth == BitDepth::Eight
