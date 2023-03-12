@@ -415,7 +415,7 @@ impl<'a> PngDecoder<'a>
 
         if self.seen_trns && self.png_info.color != PngColor::Palette
         {
-            if info.depth == 8
+            if info.depth <= 8
             {
                 self.compute_transparency();
             }
@@ -536,6 +536,8 @@ impl<'a> PngDecoder<'a>
     }
     fn compute_transparency(&mut self)
     {
+        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
+
         // for images whose color types are not paletted
         // presence of a tRNS chunk indicates that the image
         // has transparency.
@@ -555,13 +557,13 @@ impl<'a> PngDecoder<'a>
         {
             PngColor::Luma =>
             {
-                let trns_byte = ((self.trns_bytes[0]) & 255) as u8;
+                let scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
+                let trns_byte = ((self.trns_bytes[0]) & 255) as u8 * scale;
 
                 for chunk in self.out.chunks_exact_mut(2)
                 {
                     chunk[1] = u8::from(chunk[0] != trns_byte) * 255;
                 }
-                // change color type to be the one with alpha
             }
             PngColor::RGB =>
             {
@@ -965,7 +967,7 @@ impl<'a> PngDecoder<'a>
         // for pLTE chunks with lower bit depths
         // do not scale values just expand.
         // The palette pass will expand values to the right pixels.
-        if self.seen_ptle && self.png_info.depth < 8
+        if self.seen_ptle
         {
             scale = 1;
         }
