@@ -8,6 +8,7 @@ use xxhash_rust::xxh3::xxh3_128;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
+mod inflate;
 mod jpeg;
 mod png;
 mod psd;
