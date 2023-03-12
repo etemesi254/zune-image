@@ -6,7 +6,22 @@
   },
   {
     "name": "debug-corner-fill.png",
-    "hash": 114495703109176691107733980507755911199,
+    "hash": 57565035890905237675533922378567782670,
     "comment": "Same as chess.indexede8.png"
+  },
+  {
+    "name": "chess.indexed1w.png",
+    "hash": 59021299520869841009832106745654043295,
+    "comment": "Bit depth < 8, indexed image"
+  },
+  {
+    "name": "f99n0g04_.png",
+    "hash": 286916617009240388500203004484778077432,
+    "comment": "Bit depth < 8, grayscale image"
+  },
+  {
+    "name": "square.indexedb2.png",
+    "hash": 235770835826284146180540718990663607674,
+    "comment": "Bit depth < 8, RGB image"
   }
 ]
