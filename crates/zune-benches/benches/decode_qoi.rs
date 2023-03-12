@@ -2,6 +2,7 @@ use std::fs::read;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use zune_benches::sample_path;
 
 fn decode_rapid_qoi(data: &[u8]) -> Vec<u8>
 {
@@ -15,7 +16,7 @@ fn decode_zune_qoi(data: &[u8]) -> Vec<u8>
 
 fn bench_decode(c: &mut Criterion)
 {
-    let a = env!("CARGO_MANIFEST_DIR").to_string() + "/test_images/wikipedia_008.qoi";
+    let a = sample_path().join("test-images/qoi/benches/wikipedia_008.qoi");
 
     let data = read(a).unwrap();
     let mut group = c.benchmark_group("qoi: Simple decode");
