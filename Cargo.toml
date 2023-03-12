@@ -26,6 +26,8 @@ members = [
     "zune-inflate",
     #testing
     "zune-tests",
+    # Benchmarking
+    "zune-benches",
     # WASM
     "zune-wasm"
 

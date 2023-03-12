@@ -9,12 +9,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29d47fbf90d5149a107494b15a7dc8d69b351be2db3bb9691740e88ec17fd880"
 
 [[package]]
+name = "bitflags"
+version = "1.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
 name = "cc"
 version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a20104e2335ce8a659d6dd92a51a767a0c062599c73b343fd152cb401e828c3d"
 dependencies = [
-    "jobserver",
+ "jobserver",
 ]
 
 [[package]]
@@ -29,7 +35,7 @@ version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "068b1ee6743e4d11fb9c6a1e6064b3693a1b600e7f5f5988047d98b3dc9fb90b"
 dependencies = [
-    "libc",
+ "libc",
 ]
 
 [[package]]
@@ -44,9 +50,9 @@ version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8fff891139ee62800da71b7fd5b508d570b9ad95e614a53c6f453ca08366038"
 dependencies = [
-    "arbitrary",
-    "cc",
-    "once_cell",
+ "arbitrary",
+ "cc",
+ "once_cell",
 ]
 
 [[package]]
@@ -55,7 +61,7 @@ version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
-    "cfg-if",
+ "cfg-if",
 ]
 
 [[package]]
@@ -65,21 +71,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
+name = "serde"
+version = "1.0.155"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71f2b4817415c6d4210bfe1c7bfcf4801b2d904cb4d0e1a8fdb651013c9e86b8"
+
+[[package]]
 name = "zune-core"
-version = "0.1.0"
+version = "0.2.1"
+dependencies = [
+ "bitflags",
+ "serde",
+]
 
 [[package]]
 name = "zune-qoi"
 version = "0.1.0"
 dependencies = [
-    "log",
-    "zune-core",
+ "log",
+ "zune-core",
 ]
 
 [[package]]
 name = "zune-qoi-fuzz"
 version = "0.0.0"
 dependencies = [
-    "libfuzzer-sys",
-    "zune-qoi",
+ "libfuzzer-sys",
+ "zune-qoi",
 ]
