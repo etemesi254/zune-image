@@ -1,0 +1,27 @@
+[package]
+name = "zune-benches"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+zune-qoi = { version = "0.1.0", path = "../zune-qoi" }
+rapid-qoi = "0.6.1"
+flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng"] }
+libdeflater = "0.12.0"
+zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
+
+
+[dev-dependencies.criterion]
+version = "0.4.0"
+default-features = false
+features = ["html_reports"]
+
+[[bench]]
+name = "decode_qoi"
+harness = false
+
+[[bench]]
+name = "decode_inflate"
+harness = false
