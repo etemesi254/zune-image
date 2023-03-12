@@ -23,5 +23,10 @@
     "name": "square.indexedb2.png",
     "hash": 235770835826284146180540718990663607674,
     "comment": "Bit depth < 8, RGB image"
+  },
+  {
+    "name": "tbbn0g04_.png",
+    "hash": 232188941782142085316932067533085841466,
+    "comment": "< 8bpp image with tRNS chunk"
   }
 ]
