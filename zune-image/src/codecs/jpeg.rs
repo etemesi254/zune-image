@@ -64,7 +64,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
         let metadata = ImageMetadata {
             format:        Some(ImageFormat::JPEG),
-            colorspace:    self.get_output_colorspace().unwrap(),
+            colorspace:    self.get_input_colorspace().unwrap(),
             depth:         BitDepth::Eight,
             width:         width,
             height:        height,
@@ -106,7 +106,7 @@ impl JpegEncoder
         JpegEncoder {
             quality:           quality,
             progressive:       false,
-            optimized_huffman: true
+            optimized_huffman: false
         }
     }
 }
@@ -189,7 +189,8 @@ impl EncoderTrait for JpegEncoder
             ColorSpace::RGB,
             ColorSpace::RGBA,
             ColorSpace::YCbCr,
-            ColorSpace::YCCK
+            ColorSpace::YCCK,
+            ColorSpace::CMYK
         ]
     }
 
