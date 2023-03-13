@@ -12,14 +12,26 @@
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16)
 {
-    //okay do scaling
-    let max = 1.0 / f32::from(max_value);
-    let scale = 255.0;
-
-    for (old, new) in from.iter().zip(to.iter_mut())
+    if max_value == u16::MAX
     {
-        let new_val = ((f32::from(*old) * max) * scale) as u8;
-        *new = new_val;
+        // divide by 257, this clamps it to 0..255
+        for (old, new) in from.iter().zip(to.iter_mut())
+        {
+            let new_val = (old / 257) as u8;
+            *new = new_val;
+        }
+    }
+    else
+    {
+        //okay do scaling
+        let max = 1.0 / f32::from(max_value);
+        let scale = 255.0;
+
+        for (old, new) in from.iter().zip(to.iter_mut())
+        {
+            let new_val = ((f32::from(*old) * max) * scale) as u8;
+            *new = new_val;
+        }
     }
 }
 
