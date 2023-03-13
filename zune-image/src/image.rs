@@ -146,28 +146,23 @@ impl Image
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
 
-        let dims =
-            self.metadata.width * self.metadata.height * self.metadata.colorspace.num_components();
+        // We use flat maps because they allow us to skip the alloc+memset part
+        // of creating an array, it makes it a bit faster
 
-        let mut out_pixel = vec![T::default(); dims];
-
-        match self.metadata.colorspace.num_components()
+        let out_pixel = match self.metadata.colorspace.num_components()
         {
-            1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<T>().unwrap()),
+            1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
 
             2 =>
             {
                 let luma_channel = self.channels[0].reinterpret_as::<T>().unwrap();
                 let alpha_channel = self.channels[1].reinterpret_as::<T>().unwrap();
 
-                for ((out, luma), alpha) in out_pixel
-                    .chunks_exact_mut(2)
-                    .zip(luma_channel)
+                luma_channel
+                    .iter()
                     .zip(alpha_channel)
-                {
-                    out[0] = *luma;
-                    out[1] = *alpha;
-                }
+                    .flat_map(|(x1, x2)| [*x1, *x2])
+                    .collect::<Vec<T>>()
             }
             3 =>
             {
@@ -175,13 +170,11 @@ impl Image
                 let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
                 let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
 
-                for (((out, first), second), third) in
-                    out_pixel.chunks_exact_mut(3).zip(c1).zip(c2).zip(c3)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                }
+                c1.iter()
+                    .zip(c2)
+                    .zip(c3)
+                    .flat_map(|((x1, x2), x3)| [*x1, *x2, *x3])
+                    .collect::<Vec<T>>()
             }
             4 =>
             {
@@ -190,22 +183,16 @@ impl Image
                 let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
                 let c4 = self.channels[3].reinterpret_as::<T>().unwrap();
 
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(c1)
+                c1.iter()
                     .zip(c2)
                     .zip(c3)
                     .zip(c4)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                    out[3] = *fourth;
-                }
+                    .flat_map(|(((x1, x2), x3), x4)| [*x1, *x2, *x3, *x4])
+                    .collect::<Vec<T>>()
             }
             // panics, all the way down
             _ => unreachable!()
-        }
+        };
 
         out_pixel
     }
