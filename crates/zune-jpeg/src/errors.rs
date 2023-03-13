@@ -39,7 +39,8 @@ pub enum DecodeErrors
     /// Exhausted data
     ExhaustedData,
     /// Large image dimensions(Corrupted data)?
-    LargeDimensions(usize)
+    LargeDimensions(usize),
+    TooSmallOutput(usize, usize)
 }
 
 #[cfg(feature = "std")]
@@ -75,14 +76,15 @@ impl Debug for DecodeErrors
             }
             Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {reason}"),
             Self::Unsupported(ref image_type) =>
-            {
-                write!(f, "{image_type:?}")
-            }
+                {
+                    write!(f, "{image_type:?}")
+                }
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
                 "Too large dimensions {dimensions},library supports up to {MAX_DIMENSIONS}"
-            )
+            ),
+            Self::TooSmallOutput(expected, found) => write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes")
         }
     }
 }
@@ -91,34 +93,7 @@ impl Display for DecodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
-        match &self
-        {
-            Self::Format(ref a) => write!(f, "{a}"),
-            Self::FormatStatic(a) => write!(f, "{:?}", &a),
-            Self::HuffmanDecode(ref reason) =>
-            {
-                write!(f, "Error decoding huffman tables.Reason:{reason}")
-            }
-            Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
-            Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{reason}"),
-            Self::SosError(ref reason) => write!(f, "Error parsing SOS Segment. Reason:{reason}"),
-            Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{reason}"),
-            Self::IllegalMagicBytes(bytes) =>
-            {
-                write!(f, "Error parsing image. Illegal start bytes:{bytes}")
-            }
-            Self::Unsupported(ref image_type) =>
-            {
-                write!(f, "{image_type:?}")
-            }
-            Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {reason}"),
-            Self::ExhaustedData => write!(f, "Exhausted data in the image"),
-
-            Self::LargeDimensions(ref dimensions) => write!(
-                f,
-                "Too large dimensions {dimensions},library supports up to {MAX_DIMENSIONS}"
-            )
-        }
+        write!(f, "{:?}", self)
     }
 }
 
