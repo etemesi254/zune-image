@@ -120,30 +120,18 @@ impl EncoderTrait for JpegEncoder
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
     {
-        let pixels = {
-            if image.get_depth() != BitDepth::Eight
-            {
-                info!("Image is not 8 bit, jpeg expects an 8 bit image, converting it from {:?} bit to 8 bit",image.get_depth());
-                // clone the image
-                // and convert it from u16 to u8
-                let mut new_clone = image.clone();
-                let new_depth = Depth::new(BitDepth::Eight);
-                // convert to 8bit
-                new_depth
-                    .execute(&mut new_clone)
-                    .expect("Could not convert image to bit-depth of 8");
-                // then flatten
-                new_clone.flatten::<u8>()
-            }
-            else
-            {
-                // expected depth, just flatten
-                image.flatten::<u8>()
-            }
-        };
+        assert_eq!(
+            image.get_depth(),
+            BitDepth::Eight,
+            "Unsupported bit depth{:?}",
+            image.get_depth()
+        );
+        let pixels = image.flatten::<u8>();
+
         if let Some(colorspace) = match_colorspace_to_colortype(image.get_colorspace())
         {
             let max_dims = usize::from(u16::MAX);
+
             let (width, height) = image.get_dimensions();
 
             // check dimensions
@@ -197,6 +185,16 @@ impl EncoderTrait for JpegEncoder
     fn format(&self) -> ImageFormat
     {
         ImageFormat::JPEG
+    }
+
+    fn supported_bit_depth(&self) -> &'static [BitDepth]
+    {
+        &[BitDepth::Eight]
+    }
+
+    fn common_bit_depth(&self) -> BitDepth
+    {
+        BitDepth::Eight
     }
 }
 

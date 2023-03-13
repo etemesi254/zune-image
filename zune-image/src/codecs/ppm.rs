@@ -1,6 +1,7 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
 use log::debug;
+use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -69,6 +70,16 @@ impl EncoderTrait for PPMEncoder
     fn format(&self) -> ImageFormat
     {
         ImageFormat::PPM
+    }
+
+    fn supported_bit_depth(&self) -> &'static [BitDepth]
+    {
+        &[BitDepth::Sixteen, BitDepth::Eight]
+    }
+
+    fn common_bit_depth(&self) -> BitDepth
+    {
+        BitDepth::Eight
     }
 }
 
