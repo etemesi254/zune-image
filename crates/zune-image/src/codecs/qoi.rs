@@ -1,5 +1,6 @@
 #![cfg(feature = "qoi")]
 
+use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
@@ -122,6 +123,16 @@ impl EncoderTrait for QoiEncoder
     fn format(&self) -> ImageFormat
     {
         ImageFormat::QOI
+    }
+
+    fn supported_bit_depth(&self) -> &'static [BitDepth]
+    {
+        &[BitDepth::Eight]
+    }
+
+    fn common_bit_depth(&self) -> BitDepth
+    {
+        BitDepth::Eight
     }
 }
 
