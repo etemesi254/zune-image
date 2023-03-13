@@ -1,9 +1,11 @@
+use log::info;
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
 use crate::codecs::ImageFormat;
 use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
+use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::workflow::EncodeResult;
 
@@ -215,6 +217,12 @@ pub trait EncoderTrait
     /// # Arguments
     /// - image: An image which we are trying to encode.
     ///
+    /// # Returns
+    /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
+    /// in the format [ImageFormat](crate::codecs::ImageFormat)
+    ///
+    /// - Err : An unrecoverable error occurred
+    ///
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>;
 
     /// Return all colorspaces supported by this encoder.
@@ -223,6 +231,28 @@ pub trait EncoderTrait
     /// an unknown colorspace
     fn supported_colorspaces(&self) -> &'static [ColorSpace];
 
+    /// Encode the actual image into the specified format
+    ///
+    /// This also covers conversion where possible,
+    /// allowing things like bit-depth conversion where possible
+    ///
+    /// After doing some book keeping, this will eventually call `encode_inner` which
+    /// actually carries out the encoding
+    ///
+    /// # Arguments
+    /// - image: The image to encode
+    ///
+    /// # Returns
+    /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
+    /// in the format [ImageFormat](crate::codecs::ImageFormat)
+    ///
+    /// - Err : An unrecoverable error occurred
+    ///
+    /// # Note
+    /// The library may clone `image` depending on configurations of the encoder
+    /// e.g to do colorspace conversions or bit-depth conversions, hence it
+    /// is recommended to have the image in a format that can be encoded
+    /// directly to prevent such
     fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
     {
         // check colorspace is correct.
@@ -236,11 +266,59 @@ pub trait EncoderTrait
                 supported_colorspaces
             ));
         }
+        // deal convert bit depths
+        let depth = image.get_depth();
 
-        self.encode_inner(image)
+        if !self.supported_bit_depth().contains(&depth)
+        {
+            info!(
+                "Image depth is in {:?}, but {} encoder supports {:?}",
+                image.get_depth(),
+                self.get_name(),
+                self.supported_bit_depth()
+            );
+            info!(
+                "Converting image to a depth of {:?}",
+                self.common_bit_depth()
+            );
+
+            let mut image_clone = image.clone();
+
+            let depth = Depth::new(self.common_bit_depth());
+
+            depth
+                .execute(&mut image_clone)
+                .expect("Unsupported bit depth");
+            // current image bit depth not supported by this
+            // encoder.
+            // add it to supported depths
+
+            self.encode_inner(&image_clone)
+        }
+        else
+        {
+            self.encode_inner(image)
+        }
     }
+    /// Return the image format for which this
+    /// encoder will encode the format in
+    ///
+    /// # Example
+    /// Get jpeg encoder format
+    ///
+    /// ```
+    /// use zune_image::codecs::ImageFormat;
+    /// use zune_image::codecs::jpeg::JpegEncoder;
+    /// use zune_image::traits::EncoderTrait;
+    ///
+    /// let encoder = JpegEncoder::new(10);
+    /// assert!(encoder.format(),ImageFormat::JPEG);
+    /// ```
+    ///
     fn format(&self) -> ImageFormat;
 
+    /// Call `encode` and then store the image
+    /// and format in `EncodeResult`
     fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgEncodeErrors>
     {
         let data = self.encode(image)?;
@@ -250,6 +328,20 @@ pub trait EncoderTrait
             format: self.format()
         })
     }
+    /// Get supported bit-depths for this image
+    ///
+    /// This should return all supported bit depth
+    /// for the encoder
+    fn supported_bit_depth(&self) -> &'static [BitDepth];
+
+    /// Returns the common/expected bit depth for this image
+    ///
+    /// This is used in conjunction with [`supported_bit_depth`]
+    /// for cases where we want to convert the image to a bit depth
+    /// since the image is not in one of the supported image formats
+    ///
+    /// [`supported_bit_depth`]:EncoderTrait::supported_bit_depth
+    fn common_bit_depth(&self) -> BitDepth;
 }
 
 pub trait ZuneInts<T>
