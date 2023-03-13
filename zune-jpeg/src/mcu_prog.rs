@@ -41,7 +41,9 @@ impl<'a> JpegDecoder<'a>
         clippy::too_many_lines
     )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_progressive(&mut self) -> Result<Vec<u8>, DecodeErrors>
+    pub(crate) fn decode_mcu_ycbcr_progressive(
+        &mut self, pixels: &mut [u8]
+    ) -> Result<(), DecodeErrors>
     {
         setup_component_params(self)?;
 
@@ -185,7 +187,7 @@ impl<'a> JpegDecoder<'a>
             }
         }
 
-        self.finish_progressive_decoding(&block, mcu_width)
+        self.finish_progressive_decoding(&block, mcu_width, pixels)
     }
 
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
@@ -444,8 +446,8 @@ impl<'a> JpegDecoder<'a>
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize
-    ) -> Result<Vec<u8>, DecodeErrors>
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
+    ) -> Result<(), DecodeErrors>
     {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
@@ -493,15 +495,12 @@ impl<'a> JpegDecoder<'a>
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
         // Size of our output image(width*height)
-        let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
-        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
-        let extra = usize::from(self.info.width) * 8;
 
-        let mut pixels = vec![0; capacity * out_colorspace_components + extra];
+        //let mut pixels = vec![0; capacity * out_colorspace_components];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
@@ -604,7 +603,7 @@ impl<'a> JpegDecoder<'a>
 
             // process that width up until it's impossible
             self.post_process(
-                &mut pixels,
+                pixels,
                 i,
                 mcu_height,
                 width,
@@ -616,13 +615,7 @@ impl<'a> JpegDecoder<'a>
 
         debug!("Finished decoding image");
 
-        let actual_dims = usize::from(self.width())
-            * usize::from(self.height())
-            * self.options.jpeg_get_out_colorspace().num_components();
-
-        pixels.truncate(actual_dims);
-
-        return Ok(pixels);
+        return Ok(());
     }
     pub(crate) fn reset_params(&mut self)
     {

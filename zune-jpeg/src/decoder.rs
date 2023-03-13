@@ -175,7 +175,11 @@ impl<'a> JpegDecoder<'a>
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors>
     {
-        self.decode_internal()
+        self.decode_headers()?;
+        let size = self.output_buffer_size().unwrap();
+        let mut out = vec![0; size];
+        self.decode_into(&mut out)?;
+        Ok(out)
     }
 
     /// Create a new Decoder instance
@@ -213,6 +217,34 @@ impl<'a> JpegDecoder<'a>
         }
 
         return Some(self.info.clone());
+    }
+
+    /// Return the number of bytes required to hold a de-interlaced image frame
+    /// decoded using the given input transformations
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
+    ///  - `None`: Indicates the image was not decoded.
+    ///
+    /// # Panics
+    /// In case `width*height*colorspace` calculation may overflow a usize
+    #[must_use]
+    pub fn output_buffer_size(&self) -> Option<usize>
+    {
+        return if self.headers_decoded
+        {
+            Some(
+                usize::from(self.width())
+                    .checked_mul(usize::from(self.height()))
+                    .unwrap()
+                    .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
+                    .unwrap()
+            )
+        }
+        else
+        {
+            None
+        };
     }
 
     /// Get a mutable reference to the decoder options
@@ -551,19 +583,56 @@ impl<'a> JpegDecoder<'a>
         };
     }
 
-    fn decode_internal(&mut self) -> Result<Vec<u8>, DecodeErrors>
+    /// Decode into a pre-allocated buffer
+    ///
+    /// It is an error if the buffer size is smaller than
+    /// [`output_buffer_size()`](Self::output_buffer_size)
+    ///
+    /// If the buffer is bigger than expected, we ignore the end padding bytes
+    ///
+    /// # Example
+    ///
+    /// - Read  headers and then alloc a buffer big enough to hold the image
+    ///
+    /// ```no_run
+    /// use zune_jpeg::JpegDecoder;
+    /// let mut decoder = JpegDecoder::new(&[]);
+    /// // before we get output, we must decode the headers to get width
+    /// // height, and input colorspace
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let mut out = vec![0;decoder.output_buffer_size().unwrap()];
+    /// // write into out
+    /// decoder.decode_into(&mut out).unwrap();
+    /// ```
+    ///
+    ///
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors>
     {
         self.decode_headers_internal()?;
 
+        let expected_size = self.output_buffer_size().unwrap();
+
+        if out.len() < expected_size
+        {
+            // too small of a size
+            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
+        }
+
+        // ensure we don't touch anyone else's scratch space
+        let out_len = core::cmp::min(out.len(), expected_size);
+        let out = &mut out[0..out_len];
+
         if self.is_progressive
         {
-            self.decode_mcu_ycbcr_progressive()
+            self.decode_mcu_ycbcr_progressive(out)
         }
         else
         {
-            self.decode_mcu_ycbcr_baseline()
+            self.decode_mcu_ycbcr_baseline(out)
         }
     }
+
     /// Read only headers from a jpeg image buffer
     ///
     /// This allows you to extract important information like
