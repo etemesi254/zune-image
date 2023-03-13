@@ -24,31 +24,3 @@ default = ["x86", "neon", "std"]
 log = "0.4.11" # logging facilities
 zune-core = { path = "../zune-core", version = "0.2.1" }
 
-[dev-dependencies]
-xxhash-rust = { version = "0.8.6", default-features = false, features = ["xxh3"] }
-mozjpeg = "0.9.2"
-jpeg-decoder = "0.2.6"
-
-[dev-dependencies.criterion]
-version = "0.4.0"
-default-features = false
-features = ["html_reports"]
-
-[[bench]]
-name = "decode"
-harness = false
-
-[[bench]]
-name = "decode_grayscale"
-harness = false
-
-
-[[bench]]
-name = "decode_prog"
-harness = false
-
-[[bench]]
-name = "decode_x86"
-harness = false
-
-
