@@ -1,3 +1,8 @@
+### Version 0.3.13
+
+- Allow decoding into pre-allocated buffer
+- Clarify documentation
+
 ### Version 0.3.11
 
 - Add guards for SSE and AVX code paths(allows compiling for platforms that do not support it)
