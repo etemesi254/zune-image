@@ -11,6 +11,18 @@ The set of codecs aim to have the following features in order of priority
 - Ease of use: Consistent API across decoders and encoders.
   Anyone, even your grandma should be able to decode supported formats
 - Fast compile times: No dependencies on huge crates, minimal (relatively well commented) code
+-
+
+## Formats
+
+| Image Format | Decoder       | Encoder        |
+|--------------|---------------|----------------|
+| jpeg         | zune-jpeg     | [jpeg-encoder] |
+| png          | zune-png      | -              |
+| ppm          | zune-ppm      | zune-ppm       |
+| qoi          | zune-qoi      | zune-qoi       |
+| farbfeld     | zune-farbfeld | zune-farbfeld  |
+| psd          | zune-psd      | -              |
 
 ## Safety
 
@@ -61,3 +73,6 @@ results of most image decoding operations.
 Most decoders are tested in CI to ensure new changes do not introduce regressions.
 
 Critical decoders are fuzz tested in CI once every day to catch any potential issue/bug.
+
+
+[jpeg-encoder]: https://github.com/vstroebel/jpeg-encoder
