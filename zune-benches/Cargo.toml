@@ -6,12 +6,25 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
+# QOI benchmarks
 zune-qoi = { version = "0.1.0", path = "../zune-qoi" }
 rapid-qoi = "0.6.1"
+
+# deflate benchmarks
 flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng"] }
 libdeflater = "0.12.0"
 zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
 
+# png benchmarks
+png = { git = "https://github.com/fintelia/image-png/", branch = "finflate-github" }
+spng = "0.1.0"
+lodepng = "3.7.2"
+zune-png = { version = "0.1.0", path = "../zune-png" }
+
+# JPEG benchmarks
+mozjpeg = "0.9.2"
+jpeg-decoder = "0.3.0"
+zune-jpeg = { version = "0.3.12", path = "../zune-jpeg" }
 
 [dev-dependencies.criterion]
 version = "0.4.0"
@@ -24,4 +37,13 @@ harness = false
 
 [[bench]]
 name = "decode_inflate"
+harness = false
+
+
+[[bench]]
+name = "decode_png"
+harness = false
+
+[[bench]]
+name = "decode_jpeg"
 harness = false
