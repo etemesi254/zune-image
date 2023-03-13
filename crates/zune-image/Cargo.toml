@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 ppm = ["zune-ppm"]
-jpeg = ["zune-jpeg"]
+jpeg = ["zune-jpeg", "jpeg-encoder"]
 png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
@@ -29,3 +29,5 @@ zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 log = "0.4.17"
 serde = { version = "1.0.152", optional = true }
+# External image APIs
+jpeg-encoder = { version = "0.5.1", optional = true, features = ["simd", "std"] }
