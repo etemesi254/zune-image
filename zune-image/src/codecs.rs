@@ -200,7 +200,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "jpeg")]
                 {
-                    Some(Box::new(crate::codecs::jpeg::JpegEncoder::new(100)))
+                    Some(Box::new(crate::codecs::jpeg::JpegEncoder::new(80)))
                 }
                 #[cfg(not(feature = "jpeg"))]
                 {
@@ -278,7 +278,7 @@ impl ImageFormat
                 {
                     Some((
                         ImageFormat::JPEG,
-                        Box::new(crate::codecs::jpeg::JpegEncoder::new(100))
+                        Box::new(crate::codecs::jpeg::JpegEncoder::new(80))
                     ))
                 }
                 #[cfg(not(feature = "jpeg"))]
