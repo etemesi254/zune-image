@@ -1,4 +1,3 @@
-use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
@@ -78,7 +77,9 @@ impl<'a> JpegDecoder<'a>
         clippy::cast_possible_truncation
     )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_baseline(&mut self) -> Result<Vec<u8>, DecodeErrors>
+    pub(crate) fn decode_mcu_ycbcr_baseline(
+        &mut self, pixels: &mut [u8]
+    ) -> Result<(), DecodeErrors>
     {
         setup_component_params(self)?;
 
@@ -130,15 +131,11 @@ impl<'a> JpegDecoder<'a>
             mcu_width = ((self.info.width + 7) / 8) as usize;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
-        // Size of our output image(width*height)
-        let capacity = usize::from(self.info.width + 8) * usize::from(self.info.height + 8);
-        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let width = usize::from(self.info.width);
 
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
 
         let mut stream = BitStream::new();
-        let mut pixels = vec![128; capacity * out_colorspace_components];
         let mut tmp = [0_i32; DCT_BLOCK];
 
         for (pos, comp) in self.components.iter_mut().enumerate()
@@ -195,7 +192,7 @@ impl<'a> JpegDecoder<'a>
             self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
             // process that width up until it's impossible
             self.post_process(
-                &mut pixels,
+                pixels,
                 i,
                 mcu_height,
                 width,
@@ -206,14 +203,8 @@ impl<'a> JpegDecoder<'a>
         }
 
         info!("Finished decoding image");
-        // remove excess allocation for images.
-        let actual_dims = usize::from(self.width())
-            * usize::from(self.height())
-            * self.options.jpeg_get_out_colorspace().num_components();
 
-        pixels.truncate(actual_dims);
-
-        return Ok(pixels);
+        Ok(())
     }
     fn decode_mcu_width(
         &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
