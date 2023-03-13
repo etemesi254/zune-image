@@ -1,4 +1,4 @@
-#![allow(clippy::redundant_field_names)]
+#![allow(clippy::redundant_field_names, clippy::uninlined_format_args)]
 extern crate core;
 
 pub mod channel;

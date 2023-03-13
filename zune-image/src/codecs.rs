@@ -196,6 +196,17 @@ impl ImageFormat
                     None
                 }
             }
+            Self::JPEG =>
+            {
+                #[cfg(feature = "jpeg")]
+                {
+                    Some(Box::new(crate::codecs::jpeg::JpegEncoder::new(100)))
+                }
+                #[cfg(not(feature = "jpeg"))]
+                {
+                    None
+                }
+            }
             // all encoders not implemented default to none
             _ => None
         }
@@ -257,6 +268,20 @@ impl ImageFormat
                     ))
                 }
                 #[cfg(not(feature = "ppm"))]
+                {
+                    None
+                }
+            }
+            "jpeg" | "jpg" =>
+            {
+                #[cfg(feature = "jpeg")]
+                {
+                    Some((
+                        ImageFormat::JPEG,
+                        Box::new(crate::codecs::jpeg::JpegEncoder::new(100))
+                    ))
+                }
+                #[cfg(not(feature = "jpeg"))]
                 {
                     None
                 }
