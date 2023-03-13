@@ -305,14 +305,22 @@ pub trait EncoderTrait
     ///
     /// # Example
     /// Get jpeg encoder format
-    ///
+    /// Requires jpeg feature to work
     /// ```
-    /// use zune_image::codecs::ImageFormat;
-    /// use zune_image::codecs::jpeg::JpegEncoder;
-    /// use zune_image::traits::EncoderTrait;
+    /// #[cfg(feature = "jpeg")]
+    /// {
+    ///     use zune_image::codecs::ImageFormat;
+    ///     use zune_image::codecs::jpeg::JpegEncoder;
+    ///     use zune_image::traits::EncoderTrait;
     ///
-    /// let encoder = JpegEncoder::new(10);
-    /// assert!(encoder.format(),ImageFormat::JPEG);
+    ///     let encoder = JpegEncoder::new(10);
+    ///     assert_eq!(encoder.format(),ImageFormat::JPEG);
+    /// }
+    /// #[cfg(not(feature="jpeg"))]
+    /// {
+    ///  // do nothing
+    ///  let x=0;
+    /// }
     /// ```
     ///
     fn format(&self) -> ImageFormat;
