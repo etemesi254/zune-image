@@ -271,6 +271,20 @@ impl<'a> JpegDecoder<'a>
     {
         &self.options
     }
+    /// Return the input colorspace of the image
+    ///
+    /// This indicates the colorspace that is present in
+    /// the image, but this may be different to the colorspace that
+    /// the output will be transformed to
+    ///
+    /// # Returns
+    /// -`Some(Colorspace)`: Input colorspace
+    /// - None : Indicates the headers weren't decoded
+    #[must_use]
+    pub fn get_input_colorspace(&self) -> Option<ColorSpace>
+    {
+        return if self.headers_decoded { Some(self.input_colorspace) } else { None };
+    }
     /// Set decoder options
     ///
     /// This can be used to set new options even after initialization
