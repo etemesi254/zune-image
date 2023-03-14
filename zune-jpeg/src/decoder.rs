@@ -12,7 +12,9 @@ use zune_core::options::DecoderOptions;
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
-use crate::headers::{parse_app14, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame};
+use crate::headers::{
+    parse_app1, parse_app14, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
+};
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
 use crate::marker::Marker;
@@ -124,7 +126,9 @@ pub struct JpegDecoder<'a>
     pub(crate) stream:           ZByteReader<'a>,
     // Indicate whether headers have been decoded
     pub(crate) headers_decoded:  bool,
-    pub(crate) seen_sof:         bool
+    pub(crate) seen_sof:         bool,
+    // exif data, lifted from app2
+    pub(crate) exif_data:        Option<&'a [u8]>
 }
 
 impl<'a> JpegDecoder<'a>
@@ -163,7 +167,8 @@ impl<'a> JpegDecoder<'a>
             options:           options,
             stream:            ZByteReader::new(buffer),
             headers_decoded:   false,
-            seen_sof:          false
+            seen_sof:          false,
+            exif_data:         None
         }
     }
     /// Decode a buffer already in memory
@@ -481,7 +486,7 @@ impl<'a> JpegDecoder<'a>
                 return Err(DecodeErrors::Format("Unsupported image format".to_string()));
             }
             //APP(0) segment
-            Marker::APP(0 | 1) =>
+            Marker::APP(0) =>
             {
                 let length = self.stream.get_u16_be_err()?;
 
@@ -495,6 +500,10 @@ impl<'a> JpegDecoder<'a>
                 self.stream.skip((length - 2) as usize);
 
                 //parse_app(buf, m, &mut self.info)?;
+            }
+            Marker::APP(1) =>
+            {
+                parse_app1(self)?;
             }
             // Quantization tables
             Marker::DQT =>
@@ -564,6 +573,22 @@ impl<'a> JpegDecoder<'a>
         Ok(())
     }
 
+    /// Return the exif data for the file
+    ///
+    /// This returns the raw exif data starting at the
+    /// TIFF header
+    ///
+    /// # Returns
+    /// -`Some(data)`: The raw exif data, if present in the image
+    /// - None: May indicate the following
+    ///
+    ///    1. The image doesn't have exif data
+    ///    2. The image headers haven't been decoded
+    #[must_use]
+    pub fn exif(self) -> Option<&'a [u8]>
+    {
+        return self.exif_data;
+    }
     /// Get the output colorspace the image pixels will be decoded into
     ///
     ///
