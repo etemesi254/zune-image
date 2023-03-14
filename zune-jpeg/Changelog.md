@@ -1,3 +1,8 @@
+## Version 0.3.14
+
+- Add ability to parse exif and ICC chunk.
+- Fix images with one component that were down-sampled.
+
 ### Version 0.3.13
 
 - Allow decoding into pre-allocated buffer
