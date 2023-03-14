@@ -472,18 +472,17 @@ impl<'a> JpegDecoder<'a>
         // which are huge.
         //
         //
-        let mut mcu_height;
 
-        if self.is_interleaved
+        let mcu_height = if self.is_interleaved
         {
-            mcu_height = self.mcu_y;
+            self.mcu_y
         }
         else
         {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided by 8.
-            mcu_height = ((self.info.height + 7) / 8) as usize;
-        }
+            ((self.info.height + 7) / 8) as usize
+        };
 
         // Size of our output image(width*height)
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
