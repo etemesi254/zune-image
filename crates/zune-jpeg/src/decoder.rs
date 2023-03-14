@@ -589,6 +589,19 @@ impl<'a> JpegDecoder<'a>
         }
         Ok(())
     }
+    /// Get the embedded ICC profile if it exists
+    /// and is correct
+    ///
+    /// One needs not to decode the whole image to extract this,
+    /// calling [`decode_headers`] for an image with an ICC profile
+    /// allows you to decode this
+    ///
+    /// # Returns
+    /// - `Some(Vec<u8>)`: The raw ICC profile of the image
+    /// - `None`: May indicate an error  in the ICC profile , non-existence of
+    /// an ICC profile, or that the headers weren't decoded.
+    ///
+    /// [`decode_headers`]:Self::decode_headers
     #[must_use]
     pub fn icc_profile(&self) -> Option<Vec<u8>>
     {
