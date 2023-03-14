@@ -570,41 +570,44 @@ impl BitStream
                 // correction bits to the non-zeroes.
                 // A correction bit is 1 if the absolute value of the coefficient must be increased
 
-                'advance_nonzero: while k <= self.spec_end
+                if k <= self.spec_end
                 {
-                    let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
-
-                    if *coefficient != 0
+                    'advance_nonzero: loop
                     {
-                        if self.get_bit() == 1 && (*coefficient & bit) == 0
-                        {
-                            if *coefficient >= 0
-                            {
-                                *coefficient += bit;
-                            }
-                            else
-                            {
-                                *coefficient -= bit;
-                            }
-                        }
+                        let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
-                        if self.bits_left < 1
+                        if *coefficient != 0
                         {
-                            self.refill(reader)?;
-                        }
-                    }
-                    else
-                    {
-                        r -= 1;
+                            if self.get_bit() == 1 && (*coefficient & bit) == 0
+                            {
+                                if *coefficient >= 0
+                                {
+                                    *coefficient += bit;
+                                } else {
+                                    *coefficient -= bit;
+                                }
+                            }
 
-                        if r < 0
-                        {
-                            // reached target zero coefficient.
+                            if self.bits_left < 1
+                            {
+                                self.refill(reader)?;
+                            }
+                        } else {
+                            r -= 1;
+
+                            if r < 0
+                            {
+                                // reached target zero coefficient.
+                                break 'advance_nonzero;
+                            }
+                        };
+
+                        if k == self.spec_end {
                             break 'advance_nonzero;
                         }
-                    };
 
-                    k += 1;
+                        k += 1;
+                    }
                 }
 
                 if symbol != 0
