@@ -13,7 +13,7 @@ use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{
-    parse_app1, parse_app14, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
+    parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
@@ -58,6 +58,14 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
+
+/// An encapsulation of an ICC chunk
+pub(crate) struct ICCChunk<'a>
+{
+    pub(crate) seq_no:      u8,
+    pub(crate) num_markers: u8,
+    pub(crate) data:        &'a [u8]
+}
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
@@ -128,7 +136,9 @@ pub struct JpegDecoder<'a>
     pub(crate) headers_decoded:  bool,
     pub(crate) seen_sof:         bool,
     // exif data, lifted from app2
-    pub(crate) exif_data:        Option<&'a [u8]>
+    pub(crate) exif_data:        Option<&'a [u8]>,
+
+    pub(crate) icc_data: Vec<ICCChunk<'a>>
 }
 
 impl<'a> JpegDecoder<'a>
@@ -168,7 +178,8 @@ impl<'a> JpegDecoder<'a>
             stream:            ZByteReader::new(buffer),
             headers_decoded:   false,
             seen_sof:          false,
-            exif_data:         None
+            exif_data:         None,
+            icc_data:          vec![]
         }
     }
     /// Decode a buffer already in memory
@@ -450,6 +461,7 @@ impl<'a> JpegDecoder<'a>
             bytes_before_marker += 1;
         }
     }
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors>
     {
         match m
@@ -504,6 +516,11 @@ impl<'a> JpegDecoder<'a>
             Marker::APP(1) =>
             {
                 parse_app1(self)?;
+            }
+
+            Marker::APP(2) =>
+            {
+                parse_app2(self)?;
             }
             // Quantization tables
             Marker::DQT =>
@@ -572,7 +589,60 @@ impl<'a> JpegDecoder<'a>
         }
         Ok(())
     }
+    #[must_use]
+    pub fn icc_profile(&self) -> Option<Vec<u8>>
+    {
+        let mut marker_present: [Option<&ICCChunk<'a>>; 256] = [None; 256];
 
+        if !self.headers_decoded
+        {
+            return None;
+        }
+        let num_markers = self.icc_data.len();
+
+        if num_markers == 0 || num_markers >= 255
+        {
+            return None;
+        }
+        // check validity
+        for chunk in &self.icc_data
+        {
+            if usize::from(chunk.num_markers) != num_markers
+            {
+                // all the lengths must match
+                return None;
+            }
+            if chunk.seq_no == 0
+            {
+                warn!("Zero sequence number in ICC, corrupt ICC chunk");
+                return None;
+            }
+            if marker_present[usize::from(chunk.seq_no)].is_some()
+            {
+                // duplicate seq_no
+                warn!("Duplicate sequence number in ICC, corrupt chunk");
+                return None;
+            }
+
+            marker_present[usize::from(chunk.seq_no)] = Some(chunk);
+        }
+        let mut data = Vec::with_capacity(1000);
+        // assemble the data now
+        for chunk in marker_present.get(1..=num_markers).unwrap()
+        {
+            if let Some(ch) = chunk
+            {
+                data.extend_from_slice(ch.data);
+            }
+            else
+            {
+                warn!("Missing icc sequence number, corrupt ICC chunk ");
+                return None;
+            }
+        }
+
+        Some(data)
+    }
     /// Return the exif data for the file
     ///
     /// This returns the raw exif data starting at the
