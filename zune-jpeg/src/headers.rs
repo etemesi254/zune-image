@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use zune_core::colorspace::ColorSpace;
 
 use crate::components::Components;
-use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
+use crate::decoder::{ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::misc::{SOFMarkers, UN_ZIGZAG};
@@ -523,6 +523,43 @@ pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
     }
 
     decoder.stream.skip(length);
+    Ok(())
+}
+
+pub(crate) fn parse_app2(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+{
+    let mut length = usize::from(decoder.stream.get_u16_be());
+
+    if length < 2 || !decoder.stream.has(length - 2)
+    {
+        return Err(DecodeErrors::ExhaustedData);
+    }
+    // length bytes
+    length -= 2;
+
+    if length > 14 && decoder.stream.peek_at(0, 12).unwrap() == *b"ICC_PROFILE\0"
+    {
+        info!("ICC Profile present");
+        // skip 12 bytes which indicate ICC profile
+        length -= 12;
+        decoder.stream.skip(12);
+        let seq_no = decoder.stream.get_u8();
+        let num_markers = decoder.stream.get_u8();
+        // deduct the two bytes we read above
+        length -= 2;
+
+        let data = decoder.stream.peek_at(0, length).unwrap();
+
+        let icc_chunk = ICCChunk {
+            seq_no,
+            num_markers,
+            data
+        };
+        decoder.icc_data.push(icc_chunk);
+    }
+
+    decoder.stream.skip(length);
+
     Ok(())
 }
 
