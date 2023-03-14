@@ -56,7 +56,20 @@ pub trait NumOps<T>
     /// Return this as number casted
     /// to usize
     fn to_usize(self) -> usize;
+
+    /// Return this number casted to
+    /// f64
+    fn to_f64(self) -> f64;
 }
+
+/// A trait implemented only for floats
+///
+/// Can be used to bind operations which require floats to work
+pub trait ZFloat {}
+
+impl ZFloat for f32 {}
+
+impl ZFloat for f64 {}
 
 macro_rules! numops_for_int {
     ($int:tt) => {
@@ -122,6 +135,11 @@ macro_rules! numops_for_int {
             fn to_usize(self) -> usize
             {
                 self as usize
+            }
+            #[inline(always)]
+            fn to_f64(self) -> f64
+            {
+                self as f64
             }
         }
     };
