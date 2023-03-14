@@ -47,12 +47,6 @@ impl<'a> JpegDecoder<'a>
     {
         setup_component_params(self)?;
 
-        if self.is_interleaved
-        {
-            // this helps us catch component errors.
-            self.set_upsampling()?;
-        }
-
         self.check_component_dimensions()?;
         let mcu_height;
 
@@ -62,6 +56,24 @@ impl<'a> JpegDecoder<'a>
 
         let mut seen_scans = 1;
 
+        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
+        {
+            if self.options.get_strict_mode()
+            {
+                return Err(DecodeErrors::FormatStatic(
+                    "[strict-mode]: Grayscale image with down-sampled component."
+                ));
+            }
+
+            warn!("Grayscale image with down-sampled component, resetting component details");
+            self.reset_params();
+        }
+
+        if self.is_interleaved
+        {
+            // this helps us catch component errors.
+            self.set_upsampling()?;
+        }
         if self.is_interleaved
         {
             mcu_width = self.mcu_x;
@@ -480,20 +492,6 @@ impl<'a> JpegDecoder<'a>
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
 
-        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
-        {
-            if self.options.get_strict_mode()
-            {
-                return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Grayscale image with down-sampled component."
-                ));
-            }
-
-            warn!("Grayscale image with down-sampled component, resetting component details");
-            self.reset_params();
-
-            mcu_height = ((self.info.height + 7) / 8) as usize;
-        }
         // Size of our output image(width*height)
         let is_hv = usize::from(self.sub_sample_ratio == SampleRatios::HV);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
