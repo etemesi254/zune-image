@@ -495,6 +495,37 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
     Ok(())
 }
 
+/// Parse the APP1 segment
+///
+/// This contains the exif tag
+pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+{
+    // contains exif data
+    let mut length = usize::from(decoder.stream.get_u16_be());
+
+    if length < 2 || !decoder.stream.has(length - 2)
+    {
+        return Err(DecodeErrors::ExhaustedData);
+    }
+    // length bytes
+    length -= 2;
+
+    if length > 6 && decoder.stream.peek_at(0, 6).unwrap() == b"Exif\x00\x00"
+    {
+        info!("Exif segment present");
+        // skip bytes we read above
+        decoder.stream.skip(6);
+        length -= 6;
+
+        let exif_bytes = decoder.stream.peek_at(0, length).unwrap();
+
+        decoder.exif_data = Some(exif_bytes);
+    }
+
+    decoder.stream.skip(length);
+    Ok(())
+}
+
 /// Small utility function to print Un-zig-zagged quantization tables
 
 fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
