@@ -58,13 +58,6 @@ impl<'a> JpegDecoder<'a>
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
         {
-            if self.options.get_strict_mode()
-            {
-                return Err(DecodeErrors::FormatStatic(
-                    "[strict-mode]: Grayscale image with down-sampled component."
-                ));
-            }
-
             warn!("Grayscale image with down-sampled component, resetting component details");
             self.reset_params();
         }
