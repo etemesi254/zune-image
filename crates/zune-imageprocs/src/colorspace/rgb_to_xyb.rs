@@ -173,6 +173,9 @@ fn xyb_to_rgb_single(x: f64, y: f64, b: f64) -> [f64; 3]
 }
 
 /// Convert from the RGB colorspace to XYB
+///
+/// Output array is expected to be a Float type, i.e f32 or f64,
+/// since XYB works in the float domain
 pub fn rgb_to_xyb_channel<T, U>(r: &[T], g: &[T], b: &[T], x: &mut [U], y: &mut [U], xb: &mut [U])
 where
     T: Copy + NumOps<T>,
@@ -197,6 +200,9 @@ where
 }
 
 /// Convert from the RGB colorspace to XYB
+///
+/// Input arrays (X,Y,B) are expected to be a Float type, i.e f32 or f64,
+/// since XYB works in the float domain
 pub fn xyb_to_rgb_channel<T, U>(x: &[T], y: &[T], xb: &[T], r: &mut [U], g: &mut [U], b: &mut [U])
 where
     T: Copy + NumOps<T> + ZFloat,
@@ -221,6 +227,9 @@ where
 }
 
 /// Convert from RGB to XYB colorspace
+///
+/// Output array is expected to be a Float type, i.e f32 or f64,
+/// since XYB works in the float domain
 pub fn rgb_to_xyb<T, U>(rgb: &[T], xyb: &mut [U])
 where
     T: Copy + NumOps<T>,
@@ -238,6 +247,9 @@ where
 }
 
 /// Convert from XYB to RGB
+///
+/// Input array xyb is expected to be a Float type, i.e f32 or f64,
+/// since XYB works in the float domain
 pub fn xyb_to_rgb<T, U>(xyb: &[T], rgb: &mut [U])
 where
     T: Copy + NumOps<T> + ZFloat,
