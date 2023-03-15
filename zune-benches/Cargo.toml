@@ -16,7 +16,7 @@ libdeflater = "0.12.0"
 zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
 
 # png benchmarks
-png = { git = "https://github.com/fintelia/image-png/", branch = "finflate-github" }
+png = { version = "0.17.7" }
 spng = "0.1.0"
 lodepng = "3.7.2"
 zune-png = { version = "0.1.0", path = "../zune-png" }
