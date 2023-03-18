@@ -16,6 +16,9 @@ use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 
+use log::error;
+use zune_core::bit_depth::BitType;
+
 /// Minimum alignment for all types allocated in the channel
 ///
 /// This makes it possible to reinterpret the channel data safely
@@ -70,7 +73,7 @@ pub struct Channel
     length:   usize,
     capacity: usize,
     // type id for which the channel was created with
-    type_id:  Option<TypeId>
+    type_id:  TypeId
 }
 
 unsafe impl Send for Channel {}
@@ -81,7 +84,7 @@ impl Clone for Channel
 {
     fn clone(&self) -> Self
     {
-        let mut new_channel = Channel::new_with_capacity(self.capacity());
+        let mut new_channel = Channel::new_with_capacity_and_type(self.capacity(), self.type_id);
         // copy items by calling extend
         // unwrap here is safe as the conditions for None.
         // do not apply to u8 types
@@ -162,21 +165,47 @@ impl Channel
     }
 
     /// Create a new channel
-    pub fn new() -> Channel
+    pub fn new<T: 'static>() -> Channel
     {
-        Self::new_with_capacity(10)
+        Self::new_with_capacity::<T>(10)
     }
-    /// Create a new channel with the specified lenght and capacity
-    pub fn new_with_length(length: usize) -> Channel
+    /// Create a new channel with the specified length and capacity
+    pub fn new_with_length<T: 'static>(length: usize) -> Channel
     {
-        let mut channel = Channel::new_with_capacity(length);
+        let mut channel = Channel::new_with_capacity::<T>(length);
         channel.length = length;
 
         channel
     }
+    /// Create a new channel with the specified length and capacity
+    pub fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel
+    {
+        let mut channel = Channel::new_with_capacity_and_type(length, type_id);
+        channel.length = length;
+
+        channel
+    }
+    pub fn new_with_depth(length: usize, depth: BitType) -> Channel
+    {
+        let t_r = match depth
+        {
+            BitType::U8 => TypeId::of::<u8>(),
+            BitType::U16 => TypeId::of::<u16>(),
+            _ => unimplemented!("Bit-depth :{:?}", depth)
+        };
+
+        Self::new_with_length_and_type(length, t_r)
+    }
+
+    /// Return the type id which gives the representation of the bytes
+    /// in the image
+    pub fn get_type_id(&self) -> TypeId
+    {
+        self.type_id
+    }
     /// Create a new channel with the specified capacity
     /// and zero length
-    pub fn new_with_capacity(capacity: usize) -> Channel
+    pub fn new_with_capacity<T: 'static>(capacity: usize) -> Channel
     {
         unsafe {
             let ptr = Self::alloc(capacity);
@@ -185,7 +214,20 @@ impl Channel
                 ptr,
                 length: 0,
                 capacity,
-                type_id: None
+                type_id: TypeId::of::<T>()
+            }
+        }
+    }
+    pub fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel
+    {
+        unsafe {
+            let ptr = Self::alloc(capacity);
+
+            Self {
+                ptr,
+                length: 0,
+                capacity,
+                type_id
             }
         }
     }
@@ -195,7 +237,7 @@ impl Channel
     pub fn from_elm<T: Copy + 'static>(length: usize, elm: T) -> Channel
     {
         // new currently zeroes memory
-        let mut new_chan = Channel::new_with_length(length * size_of::<T>());
+        let mut new_chan = Channel::new_with_length::<T>(length * size_of::<T>());
 
         new_chan.fill(elm).unwrap();
 
@@ -377,12 +419,13 @@ impl Channel
         {
             return Err(ChannelErrors::UnevenLength(self.length, size_of::<T>()));
         }
-        if let Some(id) = self.type_id
+        let converted_type_id = TypeId::of::<T>();
+
+        if converted_type_id != self.type_id
         {
-            if id != TypeId::of::<T>()
-            {
-                panic!();
-            }
+            panic!(
+                "Different type id's , casting this channel to something it wasn't created with"
+            );
         }
 
         Ok(())

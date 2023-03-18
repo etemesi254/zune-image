@@ -432,7 +432,7 @@ impl Image
     pub fn from_fn<F, T>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
     where
         F: Fn(usize, usize) -> [T; MAX_CHANNELS],
-        T: ZuneInts<T> + Copy + Clone
+        T: ZuneInts<T> + Copy + Clone + 'static
     {
         match colorspace.num_components()
         {
@@ -454,11 +454,11 @@ impl Image
     ) -> Image
     where
         F: Fn(usize, usize) -> [T; MAX_CHANNELS],
-        T: ZuneInts<T> + Copy + Clone
+        T: ZuneInts<T> + Copy + Clone + 'static
     {
         let size = width * height * COMPONENTS * T::depth().size_of();
 
-        let mut channels = vec![Channel::new_with_capacity(size); COMPONENTS];
+        let mut channels = vec![Channel::new_with_capacity::<T>(size); COMPONENTS];
 
         let channels_ref: &mut [Channel; COMPONENTS] =
             channels.get_mut(0..COMPONENTS).unwrap().try_into().unwrap();
