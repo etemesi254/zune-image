@@ -11,7 +11,7 @@
 //! as separate bit depths.
 //! All are seen as u8 to it.
 //!
-use std::alloc::{alloc, dealloc, realloc, Layout};
+use std::alloc::{alloc_zeroed, dealloc, realloc, Layout};
 use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
@@ -36,7 +36,8 @@ pub enum ChannelErrors
     /// The length of the type does not evenly divide the channel length
     /// Indicating that wea re trying to align the channel data to something
     /// that does not evenly divide it
-    UnevenLength(usize, usize)
+    UnevenLength(usize, usize),
+    DifferentType(TypeId, TypeId)
 }
 
 impl Debug for ChannelErrors
@@ -55,6 +56,11 @@ impl Debug for ChannelErrors
                     f,
                     "Size of {size_of_1} cannot evenly divide length {length}"
                 )
+            }
+            ChannelErrors::DifferentType(expected, found) =>
+            {
+                writeln!(f, "Different type id {:?} from expected {:?}. This indicates you are converting a channel
+             to a type it wasn't instantiated with", expected, found)
             }
         }
     }
@@ -143,7 +149,7 @@ impl Channel
     unsafe fn alloc(size: usize) -> *mut u8
     {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
-        alloc(layout)
+        alloc_zeroed(layout)
     }
     /// Reallocate the pointer in place increasing
     /// it's capacity
@@ -252,8 +258,14 @@ impl Channel
     /// Extend this channel with items from data
     ///
     ///
-    pub fn extend<T: Copy>(&mut self, data: &[T])
+    pub fn extend<T: Copy + 'static>(&mut self, data: &[T])
     {
+        assert_eq!(
+            TypeId::of::<T>(),
+            self.type_id,
+            "Type Id's do not match, trying to extend the channel
+       with a type it wasn't created with"
+        );
         // get size of the generic type
         let data_size = core::mem::size_of::<T>();
         // get number of items we need to store
@@ -276,7 +288,7 @@ impl Channel
             );
         }
         // new length becomes old length + items added
-        self.length += items;
+        self.length = self.length.checked_add(items).unwrap();
     }
 
     /// Reinterpret the channel as being composed of the following type
@@ -300,6 +312,7 @@ impl Channel
         let new_ptr = self.ptr.cast::<T>();
         // Safety:
         // 1- Data is aligned correctly
+        // 2- Data is the same type it was created with
         let new_slice = unsafe { std::slice::from_raw_parts(new_ptr, new_length) };
 
         Some(new_slice)
@@ -317,6 +330,10 @@ impl Channel
         let new_length = self.length / size;
 
         let new_ptr = self.ptr.cast::<T>();
+
+        // Safety:
+        // 1- Data is aligned correctly
+        // 2- Data is the same type it was created with
         let new_slice = unsafe { std::slice::from_raw_parts_mut(new_ptr, new_length) };
 
         Some(new_slice)
@@ -332,7 +349,7 @@ impl Channel
     /// ```
     /// use core::mem::size_of;
     /// use zune_image::channel::Channel;
-    /// let mut channel = Channel::new();
+    /// let mut channel = Channel::new::<u8>();
     /// // push a u32 first
     /// channel.push::<u32>(123);
     /// // then a u64
@@ -344,7 +361,7 @@ impl Channel
     /// // assert that length matches
     /// assert_eq!(channel.len(),len);
     /// ```
-    pub fn push<T: Copy>(&mut self, elm: T)
+    pub fn push<T: Copy + 'static>(&mut self, elm: T)
     {
         let size = core::mem::size_of::<T>(); // compile time
 
@@ -352,7 +369,8 @@ impl Channel
         {
             unsafe {
                 // extend
-                self.realloc(self.capacity.saturating_add((size * 3) / 2));
+                // use 3/2 formula
+                self.realloc(self.capacity.saturating_add((size.saturating_mul(3)) / 2));
             }
         }
         unsafe {
@@ -423,9 +441,10 @@ impl Channel
 
         if converted_type_id != self.type_id
         {
-            panic!(
-                "Different type id's , casting this channel to something it wasn't created with"
-            );
+            return Err(ChannelErrors::DifferentType(
+                self.type_id,
+                converted_type_id
+            ));
         }
 
         Ok(())
@@ -449,4 +468,16 @@ fn is_aligned<T>(ptr: *const u8) -> bool
     let size = core::mem::size_of::<T>();
 
     (ptr as usize) & ((size) - 1) == 0
+}
+
+#[test]
+fn a()
+{
+    let mut ch = Channel::new::<u8>();
+    // <usize: Copy + 'static>
+    ch.push(0usize);
+    // <isize: Copy + 'static>
+    ch.push(isize::MAX);
+    // <&'static [u8]: Default + 'static>
+    assert!(ch.reinterpret_as::<&'static [u8]>().is_none());
 }
