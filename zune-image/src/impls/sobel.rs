@@ -22,7 +22,7 @@ impl OperationsTrait for Sobel
 {
     fn get_name(&self) -> &'static str
     {
-        "Scharr"
+        "Sobel"
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
     {
@@ -33,7 +33,7 @@ impl OperationsTrait for Sobel
         {
             for channel in image.get_channels_mut(true)
             {
-                let mut out_channel = Channel::new_with_length(channel.len());
+                let mut out_channel = Channel::new_with_depth(channel.len(), depth);
                 match depth
                 {
                     BitType::U8 => sobel_int::<u8>(
@@ -59,7 +59,7 @@ impl OperationsTrait for Sobel
                 for channel in image.get_channels_mut(true)
                 {
                     s.spawn(|| {
-                        let mut out_channel = Channel::new_with_length(channel.len());
+                        let mut out_channel = Channel::new_with_depth(channel.len(), depth);
                         match depth
                         {
                             BitType::U8 => sobel_int::<u8>(

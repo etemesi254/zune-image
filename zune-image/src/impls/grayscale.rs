@@ -69,7 +69,7 @@ impl OperationsTrait for RgbToGrayScale
                 let r = channel[0].reinterpret_as::<u8>().unwrap();
                 let g = channel[1].reinterpret_as::<u8>().unwrap();
                 let b = channel[2].reinterpret_as::<u8>().unwrap();
-                let mut out = Channel::new_with_length(size);
+                let mut out = Channel::new_with_length::<u8>(size);
 
                 rgb_to_grayscale_u8(
                     r,
@@ -97,7 +97,7 @@ impl OperationsTrait for RgbToGrayScale
                 let r = channel[0].reinterpret_as::<u16>().unwrap();
                 let g = channel[1].reinterpret_as::<u16>().unwrap();
                 let b = channel[2].reinterpret_as::<u16>().unwrap();
-                let mut out = Channel::new_with_length(size);
+                let mut out = Channel::new_with_length::<u16>(size);
 
                 rgb_to_grayscale_u16(
                     r,

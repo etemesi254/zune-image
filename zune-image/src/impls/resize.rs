@@ -47,7 +47,7 @@ impl OperationsTrait for Resize
             {
                 for old_channel in image.get_channels_mut(false)
                 {
-                    let mut new_channel = Channel::new_with_length(new_length);
+                    let mut new_channel = Channel::new_with_depth(new_length, depth);
 
                     resize::<u8>(
                         old_channel.reinterpret_as().unwrap(),
@@ -65,7 +65,7 @@ impl OperationsTrait for Resize
             {
                 for old_channel in image.get_channels_mut(true)
                 {
-                    let mut new_channel = Channel::new_with_length(new_length);
+                    let mut new_channel = Channel::new_with_depth(new_length, depth);
 
                     resize::<u16>(
                         old_channel.reinterpret_as().unwrap(),
