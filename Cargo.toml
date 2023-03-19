@@ -18,6 +18,7 @@ members = [
     # Image formats
     "zune-farbfeld",
     "zune-jpeg",
+    "zune-jpegxl",
     "zune-ppm",
     "zune-png",
     "zune-psd",

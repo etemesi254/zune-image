@@ -23,6 +23,7 @@ The set of codecs aim to have the following features in order of priority
 | qoi          | zune-qoi      | zune-qoi       |
 | farbfeld     | zune-farbfeld | zune-farbfeld  |
 | psd          | zune-psd      | -              |
+| jpeg-xl      | -             | zune-jpegxl    |
 
 ## Safety
 
