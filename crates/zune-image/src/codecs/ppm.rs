@@ -39,13 +39,12 @@ impl EncoderTrait for PPMEncoder
         let colorspace = image.get_colorspace();
         let depth = image.get_depth();
 
-        let options = EncoderOptions {
-            width,
-            height,
-            colorspace,
-            quality: 0,
-            depth
-        };
+        let options = EncoderOptions::default()
+            .set_width(width)
+            .set_height(height)
+            .set_colorspace(colorspace)
+            .set_depth(depth);
+
         let data = image.to_u8();
 
         let ppm_encoder = PPMEnc::new(&data, options);
