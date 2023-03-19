@@ -1,4 +1,4 @@
-#![allow(unused_imports)]
+#![allow(unused_imports, unused)]
 
 use std::fs::read;
 use std::path::{Path, PathBuf};
