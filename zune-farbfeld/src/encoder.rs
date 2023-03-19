@@ -127,7 +127,7 @@ const FARBFELD_HEADER_SIZE: usize = 20;
 fn calc_out_size(options: EncoderOptions) -> usize
 {
     options
-        .width
+        .get_width()
         .checked_mul(2)
         .unwrap()
         .checked_mul(options.get_height())

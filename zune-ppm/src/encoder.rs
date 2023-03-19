@@ -1,6 +1,4 @@
-use std::fmt::{Debug, Display, Formatter};
-use std::io;
-use std::io::Error;
+use core::fmt::{Debug, Display, Formatter};
 
 use zune_core::bit_depth::BitType;
 use zune_core::bytestream::ZByteWriter;
@@ -12,16 +10,7 @@ pub enum PPMEncodeErrors
 {
     Static(&'static str),
     TooShortInput(usize, usize),
-    UnsupportedColorspace(ColorSpace),
-    IOErrors(io::Error)
-}
-
-impl From<io::Error> for PPMEncodeErrors
-{
-    fn from(err: Error) -> Self
-    {
-        PPMEncodeErrors::IOErrors(err)
-    }
+    UnsupportedColorspace(ColorSpace)
 }
 
 impl Debug for PPMEncodeErrors
@@ -33,10 +22,6 @@ impl Debug for PPMEncodeErrors
             PPMEncodeErrors::Static(ref errors) =>
             {
                 writeln!(f, "{errors}")
-            }
-            PPMEncodeErrors::IOErrors(ref err) =>
-            {
-                writeln!(f, "{err}")
             }
             PPMEncodeErrors::TooShortInput(expected, found) =>
             {
@@ -96,15 +81,15 @@ impl<'a> PPMEncoder<'a>
 
     fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors>
     {
-        let version = version_for_colorspace(self.options.colorspace).ok_or(
-            PPMEncodeErrors::UnsupportedColorspace(self.options.colorspace)
+        let version = version_for_colorspace(self.options.get_colorspace()).ok_or(
+            PPMEncodeErrors::UnsupportedColorspace(self.options.get_colorspace())
         )?;
 
-        let width = self.options.width;
-        let height = self.options.height;
-        let components = self.options.colorspace.num_components();
-        let max_val = self.options.depth.max_value();
-        let colorspace = self.options.colorspace;
+        let width = self.options.get_width();
+        let height = self.options.get_height();
+        let components = self.options.get_colorspace().num_components();
+        let max_val = self.options.get_depth().max_value();
+        let colorspace = self.options.get_colorspace();
 
         let header = match version
         {
@@ -143,7 +128,7 @@ impl<'a> PPMEncoder<'a>
 
         self.encode_headers(&mut stream)?;
 
-        match self.options.depth.bit_type()
+        match self.options.get_depth().bit_type()
         {
             BitType::U8 => stream.write_all(self.data).unwrap(),
             BitType::U16 =>
@@ -196,12 +181,12 @@ const PPM_HEADER_SIZE: usize = 100;
 fn calc_out_size(options: EncoderOptions) -> usize
 {
     options
-        .width
-        .checked_mul(options.depth.size_of())
+        .get_width()
+        .checked_mul(options.get_depth().size_of())
         .unwrap()
-        .checked_mul(options.height)
+        .checked_mul(options.get_height())
         .unwrap()
-        .checked_mul(options.colorspace.num_components())
+        .checked_mul(options.get_colorspace().num_components())
         .unwrap()
         .checked_add(PPM_HEADER_SIZE)
         .unwrap()
