@@ -16,7 +16,6 @@ use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 
-use log::error;
 use zune_core::bit_depth::BitType;
 
 /// Minimum alignment for all types allocated in the channel
