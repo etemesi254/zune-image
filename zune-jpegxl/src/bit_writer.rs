@@ -154,6 +154,21 @@ impl<'a> BorrowingBitWriter<'a>
         self.buffer |= (mask & bit) << self.bits_in_buffer;
         self.bits_in_buffer += nbits;
     }
+    /// Put some bits to the buffer
+    /// Without flushing
+    pub fn put_bits_no_flush(&mut self, nbits: u8, bit: u64)
+    {
+        debug_assert!(nbits <= 56);
+
+        // still check, because I don't trust myself
+        debug_assert!(nbits + self.bits_in_buffer < 64);
+
+        let mask = (1 << nbits) - 1;
+
+        // add to the top of the bit buffer
+        self.buffer |= (mask & bit) << self.bits_in_buffer;
+        self.bits_in_buffer += nbits;
+    }
 
     pub fn put_bytes(&mut self, bytes: &[u8])
     {
@@ -182,16 +197,17 @@ impl<'a> BorrowingBitWriter<'a>
 
             let mut buffer = [0; 8];
 
-            const SINGLE_CHUNK: usize = 6;
+            const SINGLE_CHUNK: usize = 7;
             // now chunk
             // fast loop that handles exact byte chunks
             for chunks in bytes.chunks_exact(SINGLE_CHUNK)
             {
                 // we need them in LE format
                 // msb at the bottom
-                buffer[..6].copy_from_slice(chunks);
+                buffer[..SINGLE_CHUNK].copy_from_slice(chunks);
                 // now add bits
-                self.put_bits(SINGLE_CHUNK as u8 * 8, u64::from_le_bytes(buffer));
+                self.put_bits_no_flush(SINGLE_CHUNK as u8 * 8, u64::from_le_bytes(buffer));
+                self.flush();
             }
 
             // in case of a remainder, means the byte length
@@ -208,7 +224,7 @@ impl<'a> BorrowingBitWriter<'a>
                 buffer.fill(0);
 
                 let extra = SINGLE_CHUNK - remainder.len();
-                buffer[..6 - extra].copy_from_slice(remainder);
+                buffer[..SINGLE_CHUNK - extra].copy_from_slice(remainder);
                 self.put_bits((remainder.len() * 8) as u8, u64::from_le_bytes(buffer));
             }
             self.flush();
