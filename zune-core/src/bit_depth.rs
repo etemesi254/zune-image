@@ -151,4 +151,15 @@ impl BitDepth
             Self::Unknown => panic!("Unknown bit type")
         }
     }
+    pub const fn bit_size(&self) -> usize
+    {
+        match self
+        {
+            Self::Eight => 8,
+            Self::Ten => 10,
+            Self::Twelve => 12,
+            Self::Sixteen => 16,
+            Self::Unknown => panic!("Unknown bit depth"),
+        }
+    }
 }
