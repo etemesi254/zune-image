@@ -12,7 +12,7 @@
 //! | Farbfeld|16 bit support|None|
 //!
 //!
-#![allow(unused_imports, unused_variables)]
+#![allow(unused_imports, unused_variables, non_camel_case_types)]
 
 use zune_core::options::DecoderOptions;
 
@@ -21,6 +21,7 @@ use crate::traits::{DecoderTrait, EncoderTrait};
 
 pub mod farbfeld;
 pub mod jpeg;
+pub mod jpeg_xl;
 pub mod png;
 pub mod ppm;
 pub mod psd;
@@ -43,6 +44,8 @@ pub enum ImageFormat
     Farbfeld,
     /// Full support
     QOI,
+    /// Small support
+    JPEG_XL,
     /// Any unknown format.
     Unknown
 }
@@ -163,6 +166,10 @@ impl ImageFormat
                     unimplemented!("QOI feature not included")
                 }
             }
+            ImageFormat::JPEG_XL =>
+            {
+                unimplemented!("JXL decoder not present")
+            }
             ImageFormat::Unknown =>
             {
                 panic!("Unknown format encountered")
@@ -203,6 +210,17 @@ impl ImageFormat
                     Some(Box::new(crate::codecs::jpeg::JpegEncoder::new(80)))
                 }
                 #[cfg(not(feature = "jpeg"))]
+                {
+                    None
+                }
+            }
+            Self::JPEG_XL =>
+            {
+                #[cfg(feature = "jpeg-xl")]
+                {
+                    Some(Box::new(crate::codecs::jpeg_xl::JxlEncoder))
+                }
+                #[cfg(not(feature = "jpeg-xl"))]
                 {
                     None
                 }
@@ -282,6 +300,20 @@ impl ImageFormat
                     ))
                 }
                 #[cfg(not(feature = "jpeg"))]
+                {
+                    None
+                }
+            }
+            "jxl" =>
+            {
+                #[cfg(feature = "jpeg-xl")]
+                {
+                    Some((
+                        ImageFormat::JPEG_XL,
+                        Box::new(crate::codecs::jpeg_xl::JxlEncoder)
+                    ))
+                }
+                #[cfg(not(feature = "jpeg-xl"))]
                 {
                     None
                 }
