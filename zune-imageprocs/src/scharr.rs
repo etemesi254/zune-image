@@ -50,9 +50,9 @@ fn scharr_inner_i32<T>(in_values: &[T]) -> T
 {
     let c: &[T; 9] = in_values.try_into().unwrap();
     // Gx matrix
-    //  -1, 0, 1,
-    //  -2, 0, 2,
-    //  -1, 0, 1
+    //   -3, 0,  3,
+    //  -10, 0, 10,
+    //   -3, 0,  3
     //
     let mut sum_a = 0;
     sum_a += (i32::from(c[0]) * -03) + (i32::from(c[2]) * 03);
@@ -60,9 +60,9 @@ fn scharr_inner_i32<T>(in_values: &[T]) -> T
     sum_a += (i32::from(c[6]) * -03) + (i32::from(c[7]) * 03);
 
     // Gy matrix
-    // -1,-2,-1,
-    //  0, 0, 0,
-    //  1, 2, 1
+    // -3,-10,-3,
+    //  0,  0, 0,
+    //  3, 10, 3
     let mut sum_b = 0;
     sum_b += (i32::from(c[0]) * -03) + (i32::from(c[1]) * -10);
     sum_b += (i32::from(c[2]) * -03) + (i32::from(c[6]) * 03);
