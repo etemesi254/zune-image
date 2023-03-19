@@ -11,8 +11,9 @@ png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
+jpeg-xl = ["zune-jpegxl"]
 serde-support = ["zune-core/serde", "serde"]
-image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi"]
+image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl"]
 default = []
 threads = []
 
@@ -27,7 +28,11 @@ zune-ppm = { path = "../zune-ppm", optional = true }
 zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
+zune-jpegxl = { path = "../zune-jpegxl", optional = true }
+
+# Logging information
 log = "0.4.17"
+# Serializing info
 serde = { version = "1.0.152", optional = true }
 # External image APIs
 jpeg-encoder = { version = "0.5.1", optional = true, features = ["simd", "std"] }
