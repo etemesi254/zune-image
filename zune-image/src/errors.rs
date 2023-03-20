@@ -8,7 +8,7 @@ use zune_core::colorspace::ColorSpace;
 ///
 /// This is the grandfather of image errors and contains
 /// all decoding,processing and encoding errors possible
-pub enum ImgErrors
+pub enum ImageErrors
 {
     ImageDecodeErrors(String),
     DimensionsMisMatch(usize, usize),
@@ -50,7 +50,7 @@ pub enum ImgEncodeErrors
     ImageEncodeErrors(String)
 }
 
-impl Debug for ImgErrors
+impl Debug for ImageErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
@@ -83,11 +83,11 @@ impl Debug for ImgErrors
             Self::OperationsError(ref error) => writeln!(f, "{error:?}"),
 
             Self::EncodeErrors(ref err) => writeln!(f, "{err:?}"),
-            ImgErrors::UnsupportedColorspace(present, operation, supported) =>
+            ImageErrors::UnsupportedColorspace(present, operation, supported) =>
             {
                 writeln!(f, "Unsupported colorspace {present:?}, for the operation {operation}\nSupported colorspaces are {supported:?}")
             }
-            ImgErrors::DimensionsMisMatch(expected, found) =>
+            ImageErrors::DimensionsMisMatch(expected, found) =>
             {
                 writeln!(
                     f,
@@ -98,21 +98,22 @@ impl Debug for ImgErrors
     }
 }
 
-impl From<ImgOperationsErrors> for ImgErrors
+impl From<ImgOperationsErrors> for ImageErrors
 {
     fn from(from: ImgOperationsErrors) -> Self
     {
-        ImgErrors::OperationsError(from)
+        ImageErrors::OperationsError(from)
     }
 }
 
-impl From<ImgEncodeErrors> for ImgErrors
+impl From<ImgEncodeErrors> for ImageErrors
 {
     fn from(from: ImgEncodeErrors) -> Self
     {
-        ImgErrors::EncodeErrors(from)
+        ImageErrors::EncodeErrors(from)
     }
 }
+
 impl Debug for ImgOperationsErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
@@ -150,19 +151,19 @@ impl Debug for ImgOperationsErrors
     }
 }
 
-impl From<String> for ImgErrors
+impl From<String> for ImageErrors
 {
-    fn from(s: String) -> ImgErrors
+    fn from(s: String) -> ImageErrors
     {
-        ImgErrors::GenericString(s)
+        ImageErrors::GenericString(s)
     }
 }
 
-impl From<&'static str> for ImgErrors
+impl From<&'static str> for ImageErrors
 {
-    fn from(s: &'static str) -> ImgErrors
+    fn from(s: &'static str) -> ImageErrors
     {
-        ImgErrors::GenericStr(s)
+        ImageErrors::GenericStr(s)
     }
 }
 

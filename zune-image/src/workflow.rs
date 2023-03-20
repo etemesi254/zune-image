@@ -4,7 +4,7 @@ use log::Level::Info;
 use log::{info, log_enabled, Level};
 
 use crate::codecs::ImageFormat;
-use crate::errors::ImgErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
 
@@ -178,7 +178,7 @@ impl<'a> WorkFlow<'a>
     /// 4. Finish
     ///
     /// Calling `Workflow::advance()` will run one of this operation
-    pub fn advance(&mut self) -> Result<(), ImgErrors>
+    pub fn advance(&mut self) -> Result<(), ImageErrors>
     {
         if let Some(state) = self.state
         {
@@ -205,7 +205,7 @@ impl<'a> WorkFlow<'a>
 
                             return Ok(());
                         }
-                        return Err(ImgErrors::NoImageForOperations);
+                        return Err(ImageErrors::NoImageForOperations);
                     }
 
                     let decode_op = self.decode.as_mut().unwrap();
@@ -224,7 +224,7 @@ impl<'a> WorkFlow<'a>
                 {
                     if self.image.is_empty()
                     {
-                        return Err(ImgErrors::NoImageForOperations);
+                        return Err(ImageErrors::NoImageForOperations);
                     }
 
                     for image in self.image.iter_mut()
@@ -253,7 +253,7 @@ impl<'a> WorkFlow<'a>
                 {
                     if self.image.is_empty()
                     {
-                        return Err(ImgErrors::NoImageForOperations);
+                        return Err(ImageErrors::NoImageForOperations);
                     }
                     for image in self.image.iter()
                     {
@@ -302,7 +302,7 @@ impl<'a> WorkFlow<'a>
     ///
     /// This will run a decoder, all operations and all encoders
     /// for this particular workflow
-    pub fn advance_to_end(&mut self) -> Result<(), ImgErrors>
+    pub fn advance_to_end(&mut self) -> Result<(), ImageErrors>
     {
         if self.state.is_some()
         {

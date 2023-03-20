@@ -16,7 +16,7 @@ pub use zune_jpeg::{ImageInfo, JpegDecoder};
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
-use crate::errors::{ImgEncodeErrors, ImgErrors};
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
@@ -24,11 +24,11 @@ use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
 
 impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, crate::errors::ImgErrors>
+    fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors>
     {
         let pixels = self
             .decode()
-            .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;
+            .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
         let colorspace = self.get_out_colorspace();
         let (width, height) = self.get_dimensions().unwrap();
@@ -55,10 +55,10 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
         "JPEG decoder"
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<DecodeErrors as Into<ImgErrors>>::into)?;
+            .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
 
@@ -76,13 +76,13 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
     }
 }
 
-impl From<zune_jpeg::errors::DecodeErrors> for ImgErrors
+impl From<zune_jpeg::errors::DecodeErrors> for ImageErrors
 {
     fn from(from: zune_jpeg::errors::DecodeErrors) -> Self
     {
         let err = format!("jpg: {from:?}");
 
-        ImgErrors::ImageDecodeErrors(err)
+        ImageErrors::ImageDecodeErrors(err)
     }
 }
 // Okay I just need to really appreciate jpeg-encoder crate
@@ -118,7 +118,7 @@ impl EncoderTrait for JpegEncoder
         "jpeg-encoder(vstroebel)"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         assert_eq!(
             image.get_depth(),
@@ -213,10 +213,10 @@ const fn match_colorspace_to_colortype(colorspace: ColorSpace) -> Option<ColorTy
     }
 }
 
-impl From<EncodingError> for ImgErrors
+impl From<EncodingError> for ImageErrors
 {
     fn from(value: EncodingError) -> Self
     {
-        ImgErrors::EncodeErrors(ImgEncodeErrors::Generic(value.to_string()))
+        ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(value.to_string()))
     }
 }

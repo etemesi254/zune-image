@@ -10,7 +10,7 @@ use zune_ppm::{PPMDecodeErrors, PPMEncodeErrors, PPMEncoder as PPMEnc};
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
-use crate::errors::{ImgEncodeErrors, ImgErrors};
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
@@ -33,7 +33,7 @@ impl EncoderTrait for PPMEncoder
         "PPM Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let colorspace = image.get_colorspace();
@@ -84,7 +84,7 @@ impl EncoderTrait for PPMEncoder
 
 impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, ImgErrors>
+    fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let pixels = self.decode()?;
 
@@ -120,10 +120,10 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         "PPM Decoder"
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.read_headers()
-            .map_err(<PPMDecodeErrors as Into<ImgErrors>>::into)?;
+            .map_err(<PPMDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth().unwrap();
@@ -143,13 +143,13 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
 }
 
 #[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMDecodeErrors> for ImgErrors
+impl From<zune_ppm::PPMDecodeErrors> for ImageErrors
 {
     fn from(from: zune_ppm::PPMDecodeErrors) -> Self
     {
         let err = format!("ppm: {from:?}");
 
-        ImgErrors::ImageDecodeErrors(err)
+        ImageErrors::ImageDecodeErrors(err)
     }
 }
 
