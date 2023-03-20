@@ -4,6 +4,7 @@
 //! meaning they can manipulate images
 pub mod box_blur;
 pub mod brighten;
+pub mod colorspace;
 pub mod contrast;
 pub mod convolve;
 pub mod crop;
