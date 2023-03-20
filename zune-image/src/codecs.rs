@@ -79,6 +79,28 @@ impl ImageFormat
                     false
                 }
             }
+            Self::JPEG =>
+            {
+                #[cfg(feature = "jpeg")]
+                {
+                    true
+                }
+                #[cfg(not(feature = "jpeg"))]
+                {
+                    false
+                }
+            }
+            Self::JPEG_XL =>
+            {
+                #[cfg(feature = "jpeg-xl")]
+                {
+                    true
+                }
+                #[cfg(not(feature = "jpeg-xl"))]
+                {
+                    false
+                }
+            }
             // all other formats don't have an encoder
             _ => false
         }
