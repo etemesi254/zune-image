@@ -101,6 +101,17 @@ impl ImageFormat
                     false
                 }
             }
+            Self::Farbfeld =>
+            {
+                #[cfg(feature = "farbfeld")]
+                {
+                    true
+                }
+                #[cfg(not(feature = "farbfeld"))]
+                {
+                    false
+                }
+            }
             // all other formats don't have an encoder
             _ => false
         }
@@ -338,6 +349,16 @@ impl ImageFormat
                 #[cfg(not(feature = "jpeg-xl"))]
                 {
                     None
+                }
+            }
+            "ff" =>
+            {
+                #[cfg(feature = "farbfeld")]
+                {
+                    Some((
+                        ImageFormat::Farbfeld,
+                        Box::new(crate::codecs::farbfeld::FarbFeldEncoder)
+                    ))
                 }
             }
             _ => None
