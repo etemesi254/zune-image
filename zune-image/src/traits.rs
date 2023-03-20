@@ -3,8 +3,9 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
 use crate::codecs::ImageFormat;
-use crate::errors::{ImgEncodeErrors, ImgErrors, ImgOperationsErrors};
+use crate::errors::{ImgErrors, ImgOperationsErrors};
 use crate::image::Image;
+use crate::impls::colorspace::ColorspaceConv;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::workflow::EncodeResult;
@@ -223,7 +224,7 @@ pub trait EncoderTrait
     ///
     /// - Err : An unrecoverable error occurred
     ///
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>;
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>;
 
     /// Return all colorspaces supported by this encoder.
     ///
@@ -253,45 +254,49 @@ pub trait EncoderTrait
     /// e.g to do colorspace conversions or bit-depth conversions, hence it
     /// is recommended to have the image in a format that can be encoded
     /// directly to prevent such
-    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
+    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
     {
         // check colorspace is correct.
         let colorspace = image.get_colorspace();
         let supported_colorspaces = self.supported_colorspaces();
 
-        if !supported_colorspaces.contains(&colorspace)
-        {
-            return Err(ImgEncodeErrors::UnsupportedColorspace(
-                colorspace,
-                supported_colorspaces
-            ));
-        }
         // deal convert bit depths
         let depth = image.get_depth();
 
-        if !self.supported_bit_depth().contains(&depth)
+        if !supported_colorspaces.contains(&colorspace)
+            || !self.supported_bit_depth().contains(&depth)
         {
-            info!(
-                "Image depth is in {:?}, but {} encoder supports {:?}",
-                image.get_depth(),
-                self.get_name(),
-                self.supported_bit_depth()
-            );
-            info!(
-                "Converting image to a depth of {:?}",
-                self.common_bit_depth()
-            );
-
             let mut image_clone = image.clone();
 
-            let depth = Depth::new(self.common_bit_depth());
+            if !supported_colorspaces.contains(&colorspace)
+            {
+                // get default colorspace
+                let default_colorspace = self.default_colorspace(colorspace);
+                let image_format = self.format();
 
-            depth
-                .execute(&mut image_clone)
-                .expect("Unsupported bit depth");
-            // current image bit depth not supported by this
-            // encoder.
-            // add it to supported depths
+                info!("Image is in {colorspace:?} colorspace,converting it to {default_colorspace:?} which is the default configured colorspace of {image_format:?}");
+                // try converting  it to a supported colorspace
+                let converter = ColorspaceConv::new(default_colorspace);
+
+                converter.execute(&mut image_clone)?
+            }
+            if !self.supported_bit_depth().contains(&depth)
+            {
+                info!(
+                    "Image depth is in {:?}, but {} encoder supports {:?}",
+                    image.get_depth(),
+                    self.get_name(),
+                    self.supported_bit_depth()
+                );
+                info!("Converting image to a depth of {:?}", self.default_depth());
+
+                let depth = Depth::new(self.default_depth());
+
+                depth.execute(&mut image_clone)?
+                // current image bit depth not supported by this
+                // encoder.
+                // add it to supported depths
+            }
 
             self.encode_inner(&image_clone)
         }
@@ -327,7 +332,7 @@ pub trait EncoderTrait
 
     /// Call `encode` and then store the image
     /// and format in `EncodeResult`
-    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgEncodeErrors>
+    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgErrors>
     {
         let data = self.encode(image)?;
 
@@ -349,7 +354,19 @@ pub trait EncoderTrait
     /// since the image is not in one of the supported image formats
     ///
     /// [`supported_bit_depth`]:EncoderTrait::supported_bit_depth
-    fn common_bit_depth(&self) -> BitDepth;
+    fn default_depth(&self) -> BitDepth;
+
+    /// Returns the default colorspace to use when the image
+    /// contains a different colorspace
+    ///
+    /// Default is RGB
+    ///
+    /// # Arguments
+    /// - colorspace: The colorspace the image is currently in
+    fn default_colorspace(&self, _: ColorSpace) -> ColorSpace
+    {
+        ColorSpace::RGB
+    }
 }
 
 pub trait ZuneInts<T>
