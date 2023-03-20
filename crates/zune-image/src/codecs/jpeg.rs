@@ -118,7 +118,7 @@ impl EncoderTrait for JpegEncoder
         "jpeg-encoder(vstroebel)"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
     {
         assert_eq!(
             image.get_depth(),
@@ -141,7 +141,7 @@ impl EncoderTrait for JpegEncoder
                     "Too large image dimensions {} x {}, maximum is {} x {}",
                     width, height, max_dims, max_dims
                 );
-                return Err(ImgEncodeErrors::ImageEncodeErrors(msg));
+                return Err(ImgEncodeErrors::ImageEncodeErrors(msg).into());
             }
             // create space for our encoder
             let mut encoded_data =
@@ -154,7 +154,6 @@ impl EncoderTrait for JpegEncoder
             encoder.set_progressive(self.progressive);
             encoder.set_optimized_huffman_tables(self.optimized_huffman);
 
-            info!("Calling jpeg external encoder,(jpeg-encoder)");
             encoder.encode(&pixels, width as u16, height as u16, colorspace)?;
 
             Ok(encoded_data)
@@ -164,7 +163,8 @@ impl EncoderTrait for JpegEncoder
             return Err(ImgEncodeErrors::UnsupportedColorspace(
                 image.get_colorspace(),
                 self.supported_colorspaces()
-            ));
+            )
+            .into());
         }
     }
 
@@ -192,7 +192,7 @@ impl EncoderTrait for JpegEncoder
         &[BitDepth::Eight]
     }
 
-    fn common_bit_depth(&self) -> BitDepth
+    fn default_depth(&self) -> BitDepth
     {
         BitDepth::Eight
     }
@@ -213,10 +213,10 @@ const fn match_colorspace_to_colortype(colorspace: ColorSpace) -> Option<ColorTy
     }
 }
 
-impl From<EncodingError> for ImgEncodeErrors
+impl From<EncodingError> for ImgErrors
 {
     fn from(value: EncodingError) -> Self
     {
-        ImgEncodeErrors::Generic(value.to_string())
+        ImgErrors::EncodeErrors(ImgEncodeErrors::Generic(value.to_string()))
     }
 }
