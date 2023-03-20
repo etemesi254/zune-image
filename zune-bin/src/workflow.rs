@@ -1,5 +1,5 @@
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::string::String;
@@ -7,7 +7,7 @@ use std::string::String;
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::Level::Debug;
-use log::{debug, error, info, log_enabled};
+use log::{debug, error, info, log_enabled, warn};
 use memmap2::Mmap;
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImgErrors;
@@ -112,30 +112,47 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         workflow.advance_to_end()?;
         let results = workflow.get_results();
+        let mut curr_result_position = 0;
 
+        // write to output
+
+        //  We support multiple format writes per invocation
+        // i.e it's perfectly valid to do -o a.ppm , -o a.png
         if let Some(source) = args.value_source("out")
         {
             if source == CommandLine
             {
                 for out_file in args.get_raw("out").unwrap()
                 {
-                    let mut file = OpenOptions::new()
-                        .create(true)
-                        .append(false)
-                        .truncate(true)
-                        .write(true)
-                        .open(out_file)
-                        .unwrap();
                     //write to file
-                    for result in results.iter().take(1)
+                    if let Some(ext) = Path::new(out_file).extension()
                     {
-                        info!(
-                            "Writing data as {:?} format to file {:?}",
-                            result.get_format(),
-                            out_file
-                        );
+                        if let Some((encode_type, _)) =
+                            ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
+                        {
+                            if encode_type.has_encoder()
+                                && results[curr_result_position].get_format() == encode_type
+                            {
+                                info!(
+                                    "Writing data as {:?} format to file {:?}",
+                                    results[curr_result_position].get_format(),
+                                    out_file
+                                );
 
-                        file.write_all(result.get_data()).unwrap();
+                                std::fs::write(out_file, results[curr_result_position].get_data())
+                                    .unwrap();
+
+                                curr_result_position += 1;
+                            }
+                            else
+                            {
+                                warn!("Ignoring {:?} file", out_file);
+                            }
+                        }
+                        else
+                        {
+                            warn!("Ignoring {:?} file", out_file);
+                        }
                     }
                 }
             }
