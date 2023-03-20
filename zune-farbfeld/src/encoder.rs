@@ -1,5 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriter;
@@ -12,6 +13,35 @@ pub enum FarbFeldEncoderErrors
     UnsupportedBitDepth(BitDepth),
     UnsupportedColorSpace(ColorSpace),
     TooShortInput(usize, usize)
+}
+
+impl Debug for FarbFeldEncoderErrors
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
+    {
+        match self
+        {
+            FarbFeldEncoderErrors::TooLargeDimensions(dims) =>
+            {
+                writeln!(f, "Too large dimensions {dims}")
+            }
+            FarbFeldEncoderErrors::UnsupportedBitDepth(depth) =>
+            {
+                writeln!(f, "Unsupported bit depth {depth:?}")
+            }
+            FarbFeldEncoderErrors::UnsupportedColorSpace(color) =>
+            {
+                writeln!(f, "Unsupported color space {color:?}")
+            }
+            FarbFeldEncoderErrors::TooShortInput(expected, found) =>
+            {
+                writeln!(
+                    f,
+                    "Too short of input, expected {expected:?}, found {found:?}",
+                )
+            }
+        }
+    }
 }
 
 /// A FarbFeld encoder
