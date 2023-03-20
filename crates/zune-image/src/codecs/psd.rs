@@ -8,14 +8,14 @@ pub use zune_psd::PSDDecoder;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
-use crate::errors::ImgErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, ImgErrors>
+    fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let pixels = self.decode()?;
 
@@ -35,10 +35,10 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         Ok(image)
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<PSDDecodeErrors as Into<ImgErrors>>::into)?;
+            .map_err(<PSDDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth().unwrap();
@@ -77,12 +77,12 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
     }
 }
 
-impl From<zune_psd::errors::PSDDecodeErrors> for ImgErrors
+impl From<zune_psd::errors::PSDDecodeErrors> for ImageErrors
 {
     fn from(error: zune_psd::errors::PSDDecodeErrors) -> Self
     {
         let err = format!("psd: {error:?}");
 
-        ImgErrors::ImageDecodeErrors(err)
+        ImageErrors::ImageDecodeErrors(err)
     }
 }

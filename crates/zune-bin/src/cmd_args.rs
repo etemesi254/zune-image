@@ -88,6 +88,7 @@ pub fn create_cmd_args() -> Command {
         .args(add_operations())
         .args(add_settings())
         .args(add_filters())
+        .args(add_encode_options())
         .group(ArgGroup::new("operations")
             .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast", "resize"])
             .multiple(true))
@@ -258,6 +259,39 @@ fn add_operations() -> Vec<Arg>
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
 }
+
+fn add_encode_options() -> Vec<Arg>
+{
+    static HELP_HEADING: &str = "Encode Operations";
+    static GROUP: &str = "Encode operations";
+    let mut args = [
+        Arg::new("quality")
+            .long("quality")
+            .help("Encoding quality")
+            .default_value("80")
+            .value_name("quality")
+            .help_heading(HELP_HEADING)
+            .value_parser(value_parser!(u8))
+            .group(GROUP),
+        Arg::new("encode-threads")
+            .long("encode-threads")
+            .help("Number of threads to use when encoding")
+            .default_value("4")
+            .value_parser(value_parser!(u8))
+            .group(GROUP)
+            .help_heading(HELP_HEADING),
+        Arg::new("effort")
+            .long("effort")
+            .value_name("effort")
+            .value_parser(value_parser!(u8))
+            .help("Effort to put into encoding")
+            .group(GROUP)
+            .help_heading(HELP_HEADING)
+    ];
+    args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
+    args.to_vec()
+}
+
 fn add_filters() -> Vec<Arg>
 {
     let mut args = [

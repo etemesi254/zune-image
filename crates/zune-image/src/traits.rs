@@ -3,7 +3,7 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
 use crate::codecs::ImageFormat;
-use crate::errors::{ImgErrors, ImgOperationsErrors};
+use crate::errors::{ImageErrors, ImgOperationsErrors};
 use crate::image::Image;
 use crate::impls::colorspace::ColorspaceConv;
 use crate::impls::depth::Depth;
@@ -34,7 +34,7 @@ pub trait DecoderTrait<'a>
     ///
     /// decoder.decode().unwrap();
     /// ```
-    fn decode(&mut self) -> Result<Image, crate::errors::ImgErrors>;
+    fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors>;
 
     /// Get width and height of the image
     ///
@@ -62,7 +62,7 @@ pub trait DecoderTrait<'a>
     }
     /// Read image metadata returning the values as
     /// a struct
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         Ok(None)
     }
@@ -130,7 +130,7 @@ pub trait OperationsTrait
     ///
     ///
     /// [`execute_impl`]: Self::execute_impl
-    fn execute(&self, image: &mut Image) -> Result<(), ImgErrors>
+    fn execute(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         // Confirm colorspace
         let colorspace = image.get_colorspace();
@@ -142,7 +142,7 @@ pub trait OperationsTrait
 
         if !supported
         {
-            return Err(ImgErrors::UnsupportedColorspace(
+            return Err(ImageErrors::UnsupportedColorspace(
                 colorspace,
                 self.get_name(),
                 self.supported_colorspaces()
@@ -161,7 +161,7 @@ pub trait OperationsTrait
         confirm_invariants(image)?;
 
         self.execute_impl(image)
-            .map_err(<ImgOperationsErrors as Into<ImgErrors>>::into)?;
+            .map_err(<ImgOperationsErrors as Into<ImageErrors>>::into)?;
 
         confirm_invariants(image)?;
 
@@ -171,7 +171,7 @@ pub trait OperationsTrait
 
 /// Confirm that image invariants have been respected across image
 /// operations
-fn confirm_invariants(image: &Image) -> Result<(), ImgErrors>
+fn confirm_invariants(image: &Image) -> Result<(), ImageErrors>
 {
     // Ensure dimensions are correct
 
@@ -179,7 +179,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImgErrors>
 
     if components != image.get_colorspace().num_components()
     {
-        return Err(ImgErrors::GenericString(format!(
+        return Err(ImageErrors::GenericString(format!(
             "Components mismatch, expected {} channels since image format is {:?}, but found {}",
             image.get_colorspace().num_components(),
             image.get_colorspace(),
@@ -195,7 +195,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImgErrors>
     {
         if channel.len() != expected_length
         {
-            return Err(ImgErrors::DimensionsMisMatch(
+            return Err(ImageErrors::DimensionsMisMatch(
                 expected_length,
                 channel.len()
             ));
@@ -224,7 +224,7 @@ pub trait EncoderTrait
     ///
     /// - Err : An unrecoverable error occurred
     ///
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>;
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>;
 
     /// Return all colorspaces supported by this encoder.
     ///
@@ -254,7 +254,7 @@ pub trait EncoderTrait
     /// e.g to do colorspace conversions or bit-depth conversions, hence it
     /// is recommended to have the image in a format that can be encoded
     /// directly to prevent such
-    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         // check colorspace is correct.
         let colorspace = image.get_colorspace();
@@ -332,7 +332,7 @@ pub trait EncoderTrait
 
     /// Call `encode` and then store the image
     /// and format in `EncodeResult`
-    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImgErrors>
+    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImageErrors>
     {
         let data = self.encode(image)?;
 

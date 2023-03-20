@@ -7,14 +7,14 @@ pub use zune_farbfeld::*;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u16;
-use crate::errors::{ImgEncodeErrors, ImgErrors};
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, ImgErrors>
+    fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let pixels = self.decode()?;
         let colorspace = self.get_colorspace();
@@ -48,7 +48,7 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
         true
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()?;
 
@@ -78,7 +78,7 @@ impl EncoderTrait for FarbFeldEncoder
         "farbfeld"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let options = EncoderOptions::default()
