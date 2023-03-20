@@ -7,14 +7,14 @@ pub use zune_qoi::*;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::deinterleave_u8;
-use crate::errors::{ImgEncodeErrors, ImgErrors};
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, ImgErrors>
+    fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let pixels = self.decode()?;
         // safe because these are none when we haven't decoded.
@@ -51,10 +51,10 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
         true
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<QoiErrors as Into<ImgErrors>>::into)?;
+            .map_err(<QoiErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth();
@@ -91,7 +91,7 @@ impl EncoderTrait for QoiEncoder
         "QOI Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let colorspace = image.get_colorspace();
@@ -135,13 +135,13 @@ impl EncoderTrait for QoiEncoder
     }
 }
 
-impl From<zune_qoi::QoiErrors> for ImgErrors
+impl From<zune_qoi::QoiErrors> for ImageErrors
 {
     fn from(error: zune_qoi::QoiErrors) -> Self
     {
         let err = format!("qoi: {error:?}");
 
-        ImgErrors::ImageDecodeErrors(err)
+        ImageErrors::ImageDecodeErrors(err)
     }
 }
 

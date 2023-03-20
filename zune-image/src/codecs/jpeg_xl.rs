@@ -6,7 +6,7 @@ use zune_core::options::EncoderOptions;
 use zune_jpegxl::{JxlEncodeErrors, JxlSimpleEncoder};
 
 use crate::codecs::ImageFormat;
-use crate::errors::{ImgEncodeErrors, ImgErrors};
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::traits::EncoderTrait;
 
@@ -19,7 +19,7 @@ impl EncoderTrait for JxlEncoder
         "jxl-encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let colorspace = image.get_colorspace();

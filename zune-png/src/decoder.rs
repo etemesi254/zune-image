@@ -323,7 +323,6 @@ impl<'a> PngDecoder<'a>
                 {
                     self.parse_trns(header)?;
                 }
-
                 PngChunkType::gAMA =>
                 {
                     self.parse_gama(header)?;

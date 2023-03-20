@@ -10,7 +10,7 @@ use log::Level::Debug;
 use log::{debug, error, info, log_enabled, warn};
 use memmap2::Mmap;
 use zune_image::codecs::ImageFormat;
-use zune_image::errors::ImgErrors;
+use zune_image::errors::ImageErrors;
 use zune_image::traits::DecoderTrait;
 use zune_image::workflow::WorkFlow;
 
@@ -23,7 +23,7 @@ use crate::MmapOptions;
 #[allow(unused_variables)]
 pub(crate) fn create_and_exec_workflow_from_cmd(
     args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions
-) -> Result<(), ImgErrors>
+) -> Result<(), ImageErrors>
 {
     if let Some(view) = args.value_source("probe")
     {
@@ -78,7 +78,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if decoder.is_experimental() && !cmd_opts.experimental_formats
             {
                 let msg = format!("The `{}` is currently experimental and can only be used when --experimental is passed via the command line", decoder.get_name());
-                return Err(ImgErrors::from(msg));
+                return Err(ImageErrors::from(msg));
             }
             workflow.add_decoder(decoder);
         }

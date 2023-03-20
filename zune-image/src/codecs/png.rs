@@ -9,18 +9,18 @@ pub use zune_png::PngDecoder;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
-use crate::errors::ImgErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 {
-    fn decode(&mut self) -> Result<Image, ImgErrors>
+    fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let pixels = self
             .decode()
-            .map_err(<PngErrors as Into<ImgErrors>>::into)?;
+            .map_err(<PngErrors as Into<ImageErrors>>::into)?;
 
         let depth = self.get_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
@@ -59,10 +59,10 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
         "PNG Decoder"
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImgErrors>
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<PngErrors as Into<ImgErrors>>::into)?;
+            .map_err(<PngErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_depth().unwrap();
@@ -81,12 +81,12 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
     }
 }
 
-impl From<zune_png::error::PngErrors> for ImgErrors
+impl From<zune_png::error::PngErrors> for ImageErrors
 {
     fn from(from: zune_png::error::PngErrors) -> Self
     {
         let err = format!("png: {from:?}");
 
-        ImgErrors::ImageDecodeErrors(err)
+        ImageErrors::ImageDecodeErrors(err)
     }
 }

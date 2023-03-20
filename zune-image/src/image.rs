@@ -19,7 +19,7 @@ use zune_imageprocs::traits::NumOps;
 
 use crate::channel::Channel;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
-use crate::errors::ImgErrors;
+use crate::errors::ImageErrors;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::traits::{OperationsTrait, ZuneInts};
@@ -378,11 +378,11 @@ impl Image
     /// Fill the image with
     pub fn fill<T: Copy + Clone + NumOps<T> + 'static>(
         pixel: T, depth: BitDepth, colorspace: ColorSpace, width: usize, height: usize
-    ) -> Result<Image, ImgErrors>
+    ) -> Result<Image, ImageErrors>
     {
         if core::mem::size_of::<T>() != depth.size_of()
         {
-            return Err(ImgErrors::from(
+            return Err(ImageErrors::from(
                 "Size of T does not match bit depth, this is invalid"
             ));
         }
