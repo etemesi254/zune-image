@@ -91,7 +91,7 @@ impl EncoderTrait for QoiEncoder
         "QOI Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgEncodeErrors>
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImgErrors>
     {
         let (width, height) = image.get_dimensions();
         let colorspace = image.get_colorspace();
@@ -129,7 +129,7 @@ impl EncoderTrait for QoiEncoder
         &[BitDepth::Eight]
     }
 
-    fn common_bit_depth(&self) -> BitDepth
+    fn default_depth(&self) -> BitDepth
     {
         BitDepth::Eight
     }
