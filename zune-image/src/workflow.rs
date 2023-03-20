@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use log::Level::Info;
-use log::{info, log_enabled};
+use log::{info, log_enabled, Level};
 
 use crate::codecs::ImageFormat;
 use crate::errors::ImgErrors;
@@ -273,6 +273,10 @@ impl<'a> WorkFlow<'a>
                                 "Finished running `{encoder_name}` in {} ms",
                                 (stop - start).as_millis()
                             );
+                            if log_enabled!(Level::Info)
+                            {
+                                eprintln!();
+                            }
                         }
                     }
 
