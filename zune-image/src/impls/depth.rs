@@ -47,7 +47,7 @@ impl OperationsTrait for Depth
                 (BitDepth::Eight, BitDepth::Ten | BitDepth::Twelve | BitDepth::Sixteen) =>
                 {
                     let old_data = channel.reinterpret_as().unwrap();
-                    let mut new_channel = Channel::new_with_length::<u16>(old_data.len());
+                    let mut new_channel = Channel::new_with_length::<u16>(old_data.len() * 2);
 
                     let new_channel_raw = new_channel.reinterpret_as_mut().unwrap();
 
@@ -59,7 +59,7 @@ impl OperationsTrait for Depth
                 (BitDepth::Sixteen | BitDepth::Twelve | BitDepth::Ten, BitDepth::Eight) =>
                 {
                     let old_data = channel.reinterpret_as().unwrap();
-                    let mut new_channel = Channel::new_with_length::<u8>(old_data.len());
+                    let mut new_channel = Channel::new_with_length::<u8>(old_data.len() / 2);
 
                     let new_channel_raw = new_channel.reinterpret_as_mut().unwrap();
 
