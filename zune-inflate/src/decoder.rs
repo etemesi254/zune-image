@@ -919,8 +919,10 @@ impl<'a> DeflateDecoder<'a>
                             self.stream.drop_bits(OFFSET_TABLEBITS as u8);
                             let extra = self.stream.peek_var_bits(((entry >> 8) & 0x3F) as usize);
                             entry = offset_decode_table[((entry >> 16) as usize + extra) & 511];
+                            // refill to handle some weird edge case where we have
+                            // less bits than needed for reading the lit-len
+                            self.stream.refill_inner_loop();
                         }
-
                         saved_bitbuf = self.stream.buffer;
 
                         self.stream.drop_bits((entry & 0xFF) as u8);
@@ -928,7 +930,7 @@ impl<'a> DeflateDecoder<'a>
                         let mask = (1 << entry as u8) - 1;
 
                         offset = (entry >> 16) as usize;
-                        offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
+                        offset += (saved_bitbuf & mask) as usize >> (((entry >> 8) & 0xFF) as u8);
 
                         if offset > dest_offset
                         {
