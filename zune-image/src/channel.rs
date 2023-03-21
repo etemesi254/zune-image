@@ -288,7 +288,7 @@ impl Channel
     /// use zune_image::channel::Channel;
     /// let channel = Channel::new::<u8>();
     ///
-    /// assert_eq!(channel.type_id(),TypeId::of::<u8>());
+    /// assert_eq!(channel.get_type_id(),TypeId::of::<u8>());
     /// ```
     pub fn get_type_id(&self) -> TypeId
     {
@@ -487,18 +487,16 @@ impl Channel
     /// use core::mem::size_of;
     /// use zune_image::channel::Channel;
     /// let mut channel = Channel::new::<u8>();
-    /// // push a u32 first
-    /// channel.push::<u32>(123);
-    /// // then a u64
-    /// channel.push::<u64>(456);
-    /// // then u8
+    /// // push a u8
     /// channel.push::<u8>(123);
+    /// // then u16
+    /// channel.push::<u16>(12553);
     ///
-    /// let len = size_of::<u8>()+size_of::<u32>()+size_of::<u64>();
+    /// let len = size_of::<u8>()+size_of::<u16>();
     /// // assert that length matches
     /// assert_eq!(channel.len(),len);
     /// ```
-    pub fn push<T: Copy + 'static>(&mut self, elm: T)
+    pub fn push<T: Copy + 'static + ZuneInts<T>>(&mut self, elm: T)
     {
         let size = core::mem::size_of::<T>(); // compile time
 
@@ -634,8 +632,6 @@ mod tests
     fn test_wrong_interpretation()
     {
         let mut ch = Channel::new::<u8>();
-        ch.push(0usize);
-        ch.push(isize::MAX);
         assert!(ch.reinterpret_as::<u16>().is_none());
     }
 
