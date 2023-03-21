@@ -360,6 +360,10 @@ impl ImageFormat
                         Box::new(crate::codecs::farbfeld::FarbFeldEncoder)
                     ))
                 }
+                #[cfg(not(feature = "farbfeld"))]
+                {
+                    None
+                }
             }
             _ => None
         }

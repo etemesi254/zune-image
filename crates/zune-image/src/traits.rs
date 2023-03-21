@@ -28,11 +28,16 @@ pub trait DecoderTrait<'a>
     ///
     /// # Example
     /// ```no_run
-    /// use zune_image::traits::DecoderTrait;
-    /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
+    /// #[cfg(feature = "jpeg")]
+    /// {
+    ///     use zune_image::traits::DecoderTrait;
+    ///     use zune_jpeg::JpegDecoder;
+    ///     let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
     ///
-    /// decoder.decode().unwrap();
+    ///     decoder.decode().unwrap();
+    /// }
+    /// #[cfg(not(feature="jpeg"))]
+    /// ()
     /// ```
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors>;
 

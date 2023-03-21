@@ -141,7 +141,7 @@ impl Image
     /// Flatten channels in this image.
     ///
     /// Flatten can be used to interleave all channels into one vector
-    pub fn flatten<T: Default + Copy + 'static>(&self) -> Vec<T>
+    pub fn flatten<T: Default + Copy + 'static + ZuneInts<T>>(&self) -> Vec<T>
     {
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
@@ -376,7 +376,7 @@ impl Image
     }
 
     /// Fill the image with
-    pub fn fill<T: Copy + Clone + NumOps<T> + 'static>(
+    pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T>>(
         pixel: T, depth: BitDepth, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>
     {
