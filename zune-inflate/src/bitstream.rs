@@ -117,8 +117,9 @@ impl<'src> BitStreamReader<'src>
     }
 
     #[inline(always)]
-    pub const fn peek_bits<const LOOKAHEAD: usize>(&self) -> usize
+    pub fn peek_bits<const LOOKAHEAD: usize>(&self) -> usize
     {
+        debug_assert!(self.bits_left >= LOOKAHEAD as u8);
         (self.buffer & ((1 << LOOKAHEAD) - 1)) as usize
     }
     #[inline(always)]
