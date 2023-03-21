@@ -1,3 +1,7 @@
+## Version 0.2.52
+
+- Add small fix for refilling where the decoder lacked bits
+
 ## Version 0.2.51
 
 - Correctly check for limits in the inner loop
