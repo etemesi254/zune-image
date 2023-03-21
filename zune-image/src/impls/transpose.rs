@@ -38,7 +38,7 @@ impl OperationsTrait for Transpose
 
         for channel in image.get_channels_mut(false)
         {
-            let mut out_channel = Channel::new_with_depth(out_dim, depth.bit_type());
+            let mut out_channel = Channel::new_with_bit_type(out_dim, depth.bit_type());
 
             match depth.bit_type()
             {

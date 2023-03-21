@@ -44,7 +44,7 @@ impl OperationsTrait for Median
 
             for channel in image.get_channels_mut(false)
             {
-                let mut new_channel = Channel::new_with_depth(channel.len(), depth.bit_type());
+                let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                 match depth.bit_type()
                 {
@@ -76,7 +76,7 @@ impl OperationsTrait for Median
                 {
                     s.spawn(|| {
                         let mut new_channel =
-                            Channel::new_with_depth(channel.len(), depth.bit_type());
+                            Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                         match depth.bit_type()
                         {
