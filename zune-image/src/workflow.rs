@@ -87,13 +87,20 @@ impl<'a> WorkFlow<'a>
     ///
     /// # Example
     /// ```no_run
-    /// use std::fs::File;
-    /// use std::io::BufWriter;
-    /// use zune_image::codecs::ppm::PPMEncoder;
-    /// use zune_image::workflow::WorkFlow;
-    /// let mut buf = BufWriter::new(File::open(".").unwrap());
-    /// let encoder = PPMEncoder::new();
-    /// let x= WorkFlow::new().add_encoder(Box::new(encoder));
+    /// #[cfg(feature = "ppm")]
+    /// {
+    ///     use std::fs::File;
+    ///     use std::io::BufWriter;
+    ///     use zune_image::codecs::ppm::PPMEncoder;
+    ///     use zune_image::workflow::WorkFlow;
+    ///     let mut buf = BufWriter::new(File::open(".").unwrap());
+    ///     let encoder = PPMEncoder::new();    
+    ///     let x= WorkFlow::new().add_encoder(Box::new(encoder));
+    /// }
+    /// #[cfg(not(feature="ppm"))]
+    /// {
+    /// // nothing
+    /// }
     /// ```
     pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait + 'a>)
     {
@@ -138,18 +145,13 @@ impl<'a> WorkFlow<'a>
     /// 2. Convert RGB data to grayscale
     /// 3. Transpose the image channels   
     /// ```no_run
+    /// #
     /// use zune_image::impls::grayscale::RgbToGrayScale;
     /// use zune_image::impls::transpose::Transpose;
     /// use zune_image::workflow::WorkFlow;
     ///
     ///
-    /// use zune_jpeg::JpegDecoder;
-    ///
-    /// let buf = [0xff,0xd8];
-    ///
-    /// let decoder = JpegDecoder::new(&buf);
     /// let image = WorkFlow::new()
-    ///     .chain_decoder(Box::new(decoder))
     ///     .chain_operations(Box::new(RgbToGrayScale::new()))
     ///     .chain_operations(Box::new(Transpose::new()))    
     ///     .advance_to_end();

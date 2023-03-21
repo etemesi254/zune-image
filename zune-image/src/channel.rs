@@ -18,6 +18,8 @@ use std::mem::size_of;
 
 use zune_core::bit_depth::BitType;
 
+use crate::traits::ZuneInts;
+
 /// Minimum alignment for all types allocated in the channel
 ///
 /// This makes it possible to reinterpret the channel data safely
@@ -93,8 +95,48 @@ impl Clone for Channel
         // copy items by calling extend
         // unwrap here is safe as the conditions for None.
         // do not apply to u8 types
-        new_channel.extend(self.reinterpret_as::<u8>().unwrap());
+        unsafe {
+            new_channel.extend_unchecked(self.reinterpret_as_unchecked::<u8>().unwrap());
+        }
         new_channel
+    }
+}
+
+impl PartialEq for Channel
+{
+    fn eq(&self, other: &Self) -> bool
+    {
+        // check if length matches
+        if self.length != other.length
+        {
+            return false;
+        }
+        // check if type matches
+        if self.type_id != other.type_id
+        {
+            return false;
+        }
+        unsafe {
+            // interpret them as a bag of u8, and iterate
+
+            // safety:
+            // u8's can alias anything.
+
+            // we confirmed that the items have the same length
+            // and that they are of the same type
+            let us = self.reinterpret_as_unchecked::<u8>().unwrap();
+            let them = other.reinterpret_as_unchecked::<u8>().unwrap();
+
+            for (a, b) in us.iter().zip(them)
+            {
+                if *a != *b
+                {
+                    return false;
+                }
+            }
+        }
+        // everything is good
+        true
     }
 }
 
@@ -170,12 +212,20 @@ impl Channel
     }
 
     /// Create a new channel
-    pub fn new<T: 'static>() -> Channel
+    ///
+    ///
+    /// This stores a single plane for an image
+    pub fn new<T: 'static + ZuneInts<T>>() -> Channel
     {
         Self::new_with_capacity::<T>(10)
     }
     /// Create a new channel with the specified length and capacity
-    pub fn new_with_length<T: 'static>(length: usize) -> Channel
+    ///
+    /// The array is initialized to zero
+    ///
+    /// # Arguments
+    ///  - length: The length of the new channel
+    pub fn new_with_length<T: 'static + ZuneInts<T>>(length: usize) -> Channel
     {
         let mut channel = Channel::new_with_capacity::<T>(length);
         channel.length = length;
@@ -183,14 +233,39 @@ impl Channel
         channel
     }
     /// Create a new channel with the specified length and capacity
-    pub fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel
+    ///
+    /// and type
+    ///
+    /// # Arguments
+    ///  - length: The new lenghth of the array
+    ///  - type_id: The type id of the type this is supposed to store
+    ///
+    pub(crate) fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel
     {
         let mut channel = Channel::new_with_capacity_and_type(length, type_id);
         channel.length = length;
 
         channel
     }
-    pub fn new_with_depth(length: usize, depth: BitType) -> Channel
+
+    /// Create a new channel that can store items
+    /// of a certain bit type
+    ///
+    /// # Arguments
+    ///
+    /// * `length`: The length of the new channel
+    /// * `depth`:
+    ///
+    /// returns: Channel
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zune_core::bit_depth::BitType;
+    /// use zune_image::channel::Channel;
+    /// let channel = Channel::new_with_bit_type(0,BitType::U8);
+    /// ```
+    pub fn new_with_bit_type(length: usize, depth: BitType) -> Channel
     {
         let t_r = match depth
         {
@@ -204,13 +279,31 @@ impl Channel
 
     /// Return the type id which gives the representation of the bytes
     /// in the image
+    ///
+    /// This allows some sort of dynamic type checking
+    ///
+    /// # Example
+    /// ```
+    /// use std::any::{Any, TypeId};
+    /// use zune_image::channel::Channel;
+    /// let channel = Channel::new::<u8>();
+    ///
+    /// assert_eq!(channel.type_id(),TypeId::of::<u8>());
+    /// ```
     pub fn get_type_id(&self) -> TypeId
     {
         self.type_id
     }
     /// Create a new channel with the specified capacity
     /// and zero length
-    pub fn new_with_capacity<T: 'static>(capacity: usize) -> Channel
+    ///
+    /// # Example
+    /// ```
+    /// use zune_image::channel::Channel;
+    /// let channel = Channel::new_with_capacity::<u16>(100);    
+    /// assert!(channel.is_empty());
+    /// ```
+    pub fn new_with_capacity<T: 'static + ZuneInts<T>>(capacity: usize) -> Channel
     {
         unsafe {
             let ptr = Self::alloc(capacity);
@@ -223,7 +316,18 @@ impl Channel
             }
         }
     }
-    pub fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel
+
+    /// Create a new channel with a specified
+    /// capacity and type
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity`: The capacity of the new channel
+    /// * `type_id`:  The type the channel will be storing
+    ///
+    /// returns: Channel
+    ///
+    pub(crate) fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel
     {
         unsafe {
             let ptr = Self::alloc(capacity);
@@ -237,9 +341,23 @@ impl Channel
         }
     }
 
-    /// Creates  a new channel capable of storing T*length items and
-    /// fill it with elm symbols
-    pub fn from_elm<T: Copy + 'static>(length: usize, elm: T) -> Channel
+    ///  
+    ///
+    /// # Arguments
+    ///
+    /// * `length`: The length of the items to create
+    /// * `elm`:  The element to fill it with
+    ///
+    /// returns: Channel
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zune_image::channel::Channel;
+    /// let chan = Channel::from_elm(100,90_u16);
+    /// assert_eq!(chan.reinterpret_as::<u16>().unwrap(),&[90;100]);
+    /// ```
+    pub fn from_elm<T: Copy + 'static + ZuneInts<T>>(length: usize, elm: T) -> Channel
     {
         // new currently zeroes memory
         let mut new_chan = Channel::new_with_length::<T>(length * size_of::<T>());
@@ -257,7 +375,7 @@ impl Channel
     /// Extend this channel with items from data
     ///
     ///
-    pub fn extend<T: Copy + 'static>(&mut self, data: &[T])
+    pub fn extend<T: Copy + 'static + ZuneInts<T>>(&mut self, data: &[T])
     {
         assert_eq!(
             TypeId::of::<T>(),
@@ -265,6 +383,18 @@ impl Channel
             "Type Id's do not match, trying to extend the channel
        with a type it wasn't created with"
         );
+        unsafe {
+            self.extend_unchecked(data);
+        }
+    }
+    /// Extend items from an array
+    ///
+    /// # Safety
+    ///
+    /// - Type of element should match, otherwise behaviour is undefined
+    /// - Alignment must match
+    unsafe fn extend_unchecked<T: Copy + 'static + ZuneInts<T>>(&mut self, data: &[T])
+    {
         // get size of the generic type
         let data_size = core::mem::size_of::<T>();
         // get number of items we need to store
@@ -275,17 +405,15 @@ impl Channel
             // reallocate to handle enough of the length.
             // realloc will set the new capacity
             // but as callers we have to set the new length
-            unsafe {
-                self.realloc(self.capacity.saturating_add(items).saturating_add(10));
-            }
+            self.realloc(self.capacity.saturating_add(items).saturating_add(10));
         }
         // now we have enough space, extend
-        unsafe {
-            self.ptr.add(self.length).copy_from(
-                data.as_ptr().cast::<u8>(),
-                data.len().saturating_mul(data_size)
-            );
-        }
+
+        self.ptr.add(self.length).copy_from(
+            data.as_ptr().cast::<u8>(),
+            data.len().saturating_mul(data_size)
+        );
+
         // new length becomes old length + items added
         self.length = self.length.checked_add(items).unwrap();
     }
@@ -294,13 +422,8 @@ impl Channel
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default + 'static>(&self) -> Option<&[T]>
+    pub fn reinterpret_as<T: Default + 'static + ZuneInts<T>>(&self) -> Option<&[T]>
     {
-        // Get size of pointer
-        let size = core::mem::size_of::<T>();
-
-        let new_length = self.length / size;
-
         // check if the alignment is correct
         // plus we can evenly divide this
         if self.confirm_suspicions::<T>().is_err()
@@ -308,16 +431,31 @@ impl Channel
             return None;
         }
 
+        unsafe { self.reinterpret_as_unchecked() }
+    }
+
+    /// Reinterpret a slice of `&[u8]` to another type
+    ///
+    ///  # Safety
+    /// - Invariants for [`std::slice::from_raw_parts`] should be upheld
+    ///
+    /// # Returns
+    /// - `Some(&[T])`: THe re-interpreted bits
+    unsafe fn reinterpret_as_unchecked<T: Default + 'static + ZuneInts<T>>(&self) -> Option<&[T]>
+    {
+        // Get size of pointer
+        let size = core::mem::size_of::<T>();
+
+        let new_length = self.length / size;
+
         let new_ptr = self.ptr.cast::<T>();
-        // Safety:
-        // 1- Data is aligned correctly
-        // 2- Data is the same type it was created with
+
         let new_slice = unsafe { std::slice::from_raw_parts(new_ptr, new_length) };
 
         Some(new_slice)
     }
-
-    pub fn reinterpret_as_mut<T: Default + 'static>(&mut self) -> Option<&mut [T]>
+    /// Reinterpret a slice of `&[u8]` into another type
+    pub fn reinterpret_as_mut<T: Default + 'static + ZuneInts<T>>(&mut self) -> Option<&mut [T]>
     {
         // Get size of pointer
         let size = core::mem::size_of::<T>();
@@ -384,8 +522,25 @@ impl Channel
         // increment length by number of bytes it takes to represent this type.
         self.length += size;
     }
-    /// Fill this channel with the element `T`
-    pub fn fill<T: Copy + 'static>(&mut self, element: T) -> Result<(), ChannelErrors>
+
+    /// Fill the channel with a specific element
+    ///
+    /// # Arguments
+    ///
+    /// * `element`:  The element to fill the channel
+    ///
+    /// returns: Result<(), ChannelErrors>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use zune_image::channel::Channel;
+    /// let mut channel = Channel::new_with_length::<u16>(100);
+    /// channel.fill(100_u16).unwrap();
+    /// assert_eq!(channel.reinterpret_as::<u16>().unwrap(),&[100;50]);
+    /// ```
+    pub fn fill<T: Copy + 'static + ZuneInts<T>>(&mut self, element: T)
+        -> Result<(), ChannelErrors>
     {
         let size = core::mem::size_of::<T>();
 
@@ -469,14 +624,38 @@ fn is_aligned<T>(ptr: *const u8) -> bool
     (ptr as usize) & ((size) - 1) == 0
 }
 
-#[test]
-fn a()
+#[allow(unused_imports)]
+mod tests
 {
-    let mut ch = Channel::new::<u8>();
-    // <usize: Copy + 'static>
-    ch.push(0usize);
-    // <isize: Copy + 'static>
-    ch.push(isize::MAX);
-    // <&'static [u8]: Default + 'static>
-    assert!(ch.reinterpret_as::<&'static [u8]>().is_none());
+    use crate::channel::Channel;
+
+    /// check that we cant convert from a type we made
+    #[test]
+    fn test_wrong_interpretation()
+    {
+        let mut ch = Channel::new::<u8>();
+        ch.push(0usize);
+        ch.push(isize::MAX);
+        assert!(ch.reinterpret_as::<u16>().is_none());
+    }
+
+    // test that we return for interpretations that match
+    #[test]
+    fn test_correct_interpretation()
+    {
+        let mut ch = Channel::new::<u16>();
+        ch.push(70_u16);
+        let expected = [70_u16];
+        assert_eq!(ch.reinterpret_as::<u16>().unwrap(), expected);
+    }
+
+    #[test]
+    fn test_clone_works()
+    {
+        let mut ch = Channel::new::<u8>();
+        ch.extend::<u8>(&[10; 10]);
+        // test clone works
+        // clone has some special things
+        let _ = ch.clone();
+    }
 }
