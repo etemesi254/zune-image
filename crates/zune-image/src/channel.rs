@@ -96,7 +96,7 @@ impl Clone for Channel
         // unwrap here is safe as the conditions for None.
         // do not apply to u8 types
         unsafe {
-            new_channel.extend_unchecked(self.reinterpret_as_unchecked::<u8>().unwrap());
+            new_channel.extend_unchecked(self.reinterpret_as_unchecked::<u8>());
         }
         new_channel
     }
@@ -124,8 +124,8 @@ impl PartialEq for Channel
 
             // we confirmed that the items have the same length
             // and that they are of the same type
-            let us = self.reinterpret_as_unchecked::<u8>().unwrap();
-            let them = other.reinterpret_as_unchecked::<u8>().unwrap();
+            let us = self.reinterpret_as_unchecked::<u8>();
+            let them = other.reinterpret_as_unchecked::<u8>();
 
             for (a, b) in us.iter().zip(them)
             {
@@ -422,16 +422,14 @@ impl Channel
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default + 'static + ZuneInts<T>>(&self) -> Option<&[T]>
+    pub fn reinterpret_as<T: Default + 'static + ZuneInts<T>>(&self)
+        -> Result<&[T], ChannelErrors>
     {
         // check if the alignment is correct
         // plus we can evenly divide this
-        if self.confirm_suspicions::<T>().is_err()
-        {
-            return None;
-        }
+        self.confirm_suspicions::<T>()?;
 
-        unsafe { self.reinterpret_as_unchecked() }
+        Ok(unsafe { self.reinterpret_as_unchecked() })
     }
 
     /// Reinterpret a slice of `&[u8]` to another type
@@ -441,7 +439,7 @@ impl Channel
     ///
     /// # Returns
     /// - `Some(&[T])`: THe re-interpreted bits
-    unsafe fn reinterpret_as_unchecked<T: Default + 'static + ZuneInts<T>>(&self) -> Option<&[T]>
+    unsafe fn reinterpret_as_unchecked<T: Default + 'static + ZuneInts<T>>(&self) -> &[T]
     {
         // Get size of pointer
         let size = core::mem::size_of::<T>();
@@ -452,18 +450,18 @@ impl Channel
 
         let new_slice = unsafe { std::slice::from_raw_parts(new_ptr, new_length) };
 
-        Some(new_slice)
+        new_slice
     }
     /// Reinterpret a slice of `&[u8]` into another type
-    pub fn reinterpret_as_mut<T: Default + 'static + ZuneInts<T>>(&mut self) -> Option<&mut [T]>
+    pub fn reinterpret_as_mut<T: Default + 'static + ZuneInts<T>>(
+        &mut self
+    ) -> Result<&mut [T], ChannelErrors>
     {
         // Get size of pointer
         let size = core::mem::size_of::<T>();
         // check if the alignment is correct + size evenly divides
-        if self.confirm_suspicions::<T>().is_err()
-        {
-            return None;
-        }
+        self.confirm_suspicions::<T>()?;
+
         let new_length = self.length / size;
 
         let new_ptr = self.ptr.cast::<T>();
@@ -473,7 +471,7 @@ impl Channel
         // 2- Data is the same type it was created with
         let new_slice = unsafe { std::slice::from_raw_parts_mut(new_ptr, new_length) };
 
-        Some(new_slice)
+        Ok(new_slice)
     }
 
     /// Push a single element to the channel.
@@ -631,8 +629,8 @@ mod tests
     #[test]
     fn test_wrong_interpretation()
     {
-        let mut ch = Channel::new::<u8>();
-        assert!(ch.reinterpret_as::<u16>().is_none());
+        let ch = Channel::new::<u8>();
+        assert!(ch.reinterpret_as::<u16>().is_err());
     }
 
     // test that we return for interpretations that match
