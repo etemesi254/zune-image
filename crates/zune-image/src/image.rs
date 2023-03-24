@@ -20,6 +20,7 @@ use zune_imageprocs::traits::NumOps;
 use crate::channel::Channel;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
+use crate::frame::Frame;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::traits::{OperationsTrait, ZuneInts};
@@ -31,7 +32,7 @@ pub const MAX_CHANNELS: usize = 4;
 #[derive(Clone)]
 pub struct Image
 {
-    pub(crate) channels: Vec<Channel>,
+    pub(crate) frames:   Vec<Frame>,
     pub(crate) metadata: ImageMetadata
 }
 
@@ -51,9 +52,22 @@ impl Image
         meta.set_colorspace(colorspace);
 
         Image {
-            channels,
+            frames:   vec![Frame::new(channels)],
             metadata: meta
         }
+    }
+
+    /// Return true if the current image contains more than
+    /// one frame indicating it is animated
+    ///
+    /// # Returns
+    ///  
+    /// - true : Image contains a series of frames which can be animated
+    /// - false: Image contains a single frame  
+    ///
+    pub fn is_animated(&self) -> bool
+    {
+        self.frames.len() > 1
     }
     /// Get image dimensions as a tuple of (width,height)
     pub const fn get_dimensions(&self) -> (usize, usize)
@@ -94,43 +108,45 @@ impl Image
     {
         &self.metadata
     }
-    /// Return a reference to the underlying channels
-    pub fn get_channels_ref(&self, ignore_alpha: bool) -> &[Channel]
+
+    /// Return an immutable reference to all image frames
+    ///
+    /// # Returns
+    /// All frames in the image
+    ///
+    ///
+    pub fn get_frames_ref(&self) -> &[Frame]
     {
-        // check if alpha channel is present in colorspace
-        if ignore_alpha && self.metadata.colorspace.has_alpha()
-        {
-            // do not take the last one,
-            // we assume the last one contains the alpha channel
-            // in it.
-            // TODO: Is this a bad assumption
-            &self.channels[0..self.metadata.colorspace.num_components() - 1]
-        }
-        else
-        {
-            &self.channels[0..self.metadata.colorspace.num_components()]
-        }
+        &self.frames
+    }
+
+    pub fn get_frames_mut(&mut self) -> &mut [Frame]
+    {
+        &mut self.frames
+    }
+    /// Return a reference to the underlying channels
+    pub fn get_channels_ref(&self, ignore_alpha: bool) -> Vec<&Channel>
+    {
+        let colorspace = self.get_colorspace();
+
+        self.frames
+            .iter()
+            .flat_map(|x| x.get_channels_ref(colorspace, ignore_alpha))
+            .collect()
     }
 
     /// Return a mutable view into the image channels
     ///
     /// This gives mutable access to the chanel data allowing
     /// single or multithreaded manipulation of images
-    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> &mut [Channel]
+    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> Vec<&mut Channel>
     {
-        // check if alpha channel is present in colorspace
-        if ignore_alpha && self.metadata.colorspace.has_alpha()
-        {
-            // do not take the last one,
-            // we assume the last one contains the alpha channel
-            // in it.
-            // TODO: Is this a bad assumption
-            &mut self.channels[0..self.metadata.colorspace.num_components() - 1]
-        }
-        else
-        {
-            &mut self.channels[0..self.metadata.colorspace.num_components()]
-        }
+        let colorspace = self.get_colorspace();
+
+        self.frames
+            .iter_mut()
+            .flat_map(|x| x.get_channels_mut(colorspace, ignore_alpha))
+            .collect()
     }
     /// Get the colorspace this image is stored
     /// in
@@ -141,60 +157,13 @@ impl Image
     /// Flatten channels in this image.
     ///
     /// Flatten can be used to interleave all channels into one vector
-    pub fn flatten<T: Default + Copy + 'static + ZuneInts<T>>(&self) -> Vec<T>
+    pub fn flatten_frames<T: Default + Copy + 'static + ZuneInts<T>>(&self) -> Vec<Vec<T>>
     {
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
+        let colorspace = self.get_colorspace();
 
-        // We use flat maps because they allow us to skip the alloc+memset part
-        // of creating an array, it makes it a bit faster
-
-        let out_pixel = match self.metadata.colorspace.num_components()
-        {
-            1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
-
-            2 =>
-            {
-                let luma_channel = self.channels[0].reinterpret_as::<T>().unwrap();
-                let alpha_channel = self.channels[1].reinterpret_as::<T>().unwrap();
-
-                luma_channel
-                    .iter()
-                    .zip(alpha_channel)
-                    .flat_map(|(x1, x2)| [*x1, *x2])
-                    .collect::<Vec<T>>()
-            }
-            3 =>
-            {
-                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .flat_map(|((x1, x2), x3)| [*x1, *x2, *x3])
-                    .collect::<Vec<T>>()
-            }
-            4 =>
-            {
-                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
-                let c4 = self.channels[3].reinterpret_as::<T>().unwrap();
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                    .flat_map(|(((x1, x2), x3), x4)| [*x1, *x2, *x3, *x4])
-                    .collect::<Vec<T>>()
-            }
-            // panics, all the way down
-            _ => unreachable!()
-        };
-
-        out_pixel
+        self.frames.iter().map(|x| x.flatten(colorspace)).collect()
     }
     /// Convert image to a byte representation interleaving
     /// image pixels where necessary
@@ -203,85 +172,30 @@ impl Image
     /// For images using anything larger than 8 bit,
     /// u8 as native endian is used
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
-    pub fn to_u8(&self) -> Vec<u8>
+    pub fn to_u8(&self) -> Vec<Vec<u8>>
     {
+        let colorspace = self.get_colorspace();
         if self.metadata.get_depth() == BitDepth::Eight
         {
-            self.flatten::<u8>()
+            self.flatten_frames::<u8>()
+        }
+        else if self.metadata.get_depth().size_of() == 2
+        {
+            self.frames
+                .iter()
+                .map(|z| z.u16_to_native_endian(colorspace))
+                .collect()
         }
         else
         {
-            let dims = self.metadata.width
-                * self.metadata.height
-                * self.metadata.colorspace.num_components()
-                * 2;
-
-            let mut out_pixel = vec![u8::default(); dims];
-
-            match self.metadata.colorspace.num_components()
-            {
-                1 => out_pixel.copy_from_slice(self.channels[0].reinterpret_as::<u8>().unwrap()),
-
-                2 =>
-                {
-                    let luma_channel = self.channels[0].reinterpret_as::<u16>().unwrap();
-                    let alpha_channel = self.channels[1].reinterpret_as::<u16>().unwrap();
-
-                    for ((out, luma), alpha) in out_pixel
-                        .chunks_exact_mut(4)
-                        .zip(luma_channel)
-                        .zip(alpha_channel)
-                    {
-                        out[0..2].copy_from_slice(&luma.to_ne_bytes());
-                        out[2..4].copy_from_slice(&alpha.to_ne_bytes());
-                    }
-                }
-                3 =>
-                {
-                    let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                    let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                    let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
-
-                    for (((out, first), second), third) in
-                        out_pixel.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
-                    {
-                        out[0..2].copy_from_slice(&first.to_ne_bytes());
-                        out[2..4].copy_from_slice(&second.to_ne_bytes());
-                        out[4..6].copy_from_slice(&third.to_ne_bytes());
-                    }
-                }
-                4 =>
-                {
-                    let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                    let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                    let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
-                    let c4 = self.channels[3].reinterpret_as::<u16>().unwrap();
-
-                    for ((((out, first), second), third), fourth) in out_pixel
-                        .chunks_exact_mut(8)
-                        .zip(c1)
-                        .zip(c2)
-                        .zip(c3)
-                        .zip(c4)
-                    {
-                        out[0..2].copy_from_slice(&first.to_ne_bytes());
-                        out[2..4].copy_from_slice(&second.to_ne_bytes());
-                        out[4..6].copy_from_slice(&third.to_ne_bytes());
-                        out[6..8].copy_from_slice(&fourth.to_ne_bytes());
-                    }
-                }
-                // panics, all the way down
-                _ => unreachable!()
-            }
-
-            out_pixel
+            todo!("Unimplemented")
         }
     }
-    /// Force flattening to RGBA
+
+    /// Force flattening of all frames to RGBA format
     ///
-    /// This internally converts channel to a u8 representation if it's not
-    /// in that value
-    pub fn flatten_rgba(&mut self, out_pixel: &mut [u8])
+    /// This will iterate through all
+    pub fn flatten_rgba_frames_u8(&mut self, out_pixel: Vec<&mut [u8]>)
     {
         if self.metadata.depth != BitDepth::Eight
         {
@@ -290,74 +204,11 @@ impl Image
 
             operation.execute(self).unwrap();
         }
+        let colorspace = self.get_colorspace();
 
-        match self.metadata.colorspace.num_components()
+        for (frame, out) in self.frames.iter_mut().zip(out_pixel)
         {
-            1 =>
-            {
-                let luma_channel = self.channels[0].reinterpret_as::<u8>().unwrap();
-
-                for (out, luma) in out_pixel.chunks_exact_mut(4).zip(luma_channel)
-                {
-                    out[0] = *luma;
-                    out[1] = *luma;
-                    out[2] = *luma;
-                    out[3] = 255;
-                }
-            }
-            2 =>
-            {
-                let luma_channel = self.channels[0].reinterpret_as::<u8>().unwrap();
-                let alpha_channel = self.channels[1].reinterpret_as::<u8>().unwrap();
-
-                for ((out, luma), alpha) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(luma_channel)
-                    .zip(alpha_channel)
-                {
-                    out[0] = *luma;
-                    out[1] = *luma;
-                    out[2] = *luma;
-                    out[3] = *alpha;
-                }
-            }
-            3 =>
-            {
-                let c1 = self.channels[0].reinterpret_as::<u8>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u8>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u8>().unwrap();
-
-                for (((out, first), second), third) in
-                    out_pixel.chunks_exact_mut(4).zip(c1).zip(c2).zip(c3)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                    out[3] = 255;
-                }
-            }
-            4 =>
-            {
-                let c1 = self.channels[0].reinterpret_as::<u8>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u8>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u8>().unwrap();
-                let c4 = self.channels[3].reinterpret_as::<u8>().unwrap();
-
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(c1)
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                    out[3] = *fourth;
-                }
-            }
-            // panics, all the way down
-            _ => unreachable!()
+            frame.flatten_rgba(colorspace, out).unwrap();
         }
     }
     pub fn set_dimensions(&mut self, width: usize, height: usize)
@@ -368,11 +219,6 @@ impl Image
     pub fn set_colorspace(&mut self, colorspace: ColorSpace)
     {
         self.metadata.set_colorspace(colorspace);
-    }
-
-    pub fn set_channels(&mut self, channels: Vec<Channel>)
-    {
-        self.channels = channels;
     }
 
     /// Fill the image with
