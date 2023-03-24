@@ -101,7 +101,7 @@ impl WasmImage
     ///
     pub fn flatten_rgba(&mut self, out_pixel: &mut [u8])
     {
-        self.image.flatten_rgba(out_pixel)
+        self.image.flatten_rgba_frames_u8(vec![out_pixel])
     }
 
     /// Apply a contrast operation to the image
