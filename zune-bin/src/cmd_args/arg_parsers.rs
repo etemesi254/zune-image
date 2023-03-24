@@ -9,7 +9,9 @@ pub enum IColorSpace
     RGB,
     GRAYSCALE,
     YCbCr,
-    RGBA
+    RGBA,
+    Luma,
+    LumaA
 }
 impl IColorSpace
 {
@@ -21,7 +23,9 @@ impl IColorSpace
             IColorSpace::RGB => ColorSpace::RGB,
             IColorSpace::GRAYSCALE => ColorSpace::Luma,
             IColorSpace::YCbCr => ColorSpace::YCbCr,
-            IColorSpace::RGBA => ColorSpace::RGBA
+            IColorSpace::RGBA => ColorSpace::RGBA,
+            IColorSpace::Luma => ColorSpace::Luma,
+            IColorSpace::LumaA => ColorSpace::LumaA
         }
     }
 }
@@ -29,7 +33,14 @@ impl ValueEnum for IColorSpace
 {
     fn value_variants<'a>() -> &'a [Self]
     {
-        &[Self::RGBA, Self::RGB, Self::YCbCr, Self::GRAYSCALE]
+        &[
+            Self::RGBA,
+            Self::RGB,
+            Self::YCbCr,
+            Self::GRAYSCALE,
+            Self::Luma,
+            Self::LumaA
+        ]
     }
 
     fn to_possible_value(&self) -> Option<PossibleValue>
@@ -39,7 +50,9 @@ impl ValueEnum for IColorSpace
             Self::RGBA => PossibleValue::new("rgba"),
             Self::RGB => PossibleValue::new("rgb"),
             Self::YCbCr => PossibleValue::new("ycbcr"),
-            Self::GRAYSCALE => PossibleValue::new("grayscale")
+            Self::GRAYSCALE => PossibleValue::new("grayscale"),
+            Self::LumaA => PossibleValue::new("lumaA"),
+            Self::Luma => PossibleValue::new("luma")
         })
     }
 }

@@ -129,10 +129,9 @@ fn add_settings() -> Vec<Arg>
         Arg::new("colorspace")
             .long("colorspace")
             .help_heading(HELP_HEADING)
-            .help("Change the image colorspace during decoding")
+            .help("Change the image colorspace")
             .long_help(COLORSPACE_HELP)
             .value_parser(value_parser!(IColorSpace))
-            .default_value("rgb")
             .hide_possible_values(true),
         Arg::new("max-width")
             .long("max-width")
@@ -238,7 +237,8 @@ fn add_operations() -> Vec<Arg>
             .group("operations"),
         Arg::new("stretch_contrast")
             .long("stretch-contrast")
-            .value_name("lower:upper")
+            .value_parser(value_parser!(u16))
+            .value_names(["lower", "upper"])
             .help_heading(HELP_HEADING)
             .help("Linearly stretch contrast in an image")
             .group("operations"),
@@ -251,9 +251,18 @@ fn add_operations() -> Vec<Arg>
             .group("operations"),
         Arg::new("resize")
             .long("resize")
-            .value_name("width x height")
+            .value_names(["width", "height"])
             .help_heading(HELP_HEADING)
+            .value_parser(value_parser!(usize))
             .help("Resize an image")
+            .group("operations"),
+        // TODO: Value names
+        Arg::new("depth")
+            .long("depth")
+            .help_heading(HELP_HEADING)
+            .help("Change image depth")
+            .default_values(["8", "16"])
+            .value_parser(value_parser!(u8))
             .group("operations")
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
