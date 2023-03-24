@@ -8,7 +8,7 @@ use log::{info, log_enabled, Level};
 use zune_core::bit_depth::BitDepth;
 use zune_core::options::EncoderOptions;
 
-use crate::bit_depth::{From9To13Bits, JxlBitEncoder, MoreThan14Bits, UpTo8Bits};
+use crate::bit_depth::{JxlBitEncoder, MoreThan14Bits, UpTo8Bits};
 use crate::bit_writer::{
     encode_hybrid_uint_lz77, encode_hybrid_unit_000, BitWriter, BorrowingBitWriter
 };
@@ -205,9 +205,10 @@ impl PrefixCode
             let token_x = token as usize;
             lz77_cache_nbits[i] = lz77_nbits[token_x] + (nbits as u8) + raw_nbits[0];
 
-            lz77_cache_bits[i] = (u64::from(bits << lz77_nbits[token_x])
-                | u64::from(lz77_bits[token_x]))
-                << raw_nbits[0];
+            let bits = bits as u64;
+            lz77_cache_bits[i] = (((bits << lz77_nbits[token_x]) | u64::from(lz77_bits[token_x]))
+                << raw_nbits[0])
+                | u64::from(raw_bits[0]);
         }
 
         PrefixCode {
@@ -1136,15 +1137,13 @@ impl<'a> JxlSimpleEncoder<'a>
 
     /// Encode a jxl image producing the raw encoded
     /// bytes or an error if there was any
-    pub fn encode(&mut self) -> Result<Vec<u8>, JxlEncodeErrors>
+    pub fn encode(&self) -> Result<Vec<u8>, JxlEncodeErrors>
     {
         let depth = self.options.get_depth();
 
         let mut frame_state = match depth
         {
             BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
-            BitDepth::Ten => self.encode_inner(From9To13Bits::new(10))?,
-            BitDepth::Twelve => self.encode_inner(From9To13Bits::new(12))?,
             BitDepth::Sixteen => self.encode_inner(MoreThan14Bits())?,
             _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth))
         };
@@ -1214,12 +1213,12 @@ impl<'a> JxlSimpleEncoder<'a>
 
         let one_group = num_groups_x == 1 && num_groups_y == 1;
 
-        for g in 0..num_dc_groups_y * num_dc_groups_x
+        for g in 0..num_groups_y * num_groups_x
         {
             let xg = g % num_groups_x;
             let yg = g / num_groups_x;
             let y_offset = yg * 256;
-            let y_max = min(height - yg * 265, 256);
+            let y_max = min(height - yg * 256, 256);
             let y_begin = y_offset + max(0, y_max - 2 * effort) / 2;
             let y_count = min(2 * effort * y_max / 256, y_offset + y_max - y_begin - 1);
             let x_max = min(width - xg * 256, 256) / K_CHUNK_SIZE * K_CHUNK_SIZE;
@@ -1266,6 +1265,7 @@ impl<'a> JxlSimpleEncoder<'a>
             }
         }
         let mut codes = Vec::with_capacity(4);
+
         for i in 0..4
         {
             let code = PrefixCode::new::<B>(&raw_counts[i], &lz77_counts[i]);
@@ -1569,8 +1569,6 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         match depth
         {
             BitDepth::Eight => output.put_bits(2, 0),
-            BitDepth::Ten => output.put_bits(2, 1),
-            BitDepth::Twelve => output.put_bits(2, 0b10),
             _ =>
             {
                 output.put_bits(2, 0b11);
@@ -1693,3 +1691,23 @@ fn calculate_expected_input(options: &EncoderOptions) -> usize
         .checked_mul(options.get_colorspace().num_components())
         .unwrap()
 }
+
+// #[test]
+// fn hello()
+// {
+//     let file = std::fs::read("").unwrap();
+//     let mut data = zune_ppm::PPMDecoder::new(&file);
+//     let bytes = data.decode().unwrap().u8().unwrap();
+//     let (width, height) = data.get_dimensions().unwrap();
+//     let colorspace = data.get_colorspace().unwrap();
+//     let depth = data.get_bit_depth().unwrap();
+//
+//     let opts = EncoderOptions::default()
+//         .set_width(width)
+//         .set_height(height)
+//         .set_colorspace(colorspace)
+//         .set_depth(depth);
+//
+//     let encoder = JxlSimpleEncoder::new(&bytes, opts);
+//     encoder.encode().unwrap();
+// }
