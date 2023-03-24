@@ -23,12 +23,7 @@ pub const SUPPORTED_COLORSPACES: [ColorSpace; 4] = [
     ColorSpace::RGBA,
     ColorSpace::RGB
 ];
-pub const SUPPORTED_DEPTHS: [BitDepth; 4] = [
-    BitDepth::Eight,
-    BitDepth::Ten,
-    BitDepth::Twelve,
-    BitDepth::Sixteen
-];
+pub const SUPPORTED_DEPTHS: [BitDepth; 2] = [BitDepth::Eight, BitDepth::Sixteen];
 
 impl Debug for JxlEncodeErrors
 {

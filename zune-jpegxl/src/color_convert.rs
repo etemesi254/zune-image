@@ -83,15 +83,29 @@ where
 
 pub fn fill_row_rgb16<T>(pixels: &[u8], oxs: usize, y: &mut [T], co: &mut [T], cg: &mut [T])
 where
-    T: Add<Output = T> + Sub<Output = T> + Shr<u8, Output = T> + Copy + From<i16>
+    T: Add<Output = T>
+        + Sub<Output = T>
+        + Shr<u8, Output = T>
+        + Copy
+        + Into<i32>
+        + TryFrom<i32>
+        + Default
 {
     for (((rgb, y), co), cg) in pixels.chunks_exact(6).take(oxs).zip(y).zip(co).zip(cg)
     {
-        let r = i16::from_ne_bytes([rgb[0], rgb[1]]).into();
-        let g = i16::from_ne_bytes([rgb[2], rgb[3]]).into();
-        let b = i16::from_ne_bytes([rgb[4], rgb[5]]).into();
+        let r = u16::from_be_bytes([rgb[0], rgb[1]]).into();
+        let g = u16::from_be_bytes([rgb[2], rgb[3]]).into();
+        let b = u16::from_be_bytes([rgb[4], rgb[5]]).into();
 
-        convert_rgb_to_ycocg(r, g, b, y, co, cg);
+        let mut y_x = (*y).into();
+        let mut co_x = (*co).into();
+        let mut cg_x = (*cg).into();
+
+        convert_rgb_to_ycocg::<i32>(r, g, b, &mut y_x, &mut co_x, &mut cg_x);
+
+        *y = T::try_from(y_x).unwrap_or_default();
+        *co = T::try_from(co_x).unwrap_or_default();
+        *cg = T::try_from(cg_x).unwrap_or_default();
     }
 }
 
@@ -120,7 +134,13 @@ pub fn fill_row_rgba8<T>(
 pub fn fill_row_rgba16<T>(
     pixels: &[u8], oxs: usize, y: &mut [T], co: &mut [T], cg: &mut [T], alpha: &mut [T]
 ) where
-    T: Add<Output = T> + Sub<Output = T> + Shr<u8, Output = T> + Copy + From<i16>
+    T: Add<Output = T>
+        + Sub<Output = T>
+        + Shr<u8, Output = T>
+        + Copy
+        + Into<i32>
+        + TryFrom<i32>
+        + Default
 {
     for ((((rgb, y), co), cg), ca) in pixels
         .chunks_exact(8)
@@ -130,12 +150,20 @@ pub fn fill_row_rgba16<T>(
         .zip(cg)
         .zip(alpha)
     {
-        let r = i16::from_ne_bytes([rgb[0], rgb[1]]).into();
-        let g = i16::from_ne_bytes([rgb[2], rgb[3]]).into();
-        let b = i16::from_ne_bytes([rgb[4], rgb[5]]).into();
-        let a = i16::from_ne_bytes([rgb[6], rgb[7]]).into();
+        let r = u16::from_be_bytes([rgb[0], rgb[1]]).into();
+        let g = u16::from_be_bytes([rgb[2], rgb[3]]).into();
+        let b = u16::from_be_bytes([rgb[4], rgb[5]]).into();
+        let a = u16::from_ne_bytes([rgb[6], rgb[7]]).into();
 
-        convert_rgb_to_ycocg(r, g, b, y, co, cg);
-        *ca = a;
+        let mut y_x = (*y).into();
+        let mut co_x = (*co).into();
+        let mut cg_x = (*cg).into();
+
+        convert_rgb_to_ycocg::<i32>(r, g, b, &mut y_x, &mut co_x, &mut cg_x);
+
+        *y = T::try_from(y_x).unwrap_or_default();
+        *co = T::try_from(co_x).unwrap_or_default();
+        *cg = T::try_from(cg_x).unwrap_or_default();
+        *ca = T::try_from(a).unwrap_or_default();
     }
 }
