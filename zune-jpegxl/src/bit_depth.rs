@@ -9,6 +9,7 @@
 //! come with how they chose to support jpeg xl
 //!
 //!
+use std::fmt::Debug;
 use std::ops::{Add, BitXor, Shr, Sub};
 
 use crate::bit_writer::{encode_hybrid_unit_000, BitWriter};
@@ -43,7 +44,11 @@ pub(crate) trait JxlBitEncoder
         + TryInto<usize>
         + Shr<u8, Output = Self::Pixel>
         + From<u8>
-        + From<i16>;
+        + From<i16>
+        + TryFrom<u16>
+        + TryFrom<i32>
+        + Default
+        + Debug;
 
     /// This represents an unsigned pixel type
     /// used to represent an image pixel
@@ -166,77 +171,6 @@ impl JxlBitEncoder for UpTo8Bits
         else
         {
             8 + 2
-        }
-    }
-}
-
-pub struct From9To13Bits
-{
-    depth: u8
-}
-
-impl From9To13Bits
-{
-    // Last symbol is used for LZ77 lengths and has no limitations except allowing
-    // to represent 32 symbols in total.
-    // We cannot fit all the bits in a u16, so do not even try and use up to 8
-    // bits per raw symbol.
-    // There are at most 16 raw symbols, so Huffman coding can be SIMDfied without
-    // any special tricks.
-
-    pub fn new(depth: u8) -> From9To13Bits
-    {
-        From9To13Bits { depth }
-    }
-}
-
-impl JxlBitEncoder for From9To13Bits
-{
-    const K_INPUT_BYTES: usize = 2;
-    const KMIN_RAW_LENGTH: [u8; 20] = [0; 20];
-
-    const KMAX_RAW_LENGTH: [u8; 20] = [
-        8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 10, 155, 155, 155
-    ];
-    type Pixel = i16;
-    type Upixel = u16;
-
-    fn upixel_default() -> Self::Upixel
-    {
-        0
-    }
-
-    fn pixel_zero() -> Self::Pixel
-    {
-        0
-    }
-
-    fn upixel_zero() -> Self::Upixel
-    {
-        0
-    }
-
-    fn from_u32(value: u32) -> Self::Upixel
-    {
-        value as u16
-    }
-
-    fn max_encoded_bits_per_sample(&self) -> usize
-    {
-        16
-    }
-
-    fn num_symbols(&self, doing_ycocg: bool) -> usize
-    {
-        // values gain 1 bit for YCoCg, 1 bit for prediction.
-        // Maximum symbol is 1 + effective bit depth of residuals.
-        if doing_ycocg
-        {
-            usize::from(self.depth + 3)
-        }
-        else
-        {
-            usize::from(self.depth + 2)
         }
     }
 }

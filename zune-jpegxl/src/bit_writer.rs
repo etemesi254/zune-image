@@ -223,8 +223,7 @@ impl<'a> BorrowingBitWriter<'a>
                 // handle remainder bytes
                 buffer.fill(0);
 
-                let extra = SINGLE_CHUNK - remainder.len();
-                buffer[..SINGLE_CHUNK - extra].copy_from_slice(remainder);
+                buffer[..remainder.len()].copy_from_slice(remainder);
                 self.put_bits((remainder.len() * 8) as u8, u64::from_le_bytes(buffer));
             }
             self.flush();
