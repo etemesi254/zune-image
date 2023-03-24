@@ -52,6 +52,31 @@ impl Frame
         }
     }
 
+    /// Return a mutable reference to the vector of
+    /// channels for this frame
+    ///
+    ///
+    /// # Examples
+    ///
+    ///  Popping the last channel from this frame
+    ///
+    /// ```
+    /// use zune_image::channel::Channel;
+    /// use zune_image::frame::Frame;
+    ///
+    /// let channel = vec![Channel::new::<u8>();4];
+    /// let mut frame = Frame::new(channel);
+    /// frame.channels_vec().pop();
+    ///
+    /// // length changed from 4 to 3 since we removed
+    /// // the last channel
+    /// assert_eq!(frame.channels_vec().len(),3);
+    /// ```
+    pub fn channels_vec(&mut self) -> &mut Vec<Channel>
+    {
+        &mut self.channels
+    }
+
     /// Create a new frame with specified duration
     ///
     /// # Arguments
@@ -114,6 +139,20 @@ impl Frame
     pub fn add(&mut self, channel: Channel)
     {
         self.channels.push(channel)
+    }
+
+    /// Insert a channel into the specified
+    /// index
+    ///
+    /// # Arguments
+    ///
+    /// * `index`: The index to which we are inserting the
+    /// channel
+    /// * `channel`: The channel to insert at that specific index
+    ///
+    pub fn insert(&mut self, index: usize, channel: Channel)
+    {
+        self.channels.insert(index, channel)
     }
 
     ///  Flatten all
@@ -356,6 +395,7 @@ impl Frame
     }
 }
 
+#[allow(unused_imports)]
 mod tests
 {
     use zune_core::colorspace::ColorSpace;
