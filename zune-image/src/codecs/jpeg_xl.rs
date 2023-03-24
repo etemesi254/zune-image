@@ -31,9 +31,9 @@ impl EncoderTrait for JxlEncoder
             .set_colorspace(colorspace)
             .set_depth(depth);
 
-        let data = image.to_u8();
+        let data = &image.to_u8()[0];
 
-        let mut encoder = JxlSimpleEncoder::new(&data, options);
+        let mut encoder = JxlSimpleEncoder::new(data, options);
 
         let data = encoder
             .encode()
