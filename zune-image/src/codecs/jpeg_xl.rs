@@ -33,7 +33,7 @@ impl EncoderTrait for JxlEncoder
 
         let data = &image.to_u8()[0];
 
-        let mut encoder = JxlSimpleEncoder::new(data, options);
+        let encoder = JxlSimpleEncoder::new(data, options);
 
         let data = encoder
             .encode()

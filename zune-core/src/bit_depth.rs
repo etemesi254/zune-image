@@ -93,7 +93,7 @@ impl BitDepth
     /// use zune_core::bit_depth::{BitDepth, BitType};
     /// assert_eq!(BitDepth::Eight.bit_type(),BitType::U8);
     ///
-    /// assert_eq!(BitDepth::Twelve.bit_type(),BitType::U16);
+    /// assert_eq!(BitDepth::Sixteen.bit_type(),BitType::U16);
     /// ```
     ///
     /// See also [size_of](BitDepth::size_of)
@@ -117,7 +117,7 @@ impl BitDepth
     /// store the pixels, a size_of [`u16`] is 2.
     /// ```
     /// use zune_core::bit_depth::BitDepth;
-    /// let depth = BitDepth::Twelve;
+    /// let depth = BitDepth::Sixteen;
     /// // greater 12 bits is greater than 8 and less than 16
     /// assert_eq!(depth.size_of(),2);
     /// ```
