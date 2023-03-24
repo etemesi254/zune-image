@@ -47,7 +47,19 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImgOperationsErrors>
             ))
         }
     };
-    image.channels.push(new_channel);
+    if image.is_animated()
+    {
+        // multiple images, loop cloning channel
+        image
+            .get_frames_mut()
+            .iter_mut()
+            .for_each(|x| x.add(new_channel.clone()))
+    }
+    else
+    {
+        // single image, just use the clone we have
+        image.get_frames_mut()[0].add(new_channel);
+    }
 
     Ok(())
 }
