@@ -3,9 +3,22 @@ use std::ops::Sub;
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;
 
+///
 /// Linearly stretches the contrast in an image in place,
 /// sending lower to image minimum and upper to image maximum.
-pub fn stretch_contrast<T>(image: &mut [T], lower: T, upper: T)
+///
+/// # Arguments
+///
+/// * `image`: Image channel pixels
+/// * `lower`:  The lower minimum for which pixels below this value
+///  become 0
+/// * `upper`:  Upper maximum for which pixels above this value become the maximum
+///  value
+/// * `maximum`: Maximum value for this pixel type.
+///
+/// - Modifies array in place
+///
+pub fn stretch_contrast<T>(image: &mut [T], lower: T, upper: T, maximum: u32)
 where
     T: Ord + Sub<Output = T> + NumOps<T> + Copy,
     u32: std::convert::From<T>
@@ -36,7 +49,7 @@ where
         }
         else
         {
-            let numerator = 255 * u32::from(*pixel - lower);
+            let numerator = maximum * u32::from(*pixel - lower);
             let scaled = fastdiv_u32(numerator, mod_len);
             *pixel = T::from_u32(scaled);
         }
@@ -60,7 +73,7 @@ mod benchmarks
         let mut in_vec = vec![255_u16; dimensions];
 
         b.iter(|| {
-            stretch_contrast(&mut in_vec, 3, 10);
+            stretch_contrast(&mut in_vec, 3, 10, 65535);
         });
     }
 }
