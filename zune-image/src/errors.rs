@@ -1,4 +1,5 @@
 //! PSDDecodeErrors possible during image processing
+use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitType;
@@ -19,7 +20,8 @@ pub enum ImageErrors
     OperationsError(ImgOperationsErrors),
     EncodeErrors(ImgEncodeErrors),
     GenericString(String),
-    GenericStr(&'static str)
+    GenericStr(&'static str),
+    WrongTypeId(TypeId, TypeId)
 }
 
 /// PSDDecodeErrors that may occur during image operations
@@ -92,6 +94,13 @@ impl Debug for ImageErrors
                 writeln!(
                     f,
                     "Dimensions mismatch, expected {expected} but found {found}"
+                )
+            }
+            ImageErrors::WrongTypeId(expected, found) =>
+            {
+                writeln!(
+                    f,
+                    "Expected type with ID of {expected:?} but found {found:?}"
                 )
             }
         }
