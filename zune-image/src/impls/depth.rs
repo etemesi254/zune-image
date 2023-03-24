@@ -44,7 +44,7 @@ impl OperationsTrait for Depth
         {
             match (image_depth, self.depth)
             {
-                (BitDepth::Eight, BitDepth::Ten | BitDepth::Twelve | BitDepth::Sixteen) =>
+                (BitDepth::Eight, BitDepth::Sixteen) =>
                 {
                     let old_data = channel.reinterpret_as().unwrap();
                     let mut new_channel = Channel::new_with_length::<u16>(old_data.len() * 2);
@@ -56,7 +56,7 @@ impl OperationsTrait for Depth
                     *channel = new_channel;
                 }
 
-                (BitDepth::Sixteen | BitDepth::Twelve | BitDepth::Ten, BitDepth::Eight) =>
+                (BitDepth::Sixteen, BitDepth::Eight) =>
                 {
                     let old_data = channel.reinterpret_as::<u16>().unwrap();
                     let mut new_channel = Channel::new_with_length::<u8>(channel.len() / 2);
@@ -67,17 +67,7 @@ impl OperationsTrait for Depth
 
                     *channel = new_channel;
                 }
-                (
-                    BitDepth::Sixteen | BitDepth::Ten | BitDepth::Twelve,
-                    BitDepth::Twelve | BitDepth::Ten | BitDepth::Sixteen
-                ) =>
-                {
-                    // simple rescaling/clamping byte types do not change so we are okay
-                    for pix in channel.reinterpret_as_mut::<u16>().unwrap()
-                    {
-                        *pix = (*pix).clamp(0_u16, self.depth.max_value());
-                    }
-                }
+
                 (_, _) =>
                 {
                     let msg = format!(
