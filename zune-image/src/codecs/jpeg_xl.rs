@@ -59,12 +59,7 @@ impl EncoderTrait for JxlEncoder
 
     fn supported_bit_depth(&self) -> &'static [BitDepth]
     {
-        &[
-            BitDepth::Eight,
-            BitDepth::Ten,
-            BitDepth::Twelve,
-            BitDepth::Sixteen
-        ]
+        &[BitDepth::Eight, BitDepth::Sixteen]
     }
 
     fn default_depth(&self) -> BitDepth
