@@ -40,12 +40,14 @@ impl OperationsTrait for StretchContrast
                 BitType::U8 => stretch_contrast(
                     channel.reinterpret_as_mut::<u8>().unwrap(),
                     self.lower as u8,
-                    self.upper as u8
+                    self.upper as u8,
+                    u32::from(depth.max_value())
                 ),
                 BitType::U16 => stretch_contrast(
                     channel.reinterpret_as_mut::<u16>().unwrap(),
                     self.lower,
-                    self.upper
+                    self.upper,
+                    u32::from(depth.max_value())
                 ),
                 _ => todo!()
             }
