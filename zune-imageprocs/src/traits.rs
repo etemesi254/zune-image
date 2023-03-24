@@ -38,6 +38,10 @@ pub trait NumOps<T>
     /// using an `as` cast
     fn from_i32(x: i32) -> T;
 
+    /// Convert an u64 to type T
+    /// using an `as` cast
+    fn from_u64(x: u64) -> T;
+
     /// Saturating addition.
     ///
     /// Computes self + other, saturating at the relevant high
@@ -118,6 +122,11 @@ macro_rules! numops_for_int {
             }
             #[inline(always)]
             fn from_i32(x: i32) -> $int
+            {
+                x as $int
+            }
+            #[inline(always)]
+            fn from_u64(x: u64) -> $int
             {
                 x as $int
             }
