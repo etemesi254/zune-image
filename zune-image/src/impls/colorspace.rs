@@ -88,6 +88,19 @@ impl OperationsTrait for ColorspaceConv
                 let converter = RgbToGrayScale::new().preserve_alpha(self.to.has_alpha());
                 converter.execute(image).unwrap();
             }
+            (ColorSpace::Luma | ColorSpace::LumaA, ColorSpace::RGB | ColorSpace::RGBA) =>
+            {
+                convert_luma_to_rgb(image, self.to)?;
+            }
+            (ColorSpace::LumaA, ColorSpace::Luma) =>
+            {
+                // pop last item in the vec which should
+                // contain the alpha channel
+                for frame in image.get_frames_mut()
+                {
+                    frame.channels_vec().pop().unwrap();
+                }
+            }
 
             (a, b) =>
             {
@@ -105,4 +118,47 @@ impl OperationsTrait for ColorspaceConv
     {
         &[BitType::U16, BitType::U8]
     }
+}
+
+fn convert_luma_to_rgb(
+    image: &mut Image, out_colorspace: ColorSpace
+) -> Result<(), ImgOperationsErrors>
+{
+    let color = image.get_colorspace();
+    for frame in image.get_frames_mut()
+    {
+        let luma_channel = frame.get_channels_ref(ColorSpace::Luma, true)[0].to_owned();
+
+        if color == ColorSpace::Luma
+        {
+            // add two more luma channels
+            frame.add(luma_channel.clone());
+            frame.add(luma_channel);
+        }
+        else if color == ColorSpace::LumaA
+        {
+            // we need to insert since layout is
+            // Luma, Alpha
+            // we want Luma+Luma+Luma+Alpha
+            // so we clone and insert
+            frame.insert(1, luma_channel.clone());
+            frame.insert(1, luma_channel);
+
+            if out_colorspace.has_alpha()
+            {
+                // output should not have alpha even if input does
+                // we structured it in that alpha channel is the last element
+                // in the array, so we can pop it
+                frame.channels_vec().pop().expect("No channel present");
+            }
+        }
+        else
+        {
+            let msg = format!(
+                "Unsupported colorspace {color:?} in conversion from luma to RGB,colorspace"
+            );
+            return Err(ImgOperationsErrors::GenericString(msg));
+        }
+    }
+    Ok(())
 }
