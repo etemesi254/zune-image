@@ -86,9 +86,12 @@ impl EncoderTrait for FarbFeldEncoder
             .set_width(width)
             .set_height(height)
             .set_depth(image.get_depth());
-        let data = image.to_u8();
 
-        let encoder_options = zune_farbfeld::FarbFeldEncoder::new(&data, options);
+        assert_eq!(image.get_depth(), BitDepth::Sixteen);
+
+        let data = &image.to_u8()[0];
+
+        let encoder_options = zune_farbfeld::FarbFeldEncoder::new(data, options);
 
         let data = encoder_options
             .encode()
