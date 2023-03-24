@@ -43,15 +43,10 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
     let max_height = *options.get_one::<usize>("max-height").unwrap();
     let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
     let strict_mode = *options.get_one::<bool>("strict").unwrap();
-    let out_colorspace = options
-        .get_one::<IColorSpace>("colorspace")
-        .unwrap()
-        .to_colorspace();
 
     DecoderOptions::new_cmd()
         .set_max_height(max_height)
         .set_max_width(max_width)
         .set_use_unsafe(use_unsafe)
-        .jpeg_set_out_colorspace(out_colorspace)
         .set_strict_mode(strict_mode)
 }

@@ -1,8 +1,11 @@
 use clap::ArgMatches;
 use log::debug;
+use zune_core::bit_depth::BitDepth;
 use zune_image::impls::brighten::Brighten;
+use zune_image::impls::colorspace::ColorspaceConv;
 use zune_image::impls::contrast::Contrast;
 use zune_image::impls::crop::Crop;
+use zune_image::impls::depth::Depth;
 use zune_image::impls::flip::Flip;
 use zune_image::impls::flop::Flop;
 use zune_image::impls::gamma::Gamma;
@@ -17,7 +20,7 @@ use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
 use zune_image::workflow::WorkFlow;
 
-use crate::cmd_args::arg_parsers::get_four_pair_args;
+use crate::cmd_args::arg_parsers::{get_four_pair_args, IColorSpace};
 
 pub fn parse_options(
     workflow: &mut WorkFlow, order_args: &[String], args: &ArgMatches
@@ -145,25 +148,20 @@ pub fn parse_options(
         }
         else if argument == "stretch_contrast"
         {
-            let value = args.get_one::<String>(argument).unwrap();
-            let split_args: Vec<&str> = value.split(':').collect();
+            let values = args
+                .get_many::<u16>(argument)
+                .unwrap()
+                .collect::<Vec<&u16>>();
 
-            if split_args.len() != 2
-            {
-                return Err(format!("Stretch contrast operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
-            }
-            // parse first one as threshold
-            let lower = split_args[0];
-            let lower_u16 = str::parse::<u16>(lower).map_err(|x| x.to_string())?;
+            let lower = *values[0];
 
-            let upper = split_args[1];
-            let upper_u16 = str::parse::<u16>(upper).map_err(|x| x.to_string())?;
+            let upper = *values[1];
 
             debug!(
                 "Added stretch contrast filter with lower={} and upper={}",
                 lower, upper
             );
-            let stretch_contrast = StretchContrast::new(lower_u16, upper_u16);
+            let stretch_contrast = StretchContrast::new(lower, upper);
             workflow.add_operation(Box::new(stretch_contrast));
         }
         else if argument == "gamma"
@@ -180,19 +178,14 @@ pub fn parse_options(
         }
         else if argument == "resize"
         {
-            let value = args.get_one::<String>(argument).unwrap();
-            let split_val = value.split('x').collect::<Vec<&str>>();
+            let values = args
+                .get_many::<usize>(argument)
+                .unwrap()
+                .collect::<Vec<&usize>>();
 
-            if split_val.len() != 2
-            {
-                return Err(format!(
-                    "Expected width and height separated by  `x` but got {} args",
-                    split_val.len()
-                ));
-            }
-            let width = str::parse::<usize>(split_val[0].trim()).unwrap();
+            let width = *values[0];
 
-            let height = str::parse::<usize>(split_val[1].trim()).unwrap();
+            let height = *values[1];
 
             let func = Resize::new(width, height, ResizeMethod::Bilinear);
 
@@ -201,6 +194,35 @@ pub fn parse_options(
                 width, height
             );
             workflow.add_operation(Box::new(func));
+        }
+        else if argument == "depth"
+        {
+            let value = *args.get_one::<u8>(argument).unwrap();
+            let depth = match value
+            {
+                8 => BitDepth::Eight,
+                16 => BitDepth::Sixteen,
+                _ =>
+                {
+                    return Err(format!(
+                        "Unknown depth value {value}, supported depths are 8 and 16"
+                    ))
+                }
+            };
+            debug!("Added depth operation with depth of {value}");
+
+            workflow.add_operation(Box::new(Depth::new(depth)));
+        }
+        else if argument == "colorspace"
+        {
+            let colorspace = args
+                .get_one::<IColorSpace>("colorspace")
+                .unwrap()
+                .to_colorspace();
+
+            debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
+
+            workflow.add_operation(Box::new(ColorspaceConv::new(colorspace)))
         }
     }
     Ok(())
