@@ -126,7 +126,7 @@ impl EncoderTrait for JpegEncoder
             "Unsupported bit depth{:?}",
             image.get_depth()
         );
-        let pixels = image.flatten::<u8>();
+        let pixels = &image.flatten_frames::<u8>()[0];
 
         if let Some(colorspace) = match_colorspace_to_colortype(image.get_colorspace())
         {
@@ -154,7 +154,7 @@ impl EncoderTrait for JpegEncoder
             encoder.set_progressive(self.progressive);
             encoder.set_optimized_huffman_tables(self.optimized_huffman);
 
-            encoder.encode(&pixels, width as u16, height as u16, colorspace)?;
+            encoder.encode(pixels, width as u16, height as u16, colorspace)?;
 
             Ok(encoded_data)
         }

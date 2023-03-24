@@ -103,9 +103,9 @@ impl EncoderTrait for QoiEncoder
             .set_colorspace(colorspace)
             .set_depth(depth);
 
-        let data = image.to_u8();
+        let data = &image.to_u8()[0];
 
-        let mut qoi_encoder = zune_qoi::QoiEncoder::new(&data, options);
+        let mut qoi_encoder = zune_qoi::QoiEncoder::new(data, options);
 
         let data = qoi_encoder
             .encode()
