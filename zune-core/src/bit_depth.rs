@@ -22,25 +22,6 @@ pub enum BitDepth
     /// For images with bit depths lower than this, they will be scaled
     /// to this bit depth
     Eight,
-    /// Ten bit depth
-    ///
-    /// Images with such bit depth use [`u16`] to store values but they
-    /// only use 10 bits, i.e from 0-1024.
-    ///
-    /// Preserved across image operations
-    ///
-    /// This is provided as a compatibility to allow decoding and encoding of av1 images
-    /// (when fully supported)
-    ///
-    /// Data is stored and processed in native endian
-    Ten,
-    /// Twelve bit depth
-    ///
-    /// Images with such bit depths use [`u16`] to store values but they
-    /// only use 12 bits.
-    ///
-    /// Data is stored and processed in native endian
-    Twelve,
     /// U16 bit depth
     ///
     /// Images with such bit depths use [`u16`] to store values and use the whole range
@@ -91,8 +72,6 @@ impl BitDepth
         match self
         {
             Self::Eight => (1 << 08) - 1,
-            Self::Ten => (1 << 10) - 1,
-            Self::Twelve => (1 << 12) - 1,
             Self::Sixteen => u16::MAX,
             Self::Unknown => 0,
         }
@@ -123,7 +102,7 @@ impl BitDepth
         match self
         {
             Self::Eight => BitType::U8,
-            Self::Ten | Self::Twelve | Self::Sixteen => BitType::U16,
+            Self::Sixteen => BitType::U16,
             Self::Unknown => panic!("Unknown bit type")
         }
     }
@@ -147,7 +126,7 @@ impl BitDepth
         match self
         {
             Self::Eight => 1,
-            Self::Ten | Self::Twelve | Self::Sixteen => 2,
+            Self::Sixteen => 2,
             Self::Unknown => panic!("Unknown bit type")
         }
     }
@@ -156,10 +135,8 @@ impl BitDepth
         match self
         {
             Self::Eight => 8,
-            Self::Ten => 10,
-            Self::Twelve => 12,
             Self::Sixteen => 16,
-            Self::Unknown => panic!("Unknown bit depth"),
+            Self::Unknown => panic!("Unknown bit depth")
         }
     }
 }
