@@ -113,6 +113,20 @@ impl EncoderTrait for QoiEncoder
 
         Ok(data)
     }
+    fn default_colorspace(&self, colorspace: ColorSpace) -> ColorSpace
+    {
+        // if colorspace has an alpha channel,
+        // we want to preserve it in the final encoder
+        if colorspace.has_alpha()
+        {
+            ColorSpace::RGBA
+        }
+        else
+        {
+            // otherwise, just stick up to the one we know
+            ColorSpace::RGB
+        }
+    }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace]
     {
