@@ -118,7 +118,7 @@ fn copy_removing_padding(
 }
 
 /// Convert YCCK image to rgb
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
     output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8]

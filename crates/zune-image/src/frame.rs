@@ -39,7 +39,7 @@ impl Frame
     /// use zune_image::frame::Frame;
     /// // create a group of channels, this should
     /// // represent de-interleaved/single channel image contents
-    /// let channel = vec![Channel::new();3];
+    /// let channel = vec![Channel::new::<u8>();3];
     /// // create a new frame  
     /// let frame = Frame::new(channel);
     ///
@@ -91,7 +91,7 @@ impl Frame
     /// ```
     /// use zune_image::channel::Channel;
     /// use zune_image::frame::Frame;
-    /// let channels = vec![Channel::new();3];
+    /// let channels = vec![Channel::new::<u8>();3];
     /// // create a new frame
     /// let frame = Frame::new_with_duration(channels,60);
     ///

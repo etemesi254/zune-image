@@ -221,7 +221,7 @@ impl Image
         self.metadata.set_colorspace(colorspace);
     }
 
-    /// Fill the image with
+    /// Create an image with a static color in it
     pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T>>(
         pixel: T, depth: BitDepth, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>

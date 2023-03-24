@@ -1,8 +1,6 @@
 use clap::ArgMatches;
 use zune_core::options::DecoderOptions;
 
-use crate::cmd_args::arg_parsers::IColorSpace;
-
 pub mod global_options;
 
 pub mod filters;
