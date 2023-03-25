@@ -80,6 +80,66 @@ impl<'a> FarbFeldDecoder<'a>
         self.decoded_headers = true;
         Ok(())
     }
+
+    /// Return the minimum buffer size for which the buffer provided must be in order
+    /// to store decoded bytes into
+    ///
+    /// ## Returns
+    /// -  The size expected for a buffer of `&[u8]` which can
+    ///  hold the whole decoded bytes without overflow
+    pub fn output_buffer_size(&self) -> Option<usize>
+    {
+        if self.decoded_headers
+        {
+            Some(
+                (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
+                    .checked_mul(self.width)
+                    .unwrap()
+                    .checked_mul(self.height)
+                    .unwrap()
+                    .checked_mul(2 /*depth*/)
+                    .unwrap()
+            )
+        }
+        else
+        {
+            None
+        }
+    }
+    /// Decode data writing it into the buffer as native endian
+    ///
+    /// It is an error if the sink buffer is smaller than
+    /// [`output_buffer_size()`](Self::output_buffer_size)
+    ///
+    /// # Arguments
+    /// - `sink`: The output buffer which we will fill with bytes
+    pub fn decode_into(&mut self, sink: &mut [u8]) -> Result<(), &'static str>
+    {
+        if !self.decoded_headers
+        {
+            self.decode_headers()?;
+        }
+        if sink.len() < self.output_buffer_size().unwrap()
+        {
+            return Err("Too small output buffer size");
+        }
+        if !self.stream.has(self.output_buffer_size().unwrap())
+        {
+            return Err("Incomplete data");
+        }
+
+        // farbfeld uses big endian, and we want output in native endian
+        // so we read data as big endian and then convert it to native endian
+        // This should be a no-op in BE systems, a bswap in LE systems
+        for (datum, pix) in sink
+            .chunks_exact_mut(2)
+            .zip(self.stream.remaining_bytes().chunks_exact(2))
+        {
+            datum.copy_from_slice(&(u16::from_be_bytes(pix.try_into().unwrap())).to_ne_bytes());
+        }
+
+        Ok(())
+    }
     /// Decode a farbfeld data returning raw pixels or an error
     ///
     ///
@@ -89,7 +149,6 @@ impl<'a> FarbFeldDecoder<'a>
     /// let mut decoder = FarbFeldDecoder::new(b"NOT A VALID FILE");
     ///
     /// assert!(decoder.decode().is_err());
-    ///
     /// ```
     pub fn decode(&mut self) -> Result<Vec<u16>, &'static str>
     {
@@ -99,6 +158,8 @@ impl<'a> FarbFeldDecoder<'a>
             .saturating_mul(self.width)
             .saturating_mul(self.height);
 
+        // NOTE: This can be done via data.align() + decode_into()
+        // but that's unsafe, and doesn't please the Rust gods
         let mut data = vec![0; size];
 
         if !self.stream.has(size * FARBFELD_BIT_DEPTH.size_of())
