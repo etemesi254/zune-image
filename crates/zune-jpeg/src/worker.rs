@@ -384,7 +384,9 @@ pub(crate) fn upsample_and_color_convert_v(
         // so we do it now
         for c in remainder.iter_mut()
         {
-            if c.horizontal_sample == max_h_sample && c.vertical_sample == max_v_sample
+            if c.horizontal_sample == max_h_sample
+                && c.vertical_sample == max_v_sample
+                && c.horizontal_sample == 2
             {
                 // This one solves the following case
 
@@ -453,7 +455,9 @@ pub(crate) fn upsample_and_color_convert_v(
 
         for c in remainder.iter_mut()
         {
-            if c.horizontal_sample == max_h_sample && c.vertical_sample == max_v_sample
+            if c.horizontal_sample == max_h_sample
+                && c.vertical_sample == max_v_sample
+                && c.horizontal_sample == 2
             {
                 // see comment inside the same block when i > 0
                 continue;
