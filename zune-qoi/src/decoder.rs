@@ -181,6 +181,30 @@ impl<'a> QoiDecoder<'a>
 
         Ok(())
     }
+    /// Return the number of bytes required to hold a decoded image frame
+    /// decoded using the given input transformations
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
+    ///  - `None`: Indicates the image was not decoded.
+    ///
+    /// # Panics
+    /// In case `width*height*colorspace` calculation may overflow a usize
+    pub fn output_buffer_size(&self) -> Option<usize>
+    {
+        if self.decoded_headers
+        {
+            self.width
+                .checked_mul(self.height)
+                .unwrap()
+                .checked_mul(self.colorspace.num_components())
+        }
+        else
+        {
+            None
+        }
+    }
+
     /// Decode the bytes of a QOI image data, returning the
     /// uncompressed bytes or  the error encountered during decoding
     ///
@@ -196,25 +220,60 @@ impl<'a> QoiDecoder<'a>
     /// [`decode_headers`]:Self::decode_headers
     /// [`get_dimensions`]:Self::get_dimensions
     /// [QoiErrors]:crate::errors::QoiErrors
-    #[allow(clippy::identity_op)]
     pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors>
     {
-        self.decode_headers()?;
+        if !self.decoded_headers
+        {
+            self.decode_headers()?;
+        }
+        let mut output = vec![0; self.output_buffer_size().unwrap()];
+
+        self.decode_into(&mut output)?;
+
+        Ok(output)
+    }
+
+    /// Decode a compressed Qoi image and store the contents
+    /// into the output buffer
+    ///
+    /// Returns an error if the buffer cannot hold the contents
+    /// of the buffer
+    ///
+    /// # Arguments
+    ///
+    /// * `pixels`: Output buffer for which we will write decoded
+    /// pixels
+    ///
+    /// returns: Result<(), QoiErrors>
+    #[allow(clippy::identity_op)]
+    pub fn decode_into(&mut self, pixels: &mut [u8]) -> Result<(), QoiErrors>
+    {
+        if !self.decoded_headers
+        {
+            self.decode_headers()?;
+        }
+
+        if pixels.len() < self.output_buffer_size().unwrap()
+        {
+            return Err(QoiErrors::InsufficientData(
+                self.output_buffer_size().unwrap(),
+                pixels.len()
+            ));
+        }
 
         match self.colorspace.num_components()
         {
-            3 => self.decode_inner_generic::<3>(),
-            4 => self.decode_inner_generic::<4>(),
+            3 => self.decode_inner_generic::<3>(pixels)?,
+            4 => self.decode_inner_generic::<4>(pixels)?,
             _ => unreachable!()
         }
+        Ok(())
     }
-    fn decode_inner_generic<const SIZE: usize>(&mut self) -> Result<Vec<u8>, QoiErrors>
+    fn decode_inner_generic<const SIZE: usize>(
+        &mut self, pixels: &mut [u8]
+    ) -> Result<(), QoiErrors>
     {
         const LAST_BYTES: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
-
-        let size = self.height * self.width * SIZE;
-
-        let mut pixels = vec![0; size];
 
         let mut index = [[0_u8; 4]; 64];
         // starting pixel
@@ -302,7 +361,7 @@ impl<'a> QoiDecoder<'a>
 
         debug!("Finished decoding image");
 
-        Ok(pixels)
+        Ok(())
     }
 
     /// Returns QOI colorspace or none if the headers haven't been

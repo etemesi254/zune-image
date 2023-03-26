@@ -37,7 +37,7 @@ impl<'a> QoiEncoder<'a>
 
     /// Return the maximum size for which the encoder can safely
     /// encode the image without fearing for an out of space error
-    const fn max_size(&self) -> usize
+    fn max_size(&self) -> usize
     {
         self.options.get_width()
             * self.options.get_height()
