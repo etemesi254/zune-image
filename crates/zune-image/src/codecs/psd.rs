@@ -35,6 +35,26 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         Ok(image)
     }
 
+    fn get_dimensions(&self) -> Option<(usize, usize)>
+    {
+        self.get_dimensions()
+    }
+
+    fn get_out_colorspace(&self) -> ColorSpace
+    {
+        self.get_colorspace().unwrap()
+    }
+
+    fn get_name(&self) -> &'static str
+    {
+        "PSD Decoder"
+    }
+
+    fn is_experimental(&self) -> bool
+    {
+        true
+    }
+
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
@@ -54,26 +74,6 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         };
 
         Ok(Some(metadata))
-    }
-
-    fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        self.get_dimensions()
-    }
-
-    fn get_out_colorspace(&self) -> ColorSpace
-    {
-        self.get_colorspace().unwrap()
-    }
-
-    fn get_name(&self) -> &'static str
-    {
-        "PSD Decoder"
-    }
-
-    fn is_experimental(&self) -> bool
-    {
-        true
     }
 }
 
