@@ -11,13 +11,14 @@
 //! And that's how we represent images.
 //! Fully supported bit depths are 8 and 16, see channels for how that happens
 //!
+use std::fmt::Debug;
 use std::mem::size_of;
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_imageprocs::traits::NumOps;
 
-use crate::channel::Channel;
+use crate::channel::{Channel, ChannelErrors};
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
 use crate::frame::Frame;
@@ -208,7 +209,7 @@ impl Image
 
         for (frame, out) in self.frames.iter_mut().zip(out_pixel)
         {
-            frame.flatten_rgba(colorspace, out).unwrap();
+            frame.write_rgba(colorspace, out).unwrap();
         }
     }
     pub fn set_dimensions(&mut self, width: usize, height: usize)
@@ -223,20 +224,14 @@ impl Image
 
     /// Create an image with a static color in it
     pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T>>(
-        pixel: T, depth: BitDepth, colorspace: ColorSpace, width: usize, height: usize
+        pixel: T, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>
     {
-        if core::mem::size_of::<T>() != depth.size_of()
-        {
-            return Err(ImageErrors::from(
-                "Size of T does not match bit depth, this is invalid"
-            ));
-        }
-        let dims = width * height * depth.size_of();
+        let dims = width * height * T::depth().size_of();
 
         let channels = vec![Channel::from_elm::<T>(dims, pixel); colorspace.num_components()];
 
-        let img = Image::new(channels, depth, width, height, colorspace);
+        let img = Image::new(channels, T::depth(), width, height, colorspace);
 
         Ok(img)
     }
@@ -247,6 +242,17 @@ impl Image
     /// The function will receive two parameters, the first is the current x offset and y offset
     /// and for each it's expected to return  an array with `MAX_CHANNELS`
     ///
+    /// # Arguments
+    ///  - width : The width of the new image
+    ///  - height: The height of the new image
+    ///  - colorspace: The new colorspace of the image
+    ///  - func: A function which will be called for every pixel position
+    ///   the function is supposed to return pixels for that position
+    ///      - y: The position in the y-axis, starts at 0, ends at image height
+    ///      - x: The position in the x-axis, starts at 0, ends at image width
+    ///      - pixels: A mutable region where you can write pixels to. The results
+    ///         will be copied to the pixel positions at pixel x,y for image channels
+    ///     
     /// # Limitations.
     ///
     /// Due to constrains imposed by the library, the response has to be an array containing
@@ -259,15 +265,13 @@ impl Image
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::image::{Image, MAX_CHANNELS};
     ///
-    /// fn dead_simple(x:usize,y:usize)->[u8;MAX_CHANNELS]
+    /// fn dead_simple(y:usize,x:usize,pixels:&mut [u8;MAX_CHANNELS])
     /// {    
-    ///     let mut arr = [0;MAX_CHANNELS];
     ///     // this will create a linear band of colors from black to white and repeats
     ///     // until the whole image is visited
     ///     let luma = ((x+y) % 256) as u8;
-    ///     arr[0] = luma;
-    ///     // then return it
-    ///     arr    
+    ///     pixels[0] = luma;
+    ///      
     /// }
     /// let img  = Image::from_fn(30,20,ColorSpace::Luma,dead_simple);
     /// ```
@@ -277,8 +281,8 @@ impl Image
     /// [MAX_CHANNELS]:MAX_CHANNELS
     pub fn from_fn<F, T>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
     where
-        F: Fn(usize, usize) -> [T; MAX_CHANNELS],
-        T: ZuneInts<T> + Copy + Clone + 'static
+        F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
     {
         match colorspace.num_components()
         {
@@ -299,25 +303,42 @@ impl Image
         width: usize, height: usize, func: F, colorspace: ColorSpace
     ) -> Image
     where
-        F: Fn(usize, usize) -> [T; MAX_CHANNELS],
-        T: ZuneInts<T> + Copy + Clone + 'static
+        F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
     {
         let size = width * height * COMPONENTS * T::depth().size_of();
 
-        let mut channels = vec![Channel::new_with_capacity::<T>(size); COMPONENTS];
+        let mut channels = vec![Channel::new_with_length::<T>(size); COMPONENTS];
 
-        let channels_ref: &mut [Channel; COMPONENTS] =
-            channels.get_mut(0..COMPONENTS).unwrap().try_into().unwrap();
+        // convert the channels into mutable T's
+        //
+        // Iterate to number of components,
+        // map the channels to &mut [T], using reintepret_as_mut
+        // collect the items into a temporary vec
+        // convert that vec to a fixed size array
+        // panic if everything goes wrong
+        let channels_ref: [&mut [T]; COMPONENTS] = channels
+            .get_mut(0..COMPONENTS)
+            .unwrap()
+            .iter_mut()
+            .map(|x| x.reinterpret_as_mut().unwrap())
+            .collect::<Vec<&mut [T]>>()
+            .try_into()
+            .unwrap();
+
+        let mut pxs = [T::default(); MAX_CHANNELS];
 
         for y in 0..height
         {
             for x in 0..width
             {
-                let value = (func)(x, y);
+                (func)(y, x, &mut pxs);
+
+                let offset = y * height + x;
 
                 for i in 0..COMPONENTS
                 {
-                    channels_ref[i].push(value[i]);
+                    channels_ref[i][offset] = pxs[i];
                 }
             }
         }
@@ -398,6 +419,97 @@ impl Image
         let pixels = deinterleave_u16(pixels, colorspace).unwrap();
 
         Image::new(pixels, depth, width, height, colorspace)
+    }
+}
+
+/// Pixel manipulation methods
+impl Image
+{
+    /// Modify pixels in place using function `func`
+    ///
+    /// This iterates through all frames in the channel and calls
+    /// a function on each mutable pixel
+    ///
+    /// # Arguments
+    /// - func: Function which will modify the pixels
+    ///     The arguments used are
+    ///     - `y: usize`, the current position of the height we are currently in
+    ///     - `x: usize`, the current position on the x axis we are in
+    ///     - `[&mut T;MAX_CHANNELS]`, the pixels at `[y,x]` from the channels which
+    ///        can be modified.
+    ///        Even though it returns `MAX_CHANNELS`, only the image colorspace components
+    ///        considered, so for Luma colorspace, we only use the first element in the array and the rest are
+    ///         ignored
+    ///
+    /// # Returns
+    ///  - Ok(()): Successful manipulation of image
+    ///  - Err(ChannelErrors):  The channel could not be converted to type `T`
+    ///
+    /// # Example
+    /// Modify pixels creating a gradient
+    ///
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::Image;
+    /// // fill image with black pixel
+    /// let mut image = Image::fill(0_u8,ColorSpace::RGB,800,800).unwrap();
+    ///
+    /// // then modify the pixels
+    /// // create a gradient
+    /// image.modify_pixels_mut(|x,y,pix|
+    ///     {
+    ///         let r = (0.3 * x as f32) as u8;
+    ///         let b = (0.3 * y as f32) as u8;
+    ///         // modify channels directly
+    ///         *pix[0] = r;
+    ///         *pix[2] = b;
+    /// }).unwrap();
+    ///
+    /// ```
+    pub fn modify_pixels_mut<T, F>(&mut self, func: F) -> Result<(), ChannelErrors>
+    where
+        T: ZuneInts<T> + Default + Copy + 'static,
+        F: Fn(usize, usize, [&mut T; MAX_CHANNELS])
+    {
+        let colorspace = self.get_colorspace();
+
+        let (width, height) = self.get_dimensions();
+
+        for frame in self.frames.iter_mut()
+        {
+            let mut pixel_muts: Vec<&mut [T]> = vec![];
+
+            // convert all channels to type T
+            for channel in frame.get_channels_mut(colorspace, false)
+            {
+                pixel_muts.push(channel.reinterpret_as_mut()?)
+            }
+            for y in 0..height
+            {
+                for x in 0..width
+                {
+                    let position = y * height + x;
+
+                    // This must be kept in sync with
+                    // MAX_CHANNELS, we can't do it another way
+                    // since they are references
+                    let mut output: [&mut T; MAX_CHANNELS] = [
+                        &mut T::default(),
+                        &mut T::default(),
+                        &mut T::default(),
+                        &mut T::default()
+                    ];
+                    // push pixels from channel to temporary output
+                    for (i, j) in (pixel_muts.iter_mut()).zip(output.iter_mut())
+                    {
+                        *j = &mut i[position]
+                    }
+
+                    (func)(y, x, output);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
