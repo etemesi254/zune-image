@@ -47,7 +47,6 @@ impl<'a> JpegDecoder<'a>
     {
         setup_component_params(self)?;
 
-        self.check_component_dimensions()?;
         let mcu_height;
 
         // memory location for decoded pixels for components
@@ -200,7 +199,6 @@ impl<'a> JpegDecoder<'a>
         &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors>
     {
-        self.check_component_dimensions()?;
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 

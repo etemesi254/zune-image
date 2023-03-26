@@ -83,7 +83,6 @@ impl<'a> JpegDecoder<'a>
     {
         setup_component_params(self)?;
 
-        self.check_component_dimensions()?;
         // check dc and AC tables
         self.check_tables()?;
 

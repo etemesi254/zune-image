@@ -10,7 +10,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{ComponentID, Components, SampleRatios};
+use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{
     parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
@@ -881,55 +881,6 @@ impl<'a> JpegDecoder<'a>
         {
             None
         };
-    }
-
-    /// Check that all components have the correct width and height
-    /// before continuing to decode
-    ///
-    /// This helps to identify some corrupt images that may have invalid widths and heights and error out
-    /// before trying to decode.
-    pub(crate) fn check_component_dimensions(&self) -> Result<(), DecodeErrors>
-    {
-        // find  y component
-        let y_comp = self
-            .components
-            .iter()
-            .find(|c| c.component_id == ComponentID::Y)
-            .ok_or(DecodeErrors::FormatStatic(
-                "Could not find Y component for the image"
-            ))?;
-
-        let y_width = y_comp.width_stride;
-        let cb_cr_width = y_width / self.h_max;
-
-        for comp in &self.components
-        {
-            if comp.component_id == ComponentID::Y
-            {
-                continue;
-            }
-
-            if comp.width_stride != cb_cr_width
-            {
-                return Err(DecodeErrors::Format(format!("Invalid image width and height stride for component {:?}, expected {}, but found {}", comp.component_id, cb_cr_width, comp.width_stride)));
-            }
-
-            // this was usually there until it was reported that Cb and Cr
-            //
-            // may have different sampling factors ??.
-            // Ideally those images aren't right, but edge cases
-            //
-            // if (comp.horizontal_sample != 1 || comp.vertical_sample != 1)
-            //     && comp.component_id != ComponentID::Y
-            // {
-            //     return Err(DecodeErrors::Format(format!(
-            //         "Invalid component sample for component {:?}, expected (1,1), found ({},{})",
-            //         comp.component_id, comp.vertical_sample, comp.horizontal_sample
-            //     )));
-            // }
-        }
-
-        Ok(())
     }
 }
 
