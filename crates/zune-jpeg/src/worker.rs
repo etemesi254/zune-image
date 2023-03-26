@@ -369,6 +369,11 @@ pub(crate) fn upsample_and_color_convert_v(
 
     let out_stride = width * output_colorspace.num_components() * 2;
 
+    let (max_h_sample, max_v_sample) = (
+        y_component[0].horizontal_sample,
+        y_component[0].vertical_sample
+    );
+
     let width_stride = y_component[0].width_stride * 2;
     let stop_offset = y_component[0].raw_coeff.len() / width_stride;
 
@@ -379,6 +384,22 @@ pub(crate) fn upsample_and_color_convert_v(
         // so we do it now
         for c in remainder.iter_mut()
         {
+            if c.horizontal_sample == max_h_sample && c.vertical_sample == max_v_sample
+            {
+                // This one solves the following case
+
+                //  Component ID:Y    HS:2 VS:2 QT:0
+                //  Component ID:Cb   HS:2 VS:2 QT:1
+                //  Component ID:Cr   HS:1 VS:1 QT:2
+                //
+                // Cb component should not be up-sampled, since it contains
+                // the same sampling factor as Y,so if it is the case do not
+                // try to sample it.
+                // Ideally, it should be using self.h_max, and self.v_max, but
+                // that's a story for another day.
+                continue;
+            }
+
             let stride = c.width_stride;
 
             let dest = &mut c.upsample_dest;
@@ -432,6 +453,12 @@ pub(crate) fn upsample_and_color_convert_v(
 
         for c in remainder.iter_mut()
         {
+            if c.horizontal_sample == max_h_sample && c.vertical_sample == max_v_sample
+            {
+                // see comment inside the same block when i > 0
+                continue;
+            }
+
             let stride = c.width_stride * c.vertical_sample;
             let mut row_up: &[i16] = &[];
             // row below current sample
