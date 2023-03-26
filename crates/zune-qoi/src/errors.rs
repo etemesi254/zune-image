@@ -29,7 +29,9 @@ pub enum QoiErrors
     /// Generic message
     Generic(String),
     /// Generic message does not need heap allocation
-    GenericStatic(&'static str)
+    GenericStatic(&'static str),
+    /// To small output size
+    TooSmallOutput(usize, usize)
 }
 
 impl Debug for QoiErrors
@@ -70,6 +72,13 @@ impl Debug for QoiErrors
             QoiErrors::GenericStatic(val) =>
             {
                 writeln!(f, "{val}")
+            }
+            QoiErrors::TooSmallOutput(expected, found) =>
+            {
+                writeln!(
+                    f,
+                    "Too small output size, expected {expected}, but found {found}"
+                )
             }
         }
     }
