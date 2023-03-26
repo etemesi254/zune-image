@@ -14,7 +14,9 @@ qoi = ["zune-qoi"]
 jpeg-xl = ["zune-jpegxl"]
 serde-support = ["zune-core/serde", "serde"]
 image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl"]
-default = []
+
+default = ["all"]
+
 threads = []
 
 all = ["threads", "image_formats", "serde-support"]
@@ -36,3 +38,8 @@ log = "0.4.17"
 serde = { version = "1.0.152", optional = true }
 # External image APIs
 jpeg-encoder = { version = "0.5.1", optional = true, features = ["simd", "std"] }
+
+
+[dev-dependencies]
+num-complex = "0.4.3"
+image = { version = "0.24.6", features = ["png"] }
