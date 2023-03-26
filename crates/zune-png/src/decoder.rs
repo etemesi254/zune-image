@@ -102,9 +102,7 @@ pub struct PngDecoder<'a>
     pub(crate) seen_hdr:        bool,
     pub(crate) seen_ptle:       bool,
     pub(crate) seen_headers:    bool,
-    pub(crate) seen_trns:       bool,
-    pub(crate) use_sse2:        bool,
-    pub(crate) use_sse4:        bool
+    pub(crate) seen_trns:       bool
 }
 
 impl<'a> PngDecoder<'a>
@@ -118,9 +116,6 @@ impl<'a> PngDecoder<'a>
     #[allow(unused_mut, clippy::redundant_field_names)]
     pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
     {
-        let mut use_sse2 = options.use_sse2();
-        let mut use_sse4 = options.use_sse41();
-
         PngDecoder {
             seen_hdr:        false,
             stream:          ZByteReader::new(data),
@@ -137,8 +132,6 @@ impl<'a> PngDecoder<'a>
             seen_headers:    false,
             seen_gamma:      false,
             trns_bytes:      [0; 4],
-            use_sse2:        use_sse2,
-            use_sse4:        use_sse4,
             chunk_handler:   default_chunk_handler
         }
     }
@@ -284,6 +277,11 @@ impl<'a> PngDecoder<'a>
             crc
         })
     }
+    /// Decode headers from the ong stream and store information
+    /// in the internal structure
+    ///
+    /// After calling this, header information can
+    /// be accessed by public headers
     pub fn decode_headers(&mut self) -> Result<(), PngErrors>
     {
         // READ PNG signature
@@ -690,8 +688,8 @@ impl<'a> PngDecoder<'a>
         &mut self, deflate_data: &[u8], width: usize, height: usize
     ) -> Result<(), PngErrors>
     {
-        let use_sse4 = self.use_sse4;
-        let use_sse2 = self.use_sse2;
+        let use_sse4 = self.options.use_sse41();
+        let use_sse2 = self.options.use_sse2();
 
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
@@ -730,12 +728,6 @@ impl<'a> PngDecoder<'a>
             // X to be used by the filter
             components = 1;
         }
-
-        // if info.depth < 8
-        // {
-        //     // for bit packed components, do not allocate space, do it the normal way
-        //     out_components = components;
-        // }
 
         // add width plus colour component, this gives us number of bytes per every scan line
         chunk_size = width * out_n;
