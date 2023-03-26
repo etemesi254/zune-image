@@ -235,7 +235,7 @@ impl<'a> JpegDecoder<'a>
         return Some(self.info.clone());
     }
 
-    /// Return the number of bytes required to hold a de-interlaced image frame
+    /// Return the number of bytes required to hold a decoded image frame
     /// decoded using the given input transformations
     ///
     /// # Returns
