@@ -1,5 +1,29 @@
+use bitflags::bitflags;
+
 use crate::bit_depth::BitDepth;
 use crate::colorspace::ColorSpace;
+
+bitflags! {
+    /// Encoder options that are flags
+    struct EncoderFlags:u64{
+        /// Whether JPEG images should be encoded as progressive images
+        const JPEG_ENCODE_PROGRESSIVE = 0b0000_0000_0000_0000_0000_0000_0000_0001;
+        /// Whether JPEG images should use optimized huffman tables
+        const JPEG_OPTIMIZED_HUFFMAN  = 0b0000_0000_0000_0000_0000_0000_0000_0010;
+
+    }
+}
+impl Default for EncoderFlags
+{
+    fn default() -> Self
+    {
+        let mut options = EncoderFlags::empty();
+        options.set(EncoderFlags::JPEG_ENCODE_PROGRESSIVE, false);
+        options.set(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN, false);
+
+        options
+    }
+}
 
 /// Options shared by some of the encoders in
 /// the `zune-` family of image crates
@@ -11,7 +35,9 @@ pub struct EncoderOptions
     colorspace:  ColorSpace,
     quality:     u8,
     depth:       BitDepth,
-    num_threads: u8
+    num_threads: u8,
+    effort:      u8,
+    flags:       EncoderFlags
 }
 
 impl Default for EncoderOptions
@@ -24,7 +50,9 @@ impl Default for EncoderOptions
             colorspace:  ColorSpace::RGB,
             quality:     100,
             depth:       BitDepth::Eight,
-            num_threads: 4
+            num_threads: 4,
+            effort:      4,
+            flags:       EncoderFlags::default()
         }
     }
 }
@@ -37,9 +65,15 @@ impl EncoderOptions
         self.width
     }
 
-    /// Get the height for which the image will be encoded in
-    pub const fn get_height(&self) -> usize
+    /// Get height for which the image will be encoded in
+    ///
+    /// returns: usize
+    ///
+    /// # Panics
+    /// If height is zero
+    pub fn get_height(&self) -> usize
     {
+        assert_ne!(self.height, 0);
         self.height
     }
     /// Get the depth for which the image will be encoded in
@@ -48,6 +82,18 @@ impl EncoderOptions
         self.depth
     }
     /// Get the quality for which the image will be encoded with
+    ///
+    ///  # Lossy
+    /// - Higher quality means some images take longer to write and
+    /// are big but they look good
+    ///
+    /// - Lower quality means small images and low quality.
+    ///
+    /// # Lossless
+    /// - High quality indicates more time is spent in making the file
+    /// smaller
+    ///
+    /// - Low quality indicates less time is spent in making the file bigger
     pub const fn get_quality(&self) -> u8
     {
         self.quality
@@ -56,6 +102,10 @@ impl EncoderOptions
     pub const fn get_colorspace(&self) -> ColorSpace
     {
         self.colorspace
+    }
+    pub const fn get_effort(&self) -> u8
+    {
+        self.effort
     }
 
     /// Set width for the image to be encoded
@@ -105,5 +155,19 @@ impl EncoderOptions
     pub const fn get_num_threads(&self) -> u8
     {
         self.num_threads
+    }
+}
+
+/// JPEG options
+impl EncoderOptions
+{
+    pub const fn jpeg_encode_progressive(&self) -> bool
+    {
+        self.flags.contains(EncoderFlags::JPEG_ENCODE_PROGRESSIVE)
+    }
+
+    pub const fn jpeg_optimized_huffman_tables(&self) -> bool
+    {
+        self.flags.contains(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN)
     }
 }
