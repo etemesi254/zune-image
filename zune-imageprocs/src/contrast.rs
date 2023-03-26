@@ -1,5 +1,5 @@
 //! Calculate image contrast
-//! Algorithm is from https://www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/
+//! Algorithm is from [here](https://www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/)
 //!
 //! Steps repeated here for convenience
 //!
