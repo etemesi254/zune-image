@@ -1,16 +1,7 @@
-//! Entry point for all supported codecs  
-//! the library contains
+//! Entry point for all supported codecs the library understands
 //!
-//! Current status
-//!
-//! |IMAGE    | Decoder      |Encoder|
-//! |---------|--------------|-------|
-//! |JPEG     |Full support  | None |
-//! |PNG      |Partial       |None |
-//! |PPM      | 8 and 16 bit support |8 and 16 bit support|
-//! |PAL      | None |8 and 16 bit support |
-//! | Farbfeld|16 bit support|None|
-//!
+//! The codecs here can be enabled and disabled at will depending on the configured interface,
+//! it is recommended that you enable encoders and decoders that you only use
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types)]
 
@@ -28,6 +19,9 @@ pub mod psd;
 pub mod qoi;
 
 /// All supported image formats
+///
+/// This enum contains supported image formats, either
+/// encoders or decoders for a particular image
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ImageFormat
