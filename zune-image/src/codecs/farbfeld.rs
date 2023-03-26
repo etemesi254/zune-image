@@ -10,7 +10,7 @@ use crate::deinterleave::deinterleave_u16;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
-use crate::traits::{DecoderTrait, EncoderTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
 {
@@ -131,5 +131,23 @@ impl From<FarbFeldEncoderErrors> for ImgEncodeErrors
     fn from(value: FarbFeldEncoderErrors) -> Self
     {
         ImgEncodeErrors::ImageEncodeErrors(format!("{:?}", value))
+    }
+}
+
+impl<'b> DecodeInto for FarbFeldDecoder<'b>
+{
+    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>
+    {
+        self.decode_into(buffer)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>
+    {
+        self.decode_headers()?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buffer_size().unwrap())
     }
 }
