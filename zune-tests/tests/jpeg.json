@@ -89,5 +89,10 @@
     "name": "down_sampled_grayscale_prog.jpg",
     "hash": 45850175950794944394517639554623141997,
     "comment": "Down sampled progressive image with only grayscale component"
+  },
+  {
+    "name": "weird_sampling_2.jpeg",
+    "hash": 44023427629692410987754568486276016924,
+    "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   }
 ]
