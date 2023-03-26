@@ -50,8 +50,7 @@ pub(crate) struct FrameState
 pub struct JxlSimpleEncoder<'a>
 {
     data:    &'a [u8],
-    options: EncoderOptions,
-    effort:  usize
+    options: EncoderOptions
 }
 
 pub(crate) struct ChunkSampleCollector<'a, T: JxlBitEncoder>
@@ -1128,11 +1127,7 @@ impl<'a> JxlSimpleEncoder<'a>
     /// Create a new jpeg xl encoder
     pub fn new(data: &'a [u8], options: EncoderOptions) -> JxlSimpleEncoder<'a>
     {
-        JxlSimpleEncoder {
-            data,
-            options,
-            effort: 4
-        }
+        JxlSimpleEncoder { data, options }
     }
 
     /// Encode a jxl image producing the raw encoded
@@ -1166,7 +1161,7 @@ impl<'a> JxlSimpleEncoder<'a>
         let width = self.options.get_width();
         let height = self.options.get_height();
         let colorspace = self.options.get_colorspace();
-        let effort = self.effort;
+        let effort = usize::from(self.options.get_effort());
         let num_components = colorspace.num_components();
         let stride = depth.size_of() * width * num_components;
 
