@@ -373,10 +373,17 @@ pub trait EncoderTrait
         ColorSpace::RGB
     }
 }
-
+/// Trait that encapsulates supported
+/// integers which work with the image crates
 pub trait ZuneInts<T>
 {
     fn depth() -> BitDepth;
+
+    ///Maximum value for this type
+    ///
+    /// For integers its the maximum value they can hold
+    /// For float values it's 1.0
+    fn max_value() -> T;
 }
 
 impl ZuneInts<u8> for u8
@@ -385,6 +392,11 @@ impl ZuneInts<u8> for u8
     fn depth() -> BitDepth
     {
         BitDepth::Eight
+    }
+    #[inline(always)]
+    fn max_value() -> u8
+    {
+        255
     }
 }
 
@@ -395,4 +407,29 @@ impl ZuneInts<u16> for u16
     {
         BitDepth::Sixteen
     }
+    #[inline(always)]
+    fn max_value() -> u16
+    {
+        u16::MAX
+    }
+}
+
+/// Trait that encapsulates image decoders that
+/// can write data as raw native endian into
+/// a buffer of u8
+pub trait DecodeInto
+{
+    /// Decode raw image bytes into a buffer that can
+    /// hold u8 bytes
+    ///
+    /// The rationale is that u8 bytes can alias any type
+    /// and higher bytes offer ways to construct types from
+    /// u8's hence they can be used as a base type
+    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>;
+
+    /// Minimum buffer length which is needed to decode this image
+    ///
+    /// This may call `decode_headers` for the image routine to fetch the
+    /// expected output size.
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
 }
