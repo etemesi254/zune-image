@@ -20,7 +20,7 @@ use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
-use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait, OperationsTrait};
 
 impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 {
@@ -218,5 +218,25 @@ impl From<EncodingError> for ImageErrors
     fn from(value: EncodingError) -> Self
     {
         ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(value.to_string()))
+    }
+}
+
+impl<'b> DecodeInto for JpegDecoder<'b>
+{
+    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>
+    {
+        self.decode_into(buffer)
+            .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>
+    {
+        self.decode_headers()
+            .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buffer_size().unwrap())
     }
 }

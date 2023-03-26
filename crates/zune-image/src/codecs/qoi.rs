@@ -10,7 +10,7 @@ use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
-use crate::traits::{DecoderTrait, EncoderTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
 {
@@ -113,21 +113,6 @@ impl EncoderTrait for QoiEncoder
 
         Ok(data)
     }
-    fn default_colorspace(&self, colorspace: ColorSpace) -> ColorSpace
-    {
-        // if colorspace has an alpha channel,
-        // we want to preserve it in the final encoder
-        if colorspace.has_alpha()
-        {
-            ColorSpace::RGBA
-        }
-        else
-        {
-            // otherwise, just stick up to the one we know
-            ColorSpace::RGB
-        }
-    }
-
     fn supported_colorspaces(&self) -> &'static [ColorSpace]
     {
         &[ColorSpace::RGBA, ColorSpace::RGB]
@@ -146,6 +131,21 @@ impl EncoderTrait for QoiEncoder
     fn default_depth(&self) -> BitDepth
     {
         BitDepth::Eight
+    }
+
+    fn default_colorspace(&self, colorspace: ColorSpace) -> ColorSpace
+    {
+        // if colorspace has an alpha channel,
+        // we want to preserve it in the final encoder
+        if colorspace.has_alpha()
+        {
+            ColorSpace::RGBA
+        }
+        else
+        {
+            // otherwise, just stick up to the one we know
+            ColorSpace::RGB
+        }
     }
 }
 
@@ -166,5 +166,23 @@ impl From<zune_qoi::QoiEncodeErrors> for ImgEncodeErrors
         let err = format!("qoi: {error:?}");
 
         ImgEncodeErrors::Generic(err)
+    }
+}
+
+impl<'b> DecodeInto for QoiDecoder<'b>
+{
+    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>
+    {
+        self.decode_into(buffer)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>
+    {
+        self.decode_headers()?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buffer_size().unwrap())
     }
 }
