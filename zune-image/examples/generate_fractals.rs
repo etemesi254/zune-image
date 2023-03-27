@@ -3,12 +3,11 @@
 //!
 //! It shows use of `from_fn` methods and `modify_pixels_mut` methods
 
+use zune_core::colorspace::ColorSpace;
+use zune_image::codecs::ImageFormat;
+
 fn main()
 {
-    use zune_core::colorspace::ColorSpace;
-    use zune_image::codecs::jpeg::JpegEncoder;
-    use zune_image::traits::EncoderTrait;
-
     let img_x = 800;
     let img_y = 800;
 
@@ -45,8 +44,5 @@ fn main()
         })
         .unwrap();
 
-    let mut encoder = JpegEncoder::new(80);
-    let px = encoder.encode(&image).unwrap();
-
-    std::fs::write("./fractals.jpg", px).unwrap();
+    image.save("./fractals.jpg").unwrap();
 }
