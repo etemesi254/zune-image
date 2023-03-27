@@ -105,6 +105,58 @@ pub fn deinterleave_four_channels_u8(
     scalar::de_interleave_four_channels_scalar(source, c1, c2, c3, c4);
 }
 
+/// De interleave interleaved images in float to separate color components
+/// and store them in their respective arrays
+///
+/// # Arguments
+///
+/// * `source`: Source containing interleaved RGB/three component data
+/// * `c1`: Output for first component
+/// * `c2`: Output for second component
+/// * `c3`: Output for third component
+///
+pub fn de_interleave_three_channels_f32(
+    source: &[f32], c1: &mut [f32], c2: &mut [f32], c3: &mut [f32]
+)
+{
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "avx2")]
+        {
+            use crate::deinterleave::avx2::de_interleave_three_channels_avx2;
+
+            if is_x86_feature_detected!("avx2")
+            {
+                unsafe {
+                    return de_interleave_three_channels_avx2(source, c1, c2, c3);
+                }
+            }
+        }
+    }
+    scalar::de_interleave_three_channels_scalar(source, c1, c2, c3);
+}
+
+pub fn de_interleave_four_channels_f32(
+    source: &[f32], c1: &mut [f32], c2: &mut [f32], c3: &mut [f32], c4: &mut [f32]
+)
+{
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "avx2")]
+        {
+            use crate::deinterleave::avx2::de_interleave_four_channels_avx2;
+
+            if is_x86_feature_detected!("avx2")
+            {
+                unsafe {
+                    return de_interleave_four_channels_avx2(source, c1, c2, c3, c4);
+                }
+            }
+        }
+    }
+    scalar::de_interleave_four_channels_scalar(source, c1, c2, c3, c4);
+}
+
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
 mod benchmarks
