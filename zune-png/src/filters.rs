@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 //! A set of optimized filter functions for de-filtering png
 //! scanlines.
 //!
@@ -16,7 +17,7 @@ mod sse4;
 
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, _use_sse4: bool
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
 )
 {
     if raw.len() < components || current.len() < components
@@ -28,7 +29,7 @@ pub fn handle_avg(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // use sse features where applicable
-        if _use_sse4
+        if use_sse4
         {
             if components == 3
             {
@@ -73,7 +74,7 @@ pub fn handle_avg(
 }
 
 #[allow(clippy::manual_memcpy)]
-pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, _use_sse2: bool)
+pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: bool)
 {
     if current.len() < components || raw.len() < components
     {
@@ -82,7 +83,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, _use_sse2: 
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if _use_sse2
+        if use_sse2
         {
             if components == 3
             {
@@ -91,6 +92,14 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, _use_sse2: 
             if components == 4
             {
                 return crate::filters::sse4::de_filter_sub4_sse2(raw, current);
+            }
+            if components == 6
+            {
+                return crate::filters::sse4::de_filter_sub6_sse2(raw, current);
+            }
+            if components == 8
+            {
+                return crate::filters::sse4::de_filter_sub8_sse2(raw, current);
             }
         }
     }
@@ -111,7 +120,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, _use_sse2: 
 
 #[allow(clippy::manual_memcpy)]
 pub fn handle_paeth(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, _use_sse4: bool
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
 )
 {
     if raw.len() < components || current.len() < components
@@ -122,7 +131,7 @@ pub fn handle_paeth(
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if _use_sse4
+        if use_sse4
         {
             if components == 3
             {
