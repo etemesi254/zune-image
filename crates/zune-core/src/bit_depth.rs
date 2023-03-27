@@ -29,6 +29,10 @@ pub enum BitDepth
     ///
     /// Data is stored and processed in native endian.
     Sixteen,
+    /// Floating point 32 bit data, range is 0.0 to 1.0
+    ///
+    /// Uses f32 to store data
+    Float32,
     /// Bit depth information is unknown
     Unknown
 }
@@ -47,7 +51,10 @@ pub enum BitType
     U8,
     /// Images represented using a [`u16`] as their
     /// underlying pixel storage.
-    U16
+    U16,
+    /// Images represented using a [`f32`] as their
+    /// underlying pixel storage
+    F32
 }
 
 impl Default for BitDepth
@@ -73,6 +80,7 @@ impl BitDepth
         {
             Self::Eight => (1 << 08) - 1,
             Self::Sixteen => u16::MAX,
+            Self::Float32 => 1,
             Self::Unknown => 0,
         }
     }
@@ -103,6 +111,7 @@ impl BitDepth
         {
             Self::Eight => BitType::U8,
             Self::Sixteen => BitType::U16,
+            Self::Float32 => BitType::F32,
             Self::Unknown => panic!("Unknown bit type")
         }
     }
@@ -125,18 +134,14 @@ impl BitDepth
     {
         match self
         {
-            Self::Eight => 1,
-            Self::Sixteen => 2,
+            Self::Eight => core::mem::size_of::<u8>(),
+            Self::Sixteen => core::mem::size_of::<u16>(),
+            Self::Float32 => core::mem::size_of::<f32>(),
             Self::Unknown => panic!("Unknown bit type")
         }
     }
     pub const fn bit_size(&self) -> usize
     {
-        match self
-        {
-            Self::Eight => 8,
-            Self::Sixteen => 16,
-            Self::Unknown => panic!("Unknown bit depth")
-        }
+        self.size_of() * 8
     }
 }
