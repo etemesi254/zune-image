@@ -31,10 +31,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
         let mut image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-            DecodingResult::U16(data) =>
-            {
-                Image::from_u16(&data, width, height, BitDepth::Sixteen, colorspace)
-            }
+            DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
             _ => unreachable!()
         };
 
