@@ -251,9 +251,49 @@ unsafe fn de_filter_sub4_sse2_inner(raw: &[u8], current: &mut [u8])
     }
 }
 
+#[allow(unused_assignments)]
+#[target_feature(enable = "sse2")]
+unsafe fn de_filter_sub6_sse2_inner(raw: &[u8], current: &mut [u8])
+{
+    let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
+
+    for (raw, out) in raw.chunks_exact(6).zip(current.chunks_exact_mut(6))
+    {
+        a = d;
+        d = load6(raw.try_into().unwrap());
+        d = _mm_add_epi8(d, a);
+        store6(out.try_into().unwrap(), d);
+    }
+}
+
+#[allow(unused_assignments)]
+#[target_feature(enable = "sse2")]
+unsafe fn de_filter_sub8_sse2_inner(raw: &[u8], current: &mut [u8])
+{
+    let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
+
+    for (raw, out) in raw.chunks_exact(8).zip(current.chunks_exact_mut(8))
+    {
+        a = d;
+        d = load8(raw.try_into().unwrap());
+        d = _mm_add_epi8(d, a);
+        store8(out.try_into().unwrap(), d);
+    }
+}
+
 pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
 {
     unsafe { de_filter_sub4_sse2_inner(raw, current) }
+}
+
+pub fn de_filter_sub6_sse2(raw: &[u8], current: &mut [u8])
+{
+    unsafe { de_filter_sub6_sse2_inner(raw, current) }
+}
+
+pub fn de_filter_sub8_sse2(raw: &[u8], current: &mut [u8])
+{
+    unsafe { de_filter_sub8_sse2_inner(raw, current) }
 }
 
 #[inline]
