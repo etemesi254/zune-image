@@ -1,9 +1,12 @@
-//! PSDDecodeErrors possible during image processing
+//! Errors possible during image processing
 use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
+use std::io::Error;
 
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
+
+use crate::codecs::ImageFormat;
 
 /// All possible image errors that can occur.
 ///
@@ -21,7 +24,8 @@ pub enum ImageErrors
     EncodeErrors(ImgEncodeErrors),
     GenericString(String),
     GenericStr(&'static str),
-    WrongTypeId(TypeId, TypeId)
+    WrongTypeId(TypeId, TypeId),
+    IoError(std::io::Error)
 }
 
 /// PSDDecodeErrors that may occur during image operations
@@ -49,7 +53,8 @@ pub enum ImgEncodeErrors
     Generic(String),
     GenericStatic(&'static str),
     UnsupportedColorspace(ColorSpace, &'static [ColorSpace]),
-    ImageEncodeErrors(String)
+    ImageEncodeErrors(String),
+    NoEncoderForFormat(ImageFormat)
 }
 
 impl Debug for ImageErrors
@@ -103,7 +108,19 @@ impl Debug for ImageErrors
                     "Expected type with ID of {expected:?} but found {found:?}"
                 )
             }
+            ImageErrors::IoError(reason) =>
+            {
+                writeln!(f, "IO error, {:?}", reason)
+            }
         }
+    }
+}
+
+impl From<std::io::Error> for ImageErrors
+{
+    fn from(value: Error) -> Self
+    {
+        Self::IoError(value)
     }
 }
 
@@ -194,6 +211,10 @@ impl Debug for ImgEncodeErrors
             Self::ImageEncodeErrors(err) =>
             {
                 writeln!(f, "Image could not be encoded, reason: {err}")
+            }
+            Self::NoEncoderForFormat(format) =>
+            {
+                writeln!(f, "No encoder for image format {:?}", format)
             }
         }
     }
