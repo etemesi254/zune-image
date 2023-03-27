@@ -26,7 +26,7 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
         let mut image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-            DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace),
+            DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
             _ => unreachable!()
         };
         // set metadata details

@@ -10,11 +10,12 @@ use jpeg_encoder::{ColorType, EncodingError, JpegColorType};
 use log::info;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::EncoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 /// Re-expose jpeg crate here
 pub use zune_jpeg::{ImageInfo, JpegDecoder};
 
-use crate::codecs::ImageFormat;
+use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
@@ -93,20 +94,20 @@ impl From<zune_jpeg::errors::DecodeErrors> for ImageErrors
 #[derive(Copy, Clone, Default)]
 pub struct JpegEncoder
 {
-    quality:           u8,
-    progressive:       bool,
-    optimized_huffman: bool
+    options: Option<EncoderOptions>
 }
 
 impl JpegEncoder
 {
-    /// Create a new decoder with a specified quality
-    pub fn new(quality: u8) -> JpegEncoder
+    /// Create a new decoder with default options
+    pub fn new() -> JpegEncoder
+    {
+        JpegEncoder::default()
+    }
+    pub fn new_with_options(options: EncoderOptions) -> JpegEncoder
     {
         JpegEncoder {
-            quality:           quality,
-            progressive:       false,
-            optimized_huffman: false
+            options: Some(options)
         }
     }
 }
@@ -146,13 +147,16 @@ impl EncoderTrait for JpegEncoder
             // create space for our encoder
             let mut encoded_data =
                 Vec::with_capacity(width * height * image.get_colorspace().num_components());
+
+            let options = create_options_for_encoder(self.options, image);
+
             // create encoder finally
             // vec<u8> supports write so we use that as our encoder
-            let mut encoder = jpeg_encoder::Encoder::new(&mut encoded_data, self.quality);
+            let mut encoder = jpeg_encoder::Encoder::new(&mut encoded_data, options.get_quality());
 
             // add options
-            encoder.set_progressive(self.progressive);
-            encoder.set_optimized_huffman_tables(self.optimized_huffman);
+            encoder.set_progressive(options.jpeg_encode_progressive());
+            encoder.set_optimized_huffman_tables(options.jpeg_optimized_huffman_tables());
 
             encoder.encode(pixels, width as u16, height as u16, colorspace)?;
 
