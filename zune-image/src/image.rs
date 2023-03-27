@@ -19,7 +19,7 @@ use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_imageprocs::traits::NumOps;
 
 use crate::channel::{Channel, ChannelErrors};
-use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
+use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
 use crate::frame::Frame;
 use crate::impls::depth::Depth;
@@ -279,7 +279,7 @@ impl Image
     /// [MAX_CHANNELS] elements
     ///
     /// [MAX_CHANNELS]:MAX_CHANNELS
-    pub fn from_fn<F, T>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
+    pub fn from_fn<T, F>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
     where
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
         T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
@@ -306,7 +306,7 @@ impl Image
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
         T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
     {
-        let size = width * height * COMPONENTS * T::depth().size_of();
+        let size = width * height * T::depth().size_of();
 
         let mut channels = vec![Channel::new_with_length::<T>(size); COMPONENTS];
 
@@ -347,7 +347,7 @@ impl Image
     }
 }
 
-// Conversions
+/// Pixel constructors
 impl Image
 {
     /// Create a new image from a raw pixels
@@ -389,8 +389,7 @@ impl Image
     ///
     /// e.g if image is RGBA, pixels should be in the form of `[R,G,B,A,R,G,B,A]`
     ///
-    /// The bit depth should not be [BitDepth::U8](zune_core::bit_depth::BitDepth::Eight), this
-    /// function will panic if so
+    ///The bit depth will be treated as [BitDepth::Sixteen](zune_core::bit_depth::BitDepth::Sixteen)
     ///
     /// # Returns
     /// An [`Image`](crate::image::Image) struct
@@ -402,9 +401,7 @@ impl Image
     /// - If image `depth.size_of()` is not 2
     ///
     /// - If pixels length is not equal to expected length
-    pub fn from_u16(
-        pixels: &[u16], width: usize, height: usize, depth: BitDepth, colorspace: ColorSpace
-    ) -> Image
+    pub fn from_u16(pixels: &[u16], width: usize, height: usize, colorspace: ColorSpace) -> Image
     {
         let expected_len = checked_mul(width, height, 1, colorspace.num_components());
 
@@ -414,11 +411,25 @@ impl Image
             "Length mismatch, expected {expected_len} but found {} ",
             pixels.len()
         );
-        assert_eq!(depth.size_of(), 2);
 
         let pixels = deinterleave_u16(pixels, colorspace).unwrap();
 
-        Image::new(pixels, depth, width, height, colorspace)
+        Image::new(pixels, BitDepth::Sixteen, width, height, colorspace)
+    }
+
+    pub fn from_f32(pixels: &[f32], width: usize, height: usize, colorspace: ColorSpace) -> Image
+    {
+        let expected_len = checked_mul(width, height, 1, colorspace.num_components());
+        assert_eq!(
+            pixels.len(),
+            expected_len,
+            "Length mismatch, expected {expected_len} but found {} ",
+            pixels.len()
+        );
+
+        let pixels = deinterleave_f32(pixels, colorspace).unwrap();
+
+        Image::new(pixels, BitDepth::Float32, width, height, colorspace)
     }
 }
 
@@ -456,13 +467,13 @@ impl Image
     ///
     /// // then modify the pixels
     /// // create a gradient
-    /// image.modify_pixels_mut(|x,y,pix|
-    ///     {
-    ///         let r = (0.3 * x as f32) as u8;
-    ///         let b = (0.3 * y as f32) as u8;
-    ///         // modify channels directly
-    ///         *pix[0] = r;
-    ///         *pix[2] = b;
+    /// image.modify_pixels_mut(|x,y,pix|     
+    /// {
+    ///  let r = (0.3 * x as f32) as u8;
+    ///  let b = (0.3 * y as f32) as u8;
+    ///  // modify channels directly
+    ///  *pix[0] = r;
+    ///  *pix[2] = b;
     /// }).unwrap();
     ///
     /// ```
