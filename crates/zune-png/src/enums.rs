@@ -10,6 +10,7 @@ pub enum PngChunkType
     PLTE,
     IDAT,
     IEND,
+    eXIf,
     cHRM,
     gAMA,
     iCCP,
@@ -24,6 +25,7 @@ pub enum PngChunkType
     iTXt,
     tEXt,
     zTxt,
+    fcTL,
     acTL,
     unkn
 }
