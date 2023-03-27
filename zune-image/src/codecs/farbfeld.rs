@@ -5,7 +5,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
 
-use crate::codecs::ImageFormat;
+use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::deinterleave_u16;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
@@ -19,9 +19,8 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
         let pixels = self.decode()?;
         let colorspace = self.get_colorspace();
         let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth();
 
-        let mut image = Image::from_u16(&pixels, width, height, depth, colorspace);
+        let mut image = Image::from_u16(&pixels, width, height, colorspace);
 
         image.metadata.format = Some(ImageFormat::Farbfeld);
 
@@ -69,7 +68,25 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
     }
 }
 
-pub struct FarbFeldEncoder;
+#[derive(Default)]
+pub struct FarbFeldEncoder
+{
+    options: Option<EncoderOptions>
+}
+
+impl FarbFeldEncoder
+{
+    pub fn new() -> FarbFeldEncoder
+    {
+        FarbFeldEncoder::default()
+    }
+    pub fn new_with_options(options: EncoderOptions) -> FarbFeldEncoder
+    {
+        FarbFeldEncoder {
+            options: Some(options)
+        }
+    }
+}
 
 impl EncoderTrait for FarbFeldEncoder
 {
@@ -80,12 +97,7 @@ impl EncoderTrait for FarbFeldEncoder
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
-        let (width, height) = image.get_dimensions();
-        let options = EncoderOptions::default()
-            .set_colorspace(image.get_colorspace())
-            .set_width(width)
-            .set_height(height)
-            .set_depth(image.get_depth());
+        let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.get_depth(), BitDepth::Sixteen);
 

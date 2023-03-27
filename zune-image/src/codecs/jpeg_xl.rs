@@ -5,12 +5,30 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_jpegxl::{JxlEncodeErrors, JxlSimpleEncoder};
 
-use crate::codecs::ImageFormat;
+use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::traits::EncoderTrait;
 
-pub struct JxlEncoder;
+#[derive(Default, Copy, Clone)]
+pub struct JxlEncoder
+{
+    options: Option<EncoderOptions>
+}
+
+impl JxlEncoder
+{
+    pub fn new() -> JxlEncoder
+    {
+        JxlEncoder::default()
+    }
+    pub fn new_with_options(options: EncoderOptions) -> JxlEncoder
+    {
+        JxlEncoder {
+            options: Some(options)
+        }
+    }
+}
 
 impl EncoderTrait for JxlEncoder
 {
@@ -21,15 +39,7 @@ impl EncoderTrait for JxlEncoder
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
-        let (width, height) = image.get_dimensions();
-        let colorspace = image.get_colorspace();
-        let depth = image.get_depth();
-
-        let options = EncoderOptions::default()
-            .set_width(width)
-            .set_height(height)
-            .set_colorspace(colorspace)
-            .set_depth(depth);
+        let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 

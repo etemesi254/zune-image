@@ -8,7 +8,7 @@ use zune_core::result::DecodingResult;
 pub use zune_ppm::PPMDecoder;
 use zune_ppm::{PPMDecodeErrors, PPMEncodeErrors, PPMEncoder as PPMEnc};
 
-use crate::codecs::ImageFormat;
+use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
@@ -16,13 +16,22 @@ use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 #[derive(Copy, Clone, Default)]
-pub struct PPMEncoder;
+pub struct PPMEncoder
+{
+    options: Option<EncoderOptions>
+}
 
 impl PPMEncoder
 {
     pub fn new() -> PPMEncoder
     {
-        PPMEncoder {}
+        PPMEncoder { options: None }
+    }
+    pub fn new_with_options(options: EncoderOptions) -> PPMEncoder
+    {
+        PPMEncoder {
+            options: Some(options)
+        }
     }
 }
 
@@ -35,15 +44,7 @@ impl EncoderTrait for PPMEncoder
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
-        let (width, height) = image.get_dimensions();
-        let colorspace = image.get_colorspace();
-        let depth = image.get_depth();
-
-        let options = EncoderOptions::default()
-            .set_width(width)
-            .set_height(height)
-            .set_colorspace(colorspace)
-            .set_depth(depth);
+        let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
@@ -95,7 +96,7 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         let mut image = match pixels
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-            DecodingResult::U16(data) => Image::from_u16(&data, width, height, depth, colorspace),
+            DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
             _ => unreachable!()
         };
 

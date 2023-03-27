@@ -5,7 +5,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
 
-use crate::codecs::ImageFormat;
+use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
@@ -74,13 +74,23 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct QoiEncoder {}
+pub struct QoiEncoder
+{
+    options: Option<EncoderOptions>
+}
 
 impl QoiEncoder
 {
     pub fn new() -> QoiEncoder
     {
         QoiEncoder::default()
+    }
+
+    pub fn new_with_options(options: EncoderOptions) -> QoiEncoder
+    {
+        QoiEncoder {
+            options: Some(options)
+        }
     }
 }
 
@@ -93,15 +103,7 @@ impl EncoderTrait for QoiEncoder
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
-        let (width, height) = image.get_dimensions();
-        let colorspace = image.get_colorspace();
-        let depth = image.get_depth();
-
-        let options = EncoderOptions::default()
-            .set_width(width)
-            .set_height(height)
-            .set_colorspace(colorspace)
-            .set_depth(depth);
+        let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
