@@ -5,11 +5,17 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types)]
 
-use zune_core::options::DecoderOptions;
+use std::path::Path;
+
+use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::codecs;
+use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
+use crate::errors::{ImageErrors, ImgEncodeErrors};
+use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
+pub mod exr;
 pub mod farbfeld;
 pub mod jpeg;
 pub mod jpeg_xl;
@@ -18,6 +24,27 @@ pub mod ppm;
 pub mod psd;
 pub mod qoi;
 
+pub(crate) fn create_options_for_encoder(
+    options: Option<EncoderOptions>, image: &Image
+) -> EncoderOptions
+{
+    // choose if we take options from pre-configured , or we create default options
+    let start_options = if let Some(configured_opts) = options
+    {
+        configured_opts
+    }
+    else
+    {
+        EncoderOptions::default()
+    };
+    let (width, height) = image.get_dimensions();
+    // then set image configuration
+    start_options
+        .set_width(width)
+        .set_height(height)
+        .set_depth(image.get_depth())
+        .set_colorspace(image.get_colorspace())
+}
 /// All supported image formats
 ///
 /// This enum contains supported image formats, either
@@ -47,68 +74,9 @@ pub enum ImageFormat
 impl ImageFormat
 {
     /// Return true if an image format has an encoder
-    pub const fn has_encoder(self) -> bool
+    pub fn has_encoder(self) -> bool
     {
-        match self
-        {
-            Self::PPM =>
-            {
-                #[cfg(feature = "ppm")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "ppm"))]
-                {
-                    false
-                }
-            }
-            Self::QOI =>
-            {
-                #[cfg(feature = "qoi")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "qoi"))]
-                {
-                    false
-                }
-            }
-            Self::JPEG =>
-            {
-                #[cfg(feature = "jpeg")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "jpeg"))]
-                {
-                    false
-                }
-            }
-            Self::JPEG_XL =>
-            {
-                #[cfg(feature = "jpeg-xl")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "jpeg-xl"))]
-                {
-                    false
-                }
-            }
-            Self::Farbfeld =>
-            {
-                #[cfg(feature = "farbfeld")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "farbfeld"))]
-                {
-                    false
-                }
-            }
-            // all other formats don't have an encoder
-            _ => false
-        }
+        return self.get_encoder().is_some();
     }
 
     pub fn get_decoder<'a>(&self, data: &'a [u8]) -> Box<dyn DecoderTrait<'a> + 'a>
@@ -206,13 +174,20 @@ impl ImageFormat
 
     pub fn get_encoder(&self) -> Option<Box<dyn EncoderTrait>>
     {
+        self.get_encoder_with_options(EncoderOptions::default())
+    }
+    pub fn get_encoder_with_options(&self, options: EncoderOptions)
+        -> Option<Box<dyn EncoderTrait>>
+    {
         match self
         {
             Self::PPM =>
             {
                 #[cfg(feature = "ppm")]
                 {
-                    Some(Box::new(crate::codecs::ppm::PPMEncoder::new()))
+                    Some(Box::new(crate::codecs::ppm::PPMEncoder::new_with_options(
+                        options
+                    )))
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
@@ -221,11 +196,13 @@ impl ImageFormat
             }
             Self::QOI =>
             {
-                #[cfg(feature = "ppm")]
+                #[cfg(feature = "qoi")]
                 {
-                    Some(Box::new(crate::codecs::ppm::PPMEncoder::new()))
+                    Some(Box::new(crate::codecs::qoi::QoiEncoder::new_with_options(
+                        options
+                    )))
                 }
-                #[cfg(not(feature = "ppm"))]
+                #[cfg(not(feature = "qoi"))]
                 {
                     None
                 }
@@ -234,7 +211,9 @@ impl ImageFormat
             {
                 #[cfg(feature = "jpeg")]
                 {
-                    Some(Box::new(crate::codecs::jpeg::JpegEncoder::new(80)))
+                    Some(Box::new(
+                        crate::codecs::jpeg::JpegEncoder::new_with_options(options)
+                    ))
                 }
                 #[cfg(not(feature = "jpeg"))]
                 {
@@ -245,7 +224,9 @@ impl ImageFormat
             {
                 #[cfg(feature = "jpeg-xl")]
                 {
-                    Some(Box::new(crate::codecs::jpeg_xl::JxlEncoder))
+                    Some(Box::new(
+                        crate::codecs::jpeg_xl::JxlEncoder::new_with_options(options)
+                    ))
                 }
                 #[cfg(not(feature = "jpeg-xl"))]
                 {
@@ -293,10 +274,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "qoi")]
                 {
-                    Some((
-                        ImageFormat::QOI,
-                        Box::new(crate::codecs::qoi::QoiEncoder::new())
-                    ))
+                    Some((ImageFormat::QOI, ImageFormat::QOI.get_encoder().unwrap()))
                 }
                 #[cfg(not(feature = "qoi"))]
                 {
@@ -307,10 +285,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "ppm")]
                 {
-                    Some((
-                        ImageFormat::PPM,
-                        Box::new(crate::codecs::ppm::PPMEncoder::new())
-                    ))
+                    Some((ImageFormat::PPM, ImageFormat::PPM.get_encoder().unwrap()))
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
@@ -321,10 +296,7 @@ impl ImageFormat
             {
                 #[cfg(feature = "jpeg")]
                 {
-                    Some((
-                        ImageFormat::JPEG,
-                        Box::new(crate::codecs::jpeg::JpegEncoder::new(80))
-                    ))
+                    Some((ImageFormat::JPEG, ImageFormat::JPEG.get_encoder().unwrap()))
                 }
                 #[cfg(not(feature = "jpeg"))]
                 {
@@ -337,7 +309,7 @@ impl ImageFormat
                 {
                     Some((
                         ImageFormat::JPEG_XL,
-                        Box::new(crate::codecs::jpeg_xl::JxlEncoder)
+                        ImageFormat::JPEG_XL.get_encoder().unwrap()
                     ))
                 }
                 #[cfg(not(feature = "jpeg-xl"))]
@@ -351,7 +323,7 @@ impl ImageFormat
                 {
                     Some((
                         ImageFormat::Farbfeld,
-                        Box::new(crate::codecs::farbfeld::FarbFeldEncoder)
+                        ImageFormat::Farbfeld.get_encoder().unwrap()
                     ))
                 }
                 #[cfg(not(feature = "farbfeld"))]
@@ -360,6 +332,133 @@ impl ImageFormat
                 }
             }
             _ => None
+        }
+    }
+}
+
+// save options
+impl Image
+{
+    /// Save the image to a file and use the extension to
+    /// determine the format
+    ///
+    /// If the extension cannot be determined from the path, it's an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `file`: The file to save the image to
+    ///
+    /// returns: Result<(), ImageErrors>
+    ///
+    /// # Examples
+    ///
+    ///  - Encode image to jpeg format, requires `jpeg` feature
+    ///
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::Image;
+    /// // create a luma image
+    /// let image = Image::fill::<u8>(128,ColorSpace::Luma,100,100).unwrap();
+    /// // save to jpeg
+    /// image.save("hello.jpg").unwrap();
+    /// ```
+    pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors>
+    {
+        return if let Some(ext) = file.as_ref().extension()
+        {
+            if let Some((format, _)) = ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
+            {
+                self.save_to(file, format)
+            }
+            else
+            {
+                let msg = format!("No encoder for extension {ext:?}");
+
+                Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(msg)))
+            }
+        }
+        else
+        {
+            let msg = format!("No extension for file {:?}", file.as_ref());
+
+            Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(msg)))
+        };
+    }
+    /// Save an image using a specified format to a file
+    ///
+    /// The image may be cloned and the clone modified to fit preferences
+    /// for that specific image format, e.g if the image is in f32 and being saved
+    /// to jpeg, the clone will be modified to be in u8, and that will be the format
+    /// saved to jpeg.
+    ///
+    /// # Arguments
+    ///
+    /// * `file`: The file path to which the image will be saved
+    /// * `format`: The format to save the image into. It's an error if the
+    ///     format doesn't have an encoder(not all formats do)
+    ///
+    /// returns: Result<(), ImageErrors>
+    ///
+    ///
+    /// # Examples
+    ///
+    ///  - Save a black grayscale image to JPEG, requires the JPEG feature
+    /// ```no_run
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::codecs::ImageFormat;
+    /// use zune_image::image::Image;
+    /// // create a simple 200x200 grayscale image consisting of pure black
+    /// let image = Image::fill::<u8>(0,ColorSpace::Luma,200,200).unwrap();
+    /// // save that to jpeg
+    /// image.save_to("black.jpg",ImageFormat::JPEG).unwrap();
+    /// ```
+    pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors>
+    {
+        let contents = self.save_to_vec(format)?;
+        std::fs::write(file, contents)?;
+        Ok(())
+    }
+
+    /// Encode an image returning a vector containing the result
+    /// of the encoding
+    ///
+    /// # Arguments
+    ///
+    /// * `format`: The format to use for encoding, it's an error if the
+    /// relevant encoder is not present either because it's not supported, or it's not
+    /// included as a feature.
+    ///
+    /// returns: `Result<Vec<u8, Global>, ImageErrors>`
+    ///
+    /// # Examples
+    ///
+    /// - Encode a simple image to QOI format, needs qoi format to be enabled
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::codecs::ImageFormat;
+    /// use zune_image::image::Image;
+    /// // create an image using from fn, to generate a gradient image
+    /// let image = Image::from_fn::<u8,_>(300,300,ColorSpace::RGB,|x,y,px|{
+    ///         let r = (0.3 * x as f32) as u8;
+    ///         let b = (0.3 * y as f32) as u8;
+    ///         px[0] = r;
+    ///         px[2] = b;
+    /// });
+    /// // write to qoi now
+    /// let contents = image.save_to_vec(ImageFormat::QOI).unwrap();
+    /// ```
+    pub fn save_to_vec(&self, format: ImageFormat) -> Result<Vec<u8>, ImageErrors>
+    {
+        if let Some(mut encoder) = format.get_encoder()
+        {
+            // encode
+            encoder.encode(self)
+        }
+        else
+        {
+            Err(ImageErrors::EncodeErrors(
+                crate::errors::ImgEncodeErrors::NoEncoderForFormat(format)
+            ))
         }
     }
 }
