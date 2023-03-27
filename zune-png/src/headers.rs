@@ -2,7 +2,7 @@ use alloc::format;
 
 use log::{error, info, warn};
 
-use crate::decoder::{PLTEEntry, PngChunk};
+use crate::decoder::{PLTEEntry, PngChunk, TimeInfo};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngErrors;
 use crate::PngDecoder;
@@ -255,6 +255,76 @@ impl<'a> PngDecoder<'a>
             error!("APNG support is not yet present,this will only decode the first frame of the image");
         }
         // skip bytes plus CRC
+        self.stream.skip(chunk.length + 4);
+
+        Ok(())
+    }
+
+    /// Parse the tIME chunk if present in PNG
+    pub(crate) fn parse_time(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    {
+        if chunk.length != 7
+        {
+            if self.options.get_strict_mode()
+            {
+                return Err(PngErrors::GenericStatic("Invalid tIME chunk length"));
+            }
+            warn!("Invalid time chunk length {:?}", chunk.length);
+            return Ok(());
+        }
+
+        let year = self.stream.get_u16_be();
+        let month = self.stream.get_u8() % 13;
+        let day = self.stream.get_u8() % 32;
+        let hour = self.stream.get_u8() % 24;
+        let minute = self.stream.get_u8() % 60;
+        let second = self.stream.get_u8() % 61;
+
+        let time = TimeInfo {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second
+        };
+        self.png_info.time_info = Some(time);
+        // skip past crc
+        self.stream.skip(4);
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_exif(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    {
+        if !self.stream.has(chunk.length)
+        {
+            warn!("Too large exif chunk");
+            self.stream.skip(chunk.length + 4);
+
+            return Ok(());
+        }
+        let data = self.stream.peek_at(0, chunk.length).unwrap();
+
+        // reccomended that we check for first four bytes compatibility
+        // so do it here
+        // First check does litle endian, and second big endian
+        // See https://ftp-osl.osuosl.org/pub/libpng/documents/pngext-1.5.0.html#C.eXIf
+        if !(data.starts_with(&[73, 73, 42, 0]) || data.starts_with(&[77, 77, 0, 42]))
+        {
+            if self.options.get_strict_mode()
+            {
+                return Err(PngErrors::GenericStatic(
+                    "[strict-mode]: Invalid exif chunk"
+                ));
+            }
+            else
+            {
+                warn!("Invalid exif chunk, it doesn't start with the magick bytes")
+            }
+        }
+        self.png_info.exif = Some(data);
+        // skip past crc
         self.stream.skip(chunk.length + 4);
 
         Ok(())
