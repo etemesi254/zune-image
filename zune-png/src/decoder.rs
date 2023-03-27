@@ -18,12 +18,13 @@ use crate::filters::{
     handle_paeth_special_first, handle_sub, handle_sub_special, handle_up, handle_up_special
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
+use crate::utils::{convert_be_to_ne, expand_palette, expand_trns};
 
 /// A palette entry.
 ///
 /// The alpha field is used if the image has a tRNS
 /// chunk and pLTE chunk.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct PLTEEntry
 {
     pub red:   u8,
@@ -56,21 +57,39 @@ pub(crate) struct PngChunk
     pub crc:        u32
 }
 
+#[derive(Debug, Default, Copy, Clone)]
+pub struct TimeInfo
+{
+    pub year:   u16,
+    pub month:  u8,
+    pub day:    u8,
+    pub hour:   u8,
+    pub minute: u8,
+    pub second: u8
+}
+
 /// Represents PNG information that can be extracted
 /// from a png file.
 ///
 /// The properties are read from IHDR chunk,
 /// but may be changed by decoder during decoding
 #[derive(Default, Debug, Copy, Clone)]
-pub struct PngInfo
+pub struct PngInfo<'a>
 {
     pub width:            usize,
     pub height:           usize,
-    pub depth:            u8,
-    pub color:            PngColor,
-    pub component:        u8,
-    pub filter_method:    FilterMethod,
-    pub interlace_method: InterlaceMethod
+    pub interlace_method: InterlaceMethod,
+    pub time_info:        Option<TimeInfo>,
+    pub exif:             Option<&'a [u8]>,
+
+    // no need to expose these ones
+    pub(crate) depth:         u8,
+    // use bit_depth
+    pub(crate) color:         PngColor,
+    // use get_colorspace
+    pub(crate) component:     u8,
+    // use get_colorspace().num_components()
+    pub(crate) filter_method: FilterMethod // for internal use,no need to expose
 }
 
 /// A PNG decoder instance.
@@ -89,7 +108,7 @@ pub struct PngDecoder<'a>
 {
     pub(crate) stream:          ZByteReader<'a>,
     pub(crate) options:         DecoderOptions,
-    pub(crate) png_info:        PngInfo,
+    pub(crate) png_info:        PngInfo<'a>,
     pub(crate) palette:         Vec<PLTEEntry>,
     pub(crate) idat_chunks:     Vec<u8>,
     pub(crate) out:             Vec<u8>,
@@ -230,6 +249,9 @@ impl<'a> PngDecoder<'a>
             b"tIME" => PngChunkType::tIME,
             b"gAMA" => PngChunkType::gAMA,
             b"acTL" => PngChunkType::acTL,
+            b"fcTL" => PngChunkType::fcTL,
+            b"iCCP" => PngChunkType::iCCP,
+            b"eXIf" => PngChunkType::eXIf,
             _ => PngChunkType::unkn
         };
 
@@ -299,6 +321,7 @@ impl<'a> PngDecoder<'a>
                 "First chunk not IHDR, Corrupt PNG"
             ));
         }
+        let mut seen_first_fctl = false;
         loop
         {
             let header = self.read_chunk_header()?;
@@ -328,6 +351,26 @@ impl<'a> PngDecoder<'a>
                 PngChunkType::acTL =>
                 {
                     self.parse_actl(header)?;
+                }
+                PngChunkType::tIME =>
+                {
+                    self.parse_time(header)?;
+                }
+                PngChunkType::eXIf =>
+                {
+                    self.parse_exif(header)?;
+                }
+                PngChunkType::fcTL =>
+                {
+                    // If we have seen a fcTL chunk and we are
+                    // about to see another one, means we
+                    // have another frame incoming,
+                    // so just exit
+                    if seen_first_fctl
+                    {
+                        break;
+                    }
+                    seen_first_fctl = true;
                 }
                 PngChunkType::IEND =>
                 {
@@ -414,12 +457,12 @@ impl<'a> PngDecoder<'a>
         {
             if info.depth <= 8
             {
-                self.compute_transparency();
+                expand_trns::<false>(&mut self.out, info.color, self.trns_bytes, info.depth);
             }
             else if info.depth == 16
             {
                 // Tested by test_palette_trns_16bit.
-                self.compute_transparency_16();
+                expand_trns::<true>(&mut self.out, info.color, self.trns_bytes, info.depth);
             }
         }
         // only un-palettize images if color type type is indexed
@@ -432,23 +475,29 @@ impl<'a> PngDecoder<'a>
             {
                 return Err(PngErrors::EmptyPalette);
             }
+            let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
+
             if self.seen_trns
             {
                 // if tRNS chunk is present in paletted images, it contains
                 // alpha byte values, so that means we create alpha data from
                 // raw bytes
-                self.expand_palette(4);
+                expand_palette(&mut self.out, plte_entry, 4);
             }
             else
             {
                 // Normal expansion
-                self.expand_palette(3);
+                expand_palette(&mut self.out, plte_entry, 3);
             }
         }
 
         self.out.truncate(new_len);
-        let out = core::mem::take(&mut self.out);
+        let mut out = core::mem::take(&mut self.out);
 
+        if self.get_depth().unwrap() == BitDepth::Sixteen
+        {
+            convert_be_to_ne(&mut out, self.options.use_sse41());
+        }
         Ok(out)
     }
 
@@ -531,122 +580,7 @@ impl<'a> PngDecoder<'a>
         self.out = final_out;
         Ok(())
     }
-    fn compute_transparency(&mut self)
-    {
-        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
-        // for images whose color types are not paletted
-        // presence of a tRNS chunk indicates that the image
-        // has transparency.
-        // When the pixel specified  in the tRNS chunk is encountered in the resulting stream,
-        // it is to be treated as fully transparent.
-        // We indicate that by replacing the pixel with pixel+alpha and setting alpha to be zero;
-        // to indicate fully transparent.
-        //
-        //
-        // OPTIMIZATION: This can be done in place, stb does it in place.
-        // but it needs some complexity in the de-filtering, which I won't do.
-        // but anyone reading this is free to do it
-
-        let info = &self.png_info;
-
-        match info.color
-        {
-            PngColor::Luma =>
-            {
-                let scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
-
-                let depth_mask = (1_u16 << info.depth) - 1;
-                // BUG: This overflowing is indicative of a wrong tRNS value
-                let trns_byte = (((self.trns_bytes[0]) & 255 & depth_mask) as u8) * scale;
-
-                for chunk in self.out.chunks_exact_mut(2)
-                {
-                    chunk[1] = u8::from(chunk[0] != trns_byte) * 255;
-                }
-            }
-            PngColor::RGB =>
-            {
-                let r = (self.trns_bytes[0] & 255) as u8;
-                let g = (self.trns_bytes[1] & 255) as u8;
-                let b = (self.trns_bytes[2] & 255) as u8;
-
-                let r_matrix = [r, g, b];
-
-                for chunk in self.out.chunks_exact_mut(4)
-                {
-                    if &chunk[0..3] != &r_matrix
-                    {
-                        chunk[3] = 255;
-                    }
-                }
-            }
-            _ => unreachable!()
-        }
-    }
-    fn compute_transparency_16(&mut self)
-    {
-        // for explanation see compute_transparency
-        //
-        // OPT_GUIDE:
-        //
-        // There is a quirky optimization here, and it has something
-        // to do with the _to_ne_bytes.
-        // The tRNS items were read as big endian but the data is
-        // currently in native endian, so matching won't work across byte
-        // boundaries.
-        // But if we convert the tRNS data to native endian, the two endianness
-        // match and we can do comparisons
-
-        let info = &self.png_info;
-
-        match info.color
-        {
-            PngColor::Luma =>
-            {
-                let trns_byte = self.trns_bytes[0].to_ne_bytes();
-
-                for chunk in self.out.chunks_exact_mut(4)
-                {
-                    if trns_byte != &chunk[0..2]
-                    {
-                        chunk[2] = 255;
-                        chunk[3] = 255;
-                    }
-                }
-                // change color type to be the one with alpha
-                self.png_info.color = PngColor::LumaA;
-            }
-            PngColor::RGB =>
-            {
-                let r = self.trns_bytes[0].to_ne_bytes();
-                let g = self.trns_bytes[1].to_ne_bytes();
-                let b = self.trns_bytes[2].to_ne_bytes();
-
-                // copy all trns chunks into one big vector
-                let mut all: [u8; 6] = [0; 6];
-
-                all[0..2].copy_from_slice(&r);
-                all[2..4].copy_from_slice(&g);
-                all[4..6].copy_from_slice(&b);
-
-                for chunk in self.out.chunks_exact_mut(8)
-                {
-                    // the read does not match the bytes
-                    // so set it to opaque
-                    if all != &chunk[0..6]
-                    {
-                        chunk[6] = 255;
-                        chunk[7] = 255;
-                    }
-                }
-                // change color type to be the one with alpha
-                self.png_info.color = PngColor::RGBA;
-            }
-            _ => unreachable!()
-        }
-        //self.out = new_out;
-    }
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a Vec<u16>
     ///
@@ -663,11 +597,12 @@ impl<'a> PngDecoder<'a>
         if self.png_info.depth == 16
         {
             // https://github.com/etemesi254/zune-image/issues/36
+            // De-sugars to a memcpy
             let new_array: Vec<u16> = out
                 .chunks_exact(2)
                 .map(|chunk| {
                     let value: [u8; 2] = chunk.try_into().unwrap();
-                    u16::from_be_bytes(value)
+                    u16::from_ne_bytes(value)
                 })
                 .collect();
 
@@ -1112,44 +1047,5 @@ impl<'a> PngDecoder<'a>
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
         decoder.decode_zlib().map_err(PngErrors::ZlibDecodeErrors)
-    }
-
-    /// Expand a palettized image to the number of components
-    fn expand_palette(&mut self, components: usize)
-    {
-        if components == 0
-        {
-            return;
-        }
-
-        // this is safe because we resized palette to be 256
-        // in self.parse_plte()
-        let palette: &[PLTEEntry; 256] = &self.palette[0..256].try_into().unwrap();
-
-        if components == 3
-        {
-            for px in self.out.chunks_exact_mut(3)
-            {
-                // the & 255 may be removed as the compiler can see u8 can never be
-                // above 255, but for safety
-                let entry = palette[usize::from(px[0]) & 255];
-
-                px[0] = entry.red;
-                px[1] = entry.green;
-                px[2] = entry.blue;
-            }
-        }
-        else if components == 4
-        {
-            for px in self.out.chunks_exact_mut(4)
-            {
-                let entry = palette[usize::from(px[0]) & 255];
-
-                px[0] = entry.red;
-                px[1] = entry.green;
-                px[2] = entry.blue;
-                px[3] = entry.alpha;
-            }
-        }
     }
 }
