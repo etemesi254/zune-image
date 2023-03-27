@@ -261,6 +261,9 @@ pub trait EncoderTrait
     /// directly to prevent such
     fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
     {
+        // confirm things hold themselves
+        confirm_invariants(image)?;
+
         // check colorspace is correct.
         let colorspace = image.get_colorspace();
         let supported_colorspaces = self.supported_colorspaces();
@@ -297,11 +300,11 @@ pub trait EncoderTrait
 
                 let depth = Depth::new(self.default_depth());
 
-                depth.execute(&mut image_clone)?
-                // current image bit depth not supported by this
-                // encoder.
-                // add it to supported depths
+                depth.execute(&mut image_clone)?;
             }
+
+            // confirm again we didn't mess up
+            confirm_invariants(&image_clone)?;
 
             self.encode_inner(&image_clone)
         }
@@ -314,25 +317,16 @@ pub trait EncoderTrait
     /// encoder will encode the format in
     ///
     /// # Example
-    /// Get jpeg encoder format
-    /// Requires jpeg feature to work
+    ///  Get jpeg encoder format
+    ///-  Requires jpeg feature to work
     /// ```
-    /// #[cfg(feature = "jpeg")]
-    /// {
-    ///     use zune_image::codecs::ImageFormat;
-    ///     use zune_image::codecs::jpeg::JpegEncoder;
-    ///     use zune_image::traits::EncoderTrait;
+    /// use zune_image::codecs::ImageFormat;
+    /// use zune_image::codecs::jpeg::JpegEncoder;
+    /// use zune_image::traits::EncoderTrait;
     ///
-    ///     let encoder = JpegEncoder::new(10);
-    ///     assert_eq!(encoder.format(),ImageFormat::JPEG);
-    /// }
-    /// #[cfg(not(feature="jpeg"))]
-    /// {
-    ///  // do nothing
-    ///  let x=0;
-    /// }
+    /// let encoder = JpegEncoder::new();
+    /// assert_eq!(encoder.format(),ImageFormat::JPEG);
     /// ```
-    ///
     fn format(&self) -> ImageFormat;
 
     /// Call `encode` and then store the image
@@ -411,6 +405,20 @@ impl ZuneInts<u16> for u16
     fn max_value() -> u16
     {
         u16::MAX
+    }
+}
+
+impl ZuneInts<f32> for f32
+{
+    #[inline(always)]
+    fn depth() -> BitDepth
+    {
+        BitDepth::Sixteen
+    }
+    #[inline(always)]
+    fn max_value() -> f32
+    {
+        1.0
     }
 }
 
