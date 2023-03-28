@@ -15,11 +15,11 @@
 //!
 //! A more convenient API is given below, using `decode`
 //!
-//! ```no_run
+//!```no_run
 //! use zune_png::PngDecoder;
 //! let mut decoder = PngDecoder::new(&[]);
 //!
-//! let pixels = decoder.decode_raw();
+//! let pixels = decoder.decode_into();
 //! ```
 //!
 //! # Decode to u8 or u16 depending on depth

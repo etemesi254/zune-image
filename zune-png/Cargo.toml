@@ -18,9 +18,9 @@ default = ["crc", "sse"]
 zune-core = { path = "../zune-core", version = "0.2.1" }
 log = "0.4.17"
 zune-inflate = { path = "../zune-inflate", default-features = false, features = ["zlib"] }
-
+bytemuck = { version = "1.13.1" }
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
-png = "0.17.7"
+png = "0.17.8-rc"
 spng = "0.1.0"

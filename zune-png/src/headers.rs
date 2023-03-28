@@ -270,6 +270,8 @@ impl<'a> PngDecoder<'a>
                 return Err(PngErrors::GenericStatic("Invalid tIME chunk length"));
             }
             warn!("Invalid time chunk length {:?}", chunk.length);
+            // skip chunk + crc
+            self.stream.skip(chunk.length + 4);
             return Ok(());
         }
 
@@ -320,8 +322,11 @@ impl<'a> PngDecoder<'a>
             }
             else
             {
-                warn!("Invalid exif chunk, it doesn't start with the magick bytes")
+                warn!("Invalid exif chunk, it doesn't start with the magic bytes")
             }
+            // do not parse
+            self.stream.skip(chunk.length + 4);
+            return Ok(());
         }
         self.png_info.exif = Some(data);
         // skip past crc

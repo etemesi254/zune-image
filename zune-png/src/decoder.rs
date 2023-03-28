@@ -2,11 +2,12 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use log::info;
-use zune_core::bit_depth::BitDepth;
+use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
+use zune_core::utils::{convert_be_to_target_endian_u16, is_le};
 use zune_inflate::DeflateOptions;
 
 use crate::constants::PNG_SIGNATURE;
@@ -18,7 +19,7 @@ use crate::filters::{
     handle_paeth_special_first, handle_sub, handle_sub_special, handle_up, handle_up_special
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
-use crate::utils::{convert_be_to_ne, expand_palette, expand_trns};
+use crate::utils::{expand_palette, expand_trns};
 
 /// A palette entry.
 ///
@@ -98,7 +99,7 @@ pub struct PngInfo<'a>
 ///
 /// Instantiate the decoder with either the [new](PngDecoder::new)
 /// or [new_with_options](PngDecoder::new_with_options) and
-/// using either  of the [`decode_raw`](PngDecoder::decode_raw) or
+/// using either  of the [`decode_raw`](PngDecoder::decode_into) or
 /// [`decode`](PngDecoder::decode) will return pixels present in that image
 ///
 /// # Note
@@ -385,6 +386,10 @@ impl<'a> PngDecoder<'a>
         self.seen_headers = true;
         Ok(())
     }
+    pub fn byte_endian(&self) -> ByteEndian
+    {
+        self.options.get_bye_endian()
+    }
 
     /// Decode PNG encoded images and return the vector of raw
     /// pixels
@@ -392,11 +397,15 @@ impl<'a> PngDecoder<'a>
     /// The resulting vec may be bigger or smaller than expected
     /// depending on the bit depth of the image.
     ///
-    /// The endianness is big endian for 16 bit images represented as two u8 slices
+    /// # Byte Endian
     ///
-    /// This does not do gamma correction as opposed to decode,but may change
-    /// in the future.
-    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
+    /// - In case the image is a 16 bit PNG, endianness of the samples may be retrieved
+    ///   via [`byte_endian`](Self::byte_endian) method, which returns the configured byte
+    ///   endian of the samples.
+    /// - PNG uses Big Endian while most machines today are Little Endian (x86 and mainstream Arm),
+    ///   hence if the configured endianness is little endian the library will implicitly convert
+    ///   samples to little endian
+    pub fn decode_raw(&mut self, out: &mut [u8]) -> Result<(), PngErrors>
     {
         // decode headers
         if !self.seen_headers
@@ -431,7 +440,7 @@ impl<'a> PngDecoder<'a>
 
         let image_len = img_width_bytes * info.height;
 
-        self.out = vec![0; image_len];
+        let out = &mut out[..image_len];
 
         // go parse IDAT chunks returning the inflate
         let deflate_data = self.inflate()?;
@@ -440,17 +449,15 @@ impl<'a> PngDecoder<'a>
         // we are already done with them.
         self.idat_chunks = Vec::new();
 
-        let new_len = info.width * info.height * colorspace.num_components() * bytes;
-
         if info.interlace_method == InterlaceMethod::Standard
         {
             // allocate out to be enough to hold raw decoded bytes
 
-            self.create_png_image_raw(&deflate_data, info.width, info.height)?;
+            self.create_png_image_raw(&deflate_data, info.width, info.height, out)?;
         }
         else if info.interlace_method == InterlaceMethod::Adam7
         {
-            self.decode_interlaced(&deflate_data)?;
+            self.decode_interlaced(&deflate_data, out)?;
         }
 
         if self.seen_trns && self.png_info.color != PngColor::Palette
@@ -491,17 +498,16 @@ impl<'a> PngDecoder<'a>
             }
         }
 
-        self.out.truncate(new_len);
-        let mut out = core::mem::take(&mut self.out);
-
+        // convert to set endian if need be
         if self.get_depth().unwrap() == BitDepth::Sixteen
         {
-            convert_be_to_ne(&mut out, self.options.use_sse41());
+            convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
         }
-        Ok(out)
+
+        Ok(())
     }
 
-    fn decode_interlaced(&mut self, deflate_data: &[u8]) -> Result<(), PngErrors>
+    fn decode_interlaced(&mut self, deflate_data: &[u8], out: &mut [u8]) -> Result<(), PngErrors>
     {
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
@@ -514,6 +520,7 @@ impl<'a> PngDecoder<'a>
         // They called me a mad man - Thanos
         let out_bytes = out_n * bytes;
 
+        // temporary space for  holding interlaced images
         let mut final_out = vec![0_u8; new_len];
 
         const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
@@ -558,7 +565,7 @@ impl<'a> PngDecoder<'a>
 
                 let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
 
-                self.create_png_image_raw(deflate_slice, x, y)?;
+                self.create_png_image_raw(deflate_slice, x, y, &mut final_out)?;
 
                 for j in 0..y
                 {
@@ -570,49 +577,80 @@ impl<'a> PngDecoder<'a>
                         let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
                         let out_start = (j * x + i) * out_bytes;
 
-                        final_out[final_start..final_start + out_bytes]
-                            .copy_from_slice(&self.out[out_start..out_start + out_bytes]);
+                        out[final_start..final_start + out_bytes]
+                            .copy_from_slice(&final_out[out_start..out_start + out_bytes]);
                     }
                 }
                 image_offset += image_len;
             }
         }
-        self.out = final_out;
         Ok(())
     }
 
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a Vec<u16>
-    ///
-    /// This does one extra allocation when compared to `decode_raw` for 16 bit images to create the
-    /// necessary representation of 16 bit images.
+    #[rustfmt::skip]
     pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
     {
-        let out = self.decode_raw()?;
+        // Here we want to either return a `u8` or a `u16` depending on the
+        // headers, so we pull two tricks
+        //  1 - We either allocate u8 or u16 depending on the output
+        //      We actually allocate both, but one of the vectors ends up being
+        //      zero, and in creating an empty vec nothing is allocated on the heap
+        //  2 - We convert samples to native endian, so that transmuting is a no-op in case of
+        //      16 bit images in the next step
+        //  3 - We use bytemuck to to safe align, hence keeping the no unsafe mantra except
+        //      for platform specific intrinsics
+
+        self.decode_headers()?;
+        // configure that the decoder converts samples to native endian
+        if is_le()
+        {
+            self.options.set_byte_endian(ByteEndian::LE);
+        } else {
+            self.options.set_byte_endian(ByteEndian::BE);
+        }
+
+        let info = self.png_info;
+        let bytes = if info.depth == 16 { 2 } else { 1 };
+
+        let out_n = self.get_colorspace().unwrap().num_components();
+        let new_len = info.width * info.height * out_n;
+
+        let mut out_u8: Vec<u8> = vec![0; new_len * usize::from(info.depth != 16)];
+        let mut out_u16: Vec<u16> = vec![0; new_len * usize::from(info.depth == 16)];
+
+        // use either u8 or u16 depending on 
+        let out = if bytes == 1
+        {
+            &mut out_u8
+        } else {
+            let (a, b, c) = bytemuck::pod_align_to_mut::<u16, u8>(&mut out_u16);
+
+            // a and c should be empty since we do not expect slop bytes on either edge
+            assert!(a.is_empty());
+            assert!(c.is_empty());
+            assert_eq!(b.len(), new_len * 2); // length should be twice that of u8
+            b
+        };
+
+        self.decode_raw(out)?;
 
         if self.png_info.depth <= 8
         {
-            return Ok(DecodingResult::U8(out));
+            return Ok(DecodingResult::U8(out_u8));
         }
+
         if self.png_info.depth == 16
         {
-            // https://github.com/etemesi254/zune-image/issues/36
-            // De-sugars to a memcpy
-            let new_array: Vec<u16> = out
-                .chunks_exact(2)
-                .map(|chunk| {
-                    let value: [u8; 2] = chunk.try_into().unwrap();
-                    u16::from_ne_bytes(value)
-                })
-                .collect();
-
-            return Ok(DecodingResult::U16(new_array));
+            return Ok(DecodingResult::U16(out_u16));
         }
+
         Err(PngErrors::GenericStatic("Not implemented"))
     }
     /// Create the png data from post deflated data
     ///
-    /// `self.out` needs to have enough space to hold data, otherwise
+    /// `out` needs to have enough space to hold data, otherwise
     /// this will panic
     ///
     /// This is to allow reuse e.g interlaced images use one big allocation
@@ -620,7 +658,7 @@ impl<'a> PngDecoder<'a>
     /// away from this method to the caller of this method
     #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
     fn create_png_image_raw(
-        &mut self, deflate_data: &[u8], width: usize, height: usize
+        &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8]
     ) -> Result<(), PngErrors>
     {
         let use_sse4 = self.options.use_sse41();
@@ -690,7 +728,7 @@ impl<'a> PngDecoder<'a>
             // current points to the start of the row where we are writing de-filtered output to
             // prev is all rows we already wrote output to.
 
-            let (prev, mut current) = self.out.split_at_mut(out_position);
+            let (prev, mut current) = out.split_at_mut(out_position);
 
             current = &mut current[0..out_chunk_size];
 
@@ -829,9 +867,9 @@ impl<'a> PngDecoder<'a>
                 let in_offset = out_position - out_chunk_size;
                 let out_len = width * out_n;
 
-                self.expand_bits_to_byte(width, in_offset, out_n);
+                self.expand_bits_to_byte(width, in_offset, out_n, out);
 
-                let out_slice = &mut self.out[out_position - out_chunk_size..out_position];
+                let out_slice = &mut out[out_position - out_chunk_size..out_position];
                 // save the previous row to be used in the next pass
                 self.previous_stride[..width_stride].copy_from_slice(&out_slice[..width_stride]);
 
@@ -868,12 +906,14 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
     /// Expand bits to bytes expand images with less than 8 bpp
-    fn expand_bits_to_byte(&mut self, width: usize, mut in_offset: usize, out_n: usize)
+    fn expand_bits_to_byte(
+        &mut self, width: usize, mut in_offset: usize, out_n: usize, out: &mut [u8]
+    )
     {
         // How it works
         // ------------
         // We want to expand the current row, current row was written in
-        // self.out[in_offset..] up until ceil_div((width*depth),8)
+        // out[in_offset..] up until ceil_div((width*depth),8)
         //
         // We want to write the expanded row to self.expanded_stride
         //
@@ -914,7 +954,7 @@ impl<'a> PngDecoder<'a>
                     .try_into()
                     .unwrap();
 
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 cur[0] = scale * ((in_val >> 7) & 0x01);
                 cur[1] = scale * ((in_val >> 6) & 0x01);
@@ -932,7 +972,7 @@ impl<'a> PngDecoder<'a>
             }
             if k > 0
             {
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 for p in 0..k
                 {
@@ -953,7 +993,7 @@ impl<'a> PngDecoder<'a>
                     .try_into()
                     .unwrap();
 
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 cur[0] = scale * ((in_val >> 6) & 0x03);
                 cur[1] = scale * ((in_val >> 4) & 0x03);
@@ -967,7 +1007,7 @@ impl<'a> PngDecoder<'a>
             }
             if k > 0
             {
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 for p in 0..k
                 {
@@ -987,7 +1027,7 @@ impl<'a> PngDecoder<'a>
                     .unwrap()
                     .try_into()
                     .unwrap();
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 cur[0] = scale * ((in_val >> 4) & 0x0f);
                 cur[1] = scale * ((in_val) & 0x0f);
@@ -1000,7 +1040,7 @@ impl<'a> PngDecoder<'a>
 
             if k > 0
             {
-                let in_val = self.out[in_offset];
+                let in_val = out[in_offset];
 
                 // leftovers
                 for p in 0..k
