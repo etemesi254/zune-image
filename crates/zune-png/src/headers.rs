@@ -226,17 +226,15 @@ impl<'a> PngDecoder<'a>
             return Err(PngErrors::Generic(error));
         }
 
-        self.gama = (self.stream.get_u32_be() as f64 / 100000.0) as f32;
-        self.seen_gamma = true;
-        if self.gama == 0.0
+        let mut gama = (self.stream.get_u32_be() as f64 / 100000.0) as f32;
+        if gama == 0.0
         {
             // this is invalid gama
             // warn and set it to 2.2 which is the default gama
             warn!("Gamma value of 0.0 is invalid, setting it to 2.2");
-
-            self.gama = 1.0 / 2.2;
+            gama = 1.0 / 2.2;
         }
-
+        self.png_info.gamma = Some(gama);
         // skip crc
         self.stream.skip(4);
 
