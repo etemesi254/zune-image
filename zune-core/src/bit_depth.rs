@@ -145,3 +145,17 @@ impl BitDepth
         self.size_of() * 8
     }
 }
+/// Byte endianness of returned samples
+/// this is useful when the decoder returns samples which span more
+/// than one byte yet the type returned is `&[u8]`
+///
+/// This helps you interpret how those bytes should be reconstructed
+/// to a higher order type
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ByteEndian
+{
+    /// Little Endian byte-order
+    LE,
+    /// Big Endian byte-order
+    BE
+}
