@@ -921,7 +921,6 @@ impl<'a> DeflateDecoder<'a>
                             entry = offset_decode_table[((entry >> 16) as usize + extra) & 511];
                             // refill to handle some weird edge case where we have
                             // less bits than needed for reading the lit-len
-                            self.stream.refill_inner_loop();
                         }
                         saved_bitbuf = self.stream.buffer;
 
@@ -944,6 +943,10 @@ impl<'a> DeflateDecoder<'a>
 
                         src_offset = dest_offset - offset;
 
+                        if self.stream.bits_left < 11
+                        {
+                            self.stream.refill_inner_loop();
+                        }
                         // Copy some bytes unconditionally
                         // This makes us copy smaller match lengths quicker because we don't need
                         // a loop + don't send too much pressure to the Memory unit.
