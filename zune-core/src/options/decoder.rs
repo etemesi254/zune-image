@@ -74,6 +74,7 @@ bitflags! {
     ///
     /// NOTE: When you extend this, add true or false to
     /// all options above that return a `DecoderFlag`
+    #[derive(Copy,Debug,Clone)]
     pub struct  DecoderFlags:u64{
         /// Whether the decoder should confirm and report adler mismatch
         const INFLATE_CONFIRM_ADLER         = 0b0000_0000_0000_0000_0000_0000_0000_0001;
