@@ -101,6 +101,15 @@ impl OperationsTrait for ColorspaceConv
                     frame.channels_vec().pop().unwrap();
                 }
             }
+            (ColorSpace::RGBA, ColorSpace::RGB) =>
+            {
+                // pop last item in the vec which should
+                // contain the alpha channel
+                for frame in image.get_frames_mut()
+                {
+                    frame.channels_vec().pop().unwrap();
+                }
+            }
 
             (a, b) =>
             {
