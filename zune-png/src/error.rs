@@ -9,7 +9,8 @@ pub enum PngErrors
     BadCrc(u32, u32),
     ZlibDecodeErrors(zune_inflate::errors::InflateDecodeErrors),
     EmptyPalette,
-    UnsupportedAPNGImage
+    UnsupportedAPNGImage,
+    TooSmallOutput(usize, usize)
 }
 impl Debug for PngErrors
 {
@@ -35,6 +36,10 @@ impl Debug for PngErrors
             Self::UnsupportedAPNGImage =>
             {
                 writeln!(f, "Unsupported APNG format")
+            }
+            Self::TooSmallOutput(expected, found) =>
+            {
+                write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes")
             }
         }
     }
