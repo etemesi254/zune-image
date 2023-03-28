@@ -5,6 +5,7 @@ use crate::colorspace::ColorSpace;
 
 bitflags! {
     /// Encoder options that are flags
+    #[derive(Copy,Debug,Clone)]
     struct EncoderFlags:u64{
         /// Whether JPEG images should be encoded as progressive images
         const JPEG_ENCODE_PROGRESSIVE = 0b0000_0000_0000_0000_0000_0000_0000_0001;
@@ -48,7 +49,7 @@ impl Default for EncoderOptions
             width:       0,
             height:      0,
             colorspace:  ColorSpace::RGB,
-            quality:     100,
+            quality:     80,
             depth:       BitDepth::Eight,
             num_threads: 4,
             effort:      4,
