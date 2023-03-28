@@ -1,6 +1,7 @@
 //! Global Decoder options
 use bitflags::bitflags;
 
+use crate::bit_depth::ByteEndian;
 use crate::colorspace::ColorSpace;
 
 fn decoder_strict_mode() -> DecoderFlags
@@ -143,8 +144,11 @@ pub struct DecoderOptions
     /// Maximum size for deflate.
     /// Respected by all decoders that use inflate/deflate
     deflate_limit: usize,
-
-    flags: DecoderFlags
+    /// Boolean flags that influence decoding
+    flags:         DecoderFlags,
+    /// The byte endian of the returned bytes will be stored in
+    /// in case a single pixel spans more than a byte
+    endianness:    ByteEndian
 }
 
 /// Initializers
@@ -218,22 +222,36 @@ impl DecoderOptions
     {
         self.flags.contains(DecoderFlags::ZUNE_USE_UNSAFE)
     }
+
     /// Set maximum width for which the decoder should not try
     /// decoding images greater than that width
+    ///
+    /// # Arguments
+    ///
+    /// * `width`:  The maximum width allowed
+    ///
+    /// returns: DecoderOptions
     pub fn set_max_width(mut self, width: usize) -> Self
     {
         self.max_width = width;
         self
     }
+
     /// Set maximum height for which the decoder should not try
     /// decoding images greater than that height
+    /// # Arguments
+    ///
+    /// * `height`: The maximum height allowed
+    ///
+    /// returns: DecoderOptions
+    ///
     pub fn set_max_height(mut self, height: usize) -> Self
     {
         self.max_height = height;
         self
     }
 
-    ///  Whether the routines can use unsafe platform specific
+    /// Whether the routines can use unsafe platform specific
     /// intrinsics when necessary
     ///
     /// Platform intrinsics are implemented for operations which
@@ -258,7 +276,18 @@ impl DecoderOptions
         self.flags = flags;
         self
     }
-    /// Set whether the decoder should be in strict mode
+    /// Set whether the decoder should be in standards conforming/
+    /// strict mode
+    ///
+    /// This reduces the error tolerance level for the decoders and invalid
+    /// samples will be rejected by the decoder
+    ///
+    /// # Arguments
+    ///
+    /// * `yes`:
+    ///
+    /// returns: DecoderOptions
+    ///
     pub fn set_strict_mode(mut self, yes: bool) -> Self
     {
         let flags = DecoderFlags::JPG_ERROR_ON_NON_CONFORMANCE
@@ -267,6 +296,32 @@ impl DecoderOptions
 
         self.flags.set(flags, yes);
         self
+    }
+
+    /// Set the byte endian for which raw samples will be stored in
+    /// in case a single pixel sample spans more than a byte.
+    ///
+    /// The default is usually native endian hence big endian values
+    /// will be converted to little endian on little endian systems,
+    ///
+    /// and little endian values will be converted to big endian on big endian systems
+    ///
+    /// # Arguments
+    ///
+    /// * `endian`: The endianness to which to set the bytes to
+    ///
+    /// returns: DecoderOptions
+    pub fn set_byte_endian(mut self, endian: ByteEndian) -> Self
+    {
+        self.endianness = endian;
+        self
+    }
+
+    /// Get the byte endian for which samples that span more than one byte will
+    /// be treated
+    pub fn get_bye_endian(&self) -> ByteEndian
+    {
+        self.endianness
     }
 }
 
@@ -556,7 +611,8 @@ impl Default for DecoderOptions
             max_height:     1 << 14,
             max_scans:      100,
             deflate_limit:  1 << 30,
-            flags:          decoder_strict_mode()
+            flags:          decoder_strict_mode(),
+            endianness:     ByteEndian::BE
         }
     }
 }
