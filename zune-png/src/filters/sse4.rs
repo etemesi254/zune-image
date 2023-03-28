@@ -3,7 +3,7 @@
 //! These techniques enable faster png de-filtering in
 //! situations where sse is available i.e on x86 arch
 //!
-//! They are derived from the amazing spng at https://github.com/randy408/libspng
+//! They are derived from the amazing [spng](https://github.com/randy408/libspng)
 //!
 //! which derived them from libpng and hence they are governed by that license
 

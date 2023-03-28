@@ -58,6 +58,9 @@ pub(crate) struct PngChunk
     pub crc:        u32
 }
 
+/// Time information data
+///
+/// Extracted from tIME chunk
 #[derive(Debug, Default, Copy, Clone)]
 pub struct TimeInfo
 {
@@ -71,16 +74,20 @@ pub struct TimeInfo
 
 /// Represents PNG information that can be extracted
 /// from a png file.
-///
-/// The properties are read from IHDR chunk,
-/// but may be changed by decoder during decoding
 #[derive(Default, Debug, Copy, Clone)]
 pub struct PngInfo<'a>
 {
+    /// Image width
     pub width:            usize,
+    /// Image height
     pub height:           usize,
+    /// Image gamma
+    pub gamma:            Option<f32>,
+    /// Image interlace method
     pub interlace_method: InterlaceMethod,
+    /// Image time info
     pub time_info:        Option<TimeInfo>,
+    /// Image exif data
     pub exif:             Option<&'a [u8]>,
 
     // no need to expose these ones
@@ -112,13 +119,10 @@ pub struct PngDecoder<'a>
     pub(crate) png_info:        PngInfo<'a>,
     pub(crate) palette:         Vec<PLTEEntry>,
     pub(crate) idat_chunks:     Vec<u8>,
-    pub(crate) out:             Vec<u8>,
     pub(crate) expanded_stride: Vec<u8>,
     pub(crate) previous_stride: Vec<u8>,
-    pub(crate) gama:            f32,
     pub(crate) trns_bytes:      [u16; 4],
     pub(crate) chunk_handler:   UnkownChunkHandler,
-    pub(crate) seen_gamma:      bool,
     pub(crate) seen_hdr:        bool,
     pub(crate) seen_ptle:       bool,
     pub(crate) seen_headers:    bool,
@@ -127,12 +131,31 @@ pub struct PngDecoder<'a>
 
 impl<'a> PngDecoder<'a>
 {
+    /// Create a new PNG decoder
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: The raw bytes of a png encoded file
+    ///
+    /// returns: PngDecoder
+    ///
+    /// The decoder settings are set to be default which is
+    ///  strict mode + intrinsics
     pub fn new(data: &'a [u8]) -> PngDecoder<'a>
     {
         let default_opt = DecoderOptions::default();
 
         PngDecoder::new_with_options(data, default_opt)
     }
+    /// Create a new decoder with the specified options
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: Raw encoded jpeg file contents
+    /// * `options`:  The custom options for this decoder
+    ///
+    /// returns: PngDecoder
+    ///
     #[allow(unused_mut, clippy::redundant_field_names)]
     pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
     {
@@ -144,19 +167,21 @@ impl<'a> PngDecoder<'a>
             png_info:        PngInfo::default(),
             previous_stride: vec![],
             idat_chunks:     Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            out:             Vec::new(),
-            gama:            0.0,
             expanded_stride: vec![],
             seen_ptle:       false,
             seen_trns:       false,
             seen_headers:    false,
-            seen_gamma:      false,
             trns_bytes:      [0; 4],
             chunk_handler:   default_chunk_handler
         }
     }
 
     /// Get image dimensions or none if they aren't decoded
+    ///
+    /// # Returns
+    /// - `Some((width,height))`
+    /// - `None`: The image headers haven't been decoded
+    ///   or there was an error decoding them
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if !self.seen_hdr
@@ -166,6 +191,13 @@ impl<'a> PngDecoder<'a>
 
         Some((self.png_info.width, self.png_info.height))
     }
+    /// Return the depth of the image
+    ///
+    /// Bit depths less than 8 will be returned as [`BitDepth::Eight`](zune_core::bit_depth::BitDepth::Eight)
+    ///
+    /// # Returns
+    /// - `Some(depth)`:  The bit depth of the image.
+    /// - `None`: The header wasn't decoded hence the depth wasn't discovered.
     pub const fn get_depth(&self) -> Option<BitDepth>
     {
         if !self.seen_hdr
@@ -179,19 +211,18 @@ impl<'a> PngDecoder<'a>
             _ => unreachable!()
         }
     }
-    /// Get image gamma
-    pub const fn get_gamma(&self) -> Option<f32>
-    {
-        if self.seen_gamma
-        {
-            Some(self.gama)
-        }
-        else
-        {
-            None
-        }
-    }
     /// Get image colorspace
+    ///
+    /// If an image is a palette type, the colorspace is
+    /// either RGB or RGBA depending on existence a transparency chunk
+    ///
+    /// If an image has a transparency chunk, the colorspace
+    /// will include that
+    ///
+    /// # Returns
+    ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
+    ///  - `None`: If the image headers haven't been decoded, or there was an error
+    ///     during decoding
     pub fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if !self.seen_hdr
@@ -386,18 +417,61 @@ impl<'a> PngDecoder<'a>
         self.seen_headers = true;
         Ok(())
     }
+    /// Return the configured image byte endian which the pixels
+    /// will be in if the image is in 16 bit
+    ///
+    /// If the image depth is less than 16 bit, then the endianness has
+    /// no effect
     pub fn byte_endian(&self) -> ByteEndian
     {
         self.options.get_bye_endian()
     }
 
-    /// Decode PNG encoded images and return the vector of raw
-    /// pixels
+    /// Return the number of bytes required to hold a decoded image frame
+    /// decoded using the given input transformations
     ///
-    /// The resulting vec may be bigger or smaller than expected
-    /// depending on the bit depth of the image.
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
+    ///  - `None`: Indicates the image headers was not decoded.
     ///
-    /// # Byte Endian
+    /// # Panics
+    /// In case `width*height*colorspace` calculation may overflow a usize
+    pub fn output_buffer_size(&self) -> Option<usize>
+    {
+        if !self.seen_hdr
+        {
+            return None;
+        }
+
+        let info = self.png_info;
+        let bytes = if info.depth == 16 { 2 } else { 1 };
+
+        let out_n = self.get_colorspace().unwrap().num_components();
+
+        let new_len = info
+            .width
+            .checked_mul(info.height)
+            .unwrap()
+            .checked_mul(out_n)
+            .unwrap()
+            .checked_mul(bytes)
+            .unwrap();
+
+        Some(new_len)
+    }
+
+    pub fn get_info(&self) -> &PngInfo<'a>
+    {
+        &self.png_info
+    }
+
+    /// Decode PNG encoded images and write raw pixels into `out`
+    ///
+    /// # Arguments
+    /// - `out`: The slice which we will write our values into.
+    ///         If the slice length is smaller than [`output_buffer_size`](Self::output_buffer_size), it's an error
+    ///
+    /// # Endianness
     ///
     /// - In case the image is a 16 bit PNG, endianness of the samples may be retrieved
     ///   via [`byte_endian`](Self::byte_endian) method, which returns the configured byte
@@ -405,7 +479,7 @@ impl<'a> PngDecoder<'a>
     /// - PNG uses Big Endian while most machines today are Little Endian (x86 and mainstream Arm),
     ///   hence if the configured endianness is little endian the library will implicitly convert
     ///   samples to little endian
-    pub fn decode_raw(&mut self, out: &mut [u8]) -> Result<(), PngErrors>
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngErrors>
     {
         // decode headers
         if !self.seen_headers
@@ -429,16 +503,14 @@ impl<'a> PngDecoder<'a>
         }
         info!("Colorspace: {:?} ", self.get_colorspace().unwrap());
 
-        let colorspace = self.get_colorspace().unwrap();
         let info = self.png_info;
-        let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let mut img_width_bytes;
+        let image_len = self.output_buffer_size().unwrap();
 
-        img_width_bytes = colorspace.num_components() * info.width;
-        img_width_bytes *= bytes;
-
-        let image_len = img_width_bytes * info.height;
+        if out.len() < image_len
+        {
+            return Err(PngErrors::TooSmallOutput(image_len, out.len()));
+        }
 
         let out = &mut out[..image_len];
 
@@ -464,12 +536,12 @@ impl<'a> PngDecoder<'a>
         {
             if info.depth <= 8
             {
-                expand_trns::<false>(&mut self.out, info.color, self.trns_bytes, info.depth);
+                expand_trns::<false>(out, info.color, self.trns_bytes, info.depth);
             }
             else if info.depth == 16
             {
                 // Tested by test_palette_trns_16bit.
-                expand_trns::<true>(&mut self.out, info.color, self.trns_bytes, info.depth);
+                expand_trns::<true>(out, info.color, self.trns_bytes, info.depth);
             }
         }
         // only un-palettize images if color type type is indexed
@@ -489,12 +561,12 @@ impl<'a> PngDecoder<'a>
                 // if tRNS chunk is present in paletted images, it contains
                 // alpha byte values, so that means we create alpha data from
                 // raw bytes
-                expand_palette(&mut self.out, plte_entry, 4);
+                expand_palette(out, plte_entry, 4);
             }
             else
             {
                 // Normal expansion
-                expand_palette(&mut self.out, plte_entry, 3);
+                expand_palette(out, plte_entry, 3);
             }
         }
 
@@ -507,8 +579,37 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
+    /// Decode data returning it into `Vec<u8>`, endianness of
+    /// returned bytes in case of image being 16 bits is given
+    /// [`byte_endian()`](Self::byte_endian) method
+    ///
+    ///
+    /// returns: `Result<Vec<u8, Global>, PngErrors>`
+    ///
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
+    {
+        if !self.seen_headers
+        {
+            self.decode_headers()?;
+        }
+
+        // allocate
+        let new_len = self.output_buffer_size().unwrap();
+        let mut out: Vec<u8> = vec![0; new_len];
+        //decode
+        self.decode_into(&mut out)?;
+
+        Ok(out)
+    }
+
     fn decode_interlaced(&mut self, deflate_data: &[u8], out: &mut [u8]) -> Result<(), PngErrors>
     {
+        const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
+        const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
+
+        const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
+        const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
+
         let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
@@ -522,12 +623,6 @@ impl<'a> PngDecoder<'a>
 
         // temporary space for  holding interlaced images
         let mut final_out = vec![0_u8; new_len];
-
-        const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
-        const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
-
-        const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
-        const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
 
         let mut image_offset = 0;
 
@@ -588,7 +683,29 @@ impl<'a> PngDecoder<'a>
     }
 
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
-    /// represent them in a Vec<u16>
+    /// represent them in a `Vec<u16>`
+    ///
+    ///
+    /// This returns an enum type [`DecodingResult`](zune_core::result::DecodingResult) which
+    /// one can de-sugar to extract actual values.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use zune_core::result::DecodingResult;
+    /// use zune_png::PngDecoder;
+    /// let mut decoder = PngDecoder::new(&[]);
+    ///
+    /// match decoder.decode().unwrap(){
+    ///     DecodingResult::U16(value)=>{
+    ///         // deal with 16 bit images
+    ///     }
+    ///     DecodingResult::U8(value)=>{
+    ///         // deal with <8 bit image
+    ///     }
+    ///     _=>{}
+    /// }
+    /// ```
     #[rustfmt::skip]
     pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
     {
@@ -603,12 +720,13 @@ impl<'a> PngDecoder<'a>
         //      for platform specific intrinsics
 
         self.decode_headers()?;
+
         // configure that the decoder converts samples to native endian
         if is_le()
         {
-            self.options.set_byte_endian(ByteEndian::LE);
+            self.options = self.options.set_byte_endian(ByteEndian::LE);
         } else {
-            self.options.set_byte_endian(ByteEndian::BE);
+            self.options = self.options.set_byte_endian(ByteEndian::BE);
         }
 
         let info = self.png_info;
@@ -620,7 +738,7 @@ impl<'a> PngDecoder<'a>
         let mut out_u8: Vec<u8> = vec![0; new_len * usize::from(info.depth != 16)];
         let mut out_u16: Vec<u16> = vec![0; new_len * usize::from(info.depth == 16)];
 
-        // use either u8 or u16 depending on 
+        // use either out_u8 or out_u16 depending on the expected type for the output
         let out = if bytes == 1
         {
             &mut out_u8
@@ -633,8 +751,7 @@ impl<'a> PngDecoder<'a>
             assert_eq!(b.len(), new_len * 2); // length should be twice that of u8
             b
         };
-
-        self.decode_raw(out)?;
+        self.decode_into(out)?;
 
         if self.png_info.depth <= 8
         {

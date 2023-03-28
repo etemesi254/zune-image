@@ -19,7 +19,7 @@
 //! use zune_png::PngDecoder;
 //! let mut decoder = PngDecoder::new(&[]);
 //!
-//! let pixels = decoder.decode_into();
+//! let pixels = decoder.decode_raw();
 //! ```
 //!
 //! # Decode to u8 or u16 depending on depth

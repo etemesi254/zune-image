@@ -129,10 +129,9 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
 
                 for chunk in out.chunks_exact_mut(4)
                 {
-                    if &chunk[0..3] != &r_matrix
-                    {
-                        chunk[3] = 255;
-                    }
+                    let mask = &chunk[0..3] != &r_matrix;
+
+                    chunk[3] = 255 * u8::from(mask);
                 }
             }
             _ => unreachable!()
