@@ -30,3 +30,4 @@ pub mod colorspace;
 pub mod options;
 pub mod result;
 pub mod serde;
+pub mod utils;
