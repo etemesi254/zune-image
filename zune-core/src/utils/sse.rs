@@ -7,6 +7,7 @@
 /// - Responsibility of the caller to ensure the system
 ///  supports executing ssse3 instructions or higher
 #[target_feature(enable = "ssse3")]
+#[allow(dead_code)]
 pub unsafe fn convert_be_to_ne_sse4(out: &mut [u8])
 {
     #[cfg(target_arch = "x86")]
