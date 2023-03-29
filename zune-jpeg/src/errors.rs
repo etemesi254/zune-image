@@ -40,6 +40,7 @@ pub enum DecodeErrors
     ExhaustedData,
     /// Large image dimensions(Corrupted data)?
     LargeDimensions(usize),
+    /// Too small output for size
     TooSmallOutput(usize, usize)
 }
 
