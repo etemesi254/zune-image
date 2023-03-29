@@ -3,7 +3,7 @@ use alloc::format;
 use log::trace;
 use zune_core::bytestream::ZByteReader;
 
-use crate::error::PngErrors;
+use crate::error::PngDecodeErrors;
 
 ///
 pub type UnkownChunkHandler = fn(
@@ -11,17 +11,17 @@ pub type UnkownChunkHandler = fn(
     chunk_type: [u8; 4],
     reader: &mut ZByteReader,
     crc: u32
-) -> Result<(), PngErrors>;
+) -> Result<(), PngDecodeErrors>;
 
 pub fn default_chunk_handler(
     length: usize, chunk_type: [u8; 4], reader: &mut ZByteReader, _crc: u32
-) -> Result<(), PngErrors>
+) -> Result<(), PngDecodeErrors>
 {
     let chunk_name = core::str::from_utf8(&chunk_type).unwrap_or("XXXX");
 
     if chunk_type[0] & (1 << 5) == 0
     {
-        return Err(PngErrors::Generic(format!(
+        return Err(PngDecodeErrors::Generic(format!(
             "Marker {chunk_name} unknown but deemed necessary",
         )));
     }

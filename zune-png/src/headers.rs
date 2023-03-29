@@ -5,21 +5,21 @@ use zune_inflate::DeflateDecoder;
 
 use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
-use crate::error::PngErrors;
+use crate::error::PngDecodeErrors;
 use crate::PngDecoder;
 
 impl<'a> PngDecoder<'a>
 {
-    pub(crate) fn parse_ihdr(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_ihdr(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if self.seen_hdr
         {
-            return Err(PngErrors::GenericStatic("Multiple IHDR, corrupt PNG"));
+            return Err(PngDecodeErrors::GenericStatic("Multiple IHDR, corrupt PNG"));
         }
 
         if chunk.length != 13
         {
-            return Err(PngErrors::GenericStatic("BAD IHDR length"));
+            return Err(PngDecodeErrors::GenericStatic("BAD IHDR length"));
         }
 
         let pos_start = self.stream.get_position();
@@ -29,12 +29,14 @@ impl<'a> PngDecoder<'a>
 
         if self.png_info.width == 0 || self.png_info.height == 0
         {
-            return Err(PngErrors::GenericStatic("Width or height cannot be zero"));
+            return Err(PngDecodeErrors::GenericStatic(
+                "Width or height cannot be zero"
+            ));
         }
 
         if self.png_info.width > self.options.get_max_width()
         {
-            return Err(PngErrors::Generic(format!(
+            return Err(PngDecodeErrors::Generic(format!(
                 "Image width {}, larger than maximum configured width {}, aborting",
                 self.png_info.width,
                 self.options.get_max_width()
@@ -43,7 +45,7 @@ impl<'a> PngDecoder<'a>
 
         if self.png_info.height > self.options.get_max_height()
         {
-            return Err(PngErrors::Generic(format!(
+            return Err(PngDecodeErrors::Generic(format!(
                 "Image height {}, larger than maximum configured height {}, aborting",
                 self.png_info.height,
                 self.options.get_max_height()
@@ -59,7 +61,9 @@ impl<'a> PngDecoder<'a>
         }
         else
         {
-            return Err(PngErrors::Generic(format!("Unknown color value {color}")));
+            return Err(PngDecodeErrors::Generic(format!(
+                "Unknown color value {color}"
+            )));
         }
         self.png_info.component = self.png_info.color.num_components();
         // verify colors plus bit depths
@@ -71,14 +75,14 @@ impl<'a> PngDecoder<'a>
             {
                 if self.png_info.color == PngColor::Palette
                 {
-                    return Err(PngErrors::GenericStatic(
+                    return Err(PngDecodeErrors::GenericStatic(
                         "Indexed colour cannot have 16 bit depth"
                     ));
                 }
             }
             _ =>
             {
-                return Err(PngErrors::Generic(format!(
+                return Err(PngDecodeErrors::Generic(format!(
                     "Unknown bit depth {}",
                     self.png_info.depth
                 )))
@@ -87,7 +91,7 @@ impl<'a> PngDecoder<'a>
 
         if self.stream.get_u8() != 0
         {
-            return Err(PngErrors::GenericStatic("Unknown compression method"));
+            return Err(PngDecodeErrors::GenericStatic("Unknown compression method"));
         }
 
         let filter_method = self.stream.get_u8();
@@ -98,7 +102,7 @@ impl<'a> PngDecoder<'a>
         }
         else
         {
-            return Err(PngErrors::Generic(format!(
+            return Err(PngDecodeErrors::Generic(format!(
                 "Unknown filter method {filter_method}"
             )));
         }
@@ -111,7 +115,7 @@ impl<'a> PngDecoder<'a>
         }
         else
         {
-            return Err(PngErrors::Generic(format!(
+            return Err(PngDecodeErrors::Generic(format!(
                 "Unknown interlace method {interlace_method}",
             )));
         }
@@ -134,11 +138,13 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
-    pub(crate) fn parse_plte(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_plte(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if chunk.length % 3 != 0
         {
-            return Err(PngErrors::GenericStatic("Invalid pLTE length, corrupt PNG"));
+            return Err(PngDecodeErrors::GenericStatic(
+                "Invalid pLTE length, corrupt PNG"
+            ));
         }
 
         // allocate palette
@@ -157,7 +163,7 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
-    pub(crate) fn parse_idat(&mut self, png_chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_idat(&mut self, png_chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         // get a reference to the IDAT chunk stream and push it,
         // we will later pass these to the deflate decoder as a whole, to get the whole
@@ -173,7 +179,7 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
-    pub(crate) fn parse_trns(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_trns(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         match self.png_info.color
         {
@@ -192,11 +198,11 @@ impl<'a> PngDecoder<'a>
             {
                 if self.palette.is_empty()
                 {
-                    return Err(PngErrors::GenericStatic("tRNS chunk before plTE"));
+                    return Err(PngDecodeErrors::GenericStatic("tRNS chunk before plTE"));
                 }
                 if self.palette.len() < chunk.length
                 {
-                    return Err(PngErrors::Generic(format!(
+                    return Err(PngDecodeErrors::Generic(format!(
                         "tRNS chunk with too long entries {}",
                         chunk.length
                     )));
@@ -210,7 +216,7 @@ impl<'a> PngDecoder<'a>
             {
                 let msg = format!("A tRNS chunk shall not appear for colour type {:?} as it is already transparent", self.png_info.color);
 
-                return Err(PngErrors::Generic(msg));
+                return Err(PngDecodeErrors::Generic(msg));
             }
         }
         // skip crc
@@ -219,12 +225,12 @@ impl<'a> PngDecoder<'a>
 
         Ok(())
     }
-    pub(crate) fn parse_gama(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_gama(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if self.options.get_strict_mode() && chunk.length != 4
         {
             let error = format!("Gama chunk length is not 4 but {}", chunk.length);
-            return Err(PngErrors::Generic(error));
+            return Err(PngDecodeErrors::Generic(error));
         }
 
         let mut gama = (self.stream.get_u32_be() as f64 / 100000.0) as f32;
@@ -243,11 +249,11 @@ impl<'a> PngDecoder<'a>
     }
 
     /// Parse the animation control chunk
-    pub(crate) fn parse_actl(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_actl(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if self.options.get_strict_mode()
         {
-            return Err(PngErrors::UnsupportedAPNGImage);
+            return Err(PngDecodeErrors::UnsupportedAPNGImage);
         }
         else
         {
@@ -260,13 +266,13 @@ impl<'a> PngDecoder<'a>
     }
 
     /// Parse the tIME chunk if present in PNG
-    pub(crate) fn parse_time(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_time(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if chunk.length != 7
         {
             if self.options.get_strict_mode()
             {
-                return Err(PngErrors::GenericStatic("Invalid tIME chunk length"));
+                return Err(PngDecodeErrors::GenericStatic("Invalid tIME chunk length"));
             }
             warn!("Invalid time chunk length {:?}", chunk.length);
             // skip chunk + crc
@@ -296,7 +302,7 @@ impl<'a> PngDecoder<'a>
         Ok(())
     }
 
-    pub(crate) fn parse_exif(&mut self, chunk: PngChunk) -> Result<(), PngErrors>
+    pub(crate) fn parse_exif(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
         if !self.stream.has(chunk.length)
         {
@@ -315,7 +321,7 @@ impl<'a> PngDecoder<'a>
         {
             if self.options.get_strict_mode()
             {
-                return Err(PngErrors::GenericStatic(
+                return Err(PngDecodeErrors::GenericStatic(
                     "[strict-mode]: Invalid exif chunk"
                 ));
             }

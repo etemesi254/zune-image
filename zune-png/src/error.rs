@@ -1,18 +1,29 @@
+//! Errors possible during png operations
 use alloc::string::String;
 use core::fmt::{Debug, Formatter};
 
-pub enum PngErrors
+/// Errors possible during decoding
+pub enum PngDecodeErrors
 {
+    /// Image signature is not png signature
     BadSignature,
+    /// Generic message
     GenericStatic(&'static str),
+    /// Generic message
     Generic(String),
+    /// Calculated CRC does not match expected crc
     BadCrc(u32, u32),
+    /// error decoding zlib stream
     ZlibDecodeErrors(zune_inflate::errors::InflateDecodeErrors),
+    /// Palette is empty yet was expected
     EmptyPalette,
+    /// Unsupported Animated PNG
     UnsupportedAPNGImage,
+    /// Too small output slice
     TooSmallOutput(usize, usize)
 }
-impl Debug for PngErrors
+
+impl Debug for PngDecodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
@@ -44,7 +55,8 @@ impl Debug for PngErrors
         }
     }
 }
-impl From<&'static str> for PngErrors
+
+impl From<&'static str> for PngDecodeErrors
 {
     fn from(val: &'static str) -> Self
     {
@@ -52,7 +64,7 @@ impl From<&'static str> for PngErrors
     }
 }
 
-impl From<String> for PngErrors
+impl From<String> for PngDecodeErrors
 {
     fn from(val: String) -> Self
     {
@@ -60,7 +72,7 @@ impl From<String> for PngErrors
     }
 }
 
-impl From<zune_inflate::errors::InflateDecodeErrors> for PngErrors
+impl From<zune_inflate::errors::InflateDecodeErrors> for PngDecodeErrors
 {
     fn from(val: zune_inflate::errors::InflateDecodeErrors) -> Self
     {
