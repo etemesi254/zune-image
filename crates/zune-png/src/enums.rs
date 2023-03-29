@@ -24,7 +24,7 @@ pub enum PngChunkType
     tIME,
     iTXt,
     tEXt,
-    zTxt,
+    zTXt,
     fcTL,
     acTL,
     unkn
