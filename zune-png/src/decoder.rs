@@ -12,7 +12,7 @@ use zune_inflate::DeflateOptions;
 
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
-use crate::error::PngErrors;
+use crate::error::PngDecodeErrors;
 use crate::filters::{
     handle_avg, handle_avg_first, handle_avg_special, handle_avg_special_first,
     handle_none_special, handle_paeth, handle_paeth_first, handle_paeth_special,
@@ -126,7 +126,7 @@ pub struct PngInfo<'a>
     pub exif:                 Option<&'a [u8]>,
     /// Icc profile
     pub icc_profile:          Option<Vec<u8>>,
-    /// Text chunk
+    /// UTF-8 encoded text chunk
     pub itxt_chunk:           Vec<ItxtChunk<'a>>,
     /// ztxt chunk
     pub ztxt_chunk:           Vec<ZtxtChunk<'a>>,
@@ -301,7 +301,7 @@ impl<'a> PngDecoder<'a>
             }
         }
     }
-    fn read_chunk_header(&mut self) -> Result<PngChunk, PngErrors>
+    fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors>
     {
         // Format is length - chunk type - [data] -  crc chunk, load crc chunk now
         let chunk_length = self.stream.get_u32_be_err()? as usize;
@@ -344,7 +344,7 @@ impl<'a> PngDecoder<'a>
                 self.stream.remaining()
             );
 
-            return Err(PngErrors::Generic(err));
+            return Err(PngDecodeErrors::Generic(err));
         }
         // Confirm the CRC here.
         #[cfg(feature = "crc")]
@@ -363,7 +363,7 @@ impl<'a> PngDecoder<'a>
 
                 if crc != calc_crc
                 {
-                    return Err(PngErrors::BadCrc(crc, calc_crc));
+                    return Err(PngDecodeErrors::BadCrc(crc, calc_crc));
                 }
                 // go point after the chunk type
                 // The other parts expect the bit-reader to point to the
@@ -384,20 +384,20 @@ impl<'a> PngDecoder<'a>
     ///
     /// After calling this, header information can
     /// be accessed by public headers
-    pub fn decode_headers(&mut self) -> Result<(), PngErrors>
+    pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors>
     {
         // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
 
         if signature != PNG_SIGNATURE
         {
-            return Err(PngErrors::BadSignature);
+            return Err(PngDecodeErrors::BadSignature);
         }
 
         // check if first chunk is ihdr here
         if self.stream.peek_at(4, 4)? != b"IHDR"
         {
-            return Err(PngErrors::GenericStatic(
+            return Err(PngDecodeErrors::GenericStatic(
                 "First chunk not IHDR, Corrupt PNG"
             ));
         }
@@ -525,9 +525,22 @@ impl<'a> PngDecoder<'a>
         Some(new_len)
     }
 
-    pub fn get_info(&self) -> &PngInfo<'a>
+    /// Get png information which was extracted from the headers
+    ///
+    ///
+    /// # Returns
+    /// - `Some(info)` : The information present in the header
+    /// - `None` : Indicates headers were not decoded
+    pub fn get_info(&self) -> Option<&PngInfo<'a>>
     {
-        &self.png_info
+        if self.seen_headers
+        {
+            Some(&self.png_info)
+        }
+        else
+        {
+            None
+        }
     }
 
     /// Decode PNG encoded images and write raw pixels into `out`
@@ -544,7 +557,7 @@ impl<'a> PngDecoder<'a>
     /// - PNG uses Big Endian while most machines today are Little Endian (x86 and mainstream Arm),
     ///   hence if the configured endianness is little endian the library will implicitly convert
     ///   samples to little endian
-    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngErrors>
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors>
     {
         // decode headers
         if !self.seen_headers
@@ -574,7 +587,7 @@ impl<'a> PngDecoder<'a>
 
         if out.len() < image_len
         {
-            return Err(PngErrors::TooSmallOutput(image_len, out.len()));
+            return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
         }
 
         let out = &mut out[..image_len];
@@ -617,7 +630,7 @@ impl<'a> PngDecoder<'a>
         {
             if self.palette.is_empty()
             {
-                return Err(PngErrors::EmptyPalette);
+                return Err(PngDecodeErrors::EmptyPalette);
             }
             let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
 
@@ -651,7 +664,7 @@ impl<'a> PngDecoder<'a>
     ///
     /// returns: `Result<Vec<u8, Global>, PngErrors>`
     ///
-    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngErrors>
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
     {
         if !self.seen_headers
         {
@@ -669,7 +682,7 @@ impl<'a> PngDecoder<'a>
 
     fn decode_interlaced(
         &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo
-    ) -> Result<(), PngErrors>
+    ) -> Result<(), PngDecodeErrors>
     {
         const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
         const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
@@ -721,7 +734,7 @@ impl<'a> PngDecoder<'a>
 
                 if image_offset + image_len > deflate_data.len()
                 {
-                    return Err(PngErrors::GenericStatic("Too short data"));
+                    return Err(PngDecodeErrors::GenericStatic("Too short data"));
                 }
 
                 let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
@@ -773,7 +786,7 @@ impl<'a> PngDecoder<'a>
     /// }
     /// ```
     #[rustfmt::skip]
-    pub fn decode(&mut self) -> Result<DecodingResult, PngErrors>
+    pub fn decode(&mut self) -> Result<DecodingResult, PngDecodeErrors>
     {
         // Here we want to either return a `u8` or a `u16` depending on the
         // headers, so we pull two tricks
@@ -829,7 +842,7 @@ impl<'a> PngDecoder<'a>
             return Ok(DecodingResult::U16(out_u16));
         }
 
-        Err(PngErrors::GenericStatic("Not implemented"))
+        Err(PngDecodeErrors::GenericStatic("Not implemented"))
     }
     /// Create the png data from post deflated data
     ///
@@ -842,7 +855,7 @@ impl<'a> PngDecoder<'a>
     #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
     fn create_png_image_raw(
         &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8], info: &PngInfo
-    ) -> Result<(), PngErrors>
+    ) -> Result<(), PngDecodeErrors>
     {
         let use_sse4 = self.options.use_sse41();
         let use_sse2 = self.options.use_sse2();
@@ -871,7 +884,7 @@ impl<'a> PngDecoder<'a>
                 image_len,
                 deflate_data.len()
             );
-            return Err(PngErrors::Generic(msg));
+            return Err(PngDecodeErrors::Generic(msg));
         }
         // do png  un-filtering
         let mut chunk_size;
@@ -948,7 +961,7 @@ impl<'a> PngDecoder<'a>
 
             // get it's type
             let mut filter = FilterMethod::from_int(filter_byte)
-                .ok_or_else(|| PngErrors::Generic(format!("Unknown filter {filter_byte}")))?;
+                .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))?;
 
             if first_row
             {
@@ -1236,7 +1249,7 @@ impl<'a> PngDecoder<'a>
     }
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
-    fn inflate(&mut self) -> Result<Vec<u8>, PngErrors>
+    fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
     {
         // An annoying thing is that deflate doesn't
         // store its uncompressed size,
@@ -1268,6 +1281,8 @@ impl<'a> PngDecoder<'a>
 
         let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
 
-        decoder.decode_zlib().map_err(PngErrors::ZlibDecodeErrors)
+        decoder
+            .decode_zlib()
+            .map_err(PngDecodeErrors::ZlibDecodeErrors)
     }
 }
