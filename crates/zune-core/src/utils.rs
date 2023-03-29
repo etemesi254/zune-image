@@ -2,6 +2,7 @@
 //! that help to do small things
 use crate::bit_depth::ByteEndian;
 
+mod avx;
 mod sse;
 
 /// scalar impl of big-endian to native endian
@@ -23,12 +24,18 @@ fn convert_be_to_ne_scalar(out: &mut [u8])
 /// * `out`:  The output array for which we will convert in place
 /// * `use_sse4`:  Whether to use SSE intrinsics for conversion
 ///
-fn convert_be_to_le_u16(out: &mut [u8], use_sse4: bool)
+fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool)
 {
     #[cfg(feature = "std")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if use_sse4 && is_x86_feature_detected!("ssse3")
+        if _use_sse4 && is_x86_feature_detected!("avx2")
+        {
+            unsafe {
+                return avx::convert_be_to_ne_avx(out);
+            };
+        }
+        if _use_sse4 && is_x86_feature_detected!("ssse3")
         {
             unsafe {
                 return sse::convert_be_to_ne_sse4(out);
