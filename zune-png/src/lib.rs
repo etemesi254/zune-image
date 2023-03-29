@@ -1,6 +1,20 @@
-//!A png decoder
+//! A png decoder
+//!
+//! This features a simple PNG reader in Rust which supports decoding of valid
+//! ISO/IEC 15948:2003 (E) or PNG images
+//!
+//!
+//! # Features
+//! - Fast inflate decoder
+//! - Platform specific intrinsics for accelerated decoding on x86
+//! - Endian aware decoding support.
 //!
 //! # Usage
+//! Add the library to `Cargo.toml`
+//!
+//! ```toml
+//! zune_png="0.2"
+//! ```
 //!
 //! #### Decode to raw bytes.
 //!
@@ -9,7 +23,7 @@
 //!
 //! - **Note**: The interpretation of the data varies depending
 //! on the endianness of the source image, for 16 bit depth images
-//! each two bytes represent a single pixel in native endian.
+//! each two bytes represent a single pixel in a configurable endian.
 //! So one should inspect `PngDecoder::get_bit_depth` to get bit depth
 //! of image in order to understand the raw bytes layout.
 //!
@@ -37,10 +51,10 @@
 //! let pixels = decoder.decode().unwrap();
 //!
 //! match pixels {
-//!    DecodingResult::U8(_px)=>{
+//!    DecodingResult::U8(px)=>{
 //!        // do something with images with 8 bit depths
 //!    }
-//!    DecodingResult::U16(_px)=>{
+//!    DecodingResult::U16(px)=>{
 //!        // do something with images with 16 bit depths
 //!    }
 //!    _=>unreachable!(),
@@ -51,11 +65,20 @@
 //!
 //! E.g one can make it that 16 bit images are scaled to 8 bit images.
 //!
+//! # Endian aware decoding support
+//!
+//! One can set the target endianness of bits for 16 bit images by using
+//! [`DecoderOptions::set_endian`](zune_core::options::DecoderOptions::set_byte_endian) which
+//! will be respected by [`decode_raw`](decoder::PngDecoder::decode_raw) and [`decode_into`](decoder::PngDecoder::decode_into) functions
+//!
+//! # Alternatives
+//! - [png](https://crates.io/crates/png) crate
+//!
 #![cfg_attr(feature = "std", no_std)]
 #![allow(clippy::op_ref, clippy::identity_op)]
 extern crate alloc;
 
-pub use decoder::PngDecoder;
+pub use decoder::{PngDecoder, PngInfo, TimeInfo};
 
 mod constants;
 mod crc;

@@ -1,8 +1,9 @@
 use alloc::format;
 
 use log::{error, info, warn};
+use zune_inflate::DeflateDecoder;
 
-use crate::decoder::{PLTEEntry, PngChunk, TimeInfo};
+use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngErrors;
 use crate::PngDecoder;
@@ -306,7 +307,7 @@ impl<'a> PngDecoder<'a>
         }
         let data = self.stream.peek_at(0, chunk.length).unwrap();
 
-        // reccomended that we check for first four bytes compatibility
+        // recommended that we check for first four bytes compatibility
         // so do it here
         // First check does litle endian, and second big endian
         // See https://ftp-osl.osuosl.org/pub/libpng/documents/pngext-1.5.0.html#C.eXIf
@@ -331,5 +332,134 @@ impl<'a> PngDecoder<'a>
         self.stream.skip(chunk.length + 4);
 
         Ok(())
+    }
+
+    /// Parse the iCCP chunk
+    pub(crate) fn parse_iccp(&mut self, chunk: PngChunk)
+    {
+        let length = core::cmp::min(chunk.length, 79);
+        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
+
+        if let Some(pos) = keyword_position
+        {
+            // skip name plus null byte
+            self.stream.skip(pos + 1);
+
+            let remainder = chunk
+                .length
+                .saturating_sub(pos)
+                .saturating_sub(1) // null separator
+                .saturating_sub(1); // compression method
+
+            // read compression method
+            let compression_method = self.stream.get_u8();
+            assert_eq!(compression_method, 0);
+
+            // read remaining chunk
+            let data = self.stream.peek_at(0, remainder).unwrap();
+
+            // decode to vec
+            if let Ok(icc_uncompressed) = DeflateDecoder::new(data).decode_zlib()
+            {
+                self.png_info.icc_profile = Some(icc_uncompressed);
+            }
+            else
+            {
+                warn!("Could not decode ICC profile, error with zlib stream");
+            }
+            self.stream.skip(remainder);
+        }
+        else
+        {
+            warn!("Could not find keyword in iCCP chunk, possibly corrupt chunk");
+            // skip the length
+            self.stream.skip(chunk.length);
+        }
+        // skip crc
+        self.stream.skip(4);
+    }
+
+    /// Parse the itXT chunk
+    pub(crate) fn parse_itxt(&mut self, chunk: PngChunk)
+    {
+        let length = core::cmp::min(chunk.length, 79);
+        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
+
+        if let Some(pos) = keyword_position
+        {
+            let keyword = &keyword_bytes[..pos];
+            // skip name plus null byte
+            self.stream.skip(pos + 1);
+            let remainder = chunk.length.saturating_sub(pos + 1);
+            let raw_data = self.stream.peek_at(0, remainder).unwrap();
+
+            let itxt_chunk = ItxtChunk {
+                keyword,
+                text: raw_data
+            };
+            self.png_info.itxt_chunk.push(itxt_chunk);
+            // skip bytes we read
+            self.stream.skip(remainder);
+        }
+        else
+        {
+            warn!("Possibly corrupt iTXT chunk");
+            self.stream.skip(chunk.length);
+        }
+        // skip crc
+        self.stream.skip(4);
+    }
+
+    /// Parse zTxt chunk
+    pub(crate) fn parse_ztxt(&mut self, chunk: PngChunk)
+    {
+        let length = core::cmp::min(chunk.length, 79);
+        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
+
+        if let Some(pos) = keyword_position
+        {
+            let keyword = &keyword_bytes[..pos];
+
+            // skip name plus null byte
+            self.stream.skip(pos + 1);
+
+            let remainder = chunk
+                .length
+                .saturating_sub(pos)
+                .saturating_sub(1) // null separator
+                .saturating_sub(1); // compression method
+
+            // read compression method
+            let _ = self.stream.get_u8();
+
+            // read remaining chunk
+            let data = self.stream.peek_at(0, remainder).unwrap();
+
+            // decode to vec
+            if let Ok(ztxt) = DeflateDecoder::new(data).decode_zlib()
+            {
+                let chunk = ZtxtChunk {
+                    keyword,
+                    text: ztxt
+                };
+                self.png_info.ztxt_chunk.push(chunk);
+            }
+            else
+            {
+                warn!("Could not decode ztxt profile, error with zlib stream");
+            }
+            self.stream.skip(remainder);
+        }
+        else
+        {
+            warn!("Could not find keyword in iCCP chunk, possibly corrupt chunk");
+            // skip the length
+            self.stream.skip(chunk.length);
+        }
+        // skip crc
+        self.stream.skip(4);
     }
 }

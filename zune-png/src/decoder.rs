@@ -72,9 +72,24 @@ pub struct TimeInfo
     pub second: u8
 }
 
+#[derive(Clone)]
+pub struct ItxtChunk<'a>
+{
+    pub keyword: &'a [u8],
+    pub text:    &'a [u8]
+}
+
+#[derive(Clone)]
+pub struct ZtxtChunk<'a>
+{
+    pub keyword: &'a [u8],
+    /// Uncompressed text
+    pub text:    Vec<u8>
+}
+
 /// Represents PNG information that can be extracted
 /// from a png file.
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Clone)]
 pub struct PngInfo<'a>
 {
     /// Image width
@@ -89,6 +104,12 @@ pub struct PngInfo<'a>
     pub time_info:        Option<TimeInfo>,
     /// Image exif data
     pub exif:             Option<&'a [u8]>,
+    /// Icc profile
+    pub icc_profile:      Option<Vec<u8>>,
+    /// Text chunk
+    pub itxt_chunk:       Vec<ItxtChunk<'a>>,
+    /// ztxt chunk
+    pub ztxt_chunk:       Vec<ZtxtChunk<'a>>,
 
     // no need to expose these ones
     pub(crate) depth:         u8,
@@ -112,6 +133,9 @@ pub struct PngInfo<'a>
 /// # Note
 /// The decoder currently expands images less than 8 bits per pixels to 8 bits per pixel
 /// if this is not desired, then I'd suggest another png decoder
+///
+/// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::get_info)
+/// and access the relevant fields exposed
 pub struct PngDecoder<'a>
 {
     pub(crate) stream:          ZByteReader<'a>,
@@ -283,7 +307,9 @@ impl<'a> PngDecoder<'a>
             b"acTL" => PngChunkType::acTL,
             b"fcTL" => PngChunkType::fcTL,
             b"iCCP" => PngChunkType::iCCP,
+            b"iTXt" => PngChunkType::iTXt,
             b"eXIf" => PngChunkType::eXIf,
+            b"zTXt" => PngChunkType::zTXt,
             _ => PngChunkType::unkn
         };
 
@@ -392,12 +418,25 @@ impl<'a> PngDecoder<'a>
                 {
                     self.parse_exif(header)?;
                 }
+                PngChunkType::iCCP =>
+                {
+                    self.parse_iccp(header);
+                }
+                PngChunkType::iTXt =>
+                {
+                    self.parse_itxt(header);
+                }
+                PngChunkType::zTXt =>
+                {
+                    self.parse_ztxt(header);
+                }
                 PngChunkType::fcTL =>
                 {
                     // If we have seen a fcTL chunk and we are
                     // about to see another one, means we
                     // have another frame incoming,
-                    // so just exit
+                    // so just exit since we do not support animated
+                    // png
                     if seen_first_fctl
                     {
                         break;
@@ -443,7 +482,7 @@ impl<'a> PngDecoder<'a>
             return None;
         }
 
-        let info = self.png_info;
+        let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_n = self.get_colorspace().unwrap().num_components();
@@ -503,7 +542,7 @@ impl<'a> PngDecoder<'a>
         }
         info!("Colorspace: {:?} ", self.get_colorspace().unwrap());
 
-        let info = self.png_info;
+        let info = self.png_info.clone();
 
         let image_len = self.output_buffer_size().unwrap();
 
@@ -525,11 +564,11 @@ impl<'a> PngDecoder<'a>
         {
             // allocate out to be enough to hold raw decoded bytes
 
-            self.create_png_image_raw(&deflate_data, info.width, info.height, out)?;
+            self.create_png_image_raw(&deflate_data, info.width, info.height, out, &info)?;
         }
         else if info.interlace_method == InterlaceMethod::Adam7
         {
-            self.decode_interlaced(&deflate_data, out)?;
+            self.decode_interlaced(&deflate_data, out, &info)?;
         }
 
         if self.seen_trns && self.png_info.color != PngColor::Palette
@@ -602,7 +641,9 @@ impl<'a> PngDecoder<'a>
         Ok(out)
     }
 
-    fn decode_interlaced(&mut self, deflate_data: &[u8], out: &mut [u8]) -> Result<(), PngErrors>
+    fn decode_interlaced(
+        &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo
+    ) -> Result<(), PngErrors>
     {
         const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
         const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
@@ -610,7 +651,6 @@ impl<'a> PngDecoder<'a>
         const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
         const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
 
-        let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_n = self.get_colorspace().unwrap().num_components();
@@ -660,7 +700,7 @@ impl<'a> PngDecoder<'a>
 
                 let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
 
-                self.create_png_image_raw(deflate_slice, x, y, &mut final_out)?;
+                self.create_png_image_raw(deflate_slice, x, y, &mut final_out, info)?;
 
                 for j in 0..y
                 {
@@ -729,7 +769,7 @@ impl<'a> PngDecoder<'a>
             self.options = self.options.set_byte_endian(ByteEndian::BE);
         }
 
-        let info = self.png_info;
+        let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_n = self.get_colorspace().unwrap().num_components();
@@ -775,13 +815,12 @@ impl<'a> PngDecoder<'a>
     /// away from this method to the caller of this method
     #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
     fn create_png_image_raw(
-        &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8]
+        &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8], info: &PngInfo
     ) -> Result<(), PngErrors>
     {
         let use_sse4 = self.options.use_sse41();
         let use_sse2 = self.options.use_sse2();
 
-        let info = self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_colorspace = self.get_colorspace().unwrap();
