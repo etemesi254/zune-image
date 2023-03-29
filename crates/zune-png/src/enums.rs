@@ -107,11 +107,18 @@ impl Default for FilterMethod
     }
 }
 
+/// The image interlace method
+///
+/// Default is `Unknown` but should change it to
+/// the image interlace when headers are decoded
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InterlaceMethod
 {
+    /// Standard/ No interlacing
     Standard,
+    /// Adam7 interlacing
     Adam7,
+    /// The interlacing of the image is currently unknown
     Unknown
 }
 

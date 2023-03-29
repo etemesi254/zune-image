@@ -71,6 +71,14 @@
 //! [`DecoderOptions::set_endian`](zune_core::options::DecoderOptions::set_byte_endian) which
 //! will be respected by [`decode_raw`](decoder::PngDecoder::decode_raw) and [`decode_into`](decoder::PngDecoder::decode_into) functions
 //!
+//!
+//! # Extracting metadata
+//!
+//! Once headers have been decoded, image metadata can be accessed via [`get_info()`](PngDecoder::get_info) method
+//!
+//! Some data is usually borrowed from the underlying reader, so the lifetime of the [`PngInfo`] struct is tied
+//! to the lifetime of the [`PngDecoder`] struct from which it was derived
+//!
 //! # Alternatives
 //! - [png](https://crates.io/crates/png) crate
 //!
@@ -78,7 +86,8 @@
 #![allow(clippy::op_ref, clippy::identity_op)]
 extern crate alloc;
 
-pub use decoder::{PngDecoder, PngInfo, TimeInfo};
+pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
+pub use enums::InterlaceMethod;
 
 mod constants;
 mod crc;
