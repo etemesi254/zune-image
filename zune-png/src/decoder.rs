@@ -72,6 +72,11 @@ pub struct TimeInfo
     pub second: u8
 }
 
+/// iTXt details
+///
+/// UTF-8 encoded text
+///
+/// Extracted from iXTt chunk where present
 #[derive(Clone)]
 pub struct ItxtChunk<'a>
 {
@@ -79,6 +84,21 @@ pub struct ItxtChunk<'a>
     pub text:    &'a [u8]
 }
 
+/// tEXt chunk details
+///
+/// Latin-1 character set
+///
+/// Extracted from tEXt chunk where present
+#[derive(Clone)]
+pub struct TextChunk<'a>
+{
+    pub keyword: &'a [u8],
+    pub text:    &'a [u8]
+}
+
+/// zTxt details
+///
+/// Extracted from zTXt chunk where present
 #[derive(Clone)]
 pub struct ZtxtChunk<'a>
 {
@@ -93,24 +113,25 @@ pub struct ZtxtChunk<'a>
 pub struct PngInfo<'a>
 {
     /// Image width
-    pub width:            usize,
+    pub width:                usize,
     /// Image height
-    pub height:           usize,
+    pub height:               usize,
     /// Image gamma
-    pub gamma:            Option<f32>,
+    pub gamma:                Option<f32>,
     /// Image interlace method
-    pub interlace_method: InterlaceMethod,
+    pub interlace_method:     InterlaceMethod,
     /// Image time info
-    pub time_info:        Option<TimeInfo>,
+    pub time_info:            Option<TimeInfo>,
     /// Image exif data
-    pub exif:             Option<&'a [u8]>,
+    pub exif:                 Option<&'a [u8]>,
     /// Icc profile
-    pub icc_profile:      Option<Vec<u8>>,
+    pub icc_profile:          Option<Vec<u8>>,
     /// Text chunk
-    pub itxt_chunk:       Vec<ItxtChunk<'a>>,
+    pub itxt_chunk:           Vec<ItxtChunk<'a>>,
     /// ztxt chunk
-    pub ztxt_chunk:       Vec<ZtxtChunk<'a>>,
-
+    pub ztxt_chunk:           Vec<ZtxtChunk<'a>>,
+    /// tEXt chunk
+    pub text_chunk:           Vec<TextChunk<'a>>,
     // no need to expose these ones
     pub(crate) depth:         u8,
     // use bit_depth
@@ -310,6 +331,7 @@ impl<'a> PngDecoder<'a>
             b"iTXt" => PngChunkType::iTXt,
             b"eXIf" => PngChunkType::eXIf,
             b"zTXt" => PngChunkType::zTXt,
+            b"tEXt" => PngChunkType::tEXt,
             _ => PngChunkType::unkn
         };
 
@@ -429,6 +451,10 @@ impl<'a> PngDecoder<'a>
                 PngChunkType::zTXt =>
                 {
                     self.parse_ztxt(header);
+                }
+                PngChunkType::tEXt =>
+                {
+                    self.parse_text(header);
                 }
                 PngChunkType::fcTL =>
                 {
