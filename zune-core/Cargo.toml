@@ -1,6 +1,6 @@
 [package]
 name = "zune-core"
-version = "0.2.1"
+version = "0.2.12"
 edition = "2021"
 description = "Core utilities for image processing in the zune family of crates"
 exclude = ["tests/"]
@@ -17,4 +17,4 @@ std = []
 default = ["serde"]
 [dependencies]
 bitflags = "2.0.2"
-serde = { version = "1.0.152", optional = true }
+serde = { version = "1.0.52", optional = true }
