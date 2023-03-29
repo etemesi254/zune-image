@@ -3,7 +3,7 @@ use alloc::format;
 use log::{error, info, warn};
 use zune_inflate::DeflateDecoder;
 
-use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TimeInfo, ZtxtChunk};
+use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngErrors;
 use crate::PngDecoder;
@@ -353,8 +353,7 @@ impl<'a> PngDecoder<'a>
                 .saturating_sub(1); // compression method
 
             // read compression method
-            let compression_method = self.stream.get_u8();
-            assert_eq!(compression_method, 0);
+            let _ = self.stream.get_u8();
 
             // read remaining chunk
             let data = self.stream.peek_at(0, remainder).unwrap();
@@ -380,6 +379,39 @@ impl<'a> PngDecoder<'a>
         self.stream.skip(4);
     }
 
+    /// Parse the text chunk
+    pub(crate) fn parse_text(&mut self, chunk: PngChunk)
+    {
+        let length = core::cmp::min(chunk.length, 79);
+        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
+
+        if let Some(pos) = keyword_position
+        {
+            let keyword = &keyword_bytes[..pos];
+            // skip name plus null byte
+            self.stream.skip(pos + 1);
+
+            let remainder = chunk.length.saturating_sub(pos).saturating_sub(1); // null byte
+
+            // read remaining chunk
+
+            let text = self.stream.peek_at(0, remainder).unwrap();
+
+            let text_chunk = TextChunk { keyword, text };
+            self.png_info.text_chunk.push(text_chunk);
+
+            self.stream.skip(remainder);
+        }
+        else
+        {
+            warn!("Could not find keyword in text chunk, possibly corrupt chunk");
+            // skip the length
+            self.stream.skip(chunk.length);
+        }
+        // skip crc
+        self.stream.skip(4);
+    }
     /// Parse the itXT chunk
     pub(crate) fn parse_itxt(&mut self, chunk: PngChunk)
     {
@@ -391,8 +423,14 @@ impl<'a> PngDecoder<'a>
         {
             let keyword = &keyword_bytes[..pos];
             // skip name plus null byte
-            self.stream.skip(pos + 1);
-            let remainder = chunk.length.saturating_sub(pos + 1);
+            let bytes_to_skip = pos + 1 // null separator
+                + 1  // compression flag
+                + 1  // compression method
+                + 1  // null separator
+                + 1; // null separator
+
+            self.stream.skip(bytes_to_skip);
+            let remainder = chunk.length.saturating_sub(bytes_to_skip);
             let raw_data = self.stream.peek_at(0, remainder).unwrap();
 
             let itxt_chunk = ItxtChunk {
