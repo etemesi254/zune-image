@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::Read;
-use std::ops::Deref;
 use std::path::Path;
 use std::string::String;
 
@@ -8,19 +7,20 @@ use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::Level::Debug;
 use log::{debug, error, info, log_enabled, warn};
-use memmap2::Mmap;
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
-use zune_image::traits::DecoderTrait;
+use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_parsers::get_decoder_options;
 use crate::cmd_parsers::global_options::CmdOptions;
+use crate::file_io::ZuneFile;
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
 use crate::MmapOptions;
 
 #[allow(unused_variables)]
+#[allow(clippy::unused_io_amount)] // yes it's what I want
 pub(crate) fn create_and_exec_workflow_from_cmd(
     args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions
 ) -> Result<(), ImageErrors>
@@ -37,50 +37,37 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     info!("Creating workflows from input");
 
     let decoder_options = get_decoder_options(args);
+    let mut buf = [0; 30];
 
-    let mut buf = Vec::with_capacity(1 << 20);
     for in_file in args.get_raw("in").unwrap()
     {
-        // file i/o
-        let mut fd = File::open(in_file).unwrap();
-        let mmap = unsafe { Mmap::map(&fd).unwrap() };
-        let mmap_opt = cmd_opts.mmap;
+        let mut workflow: WorkFlow<ZuneFile> = WorkFlow::new();
 
-        // Decide how we are reading files
-        // this has to be here due to Rust ownership rules, etc etc
-        let data = {
-            if mmap_opt == MmapOptions::Auto || mmap_opt == MmapOptions::Always
-            {
-                info!("Reading file via memory maps");
-                mmap.deref()
-            }
-            else
-            {
-                info!("Reading file to memory");
-                fd.read_to_end(&mut buf).unwrap();
-                &buf
-            }
-        };
-        // workflow
-
-        // Rust was pretty good to catch this.
-        // Thank you compiler gods.
-
-        let mut workflow = WorkFlow::new();
+        File::open(in_file)?.read(&mut buf)?;
 
         add_operations(args, options, &mut workflow)?;
 
-        if let Some(format) = ImageFormat::guess_format(data)
-        {
-            let decoder: Box<dyn DecoderTrait> =
-                format.get_decoder_with_options(data, decoder_options);
+        let mmap_opt = cmd_opts.mmap;
+        let use_mmap = mmap_opt == MmapOptions::Auto || mmap_opt == MmapOptions::Always;
 
-            if decoder.is_experimental() && !cmd_opts.experimental_formats
+        if let Some(format) = ImageFormat::guess_format(&buf)
+        {
+            if format.has_decoder()
             {
-                let msg = format!("The `{}` is currently experimental and can only be used when --experimental is passed via the command line", decoder.get_name());
-                return Err(ImageErrors::from(msg));
+                workflow.add_decoder(ZuneFile::new(
+                    in_file.to_os_string(),
+                    use_mmap,
+                    decoder_options
+                ))
             }
-            workflow.add_decoder(decoder);
+            else
+            {
+                return Err(ImageErrors::ImageDecoderNotImplemented(format));
+            }
+        }
+        else
+        {
+            return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
         }
 
         if let Some(source) = args.value_source("out")
@@ -173,8 +160,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     Ok(())
 }
 
-pub fn add_operations(
-    args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow
+pub fn add_operations<T: IntoImage>(
+    args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow<T>
 ) -> Result<(), String>
 {
     if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)

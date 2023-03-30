@@ -6,10 +6,11 @@ use zune_image::impls::scharr::Scharr;
 use zune_image::impls::sobel::Sobel;
 use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::unsharpen::Unsharpen;
+use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 
-pub fn parse_options(
-    workflow: &mut WorkFlow, order_args: &[String], args: &ArgMatches
+pub fn parse_options<T: IntoImage>(
+    workflow: &mut WorkFlow<T>, order_args: &[String], args: &ArgMatches
 ) -> Result<(), String>
 {
     for argument in order_args
