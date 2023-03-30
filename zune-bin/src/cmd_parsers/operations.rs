@@ -18,12 +18,13 @@ use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::stretch_contrast::StretchContrast;
 use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::impls::transpose::Transpose;
+use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 
 use crate::cmd_args::arg_parsers::{get_four_pair_args, IColorSpace};
 
-pub fn parse_options(
-    workflow: &mut WorkFlow, order_args: &[String], args: &ArgMatches
+pub fn parse_options<T: IntoImage>(
+    workflow: &mut WorkFlow<T>, order_args: &[String], args: &ArgMatches
 ) -> Result<(), String>
 {
     for argument in order_args

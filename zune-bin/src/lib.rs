@@ -7,6 +7,7 @@ use crate::workflow::create_and_exec_workflow_from_cmd;
 
 mod cmd_args;
 mod cmd_parsers;
+mod file_io;
 mod probe_files;
 mod serde;
 mod show_gui;
@@ -32,6 +33,7 @@ pub fn main()
             " Could not complete workflow, reason {:?}",
             result.err().unwrap()
         );
+
         println!();
         exit(-1);
     }
