@@ -411,12 +411,12 @@ impl<'a> PPMDecoder<'a>
     /// are not decoded.
     ///
     /// # Returns
-    /// - `Some(BitDepth)`: The image bit depth, can be [U8] or [U16]
+    /// - `Some(BitDepth)`: The image bit depth, can be [Eight] or [Sixteen]
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
-    /// [U8]: BitDepth::U8,
-    /// [U16]: BitDepth::Sixteen
+    /// [Eight]: BitDepth::Eight,
+    /// [Sixteen]: BitDepth::Sixteen
     pub const fn get_bit_depth(&self) -> Option<BitDepth>
     {
         if self.decoded_headers
@@ -450,7 +450,7 @@ impl<'a> PPMDecoder<'a>
     ///
     /// # Returns
     /// - `Some(width,height)`: The image width and height as a usize
-    /// -  None: Indicates the image headers weren't decoded or an error occured
+    /// -  None: Indicates the image headers weren't decoded or an error occurred
     ///
     ///  # Example
     /// ```
@@ -478,7 +478,7 @@ impl<'a> PPMDecoder<'a>
     }
     /// Decode a ppm encoded file and return the row bytes from it
     ///
-    /// DecodingResult is an enum that can have either Vec<u8> or Vec<u16>,
+    /// DecodingResult is an enum that can have either `Vec<u8>` or `Vec<u16>`,
     /// and that depends on image bit depth.
     ///
     /// # Returns
