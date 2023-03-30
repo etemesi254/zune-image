@@ -38,6 +38,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
         image.metadata = metadata;
+        image.metadata.colorspace = self.get_out_colorspace();
         Ok(image)
     }
 
