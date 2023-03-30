@@ -64,19 +64,21 @@ pub fn choose_ycbcr_to_rgb_convert_func(
 
             // I believe avx2 means sse4 is also available
             // match colorspace
-            return match type_need
+            match type_need
             {
-                ColorSpace::RGB => Some(ycbcr_to_rgb_avx2),
-                ColorSpace::RGBA => Some(ycbcr_to_rgba_avx2),
-                _ => None
+                ColorSpace::RGB => return Some(ycbcr_to_rgb_avx2),
+                ColorSpace::RGBA => return Some(ycbcr_to_rgba_avx2),
+                _ => () // fall through to scalar, which has more types
             };
         }
     }
     // when there is no x86 or we haven't returned by here, resort to scalar
     return match type_need
     {
-        ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_16_scalar),
-        ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_16_scalar),
+        ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_inner_16_scalar::<false>),
+        ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_inner_16_scalar::<false>),
+        ColorSpace::BGRA => Some(scalar::ycbcr_to_rgba_inner_16_scalar::<true>),
+        ColorSpace::BGR => Some(scalar::ycbcr_to_rgb_inner_16_scalar::<true>),
         _ => None
     };
 }

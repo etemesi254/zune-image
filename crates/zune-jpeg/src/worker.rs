@@ -41,7 +41,10 @@ pub(crate) fn color_convert_no_sampling(
         {
             ycbcr_to_grayscale(unprocessed[0], width, padded_width, output);
         }
-        (ColorSpace::YCbCr, ColorSpace::RGB | ColorSpace::RGBA) =>
+        (
+            ColorSpace::YCbCr,
+            ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::BGR | ColorSpace::BGRA
+        ) =>
         {
             color_convert_ycbcr(
                 unprocessed,

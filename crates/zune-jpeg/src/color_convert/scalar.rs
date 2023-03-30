@@ -10,7 +10,12 @@ fn clamp(a: i16) -> u8
 
 /// YCbCr to RGBA color conversion
 
-pub fn ycbcr_to_rgba_16_scalar(
+/// Convert YCbCr to RGB/BGR
+///
+/// Converts to RGB if const BGRA is false
+///
+/// Converts to BGR if const BGRA is true
+pub fn ycbcr_to_rgba_inner_16_scalar<const BGRA: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 )
 {
@@ -22,37 +27,45 @@ pub fn ycbcr_to_rgba_16_scalar(
         .expect("Slice to small cannot write")
         .try_into()
         .unwrap();
-    let mut p = 0;
-    for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter()))
+    for ((y, (cb, cr)), out) in y
+        .iter()
+        .zip(cb.iter().zip(cr.iter()))
+        .zip(opt.chunks_exact_mut(4))
     {
         let cr = cr - 128;
-
         let cb = cb - 128;
 
         let r = y + ((45_i16.wrapping_mul(cr)) >> 5);
-
         let g = y - ((11_i16.wrapping_mul(cb) + 23_i16.wrapping_mul(cr)) >> 5);
-
         let b = y + ((113_i16.wrapping_mul(cb)) >> 6);
 
-        opt[p] = clamp(r);
-
-        opt[p + 1] = clamp(g);
-
-        opt[p + 2] = clamp(b);
-
-        opt[p + 3] = 255;
-
-        p += 4;
+        if BGRA
+        {
+            out[0] = clamp(b);
+            out[1] = clamp(g);
+            out[2] = clamp(r);
+            out[3] = 255;
+        }
+        else
+        {
+            out[0] = clamp(r);
+            out[1] = clamp(g);
+            out[2] = clamp(b);
+            out[3] = 255;
+        }
     }
     *pos += 64;
 }
 
-pub fn ycbcr_to_rgb_16_scalar(
+/// Convert YCbCr to RGB/BGR
+///
+/// Converts to RGB if const BGRA is false
+///
+/// Converts to BGR if const BGRA is true
+pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 )
 {
-    let mut p = 0;
     let (_, output_position) = output.split_at_mut(*pos);
 
     // Convert into a slice with 48 elements
@@ -62,25 +75,30 @@ pub fn ycbcr_to_rgb_16_scalar(
         .try_into()
         .unwrap();
 
-    for (y, (cb, cr)) in y.iter().zip(cb.iter().zip(cr.iter()))
+    for ((y, (cb, cr)), out) in y
+        .iter()
+        .zip(cb.iter().zip(cr.iter()))
+        .zip(opt.chunks_exact_mut(3))
     {
         let cr = cr - 128;
-
         let cb = cb - 128;
 
         let r = y + ((45_i16.wrapping_mul(cr)) >> 5);
-
         let g = y - ((11_i16.wrapping_mul(cb) + 23_i16.wrapping_mul(cr)) >> 5);
-
         let b = y + ((113_i16.wrapping_mul(cb)) >> 6);
 
-        opt[p] = clamp(r);
-
-        opt[p + 1] = clamp(g);
-
-        opt[p + 2] = clamp(b);
-
-        p += 3;
+        if BGRA
+        {
+            out[0] = clamp(b);
+            out[1] = clamp(g);
+            out[2] = clamp(r);
+        }
+        else
+        {
+            out[0] = clamp(r);
+            out[1] = clamp(g);
+            out[2] = clamp(b);
+        }
     }
 
     // Increment pos
