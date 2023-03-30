@@ -5,6 +5,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
+# Single based image decoders and encoders
 ppm = ["zune-ppm"]
 jpeg = ["zune-jpeg", "jpeg-encoder"]
 png = ["zune-png"]
@@ -12,14 +13,19 @@ psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
 jpeg-xl = ["zune-jpegxl"]
+
+# Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
+# All image formats
 image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl"]
+# External crates that help us handle metadata
 metadata = ["kamadak-exif"]
+# Every supported thing
 default = ["all"]
+# Whether to use threads or not for some operations
+threads = ["zune-jpegxl/threads"]
 
-threads = []
-
-all = ["threads", "image_formats", "serde-support", "metadata"]
+all = ["image_formats", "serde-support", "metadata"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
@@ -33,9 +39,11 @@ zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 zune-jpegxl = { path = "../zune-jpegxl", optional = true }
-#exr = { version = "1.6.3", optional = true }
+
 # Logging information
 log = "0.4.17"
+# Channel conversions in a safe way
+bytemuck = { version = "1.13.1", default-features = false }
 # Serializing info
 serde = { version = "1.0.152", optional = true }
 # External image APIs
@@ -46,4 +54,4 @@ kamadak-exif = { version = "0.5.5", optional = true }
 
 
 [dev-dependencies]
-num-complex = "0.4.3"
+num-complex = "0.4.3" # Runs generate-fractals
