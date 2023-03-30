@@ -191,14 +191,22 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage>
 {
     if let Some(format) = ImageFormat::guess_format(bytes)
     {
-        let mut decoder = format.get_decoder(bytes);
+        if let Ok(mut decoder) = format.get_decoder(bytes)
+        {
+            let mut image = decoder.decode().unwrap();
 
-        let mut image = decoder.decode().unwrap();
+            // WASM works with 8 bit images, so convert this to an 8 biy image
+            Depth::new(BitDepth::Eight).execute(&mut image).unwrap();
 
-        // WASM works with 8 bit images, so convert this to an 8 biy image
-        Depth::new(BitDepth::Eight).execute(&mut image).unwrap();
-
-        return Some(WasmImage { image });
+            return Some(WasmImage { image });
+        }
+        else
+        {
+            error!(
+                "Could not decode {:?}",
+                format.get_decoder(bytes).err().unwrap()
+            )
+        }
     }
     None
 }
