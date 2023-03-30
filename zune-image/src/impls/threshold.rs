@@ -3,7 +3,7 @@ use zune_core::bit_depth::BitType;
 use zune_imageprocs::threshold::threshold;
 pub use zune_imageprocs::threshold::ThresholdMethod;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -27,7 +27,7 @@ impl OperationsTrait for Threshold
         "Threshold"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         if !image.get_colorspace().is_grayscale()
         {

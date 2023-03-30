@@ -4,7 +4,6 @@
 //! It shows use of `from_fn` methods and `modify_pixels_mut` methods
 
 use zune_core::colorspace::ColorSpace;
-use zune_image::codecs::ImageFormat;
 
 fn main()
 {

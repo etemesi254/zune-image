@@ -4,7 +4,7 @@ use log::{debug, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
-use zune_png::error::PngErrors;
+use zune_png::error::PngDecodeErrors;
 pub use zune_png::PngDecoder;
 
 use crate::codecs::ImageFormat;
@@ -18,15 +18,15 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 {
     fn decode(&mut self) -> Result<Image, ImageErrors>
     {
+        let metadata = self.read_headers()?.unwrap();
+
         let pixels = self
             .decode()
-            .map_err(<PngErrors as Into<ImageErrors>>::into)?;
+            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
 
         let depth = self.get_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
-
-        debug!("De-Interleaving image channel");
 
         let mut image = match pixels
         {
@@ -34,10 +34,8 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
             DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
             _ => unreachable!()
         };
-
-        // set metadata details
-        image.metadata.format = Some(ImageFormat::PNG);
-        image.metadata.default_gamma = self.get_gamma();
+        // metadata
+        image.metadata = metadata;
 
         Ok(image)
     }
@@ -59,28 +57,37 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<PngErrors as Into<ImageErrors>>::into)?;
+            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_depth().unwrap();
 
-        let metadata = ImageMetadata {
-            format:        Some(ImageFormat::PNG),
-            colorspace:    self.get_colorspace().unwrap(),
-            depth:         depth,
-            width:         width,
-            height:        height,
-            color_trc:     None,
-            default_gamma: self.get_gamma()
+        let mut metadata = ImageMetadata {
+            format: Some(ImageFormat::PNG),
+            colorspace: self.get_colorspace().unwrap(),
+            depth: depth,
+            width: width,
+            height: height,
+            default_gamma: self.get_info().unwrap().gamma,
+            ..Default::default()
         };
+        #[cfg(feature = "metadata")]
+        {
+            let info = self.get_info().unwrap();
+            // see if we have an exif chunk
+            if let Some(exif) = info.exif
+            {
+                metadata.parse_raw_exif(exif)
+            }
+        }
 
         Ok(Some(metadata))
     }
 }
 
-impl From<zune_png::error::PngErrors> for ImageErrors
+impl From<zune_png::error::PngDecodeErrors> for ImageErrors
 {
-    fn from(from: zune_png::error::PngErrors) -> Self
+    fn from(from: zune_png::error::PngDecodeErrors) -> Self
     {
         let err = format!("png: {from:?}");
 

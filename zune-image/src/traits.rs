@@ -3,7 +3,7 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 
 use crate::codecs::ImageFormat;
-use crate::errors::{ImageErrors, ImgOperationsErrors};
+use crate::errors::{ImageErrors, ImageOperationsErrors};
 use crate::image::Image;
 use crate::impls::colorspace::ColorspaceConv;
 use crate::impls::depth::Depth;
@@ -90,7 +90,7 @@ pub trait OperationsTrait
     /// before calling this method
     ///
     /// [`execute`]: Self::execute
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>;
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>;
 
     /// Return the supported colorspaces this operation supports
     ///
@@ -160,13 +160,15 @@ pub trait OperationsTrait
 
         if !supported
         {
-            return Err(ImgOperationsErrors::UnsupportedType(self.get_name(), bit_type).into());
+            return Err(ImageErrors::OperationsError(
+                ImageOperationsErrors::UnsupportedType(self.get_name(), bit_type)
+            ));
         }
 
         confirm_invariants(image)?;
 
         self.execute_impl(image)
-            .map_err(<ImgOperationsErrors as Into<ImageErrors>>::into)?;
+            .map_err(<ImageErrors as Into<ImageErrors>>::into)?;
 
         confirm_invariants(image)?;
 
@@ -440,4 +442,18 @@ pub trait DecodeInto
     /// This may call `decode_headers` for the image routine to fetch the
     /// expected output size.
     fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
+}
+
+pub trait IntoImage
+{
+    /// Consumes this and returns an image
+    fn into_image(self) -> Result<Image, ImageErrors>;
+}
+
+impl IntoImage for Image
+{
+    fn into_image(self) -> Result<Image, ImageErrors>
+    {
+        Ok(self)
+    }
 }

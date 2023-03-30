@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::invert::invert;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -23,7 +23,7 @@ impl OperationsTrait for Invert
     {
         "Invert"
     }
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let depth = image.get_depth().bit_type();
 

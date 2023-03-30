@@ -20,16 +20,18 @@ pub enum ImageErrors
     NoImageForOperations,
     NoImageForEncoding,
     NoImageBuffer,
-    OperationsError(ImgOperationsErrors),
+    OperationsError(ImageOperationsErrors),
     EncodeErrors(ImgEncodeErrors),
     GenericString(String),
     GenericStr(&'static str),
     WrongTypeId(TypeId, TypeId),
+    ImageDecoderNotIncluded(ImageFormat),
+    ImageDecoderNotImplemented(ImageFormat),
     IoError(std::io::Error)
 }
 
-/// PSDDecodeErrors that may occur during image operations
-pub enum ImgOperationsErrors
+/// Errors that may occur during image operations
+pub enum ImageOperationsErrors
 {
     /// Unexpected colorspace
     WrongColorspace(ColorSpace, ColorSpace),
@@ -112,6 +114,20 @@ impl Debug for ImageErrors
             {
                 writeln!(f, "IO error, {:?}", reason)
             }
+            ImageErrors::ImageDecoderNotIncluded(format) =>
+            {
+                writeln!(
+                    f,
+                    "The feature required to decode {format:?} has not been included"
+                )
+            }
+            ImageErrors::ImageDecoderNotImplemented(format) =>
+            {
+                writeln!(
+                    f,
+                    "The decoder to parse {format:?} has not been implemented"
+                )
+            }
         }
     }
 }
@@ -124,9 +140,9 @@ impl From<std::io::Error> for ImageErrors
     }
 }
 
-impl From<ImgOperationsErrors> for ImageErrors
+impl From<ImageOperationsErrors> for ImageErrors
 {
-    fn from(from: ImgOperationsErrors) -> Self
+    fn from(from: ImageOperationsErrors) -> Self
     {
         ImageErrors::OperationsError(from)
     }
@@ -140,7 +156,7 @@ impl From<ImgEncodeErrors> for ImageErrors
     }
 }
 
-impl Debug for ImgOperationsErrors
+impl Debug for ImageOperationsErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {

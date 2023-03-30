@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_imageprocs::transpose::{transpose_u16, transpose_u8};
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -29,7 +29,7 @@ impl OperationsTrait for Transpose
         "Transpose"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let out_dim = width * height * image.get_depth().size_of();

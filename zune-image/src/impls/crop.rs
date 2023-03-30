@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_imageprocs::crop::crop;
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -34,7 +34,7 @@ impl OperationsTrait for Crop
         "Crop"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let new_dims = self.width * self.height * image.get_depth().size_of();
         let (old_width, _) = image.get_dimensions();

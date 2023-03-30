@@ -14,16 +14,18 @@ qoi = ["zune-qoi"]
 jpeg-xl = ["zune-jpegxl"]
 serde-support = ["zune-core/serde", "serde"]
 image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl"]
-
+metadata = ["kamadak-exif"]
 default = ["all"]
 
 threads = []
 
-all = ["threads", "image_formats", "serde-support"]
+all = ["threads", "image_formats", "serde-support", "metadata"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
+# Core primitives
 zune-core = { path = "../zune-core", version = "0.2.1" }
+# Images
 zune-png = { path = "../zune-png", optional = true }
 zune-jpeg = { path = "../zune-jpeg", optional = true }
 zune-ppm = { path = "../zune-ppm", optional = true }
@@ -31,7 +33,7 @@ zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 zune-jpegxl = { path = "../zune-jpegxl", optional = true }
-
+#exr = { version = "1.6.3", optional = true }
 # Logging information
 log = "0.4.17"
 # Serializing info
@@ -39,7 +41,9 @@ serde = { version = "1.0.152", optional = true }
 # External image APIs
 jpeg-encoder = { version = "0.5.1", optional = true, features = ["simd", "std"] }
 
+# metadata
+kamadak-exif = { version = "0.5.5", optional = true }
+
 
 [dev-dependencies]
 num-complex = "0.4.3"
-image = { version = "0.24.6", features = ["png"] }

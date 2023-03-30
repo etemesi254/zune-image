@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::brighten::brighten;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -26,7 +26,7 @@ impl OperationsTrait for Brighten
         "Brighten"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let max_val = image.get_depth().max_value();
         let depth = image.get_depth();

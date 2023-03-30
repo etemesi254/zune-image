@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::impls::grayscale::RgbToGrayScale;
 use crate::traits::OperationsTrait;
@@ -20,7 +20,7 @@ impl ColorspaceConv
     }
 }
 
-fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImgOperationsErrors>
+fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors>
 {
     let old_len = image.get_channels_ref(true)[0].len();
 
@@ -42,7 +42,7 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImgOperationsErrors>
         }
         _ =>
         {
-            return Err(ImgOperationsErrors::Generic(
+            return Err(ImageErrors::GenericStr(
                 "Unsupported bit depth for RGB->RGBA conversion"
             ))
         }
@@ -64,6 +64,29 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImgOperationsErrors>
     Ok(())
 }
 
+fn convert_rgb_bgr(from: ColorSpace, to: ColorSpace, image: &mut Image) -> Result<(), ImageErrors>
+{
+    for frame in image.get_frames_mut()
+    {
+        // swap B with R
+        frame.channels.swap(0, 2);
+
+        // if mapping was from bgra to rgb, drop alpha
+        if from == ColorSpace::BGRA && to == ColorSpace::RGB
+        {
+            frame.channels.pop();
+            assert_eq!(frame.channels.len(), 3);
+        }
+    }
+
+    // if mapping was from bgra to rgb, drop alpha
+    if from == ColorSpace::BGR && to == ColorSpace::RGBA
+    {
+        convert_rgb_to_rgba(image)?;
+    }
+    Ok(())
+}
+
 impl OperationsTrait for ColorspaceConv
 {
     fn get_name(&self) -> &'static str
@@ -71,15 +94,29 @@ impl OperationsTrait for ColorspaceConv
         "Colorspace conversion"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let from = image.get_colorspace();
+
+        // colorspace matches
+        if from == self.to
+        {
+            return Ok(());
+        }
 
         match (from, self.to)
         {
             (ColorSpace::RGB, ColorSpace::RGBA) =>
             {
                 convert_rgb_to_rgba(image)?;
+            }
+            (ColorSpace::BGR | ColorSpace::BGRA, ColorSpace::RGB | ColorSpace::RGBA) =>
+            {
+                convert_rgb_bgr(from, self.to, image)?;
+            }
+            (ColorSpace::RGB | ColorSpace::RGBA, ColorSpace::BGR | ColorSpace::BGRA) =>
+            {
+                convert_rgb_bgr(from, self.to, image)?;
             }
 
             (ColorSpace::RGB | ColorSpace::RGBA, ColorSpace::Luma | ColorSpace::LumaA) =>
@@ -114,7 +151,7 @@ impl OperationsTrait for ColorspaceConv
             (a, b) =>
             {
                 let msg = format!("Unsupported/unknown mapping from {a:?} to {b:?}");
-                return Err(ImgOperationsErrors::GenericString(msg));
+                return Err(ImageErrors::GenericString(msg));
             }
         }
         // set it to the new colorspace
@@ -129,9 +166,7 @@ impl OperationsTrait for ColorspaceConv
     }
 }
 
-fn convert_luma_to_rgb(
-    image: &mut Image, out_colorspace: ColorSpace
-) -> Result<(), ImgOperationsErrors>
+fn convert_luma_to_rgb(image: &mut Image, out_colorspace: ColorSpace) -> Result<(), ImageErrors>
 {
     let color = image.get_colorspace();
     for frame in image.get_frames_mut()
@@ -166,7 +201,7 @@ fn convert_luma_to_rgb(
             let msg = format!(
                 "Unsupported colorspace {color:?} in conversion from luma to RGB,colorspace"
             );
-            return Err(ImgOperationsErrors::GenericString(msg));
+            return Err(ImageErrors::GenericString(msg));
         }
     }
     Ok(())
