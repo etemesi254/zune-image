@@ -130,13 +130,12 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         let depth = self.get_bit_depth().unwrap();
 
         let metadata = ImageMetadata {
-            format:        Some(ImageFormat::PPM),
-            colorspace:    self.get_colorspace().unwrap(),
-            depth:         depth,
-            width:         width,
-            height:        height,
-            color_trc:     None,
-            default_gamma: None
+            format: Some(ImageFormat::PPM),
+            colorspace: self.get_colorspace().unwrap(),
+            depth: depth,
+            width: width,
+            height: height,
+            ..Default::default()
         };
 
         Ok(Some(metadata))

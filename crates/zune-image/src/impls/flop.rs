@@ -1,7 +1,7 @@
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::flop::flop;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -23,7 +23,7 @@ impl OperationsTrait for Flop
         "Flop"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, _) = image.get_dimensions();
         let depth = image.get_depth();

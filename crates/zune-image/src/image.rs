@@ -180,7 +180,7 @@ impl Image
         {
             self.flatten_frames::<u8>()
         }
-        else if self.metadata.get_depth().size_of() == 2
+        else if self.metadata.get_depth() == BitDepth::Sixteen
         {
             self.frames
                 .iter()

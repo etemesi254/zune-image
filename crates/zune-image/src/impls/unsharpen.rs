@@ -2,7 +2,7 @@ use log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::unsharpen::{unsharpen_u16, unsharpen_u8};
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -34,7 +34,7 @@ impl OperationsTrait for Unsharpen
         "Unsharpen"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, height) = image.get_dimensions();
 

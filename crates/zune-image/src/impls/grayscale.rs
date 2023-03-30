@@ -4,7 +4,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::grayscale::{rgb_to_grayscale_u16, rgb_to_grayscale_u8};
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -47,7 +47,7 @@ impl OperationsTrait for RgbToGrayScale
         "RGB to Grayscale"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let im_colorspace = image.get_colorspace();
 

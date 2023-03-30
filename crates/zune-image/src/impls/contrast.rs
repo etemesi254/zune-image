@@ -2,7 +2,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::contrast::contrast_u8;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -27,7 +27,7 @@ impl OperationsTrait for Contrast
         "contrast"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let depth = image.get_depth();
 
@@ -41,7 +41,7 @@ impl OperationsTrait for Contrast
                 }
                 BitType::U16 =>
                 {
-                    return Err(ImgOperationsErrors::Generic(
+                    return Err(ImageErrors::GenericStr(
                         "Contrast for 16 bit depth is not yet implemented"
                     ));
                 }

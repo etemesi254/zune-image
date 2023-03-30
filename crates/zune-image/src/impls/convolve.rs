@@ -3,7 +3,7 @@
 use zune_core::bit_depth::BitType;
 
 //use zune_imageprocs::convolve::convolve_1d;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -29,7 +29,7 @@ impl OperationsTrait for Convolve
         "1D convolution"
     }
 
-    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors>
     {
         // let (width, height) = image.get_dimensions();
         // let max_val = image.get_depth().max_value();

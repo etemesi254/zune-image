@@ -12,7 +12,7 @@
 //! are represented as planar hence there will be a lot of cache misses as opposed
 //! to others that represents pixels as one single continuous buffer.
 //!
-//! if you plan on doing multiple per pixel manipulations, [image] crate may be a better
+//! If you plan on doing multiple per pixel manipulations, [image] crate may be a better
 //! fit for your needs
 //!
 //![image]:https://crates.io/crates/image

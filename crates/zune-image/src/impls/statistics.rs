@@ -4,7 +4,7 @@ use zune_imageprocs::spatial_ops::spatial_ops;
 pub use zune_imageprocs::spatial_ops::StatisticOperations;
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -34,7 +34,7 @@ impl OperationsTrait for StatisticsOps
         "StatisticsOps Filter"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, height) = image.get_dimensions();
 

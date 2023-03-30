@@ -60,13 +60,12 @@ impl<'a> DecoderTrait<'a> for QoiDecoder<'a>
         let depth = self.get_bit_depth();
 
         let metadata = ImageMetadata {
-            format:        Some(ImageFormat::QOI),
-            colorspace:    self.get_colorspace().unwrap(),
-            depth:         depth,
-            width:         width,
-            height:        height,
-            color_trc:     None,
-            default_gamma: None
+            format: Some(ImageFormat::QOI),
+            colorspace: self.get_colorspace().unwrap(),
+            depth: depth,
+            width: width,
+            height: height,
+            ..Default::default()
         };
 
         Ok(Some(metadata))

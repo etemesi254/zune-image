@@ -1,5 +1,7 @@
 #![cfg(feature = "serde-support")]
 
+use std::collections::BTreeMap;
+
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -22,6 +24,24 @@ impl Serialize for ImageMetadata
         state.serialize_field("format", &self.format)?;
         state.serialize_field("color_transfer_characteristics", &self.color_trc)?;
         state.serialize_field("gamma_value", &self.default_gamma)?;
+
+        let mut fields = BTreeMap::new();
+        if let Some(ex) = &self.exif
+        {
+            for f in ex
+            {
+                let key = f.tag.to_string();
+                fields.insert(key, f.display_value().to_string());
+            }
+        }
+        if fields.is_empty()
+        {
+            state.serialize_field::<Option<BTreeMap<String, String>>>("exif", &None)?;
+        }
+        else
+        {
+            state.serialize_field("exif", &fields)?;
+        }
 
         state.end()
     }
