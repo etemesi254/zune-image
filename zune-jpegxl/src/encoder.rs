@@ -1336,7 +1336,7 @@ impl<'a> JxlSimpleEncoder<'a>
 
         #[cfg(feature = "threads")]
         {
-            if !one_group
+            if !one_group && self.options.get_num_threads() > 0
             {
                 ran_runners = true;
                 let open_threads = Arc::new(AtomicUsize::new(0));
