@@ -356,8 +356,12 @@ impl<'a> JpegDecoder<'a>
         // We only care for ycbcr to rgb/rgba here
         // in case one is using another colorspace.
         // May god help you
-        if self.options.jpeg_get_out_colorspace() == ColorSpace::RGB
-            || self.options.jpeg_get_out_colorspace() == ColorSpace::RGBA
+        let out_colorspace = self.options.jpeg_get_out_colorspace();
+
+        if matches!(
+            out_colorspace,
+            ColorSpace::BGR | ColorSpace::BGRA | ColorSpace::RGB | ColorSpace::RGBA
+        )
         {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
                 self.options.jpeg_get_out_colorspace(),
@@ -668,7 +672,7 @@ impl<'a> JpegDecoder<'a>
     ///    1. The image doesn't have exif data
     ///    2. The image headers haven't been decoded
     #[must_use]
-    pub fn exif(self) -> Option<&'a [u8]>
+    pub fn exif(&self) -> Option<&'a [u8]>
     {
         return self.exif_data;
     }

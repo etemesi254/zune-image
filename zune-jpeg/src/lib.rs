@@ -29,6 +29,9 @@
 //! ```
 //!
 //! ## Decode a JPEG file to RGBA format
+//!
+//! - Other (limited) supported formats are and  BGR, BGRA
+//!
 //!```no_run
 //! use zune_core::colorspace::ColorSpace;
 //! use zune_core::options::DecoderOptions;
