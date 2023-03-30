@@ -56,6 +56,7 @@ in order of importance
 - [X] Single-threaded decoding.
 - [X] Support for four component JPEGs, and esoteric color schemes like CYMK
 - [X] Support for `no_std`
+- [X] BGR/BGRA decoding support.
 
 ## Crate Features
 
@@ -77,7 +78,7 @@ will be running on
 ## Debug vs release
 
 The decoder heavily relies on platform specific intrinsics, namely AVX2 and SSE to gain speed-ups in decoding,
-but the [perform poorly](https://godbolt.org/z/vPq57z13b) in debug builds. To get reasonable performance even
+but they [perform poorly](https://godbolt.org/z/vPq57z13b) in debug builds. To get reasonable performance even
 when compiling your program in debug mode, add this to your `Cargo.toml`:
 
 ```toml
