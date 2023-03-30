@@ -94,5 +94,11 @@
     "name": "weird_sampling_2.jpeg",
     "hash": 44023427629692410987754568486276016924,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
+  },
+  {
+    "name": "2029.jpg",
+    "hash": 145881769686590241353562665580548083291,
+    "comment": "testing-bgr support",
+    "colorspace": "bgr"
   }
 ]
