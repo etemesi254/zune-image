@@ -4,6 +4,7 @@
 
 use std::any::TypeId;
 
+use bytemuck::Pod;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::{Channel, ChannelErrors};
@@ -191,7 +192,7 @@ impl Frame
     ///
     ///  It's an error if `T` is not the same type as the bytes stored by
     /// the channel
-    pub fn write_rgba<T: Clone + Copy + ZuneInts<T> + Default + 'static>(
+    pub fn write_rgba<T: Clone + Copy + ZuneInts<T> + Default + 'static + Pod>(
         &self, colorspace: ColorSpace, out_pixel: &mut [T]
     ) -> Result<(), ChannelErrors>
     {
@@ -265,7 +266,7 @@ impl Frame
         }
         Ok(())
     }
-    pub fn flatten<T: Clone + Default + ZuneInts<T> + 'static + Copy>(
+    pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(
         &self, colorspace: ColorSpace
     ) -> Vec<T>
     {

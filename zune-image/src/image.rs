@@ -14,6 +14,7 @@
 use std::fmt::Debug;
 use std::mem::size_of;
 
+use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_imageprocs::traits::NumOps;
@@ -158,7 +159,7 @@ impl Image
     /// Flatten channels in this image.
     ///
     /// Flatten can be used to interleave all channels into one vector
-    pub fn flatten_frames<T: Default + Copy + 'static + ZuneInts<T>>(&self) -> Vec<Vec<T>>
+    pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>>
     {
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
@@ -223,7 +224,7 @@ impl Image
     }
 
     /// Create an image with a static color in it
-    pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T>>(
+    pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T> + Zeroable>(
         pixel: T, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>
     {
@@ -282,7 +283,7 @@ impl Image
     pub fn from_fn<T, F>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
     where
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
-        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod
     {
         match colorspace.num_components()
         {
@@ -304,7 +305,7 @@ impl Image
     ) -> Image
     where
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
-        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod
     {
         let size = width * height * T::depth().size_of();
 
@@ -479,7 +480,7 @@ impl Image
     /// ```
     pub fn modify_pixels_mut<T, F>(&mut self, func: F) -> Result<(), ChannelErrors>
     where
-        T: ZuneInts<T> + Default + Copy + 'static,
+        T: ZuneInts<T> + Default + Copy + 'static + Pod,
         F: Fn(usize, usize, [&mut T; MAX_CHANNELS])
     {
         let colorspace = self.get_colorspace();

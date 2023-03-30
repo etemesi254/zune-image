@@ -16,9 +16,8 @@ use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
 use std::mem::size_of;
 
+use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitType;
-
-use crate::traits::ZuneInts;
 
 /// Minimum alignment for all types allocated in the channel
 ///
@@ -93,8 +92,12 @@ impl Clone for Channel
     {
         let mut new_channel = Channel::new_with_capacity_and_type(self.capacity(), self.type_id);
         // copy items by calling extend
-        // unwrap here is safe as the conditions for None.
-        // do not apply to u8 types
+
+        // Safety:
+        //
+        // no-slop-bytes: U8's cannot have slop bytes
+        // ptr is valid since we own it, and memory is allocated by us.
+        //
         unsafe {
             new_channel.extend_unchecked(self.reinterpret_as_unchecked::<u8>());
         }
@@ -215,7 +218,7 @@ impl Channel
     ///
     ///
     /// This stores a single plane for an image
-    pub fn new<T: 'static + ZuneInts<T>>() -> Channel
+    pub fn new<T: 'static + Zeroable>() -> Channel
     {
         Self::new_with_capacity::<T>(10)
     }
@@ -225,7 +228,7 @@ impl Channel
     ///
     /// # Arguments
     ///  - length: The length of the new channel
-    pub fn new_with_length<T: 'static + ZuneInts<T>>(length: usize) -> Channel
+    pub fn new_with_length<T: 'static + Zeroable>(length: usize) -> Channel
     {
         let mut channel = Channel::new_with_capacity::<T>(length);
         channel.length = length;
@@ -303,7 +306,7 @@ impl Channel
     /// let channel = Channel::new_with_capacity::<u16>(100);    
     /// assert!(channel.is_empty());
     /// ```
-    pub fn new_with_capacity<T: 'static + ZuneInts<T>>(capacity: usize) -> Channel
+    pub fn new_with_capacity<T: 'static + Zeroable>(capacity: usize) -> Channel
     {
         unsafe {
             let ptr = Self::alloc(capacity);
@@ -357,7 +360,7 @@ impl Channel
     /// let chan = Channel::from_elm(100,90_u16);
     /// assert_eq!(chan.reinterpret_as::<u16>().unwrap(),&[90;100]);
     /// ```
-    pub fn from_elm<T: Copy + 'static + ZuneInts<T>>(length: usize, elm: T) -> Channel
+    pub fn from_elm<T: Copy + 'static + Zeroable>(length: usize, elm: T) -> Channel
     {
         // new currently zeroes memory
         let mut new_chan = Channel::new_with_length::<T>(length * size_of::<T>());
@@ -375,7 +378,7 @@ impl Channel
     /// Extend this channel with items from data
     ///
     ///
-    pub fn extend<T: Copy + 'static + ZuneInts<T>>(&mut self, data: &[T])
+    pub fn extend<T: Copy + 'static + Zeroable>(&mut self, data: &[T])
     {
         assert_eq!(
             TypeId::of::<T>(),
@@ -393,7 +396,7 @@ impl Channel
     ///
     /// - Type of element should match, otherwise behaviour is undefined
     /// - Alignment must match
-    unsafe fn extend_unchecked<T: Copy + 'static + ZuneInts<T>>(&mut self, data: &[T])
+    unsafe fn extend_unchecked<T: Copy + 'static + Zeroable>(&mut self, data: &[T])
     {
         // get size of the generic type
         let data_size = core::mem::size_of::<T>();
@@ -409,7 +412,11 @@ impl Channel
         }
         // now we have enough space, extend
 
-        self.ptr.add(self.length).copy_from(
+        // Safety
+        // - self.ptr+length cannot overflow, since it's usize
+        // -  data is valid for data size
+        //
+        self.ptr.wrapping_add(self.length).copy_from(
             data.as_ptr().cast::<u8>(),
             data.len().saturating_mul(data_size)
         );
@@ -422,8 +429,7 @@ impl Channel
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default + 'static + ZuneInts<T>>(&self)
-        -> Result<&[T], ChannelErrors>
+    pub fn reinterpret_as<T: Default + 'static + Pod>(&self) -> Result<&[T], ChannelErrors>
     {
         // check if the alignment is correct
         // plus we can evenly divide this
@@ -436,42 +442,42 @@ impl Channel
     ///
     ///  # Safety
     /// - Invariants for [`std::slice::from_raw_parts`] should be upheld
+    /// - There should be no sloppy bytes at the end of the memory location
     ///
     /// # Returns
     /// - `Some(&[T])`: THe re-interpreted bits
-    unsafe fn reinterpret_as_unchecked<T: Default + 'static + ZuneInts<T>>(&self) -> &[T]
+    unsafe fn reinterpret_as_unchecked<T: Default + 'static + Pod>(&self) -> &[T]
     {
-        // Get size of pointer
-        let size = core::mem::size_of::<T>();
+        // Safety:
+        //  validity: We own the data
+        //  well aligned: You cannot have u8 having bad alignment
+        //
+        let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
-        let new_length = self.length / size;
-
-        let new_ptr = self.ptr.cast::<T>();
-
-        let new_slice = unsafe { std::slice::from_raw_parts(new_ptr, new_length) };
-
-        new_slice
+        let (a, b, c) = bytemuck::pod_align_to(new_slice);
+        assert!(a.is_empty(), "extra sloppy bytes");
+        assert!(c.is_empty(), "extra sloppy bytes");
+        b
     }
     /// Reinterpret a slice of `&[u8]` into another type
-    pub fn reinterpret_as_mut<T: Default + 'static + ZuneInts<T>>(
+    pub fn reinterpret_as_mut<T: Default + 'static + Pod>(
         &mut self
     ) -> Result<&mut [T], ChannelErrors>
     {
         // Get size of pointer
-        let size = core::mem::size_of::<T>();
         // check if the alignment is correct + size evenly divides
         self.confirm_suspicions::<T>()?;
 
-        let new_length = self.length / size;
-
-        let new_ptr = self.ptr.cast::<T>();
-
         // Safety:
-        // 1- Data is aligned correctly
-        // 2- Data is the same type it was created with
-        let new_slice = unsafe { std::slice::from_raw_parts_mut(new_ptr, new_length) };
+        //  validity: We own the data
+        //  well aligned: You cannot have u8 having bad alignment
+        //
+        let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
-        Ok(new_slice)
+        let (a, b, c) = bytemuck::pod_align_to_mut(new_slice);
+        assert!(a.is_empty(), "extra sloppy bytes");
+        assert!(c.is_empty(), "extra sloppy bytes");
+        Ok(b)
     }
 
     /// Push a single element to the channel.
@@ -494,7 +500,7 @@ impl Channel
     /// // assert that length matches
     /// assert_eq!(channel.len(),len);
     /// ```
-    pub fn push<T: Copy + 'static + ZuneInts<T>>(&mut self, elm: T)
+    pub fn push<T: Copy + 'static + Zeroable>(&mut self, elm: T)
     {
         let size = core::mem::size_of::<T>(); // compile time
 
@@ -535,8 +541,7 @@ impl Channel
     /// channel.fill(100_u16).unwrap();
     /// assert_eq!(channel.reinterpret_as::<u16>().unwrap(),&[100;50]);
     /// ```
-    pub fn fill<T: Copy + 'static + ZuneInts<T>>(&mut self, element: T)
-        -> Result<(), ChannelErrors>
+    pub fn fill<T: Copy + 'static + Zeroable>(&mut self, element: T) -> Result<(), ChannelErrors>
     {
         let size = core::mem::size_of::<T>();
 
@@ -650,6 +655,8 @@ mod tests
         ch.extend::<u8>(&[10; 10]);
         // test clone works
         // clone has some special things
-        let _ = ch.clone();
+        let ch2 = ch.clone();
+
+        assert_eq!(ch, ch2);
     }
 }
