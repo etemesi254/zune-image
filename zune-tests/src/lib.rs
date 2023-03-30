@@ -22,7 +22,9 @@ pub enum JsonColorspace
     CMYK,
     YCbCr,
     Luma,
-    YCCK
+    YCCK,
+    BGR,
+    BGRA
 }
 
 impl JsonColorspace
@@ -36,7 +38,9 @@ impl JsonColorspace
             Self::RGB => ColorSpace::RGB,
             Self::YCbCr => ColorSpace::YCbCr,
             Self::Luma => ColorSpace::Luma,
-            Self::RGBA => ColorSpace::RGBA
+            Self::RGBA => ColorSpace::RGBA,
+            Self::BGR => ColorSpace::BGR,
+            Self::BGRA => ColorSpace::BGRA
         }
     }
 }
