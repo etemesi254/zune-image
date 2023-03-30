@@ -6,7 +6,7 @@ use log::{info, log_enabled, Level};
 use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
 use crate::image::Image;
-use crate::traits::{DecoderTrait, EncoderTrait, OperationsTrait};
+use crate::traits::{EncoderTrait, IntoImage, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
 enum WorkFlowState
@@ -49,27 +49,30 @@ impl EncodeResult
         self.format
     }
 }
+
 /// Workflow, batch image processing
 ///
 /// A workflow provides an idiomatic way to do batch image processing
 /// it can load multiple images (by queing decoders) and batch apply an operation
 /// to all the images and then encode images to a specified format.
 ///
-pub struct WorkFlow<'a>
+pub struct WorkFlow<T: IntoImage>
 {
     state:         Option<WorkFlowState>,
-    decode:        Option<Box<dyn DecoderTrait<'a> + 'a>>,
+    decode:        Option<T>,
     image:         Vec<Image>,
     operations:    Vec<Box<dyn OperationsTrait>>,
-    encode:        Vec<Box<dyn EncoderTrait + 'a>>,
+    encode:        Vec<Box<dyn EncoderTrait>>,
     encode_result: Vec<EncodeResult>
 }
 
-impl<'a> WorkFlow<'a>
+impl<T> WorkFlow<T>
+where
+    T: IntoImage
 {
     /// Create a new workflow that encapsulates a
     #[allow(clippy::new_without_default)]
-    pub fn new() -> WorkFlow<'a>
+    pub fn new() -> WorkFlow<T>
     {
         WorkFlow {
             image:         vec![],
@@ -102,12 +105,12 @@ impl<'a> WorkFlow<'a>
     /// // nothing
     /// }
     /// ```
-    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait + 'a>)
+    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>)
     {
         self.encode.push(encoder);
     }
     /// Add a single decoder for this image
-    pub fn add_decoder(&mut self, decoder: Box<dyn DecoderTrait<'a> + 'a>)
+    pub fn add_decoder(&mut self, decoder: T)
     {
         self.decode = Some(decoder);
     }
@@ -122,12 +125,12 @@ impl<'a> WorkFlow<'a>
         self.image.push(image);
     }
 
-    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<'a>
+    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<T>
     {
         self.encode.push(encoder);
         self
     }
-    pub fn chain_decoder(&mut self, decoder: Box<dyn DecoderTrait<'a> + 'a>) -> &mut WorkFlow<'a>
+    pub fn chain_decoder(&mut self, decoder: T) -> &mut WorkFlow<T>
     {
         self.decode = Some(decoder);
         self
@@ -156,7 +159,7 @@ impl<'a> WorkFlow<'a>
     ///     .chain_operations(Box::new(Transpose::new()))    
     ///     .advance_to_end();
     /// ```
-    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<'a>
+    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T>
     {
         self.operations.push(operations);
         self
@@ -210,9 +213,9 @@ impl<'a> WorkFlow<'a>
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    let decode_op = self.decode.as_mut().unwrap();
+                    let decode_op = self.decode.take().unwrap();
 
-                    let img = decode_op.decode()?;
+                    let img = decode_op.into_image()?;
 
                     self.image.push(img);
 

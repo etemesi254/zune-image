@@ -17,6 +17,7 @@ pub mod grayscale;
 pub mod invert;
 pub mod median;
 pub mod mirror;
+pub mod orientation;
 pub mod resize;
 pub mod scharr;
 pub mod sobel;

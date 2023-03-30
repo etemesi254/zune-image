@@ -17,17 +17,17 @@ use zune_imageprocs::deinterleave::{
 };
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::{ImageErrors, ImageOperationsErrors};
 
 /// Separates image u8's into various components
 pub fn deinterleave_u8(
     interleaved_pixels: &[u8], colorspace: ColorSpace
-) -> Result<Vec<Channel>, ImgOperationsErrors>
+) -> Result<Vec<Channel>, ImageErrors>
 {
     if interleaved_pixels.len() % colorspace.num_components() != 0
     {
-        return Err(ImgOperationsErrors::InvalidChannelLayout(
-            "Extra pixels in the colorspace"
+        return Err(ImageErrors::OperationsError(
+            ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
     }
     let size = interleaved_pixels.len() / colorspace.num_components();
@@ -95,14 +95,15 @@ pub fn deinterleave_u8(
 /// Separates u16's into various components
 pub fn deinterleave_u16(
     interleaved_pixels: &[u16], colorspace: ColorSpace
-) -> Result<Vec<Channel>, ImgOperationsErrors>
+) -> Result<Vec<Channel>, ImageErrors>
 {
     if interleaved_pixels.len() % colorspace.num_components() != 0
     {
-        return Err(ImgOperationsErrors::InvalidChannelLayout(
-            "Extra pixels in the colorspace"
+        return Err(ImageErrors::OperationsError(
+            ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
     }
+
     let size = (interleaved_pixels.len() / colorspace.num_components()) * 2 /*Depth is two bytes*/;
 
     if colorspace.num_components() == 1
@@ -167,12 +168,12 @@ pub fn deinterleave_u16(
 
 pub fn deinterleave_f32(
     interleaved_pixels: &[f32], colorspace: ColorSpace
-) -> Result<Vec<Channel>, ImgOperationsErrors>
+) -> Result<Vec<Channel>, ImageErrors>
 {
     if interleaved_pixels.len() % colorspace.num_components() != 0
     {
-        return Err(ImgOperationsErrors::InvalidChannelLayout(
-            "Extra pixels in the colorspace"
+        return Err(ImageErrors::OperationsError(
+            ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
     }
     let size = (interleaved_pixels.len() / colorspace.num_components()) * 4 /*Depth 4  bytes*/;

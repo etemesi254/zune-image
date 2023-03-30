@@ -73,20 +73,27 @@ pub enum ImageFormat
 
 impl ImageFormat
 {
-    /// Return true if an image format has an encoder
+    /// Return true if an image format has an encoder that can convert the image
+    /// into that format
     pub fn has_encoder(self) -> bool
     {
         return self.get_encoder().is_some();
     }
 
-    pub fn get_decoder<'a>(&self, data: &'a [u8]) -> Box<dyn DecoderTrait<'a> + 'a>
+    pub fn has_decoder(self) -> bool
+    {
+        return self.get_decoder(&[]).is_ok();
+    }
+    pub fn get_decoder<'a>(
+        &self, data: &'a [u8]
+    ) -> Result<Box<dyn DecoderTrait<'a> + 'a>, ImageErrors>
     {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
 
     pub fn get_decoder_with_options<'a>(
         &self, data: &'a [u8], options: DecoderOptions
-    ) -> Box<dyn DecoderTrait<'a> + 'a>
+    ) -> Result<Box<dyn DecoderTrait<'a> + 'a>, ImageErrors>
     {
         match self
         {
@@ -94,11 +101,13 @@ impl ImageFormat
             {
                 #[cfg(feature = "jpeg")]
                 {
-                    Box::new(zune_jpeg::JpegDecoder::new_with_options(options, data))
+                    Ok(Box::new(zune_jpeg::JpegDecoder::new_with_options(
+                        options, data
+                    )))
                 }
                 #[cfg(not(feature = "jpeg"))]
                 {
-                    unimplemented!("JPEG feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
 
@@ -106,33 +115,39 @@ impl ImageFormat
             {
                 #[cfg(feature = "png")]
                 {
-                    Box::new(zune_png::PngDecoder::new_with_options(data, options))
+                    Ok(Box::new(zune_png::PngDecoder::new_with_options(
+                        data, options
+                    )))
                 }
                 #[cfg(not(feature = "png"))]
                 {
-                    unimplemented!("PNG feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
             ImageFormat::PPM =>
             {
                 #[cfg(feature = "ppm")]
                 {
-                    Box::new(zune_ppm::PPMDecoder::new_with_options(options, data))
+                    Ok(Box::new(zune_ppm::PPMDecoder::new_with_options(
+                        options, data
+                    )))
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
-                    unimplemented!("PPM feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
             ImageFormat::PSD =>
             {
                 #[cfg(feature = "ppm")]
                 {
-                    Box::new(zune_psd::PSDDecoder::new_with_options(data, options))
+                    Ok(Box::new(zune_psd::PSDDecoder::new_with_options(
+                        data, options
+                    )))
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
-                    unimplemented!("PPM feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
 
@@ -140,13 +155,13 @@ impl ImageFormat
             {
                 #[cfg(feature = "farbfeld")]
                 {
-                    Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
+                    Ok(Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
                         data, options
-                    ))
+                    )))
                 }
                 #[cfg(not(feature = "farbfeld"))]
                 {
-                    unimplemented!("Farbfeld feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
 
@@ -154,21 +169,17 @@ impl ImageFormat
             {
                 #[cfg(feature = "qoi")]
                 {
-                    Box::new(zune_qoi::QoiDecoder::new_with_options(options, data))
+                    Ok(Box::new(zune_qoi::QoiDecoder::new_with_options(
+                        options, data
+                    )))
                 }
                 #[cfg(not(feature = "qoi"))]
                 {
-                    unimplemented!("QOI feature not included")
+                    Err(ImageErrors::ImageDecoderNotIncluded(self))
                 }
             }
-            ImageFormat::JPEG_XL =>
-            {
-                unimplemented!("JXL decoder not present")
-            }
-            ImageFormat::Unknown =>
-            {
-                panic!("Unknown format encountered")
-            }
+            ImageFormat::JPEG_XL => Err(ImageErrors::ImageDecoderNotImplemented(*self)),
+            ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
         }
     }
 
@@ -460,5 +471,49 @@ impl Image
                 crate::errors::ImgEncodeErrors::NoEncoderForFormat(format)
             ))
         }
+    }
+
+    pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors>
+    {
+        Self::open_with_options(file, DecoderOptions::default())
+    }
+
+    pub fn open_with_options<P: AsRef<Path>>(
+        file: P, options: DecoderOptions
+    ) -> Result<Image, ImageErrors>
+    {
+        let file = std::fs::read(file)?;
+
+        let decoder = ImageFormat::guess_format(&file);
+
+        return if let Some(format) = decoder
+        {
+            let mut image_decoder = format.get_decoder_with_options(&file, options)?;
+
+            image_decoder.decode()
+        }
+        else
+        {
+            Err(ImageErrors::ImageDecoderNotImplemented(
+                ImageFormat::Unknown
+            ))
+        };
+    }
+    pub fn read_with_opts(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors>
+    {
+        let decoder = ImageFormat::guess_format(src);
+
+        return if let Some(format) = decoder
+        {
+            let mut image_decoder = format.get_decoder_with_options(src, options)?;
+
+            image_decoder.decode()
+        }
+        else
+        {
+            Err(ImageErrors::ImageDecoderNotImplemented(
+                ImageFormat::Unknown
+            ))
+        };
     }
 }

@@ -3,7 +3,7 @@ use zune_imageprocs::resize::resize;
 pub use zune_imageprocs::resize::ResizeMethod;
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -34,7 +34,7 @@ impl OperationsTrait for Resize
         "Resize"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (old_w, old_h) = image.get_dimensions();
         let depth = image.get_depth().bit_type();

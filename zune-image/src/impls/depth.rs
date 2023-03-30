@@ -3,7 +3,7 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_imageprocs::depth::{depth_u16_to_u8, depth_u8_to_u16};
 
 use crate::channel::Channel;
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -30,7 +30,7 @@ impl OperationsTrait for Depth
         "Depth"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let image_depth = image.get_depth();
 
@@ -75,7 +75,7 @@ impl OperationsTrait for Depth
                         image_depth, self.depth
                     );
 
-                    return Err(ImgOperationsErrors::GenericString(msg));
+                    return Err(ImageErrors::GenericString(msg));
                 }
             }
         }

@@ -2,7 +2,7 @@ use log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::box_blur::{box_blur_u16, box_blur_u8};
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -33,7 +33,7 @@ impl OperationsTrait for BoxBlur
         "Box blur"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, height) = image.get_dimensions();
 

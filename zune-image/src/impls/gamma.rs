@@ -2,7 +2,7 @@ use log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::gamma::gamma;
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -27,7 +27,7 @@ impl OperationsTrait for Gamma
         "Gamma Correction"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let max_value = image.get_depth().max_value();
 

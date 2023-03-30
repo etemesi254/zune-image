@@ -2,7 +2,7 @@ use log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
 
-use crate::errors::ImgOperationsErrors;
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
@@ -28,7 +28,7 @@ impl OperationsTrait for GaussianBlur
         "Gaussian blur"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImgOperationsErrors>
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
     {
         let (width, height) = image.get_dimensions();
         let depth = image.get_depth();

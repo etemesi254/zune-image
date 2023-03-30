@@ -2,17 +2,20 @@
 //!
 //! This module provides the ability to store image metadata and transfer it
 //! from one image to another
+
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 
 use crate::codecs::ImageFormat;
+
+mod exif;
 
 /// Image metadata
 ///
 /// Each image type has this information present
 /// The decoder usually sets this up while the encoder
 /// can get these details from the user/image struct
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ImageMetadata
 {
     // REMEMBER: If you add a field here add it's serialization
@@ -23,7 +26,9 @@ pub struct ImageMetadata
     pub(crate) height:        usize,
     pub(crate) colorspace:    ColorSpace,
     pub(crate) depth:         BitDepth,
-    pub(crate) format:        Option<ImageFormat>
+    pub(crate) format:        Option<ImageFormat>,
+    #[cfg(feature = "metadata")]
+    pub(crate) exif:          Option<Vec<::exif::Field>>
 }
 
 impl Default for ImageMetadata
@@ -31,13 +36,15 @@ impl Default for ImageMetadata
     fn default() -> Self
     {
         ImageMetadata {
-            color_trc:     None,
+            color_trc: None,
             default_gamma: None,
-            width:         0,
-            height:        0,
-            colorspace:    ColorSpace::Unknown,
-            depth:         BitDepth::default(),
-            format:        None
+            width: 0,
+            height: 0,
+            colorspace: ColorSpace::Unknown,
+            depth: BitDepth::default(),
+            format: None,
+            #[cfg(feature = "metadata")]
+            exif: None
         }
     }
 }
