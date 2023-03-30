@@ -521,6 +521,10 @@ pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
 
         decoder.exif_data = Some(exif_bytes);
     }
+    else
+    {
+        warn!("Wrongly formatted exif tag");
+    }
 
     decoder.stream.skip(length);
     Ok(())
