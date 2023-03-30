@@ -7,13 +7,24 @@
 #[non_exhaustive]
 pub enum ColorSpace
 {
+    /// Red, Green , Blue
     RGB,
+    /// Red, Green, Blue, Alpha
     RGBA,
+    /// YUV colorspace
     YCbCr,
+    /// Grayscale colorspace
     Luma,
+    /// Grayscale with alpha colorspace
     LumaA,
     YCCK,
+    /// Cyan , Magenta, Yellow, Black
     CMYK,
+    /// Blue, Green, Red
+    BGR,
+    /// Blue, Green, Red, Alpha
+    BGRA,
+    /// The colorspace is unknown
     Unknown
 }
 impl ColorSpace
@@ -22,8 +33,8 @@ impl ColorSpace
     {
         match self
         {
-            Self::RGB | Self::YCbCr => 3,
-            Self::RGBA | Self::YCCK | Self::CMYK => 4,
+            Self::RGB | Self::YCbCr | Self::BGR => 3,
+            Self::RGBA | Self::YCCK | Self::CMYK | Self::BGRA => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
             Self::Unknown => 0
@@ -32,7 +43,7 @@ impl ColorSpace
 
     pub const fn has_alpha(&self) -> bool
     {
-        matches!(self, Self::RGBA | Self::LumaA)
+        matches!(self, Self::RGBA | Self::LumaA | Self::BGRA)
     }
 
     pub const fn is_grayscale(&self) -> bool
@@ -43,12 +54,14 @@ impl ColorSpace
 
 /// Encapsulates all colorspaces supported by
 /// the library
-pub static ALL_COLORSPACES: [ColorSpace; 6] = [
+pub static ALL_COLORSPACES: [ColorSpace; 8] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
     ColorSpace::LumaA,
     ColorSpace::Luma,
     ColorSpace::CMYK,
+    ColorSpace::BGRA,
+    ColorSpace::BGR,
     ColorSpace::YCbCr
 ];
 
