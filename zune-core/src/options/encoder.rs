@@ -11,6 +11,8 @@ bitflags! {
         const JPEG_ENCODE_PROGRESSIVE = 0b0000_0000_0000_0000_0000_0000_0000_0001;
         /// Whether JPEG images should use optimized huffman tables
         const JPEG_OPTIMIZED_HUFFMAN  = 0b0000_0000_0000_0000_0000_0000_0000_0010;
+        /// Whether to not preserve metadata across image transformations
+        const IMAGE_STRIP_METADATA    = 0b0000_0000_0000_0000_0000_0000_0000_0100;
 
     }
 }
@@ -21,6 +23,7 @@ impl Default for EncoderFlags
         let mut options = EncoderFlags::empty();
         options.set(EncoderFlags::JPEG_ENCODE_PROGRESSIVE, false);
         options.set(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN, false);
+        options.set(EncoderFlags::IMAGE_STRIP_METADATA, false);
 
         options
     }
@@ -153,20 +156,42 @@ impl EncoderOptions
 
     /// Return number of threads configured for multithreading
     /// where possible
+    ///
+    /// This is used for multi-threaded encoders,
+    /// currently only jpeg-xl
     pub const fn get_num_threads(&self) -> u8
     {
         self.num_threads
+    }
+
+    /// Whether or not the encoder should remove metadata from the image
+    ///
+    /// The default value is false, and encoders that respect this try to preserve as much
+    /// data as possible from one image to another
+    pub const fn strip_metadata(&self) -> bool
+    {
+        !self.flags.contains(EncoderFlags::IMAGE_STRIP_METADATA)
     }
 }
 
 /// JPEG options
 impl EncoderOptions
 {
+    /// Whether the jpeg encoder should encode the image in progressive mode
+    ///
+    /// Default is `false`.
+    ///
+    /// This may be used to create slightly smaller images at the cost of more processing
+    /// time
     pub const fn jpeg_encode_progressive(&self) -> bool
     {
         self.flags.contains(EncoderFlags::JPEG_ENCODE_PROGRESSIVE)
     }
 
+    /// Whether the jpeg encoder should optimize huffman tables to create smaller files
+    /// at the cost of processing time
+    ///
+    /// Default is `false`.
     pub const fn jpeg_optimized_huffman_tables(&self) -> bool
     {
         self.flags.contains(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN)
