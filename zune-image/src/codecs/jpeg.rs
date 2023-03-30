@@ -7,7 +7,7 @@
 //!
 //!
 use jpeg_encoder::{ColorType, EncodingError, JpegColorType};
-use log::info;
+use log::{info, warn};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
@@ -27,6 +27,8 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors>
     {
+        let metadata = self.read_headers()?.unwrap();
+
         let pixels = self
             .decode()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
@@ -35,8 +37,7 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
         let (width, height) = self.get_dimensions().unwrap();
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
-        image.metadata.format = Some(ImageFormat::JPEG);
-
+        image.metadata = metadata;
         Ok(image)
     }
 
@@ -63,15 +64,22 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
 
         let (width, height) = self.get_dimensions().unwrap();
 
-        let metadata = ImageMetadata {
-            format:        Some(ImageFormat::JPEG),
-            colorspace:    self.get_input_colorspace().unwrap(),
-            depth:         BitDepth::Eight,
-            width:         width,
-            height:        height,
-            color_trc:     None,
-            default_gamma: None
+        let mut metadata = ImageMetadata {
+            format: Some(ImageFormat::JPEG),
+            colorspace: self.get_input_colorspace().unwrap(),
+            depth: BitDepth::Eight,
+            width: width,
+            height: height,
+            ..Default::default()
         };
+        #[cfg(feature = "metadata")]
+        {
+            // see if we have an exif chunk
+            if let Some(exif) = self.exif()
+            {
+                metadata.parse_raw_exif(exif)
+            }
+        }
 
         Ok(Some(metadata))
     }
@@ -157,6 +165,39 @@ impl EncoderTrait for JpegEncoder
             // add options
             encoder.set_progressive(options.jpeg_encode_progressive());
             encoder.set_optimized_huffman_tables(options.jpeg_optimized_huffman_tables());
+
+            #[cfg(feature = "metadata")]
+            {
+                use exif::experimental::Writer;
+
+                if options.strip_metadata()
+                {
+                    // explicit :)
+                }
+                else if let Some(metadata) = &image.metadata.exif
+                {
+                    let mut writer = Writer::new();
+                    // write first tags for exif
+                    let mut buf = std::io::Cursor::new(b"Exif\x00\x00".to_vec());
+                    // set buffer position to be bytes written, to ensure we don't overwrite anything
+                    buf.set_position(6);
+
+                    for metadatum in metadata
+                    {
+                        writer.push_field(metadatum);
+                    }
+                    let result = writer.write(&mut buf, false);
+                    if result.is_ok()
+                    {
+                        // add the exif tag to APP1 segment
+                        encoder.add_app_segment(1, buf.get_ref())?;
+                    }
+                    else
+                    {
+                        warn!("Writing exif failed {:?}", result);
+                    }
+                }
+            }
 
             encoder.encode(pixels, width as u16, height as u16, colorspace)?;
 
