@@ -20,7 +20,7 @@ description = "A fast, correct and safe png decoder"
 crc = []
 sse = []
 std = ["zune-core/std"]
-default = ["crc", "sse"]
+default = ["crc", "sse", "std"]
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.2.12" }
