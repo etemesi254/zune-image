@@ -473,33 +473,65 @@ impl Image
         }
     }
 
+    /// Open an encoded file for which the library has a configured decoder for it
+    ///
+    /// # Note
+    /// - This reads the whole file into memory before parsing
+    /// do not use for large files
+    ///
+    /// - The decoders supported can be switched on and off depending on how
+    ///  you configure your Cargo.toml. It is generally recommended to not enable decoders
+    ///  you will not be using as it reduces both the security attack surface and dependency
+    ///
+    /// # Arguments
+    /// - file: The file path from which to read the file from, the file must be a supported format
+    /// otherwise it's an error to try and decode
+    ///
+    /// See also [open_from_mem](Self::open_from_mem) for reading from memory
     pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors>
     {
         Self::open_with_options(file, DecoderOptions::default())
     }
 
+    /// Open an encoded file for which the library has a configured decoder for it
+    /// with the specified custom decoder options
+    ///
+    /// This allows you to modify decoding steps  where possible by specifying how the
+    /// decoder should behave
+    ///
+    /// # Example
+    ///  -  Decode a file with strict mode enabled and only expect images with less
+    ///  than 100 pixels in width
+    ///
+    /// ```no_run
+    /// use zune_core::options::DecoderOptions;
+    /// use zune_image::image::Image;
+    /// let options = DecoderOptions::default().set_strict_mode(true).set_max_width(100);
+    /// let image = Image::open_with_options("/a/file.jpeg",options).unwrap();
+    /// ```
     pub fn open_with_options<P: AsRef<Path>>(
         file: P, options: DecoderOptions
     ) -> Result<Image, ImageErrors>
     {
         let file = std::fs::read(file)?;
 
-        let decoder = ImageFormat::guess_format(&file);
-
-        return if let Some(format) = decoder
-        {
-            let mut image_decoder = format.get_decoder_with_options(&file, options)?;
-
-            image_decoder.decode()
-        }
-        else
-        {
-            Err(ImageErrors::ImageDecoderNotImplemented(
-                ImageFormat::Unknown
-            ))
-        };
+        Self::open_from_mem(&file, options)
     }
-    pub fn read_with_opts(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors>
+    /// Open a new file from memory with the configured options
+    ///  
+    /// # Arguments
+    ///  - `src`: The encoded buffer loaded into memory
+    ///  - `options`: The configured decoded options
+    /// # Example
+    /// - Open a memory source with the default options
+    ///
+    ///```no_run
+    /// use zune_core::options::DecoderOptions;
+    /// use zune_image::image::Image;
+    /// // create a simple ppm p5 grayscale format
+    /// let image = Image::open_from_mem(b"P5 1 1 255 1",DecoderOptions::default());
+    ///```
+    pub fn open_from_mem(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors>
     {
         let decoder = ImageFormat::guess_format(src);
 
