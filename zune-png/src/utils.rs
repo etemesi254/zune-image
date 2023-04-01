@@ -10,29 +10,9 @@ pub(crate) fn expand_palette(input: &[u8], out: &mut [u8], palette: &[PLTEEntry]
 
     if components == 3
     {
-        // We can get it to be a little faster, with some parallelization,
-        // we do two palette entry fills per iteration
-        for (in_px, px) in input.chunks_exact(2).zip(out.chunks_exact_mut(6))
+        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(3))
         {
-            let e1 = palette[usize::from(in_px[0]) & 255];
-            let e2 = palette[usize::from(in_px[1]) & 255];
-
-            px[0] = e1.red;
-            px[1] = e1.green;
-            px[2] = e1.blue;
-
-            px[3] = e2.red;
-            px[4] = e2.green;
-            px[5] = e2.blue;
-        }
-        // handle remainder
-        for (in_px, px) in input
-            .chunks_exact(2)
-            .remainder()
-            .iter()
-            .zip(out.chunks_exact_mut(6).into_remainder().chunks_exact_mut(3))
-        {
-            let entry = palette[usize::from(*in_px)];
+            let entry = palette[usize::from(*in_px) & 255];
 
             px[0] = entry.red;
             px[1] = entry.green;
