@@ -11,7 +11,7 @@ zune-qoi = { version = "0.1.0", path = "../zune-qoi" }
 rapid-qoi = "0.6.1"
 
 # deflate benchmarks
-flate2 = { version = "1.0.25", default-features = false, features = ["miniz_oxide"] }
+flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng-compat"] }
 libdeflater = "0.12.0"
 zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
 
