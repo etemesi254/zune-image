@@ -35,7 +35,14 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 
     let zune_results = decode_zune(&contents);
     let ref_results = decode_ref(&contents);
-    assert_eq!(&zune_results, &ref_results);
+    for ((pos, a), b) in ref_results.iter().enumerate().zip(&zune_results)
+    {
+        if a != b
+        {
+            panic!("[{pos}]: {a} != {b}");
+        }
+    }
+    //assert_eq!(&ref_results, &zune_results);
 }
 
 #[test]
@@ -87,12 +94,12 @@ fn test_palette_4bpp()
 fn test_palette_8bpp()
 {
     {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi3p08.png";
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn3p08.png";
 
         test_decoding(path);
     }
     {
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn3p08.png";
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi3p08.png";
 
         test_decoding(path);
     }
