@@ -1593,7 +1593,7 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
         // TODO: Support XYB
         output.put_bits(1, 0); // not xyb
 
-        if colorspace.num_components() > 1
+        if colorspace.num_components() > 2
         {
             output.put_bits(1, 1); // color_encoding.all_default (sRGB)
         }
