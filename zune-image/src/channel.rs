@@ -193,6 +193,11 @@ impl Channel
     unsafe fn alloc(size: usize) -> *mut u8
     {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
+        // Safety
+        //  alloc zeroed == alloc + std::mem::zeroed()
+        // and we are bound by the zeroed trait, hence we are sure that
+        // for whatever type we are going to allocate for,
+        // it can be represented with a bit-representation of zero.
         alloc_zeroed(layout)
     }
     /// Reallocate the pointer in place increasing
@@ -201,12 +206,11 @@ impl Channel
     {
         let layout = Layout::from_size_align(new_size, MIN_ALIGNMENT).unwrap();
 
-        // make pointer to be
         self.ptr = realloc(self.ptr, layout, new_size);
         // set capacity to be new size
         self.capacity = new_size;
     }
-    /// Deallocate storage allocated
+    /// Deallocate storage allocated for this channel
     unsafe fn dealloc(&mut self)
     {
         let layout = Layout::from_size_align(self.capacity, MIN_ALIGNMENT).unwrap();
@@ -450,13 +454,16 @@ impl Channel
     {
         // Safety:
         //  validity: We own the data
-        //  well aligned: You cannot have u8 having bad alignment
+        //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
+        // of alignment is a byte and u8==1 byte
         //
         let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
         let (a, b, c) = bytemuck::pod_align_to(new_slice);
+
         assert!(a.is_empty(), "extra sloppy bytes");
         assert!(c.is_empty(), "extra sloppy bytes");
+
         b
     }
     /// Reinterpret a slice of `&[u8]` into another type
@@ -475,8 +482,10 @@ impl Channel
         let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
         let (a, b, c) = bytemuck::pod_align_to_mut(new_slice);
+
         assert!(a.is_empty(), "extra sloppy bytes");
         assert!(c.is_empty(), "extra sloppy bytes");
+
         Ok(b)
     }
 
