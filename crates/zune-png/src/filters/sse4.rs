@@ -146,9 +146,9 @@
 #![cfg(feature = "sse")]
 
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
 
 #[target_feature(enable = "sse2")]
 #[inline]
@@ -546,11 +546,6 @@ unsafe fn de_filter_paeth8_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mu
 pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("SSE feature not found, this is unsound, please file an issue")
-        }
-
         de_filter_paeth3_sse41_inner(prev_row, raw, current);
     }
 }
@@ -558,11 +553,6 @@ pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("SSE feature not found, this is unsound,please file an issue")
-        }
-
         de_filter_paeth4_sse41_inner(prev_row, raw, current);
     }
 }
@@ -570,11 +560,6 @@ pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("SSE feature not found, this is unsound,please file an issue")
-        }
-
         de_filter_paeth6_sse41_inner(prev_row, raw, current);
     }
 }
@@ -582,10 +567,6 @@ pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 pub fn de_filter_paeth8_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("SSE feature not found, this is unsound,please file an issue")
-        }
         de_filter_paeth8_sse41_inner(prev_row, raw, current);
     }
 }
@@ -659,11 +640,6 @@ unsafe fn defilter_avg3_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u
 pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse2")
-        {
-            panic!("SSE feature not found, this is unsound,please file an issue")
-        }
-
         defilter_avg3_sse2_inner(prev_row, raw, current);
     }
 }
@@ -671,11 +647,6 @@ pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 pub fn defilter_avg4_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     unsafe {
-        if !is_x86_feature_detected!("sse2")
-        {
-            panic!("SSE feature not found, this is unsound,please file an issue")
-        }
-
         defilter_avg4_sse2_inner(prev_row, raw, current);
     }
 }

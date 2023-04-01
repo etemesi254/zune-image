@@ -82,12 +82,13 @@
 //! # Alternatives
 //! - [png](https://crates.io/crates/png) crate
 //!
-#![cfg_attr(feature = "std", no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::op_ref, clippy::identity_op)]
 extern crate alloc;
 
 pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
 pub use enums::InterlaceMethod;
+pub use zune_core;
 
 mod constants;
 mod crc;
