@@ -30,6 +30,7 @@ fn decode_spng(data: &[u8]) -> Vec<u8>
     let cursor = std::io::Cursor::new(data);
     let mut decoder = spng::Decoder::new(cursor);
     decoder.set_decode_flags(DecodeFlags::TRANSPARENCY);
+
     let (_, mut reader) = decoder.read_info().unwrap();
     let output_buffer_size = reader.output_buffer_size();
     let mut out = vec![0; output_buffer_size];
@@ -120,10 +121,10 @@ fn decode_test_16_bit(c: &mut Criterion)
 
 fn decode_test_trns_chunk(c: &mut Criterion)
 {
-    let path = sample_path().join("test-images/png/benchmarks/trns.png");
+    let path = sample_path().join("test-images/png/benchmarks/speed_bench_palette.png");
     let data = read(path).unwrap();
 
-    let mut group = c.benchmark_group("png: PNG decoding  trns image");
+    let mut group = c.benchmark_group("png: PNG decoding palette image");
     group.throughput(Throughput::Bytes(data.len() as u64));
 
     group.bench_function("zune-png", |b| {
@@ -147,8 +148,7 @@ criterion_group!(name=benches;
   let c = Criterion::default();
     c.measurement_time(Duration::from_secs(20))
   };
-targets=decode_test_trns_chunk
-//targets=decode_test_16_bit,decode_test,decode_test_interlaced
+targets=decode_test_trns_chunk,decode_test_16_bit,decode_test,decode_test_interlaced
 );
 
 criterion_main!(benches);
