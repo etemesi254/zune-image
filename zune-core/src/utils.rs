@@ -75,14 +75,14 @@ pub fn convert_be_to_target_endian_u16(sample: &mut [u8], endian: ByteEndian, us
 }
 
 /// Return true if the system is little endian
-pub fn is_le() -> bool
+pub const fn is_le() -> bool
 {
     // see if le and be conversion return the same number
     u16::from_le_bytes([234, 231]) == u16::from_ne_bytes([234, 231])
 }
 
 /// Return true if the system is big endian
-pub fn is_be() -> bool
+pub const fn is_be() -> bool
 {
     !is_le()
 }
