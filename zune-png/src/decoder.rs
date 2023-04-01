@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
+use core::cmp::min;
 
 use log::info;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
@@ -14,12 +15,10 @@ use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::filters::{
-    handle_avg, handle_avg_first, handle_avg_special, handle_avg_special_first,
-    handle_none_special, handle_paeth, handle_paeth_first, handle_paeth_special,
-    handle_paeth_special_first, handle_sub, handle_sub_special, handle_up, handle_up_special
+    handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
-use crate::utils::{expand_palette, expand_trns};
+use crate::utils::{expand_bits_to_byte, expand_palette, expand_trns};
 
 /// A palette entry.
 ///
@@ -386,6 +385,10 @@ impl<'a> PngDecoder<'a>
     /// be accessed by public headers
     pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors>
     {
+        if self.seen_headers
+        {
+            return Ok(());
+        }
         // READ PNG signature
         let signature = self.stream.get_u64_be_err()?;
 
@@ -467,6 +470,14 @@ impl<'a> PngDecoder<'a>
                     {
                         break;
                     }
+
+                    (self.chunk_handler)(
+                        header.length,
+                        header.chunk,
+                        &mut self.stream,
+                        header.crc
+                    )?;
+
                     seen_first_fctl = true;
                 }
                 PngChunkType::IEND =>
@@ -579,7 +590,9 @@ impl<'a> PngDecoder<'a>
                 0
             );
         }
-        info!("Colorspace: {:?} ", self.get_colorspace().unwrap());
+        info!("Input Colorspace: {:?} ", self.png_info.color);
+
+        info!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
 
         let info = self.png_info.clone();
 
@@ -608,44 +621,6 @@ impl<'a> PngDecoder<'a>
         else if info.interlace_method == InterlaceMethod::Adam7
         {
             self.decode_interlaced(&deflate_data, out, &info)?;
-        }
-
-        if self.seen_trns && self.png_info.color != PngColor::Palette
-        {
-            if info.depth <= 8
-            {
-                expand_trns::<false>(out, info.color, self.trns_bytes, info.depth);
-            }
-            else if info.depth == 16
-            {
-                // Tested by test_palette_trns_16bit.
-                expand_trns::<true>(out, info.color, self.trns_bytes, info.depth);
-            }
-        }
-        // only un-palettize images if color type type is indexed
-        // palette entries for true color and true color with alpha
-        // are a suggestion for image viewers.
-        // See https://www.w3.org/TR/2003/REC-PNG-20031110/#11PLTE
-        if self.seen_ptle && self.png_info.color == PngColor::Palette
-        {
-            if self.palette.is_empty()
-            {
-                return Err(PngDecodeErrors::EmptyPalette);
-            }
-            let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
-
-            if self.seen_trns
-            {
-                // if tRNS chunk is present in paletted images, it contains
-                // alpha byte values, so that means we create alpha data from
-                // raw bytes
-                expand_palette(out, plte_entry, 4);
-            }
-            else
-            {
-                // Normal expansion
-                expand_palette(out, plte_entry, 3);
-            }
         }
 
         // convert to set endian if need be
@@ -798,8 +773,9 @@ impl<'a> PngDecoder<'a>
         //  3 - We use bytemuck to to safe align, hence keeping the no unsafe mantra except
         //      for platform specific intrinsics
 
-        self.decode_headers()?;
-
+        if !self.seen_headers {
+            self.decode_headers()?;
+        }
         // configure that the decoder converts samples to native endian
         if is_le()
         {
@@ -863,7 +839,6 @@ impl<'a> PngDecoder<'a>
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_colorspace = self.get_colorspace().unwrap();
-        let out_components = out_colorspace.num_components() * bytes;
 
         let mut img_width_bytes;
 
@@ -917,7 +892,15 @@ impl<'a> PngDecoder<'a>
         let mut first_row = true;
         let mut out_position = 0;
 
-        for in_stride in chunks.take(height)
+        let will_post_process = self.seen_trns | self.seen_ptle | (info.depth < 8);
+
+        if will_post_process && self.previous_stride.len() < out_chunk_size
+        {
+            self.previous_stride.resize(out_chunk_size, 0);
+        }
+        let n_components = usize::from(info.color.num_components());
+
+        for (i, in_stride) in chunks.take(height).enumerate()
         {
             // Split output into current and previous
             // current points to the start of the row where we are writing de-filtered output to
@@ -934,22 +917,9 @@ impl<'a> PngDecoder<'a>
 
             if !first_row
             {
-                if info.depth < 8
-                {
-                    // for lower depths, we expanded the previous row,
-                    // so we can't use the previous row as expected.
-
-                    // But we backed up the unexpanded back row  in
-                    // self.previous_stride (only for depth <8), and
-                    // hence we use it here as our backup row
-                    prev_row = &self.previous_stride[0..width_stride];
-                }
-                else
-                {
-                    // normal bit depth, use the previous row as normal
-                    prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
-                    prev_row_start += out_chunk_size;
-                }
+                // normal bit depth, use the previous row as normal
+                prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
+                prev_row_start += out_chunk_size;
             }
 
             out_position += out_chunk_size;
@@ -985,268 +955,239 @@ impl<'a> PngDecoder<'a>
 
                 first_row = false;
             }
-            if components == out_components || info.depth < 8
+
+            match filter
             {
-                match filter
+                FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
+
+                FilterMethod::Average => handle_avg(prev_row, raw, current, components, use_sse4),
+
+                FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
+
+                FilterMethod::Up => handle_up(prev_row, raw, current),
+
+                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components, use_sse4),
+
+                FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
+
+                FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
+
+                FilterMethod::Unknown => unreachable!()
+            }
+
+            if will_post_process && i > 0
+            {
+                // run the post processor two scanlines behind so that we
+                // don't mess with any filters that require previous row
+
+                // read the row we are about to filter
+                let to_filter_row = &mut prev[(i - 1) * out_chunk_size..(i) * out_chunk_size];
+
+                if info.depth < 8
                 {
-                    FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
+                    // check if we will run any other transform
+                    let extra_transform = self.seen_ptle | self.seen_trns;
 
-                    FilterMethod::Average =>
+                    if extra_transform
                     {
-                        handle_avg(prev_row, raw, current, components, use_sse4)
+                        // input data is  in_to_filter_row,
+                        // we write output to previous_stride
+                        // since other parts use previous_stride
+                        expand_bits_to_byte(
+                            width,
+                            usize::from(info.depth),
+                            0,
+                            n_components,
+                            self.seen_ptle,
+                            to_filter_row,
+                            &mut self.previous_stride
+                        )
                     }
-
-                    FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
-
-                    FilterMethod::Up => handle_up(prev_row, raw, current),
-
-                    FilterMethod::Paeth =>
+                    else
                     {
-                        handle_paeth(prev_row, raw, current, components, use_sse4)
+                        // no extra transform, just depth upscaling, so let's
+                        // do that,
+
+                        // copy the row to a temporary space
+                        self.previous_stride[..width_stride]
+                            .copy_from_slice(&to_filter_row[..width_stride]);
+
+                        expand_bits_to_byte(
+                            width,
+                            usize::from(info.depth),
+                            0,
+                            n_components,
+                            self.seen_ptle,
+                            &self.previous_stride,
+                            to_filter_row
+                        )
                     }
+                }
+                else
+                {
+                    // copy the row to a temporary space
+                    self.previous_stride[..width_stride]
+                        .copy_from_slice(&to_filter_row[..width_stride]);
+                }
 
-                    FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
+                if self.seen_trns && self.png_info.color != PngColor::Palette
+                {
+                    // the expansion is a trns expansion
+                    // bytes are already in position, so finish the business
 
-                    FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
+                    if info.depth <= 8
+                    {
+                        expand_trns::<false>(
+                            &self.previous_stride,
+                            to_filter_row,
+                            info.color,
+                            self.trns_bytes,
+                            info.depth
+                        );
+                    }
+                    else if info.depth == 16
+                    {
+                        // Tested by test_palette_trns_16bit.
+                        expand_trns::<true>(
+                            &self.previous_stride,
+                            to_filter_row,
+                            info.color,
+                            self.trns_bytes,
+                            info.depth
+                        );
+                    }
+                }
 
-                    FilterMethod::Unknown => unreachable!()
+                if self.seen_ptle && self.png_info.color == PngColor::Palette
+                {
+                    if self.palette.is_empty()
+                    {
+                        return Err(PngDecodeErrors::EmptyPalette);
+                    }
+                    let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
+
+                    // so now we have two things
+                    // the palette entries stored in self.previous_stride
+                    // the row to fill the palette sored in to_filter row,
+                    // so we can finally expand the entries
+                    if self.seen_trns
+                    {
+                        // if tRNS chunk is present in paletted images, it contains
+                        // alpha byte values, so that means we create alpha data from
+                        // raw bytes
+                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
+                    }
+                    else
+                    {
+                        // Normal expansion
+                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
+                    }
                 }
             }
-            else if components < out_components
-            {
-                // in and out don't match. Like paletted images, images with tRNS chunks that
-                // we will expand later on.
-                match filter
-                {
-                    FilterMethod::Average =>
-                    {
-                        handle_avg_special(raw, prev_row, current, components, out_components)
-                    }
-                    FilterMethod::AvgFirst =>
-                    {
-                        handle_avg_special_first(raw, current, components, out_components)
-                    }
-                    FilterMethod::None =>
-                    {
-                        handle_none_special(raw, current, components, out_components)
-                    }
-                    FilterMethod::Up =>
-                    {
-                        handle_up_special(raw, prev_row, current, components, out_components)
-                    }
-                    FilterMethod::Sub =>
-                    {
-                        handle_sub_special(raw, current, components, out_components)
-                    }
-                    FilterMethod::PaethFirst =>
-                    {
-                        handle_paeth_special_first(raw, current, components, out_components)
-                    }
-                    FilterMethod::Paeth =>
-                    {
-                        handle_paeth_special(raw, prev_row, current, components, out_components)
-                    }
+        }
 
-                    FilterMethod::Unknown =>
+        if will_post_process
+        {
+            for i in height..height + min(height, 1)
+            {
+                let to_filter_row = &mut out[(i - 1) * out_chunk_size..i * out_chunk_size];
+
+                // check if we will run any other transform
+                let extra_transform = self.seen_ptle | self.seen_trns;
+
+                if info.depth < 8
+                {
+                    if extra_transform
                     {
-                        unreachable!()
+                        // input data is  in_to_filter_row,
+                        // we write output to previous_stride
+                        // since other parts use previous_stride
+                        expand_bits_to_byte(
+                            width,
+                            usize::from(info.depth),
+                            0,
+                            n_components,
+                            self.seen_ptle,
+                            to_filter_row,
+                            &mut self.previous_stride
+                        )
+                    }
+                    else
+                    {
+                        // no extra transform, just depth upscaling, so let's
+                        // do that,
+
+                        // copy the row to a temporary space
+                        self.previous_stride[..width_stride]
+                            .copy_from_slice(&to_filter_row[..width_stride]);
+
+                        expand_bits_to_byte(
+                            width,
+                            usize::from(info.depth),
+                            0,
+                            n_components,
+                            self.seen_ptle,
+                            &self.previous_stride,
+                            to_filter_row
+                        )
                     }
                 }
-            }
-            // Expand images less than 8 bit to 8 bpp
-            //
-            // This has some complexity because we run it in the same scanline
-            // that we just decoded
-            if info.depth < 8
-            {
-                let in_offset = out_position - out_chunk_size;
-                let out_len = width * out_n;
-
-                self.expand_bits_to_byte(width, in_offset, out_n, out);
-
-                let out_slice = &mut out[out_position - out_chunk_size..out_position];
-                // save the previous row to be used in the next pass
-                self.previous_stride[..width_stride].copy_from_slice(&out_slice[..width_stride]);
-
-                if out_n == out_components
+                else
                 {
-                    // This includes cases like 1bpp RGBA image which
-                    // has no tRNS or palette images
-
-                    //
-                    // input components match output components.
-                    // simple memory copy
-                    out_slice.copy_from_slice(&self.expanded_stride[0..out_len]);
+                    // copy the row to a temporary space
+                    self.previous_stride[..width_stride]
+                        .copy_from_slice(&to_filter_row[..width_stride]);
                 }
-                else if out_n < out_components
+                if self.seen_trns && self.png_info.color != PngColor::Palette
                 {
-                    // For the case where we have images with less than 8 bpp and
-                    // also have more post processing steps.
-                    // E.g an image with 1 bpp that use palettes, or has a tRNS chunk
+                    // the expansion is a trns expansion
+                    // bytes are already in position, so finish the business
 
-                    // the output chunks, these are where we will be filling our
-                    // expanded bytes
-                    let out_chunks = out_slice.chunks_exact_mut(out_components);
-                    // where we are reading the expanded bytes from
-                    let in_chunks = self.expanded_stride[..out_len].chunks_exact(out_n);
-
-                    // loop copying from in_bytes to out bytes.
-                    for (out_c, in_c) in out_chunks.zip(in_chunks)
+                    if info.depth <= 8
                     {
-                        out_c[..in_c.len()].copy_from_slice(in_c);
+                        expand_trns::<false>(
+                            &self.previous_stride,
+                            to_filter_row,
+                            info.color,
+                            self.trns_bytes,
+                            info.depth
+                        );
+                    }
+                    else if info.depth == 16
+                    {
+                        // Tested by test_palette_trns_16bit.
+                        expand_trns::<true>(
+                            &self.previous_stride,
+                            to_filter_row,
+                            info.color,
+                            self.trns_bytes,
+                            info.depth
+                        );
+                    }
+                }
+                if self.seen_ptle && self.png_info.color == PngColor::Palette
+                {
+                    if self.palette.is_empty()
+                    {
+                        return Err(PngDecodeErrors::EmptyPalette);
+                    }
+
+                    let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
+
+                    if self.seen_trns
+                    {
+                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
+                    }
+                    else
+                    {
+                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
                     }
                 }
             }
         }
         Ok(())
     }
-    /// Expand bits to bytes expand images with less than 8 bpp
-    fn expand_bits_to_byte(
-        &mut self, width: usize, mut in_offset: usize, out_n: usize, out: &mut [u8]
-    )
-    {
-        // How it works
-        // ------------
-        // We want to expand the current row, current row was written in
-        // out[in_offset..] up until ceil_div((width*depth),8)
-        //
-        // We want to write the expanded row to self.expanded_stride
-        //
-        // So we get in_offset from the caller, for lower bit depths,
-        // numbers are clumped up together, even if they have tRNS and PLTE chunks
-        //
-        // So we expand the lower bit depths starting from self.out[in_offset] incrementing
-        // it, until we have expanded a single row, then we return to the caller
-        //
-        //
-        //
-        const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
-        let info = &self.png_info;
-
-        let mut current = 0;
-
-        let mut scale = DEPTH_SCALE_TABLE[usize::from(info.depth)];
-
-        // for pLTE chunks with lower bit depths
-        // do not scale values just expand.
-        // The palette pass will expand values to the right pixels.
-        if self.seen_ptle
-        {
-            scale = 1;
-        }
-
-        let mut k = width * out_n;
-
-        if info.depth == 1
-        {
-            while k >= 8
-            {
-                let cur: &mut [u8; 8] = self
-                    .expanded_stride
-                    .get_mut(current..current + 8)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-
-                let in_val = out[in_offset];
-
-                cur[0] = scale * ((in_val >> 7) & 0x01);
-                cur[1] = scale * ((in_val >> 6) & 0x01);
-                cur[2] = scale * ((in_val >> 5) & 0x01);
-                cur[3] = scale * ((in_val >> 4) & 0x01);
-                cur[4] = scale * ((in_val >> 3) & 0x01);
-                cur[5] = scale * ((in_val >> 2) & 0x01);
-                cur[6] = scale * ((in_val >> 1) & 0x01);
-                cur[7] = scale * ((in_val) & 0x01);
-
-                in_offset += 1;
-                current += 8;
-
-                k -= 8;
-            }
-            if k > 0
-            {
-                let in_val = out[in_offset];
-
-                for p in 0..k
-                {
-                    let shift = (7_usize).wrapping_sub(p);
-                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x01);
-                    current += 1;
-                }
-            }
-        }
-        else if info.depth == 2
-        {
-            while k >= 4
-            {
-                let cur: &mut [u8; 4] = self
-                    .expanded_stride
-                    .get_mut(current..current + 4)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-
-                let in_val = out[in_offset];
-
-                cur[0] = scale * ((in_val >> 6) & 0x03);
-                cur[1] = scale * ((in_val >> 4) & 0x03);
-                cur[2] = scale * ((in_val >> 2) & 0x03);
-                cur[3] = scale * ((in_val) & 0x03);
-
-                k -= 4;
-
-                in_offset += 1;
-                current += 4;
-            }
-            if k > 0
-            {
-                let in_val = out[in_offset];
-
-                for p in 0..k
-                {
-                    let shift = (6_usize).wrapping_sub(p * 2);
-                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x03);
-                    current += 1;
-                }
-            }
-        }
-        else if info.depth == 4
-        {
-            while k >= 2
-            {
-                let cur: &mut [u8; 2] = self
-                    .expanded_stride
-                    .get_mut(current..current + 2)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                let in_val = out[in_offset];
-
-                cur[0] = scale * ((in_val >> 4) & 0x0f);
-                cur[1] = scale * ((in_val) & 0x0f);
-
-                k -= 2;
-
-                in_offset += 1;
-                current += 2;
-            }
-
-            if k > 0
-            {
-                let in_val = out[in_offset];
-
-                // leftovers
-                for p in 0..k
-                {
-                    let shift = (4_usize).wrapping_sub(p * 4);
-                    self.expanded_stride[current] = scale * ((in_val >> shift) & 0x0f);
-                    current += 1;
-                }
-            }
-        }
-    }
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
     fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
