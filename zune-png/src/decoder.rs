@@ -163,7 +163,6 @@ pub struct PngDecoder<'a>
     pub(crate) png_info:        PngInfo<'a>,
     pub(crate) palette:         Vec<PLTEEntry>,
     pub(crate) idat_chunks:     Vec<u8>,
-    pub(crate) expanded_stride: Vec<u8>,
     pub(crate) previous_stride: Vec<u8>,
     pub(crate) trns_bytes:      [u16; 4],
     pub(crate) chunk_handler:   UnkownChunkHandler,
@@ -211,7 +210,6 @@ impl<'a> PngDecoder<'a>
             png_info:        PngInfo::default(),
             previous_stride: vec![],
             idat_chunks:     Vec::with_capacity(37), // randomly chosen size, my favourite number,
-            expanded_stride: vec![],
             seen_ptle:       false,
             seen_trns:       false,
             seen_headers:    false,
@@ -267,7 +265,7 @@ impl<'a> PngDecoder<'a>
     ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
     ///  - `None`: If the image headers haven't been decoded, or there was an error
     ///     during decoding
-    pub fn get_colorspace(&self) -> Option<ColorSpace>
+    pub const fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if !self.seen_hdr
         {
@@ -498,7 +496,7 @@ impl<'a> PngDecoder<'a>
     ///
     /// If the image depth is less than 16 bit, then the endianness has
     /// no effect
-    pub fn byte_endian(&self) -> ByteEndian
+    pub const fn byte_endian(&self) -> ByteEndian
     {
         self.options.get_bye_endian()
     }
@@ -542,7 +540,7 @@ impl<'a> PngDecoder<'a>
     /// # Returns
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
-    pub fn get_info(&self) -> Option<&PngInfo<'a>>
+    pub const fn get_info(&self) -> Option<&PngInfo<'a>>
     {
         if self.seen_headers
         {
@@ -576,20 +574,6 @@ impl<'a> PngDecoder<'a>
             self.decode_headers()?;
         }
 
-        if self.expanded_stride.is_empty() && self.png_info.depth < 8
-        {
-            // add space for single stride
-            // this will be used for small bit depths of less than 8 to expand
-            // to 8 bits
-            self.expanded_stride.resize(
-                self.png_info.width * self.get_colorspace().unwrap().num_components(),
-                0
-            );
-            self.previous_stride.resize(
-                self.png_info.width * self.get_colorspace().unwrap().num_components(),
-                0
-            );
-        }
         info!("Input Colorspace: {:?} ", self.png_info.color);
 
         info!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
