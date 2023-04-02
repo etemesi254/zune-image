@@ -92,11 +92,13 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                 all[2..4].copy_from_slice(&g);
                 all[4..6].copy_from_slice(&b);
 
-                for chunk in out.chunks_exact_mut(8)
+                for (in_chunk, chunk) in input.chunks_exact(6).zip(out.chunks_exact_mut(8))
                 {
+                    chunk[..6].copy_from_slice(in_chunk);
+
                     // the read does not match the bytes
                     // so set it to opaque
-                    if all != &chunk[0..6]
+                    if all != &in_chunk[..6]
                     {
                         chunk[6] = 255;
                         chunk[7] = 255;
