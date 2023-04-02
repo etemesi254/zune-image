@@ -181,12 +181,12 @@ pub(crate) fn expand_bits_to_byte(
     if depth == 1
     {
 
-        let in_iter = input.iter();
+        let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(8);
 
         // process in batches of 8 to make use of autovectorization,
         // or failing that - instruction-level parallelism
-        in_iter.zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
             // make sure we only perform the bounds check once
             let cur: &mut [u8; 8] = out_vals.try_into().unwrap();
             // perform the actual expansion
@@ -201,7 +201,7 @@ pub(crate) fn expand_bits_to_byte(
         });
 
         // handle the remainder at the end where the output is less than 8 bytes long
-        if let Some(in_val) = input.last() {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (7_usize).wrapping_sub(pos);
@@ -211,69 +211,49 @@ pub(crate) fn expand_bits_to_byte(
     }
     else if depth == 2
     {
-        while k >= 4
-        {
-            let cur: &mut [u8; 4] = out
-                .get_mut(current..current + 4)
-                .unwrap()
-                .try_into()
-                .unwrap();
+        let mut in_iter = input.iter();
+        let mut out_iter = out.chunks_exact_mut(4);
 
-            let in_val = input[in_offset];
+        // same as above but adjusted to expand into 4 bytes instead of 8
+        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+            let cur: &mut [u8; 4] = out_vals.try_into().unwrap();
 
             cur[0] = scale * ((in_val >> 6) & 0x03);
             cur[1] = scale * ((in_val >> 4) & 0x03);
             cur[2] = scale * ((in_val >> 2) & 0x03);
             cur[3] = scale * ((in_val) & 0x03);
+        });
 
-            k -= 4;
-
-            in_offset += 1;
-            current += 4;
-        }
-        if k > 0
-        {
-            let in_val = input[in_offset];
-
-            for p in 0..k
-            {
-                let shift = (6_usize).wrapping_sub(p * 2);
-                out[current] = scale * ((in_val >> shift) & 0x03);
-                current += 1;
-            }
+        // handle the remainder at the end where the output is less than 4 bytes long
+        if let Some(in_val) = in_iter.next() {
+            let remainder_iter = out_iter.into_remainder().iter_mut();
+            remainder_iter.enumerate().for_each(|(pos, out_val)| {
+                let shift = (6_usize).wrapping_sub(pos * 2);
+                *out_val = scale * ((in_val >> shift) & 0x03);
+            });
         }
     }
     else if depth == 4
     {
-        while k >= 2
-        {
-            let cur: &mut [u8; 2] = out
-                .get_mut(current..current + 2)
-                .unwrap()
-                .try_into()
-                .unwrap();
-            let in_val = input[in_offset];
+
+        let mut in_iter = input.iter();
+        let mut out_iter = out.chunks_exact_mut(2);
+
+        // same as above but adjusted to expand into 2 bytes instead of 8
+        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+            let cur: &mut [u8; 2] = out_vals.try_into().unwrap();
 
             cur[0] = scale * ((in_val >> 4) & 0x0f);
             cur[1] = scale * ((in_val) & 0x0f);
+        });
 
-            k -= 2;
-
-            in_offset += 1;
-            current += 2;
-        }
-
-        if k > 0
-        {
-            let in_val = input[in_offset];
-
-            // leftovers
-            for p in 0..k
-            {
-                let shift = (4_usize).wrapping_sub(p * 4);
-                out[current] = scale * ((in_val >> shift) & 0x0f);
-                current += 1;
-            }
+        // handle the remainder at the end
+        if let Some(in_val) = in_iter.next() {
+            let remainder_iter = out_iter.into_remainder().iter_mut();
+            remainder_iter.enumerate().for_each(|(pos, out_val)| {
+                let shift = (4_usize).wrapping_sub(pos * 4);
+                *out_val = scale * ((in_val >> shift) & 0x0f);
+            });
         }
     }
 }
