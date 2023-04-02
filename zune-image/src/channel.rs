@@ -24,7 +24,13 @@ use zune_core::bit_depth::BitType;
 /// This makes it possible to reinterpret the channel data safely
 /// as whatever type we so wish without worry that it would be wrongly
 /// misaligned especially on platforms where reading unaligned data is UB
-pub const MIN_ALIGNMENT: usize = 16;
+///
+///
+/// 64 is chosen as it allows us to align to the highest
+/// register type supported on machines I'm aware of
+/// i.e its for AVX-512, and thenthis transitively means all other types
+/// become aligned
+pub const MIN_ALIGNMENT: usize = 64;
 
 /// Encapsulates errors that can occur
 /// when manipulating channels
@@ -190,6 +196,9 @@ impl Channel
 
     /// Allocates some bytes using the system allocator.
     /// but align it to MIN_ALIGNMENT
+    ///
+    /// It is not unsafe to call this, it's just left as unsafe
+    /// to remind one to be careful of what they are doing
     unsafe fn alloc(size: usize) -> *mut u8
     {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
@@ -215,6 +224,9 @@ impl Channel
     {
         let layout = Layout::from_size_align(self.capacity, MIN_ALIGNMENT).unwrap();
 
+        // safety
+        // - The same layout alignment we used for alloc is the same we are using for
+        //  dealloc
         dealloc(self.ptr, layout);
     }
 
@@ -278,6 +290,7 @@ impl Channel
         {
             BitType::U8 => TypeId::of::<u8>(),
             BitType::U16 => TypeId::of::<u16>(),
+            BitType::F32 => TypeId::of::<f32>(),
             _ => unimplemented!("Bit-depth :{:?}", depth)
         };
 
@@ -364,7 +377,9 @@ impl Channel
     /// let chan = Channel::from_elm(100,90_u16);
     /// assert_eq!(chan.reinterpret_as::<u16>().unwrap(),&[90;100]);
     /// ```
-    pub fn from_elm<T: Copy + 'static + Zeroable>(length: usize, elm: T) -> Channel
+    pub fn from_elm<T>(length: usize, elm: T) -> Channel
+    where
+        T: Clone + Copy + 'static + Zeroable + Pod
     {
         // new currently zeroes memory
         let mut new_chan = Channel::new_with_length::<T>(length * size_of::<T>());
@@ -439,6 +454,12 @@ impl Channel
         // plus we can evenly divide this
         self.confirm_suspicions::<T>()?;
 
+        // safety:
+        //  - we confirmed that the type we are reinterpreting as
+        //    is the same type the channel was initialized with
+        //  - alignment is not an issue since we align all reads
+        // to 16 bytes(bytes, not bits), the highest type we have
+        // has an alignment of
         Ok(unsafe { self.reinterpret_as_unchecked() })
     }
 
@@ -467,9 +488,7 @@ impl Channel
         b
     }
     /// Reinterpret a slice of `&[u8]` into another type
-    pub fn reinterpret_as_mut<T: Default + 'static + Pod>(
-        &mut self
-    ) -> Result<&mut [T], ChannelErrors>
+    pub fn reinterpret_as_mut<T: 'static + Pod>(&mut self) -> Result<&mut [T], ChannelErrors>
     {
         // Get size of pointer
         // check if the alignment is correct + size evenly divides
@@ -550,35 +569,14 @@ impl Channel
     /// channel.fill(100_u16).unwrap();
     /// assert_eq!(channel.reinterpret_as::<u16>().unwrap(),&[100;50]);
     /// ```
-    pub fn fill<T: Copy + 'static + Zeroable>(&mut self, element: T) -> Result<(), ChannelErrors>
+    pub fn fill<T>(&mut self, element: T) -> Result<(), ChannelErrors>
+    where
+        T: Clone + Copy + 'static + Pod
     {
-        let size = core::mem::size_of::<T>();
-
-        // Check safety under for loop
-        self.confirm_suspicions::<T>()?;
-
-        // Data is correctly aligned,
-        // T evenly divides self.channel
-        let new_cast = self.ptr.cast::<T>();
-
-        let new_length = self.length / size;
-
-        for offset in 0..new_length
-        {
-            // Finally write the whole item
-            // Safety:
-            //  - We know that the length is
-            //    in bounds in ptr and we only write enough data to define
-            //    length.
-            //  - We also check that T will fill length evenly by using
-            //    confirm_suspicions()
-            //  - We know we are writing to aligned memory, confirmed by
-            //    confirm_suspicions() (it confirms it's aligned)
-            //
-            unsafe {
-                new_cast.add(offset).write(element);
-            }
-        }
+        // reinterpret to be type T
+        let array = self.reinterpret_as_mut()?;
+        // Then fill elements
+        array.fill(element);
 
         Ok(())
     }
