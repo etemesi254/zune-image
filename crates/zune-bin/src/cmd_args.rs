@@ -213,7 +213,7 @@ fn add_operations() -> Vec<Arg>
             .help("Brighten (or darken) an image.")
             .long_help(BRIGHTEN_HELP)
             .allow_negative_numbers(true)
-            .value_parser(value_parser!(i16).range(-255..=255))
+            .value_parser(value_parser!(f32))
             .group("operations"),
         Arg::new("crop")
             .long("crop")
