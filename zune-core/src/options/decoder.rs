@@ -320,7 +320,7 @@ impl DecoderOptions
 
     /// Get the byte endian for which samples that span more than one byte will
     /// be treated
-    pub fn get_bye_endian(&self) -> ByteEndian
+    pub const fn get_bye_endian(&self) -> ByteEndian
     {
         self.endianness
     }
