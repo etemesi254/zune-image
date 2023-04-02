@@ -184,8 +184,12 @@ pub(crate) fn expand_bits_to_byte(
         let mut out_iter = out.chunks_exact_mut(8);
 
         // process in batches of 8 to make use of autovectorization,
-        // or failing that - instruction-level parallelism
-        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+        // or failing that - instruction-level parallelism.
+        //
+        // The ordering of the iterators is important:
+        // `out_iter` must come before `in_iter` so that `in_iter` is not advanced
+        // when `out_iter` is less than 8 bytes long
+        (&mut out_iter).zip(&mut in_iter).for_each(|(out_vals, in_val)| {
             // make sure we only perform the bounds check once
             let cur: &mut [u8; 8] = out_vals.try_into().unwrap();
             // perform the actual expansion
@@ -214,7 +218,7 @@ pub(crate) fn expand_bits_to_byte(
         let mut out_iter = out.chunks_exact_mut(4);
 
         // same as above but adjusted to expand into 4 bytes instead of 8
-        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+        (&mut out_iter).zip(&mut in_iter).for_each(|(out_vals, in_val)| {
             let cur: &mut [u8; 4] = out_vals.try_into().unwrap();
 
             cur[0] = scale * ((in_val >> 6) & 0x03);
@@ -239,7 +243,7 @@ pub(crate) fn expand_bits_to_byte(
         let mut out_iter = out.chunks_exact_mut(2);
 
         // same as above but adjusted to expand into 2 bytes instead of 8
-        (&mut in_iter).zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+        (&mut out_iter).zip(&mut in_iter).for_each(|(out_vals, in_val)| {
             let cur: &mut [u8; 2] = out_vals.try_into().unwrap();
 
             cur[0] = scale * ((in_val >> 4) & 0x0f);
