@@ -158,7 +158,7 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
 
 /// Expand bits to bytes expand images with less than 8 bpp
 pub(crate) fn expand_bits_to_byte(
-    width: usize, depth: usize, in_offset: usize, out_n: usize, plte_present: bool,
+    width: usize, depth: usize, out_n: usize, plte_present: bool,
     input: &[u8], out: &mut [u8]
 )
 {
@@ -166,7 +166,6 @@ pub(crate) fn expand_bits_to_byte(
 
     let mut scale = DEPTH_SCALE_TABLE[depth];
 
-    let input = &input[in_offset..];
     let out = &mut out[..width * out_n];
 
     // for pLTE chunks with lower bit depths
