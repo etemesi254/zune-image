@@ -54,7 +54,7 @@ impl ColorSpace
 
 /// Encapsulates all colorspaces supported by
 /// the library
-pub static ALL_COLORSPACES: [ColorSpace; 8] = [
+pub static ALL_COLORSPACES: [ColorSpace; 9] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
     ColorSpace::LumaA,
@@ -62,6 +62,7 @@ pub static ALL_COLORSPACES: [ColorSpace; 8] = [
     ColorSpace::CMYK,
     ColorSpace::BGRA,
     ColorSpace::BGR,
+    ColorSpace::YCCK,
     ColorSpace::YCbCr
 ];
 
