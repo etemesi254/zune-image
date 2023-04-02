@@ -5,13 +5,13 @@ for decoding and sometimes encoding images in a variety of formats.
 
 The set of codecs aim to have the following features in order of priority
 
-- Performance: Performance should be almost similar to reference libraries, this means that
+- Performance: Performance should be on par with or better than reference libraries. For example,
   `zune-jpeg` should easily replace `libjpeg-turbo` without any noticeable speed loss.
-- Safety: All decoders should be fuzz tested and such bugs fixed promptly.
+- Safety: No `unsafe` code, with the sole exception of SIMD intrinsics which currently require `unsafe`.
+- Robustness: All decoders should be fuzz tested and found bugs fixed promptly.
 - Ease of use: Consistent API across decoders and encoders.
   Anyone, even your grandma should be able to decode supported formats
-- Fast compile times: No dependencies on huge crates, minimal (relatively well commented) code
--
+- Fast compile times: No dependencies on huge crates. Minimal and relatively well commented code.
 
 ## Formats
 
@@ -27,26 +27,15 @@ The set of codecs aim to have the following features in order of priority
 
 ## Safety
 
-While it is quite possible to implement all decoders in 100% safe Rust, it is sometimes required
-to dabble in the arts of `unsafe` Rust when speed matters.
+This workspace **allows only 1 type of unsafe:** platform specific intrinsics (e.g. SIMD), and only where speed really matters.
 
-But again we can abuse the notion of the search for the fastest code to write some crabby code and justify it with
-benchmarks.
-
-Which beats the purpose of using a memory safe language, but just as with life, compromises have to be made.
-
-This workspace **allows only 1 type of unsafe**
-
-- Platform specific intrinsics, where speed matters.
-
-All other types are **explicitly forbidden**
+All other types are **explicitly forbidden.**
 
 ## Why yet another image library
 
 Rust already has a good image library i.e https://github.com/image-rs/image
-and there is probably no reason to have this,
 
-But I'll let the overall speed of operations(decoding, applying image operations like blurring) speak for itself when
+But I'll let the overall speed of operations (decoding, applying image operations like blurring) speak for itself when
 compared to other implementations.
 
 ## Benchmarks.
