@@ -64,6 +64,8 @@ pub trait NumOps<T>
     /// Return this number casted to
     /// f64
     fn to_f64(self) -> f64;
+
+    fn zclamp(self, min: T, max: T) -> T;
 }
 
 /// A trait implemented only for floats
@@ -149,6 +151,11 @@ macro_rules! numops_for_int {
             fn to_f64(self) -> f64
             {
                 self as f64
+            }
+            #[inline(always)]
+            fn zclamp(self, min: $int, max: $int) -> $int
+            {
+                <$int>::clamp(self, min, max)
             }
         }
     };
