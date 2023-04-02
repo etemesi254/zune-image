@@ -7,7 +7,8 @@ use alloc::vec::Vec;
 pub enum DecodingResult
 {
     U8(Vec<u8>),
-    U16(Vec<u16>)
+    U16(Vec<u16>),
+    F32(Vec<f32>)
 }
 
 impl DecodingResult
