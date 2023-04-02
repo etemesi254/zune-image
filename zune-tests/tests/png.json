@@ -28,5 +28,10 @@
     "name": "tbbn0g04_.png",
     "hash": 232188941782142085316932067533085841466,
     "comment": "< 8bpp image with tRNS chunk"
+  },
+  {
+    "name": "msn_photo.png",
+    "hash": 49816058334269460438644594295273178184,
+    "comment": "16bpp image with tRNS chunk"
   }
 ]
