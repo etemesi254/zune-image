@@ -980,7 +980,6 @@ impl<'a> PngDecoder<'a>
                         expand_bits_to_byte(
                             width,
                             usize::from(info.depth),
-                            0,
                             n_components,
                             self.seen_ptle,
                             to_filter_row,
@@ -999,7 +998,6 @@ impl<'a> PngDecoder<'a>
                         expand_bits_to_byte(
                             width,
                             usize::from(info.depth),
-                            0,
                             n_components,
                             self.seen_ptle,
                             &self.previous_stride,
@@ -1089,7 +1087,6 @@ impl<'a> PngDecoder<'a>
                         expand_bits_to_byte(
                             width,
                             usize::from(info.depth),
-                            0,
                             n_components,
                             self.seen_ptle,
                             to_filter_row,
@@ -1108,7 +1105,6 @@ impl<'a> PngDecoder<'a>
                         expand_bits_to_byte(
                             width,
                             usize::from(info.depth),
-                            0,
                             n_components,
                             self.seen_ptle,
                             &self.previous_stride,
