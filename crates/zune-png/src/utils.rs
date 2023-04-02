@@ -180,16 +180,16 @@ pub(crate) fn expand_bits_to_byte(
 
     if depth == 1
     {
-        while k >= 8
-        {
-            let cur: &mut [u8; 8] = out
-                .get_mut(current..current + 8)
-                .unwrap()
-                .try_into()
-                .unwrap();
 
-            let in_val = input[in_offset];
+        let in_iter = input.iter();
+        let mut out_iter = out.chunks_exact_mut(8);
 
+        // process in batches of 8 to make use of autovectorization,
+        // or failing that - instruction-level parallelism
+        in_iter.zip(&mut out_iter).for_each(|(in_val, out_vals)| {
+            // make sure we only perform the bounds check once
+            let cur: &mut [u8; 8] = out_vals.try_into().unwrap();
+            // perform the actual expansion
             cur[0] = scale * ((in_val >> 7) & 0x01);
             cur[1] = scale * ((in_val >> 6) & 0x01);
             cur[2] = scale * ((in_val >> 5) & 0x01);
@@ -198,22 +198,15 @@ pub(crate) fn expand_bits_to_byte(
             cur[5] = scale * ((in_val >> 2) & 0x01);
             cur[6] = scale * ((in_val >> 1) & 0x01);
             cur[7] = scale * ((in_val) & 0x01);
+        });
 
-            in_offset += 1;
-            current += 8;
-
-            k -= 8;
-        }
-        if k > 0
-        {
-            let in_val = input[in_offset];
-
-            for p in 0..k
-            {
-                let shift = (7_usize).wrapping_sub(p);
-                out[current] = scale * ((in_val >> shift) & 0x01);
-                current += 1;
-            }
+        // handle the remainder at the end where the output is less than 8 bytes long
+        if let Some(in_val) = input.last() {
+            let remainder_iter = out_iter.into_remainder().iter_mut();
+            remainder_iter.enumerate().for_each(|(pos, out_val)| {
+                let shift = (7_usize).wrapping_sub(pos);
+                *out_val = scale * ((in_val >> shift) & 0x01);
+            });
         }
     }
     else if depth == 2
