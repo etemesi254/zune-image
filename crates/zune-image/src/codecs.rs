@@ -251,7 +251,7 @@ impl ImageFormat
     pub fn guess_format(bytes: &[u8]) -> Option<ImageFormat>
     {
         // stolen from imagers
-        static MAGIC_BYTES: [(&[u8], ImageFormat); 8] = [
+        let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
             (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
             // Of course with jpg we need to relax our definition of what is a jpeg
             // the best identifier would be 0xFF,0xd8 0xff but nop, some images exist
@@ -260,12 +260,14 @@ impl ImageFormat
             (b"P5", ImageFormat::PPM),
             (b"P6", ImageFormat::PPM),
             (b"P7", ImageFormat::PPM),
+            (b"Pf", ImageFormat::PPM),
+            (b"PF", ImageFormat::PPM),
             (b"8BPS", ImageFormat::PSD),
             (b"farbfeld", ImageFormat::Farbfeld),
-            (b"qoif", ImageFormat::QOI)
+            (b"qoif", ImageFormat::QOI),
         ];
 
-        for (magic, decoder) in MAGIC_BYTES
+        for (magic, decoder) in magic_bytes
         {
             if bytes.starts_with(magic)
             {
@@ -292,7 +294,7 @@ impl ImageFormat
                     None
                 }
             }
-            "ppm" | "pam" | "pgm" | "pbm" =>
+            "ppm" | "pam" | "pgm" | "pbm" | "pfm" =>
             {
                 #[cfg(feature = "ppm")]
                 {
