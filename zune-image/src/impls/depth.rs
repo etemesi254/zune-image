@@ -67,6 +67,36 @@ impl OperationsTrait for Depth
 
                     *channel = new_channel;
                 }
+                (BitDepth::Float32, BitDepth::Eight) =>
+                {
+                    let old_data = channel.reinterpret_as::<f32>().unwrap();
+                    let mut new_channel = Channel::new_with_length::<u8>(channel.len() / 4);
+
+                    let new_channel_raw = new_channel.reinterpret_as_mut::<u8>().unwrap();
+
+                    // scale by multiplying with 255
+                    for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
+                    {
+                        *new_chan = (255.0 * old_chan).clamp(0.0, 255.0) as u8;
+                    }
+
+                    *channel = new_channel;
+                }
+                (BitDepth::Float32, BitDepth::Sixteen) =>
+                {
+                    let old_data = channel.reinterpret_as::<f32>().unwrap();
+                    let mut new_channel = Channel::new_with_length::<u16>(channel.len() / 2);
+
+                    let new_channel_raw = new_channel.reinterpret_as_mut::<u16>().unwrap();
+
+                    // scale by multiplying with 65535
+                    for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
+                    {
+                        *new_chan = (65535.0 * old_chan).clamp(0.0, 65535.0) as u16;
+                    }
+
+                    *channel = new_channel;
+                }
 
                 (_, _) =>
                 {
@@ -87,6 +117,6 @@ impl OperationsTrait for Depth
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
