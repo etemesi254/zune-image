@@ -108,7 +108,7 @@ pub fn parse_options<T: IntoImage>(
         }
         else if argument == "brighten"
         {
-            let value = *args.get_one::<i16>(argument).unwrap();
+            let value = *args.get_one::<f32>(argument).unwrap();
             debug!("Added brighten operation with {:?}", value);
             workflow.add_operation(Box::new(Brighten::new(value)))
         }
