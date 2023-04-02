@@ -46,12 +46,8 @@ opt-level = 3
 
 ## Benchmarks
 
-- TODO
+The updated benchmarks comparing this decoder with other Rust and C decoders can be
+found [here](https://etemesi254.github.io/assets/criterion/report/index.html) with
+the `png` prefix. Benchmarks are updated regularly to keep up with optimizations present
 
-### Wuffs benchmark
 
-- TODO
-
-[^1]: Spng has ability to use sse for accelerated decoding, but that feature is disabled in the rust build as the
-decoder
-cannot support SSE4 via dynamic feature checks
