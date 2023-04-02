@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use log::info;
-use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::bit_depth::{BitDepth, BitType, ByteEndian};
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
@@ -136,16 +136,6 @@ impl<'a> PPMDecoder<'a>
                 return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
 
-            if version != b'5' && version != b'6' && version != b'7'
-            {
-                let msg = format!(
-                    "Unsupported PPM version `{}`, supported versions are 5,6 and 7",
-                    version as char
-                );
-
-                return Err(PPMDecodeErrors::InvalidHeader(msg));
-            }
-
             if version == b'5' || version == b'6'
             {
                 self.decode_p5_and_p6_header(version)?;
@@ -153,6 +143,23 @@ impl<'a> PPMDecoder<'a>
             else if version == b'7'
             {
                 self.decode_p7_header()?;
+            }
+            else if version == b'f'
+            {
+                self.decode_pf_header(ColorSpace::Luma)?;
+            }
+            else if version == b'F'
+            {
+                self.decode_pf_header(ColorSpace::RGB)?;
+            }
+            else
+            {
+                let msg = format!(
+                    "Unsupported PPM version `{}`, supported versions are 5,6 and 7",
+                    version as char
+                );
+
+                return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
         }
         else
@@ -162,6 +169,75 @@ impl<'a> PPMDecoder<'a>
 
             return Err(PPMDecodeErrors::InvalidHeader(msg));
         }
+
+        Ok(())
+    }
+    fn decode_pf_header(&mut self, colorspace: ColorSpace) -> Result<(), PPMDecodeErrors>
+    {
+        self.colorspace = colorspace;
+        // read width and height
+        // skip whitespace
+        skip_spaces(&mut self.reader);
+        // read width
+        self.width = self.get_integer();
+
+        if self.width > self.options.get_max_width()
+        {
+            let msg = format!(
+                "Width {} greater than max width {}",
+                self.width,
+                self.options.get_max_width()
+            );
+            return Err(PPMDecodeErrors::Generic(msg));
+        }
+        // skip whitespace
+        skip_spaces(&mut self.reader);
+
+        self.height = self.get_integer();
+
+        if self.height > self.options.get_max_height()
+        {
+            let msg = format!(
+                "Height {} greater than max height {}",
+                self.width,
+                self.options.get_max_height()
+            );
+            return Err(PPMDecodeErrors::Generic(msg));
+        }
+
+        info!("Width: {}, height: {}", self.width, self.height);
+
+        skip_spaces(&mut self.reader);
+
+        // get the magnitude byte
+        let int_bytes = match core::str::from_utf8(get_bytes_until_whitespace(&mut self.reader))
+        {
+            Ok(valid_str) => match valid_str.trim().parse::<f32>()
+            {
+                Ok(number) => number,
+                Err(_) =>
+                {
+                    return Err(PPMDecodeErrors::Generic(format!(
+                        "Invalid number {valid_str:?}"
+                    )))
+                }
+            },
+            Err(_) => return Err(PPMDecodeErrors::GenericStatic("Invalid string"))
+        };
+        // " is a number used to indicate the byte order within the file.
+        // A positive number (e.g. "1.0") indicates big-endian
+        //
+        // If the number is negative (e.g. "-1.0") this indicates little-endian, with the least significant byte first.
+        if int_bytes < 0.0
+        {
+            self.options = self.options.set_byte_endian(ByteEndian::LE);
+        }
+        else
+        {
+            self.options = self.options.set_byte_endian(ByteEndian::BE);
+        }
+        self.decoded_headers = true;
+        self.bit_depth = BitDepth::Float32;
 
         Ok(())
     }
@@ -382,6 +458,7 @@ impl<'a> PPMDecoder<'a>
 
         Ok(())
     }
+
     fn get_integer(&mut self) -> usize
     {
         let mut value = 0_usize;
@@ -553,6 +630,58 @@ impl<'a> PPMDecoder<'a>
 
                 Ok(DecodingResult::U16(data))
             }
+            BitType::F32 =>
+            {
+                // match endianness
+                // specified by the decoder options
+                let mut result = if self.options.get_bye_endian() == ByteEndian::BE
+                {
+                    let remaining = self.reader.remaining_bytes();
+
+                    remaining
+                        .chunks_exact(4)
+                        .take(size / 4)
+                        .map(|b| f32::from_be_bytes(b.try_into().unwrap()))
+                        .collect::<Vec<f32>>()
+                }
+                else if self.options.get_bye_endian() == ByteEndian::LE
+                {
+                    let remaining = self.reader.remaining_bytes();
+
+                    remaining
+                        .chunks_exact(4)
+                        .take(size / 4)
+                        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+                        .collect::<Vec<f32>>()
+                }
+                else
+                {
+                    unreachable!()
+                };
+
+                // pfm uses bottom-top orientation, so let's fix it
+                let length = result.len() / 2;
+
+                let (in_img_top, in_img_bottom) = result.split_at_mut(length);
+
+                let single_stride = self.width * self.colorspace.num_components();
+                let mut stride = vec![0.; single_stride];
+
+                for (in_dim, out_dim) in in_img_top
+                    .chunks_exact_mut(single_stride)
+                    .rev()
+                    .zip(in_img_bottom.chunks_exact_mut(single_stride))
+                {
+                    // copy in_top to temp vec
+                    stride.copy_from_slice(in_dim);
+                    // copy bottom to top
+                    in_dim.copy_from_slice(out_dim);
+                    // copy temp to bottom
+                    out_dim.copy_from_slice(&stride);
+                }
+
+                Ok(DecodingResult::F32(result))
+            }
             _ => unreachable!()
         };
     }
@@ -615,3 +744,20 @@ fn get_bytes_until_whitespace<'a>(z: &'a mut ZByteReader) -> &'a [u8]
     z.skip(end - start);
     stream
 }
+
+// #[test]
+// fn test_pfm()
+// {
+//     let data = std::fs::read("/home/caleb/Downloads/memorial.pfm").unwrap();
+//
+//     let decoder = PPMDecoder::new(&data).decode().unwrap();
+//
+//     match decoder
+//     {
+//         DecodingResult::F32(z) =>
+//         {
+//             println!("{:?}", &z[0..10]);
+//         }
+//         _ => ()
+//     }
+// }
