@@ -97,6 +97,7 @@ impl<'a> DecoderTrait<'a> for PPMDecoder<'a>
         {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
             DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
+            DecodingResult::F32(data) => Image::from_f32(&data, width, height, colorspace),
             _ => unreachable!()
         };
 
