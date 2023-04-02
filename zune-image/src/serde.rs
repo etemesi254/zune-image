@@ -31,7 +31,21 @@ impl Serialize for ImageMetadata
             for f in ex
             {
                 let key = f.tag.to_string();
-                fields.insert(key, f.display_value().to_string());
+
+                // some tags may have leading quotes yet they
+                // are enclosed in a string.
+                // This helps remove them
+                let value = f
+                    .display_value()
+                    .to_string()
+                    .trim_start_matches(|x| x == '\"')
+                    .trim_end_matches(|x| x == '\"')
+                    .to_string();
+
+                if value.len() < 100
+                {
+                    fields.insert(key, value);
+                }
             }
         }
         if fields.is_empty()
