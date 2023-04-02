@@ -6,16 +6,17 @@ A fast, correct and safe png decoder
 
 - This decoder (currently) expands images with less than 8 bpp to be 8 bits(one byte)
   automatically.
-  This may or may not be desired depending on your use cases
+  This may or may not be desired depending on your use cases.
+- No support for the non-standard [APNG](https://en.wikipedia.org/wiki/APNG) (animation) extension.
 
 ## Features
 
 - Fast deflate decoder
-- Vectorized code paths
+- Vectorized filters and bit manipulation
 - Memory friendly (few allocations)
 - Zero unsafe outside of platform specific intrinsics
 
-## Usages
+## Usage
 
 First, include this in your Cargo.toml
 
@@ -48,6 +49,4 @@ opt-level = 3
 
 The updated benchmarks comparing this decoder with other Rust and C decoders can be
 found [here](https://etemesi254.github.io/assets/criterion/report/index.html) with
-the `png` prefix. Benchmarks are updated regularly to keep up with optimizations present
-
-
+the `png` prefix. Benchmarks are updated regularly to keep up with optimizations added.
