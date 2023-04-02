@@ -29,5 +29,5 @@ pub mod bytestream;
 pub mod colorspace;
 pub mod options;
 pub mod result;
-pub mod serde;
+mod serde;
 pub mod utils;
