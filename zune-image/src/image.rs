@@ -224,9 +224,11 @@ impl Image
     }
 
     /// Create an image with a static color in it
-    pub fn fill<T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T> + Zeroable>(
+    pub fn fill<T>(
         pixel: T, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>
+    where
+        T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T> + Zeroable + Pod
     {
         let dims = width * height * T::depth().size_of();
 
