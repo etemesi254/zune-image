@@ -88,6 +88,10 @@ pub struct Channel
     type_id:  TypeId
 }
 
+// safety: The functions ae unsafe because the
+// compiler cannot see that we own the data since self.ptr is a *mut 8
+// which can be stored at a different location from the array,
+// but since we own it and we do not expose it, this is safe
 unsafe impl Send for Channel {}
 
 unsafe impl Sync for Channel {}
@@ -153,11 +157,11 @@ impl Debug for Channel
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        unsafe {
-            let slice = std::slice::from_raw_parts(self.ptr, self.length);
-
-            writeln!(f, "{slice:?}")
-        }
+        // safety.
+        // all types can alias u8,
+        // length points to the length spanning the ptr
+        let slice = unsafe { std::slice::from_raw_parts(self.ptr, self.length) };
+        writeln!(f, "raw_bytes: {slice:?}")
     }
 }
 
@@ -325,16 +329,7 @@ impl Channel
     /// ```
     pub fn new_with_capacity<T: 'static + Zeroable>(capacity: usize) -> Channel
     {
-        unsafe {
-            let ptr = Self::alloc(capacity);
-
-            Self {
-                ptr,
-                length: 0,
-                capacity,
-                type_id: TypeId::of::<T>()
-            }
-        }
+        Self::new_with_capacity_and_type(capacity, TypeId::of::<T>())
     }
 
     /// Create a new channel with a specified
@@ -349,15 +344,13 @@ impl Channel
     ///
     pub(crate) fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel
     {
-        unsafe {
-            let ptr = Self::alloc(capacity);
+        let ptr = unsafe { Self::alloc(capacity) };
 
-            Self {
-                ptr,
-                length: 0,
-                capacity,
-                type_id
-            }
+        Self {
+            ptr,
+            length: 0,
+            capacity,
+            type_id
         }
     }
 
@@ -537,9 +530,11 @@ impl Channel
             unsafe {
                 // extend
                 // use 3/2 formula
-                self.realloc(self.capacity.saturating_add((size.saturating_mul(3)) / 2));
+                self.realloc(self.capacity.saturating_mul(size.saturating_mul(3)) / 2);
             }
         }
+        // safety:
+        // We ensured above there that we have space enough for one more element
         unsafe {
             // Store elm in a 1 element array in order to cast it's
             // pointer to u8 so that we can copy it
