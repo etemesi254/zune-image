@@ -167,6 +167,7 @@ pub(crate) fn expand_bits_to_byte(
     let mut scale = DEPTH_SCALE_TABLE[depth];
 
     let input = &input[in_offset..];
+    let out = &mut out[..width * out_n];
 
     // for pLTE chunks with lower bit depths
     // do not scale values just expand.
@@ -175,8 +176,6 @@ pub(crate) fn expand_bits_to_byte(
     {
         scale = 1;
     }
-
-    let mut k = width * out_n;
 
     if depth == 1
     {
