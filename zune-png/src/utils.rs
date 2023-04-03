@@ -162,19 +162,18 @@ pub(crate) fn expand_bits_to_byte(
     input: &[u8], out: &mut [u8]
 )
 {
-    const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
-
-    let mut scale = DEPTH_SCALE_TABLE[depth];
-
-    let out = &mut out[..width * out_n];
-
-    // for pLTE chunks with lower bit depths
-    // do not scale values just expand.
-    // The palette pass will expand values to the right pixels.
-    if plte_present
-    {
-        scale = 1;
-    }
+    let scale = if plte_present {
+        // When a palette is used we only separate the indexes in this pass,
+        // the palette pass will convert indexes to the right colors later.
+        1
+    } else {
+        match depth {
+            1 => 0xFF,
+            2 => 0x55,
+            4 => 0x11,
+            _ => return,
+        }
+    };
 
     if depth == 1
     {
