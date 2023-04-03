@@ -6,6 +6,7 @@ use std::io::Error;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 
+use crate::channel::ChannelErrors;
 use crate::codecs::ImageFormat;
 
 /// All possible image errors that can occur.
@@ -25,6 +26,7 @@ pub enum ImageErrors
     GenericString(String),
     GenericStr(&'static str),
     WrongTypeId(TypeId, TypeId),
+    ChannelErrors(ChannelErrors),
     ImageDecoderNotIncluded(ImageFormat),
     ImageDecoderNotImplemented(ImageFormat),
     IoError(std::io::Error)
@@ -128,6 +130,10 @@ impl Debug for ImageErrors
                     "The decoder to parse {format:?} has not been implemented"
                 )
             }
+            ImageErrors::ChannelErrors(err) =>
+            {
+                writeln!(f, "Channel error : {:?}", err)
+            }
         }
     }
 }
@@ -206,6 +212,14 @@ impl From<&'static str> for ImageErrors
     fn from(s: &'static str) -> ImageErrors
     {
         ImageErrors::GenericStr(s)
+    }
+}
+
+impl From<ChannelErrors> for ImageErrors
+{
+    fn from(value: ChannelErrors) -> Self
+    {
+        ImageErrors::ChannelErrors(value)
     }
 }
 
