@@ -8,11 +8,14 @@ pub(crate) fn expand_palette(input: &[u8], out: &mut [u8], palette: &[PLTEEntry]
         return;
     }
 
+    // check length up front to get rid of bounds checks in the loops
+    assert!(palette.len() >= 256);
+
     if components == 3
     {
         for (in_px, px) in input.iter().zip(out.chunks_exact_mut(3))
         {
-            let entry = palette[usize::from(*in_px) & 255];
+            let entry = palette[usize::from(*in_px) % 256];
 
             px[0] = entry.red;
             px[1] = entry.green;
@@ -23,7 +26,7 @@ pub(crate) fn expand_palette(input: &[u8], out: &mut [u8], palette: &[PLTEEntry]
     {
         for (in_px, px) in input.iter().zip(out.chunks_exact_mut(4))
         {
-            let entry = palette[usize::from(*in_px) & 255];
+            let entry = palette[usize::from(*in_px) % 256];
 
             px[0] = entry.red;
             px[1] = entry.green;
