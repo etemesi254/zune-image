@@ -174,6 +174,8 @@ pub(crate) fn expand_bits_to_byte(
             _ => return,
         }
     };
+    
+    let out = &mut out[..width * out_n];
 
     if depth == 1
     {
