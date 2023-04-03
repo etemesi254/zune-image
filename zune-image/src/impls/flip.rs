@@ -33,11 +33,15 @@ impl OperationsTrait for Flip
             {
                 BitType::U8 =>
                 {
-                    flip(inp.reinterpret_as_mut::<u8>().unwrap());
+                    flip(inp.reinterpret_as_mut::<u8>()?);
                 }
                 BitType::U16 =>
                 {
-                    flip(inp.reinterpret_as_mut::<u16>().unwrap());
+                    flip(inp.reinterpret_as_mut::<u16>()?);
+                }
+                BitType::F32 =>
+                {
+                    flip(inp.reinterpret_as_mut::<f32>()?);
                 }
                 _ => todo!()
             }
@@ -47,6 +51,6 @@ impl OperationsTrait for Flip
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
