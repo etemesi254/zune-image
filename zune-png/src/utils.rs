@@ -1,15 +1,12 @@
 use crate::decoder::PLTEEntry;
 use crate::enums::PngColor;
 
-pub(crate) fn expand_palette(input: &[u8], out: &mut [u8], palette: &[PLTEEntry], components: usize)
+pub(crate) fn expand_palette(input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize)
 {
     if components == 0
     {
         return;
     }
-
-    // check length up front to get rid of bounds checks in the loops
-    assert!(palette.len() >= 256);
 
     if components == 3
     {
