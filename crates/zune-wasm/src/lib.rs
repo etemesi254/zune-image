@@ -127,7 +127,7 @@ impl WasmImage
     }
 
     /// Apply a brighten operation to the image
-    pub fn brighten(&mut self, value: i16)
+    pub fn brighten(&mut self, value: f32)
     {
         let ops = Brighten::new(value);
 
