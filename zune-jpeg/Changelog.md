@@ -1,3 +1,7 @@
+## Version 0.3.16
+
+- Add support for decoding to BGR and BGRA
+
 ## Version 0.3.14
 
 - Add ability to parse exif and ICC chunk.
