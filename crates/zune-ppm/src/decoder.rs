@@ -488,12 +488,10 @@ impl<'a> PPMDecoder<'a>
     /// are not decoded.
     ///
     /// # Returns
-    /// - `Some(BitDepth)`: The image bit depth, can be [Eight] or [Sixteen]
+    /// - `Some(BitDepth)`: The image bit depth, can be Eight or Sixteen, or F32 for (.pfm files)
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
-    /// [Eight]: BitDepth::Eight,
-    /// [Sixteen]: BitDepth::Sixteen
     pub const fn get_bit_depth(&self) -> Option<BitDepth>
     {
         if self.decoded_headers
@@ -589,6 +587,12 @@ impl<'a> PPMDecoder<'a>
             self.read_headers()?;
         }
 
+        if self.width == 0 || self.height == 0
+        {
+            return Err(PPMDecodeErrors::GenericStatic(
+                "Zero dimensions not allowed"
+            ));
+        }
         // okay check if the stream is large enough for the bit depth
         let size =
             self.width * self.height * self.colorspace.num_components() * self.bit_depth.size_of();
