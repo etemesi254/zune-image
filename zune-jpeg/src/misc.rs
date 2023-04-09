@@ -215,6 +215,7 @@ pub(crate) fn setup_component_params(img: &mut JpegDecoder) -> Result<(), Decode
 {
     let img_width = img.width();
     let img_height = img.height();
+
     for component in &mut img.components
     {
         // compute interleaved image info
@@ -254,6 +255,14 @@ pub(crate) fn setup_component_params(img: &mut JpegDecoder) -> Result<(), Decode
         component.quantization_table = qt_table;
         // initially stride contains its horizontal sub-sampling
         component.width_stride *= img.mcu_x * 8;
+    }
+    if img.is_interleaved
+        && img.components[0].horizontal_sample == 1
+        && img.components[0].vertical_sample == 1
+    {
+        return Err(DecodeErrors::FormatStatic(
+            "Unsupported unsampled Y component with sampled Cb / Cr components"
+        ));
     }
 
     // delete quantization tables, we'll extract them from the components when
