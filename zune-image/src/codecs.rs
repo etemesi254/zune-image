@@ -537,7 +537,7 @@ impl Image
     {
         let decoder = ImageFormat::guess_format(src);
 
-        return if let Some(format) = decoder
+        if let Some(format) = decoder
         {
             let mut image_decoder = format.get_decoder_with_options(src, options)?;
 
@@ -548,6 +548,6 @@ impl Image
             Err(ImageErrors::ImageDecoderNotImplemented(
                 ImageFormat::Unknown
             ))
-        };
+        }
     }
 }

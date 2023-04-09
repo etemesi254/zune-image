@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use log::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use zune_core::bit_depth::BitDepth;
+// use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
 use zune_image::image::Image;
 use zune_image::impls::brighten::Brighten;
@@ -54,6 +55,15 @@ fn print_initial_stats()
     }
 }
 
+//
+// #[wasm_bindgen]
+// pub struct WasmImageMetadata
+// {
+//     width:      usize,
+//     height:     usize,
+//     depth:      BitDepth,
+//     colorspace: ColorSpace
+// }
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmImage
