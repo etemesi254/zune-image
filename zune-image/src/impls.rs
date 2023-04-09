@@ -18,6 +18,7 @@ pub mod invert;
 pub mod median;
 pub mod mirror;
 pub mod orientation;
+pub mod premul_alpha;
 pub mod resize;
 pub mod scharr;
 pub mod sobel;
