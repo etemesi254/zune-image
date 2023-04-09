@@ -13,7 +13,6 @@ zune-core = { path = "../zune-core", version = "0.2.1" }
 memmap2 = "0.5.7"
 serde_json = "1.0.93"
 serde = "1.0.152"
-glob = "0.3.0"
 
 [dependencies.simple_logger]
 version = "4.0.0"
@@ -21,6 +20,6 @@ default-features = false
 features = ["colors"]
 
 [dependencies.clap]
-version = "4.1.0"
+version = "4.2.1"
 default-features = false
-features = ["color", "suggestions", "std", "help", "error-context"]
+features = ["color", "suggestions", "std", "help"]
