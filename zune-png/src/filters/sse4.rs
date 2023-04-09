@@ -142,6 +142,18 @@
 // this source code in a product, acknowledgment is not required but would
 // be appreciated.
 
+//  Safety of Platform specific intrinsics
+// ---------------------------------------------
+//
+// To correctly support non std variants we depend on compilation strategies
+// , when zune-core is compiled, it either chooses dynamic platform detection using
+// is_x86_feature_detected!() if we link to std or we choose based on compilation strategies
+//
+// Here we offer another check to see if we have the features, but that only works for non-std variants
+// since the feature detection needs linking to std.
+//
+//
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "sse")]
 
@@ -283,16 +295,37 @@ unsafe fn de_filter_sub8_sse2_inner(raw: &[u8], current: &mut [u8])
 
 pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse2")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe { de_filter_sub4_sse2_inner(raw, current) }
 }
 
 pub fn de_filter_sub6_sse2(raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse2")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe { de_filter_sub6_sse2_inner(raw, current) }
 }
 
 pub fn de_filter_sub8_sse2(raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse2")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe { de_filter_sub8_sse2_inner(raw, current) }
 }
 
@@ -545,6 +578,13 @@ unsafe fn de_filter_paeth8_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mu
 /// If sse4.1 feature isn't present
 pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse4.1")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         de_filter_paeth3_sse41_inner(prev_row, raw, current);
     }
@@ -552,6 +592,13 @@ pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 
 pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse4.1")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         de_filter_paeth4_sse41_inner(prev_row, raw, current);
     }
@@ -559,6 +606,13 @@ pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 
 pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse4.1")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         de_filter_paeth6_sse41_inner(prev_row, raw, current);
     }
@@ -566,6 +620,13 @@ pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 
 pub fn de_filter_paeth8_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse4.1")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         de_filter_paeth8_sse41_inner(prev_row, raw, current);
     }
@@ -639,6 +700,13 @@ unsafe fn defilter_avg3_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u
 
 pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse2")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         defilter_avg3_sse2_inner(prev_row, raw, current);
     }
@@ -646,6 +714,13 @@ pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 
 pub fn defilter_avg4_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
+    #[cfg(feature = "std")]
+    {
+        if !is_86_feature_present!("sse2")
+        {
+            panic!("Internal error, calling platform specific function where not supported")
+        }
+    }
     unsafe {
         defilter_avg4_sse2_inner(prev_row, raw, current);
     }
