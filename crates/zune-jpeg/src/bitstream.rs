@@ -583,7 +583,9 @@ impl BitStream
                                 if *coefficient >= 0
                                 {
                                     *coefficient += bit;
-                                } else {
+                                }
+                                else
+                                {
                                     *coefficient -= bit;
                                 }
                             }
@@ -592,7 +594,9 @@ impl BitStream
                             {
                                 self.refill(reader)?;
                             }
-                        } else {
+                        }
+                        else
+                        {
                             r -= 1;
 
                             if r < 0
@@ -602,7 +606,8 @@ impl BitStream
                             }
                         };
 
-                        if k == self.spec_end {
+                        if k == self.spec_end
+                        {
                             break 'advance_nonzero;
                         }
 
