@@ -39,6 +39,7 @@ pub mod mathops;
 pub mod median;
 pub mod mirror;
 pub mod pad;
+pub mod premul_alpha;
 pub mod resize;
 pub mod rotate;
 pub mod scharr;
