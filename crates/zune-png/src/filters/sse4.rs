@@ -147,7 +147,7 @@
 //
 // To correctly support non std variants we depend on compilation strategies
 // , when zune-core is compiled, it either chooses dynamic platform detection using
-// is_x86_feature_detected!() if we link to std or we choose based on compilation strategies
+// is_x86_feature_detected!!() if we link to std or we choose based on compilation strategies
 //
 // Here we offer another check to see if we have the features, but that only works for non-std variants
 // since the feature detection needs linking to std.
@@ -297,7 +297,7 @@ pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse2")
+        if !is_x86_feature_detected!("sse2")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -309,7 +309,7 @@ pub fn de_filter_sub6_sse2(raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse2")
+        if !is_x86_feature_detected!("sse2")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -321,7 +321,7 @@ pub fn de_filter_sub8_sse2(raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse2")
+        if !is_x86_feature_detected!("sse2")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -580,7 +580,7 @@ pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse4.1")
+        if !is_x86_feature_detected!("sse4.1")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -594,7 +594,7 @@ pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse4.1")
+        if !is_x86_feature_detected!("sse4.1")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -608,7 +608,7 @@ pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse4.1")
+        if !is_x86_feature_detected!("sse4.1")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -622,7 +622,7 @@ pub fn de_filter_paeth8_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse4.1")
+        if !is_x86_feature_detected!("sse4.1")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -702,7 +702,7 @@ pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse2")
+        if !is_x86_feature_detected!("sse2")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
@@ -716,7 +716,7 @@ pub fn defilter_avg4_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
-        if !is_86_feature_present!("sse2")
+        if !is_x86_feature_detected!("sse2")
         {
             panic!("Internal error, calling platform specific function where not supported")
         }
