@@ -9,7 +9,15 @@ use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use crate::codecs::ImageFormat;
 
 mod exif;
-
+/// Contains information about whether the image
+/// is pre multiplied with it's alpha
+/// or it's not
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AlphaState
+{
+    PreMultiplied,
+    NonPreMultiplied
+}
 /// Image metadata
 ///
 /// Each image type has this information present
@@ -27,6 +35,7 @@ pub struct ImageMetadata
     pub(crate) colorspace:    ColorSpace,
     pub(crate) depth:         BitDepth,
     pub(crate) format:        Option<ImageFormat>,
+    pub(crate) alpha:         AlphaState,
     #[cfg(feature = "metadata")]
     pub(crate) exif:          Option<Vec<::exif::Field>>
 }
@@ -43,6 +52,7 @@ impl Default for ImageMetadata
             colorspace: ColorSpace::Unknown,
             depth: BitDepth::default(),
             format: None,
+            alpha: AlphaState::NonPreMultiplied,
             #[cfg(feature = "metadata")]
             exif: None
         }
