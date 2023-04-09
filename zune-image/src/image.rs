@@ -268,7 +268,7 @@ impl Image
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::image::{Image, MAX_CHANNELS};
     ///
-    /// fn dead_simple(y:usize,x:usize,pixels:&mut [u8;MAX_CHANNELS])
+    /// fn linear_gradient(y:usize,x:usize,pixels:&mut [u8;MAX_CHANNELS])
     /// {    
     ///     // this will create a linear band of colors from black to white and repeats
     ///     // until the whole image is visited
@@ -276,7 +276,7 @@ impl Image
     ///     pixels[0] = luma;
     ///      
     /// }
-    /// let img  = Image::from_fn(30,20,ColorSpace::Luma,dead_simple);
+    /// let img  = Image::from_fn(30,20,ColorSpace::Luma,linear_gradient);
     /// ```
     /// We only set one element in our array but need to return an array with
     /// [MAX_CHANNELS] elements
