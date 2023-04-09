@@ -55,7 +55,7 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
         let depth = self.get_bit_depth();
 
         let metadata = ImageMetadata {
-            format: Some(ImageFormat::PNG),
+            format: Some(ImageFormat::Farbfeld),
             colorspace: self.get_colorspace(),
             depth: depth,
             width: width,
