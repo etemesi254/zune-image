@@ -13,9 +13,9 @@ pub fn box_blur_u16(
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
-    box_blur_inner(in_out_image, scratch_space, width, height, radius);
+    box_blur_inner(in_out_image, scratch_space, width, radius);
     transpose::transpose_u16(scratch_space, in_out_image, width, height);
-    box_blur_inner(in_out_image, scratch_space, height, width, radius);
+    box_blur_inner(in_out_image, scratch_space, height, radius);
     transpose::transpose_u16(scratch_space, in_out_image, height, width);
 }
 
@@ -28,19 +28,19 @@ pub fn box_blur_u8(
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
-    box_blur_inner(in_out_image, scratch_space, width, height, radius);
+    box_blur_inner(in_out_image, scratch_space, width, radius);
     transpose::transpose_u8(scratch_space, in_out_image, width, height);
-    box_blur_inner(in_out_image, scratch_space, height, width, radius);
+    box_blur_inner(in_out_image, scratch_space, height, radius);
     transpose::transpose_u8(scratch_space, in_out_image, height, width);
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
-fn box_blur_inner<T>(
-    in_image: &[T], out_image: &mut [T], width: usize, height: usize, radius: usize
-) where
+pub(crate) fn box_blur_inner<T>(in_image: &[T], out_image: &mut [T], width: usize, radius: usize)
+where
     T: Copy + NumOps<T>,
     u32: std::convert::From<T>
 {
+    let radius = radius;
     // 1D-Box blurs can be seen as the average of radius pixels iterating
     // through a window
     // A box blur therefore is
@@ -72,148 +72,59 @@ fn box_blur_inner<T>(
         return;
     }
     let radius = radius.min(width);
-    let m_radius = compute_mod_u32(radius as u64);
+    let m_radius = compute_mod_u32((radius + 1) as u64);
 
+    for (stride_in, stride_out) in in_image
+        .chunks_exact(width)
+        .zip(out_image.chunks_exact_mut(width))
     {
-        // handle pixels inside boundaries
+        let half_radius = (radius + 1) / 2;
 
-        for (four_stride_in, four_stride_out) in in_image
-            .chunks_exact(width * 4)
-            .zip(out_image.chunks_exact_mut(width * 4))
+        let mut accumulator: u32 = stride_in[..half_radius].iter().map(|x| u32::from(*x)).sum();
+
+        accumulator += (half_radius as u32) * u32::from(stride_in[0]);
+
+        for (data_in, data_out) in stride_in[half_radius..]
+            .iter()
+            .zip(stride_out.iter_mut())
+            .take(half_radius)
         {
-            // output strides
-            let (os1, rem) = four_stride_out.split_at_mut(width);
-            let (os2, rem) = rem.split_at_mut(width);
-            let (os3, os4) = rem.split_at_mut(width);
+            accumulator += u32::from(*data_in);
+            accumulator -= u32::from(stride_in[0]);
 
-            // input strides
-            let (ws1, rem) = four_stride_in.split_at(width);
-            let (ws2, rem) = rem.split_at(width);
-            let (ws3, ws4) = rem.split_at(width);
-
-            // do the first accumulation
-            let (mut a1, mut a2, mut a3, mut a4) = (0, 0, 0, 0);
-            let mut p = 1;
-
-            for ((((pos, n1), n2), n3), n4) in ws1
-                .iter()
-                .enumerate()
-                .zip(ws2.iter())
-                .zip(ws3.iter())
-                .zip(ws4.iter())
-                .take(radius - 1)
-            {
-                a1 += u32::from(*n1);
-                a2 += u32::from(*n2);
-                a3 += u32::from(*n3);
-                a4 += u32::from(*n4);
-
-                // Handle edge pixels
-                os1[pos] = T::from_u32(a1 / p);
-                os2[pos] = T::from_u32(a2 / p);
-                os3[pos] = T::from_u32(a3 / p);
-                os4[pos] = T::from_u32(a4 / p);
-                p += 1;
-            }
-            // some won't be handled explicitly by the loop
-            // handle it here
-            os1[radius - 1] = T::from_u32(a1 / p);
-            os2[radius - 1] = T::from_u32(a2 / p);
-            os3[radius - 1] = T::from_u32(a3 / p);
-            os4[radius - 1] = T::from_u32(a4 / p);
-
-            let mut r1 = 0;
-            let mut r2 = 0;
-            let mut r3 = 0;
-            let mut r4 = 0;
-
-            let mut pos = 0;
-
-            for (((((((o1, o2), o3), o4), w1), w2), w3), w4) in os1[radius / 2..]
-                .iter_mut()
-                .zip(os2[radius / 2..].iter_mut())
-                .zip(os3[radius / 2..].iter_mut())
-                .zip(os4[radius / 2..].iter_mut())
-                .zip(ws1.windows(radius))
-                .zip(ws2.windows(radius))
-                .zip(ws3.windows(radius))
-                .zip(ws4.windows(radius))
-            {
-                a1 = a1.wrapping_add(u32::from(w1[radius - 1])).wrapping_sub(r1);
-                *o1 = T::from_u32(fastdiv_u32(a1, m_radius));
-
-                a2 = a2.wrapping_add(u32::from(w2[radius - 1])).wrapping_sub(r2);
-                *o2 = T::from_u32(fastdiv_u32(a2, m_radius));
-
-                a3 = a3.wrapping_add(u32::from(w3[radius - 1])).wrapping_sub(r3);
-                *o3 = T::from_u32(fastdiv_u32(a3, m_radius));
-
-                a4 = a4.wrapping_add(u32::from(w4[radius - 1])).wrapping_sub(r4);
-                *o4 = T::from_u32(fastdiv_u32(a4, m_radius));
-
-                r1 = u32::from(w1[0]);
-                r2 = u32::from(w2[0]);
-                r3 = u32::from(w3[0]);
-                r4 = u32::from(w4[0]);
-
-                pos += 1;
-            }
-
-            let mut p = (radius + 1) as u32 / 2;
-
-            for (((n1, n2), n3), n4) in ws1
-                .iter()
-                .rev()
-                .zip(ws2.iter().rev())
-                .zip(ws3.iter().rev())
-                .zip(ws4.iter().rev())
-                .take((radius + 1) / 2)
-            {
-                a1 -= u32::from(*n1);
-                a2 -= u32::from(*n2);
-                a3 -= u32::from(*n3);
-                a4 -= u32::from(*n4);
-
-                // Handle edge pixels
-                os1[pos] = T::from_u32(a1 / p);
-                os2[pos] = T::from_u32(a2 / p);
-                os3[pos] = T::from_u32(a3 / p);
-                os4[pos] = T::from_u32(a4 / p);
-                p -= 1;
-            }
+            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
         }
-        // do the bottom three that the inner loop may have failed to parse
-        if height % 4 != 0
+
+        let mut window_slide = 0;
+        let mut mask = 0;
+
+        for (window_in, data_out) in stride_in
+            .windows(radius)
+            .zip(stride_out[half_radius..].iter_mut())
         {
-            let rows_unhanded = (in_image.len() / width) % 4;
+            accumulator = accumulator.wrapping_sub(window_slide);
+            accumulator = accumulator.wrapping_add(u32::from(*window_in.last().unwrap()) & mask);
 
-            for (in_stride, out_stride) in in_image
-                .rchunks_exact(width)
-                .zip(out_image.rchunks_exact_mut(width))
-                .take(rows_unhanded)
-            {
-                let mut a1 = 0;
-                let mut p = 1;
+            mask = u32::MAX;
+            window_slide = u32::from(window_in[0]);
 
-                for (pos, i) in in_stride.iter().take(radius).enumerate()
-                {
-                    a1 += u32::from(*i);
-                    out_stride[pos] = T::from_u32(a1 / p);
-                    p += 1;
-                }
-                out_stride[radius - 1] = T::from_u32(a1 / p);
+            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
+        }
 
-                let mut r1 = 0;
+        let edge_len = stride_out.len() - half_radius;
 
-                for (w1, o1) in in_stride
-                    .windows(radius)
-                    .zip(out_stride[radius / 2..].iter_mut())
-                {
-                    a1 = a1.wrapping_add(u32::from(w1[radius - 1])).wrapping_sub(r1);
-                    *o1 = T::from_u32(fastdiv_u32(a1, m_radius));
-                    r1 = u32::from(w1[0]);
-                }
-            }
+        let end_stride = &mut stride_out[edge_len..];
+        let last_item = u32::from(*stride_in.last().unwrap());
+
+        for (data_in, data_out) in stride_in[edge_len..]
+            .iter()
+            .zip(end_stride)
+            .take(half_radius)
+        {
+            accumulator = accumulator.wrapping_sub(u32::from(*data_in));
+            accumulator = accumulator.wrapping_add(last_item);
+
+            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
         }
     }
 }
