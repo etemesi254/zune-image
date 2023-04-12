@@ -39,7 +39,7 @@ impl OperationsTrait for GaussianBlur
 
             match depth.bit_type()
             {
-                BitType::U16 =>
+                BitType::U8 =>
                 {
                     let mut temp = vec![0; width * height];
 
@@ -54,7 +54,7 @@ impl OperationsTrait for GaussianBlur
                         );
                     }
                 }
-                BitType::U8 =>
+                BitType::U16 =>
                 {
                     let mut temp = vec![0; width * height];
 
