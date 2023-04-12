@@ -107,7 +107,8 @@ pub fn premultiply_u16(input: &mut [u16], alpha: &[u16])
     const MAX_VALUE: u32 = 65535;
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
-        *color = ((u32::from(*color) * u32::from(*al)) / MAX_VALUE) as u16;
+        let temp = (u32::from(*al) * u32::from(*color)) + ((MAX_VALUE + 1) / 2);
+        *color = ((temp + (temp >> 16)) / MAX_VALUE) as u16;
     });
 }
 
