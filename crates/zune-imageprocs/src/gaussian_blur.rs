@@ -6,6 +6,8 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
+use crate::transpose;
+
 /// Create different box radius for each gaussian kernel function.
 #[allow(
     clippy::cast_possible_truncation,
@@ -73,11 +75,35 @@ pub fn gaussian_blur_u16(
     // use the box blur implementation
     let blur_radii = create_box_gauss(sigma);
 
-    for blur_radius in blur_radii
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
     {
-        // approximate gaussian blur using multiple box blurs
-        crate::box_blur::box_blur_u16(in_out_image, scratch_space, width, height, blur_radius);
+        // carry out horizontal box blur
+        // for the first iteration, samples are written to scratch space,
+        // so the next iteration, samples should be read from scratch space, as that is our input
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
+            1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
+            _ => unreachable!()
+        };
     }
+    // transpose
+    // we do three iterations above, so when that is done, results will always be in
+    // scratch_space, so wr transpose writing to in_out_image which is used below
+    transpose::transpose_u16(scratch_space, in_out_image, width, height);
+
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
+    {
+        // carry out horizontal box blur
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
+            1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
+            _ => unreachable!()
+        };
+    }
+    // transpose back
+    transpose::transpose_u16(scratch_space, in_out_image, height, width);
 }
 
 /// Carry out a gaussian blur on bytes that represent a single image channel
@@ -96,9 +122,58 @@ pub fn gaussian_blur_u8(
     // use the box blur implementation
     let blur_radii = create_box_gauss(sigma);
 
-    for blur_radius in blur_radii
+    assert_eq!(blur_radii.len(), 3, "Update transpose operations");
+
+    // An optimization applied here was applied from Fabian's
+    // fast blurs (https://fgiesen.wordpress.com/2012/08/01/fast-blurs-2/)
+    //
+    // I.e instead of the code reading
+
+    // for (int pass=0; pass < num_passes; pass++) {
+    //   for (int y=0; y < height; y++) {
+    //     blur_scanline(y, radius);
+    //   }
+    // }
+    //
+    //  It is
+    //
+    // for (int y=0; y < height; y++) {
+    //   for (int pass=0; pass < num_passes; pass++) {
+    //     blur_scanline(y, radius);
+    //   }
+    // }
+    //
+    // The latter allows us to delay transposition i.e instead
+    // of doing blur->transpose->blur->transpose->blur->transpose...
+    // we do, blur->blur->blur...->transpose->blur->blur->blur..->transpose
+    //
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
     {
-        // approximate gaussian blur using multiple box blurs
-        crate::box_blur::box_blur_u8(in_out_image, scratch_space, width, height, blur_radius);
+        // carry out horizontal box blur
+        // for the first iteration, samples are written to scratch space,
+        // so the next iteration, samples should be read from scratch space, as that is our input
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
+            1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
+            _ => unreachable!()
+        };
     }
+    // transpose
+    // we do three iterations above, so when that is done, results will always be in
+    // scratch_space, so wr transpose writing to in_out_image which is used below
+    transpose::transpose_u8(scratch_space, in_out_image, width, height);
+
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
+    {
+        // carry out horizontal box blur
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
+            1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
+            _ => unreachable!()
+        };
+    }
+    // transpose back
+    transpose::transpose_u8(scratch_space, in_out_image, height, width);
 }
