@@ -13,6 +13,7 @@ use zune_image::impls::grayscale::RgbToGrayScale;
 use zune_image::impls::invert::Invert;
 use zune_image::impls::median::Median;
 use zune_image::impls::mirror::{Mirror, MirrorMode};
+use zune_image::impls::orientation::AutoOrient;
 use zune_image::impls::resize::{Resize, ResizeMethod};
 use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
 use zune_image::impls::stretch_contrast::StretchContrast;
@@ -224,6 +225,11 @@ pub fn parse_options<T: IntoImage>(
             debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
 
             workflow.add_operation(Box::new(ColorspaceConv::new(colorspace)))
+        }
+        else if argument == "auto-orient"
+        {
+            debug!("Add auto orient operation");
+            workflow.add_operation(Box::new(AutoOrient))
         }
     }
     Ok(())
