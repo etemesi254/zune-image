@@ -93,6 +93,6 @@ pub fn unsharpen_u8(
         let threshold_mask = u8::from(diff > threshold).wrapping_sub(1);
 
         // if diff > threshold { pix = (diff + pix) } else { pix }
-        *in_pix = (in_pix.wrapping_add(diff) & !threshold_mask) | (*in_pix & threshold_mask);
+        *in_pix = (in_pix.saturating_add(diff) & !threshold_mask) | (*in_pix & threshold_mask);
     }
 }

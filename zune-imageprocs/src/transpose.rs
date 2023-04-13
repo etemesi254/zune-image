@@ -44,14 +44,14 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
             if is_x86_feature_detected!("sse4.1")
             {
                 START.call_once(|| {
-                    trace!("Using SSE4.1 transpose_u16 algorithm");
+                    trace!("Using SSE4.1 transpose u8 algorithm");
                 });
                 unsafe { return transpose_sse41_u8(in_matrix, out_matrix, width, height) }
             }
         }
     }
     START.call_once(|| {
-        trace!("Using scalar transpose_u16 algorithm");
+        trace!("Using scalar transpose u8 algorithm");
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
