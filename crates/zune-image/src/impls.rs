@@ -20,6 +20,7 @@ pub mod mirror;
 pub mod orientation;
 pub mod premul_alpha;
 pub mod resize;
+pub mod rotate;
 pub mod scharr;
 pub mod sobel;
 pub mod statistics;
