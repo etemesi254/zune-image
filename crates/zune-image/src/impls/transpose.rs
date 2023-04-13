@@ -1,5 +1,5 @@
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::transpose::{transpose_u16, transpose_u8};
+use zune_imageprocs::transpose::{transpose_generic, transpose_u16, transpose_u8};
 
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
@@ -62,6 +62,12 @@ impl OperationsTrait for Transpose
                     );
                     *channel = out_channel;
                 }
+                BitType::F32 => transpose_generic::<f32>(
+                    channel.reinterpret_as().unwrap(),
+                    out_channel.reinterpret_as_mut().unwrap(),
+                    width,
+                    height
+                ),
                 _ => todo!()
             };
         }
@@ -72,6 +78,6 @@ impl OperationsTrait for Transpose
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
