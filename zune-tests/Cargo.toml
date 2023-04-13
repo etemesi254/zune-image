@@ -12,5 +12,5 @@ serde_json = "1.0.94"
 zune-core = { version = "0.2.1", path = "../zune-core" }
 zune-jpeg = { version = "0.3.12", path = "../zune-jpeg" }
 zune-psd = { version = "0.1.0", path = "../zune-psd" }
-zune-png = { version = "0.1.9", path = "../zune-png" }
+zune-png = { version = "0.2.0", path = "../zune-png" }
 zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
