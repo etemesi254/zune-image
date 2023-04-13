@@ -106,6 +106,64 @@ pub fn gaussian_blur_u16(
     transpose::transpose_u16(scratch_space, in_out_image, height, width);
 }
 
+pub fn gaussian_blur_f32(
+    in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, sigma: f32
+)
+{
+    // use the box blur implementation
+    let blur_radii = create_box_gauss(sigma);
+
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
+    {
+        // carry out horizontal box blur
+        // for the first iteration, samples are written to scratch space,
+        // so the next iteration, samples should be read from scratch space, as that is our input
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_f32_inner(
+                in_out_image,
+                scratch_space,
+                width,
+                *blur_radius
+            ),
+            1 => crate::box_blur::box_blur_f32_inner(
+                scratch_space,
+                in_out_image,
+                width,
+                *blur_radius
+            ),
+            _ => unreachable!()
+        };
+    }
+    // transpose
+    // we do three iterations above, so when that is done, results will always be in
+    // scratch_space, so wr transpose writing to in_out_image which is used below
+    transpose::transpose_generic(scratch_space, in_out_image, width, height);
+
+    for (pos, blur_radius) in blur_radii.iter().enumerate()
+    {
+        // carry out horizontal box blur
+        match pos % 2
+        {
+            0 => crate::box_blur::box_blur_f32_inner(
+                in_out_image,
+                scratch_space,
+                height,
+                *blur_radius
+            ),
+            1 => crate::box_blur::box_blur_f32_inner(
+                scratch_space,
+                in_out_image,
+                height,
+                *blur_radius
+            ),
+            _ => unreachable!()
+        };
+    }
+    // transpose back
+    transpose::transpose_generic(scratch_space, in_out_image, height, width);
+}
+
 /// Carry out a gaussian blur on bytes that represent a single image channel
 ///
 ///

@@ -1,3 +1,5 @@
+use std::f32;
+
 use log::warn;
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
@@ -125,6 +127,75 @@ where
             accumulator = accumulator.wrapping_add(last_item);
 
             *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
+        }
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+pub(crate) fn box_blur_f32_inner(
+    in_image: &[f32], out_image: &mut [f32], width: usize, radius: usize
+)
+{
+    let radius = radius;
+    if width <= 1 || radius <= 1
+    {
+        // repeated here for the optimizer
+        return;
+    }
+    let radius = radius.min(width);
+    let m_radius = 1.0 / ((radius + 1) as f32);
+
+    for (stride_in, stride_out) in in_image
+        .chunks_exact(width)
+        .zip(out_image.chunks_exact_mut(width))
+    {
+        let half_radius = (radius + 1) / 2;
+
+        let mut accumulator: f32 = stride_in[..half_radius].iter().map(|x| f32::from(*x)).sum();
+
+        accumulator += (half_radius as f32) * stride_in[0];
+
+        for (data_in, data_out) in stride_in[half_radius..]
+            .iter()
+            .zip(stride_out.iter_mut())
+            .take(half_radius)
+        {
+            accumulator += f32::from(*data_in);
+            accumulator -= f32::from(stride_in[0]);
+
+            *data_out = accumulator * m_radius;
+        }
+
+        let mut window_slide = 0.0;
+        let mut mask = 0.0;
+
+        for (window_in, data_out) in stride_in
+            .windows(radius)
+            .zip(stride_out[half_radius..].iter_mut())
+        {
+            accumulator = accumulator - window_slide;
+            accumulator = accumulator + ((*window_in.last().unwrap()) * mask);
+
+            mask = 1.0;
+            window_slide = window_in[0];
+
+            *data_out = accumulator * m_radius;
+        }
+
+        let edge_len = stride_out.len() - half_radius;
+
+        let end_stride = &mut stride_out[edge_len..];
+        let last_item = *stride_in.last().unwrap();
+
+        for (data_in, data_out) in stride_in[edge_len..]
+            .iter()
+            .zip(end_stride)
+            .take(half_radius)
+        {
+            accumulator = accumulator - *data_in;
+            accumulator = accumulator + last_item;
+
+            *data_out = accumulator * m_radius;
         }
     }
 }
