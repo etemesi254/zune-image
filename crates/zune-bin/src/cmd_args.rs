@@ -263,7 +263,11 @@ fn add_operations() -> Vec<Arg>
             .help("Change image depth")
             .default_values(["8", "16"])
             .value_parser(value_parser!(u8))
-            .group("operations")
+            .group("operations"),
+        Arg::new("auto-orient")
+            .long("auto-orient")
+            .help("Automatically orient the image based on exif tag")
+            .action(ArgAction::SetTrue)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     args.to_vec()
