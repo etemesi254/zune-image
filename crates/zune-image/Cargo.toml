@@ -25,7 +25,7 @@ default = ["all"]
 # Whether to use threads or not for some operations
 threads = ["zune-jpegxl/threads"]
 
-all = ["image_formats", "serde-support", "metadata"]
+all = ["image_formats", "serde-support", "metadata", "threads"]
 
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs" }
