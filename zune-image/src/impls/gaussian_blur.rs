@@ -1,6 +1,6 @@
 use log::trace;
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
+use zune_imageprocs::gaussian_blur::{gaussian_blur_f32, gaussian_blur_u16, gaussian_blur_u8};
 
 use crate::errors::ImageErrors;
 use crate::image::Image;
@@ -69,6 +69,18 @@ impl OperationsTrait for GaussianBlur
                         );
                     }
                 }
+                BitType::F32 =>
+                {
+                    let mut temp = vec![0.0; width * height];
+
+                    gaussian_blur_f32(
+                        channel.reinterpret_as_mut().unwrap(),
+                        &mut temp,
+                        width,
+                        height,
+                        self.sigma
+                    );
+                }
                 _ => todo!()
             }
         }
@@ -100,6 +112,18 @@ impl OperationsTrait for GaussianBlur
 
                             gaussian_blur_u16(
                                 channel.reinterpret_as_mut::<u16>().unwrap(),
+                                &mut temp,
+                                width,
+                                height,
+                                self.sigma
+                            );
+                        }
+                        BitType::F32 =>
+                        {
+                            let mut temp = vec![0.0; width * height];
+
+                            gaussian_blur_f32(
+                                channel.reinterpret_as_mut().unwrap(),
                                 &mut temp,
                                 width,
                                 height,
