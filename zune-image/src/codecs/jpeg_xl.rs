@@ -76,6 +76,11 @@ impl EncoderTrait for JxlEncoder
     {
         BitDepth::Eight
     }
+
+    fn set_options(&mut self, options: EncoderOptions)
+    {
+        self.options = Some(options)
+    }
 }
 
 impl From<JxlEncodeErrors> for ImgEncodeErrors

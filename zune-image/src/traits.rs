@@ -1,6 +1,7 @@
 use log::info;
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
+use zune_core::options::EncoderOptions;
 
 use crate::codecs::ImageFormat;
 use crate::errors::{ImageErrors, ImageOperationsErrors};
@@ -368,6 +369,9 @@ pub trait EncoderTrait
     {
         ColorSpace::RGB
     }
+
+    /// Set encoder options for this encoder
+    fn set_options(&mut self, _: EncoderOptions) {}
 }
 /// Trait that encapsulates supported
 /// integers which work with the image crates
