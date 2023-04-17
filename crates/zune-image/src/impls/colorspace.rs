@@ -40,6 +40,12 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors>
             channel.fill(65535_u16).unwrap();
             channel
         }
+        BitType::F32 =>
+        {
+            let mut channel = Channel::new_with_length::<f32>(old_len);
+            channel.fill(1.0f32).unwrap();
+            channel
+        }
         _ =>
         {
             return Err(ImageErrors::GenericStr(
@@ -162,7 +168,7 @@ impl OperationsTrait for ColorspaceConv
 
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U16, BitType::U8]
+        &[BitType::U16, BitType::U8, BitType::F32]
     }
 }
 

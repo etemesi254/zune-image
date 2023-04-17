@@ -1,6 +1,6 @@
 use log::trace;
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::box_blur::{box_blur_u16, box_blur_u8};
+use zune_imageprocs::box_blur::{box_blur_f32, box_blur_u16, box_blur_u8};
 
 use crate::errors::ImageErrors;
 use crate::image::Image;
@@ -60,6 +60,13 @@ impl OperationsTrait for BoxBlur
                             let data = channel.reinterpret_as_mut::<u8>().unwrap();
                             box_blur_u8(data, &mut scratch_space, width, height, self.radius);
                         }
+
+                        BitType::F32 =>
+                        {
+                            let mut scratch_space = vec![0.0; width * height];
+                            let data = channel.reinterpret_as_mut::<f32>().unwrap();
+                            box_blur_f32(data, &mut scratch_space, width, height, self.radius);
+                        }
                         _ => todo!()
                     });
                 }
@@ -91,6 +98,17 @@ impl OperationsTrait for BoxBlur
                         box_blur_u8(data, &mut scratch_space, width, height, self.radius);
                     }
                 }
+
+                BitType::F32 =>
+                {
+                    let mut scratch_space = vec![0.0; width * height];
+
+                    for channel in image.get_channels_mut(false)
+                    {
+                        let data = channel.reinterpret_as_mut::<f32>().unwrap();
+                        box_blur_f32(data, &mut scratch_space, width, height, self.radius);
+                    }
+                }
                 _ => todo!()
             }
         }
@@ -99,6 +117,6 @@ impl OperationsTrait for BoxBlur
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
