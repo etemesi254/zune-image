@@ -242,6 +242,11 @@ impl EncoderTrait for JpegEncoder
     {
         BitDepth::Eight
     }
+
+    fn set_options(&mut self, options: EncoderOptions)
+    {
+        self.options = Some(options)
+    }
 }
 
 /// Match the library colorspace to jpeg color type
