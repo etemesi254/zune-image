@@ -1161,7 +1161,7 @@ impl<'a> JxlSimpleEncoder<'a>
         let width = self.options.get_width();
         let height = self.options.get_height();
         let colorspace = self.options.get_colorspace();
-        let effort = usize::from(self.options.get_effort());
+        let effort = usize::from(self.options.get_effort()).clamp(0, 127);
         let num_components = colorspace.num_components();
         let stride = depth.size_of() * width * num_components;
 
