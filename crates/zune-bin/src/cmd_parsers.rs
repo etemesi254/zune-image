@@ -1,39 +1,10 @@
 use clap::ArgMatches;
-use zune_core::options::DecoderOptions;
+use zune_core::options::{DecoderOptions, EncoderOptions};
 
 pub mod global_options;
 
 pub mod filters;
 pub mod operations;
-
-/// Fill arguments into a Vec according to the
-/// order which they were specified in the command line
-pub fn fill_args(options: &ArgMatches) -> Vec<String>
-{
-    let mut map = Vec::with_capacity(20);
-
-    for (_pos, id) in options.ids().enumerate()
-    {
-        if options.try_get_many::<clap::Id>(id.as_str()).is_ok()
-        {
-            // ignore groups
-            continue;
-        }
-
-        let value_source = options
-            .value_source(id.as_str())
-            .expect("id came from matches");
-
-        if value_source != clap::parser::ValueSource::CommandLine
-        {
-            // ignore things not passed via command line
-            continue;
-        }
-        let argument = id.to_string();
-        map.push(argument)
-    }
-    map
-}
 
 pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
 {
@@ -47,4 +18,20 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
         .set_max_width(max_width)
         .set_use_unsafe(use_unsafe)
         .set_strict_mode(strict_mode)
+}
+
+pub fn get_encoder_options(options: &ArgMatches) -> EncoderOptions
+{
+    let quality = *options.get_one::<u8>("quality").unwrap();
+    let encode_threads = *options.get_one::<u8>("encode-threads").unwrap();
+    let effort = *options.get_one::<u8>("effort").unwrap();
+    let progressive = options.contains_id("progressive");
+    let strip_metadata = options.contains_id("strip");
+
+    EncoderOptions::default()
+        .set_quality(quality)
+        .set_num_threads(encode_threads)
+        .set_effort(effort)
+        .set_strip_metadata(strip_metadata)
+        .set_jpeg_encode_progressive(progressive)
 }

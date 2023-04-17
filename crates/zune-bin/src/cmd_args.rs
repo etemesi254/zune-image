@@ -39,6 +39,10 @@ impl ValueEnum for MmapOptions
 }
 #[rustfmt::skip]
 pub fn create_cmd_args() -> Command {
+    let (options_args, option_group) = add_operations();
+    let (filter_args, filter_group) = add_filters();
+    let (encode_args, encode_group) = add_encode_options();
+
     Command::new("zune")
         .after_help(AFTER_HELP)
         .author("Caleb Etemesi")
@@ -58,7 +62,7 @@ pub fn create_cmd_args() -> Command {
             .help("Output to write the data to")
             .action(ArgAction::Append)
             .value_parser(value_parser!(OsString))
-            )
+        )
         .arg(Arg::new("mmap")
             .long("mmap")
             .help_heading("ADVANCED")
@@ -85,16 +89,13 @@ pub fn create_cmd_args() -> Command {
             .help("Support experimental image decoders in the command line")
             .action(ArgAction::SetTrue))
         .args(add_logging_options())
-        .args(add_operations())
         .args(add_settings())
-        .args(add_filters())
-        .args(add_encode_options())
-        .group(ArgGroup::new("operations")
-            .args(["flip", "transpose", "grayscale", "flop", "mirror", "invert", "brighten", "crop", "threshold", "gamma", "contrast", "resize"])
-            .multiple(true))
-        .group(ArgGroup::new("filters")
-            .args(["box-blur", "blur", "unsharpen", "mean-blur"])
-            .multiple(true))
+        .args(options_args)
+        .group(option_group)
+        .args(filter_args)
+        .group(filter_group)
+        .args(encode_args)
+        .group(encode_group)
 }
 
 fn add_logging_options() -> [Arg; 4]
@@ -161,12 +162,13 @@ fn add_settings() -> Vec<Arg>
     ];
     // list them in order
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
-
     args.to_vec()
 }
-fn add_operations() -> Vec<Arg>
+
+fn add_operations() -> (Vec<Arg>, ArgGroup)
 {
     static HELP_HEADING: &str = "Image Operations";
+    static GROUP: &str = "Operations";
 
     let mut args = [
         Arg::new("grayscale")
@@ -175,38 +177,38 @@ fn add_operations() -> Vec<Arg>
             .action(ArgAction::SetTrue)
             .help("Convert the image to grayscale")
             .long_help("Change image type from RGB to grayscale")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("transpose")
             .long("transpose")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Transpose an image")
-            .group("operations")
+            .group(GROUP)
             .long_help(TRANSPOSE_HELP),
         Arg::new("flip")
             .long("flip")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flip an image")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("flop")
             .long("flop")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flop an image")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("mirror")
             .long("mirror")
             .help_heading(HELP_HEADING)
             .value_parser(["north", "south", "east", "west"])
             .help("Mirror the image")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("invert")
             .long("invert")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Invert image pixels")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("brighten")
             .long("brighten")
             .help_heading(HELP_HEADING)
@@ -214,66 +216,71 @@ fn add_operations() -> Vec<Arg>
             .long_help(BRIGHTEN_HELP)
             .allow_negative_numbers(true)
             .value_parser(value_parser!(f32))
-            .group("operations"),
+            .group(GROUP),
         Arg::new("crop")
             .long("crop")
             .help_heading(HELP_HEADING)
-            .value_name("out_w:out_h:x:y")
+            .value_names(["width", "height", "x", "y"])
             .help("Crop an image ")
             .long_help(CROP_HELP)
-            .group("operations"),
+            .group(GROUP),
         Arg::new("threshold")
             .long("threshold")
-            .value_name("threshold:mode")
+            .value_names(["threshold", "mode"])
             .help_heading(HELP_HEADING)
             .help("Replace pixels in an image depending on intensity of the pixel.")
             .long_help(THRESHOLD_HELP)
-            .group("operations"),
+            .group(GROUP),
         Arg::new("gamma")
             .long("gamma")
             .help("Gamma adjust an image")
             .help_heading(HELP_HEADING)
             .value_parser(value_parser!(f32))
-            .group("operations"),
+            .group(GROUP),
         Arg::new("stretch_contrast")
             .long("stretch-contrast")
             .value_parser(value_parser!(u16))
             .value_names(["lower", "upper"])
             .help_heading(HELP_HEADING)
             .help("Linearly stretch contrast in an image")
-            .group("operations"),
+            .group(GROUP),
         Arg::new("contrast")
             .long("contrast")
             .value_name("contrast")
             .help_heading(HELP_HEADING)
             .help("Adjust contrast of the image")
             .value_parser(value_parser!(f32))
-            .group("operations"),
+            .group(GROUP),
         Arg::new("resize")
             .long("resize")
             .value_names(["width", "height"])
             .help_heading(HELP_HEADING)
             .value_parser(value_parser!(usize))
             .help("Resize an image")
-            .group("operations"),
-        // TODO: Value names
+            .group(GROUP),
         Arg::new("depth")
             .long("depth")
             .help_heading(HELP_HEADING)
             .help("Change image depth")
-            .default_values(["8", "16"])
             .value_parser(value_parser!(u8))
-            .group("operations"),
+            .group(GROUP),
         Arg::new("auto-orient")
             .long("auto-orient")
+            .help_heading(HELP_HEADING)
             .help("Automatically orient the image based on exif tag")
             .action(ArgAction::SetTrue)
+            .group(GROUP)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
-    args.to_vec()
+
+    let arg_group = ArgGroup::new(GROUP)
+        .args(args.iter().map(|x| x.get_id()))
+        .multiple(true);
+
+    (args.to_vec(), arg_group)
 }
 
-fn add_encode_options() -> Vec<Arg>
+fn add_encode_options() -> (Vec<Arg>, ArgGroup)
 {
     static HELP_HEADING: &str = "Encode Operations";
     static GROUP: &str = "Encode operations";
@@ -295,68 +302,101 @@ fn add_encode_options() -> Vec<Arg>
             .help_heading(HELP_HEADING),
         Arg::new("effort")
             .long("effort")
+            .default_value("4")
             .value_name("effort")
             .value_parser(value_parser!(u8))
             .help("Effort to put into encoding")
             .group(GROUP)
+            .help_heading(HELP_HEADING),
+        Arg::new("progressive")
+            .long("progressive")
+            .help("Encode images using progressive encoding where supported")
+            .action(ArgAction::SetTrue)
+            .group(GROUP)
+            .help_heading(HELP_HEADING),
+        Arg::new("strip")
+            .long("strip")
+            .help("Strip metadata when encoding images (where supported)")
+            .action(ArgAction::SetTrue)
+            .group(GROUP)
             .help_heading(HELP_HEADING)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
-    args.to_vec()
+    let arg_group = ArgGroup::new(GROUP)
+        .args(args.iter().map(|x| x.get_id()))
+        .multiple(true);
+    (args.to_vec(), arg_group)
 }
 
-fn add_filters() -> Vec<Arg>
+fn add_filters() -> (Vec<Arg>, ArgGroup)
 {
+    static GROUP: &str = "filters";
+
     let mut args = [
         Arg::new("box-blur")
             .long("box-blur")
             .help("Perform a box blur")
             .value_name("radius")
             .long_help(BOX_BLUR_HELP)
-            .help_heading("Filters")
+            .help_heading(GROUP)
             .value_parser(value_parser!(usize))
-            .group("filters"),
+            .group(GROUP),
         Arg::new("blur")
             .long("blur")
             .help("Perform a gaussian blur")
             .value_name("sigma")
             .long_help(GAUSSIAN_BLUR_HELP)
-            .help_heading("Filters")
+            .help_heading(GROUP)
             .value_parser(value_parser!(f32))
-            .group("filters"),
+            .group(GROUP),
         Arg::new("unsharpen")
             .long("unsharpen")
             .help("Perform an unsharp mask")
-            .help_heading("Filters")
-            .value_name("sigma:threshold")
-            .group("filters"),
+            .help_heading(GROUP)
+            .value_names(["sigma", "threshold"])
+            .value_parser(value_parser!(f32))
+            .group(GROUP),
         Arg::new("statistic")
             .long("statistic")
             .help("Replace each pixel with corresponding statistic from the neighbourhood")
-            .help_heading("Filters")
-            .value_name("radius:statistic"),
+            .help_heading(GROUP)
+            .value_names(["radius", "statistic"])
+            .group(GROUP),
         Arg::new("mean-blur")
             .long("mean-blur")
             .help("Perform a mean blur")
             .value_name("radius")
-            .help_heading("Filters")
+            .help_heading(GROUP)
             .value_parser(value_parser!(usize))
-            .group("filters"),
+            .group(GROUP),
         Arg::new("sobel")
             .long("sobel")
             .help("Perform a 3x3 sobel convolution operation")
             .action(ArgAction::SetTrue)
-            .help_heading("Filters")
-            .group("filters"),
+            .help_heading(GROUP)
+            .group(GROUP),
         Arg::new("scharr")
             .long("scharr")
             .help("Perform a 3x3 scharr convolution operation")
             .action(ArgAction::SetTrue)
-            .help_heading("Filters")
-            .group("filters")
+            .help_heading(GROUP)
+            .group(GROUP),
+        Arg::new("convolve")
+            .long("convolve")
+            .allow_hyphen_values(true)
+            .help("Perform a 2D NxN convolution. N can be either of 3,5 or 7")
+            .group(GROUP)
+            .help_heading(GROUP)
+            .num_args(..=9)
+            .action(ArgAction::Append)
+            .value_parser(value_parser!(f32))
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
-    args.to_vec()
+    let arg_group = ArgGroup::new(GROUP)
+        .args(args.iter().map(|x| x.get_id()))
+        .multiple(true);
+
+    (args.to_vec(), arg_group)
 }
 
 #[test]

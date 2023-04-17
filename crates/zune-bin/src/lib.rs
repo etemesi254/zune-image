@@ -22,9 +22,7 @@ pub fn main()
 
     let parsed_opts = cmd_parsers::global_options::parse_options(&options);
 
-    let args = crate::cmd_parsers::fill_args(&options);
-
-    let result = create_and_exec_workflow_from_cmd(&options, &args, &parsed_opts);
+    let result = create_and_exec_workflow_from_cmd(&options, &parsed_opts);
 
     if result.is_err()
     {

@@ -72,23 +72,3 @@ impl std::str::FromStr for IColorSpace
         Err(format!("Invalid variant: {s}"))
     }
 }
-pub fn get_four_pair_args(input: &str) -> Result<[usize; 4], String>
-{
-    // format like imagemagick
-    //[width]:[height]:[+x]:[+y]
-    let mut result = [0; 4];
-
-    let split = input.split(':');
-    let mut counter = 0;
-    for (single, pos) in split.zip(result.iter_mut())
-    {
-        *pos = str::parse::<usize>(single).map_err(|x| x.to_string())?;
-        counter += 1;
-    }
-    if counter != 4
-    {
-        return Err(format!("Not enough arguments for crop {counter}"));
-    }
-
-    Ok(result)
-}
