@@ -93,9 +93,9 @@ where
 {
     for (((rgb, y), co), cg) in pixels.chunks_exact(6).take(oxs).zip(y).zip(co).zip(cg)
     {
-        let r = u16::from_be_bytes([rgb[0], rgb[1]]).into();
-        let g = u16::from_be_bytes([rgb[2], rgb[3]]).into();
-        let b = u16::from_be_bytes([rgb[4], rgb[5]]).into();
+        let r = u16::from_ne_bytes([rgb[0], rgb[1]]).into();
+        let g = u16::from_ne_bytes([rgb[2], rgb[3]]).into();
+        let b = u16::from_ne_bytes([rgb[4], rgb[5]]).into();
 
         let mut y_x = (*y).into();
         let mut co_x = (*co).into();
@@ -150,9 +150,9 @@ pub fn fill_row_rgba16<T>(
         .zip(cg)
         .zip(alpha)
     {
-        let r = u16::from_be_bytes([rgb[0], rgb[1]]).into();
-        let g = u16::from_be_bytes([rgb[2], rgb[3]]).into();
-        let b = u16::from_be_bytes([rgb[4], rgb[5]]).into();
+        let r = u16::from_ne_bytes([rgb[0], rgb[1]]).into();
+        let g = u16::from_ne_bytes([rgb[2], rgb[3]]).into();
+        let b = u16::from_ne_bytes([rgb[4], rgb[5]]).into();
         let a = u16::from_ne_bytes([rgb[6], rgb[7]]).into();
 
         let mut y_x = (*y).into();
