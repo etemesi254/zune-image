@@ -12,8 +12,8 @@ use zune_image::errors::ImageErrors;
 use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 
-use crate::cmd_parsers::get_decoder_options;
 use crate::cmd_parsers::global_options::CmdOptions;
+use crate::cmd_parsers::{get_decoder_options, get_encoder_options};
 use crate::file_io::ZuneFile;
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
@@ -22,7 +22,7 @@ use crate::MmapOptions;
 #[allow(unused_variables)]
 #[allow(clippy::unused_io_amount)] // yes it's what I want
 pub(crate) fn create_and_exec_workflow_from_cmd(
-    args: &ArgMatches, options: &[String], cmd_opts: &CmdOptions
+    args: &ArgMatches, cmd_opts: &CmdOptions
 ) -> Result<(), ImageErrors>
 {
     if let Some(view) = args.value_source("probe")
@@ -45,7 +45,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         File::open(in_file)?.read(&mut buf)?;
 
-        add_operations(args, options, &mut workflow)?;
+        add_operations(args, &mut workflow)?;
 
         let mmap_opt = cmd_opts.mmap;
         let use_mmap = mmap_opt == MmapOptions::Auto || mmap_opt == MmapOptions::Always;
@@ -70,6 +70,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
         }
 
+        let options = get_encoder_options(args);
+
         if let Some(source) = args.value_source("out")
         {
             if source == CommandLine
@@ -78,10 +80,11 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 {
                     if let Some(ext) = Path::new(out_file).extension()
                     {
-                        if let Some((encode_type, encoder)) =
+                        if let Some((encode_type, mut encoder)) =
                             ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
                         {
                             debug!("Treating {:?} as a {:?} format", out_file, encode_type);
+                            encoder.set_options(options);
                             workflow.add_encoder(encoder);
                         }
                         else
@@ -161,7 +164,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 }
 
 pub fn add_operations<T: IntoImage>(
-    args: &ArgMatches, order_args: &[String], workflow: &mut WorkFlow<T>
+    args: &ArgMatches, workflow: &mut WorkFlow<T>
 ) -> Result<(), String>
 {
     if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
@@ -169,10 +172,27 @@ pub fn add_operations<T: IntoImage>(
         println!();
     }
 
-    crate::cmd_parsers::operations::parse_options(workflow, order_args, args)?;
-    crate::cmd_parsers::filters::parse_options(workflow, order_args, args)?;
+    for (_pos, id) in args.ids().enumerate()
+    {
+        if args.try_get_many::<clap::Id>(id.as_str()).is_ok()
+        {
+            // ignore groups
+            continue;
+        }
 
-    debug!("Arranging options as specified in cmd");
+        let value_source = args
+            .value_source(id.as_str())
+            .expect("id came from matches");
+
+        if value_source != clap::parser::ValueSource::CommandLine
+        {
+            // ignore things not passed via command line
+            continue;
+        }
+
+        crate::cmd_parsers::operations::parse_options(workflow, id.as_str(), args)?;
+        crate::cmd_parsers::filters::parse_options(workflow, id.as_str(), args)?;
+    }
 
     if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
     {
