@@ -1,5 +1,5 @@
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::sobel::sobel_int;
+use zune_imageprocs::sobel::{sobel_float, sobel_int};
 
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
@@ -48,6 +48,12 @@ impl OperationsTrait for Sobel
                         width,
                         height
                     ),
+                    BitType::F32 => sobel_float::<f32>(
+                        channel.reinterpret_as().unwrap(),
+                        out_channel.reinterpret_as_mut().unwrap(),
+                        width,
+                        height
+                    ),
                     _ => todo!()
                 }
                 *channel = out_channel;
@@ -74,6 +80,12 @@ impl OperationsTrait for Sobel
                                 width,
                                 height
                             ),
+                            BitType::F32 => sobel_float::<f32>(
+                                channel.reinterpret_as().unwrap(),
+                                out_channel.reinterpret_as_mut().unwrap(),
+                                width,
+                                height
+                            ),
                             _ => todo!()
                         }
                         *channel = out_channel;
@@ -87,6 +99,6 @@ impl OperationsTrait for Sobel
 
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
