@@ -33,6 +33,7 @@ impl OperationsTrait for Invert
             {
                 BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
                 BitType::U16 => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
+                BitType::F32 => invert(channel.reinterpret_as_mut::<f32>().unwrap()),
                 _ => todo!()
             }
         }
@@ -51,6 +52,6 @@ impl OperationsTrait for Invert
     }
     fn supported_types(&self) -> &'static [BitType]
     {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
