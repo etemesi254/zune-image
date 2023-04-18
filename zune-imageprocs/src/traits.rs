@@ -1,3 +1,4 @@
+#![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 //! Various operations useful for generic image processing.
 //!
 //!
@@ -164,3 +165,81 @@ macro_rules! numops_for_int {
 numops_for_int!(u8);
 numops_for_int!(u16);
 numops_for_int!(i32);
+
+impl NumOps<f32> for f32
+{
+    fn max_val() -> f32
+    {
+        1.0
+    }
+
+    fn min_val() -> f32
+    {
+        0.0
+    }
+
+    fn from_u8(x: u8) -> f32
+    {
+        f32::from(x)
+    }
+
+    fn from_u32(x: u32) -> f32
+    {
+        x as f32
+    }
+
+    fn from_f64(x: f64) -> f32
+    {
+        x as f32
+    }
+
+    fn from_f32(x: f32) -> f32
+    {
+        x
+    }
+
+    fn from_usize(x: usize) -> f32
+    {
+        x as f32
+    }
+
+    fn from_i32(x: i32) -> f32
+    {
+        x as f32
+    }
+
+    fn from_u64(x: u64) -> f32
+    {
+        x as f32
+    }
+
+    fn saturating_add(self, other: f32) -> f32
+    {
+        self + other
+    }
+
+    fn saturating_sub(self, other: f32) -> f32
+    {
+        self - other
+    }
+
+    fn one() -> f32
+    {
+        1.0
+    }
+
+    fn to_usize(self) -> usize
+    {
+        self as _
+    }
+
+    fn to_f64(self) -> f64
+    {
+        self as _
+    }
+
+    fn zclamp(self, min: f32, max: f32) -> f32
+    {
+        self.clamp(min, max)
+    }
+}
