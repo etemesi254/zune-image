@@ -36,6 +36,21 @@ pub fn box_blur_u8(
     transpose::transpose_u8(scratch_space, in_out_image, height, width);
 }
 
+pub fn box_blur_f32(
+    in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, radius: usize
+)
+{
+    if width == 0 || radius <= 1
+    {
+        warn!("Box blur with radius less than or equal to 1 does nothing");
+        return;
+    }
+    box_blur_f32_inner(in_out_image, scratch_space, width, radius);
+    transpose::transpose_generic(scratch_space, in_out_image, width, height);
+    box_blur_f32_inner(in_out_image, scratch_space, height, radius);
+    transpose::transpose_generic(scratch_space, in_out_image, height, width);
+}
+
 #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
 pub(crate) fn box_blur_inner<T>(in_image: &[T], out_image: &mut [T], width: usize, radius: usize)
 where
@@ -160,8 +175,8 @@ pub(crate) fn box_blur_f32_inner(
             .zip(stride_out.iter_mut())
             .take(half_radius)
         {
-            accumulator += f32::from(*data_in);
-            accumulator -= f32::from(stride_in[0]);
+            accumulator += *data_in;
+            accumulator -= stride_in[0];
 
             *data_out = accumulator * m_radius;
         }
@@ -173,8 +188,8 @@ pub(crate) fn box_blur_f32_inner(
             .windows(radius)
             .zip(stride_out[half_radius..].iter_mut())
         {
-            accumulator = accumulator - window_slide;
-            accumulator = accumulator + ((*window_in.last().unwrap()) * mask);
+            accumulator -= window_slide;
+            accumulator += (*window_in.last().unwrap()) * mask;
 
             mask = 1.0;
             window_slide = window_in[0];
@@ -192,8 +207,8 @@ pub(crate) fn box_blur_f32_inner(
             .zip(end_stride)
             .take(half_radius)
         {
-            accumulator = accumulator - *data_in;
-            accumulator = accumulator + last_item;
+            accumulator -= *data_in;
+            accumulator += last_item;
 
             *data_out = accumulator * m_radius;
         }
