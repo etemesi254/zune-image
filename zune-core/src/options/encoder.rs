@@ -132,6 +132,11 @@ impl EncoderOptions
         self
     }
     /// Set quality of the image to be encoded
+    ///
+    /// Quality is clamped from 0..100
+    ///
+    /// Quality means different options depending on the encoder, see
+    /// [get_quality](Self::get_quality)
     pub fn set_quality(mut self, quality: u8) -> Self
     {
         self.quality = quality.clamp(0, 100);
@@ -153,6 +158,11 @@ impl EncoderOptions
 
         self
     }
+    pub fn set_effort(mut self, effort: u8) -> Self
+    {
+        self.effort = effort;
+        self
+    }
 
     /// Return number of threads configured for multithreading
     /// where possible
@@ -164,6 +174,16 @@ impl EncoderOptions
         self.num_threads
     }
 
+    /// Set whether the encoder should remove metadata from the image
+    ///
+    /// When set to `true`, supported encoders will strip away metadata
+    /// from the resulting image. If set to false, where supported, encoders
+    /// will not remove metadata from images
+    pub fn set_strip_metadata(mut self, yes: bool) -> Self
+    {
+        self.flags.set(EncoderFlags::IMAGE_STRIP_METADATA, yes);
+        self
+    }
     /// Whether or not the encoder should remove metadata from the image
     ///
     /// The default value is false, and encoders that respect this try to preserve as much
@@ -195,5 +215,14 @@ impl EncoderOptions
     pub const fn jpeg_optimized_huffman_tables(&self) -> bool
     {
         self.flags.contains(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN)
+    }
+
+    /// Set whether the jpeg encoder should encode the imagei in progressive mode
+    ///
+    /// Default is `false`
+    pub fn set_jpeg_encode_progressive(mut self, yes: bool) -> Self
+    {
+        self.flags.set(EncoderFlags::JPEG_OPTIMIZED_HUFFMAN, yes);
+        self
     }
 }
