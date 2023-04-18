@@ -98,7 +98,7 @@ impl FilterMethod
         }
     }
 }
-
+#[allow(clippy::derivable_impls)]
 impl Default for FilterMethod
 {
     fn default() -> Self
@@ -172,6 +172,10 @@ impl PngColor
             PngColor::RGBA => 4,
             PngColor::Unknown => unreachable!()
         }
+    }
+    pub(crate) fn has_alpha(&self) -> bool
+    {
+        matches!(self, PngColor::RGBA | PngColor::LumaA)
     }
     pub(crate) fn from_int(int: u8) -> Option<PngColor>
     {

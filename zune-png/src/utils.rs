@@ -1,3 +1,5 @@
+use zune_core::bit_depth::BitDepth;
+
 use crate::decoder::PLTEEntry;
 use crate::enums::PngColor;
 
@@ -270,5 +272,50 @@ pub(crate) fn expand_bits_to_byte(
                 *out_val = scale * ((in_val >> shift) & 0x0f);
             });
         }
+    }
+}
+
+/// Add an alpha channel to an image with no alpha
+///
+/// This feels the alpha channel with 255 or 65535 depending on image depth
+pub(crate) fn add_alpha(input: &[u8], output: &mut [u8], colorspace: PngColor, depth: BitDepth)
+{
+    match (colorspace, depth)
+    {
+        (PngColor::Luma, BitDepth::Eight) =>
+        {
+            for (in_array, out_chunk) in input.iter().zip(output.chunks_exact_mut(2))
+            {
+                out_chunk[0] = *in_array;
+                out_chunk[1] = 255;
+            }
+        }
+        (PngColor::Luma, BitDepth::Sixteen) =>
+        {
+            for (in_array, out_chunk) in input.chunks_exact(2).zip(output.chunks_exact_mut(4))
+            {
+                out_chunk[0..2].copy_from_slice(in_array);
+                out_chunk[2] = 255;
+                out_chunk[3] = 255;
+            }
+        }
+        (PngColor::RGB, BitDepth::Eight) =>
+        {
+            for (in_array, out_chunk) in input.chunks_exact(3).zip(output.chunks_exact_mut(4))
+            {
+                out_chunk[0..3].copy_from_slice(in_array);
+                out_chunk[3] = 255;
+            }
+        }
+        (PngColor::RGB, BitDepth::Sixteen) =>
+        {
+            for (in_array, out_chunk) in input.chunks_exact(6).zip(output.chunks_exact_mut(8))
+            {
+                out_chunk[0..6].copy_from_slice(in_array);
+                out_chunk[6] = 255;
+                out_chunk[7] = 255;
+            }
+        }
+        (a, b) => panic!("Unknown combination of depth {a:?} and color type for expand alpha {b:?}")
     }
 }
