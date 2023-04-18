@@ -61,6 +61,7 @@ pub fn create_unpremul_table_u8() -> [u128; 256]
 ///
 /// Useful for speeding up un-pre-multiplying alpha
 #[must_use]
+#[allow(clippy::needless_range_loop)]
 pub fn create_unpremul_table_u16() -> Vec<u128>
 {
     let mut array = vec![0; 65536];
