@@ -18,6 +18,7 @@ fn decoder_strict_mode() -> DecoderFlags
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+    flags.set(DecoderFlags::PNG_ADD_ALPHA_CHANNEL, false);
 
     flags
 }
@@ -41,6 +42,7 @@ fn fast_options() -> DecoderFlags
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+    flags.set(DecoderFlags::PNG_ADD_ALPHA_CHANNEL, false);
 
     flags
 }
@@ -65,6 +67,7 @@ fn cmd_options() -> DecoderFlags
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+    flags.set(DecoderFlags::PNG_ADD_ALPHA_CHANNEL, false);
 
     flags
 }
@@ -99,6 +102,8 @@ bitflags! {
         const ZUNE_USE_AVX                  =  0b0000_0000_0000_0000_0000_0000_1000_0000;
         /// Whether we should use avx2 instructions where possible.
         const ZUNE_USE_AVX2                 =  0b0000_0000_0000_0000_0000_0001_0000_0000;
+        /// Whether the png decoder should add alpha channel where possible.
+        const PNG_ADD_ALPHA_CHANNEL         =  0b0000_0000_0000_0000_0000_0010_0000_0000;
     }
 }
 
@@ -369,6 +374,23 @@ impl DecoderOptions
     {
         self.flags.set(DecoderFlags::PNG_CONFIRM_CRC, yes);
         self
+    }
+    /// Set whether the png decoder should add an alpha channel to
+    /// images where possible.
+    ///
+    /// For Luma images, it converts it to Luma+Alpha
+    ///
+    /// For RGB images it converts it to RGB+Alpha
+    pub fn png_set_add_alpha_channel(mut self, yes: bool) -> Self
+    {
+        self.flags.set(DecoderFlags::PNG_ADD_ALPHA_CHANNEL, yes);
+        self
+    }
+    /// Return true whether the png decoder should add an alpha
+    /// channel to images where possible
+    pub const fn png_get_add_alpha_channel(&self) -> bool
+    {
+        self.flags.contains(DecoderFlags::PNG_ADD_ALPHA_CHANNEL)
     }
 }
 
