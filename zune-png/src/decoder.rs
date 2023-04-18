@@ -18,7 +18,7 @@ use crate::filters::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
-use crate::utils::{expand_bits_to_byte, expand_palette, expand_trns};
+use crate::utils::{add_alpha, expand_bits_to_byte, expand_palette, expand_trns};
 
 /// A palette entry.
 ///
@@ -270,6 +270,15 @@ impl<'a> PngDecoder<'a>
         if !self.seen_hdr
         {
             return None;
+        }
+        if self.options.png_get_add_alpha_channel()
+        {
+            return match self.png_info.color
+            {
+                PngColor::Luma | PngColor::LumaA => Some(ColorSpace::LumaA),
+                PngColor::Palette | PngColor::RGB | PngColor::RGBA => Some(ColorSpace::RGBA),
+                PngColor::Unknown => unreachable!()
+            };
         }
         if !self.seen_trns
         {
@@ -550,6 +559,24 @@ impl<'a> PngDecoder<'a>
         {
             None
         }
+    }
+    /// Get a mutable reference to the decoder options
+    /// for the decoder instance
+    ///
+    /// Can be used to modify options before actual decoding but after initial
+    /// creation
+    pub const fn get_options(&self) -> &DecoderOptions
+    {
+        &self.options
+    }
+
+    /// Overwrite decoder options with the new options
+    ///
+    /// Can be used to modify decoding after initialization but before
+    /// decoding, it does not do anything after decoding an image
+    pub fn set_options(&mut self, options: DecoderOptions)
+    {
+        self.options = options;
     }
 
     /// Decode PNG encoded images and write raw pixels into `out`
@@ -876,7 +903,12 @@ impl<'a> PngDecoder<'a>
         let mut first_row = true;
         let mut out_position = 0;
 
-        let will_post_process = self.seen_trns | self.seen_ptle | (info.depth < 8);
+        let mut will_post_process = self.seen_trns | self.seen_ptle | (info.depth < 8);
+
+        let add_alpha_channel =
+            self.options.png_get_add_alpha_channel() && (!self.png_info.color.has_alpha());
+
+        will_post_process |= add_alpha_channel;
 
         if will_post_process && self.previous_stride.len() < out_chunk_size
         {
@@ -970,7 +1002,7 @@ impl<'a> PngDecoder<'a>
                 if info.depth < 8
                 {
                     // check if we will run any other transform
-                    let extra_transform = self.seen_ptle | self.seen_trns;
+                    let extra_transform = self.seen_ptle | self.seen_trns | add_alpha_channel;
 
                     if extra_transform
                     {
@@ -1052,11 +1084,18 @@ impl<'a> PngDecoder<'a>
                     // the palette entries stored in self.previous_stride
                     // the row to fill the palette sored in to_filter row,
                     // so we can finally expand the entries
-                    if self.seen_trns
+
+                    if self.seen_trns | add_alpha_channel
                     {
                         // if tRNS chunk is present in paletted images, it contains
                         // alpha byte values, so that means we create alpha data from
                         // raw bytes
+
+                        // if we are to add alpha channel for palette images , we simply just
+                        // read four entries from the palette.
+                        //
+                        // The palette is set that the alpha channel is initialized as 255 for non alpha
+                        // images,
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
                     }
                     else
@@ -1064,6 +1103,17 @@ impl<'a> PngDecoder<'a>
                         // Normal expansion
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
                     }
+                }
+                else if add_alpha_channel
+                {
+                    // the image is a normal RGB/ Luma image, which we need to add the alpha channel
+                    // do it here
+                    add_alpha(
+                        &self.previous_stride,
+                        to_filter_row,
+                        self.png_info.color,
+                        self.get_depth().unwrap()
+                    );
                 }
             }
         }
@@ -1154,7 +1204,7 @@ impl<'a> PngDecoder<'a>
 
                     let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
 
-                    if self.seen_trns
+                    if self.seen_trns | add_alpha_channel
                     {
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
                     }
@@ -1162,6 +1212,15 @@ impl<'a> PngDecoder<'a>
                     {
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
                     }
+                }
+                else if add_alpha_channel
+                {
+                    add_alpha(
+                        &self.previous_stride,
+                        to_filter_row,
+                        self.png_info.color,
+                        self.get_depth().unwrap()
+                    );
                 }
             }
         }
