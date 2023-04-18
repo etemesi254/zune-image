@@ -69,3 +69,52 @@ pub fn spatial<T, F>(
         }
     }
 }
+
+/// A special spatial function that takes advantage of const generics to
+/// speed up operations for convolve
+#[allow(non_snake_case)]
+pub(crate) fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, function: F
+) where
+    T: Default + Copy,
+    F: Fn(&[T; OUT_SIZE]) -> T
+{
+    let old_width = width;
+    let height = (RADIUS * 2) + height;
+    let width = (RADIUS * 2) + width;
+
+    assert_eq!(height * width, in_channel.len());
+
+    let radius_size = (2 * RADIUS) + 1;
+
+    let radius_loop = radius_size >> 1;
+
+    let mut local_storage = [T::default(); OUT_SIZE];
+
+    for y in radius_loop..height - radius_loop
+    {
+        for x in radius_loop..width - radius_loop
+        {
+            let iy = y - radius_loop;
+            let ix = x - radius_loop;
+
+            let mut i = 0;
+
+            for ky in 0..radius_size
+            {
+                let iy_i = iy + ky;
+
+                let in_slice = &in_channel[(iy_i * width) + ix..(iy_i * width) + ix + radius_size];
+                z_prefetch(in_channel, (iy_i + 1) * width + ix);
+                local_storage[i..i + radius_size].copy_from_slice(in_slice);
+                z_prefetch(in_channel, (iy_i + 2) * width + ix);
+
+                i += radius_size;
+            }
+
+            let result = function(&local_storage);
+
+            out_channel[iy * old_width + ix] = result;
+        }
+    }
+}
