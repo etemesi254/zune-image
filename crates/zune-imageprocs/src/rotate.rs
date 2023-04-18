@@ -1,5 +1,3 @@
-use crate::flip::flip;
-
 pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T])
 {
     let angle = angle % 360.0;
@@ -30,7 +28,7 @@ pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize)
     {
         for (a, b) in top_chunk.iter_mut().zip(bottom_chunk.iter_mut())
         {
-            core::mem::swap(a, b)
+            core::mem::swap(a, b);
         }
     }
 }

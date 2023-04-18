@@ -1,3 +1,5 @@
+#![allow(clippy::identity_op)]
+
 use log::{debug, error, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
