@@ -21,7 +21,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
 
         let pixels = self
             .decode()
-            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
+            .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
 
         let depth = self.get_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
@@ -56,7 +56,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
+            .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_depth().unwrap();
