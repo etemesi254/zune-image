@@ -8,7 +8,9 @@ use crate::errors::{ImageErrors, ImageOperationsErrors};
 use crate::image::Image;
 use crate::impls::colorspace::ColorspaceConv;
 use crate::impls::depth::Depth;
-use crate::metadata::ImageMetadata;
+use crate::impls::premul_alpha::PremultiplyAlpha;
+use crate::metadata::AlphaState::NonPreMultiplied;
+use crate::metadata::{AlphaState, ImageMetadata};
 use crate::workflow::EncodeResult;
 
 /// Encapsulates an image decoder.
@@ -154,6 +156,10 @@ pub trait OperationsTrait
                 self.supported_colorspaces()
             ));
         }
+        // if image.metadata.alpha != self.alpha_state()
+        // {
+        //     PremultiplyAlpha::new(self.alpha_state());
+        // }
         // check we support the bit depth
         let bit_type = image.metadata.get_depth().bit_type();
 
@@ -174,6 +180,15 @@ pub trait OperationsTrait
         confirm_invariants(image)?;
 
         Ok(())
+    }
+    /// Alpha state for which the image operation works in
+    ///
+    /// Most image expect a premultiplied alpha state to work correctly
+    /// this allows one to override the alpha state the image will
+    /// be converted into before carrying out an operation
+    fn alpha_state(&self) -> AlphaState
+    {
+        AlphaState::PreMultiplied
     }
 }
 
@@ -274,8 +289,11 @@ pub trait EncoderTrait
         // deal convert bit depths
         let depth = image.get_depth();
 
+        // convert to premultiplied alpha
+
         if !supported_colorspaces.contains(&colorspace)
             || !self.supported_bit_depth().contains(&depth)
+            || image.metadata.alpha != NonPreMultiplied
         {
             let mut image_clone = image.clone();
 
@@ -304,6 +322,10 @@ pub trait EncoderTrait
                 let depth = Depth::new(self.default_depth());
 
                 depth.execute(&mut image_clone)?;
+            }
+            if image.metadata.alpha != NonPreMultiplied
+            {
+                PremultiplyAlpha::new(NonPreMultiplied).execute(&mut image_clone)?;
             }
 
             // confirm again we didn't mess up
