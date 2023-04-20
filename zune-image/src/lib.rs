@@ -27,7 +27,7 @@ pub mod frame;
 pub mod image;
 pub mod impls;
 pub mod metadata;
-pub mod ops;
+mod ops;
 mod serde;
 mod tests;
 pub mod traits;
