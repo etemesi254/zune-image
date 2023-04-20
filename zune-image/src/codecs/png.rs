@@ -4,8 +4,7 @@ use log::{debug, info};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
-use zune_png::error::PngDecodeErrors;
-pub use zune_png::PngDecoder;
+pub use zune_png::*;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};

@@ -3,8 +3,7 @@
 use log::debug;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
-use zune_psd::errors::PSDDecodeErrors;
-pub use zune_psd::PSDDecoder;
+pub use zune_psd::*;
 
 use crate::codecs::ImageFormat;
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
