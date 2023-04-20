@@ -17,6 +17,7 @@ members = [
     "zune-imageprocs",
     # Image formats
     "zune-farbfeld",
+    "zune-hdr",
     "zune-jpeg",
     "zune-jpegxl",
     "zune-ppm",
