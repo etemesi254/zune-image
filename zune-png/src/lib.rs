@@ -36,7 +36,7 @@
 //! let pixels = decoder.decode_raw();
 //! ```
 //!
-//! # Decode to u8 or u16 depending on depth
+//! ### Decode to u8 or u16 depending on depth
 //!
 //! From above limitation, there are needs to treat result
 //! types differently depending on the image's bit depth.
@@ -71,6 +71,27 @@
 //! [`DecoderOptions::set_endian`](zune_core::options::DecoderOptions::set_byte_endian) which
 //! will be respected by [`decode_raw`](decoder::PngDecoder::decode_raw) and [`decode_into`](decoder::PngDecoder::decode_into) functions
 //!
+//!
+//! ### Decoding from RGB to RGBA
+//!
+//! Some endpoints may require data to be in RGBA such as GPUs but not all pngs have
+//! the alpha channel.
+//!
+//! - Note: When input is in Luma, the transform will convert it to Luma+Alpha and not RGB+Alpha
+//! to convert it to such types use the zune-image crate which provides efficient transforms for that
+//!
+//!```no_run
+//! use zune_core::options::DecoderOptions;
+//! use zune_png::PngDecoder;
+//! // set option to add alpha channel
+//! let options = DecoderOptions::default().png_set_add_alpha_channel(true);
+//! // use the above option to decode
+//! let mut decoder = PngDecoder::new_with_options(&[],options);
+//!
+//! decoder.decode().unwrap();
+//! // the colorspace will always be have an alpha
+//! assert!(decoder.get_colorspace().unwrap().has_alpha());
+//! ```
 //!
 //! # Extracting metadata
 //!
