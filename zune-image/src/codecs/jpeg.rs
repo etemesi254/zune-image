@@ -33,12 +33,12 @@ impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
             .decode()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
-        let colorspace = self.get_out_colorspace();
+        let colorspace = self.get_output_colorspace().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
         image.metadata = metadata;
-        image.metadata.colorspace = self.get_out_colorspace();
+        image.metadata.colorspace = self.get_output_colorspace().unwrap();
         Ok(image)
     }
 

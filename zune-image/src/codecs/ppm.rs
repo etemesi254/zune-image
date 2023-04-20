@@ -5,8 +5,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
-pub use zune_ppm::PPMDecoder;
-use zune_ppm::{PPMDecodeErrors, PPMEncodeErrors, PPMEncoder as PPMEnc};
+pub use zune_ppm::{PPMDecodeErrors, PPMDecoder, PPMEncodeErrors, PPMEncoder as PPMEnc};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::{deinterleave_u16, deinterleave_u8};

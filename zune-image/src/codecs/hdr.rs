@@ -2,7 +2,7 @@
 //! Radiance HDR decoding support
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
-use zune_hdr::{HdrDecodeErrors, HdrDecoder};
+pub use zune_hdr::*;
 
 use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;

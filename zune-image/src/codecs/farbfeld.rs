@@ -1,5 +1,5 @@
 #![cfg(feature = "farbfeld")]
-
+//! Farbfeld decoding and encoding support
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;

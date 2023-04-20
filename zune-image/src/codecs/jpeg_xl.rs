@@ -3,7 +3,7 @@
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
-use zune_jpegxl::{JxlEncodeErrors, JxlSimpleEncoder};
+pub use zune_jpegxl::*;
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
