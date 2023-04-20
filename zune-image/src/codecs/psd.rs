@@ -57,7 +57,7 @@ impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
     {
         self.decode_headers()
-            .map_err(<PSDDecodeErrors as Into<ImageErrors>>::into)?;
+            .map_err(<errors::PSDDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth().unwrap();
