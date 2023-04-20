@@ -309,6 +309,7 @@ impl<'a> ZByteReader<'a>
         Ok(diff)
     }
 
+    /// Read enough bytes to fill in
     pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), &'static str>
     {
         let size = self.read(buf)?;
@@ -318,6 +319,15 @@ impl<'a> ZByteReader<'a>
             return Err("Could not read into the whole buffer");
         }
         Ok(())
+    }
+
+    /// Set the cursor position
+    ///
+    /// After this, all reads will proceed from the position as an anchor
+    /// point
+    pub fn set_position(&mut self, position: usize)
+    {
+        self.position = position;
     }
 }
 
