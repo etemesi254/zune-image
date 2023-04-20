@@ -1,0 +1,36 @@
+name: Fuzz HDR
+
+on:
+  push:
+    branches: [ "main","dev" ]
+    paths:
+      - 'zune-hdr/**'
+  pull_request:
+    branches: [ "main" ,"dev" ]
+    paths:
+      - 'zune-hdr/**'
+
+  schedule:
+    - cron: '0 0 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install
+        run: cargo install cargo-fuzz
+
+      - name: Normal Fuzz testing.
+        run: cargo +nightly fuzz run --fuzz-dir zune-hdr/fuzz decode_buffer -j2 -- -timeout=10s   test-images/hdr -max_total_time=120
+

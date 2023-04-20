@@ -17,13 +17,13 @@ use crate::traits::{DecoderTrait, EncoderTrait};
 
 pub mod exr;
 pub mod farbfeld;
+pub mod hdr;
 pub mod jpeg;
 pub mod jpeg_xl;
 pub mod png;
 pub mod ppm;
 pub mod psd;
 pub mod qoi;
-
 pub(crate) fn create_options_for_encoder(
     options: Option<EncoderOptions>, image: &Image
 ) -> EncoderOptions
@@ -53,21 +53,23 @@ pub(crate) fn create_options_for_encoder(
 #[non_exhaustive]
 pub enum ImageFormat
 {
-    /// Fully complete
+    /// Joint Photographic Experts Group
     JPEG,
-    /// Not yet complete
+    /// Portable Network Graphics
     PNG,
-    /// Fully complete
+    /// Portable Pixel Map image
     PPM,
-    /// Partial support
+    /// Photoshop PSD component
     PSD,
-    /// Full support
+    /// Farbfeld format
     Farbfeld,
-    /// Full support
+    /// Quite Okay Image
     QOI,
-    /// Small support
+    /// JPEG XL, new format
     JPEG_XL,
-    /// Any unknown format.
+    /// Radiance HDR decoder
+    HDR,
+    /// Any unknown format
     Unknown
 }
 
@@ -107,7 +109,7 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "jpeg"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
 
@@ -121,7 +123,7 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "png"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
             ImageFormat::PPM =>
@@ -134,7 +136,7 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
             ImageFormat::PSD =>
@@ -147,7 +149,7 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "ppm"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
 
@@ -161,7 +163,7 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "farbfeld"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
 
@@ -175,7 +177,20 @@ impl ImageFormat
                 }
                 #[cfg(not(feature = "qoi"))]
                 {
-                    Err(ImageErrors::ImageDecoderNotIncluded(self))
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
+            }
+            ImageFormat::HDR =>
+            {
+                #[cfg(feature = "hdr")]
+                {
+                    Ok(Box::new(zune_hdr::HdrDecoder::new_with_options(
+                        data, options
+                    )))
+                }
+                #[cfg(not(feature = "hdr"))]
+                {
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
             ImageFormat::JPEG_XL => Err(ImageErrors::ImageDecoderNotImplemented(*self)),
@@ -265,6 +280,8 @@ impl ImageFormat
             (b"8BPS", ImageFormat::PSD),
             (b"farbfeld", ImageFormat::Farbfeld),
             (b"qoif", ImageFormat::QOI),
+            (b"#?RADIANCE\n", ImageFormat::HDR),
+            (b"#?RGBE\n", ImageFormat::HDR),
         ];
 
         for (magic, decoder) in magic_bytes
