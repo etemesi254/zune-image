@@ -13,11 +13,12 @@ psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
 jpeg-xl = ["zune-jpegxl"]
+hdr = ["zune-hdr"]
 
 # Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
 # All image formats
-image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl"]
+image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr"]
 # External crates that help us handle metadata
 metadata = ["kamadak-exif"]
 # Every supported thing
@@ -39,7 +40,7 @@ zune-psd = { path = "../zune-psd", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 zune-jpegxl = { path = "../zune-jpegxl", optional = true }
-
+zune-hdr = { path = "../zune-hdr", optional = true }
 # Logging information
 log = "0.4.17"
 # Channel conversions in a safe way
