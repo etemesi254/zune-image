@@ -16,7 +16,7 @@ use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
+use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::traits::NumOps;
 
 use crate::channel::{Channel, ChannelErrors};
@@ -40,7 +40,11 @@ pub struct Image
 
 impl Image
 {
-    /// Create a new image channel
+    /// Create a new image instance
+    ///
+    /// This constructs a single image frame (non-animated) with the
+    /// configured dimensions,colorspace and depth
+    ///  
     pub fn new(
         channels: Vec<Channel>, depth: BitDepth, width: usize, height: usize,
         colorspace: ColorSpace
@@ -87,25 +91,7 @@ impl Image
     {
         self.metadata.set_depth(depth)
     }
-    pub fn set_color_trc(&mut self, color_trc: ColorCharacteristics)
-    {
-        self.metadata.set_color_trc(color_trc);
-    }
-    /// Set default gamma for this image
-    ///
-    /// For more information see [ImageMetadata::set_gamma](crate::metadata::ImageMetadata::set_default_gamma)
-    pub fn set_default_gamma(&mut self, gamma: f32)
-    {
-        self.metadata.set_default_gamma(gamma)
-    }
-    /// Return the image's  gamma value.
-    ///
-    ///This is the value that will be used to convert images to linear
-    ///image in case
-    pub const fn get_default_gamma(&self) -> Option<f32>
-    {
-        self.metadata.default_gamma
-    }
+
     pub const fn get_metadata(&self) -> &ImageMetadata
     {
         &self.metadata
