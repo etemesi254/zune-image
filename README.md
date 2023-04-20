@@ -24,10 +24,12 @@ The set of codecs aim to have the following features in order of priority
 | farbfeld     | zune-farbfeld | zune-farbfeld  |
 | psd          | zune-psd      | -              |
 | jpeg-xl      | -             | zune-jpegxl    |
+| hdr          | zune-hdr      | -              |
 
 ## Safety
 
-This workspace **allows only 1 type of unsafe:** platform specific intrinsics (e.g. SIMD), and only where speed really matters.
+This workspace **allows only 1 type of unsafe:** platform specific intrinsics (e.g. SIMD), and only where speed really
+matters.
 
 All other types are **explicitly forbidden.**
 
