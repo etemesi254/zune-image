@@ -1,13 +1,22 @@
+use alloc::string::String;
 use core::fmt::{Debug, Formatter};
-use std::num::ParseIntError;
+use core::num::ParseIntError;
 
+/// HDR decoding errors
 pub enum HdrDecodeErrors
 {
+    /// Magic bytes do not start with `?#RADIANCE` or `?#RGBE`
     InvalidMagicBytes,
+    /// The decoder could not convert string to int
     ParseError(ParseIntError),
+    /// The image contains an unsupported orientation
     UnsupportedOrientation(String, String),
+    /// Too large dimensions for a given dimension
     TooLargeDimensions(&'static str, usize, usize),
+    /// Generic message
     Generic(&'static str),
+    /// The output array is too small to contain the whole
+    /// image
     TooSmallOutputArray(usize, usize)
 }
 
