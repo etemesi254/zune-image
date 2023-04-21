@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 
 use log::{info, trace};
 use zune_core::bytestream::ZByteReader;
@@ -20,7 +23,7 @@ pub struct HdrDecoder<'a>
 {
     buf:             ZByteReader<'a>,
     options:         DecoderOptions,
-    metadata:        HashMap<String, String>,
+    metadata:        BTreeMap<String, String>,
     width:           usize,
     height:          usize,
     decoded_headers: bool
@@ -78,11 +81,23 @@ impl<'a> HdrDecoder<'a>
             options,
             width: 0,
             height: 0,
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
             decoded_headers: false
         }
     }
+    /// Get key value metadata found in the header
+    ///
+    ///
+    /// In case the key or value contains non-valid UTF-8, the
+    /// characters are replaced with [REPLACEMENT_CHARACTER](core::char::REPLACEMENT_CHARACTER)
+    pub const fn get_metadata(&self) -> &BTreeMap<String, String>
+    {
+        &self.metadata
+    }
     /// Decode headers for the HDR image
+    ///
+    /// The struct is modified in place and data can be
+    /// extracted from appropriate getters.
     pub fn decode_headers(&mut self) -> Result<(), HdrDecodeErrors>
     {
         if self.decoded_headers
@@ -182,6 +197,12 @@ impl<'a> HdrDecoder<'a>
         Ok(())
     }
 
+    /// Get image dimensions as a tuple of width and height
+    /// or `None` if the image hasn't been decoded.
+    ///
+    /// # Returns
+    /// - `Some(width,height)`: Image dimensions
+    /// -  None : The image headers haven't been decoded
     pub const fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if self.decoded_headers
@@ -193,6 +214,12 @@ impl<'a> HdrDecoder<'a>
             None
         }
     }
+
+    /// Return the input colorspace of the image
+    ///
+    /// # Returns
+    /// -`Some(Colorspace)`: Input colorspace
+    /// - None : Indicates the headers weren't decoded
     pub fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if self.decoded_headers
@@ -205,6 +232,13 @@ impl<'a> HdrDecoder<'a>
         }
     }
 
+    /// Decode HDR file return a vector containing decoded
+    /// coefficients
+    ///
+    /// # Returns
+    /// - `Ok(Vec<f32>)`: The actual decoded coefficients
+    /// - `Err(HdrDecodeErrors)`: Indicates an unrecoverable
+    ///  error occurred during decoding.
     pub fn decode(&mut self) -> Result<Vec<f32>, HdrDecodeErrors>
     {
         self.decode_headers()?;
@@ -214,11 +248,26 @@ impl<'a> HdrDecoder<'a>
 
         Ok(buffer)
     }
+    // Return the number of bytes required to hold a decoded image frame
+    /// decoded using the given input transformations
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
+    ///  - `None`: Indicates the image was not decoded.
+    ///
+    /// # Panics
+    /// In case `width*height*colorspace` calculation may overflow a usize
     pub fn output_buffer_size(&self) -> Option<usize>
     {
         if self.decoded_headers
         {
-            Some(self.width * self.height * 3)
+            Some(
+                self.width
+                    .checked_mul(self.height)
+                    .unwrap()
+                    .checked_mul(3)
+                    .unwrap()
+            )
         }
         else
         {
@@ -226,6 +275,28 @@ impl<'a> HdrDecoder<'a>
         }
     }
 
+    /// Decode into a pre-allocated buffer
+    ///
+    /// It is an error if the buffer size is smaller than
+    /// [`output_buffer_size()`](Self::output_buffer_size)
+    ///
+    /// If the buffer is bigger than expected, we ignore the end padding bytes
+    ///
+    /// # Example
+    ///
+    /// - Read  headers and then alloc a buffer big enough to hold the image
+    ///
+    /// ```no_run
+    /// use zune_hdr::HdrDecoder;
+    /// let mut decoder = HdrDecoder::new(&[]);
+    /// // before we get output, we must decode the headers to get width
+    /// // height, and input colorspace
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let mut out = vec![0.0;decoder.output_buffer_size().unwrap()];
+    /// // write into out
+    /// decoder.decode_into(&mut out).unwrap();
+    /// ```
     pub fn decode_into(&mut self, buffer: &mut [f32]) -> Result<(), HdrDecodeErrors>
     {
         if !self.decoded_headers
@@ -246,11 +317,11 @@ impl<'a> HdrDecoder<'a>
         // single width scanline
         let mut scanline = vec![0_u8; self.width * 4]; // R,G,B,E
 
-        let single_scanline_size = self.width * 3; // RGB, * width gives us size of one scanline
+        let output_scanline_size = self.width * 3; // RGB, * width gives us size of one scanline
 
         // read flat data
         for out_scanline in buffer
-            .chunks_exact_mut(single_scanline_size)
+            .chunks_exact_mut(output_scanline_size)
             .take(self.height)
         {
             if self.width < 8 || self.width > 0x7fff
@@ -417,7 +488,7 @@ impl<'a> HdrDecoder<'a>
             .map_err(HdrDecodeErrors::Generic)?;
 
         // return position
-        // +1 increments past new line
+        // +1 increments past needle
         self.buf.set_position(end + 1);
 
         Ok(bytes)
