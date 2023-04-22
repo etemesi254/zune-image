@@ -97,6 +97,36 @@ impl OperationsTrait for Depth
 
                     *channel = new_channel;
                 }
+                (BitDepth::Eight, BitDepth::Float32) =>
+                {
+                    let old_data = channel.reinterpret_as::<u8>().unwrap();
+                    let mut new_channel = Channel::new_with_length::<f32>(old_data.len() * 4);
+
+                    let new_channel_raw = new_channel.reinterpret_as_mut::<f32>().unwrap();
+
+                    // scale by dividing with 255
+                    for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
+                    {
+                        *new_chan = f32::from(*old_chan) / 255.0;
+                    }
+
+                    *channel = new_channel;
+                }
+                (BitDepth::Sixteen, BitDepth::Float32) =>
+                {
+                    let old_data = channel.reinterpret_as::<u16>().unwrap();
+                    let mut new_channel = Channel::new_with_length::<f32>(old_data.len() * 4);
+
+                    let new_channel_raw = new_channel.reinterpret_as_mut::<f32>().unwrap();
+
+                    // scale by dividing with 65535
+                    for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
+                    {
+                        *new_chan = f32::from(*old_chan) / 65535.0;
+                    }
+
+                    *channel = new_channel;
+                }
 
                 (_, _) =>
                 {
