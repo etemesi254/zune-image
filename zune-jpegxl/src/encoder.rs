@@ -46,7 +46,24 @@ pub(crate) struct FrameState
 /// A simple jxl encoder
 ///
 ///  # Example
-/// // en
+/// - Encode grayscale image
+///
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_core::options::EncoderOptions;
+/// use zune_jpegxl::JxlSimpleEncoder;
+///
+/// // set up options for encoder
+/// let options = EncoderOptions::default()
+///     .set_height(10)
+///     .set_width(10)
+///     .set_colorspace(ColorSpace::Luma);
+/// let image:[u8;100] = std::array::from_fn(|x| x as u8);
+///
+/// let encoder = JxlSimpleEncoder::new(&image,options);
+/// // encode the image
+/// encoder.encode().unwrap();
+/// ```
 pub struct JxlSimpleEncoder<'a>
 {
     data:    &'a [u8],
