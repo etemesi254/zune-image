@@ -1,3 +1,4 @@
+//! Encoding support for Farbfeld image format
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
@@ -7,11 +8,20 @@ use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
+/// Errors possible during encoding
 pub enum FarbFeldEncoderErrors
 {
+    /// Too large dimensions, above 2^32.
+    /// Farbfeld uses 4 bytes for width and height, if image cannot fit in it
+    /// then it's undefined
     TooLargeDimensions(usize),
+    /// Unsupported bit depth for Farbfeld. Farbfeld only supports 16 bit images
+    /// any other image format is not supported
     UnsupportedBitDepth(BitDepth),
+    /// Unsupported colorspace for Farbfeld. Farbfeld only supports RGBA images
     UnsupportedColorSpace(ColorSpace),
+    /// Too short of an input buffer, the buffer size is not same as expected buffer
+    /// size
     TooShortInput(usize, usize)
 }
 
