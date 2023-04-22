@@ -1,10 +1,10 @@
 #![cfg(feature = "jpeg")]
-//! This represents a jpeg decoder instance
+//! Jpeg decoding and encoding support
 //!
+//! The decoder uses a delegate library [`zune-jpeg`](zune_jpeg)
+//! for decoding and [`jpeg-encoder`](jpeg_encoder) for encoding
 //!
-//! Re-exports all items in zune_jpeg library
-//! and implements `DecoderTrait` for the library
-//!
+//! The decoder and encoder both support metadata extraction and saving.
 //!
 use jpeg_encoder::{ColorType, EncodingError, JpegColorType};
 use log::{info, warn};
@@ -12,7 +12,6 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_jpeg::errors::DecodeErrors;
-/// Re-expose jpeg crate here
 pub use zune_jpeg::{ImageInfo, JpegDecoder};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
@@ -108,11 +107,12 @@ pub struct JpegEncoder
 
 impl JpegEncoder
 {
-    /// Create a new decoder with default options
+    /// Create a new encoder with default options
     pub fn new() -> JpegEncoder
     {
         JpegEncoder::default()
     }
+    /// Create a new encoder with custom options
     pub fn new_with_options(options: EncoderOptions) -> JpegEncoder
     {
         JpegEncoder {
@@ -238,7 +238,7 @@ impl EncoderTrait for JpegEncoder
         &[BitDepth::Eight]
     }
 
-    fn default_depth(&self) -> BitDepth
+    fn default_depth(&self, _: BitDepth) -> BitDepth
     {
         BitDepth::Eight
     }

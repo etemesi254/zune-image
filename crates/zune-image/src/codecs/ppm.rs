@@ -76,9 +76,16 @@ impl EncoderTrait for PPMEncoder
         &[BitDepth::Sixteen, BitDepth::Eight]
     }
 
-    fn default_depth(&self) -> BitDepth
+    /// Get appropriate depth for this image
+    ///
+    /// Float32 types, they are converted to Float16 types
+    fn default_depth(&self, depth: BitDepth) -> BitDepth
     {
-        BitDepth::Eight
+        match depth
+        {
+            BitDepth::Float32 | BitDepth::Sixteen => BitDepth::Sixteen,
+            _ => BitDepth::Eight
+        }
     }
 }
 

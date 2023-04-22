@@ -129,7 +129,7 @@ impl EncoderTrait for QoiEncoder
         &[BitDepth::Eight]
     }
 
-    fn default_depth(&self) -> BitDepth
+    fn default_depth(&self, _: BitDepth) -> BitDepth
     {
         BitDepth::Eight
     }
