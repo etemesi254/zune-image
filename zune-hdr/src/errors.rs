@@ -2,6 +2,8 @@ use alloc::string::String;
 use core::fmt::{Debug, Formatter};
 use core::num::ParseIntError;
 
+use zune_core::colorspace::ColorSpace;
+
 /// HDR decoding errors
 pub enum HdrDecodeErrors
 {
@@ -65,5 +67,29 @@ impl From<ParseIntError> for HdrDecodeErrors
     fn from(value: ParseIntError) -> Self
     {
         HdrDecodeErrors::ParseError(value)
+    }
+}
+
+pub enum HdrEncodeErrors
+{
+    UnsupportedColorspace(ColorSpace),
+    WrongInputSize(usize, usize)
+}
+
+impl Debug for HdrEncodeErrors
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
+    {
+        match self
+        {
+            HdrEncodeErrors::UnsupportedColorspace(color) =>
+            {
+                writeln!(f, "Unsupported colorspace {color:?} for Radiance, Radiance only works with RGB f32 data")
+            }
+            HdrEncodeErrors::WrongInputSize(expected, found) =>
+            {
+                writeln!(f, "Input array length {found} doesn't match {expected}")
+            }
+        }
     }
 }
