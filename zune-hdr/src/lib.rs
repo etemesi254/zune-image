@@ -1,4 +1,4 @@
-//! A RADIANCE HDR decoder
+//! A RADIANCE HDR decoder and encoder
 //!
 //!
 //! # Features
@@ -25,7 +25,10 @@
 extern crate alloc;
 
 pub use decoder::HdrDecoder;
-pub use errors::HdrDecodeErrors;
+pub use encoder::HdrEncoder;
+pub use errors::{HdrDecodeErrors, HdrEncodeErrors};
+pub use zune_core;
 
 mod decoder;
+mod encoder;
 mod errors;

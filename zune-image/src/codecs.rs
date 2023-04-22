@@ -3,10 +3,30 @@
 //! The codecs here can be enabled and disabled at will depending on the configured interface,
 //! it is recommended that you enable encoders and decoders that you only use
 //!
+//!
+//! # Note on Compatibility with images
+//!
+//! - The library automatically tries to convert the image with highest compatibility
+//!  this means that it will automatically convert the image to a supported bit depth
+//! and supported colorspace in case the image is not in the supported colorspace
+//!
+//! E.g if you open a HDR or EXR image whose format is `f32``[0.0-1.0]` and convert it to JPEG,
+//! which understands 8 bit images`[0-255]`, the library will internally convert it to 8 bit images
+//!
+//! - For image depth, we convert it to the most appropriate depth, e.g trying to store F32 images in png
+//! will convert it to 16 bit images, this allows us to preserve as much information as possible
+//! during the conversation.
+//!
+//! - **Warning**: For this to work, the image will be cloned and the depth or colorspace modified on the
+//!  clone. The current image is left as is, unmodified.
+//!  **This may cause huge memory usage as cloning is expensive**
+//!
+//!
 #![allow(unused_imports, unused_variables, non_camel_case_types)]
 
 use std::path::Path;
 
+use log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::codecs;
@@ -259,6 +279,19 @@ impl ImageFormat
                     None
                 }
             }
+            Self::HDR =>
+            {
+                #[cfg(feature = "hdr")]
+                {
+                    Some(Box::new(crate::codecs::hdr::HdrEncoder::new_with_options(
+                        options
+                    )))
+                }
+                #[cfg(not(feature = "hdr"))]
+                {
+                    None
+                }
+            }
             // all encoders not implemented default to none
             _ => None
         }
@@ -357,6 +390,17 @@ impl ImageFormat
                     ))
                 }
                 #[cfg(not(feature = "farbfeld"))]
+                {
+                    None
+                }
+            }
+            "hdr" =>
+            {
+                #[cfg(feature = "hdr")]
+                {
+                    Some((ImageFormat::HDR, ImageFormat::HDR.get_encoder().unwrap()))
+                }
+                #[cfg(not(feature = "hdr"))]
                 {
                     None
                 }
