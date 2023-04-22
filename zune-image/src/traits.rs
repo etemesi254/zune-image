@@ -309,6 +309,8 @@ pub trait EncoderTrait
 
                 converter.execute(&mut image_clone)?
             }
+            let image_depth = image.get_depth();
+
             if !self.supported_bit_depth().contains(&depth)
             {
                 info!(
@@ -317,9 +319,12 @@ pub trait EncoderTrait
                     self.get_name(),
                     self.supported_bit_depth()
                 );
-                info!("Converting image to a depth of {:?}", self.default_depth());
+                info!(
+                    "Converting image to a depth of {:?}",
+                    self.default_depth(image_depth)
+                );
 
-                let depth = Depth::new(self.default_depth());
+                let depth = Depth::new(self.default_depth(image_depth));
 
                 depth.execute(&mut image_clone)?;
             }
@@ -378,7 +383,7 @@ pub trait EncoderTrait
     /// since the image is not in one of the supported image formats
     ///
     /// [`supported_bit_depth`]:EncoderTrait::supported_bit_depth
-    fn default_depth(&self) -> BitDepth;
+    fn default_depth(&self, depth: BitDepth) -> BitDepth;
 
     /// Returns the default colorspace to use when the image
     /// contains a different colorspace
