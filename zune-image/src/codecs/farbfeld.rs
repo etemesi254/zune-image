@@ -1,5 +1,8 @@
 #![cfg(feature = "farbfeld")]
 //! Farbfeld decoding and encoding support
+//!
+//! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
+//! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
@@ -67,6 +70,10 @@ impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
     }
 }
 
+/// A small wrapper against the Farbfeld encoder that ties
+/// the bridge between Image struct and the buffer
+/// which [zune_farbfeld::FarbFeldEncoder](zune_farbfeld::FarbFeldEncoder)
+/// understands
 #[derive(Default)]
 pub struct FarbFeldEncoder
 {
@@ -75,10 +82,12 @@ pub struct FarbFeldEncoder
 
 impl FarbFeldEncoder
 {
+    /// Create a new encoder
     pub fn new() -> FarbFeldEncoder
     {
         FarbFeldEncoder::default()
     }
+    /// Create a new encoder with specified options
     pub fn new_with_options(options: EncoderOptions) -> FarbFeldEncoder
     {
         FarbFeldEncoder {
@@ -126,7 +135,7 @@ impl EncoderTrait for FarbFeldEncoder
         &[BitDepth::Sixteen]
     }
 
-    fn default_depth(&self) -> BitDepth
+    fn default_depth(&self, _: BitDepth) -> BitDepth
     {
         BitDepth::Sixteen
     }
