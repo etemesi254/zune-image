@@ -5,8 +5,7 @@ use std::string::String;
 
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
-use log::Level::Debug;
-use log::{debug, error, info, log_enabled, warn};
+use log::{debug, error, info, warn};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::traits::IntoImage;
@@ -167,11 +166,6 @@ pub fn add_operations<T: IntoImage>(
     args: &ArgMatches, workflow: &mut WorkFlow<T>
 ) -> Result<(), String>
 {
-    if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
-    {
-        println!();
-    }
-
     for (_pos, id) in args.ids().enumerate()
     {
         if args.try_get_many::<clap::Id>(id.as_str()).is_ok()
@@ -194,9 +188,5 @@ pub fn add_operations<T: IntoImage>(
         crate::cmd_parsers::filters::parse_options(workflow, id.as_str(), args)?;
     }
 
-    if log_enabled!(Debug) && args.value_source("operations") == Some(CommandLine)
-    {
-        println!();
-    }
     Ok(())
 }
