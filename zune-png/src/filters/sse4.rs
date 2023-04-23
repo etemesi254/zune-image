@@ -162,138 +162,27 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-#[target_feature(enable = "sse2")]
-#[inline]
-unsafe fn store3(x: &mut [u8; 3], v: __m128i)
-{
-    let tmp = _mm_cvtsi128_si32(v) as u32;
-    let tmp_x = tmp.to_le_bytes();
-    x[0..3].copy_from_slice(&tmp_x[0..3]);
-}
-
-#[target_feature(enable = "sse2")]
-#[inline]
-unsafe fn store4(x: &mut [u8; 4], v: __m128i)
-{
-    let tmp = _mm_cvtsi128_si32(v);
-    x.copy_from_slice(&tmp.to_le_bytes());
-}
-
-#[target_feature(enable = "sse2")]
-#[inline]
-unsafe fn load3(x: &[u8; 3]) -> __m128i
-{
-    let mut tmp_bytes = [0_u8; 4];
-    tmp_bytes[0..3].copy_from_slice(x);
-
-    let tmp = i32::from_le_bytes(tmp_bytes);
-    _mm_cvtsi32_si128(tmp)
-}
-
-#[target_feature(enable = "sse2")]
-#[inline]
-unsafe fn load6(x: &[u8; 6]) -> __m128i
-{
-    let mut tmp_bytes = [0_u8; 8];
-    tmp_bytes[0..6].copy_from_slice(x);
-
-    let tmp = i64::from_le_bytes(tmp_bytes);
-    _mm_cvtsi64_si128(tmp)
-}
-
-#[target_feature(enable = "sse2")]
-#[inline]
-unsafe fn store6(x: &mut [u8; 6], v: __m128i)
-{
-    let tmp = _mm_cvtsi128_si64x(v);
-    let tmp_x = tmp.to_le_bytes();
-    x[0..6].copy_from_slice(&tmp_x[0..6]);
-}
-
-unsafe fn load4(x: &[u8; 4]) -> __m128i
-{
-    let tmp = i32::from_le_bytes(*x);
-    _mm_cvtsi32_si128(tmp)
-}
-
-unsafe fn load8(x: &[u8; 8]) -> __m128i
-{
-    let tmp = i64::from_le_bytes(*x);
-    _mm_cvtsi64_si128(tmp)
-}
-
-unsafe fn store8(x: &mut [u8; 8], v: __m128i)
-{
-    let tmp = _mm_cvtsi128_si64x(v);
-    x.copy_from_slice(&tmp.to_le_bytes());
-}
-
 #[allow(unused_assignments)]
 #[target_feature(enable = "sse2")]
-unsafe fn defilter_sub3_sse2_inner(raw: &[u8], current: &mut [u8])
+unsafe fn de_filter_sub_generic_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8])
 {
+    let mut zero = [0; 16];
     let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
 
-    for (raw, out) in raw.chunks_exact(3).zip(current.chunks_exact_mut(3))
+    for (raw, out) in raw.chunks_exact(SIZE).zip(current.chunks_exact_mut(SIZE))
     {
+        zero[0..SIZE].copy_from_slice(raw);
+
         a = d;
-        d = load3(raw.try_into().unwrap());
+        d = _mm_loadu_si128(zero.as_ptr().cast());
         d = _mm_add_epi8(d, a);
-        store3(out.try_into().unwrap(), d);
+        _mm_storeu_si128(zero.as_mut_ptr().cast(), d);
+
+        out.copy_from_slice(&zero[0..SIZE]);
     }
 }
 
-pub fn de_filter_sub3_sse2(raw: &[u8], current: &mut [u8])
-{
-    unsafe { defilter_sub3_sse2_inner(raw, current) }
-}
-
-#[allow(unused_assignments)]
-#[target_feature(enable = "sse2")]
-unsafe fn de_filter_sub4_sse2_inner(raw: &[u8], current: &mut [u8])
-{
-    let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
-
-    for (raw, out) in raw.chunks_exact(4).zip(current.chunks_exact_mut(4))
-    {
-        a = d;
-        d = load4(raw.try_into().unwrap());
-        d = _mm_add_epi8(d, a);
-        store4(out.try_into().unwrap(), d);
-    }
-}
-
-#[allow(unused_assignments)]
-#[target_feature(enable = "sse2")]
-unsafe fn de_filter_sub6_sse2_inner(raw: &[u8], current: &mut [u8])
-{
-    let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
-
-    for (raw, out) in raw.chunks_exact(6).zip(current.chunks_exact_mut(6))
-    {
-        a = d;
-        d = load6(raw.try_into().unwrap());
-        d = _mm_add_epi8(d, a);
-        store6(out.try_into().unwrap(), d);
-    }
-}
-
-#[allow(unused_assignments)]
-#[target_feature(enable = "sse2")]
-unsafe fn de_filter_sub8_sse2_inner(raw: &[u8], current: &mut [u8])
-{
-    let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
-
-    for (raw, out) in raw.chunks_exact(8).zip(current.chunks_exact_mut(8))
-    {
-        a = d;
-        d = load8(raw.try_into().unwrap());
-        d = _mm_add_epi8(d, a);
-        store8(out.try_into().unwrap(), d);
-    }
-}
-
-pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
+pub fn de_filter_sub_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
@@ -302,31 +191,7 @@ pub fn de_filter_sub4_sse2(raw: &[u8], current: &mut [u8])
             panic!("Internal error, calling platform specific function where not supported")
         }
     }
-    unsafe { de_filter_sub4_sse2_inner(raw, current) }
-}
-
-pub fn de_filter_sub6_sse2(raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse2")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe { de_filter_sub6_sse2_inner(raw, current) }
-}
-
-pub fn de_filter_sub8_sse2(raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse2")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe { de_filter_sub8_sse2_inner(raw, current) }
+    unsafe { de_filter_sub_generic_sse2::<SIZE>(raw, current) }
 }
 
 #[inline]
@@ -339,193 +204,12 @@ unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i
     //return _mm_or_si128(_mm_and_si128(c, t), _mm_andnot_si128(c, e));
 }
 
-#[allow(unused_assignments)]
-#[target_feature(enable = "sse4.1")]
-unsafe fn de_filter_paeth6_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    /* Paeth tries to predict pixel d using the pixel to the left of it, a,
-     * and two pixels from the previous row, b and c:
-     *   prev: c b
-     *   row:  a d
-     * The Paeth function predicts d to be whichever of a, b, or c is nearest to
-     * p=a+b-c.
-     *
-     * The first pixel has no left context, and so uses an Up filter, p = b.
-     * This works naturally with our main loop's p = a+b-c if we force a and c
-     * to zero.
-     * Here we zero b and d, which become c and a respectively at the start of
-     * the loop.
-     */
-
-    let zero = _mm_setzero_si128();
-
-    let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
-
-    let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
-
-    for ((prev, raw), current_row) in prev_row
-        .chunks_exact(6)
-        .zip(raw.chunks_exact(6))
-        .zip(current.chunks_exact_mut(6))
-    {
-        /*
-         * It's easiest to do this math (particularly, deal with pc) with 16-bit
-         * intermediates.
-         */
-        c = b;
-        b = _mm_unpacklo_epi8(load6(prev.try_into().unwrap()), zero);
-        a = d;
-        d = _mm_unpacklo_epi8(load6(raw.try_into().unwrap()), zero);
-
-        /* (p-a) == (a+b-c - a) == (b-c) */
-        pa = _mm_sub_epi16(b, c);
-
-        /* (p-b) == (a+b-c - b) == (a-c) */
-        pb = _mm_sub_epi16(a, c);
-
-        /* (p-c) == (a+b-c - c) == (a+b-c-c) == (b-c)+(a-c) */
-        pc = _mm_add_epi16(pa, pb);
-
-        pa = _mm_abs_epi16(pa); /* |p-a| */
-        pb = _mm_abs_epi16(pb); /* |p-b| */
-        pc = _mm_abs_epi16(pc); /* |p-c| */
-
-        smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
-
-        /* Paeth breaks ties favoring a over b over c. */
-        nearest = if_then_else(
-            _mm_cmpeq_epi16(smallest, pa),
-            a,
-            if_then_else(_mm_cmpeq_epi16(smallest, pb), b, c)
-        );
-
-        /* Note `_epi8`: we need addition to wrap modulo 255. */
-        d = _mm_add_epi8(d, nearest);
-
-        store6(current_row.try_into().unwrap(), _mm_packus_epi16(d, d));
-    }
-}
-
-#[allow(unused_assignments)]
-#[target_feature(enable = "sse4.1")]
-unsafe fn de_filter_paeth3_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    /* Paeth tries to predict pixel d using the pixel to the left of it, a,
-     * and two pixels from the previous row, b and c:
-     *   prev: c b
-     *   row:  a d
-     * The Paeth function predicts d to be whichever of a, b, or c is nearest to
-     * p=a+b-c.
-     *
-     * The first pixel has no left context, and so uses an Up filter, p = b.
-     * This works naturally with our main loop's p = a+b-c if we force a and c
-     * to zero.
-     * Here we zero b and d, which become c and a respectively at the start of
-     * the loop.
-     */
-
-    let zero = _mm_setzero_si128();
-
-    let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
-
-    let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
-
-    for ((prev, raw), current_row) in prev_row
-        .chunks_exact(3)
-        .zip(raw.chunks_exact(3))
-        .zip(current.chunks_exact_mut(3))
-    {
-        /*
-         * It's easiest to do this math (particularly, deal with pc) with 16-bit
-         * intermediates.
-         */
-        c = b;
-        b = _mm_unpacklo_epi8(load3(prev.try_into().unwrap()), zero);
-        a = d;
-        d = _mm_unpacklo_epi8(load3(raw.try_into().unwrap()), zero);
-
-        /* (p-a) == (a+b-c - a) == (b-c) */
-        pa = _mm_sub_epi16(b, c);
-
-        /* (p-b) == (a+b-c - b) == (a-c) */
-        pb = _mm_sub_epi16(a, c);
-
-        /* (p-c) == (a+b-c - c) == (a+b-c-c) == (b-c)+(a-c) */
-        pc = _mm_add_epi16(pa, pb);
-
-        pa = _mm_abs_epi16(pa); /* |p-a| */
-        pb = _mm_abs_epi16(pb); /* |p-b| */
-        pc = _mm_abs_epi16(pc); /* |p-c| */
-
-        smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
-
-        /* Paeth breaks ties favoring a over b over c. */
-        nearest = if_then_else(
-            _mm_cmpeq_epi16(smallest, pa),
-            a,
-            if_then_else(_mm_cmpeq_epi16(smallest, pb), b, c)
-        );
-
-        /* Note `_epi8`: we need addition to wrap modulo 255. */
-        d = _mm_add_epi8(d, nearest);
-
-        store3(current_row.try_into().unwrap(), _mm_packus_epi16(d, d));
-    }
-}
-
-#[target_feature(enable = "sse4.1")]
-#[allow(unused_assignments)]
-unsafe fn de_filter_paeth4_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    let zero = _mm_setzero_si128();
-
-    let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
-
-    let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
-
-    for ((prev, raw), current_row) in prev_row
-        .chunks_exact(4)
-        .zip(raw.chunks_exact(4))
-        .zip(current.chunks_exact_mut(4))
-    {
-        c = b;
-        b = _mm_unpacklo_epi8(load4(prev.try_into().unwrap()), zero);
-        a = d;
-        d = _mm_unpacklo_epi8(load4(raw.try_into().unwrap()), zero);
-
-        /* (p-a) == (a+b-c - a) == (b-c) */
-        pa = _mm_sub_epi16(b, c);
-
-        /* (p-b) == (a+b-c - b) == (a-c) */
-        pb = _mm_sub_epi16(a, c);
-
-        /* (p-c) == (a+b-c - c) == (a+b-c-c) == (b-c)+(a-c) */
-        pc = _mm_add_epi16(pa, pb);
-
-        pa = _mm_abs_epi16(pa); /* |p-a| */
-        pb = _mm_abs_epi16(pb); /* |p-b| */
-        pc = _mm_abs_epi16(pc); /* |p-c| */
-
-        smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
-
-        /* Paeth breaks ties favoring a over b over c. */
-        nearest = if_then_else(
-            _mm_cmpeq_epi16(smallest, pa),
-            a,
-            if_then_else(_mm_cmpeq_epi16(smallest, pb), b, c)
-        );
-
-        /* Note `_epi8`: we need addition to wrap modulo 255. */
-        d = _mm_add_epi8(d, nearest);
-
-        store4(current_row.try_into().unwrap(), _mm_packus_epi16(d, d));
-    }
-}
-
 // 16 bpp RGBA SSE filtering code
 #[target_feature(enable = "sse4.1")]
 #[allow(unused_assignments)]
-unsafe fn de_filter_paeth8_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
+    prev_row: &[u8], raw: &[u8], current: &mut [u8]
+)
 {
     let zero = _mm_setzero_si128();
 
@@ -533,15 +217,20 @@ unsafe fn de_filter_paeth8_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mu
 
     let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
 
+    let (mut f, mut g) = ([0; 16], [0; 16]);
+
     for ((prev, raw), current_row) in prev_row
-        .chunks_exact(8)
-        .zip(raw.chunks_exact(8))
-        .zip(current.chunks_exact_mut(8))
+        .chunks_exact(SIZE)
+        .zip(raw.chunks_exact(SIZE))
+        .zip(current.chunks_exact_mut(SIZE))
     {
+        f[0..SIZE].copy_from_slice(prev);
+        g[0..SIZE].copy_from_slice(raw);
+
         c = b;
-        b = _mm_unpacklo_epi8(load8(prev.try_into().unwrap()), zero);
+        b = _mm_unpacklo_epi8(_mm_loadu_si128(f.as_ptr().cast()), zero);
         a = d;
-        d = _mm_unpacklo_epi8(load8(raw.try_into().unwrap()), zero);
+        d = _mm_unpacklo_epi8(_mm_loadu_si128(g.as_ptr().cast()), zero);
 
         /* (p-a) == (a+b-c - a) == (b-c) */
         pa = _mm_sub_epi16(b, c);
@@ -568,15 +257,13 @@ unsafe fn de_filter_paeth8_sse41_inner(prev_row: &[u8], raw: &[u8], current: &mu
         /* Note `_epi8`: we need addition to wrap modulo 255. */
         d = _mm_add_epi8(d, nearest);
 
-        store8(current_row.try_into().unwrap(), _mm_packus_epi16(d, d));
+        _mm_storeu_si128(f.as_mut_ptr().cast(), d);
+
+        current_row.copy_from_slice(&f[0..SIZE]);
     }
 }
 
-/// Carries out de-filtering of a paeth filtered scanline using SSE
-///
-/// # Panics
-/// If sse4.1 feature isn't present
-pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+pub fn de_filter_paeth_sse41<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
@@ -586,87 +273,14 @@ pub fn de_filter_paeth3_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
         }
     }
     unsafe {
-        de_filter_paeth3_sse41_inner(prev_row, raw, current);
-    }
-}
-
-pub fn de_filter_paeth4_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe {
-        de_filter_paeth4_sse41_inner(prev_row, raw, current);
-    }
-}
-
-pub fn de_filter_paeth6_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe {
-        de_filter_paeth6_sse41_inner(prev_row, raw, current);
-    }
-}
-
-pub fn de_filter_paeth8_sse41(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse4.1")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe {
-        de_filter_paeth8_sse41_inner(prev_row, raw, current);
-    }
-}
-
-#[target_feature(enable = "sse2")]
-unsafe fn defilter_avg4_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    /* The Avg filter predicts each pixel as the (truncated) average of a and b.
-     * There's no pixel to the left of the first pixel.  Luckily, it's
-     * predicted to be half of the pixel above it.  So again, this works
-     * perfectly with our loop if we make sure a starts at zero.
-     */
-
-    let zero = _mm_setzero_si128();
-    let (mut a, mut b);
-    let mut d = zero;
-    let mut avg;
-
-    for ((prev, raw), current_row) in prev_row
-        .chunks_exact(4)
-        .zip(raw.chunks_exact(4))
-        .zip(current.chunks_exact_mut(4))
-    {
-        b = load4(prev.try_into().unwrap());
-        a = d;
-        d = load4(raw.try_into().unwrap());
-
-        /* PNG requires a truncating average, so we can't just use _mm_avg_epu8 */
-        avg = _mm_avg_epu8(a, b);
-        /* ...but we can fix it up by subtracting off 1 if it rounded up. */
-        avg = _mm_sub_epi8(avg, _mm_and_si128(_mm_xor_si128(a, b), _mm_set1_epi8(1)));
-
-        d = _mm_add_epi8(d, avg);
-        store4(current_row.try_into().unwrap(), d);
+        de_filter_paeth_sse41_inner::<SIZE>(prev_row, raw, current);
     }
 }
 
 #[cfg(target_feature = "sse2")]
-unsafe fn defilter_avg3_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+unsafe fn defilter_avg_sse2_inner<const SIZE: usize>(
+    prev_row: &[u8], raw: &[u8], current: &mut [u8]
+)
 {
     /* The Avg filter predicts each pixel as the (truncated) average of a and b.
      * There's no pixel to the left of the first pixel.  Luckily, it's
@@ -675,30 +289,40 @@ unsafe fn defilter_avg3_sse2_inner(prev_row: &[u8], raw: &[u8], current: &mut [u
      */
 
     let zero = _mm_setzero_si128();
+
+    let (mut x, mut y) = ([0; 16], [0; 16]);
+
     let (mut a, mut b);
     let mut d = zero;
     let mut avg;
 
     for ((prev, raw), current_row) in prev_row
-        .chunks_exact(3)
-        .zip(raw.chunks_exact(3))
-        .zip(current.chunks_exact_mut(3))
+        .chunks_exact(SIZE)
+        .zip(raw.chunks_exact(SIZE))
+        .zip(current.chunks_exact_mut(SIZE))
     {
-        b = load3(prev.try_into().unwrap());
-        a = d;
-        d = load3(raw.try_into().unwrap());
+        x[0..SIZE].copy_from_slice(raw);
+        y[0..SIZE].copy_from_slice(prev);
 
+        //b = load3(prev.try_into().unwrap());
+        b = _mm_loadu_si128(y.as_ptr().cast());
+        a = d;
+        //d = load3(raw.try_into().unwrap());
+        d = _mm_loadu_si128(x.as_ptr().cast());
         /* PNG requires a truncating average, so we can't just use _mm_avg_epu8 */
         avg = _mm_avg_epu8(a, b);
         /* ...but we can fix it up by subtracting off 1 if it rounded up. */
         avg = _mm_sub_epi8(avg, _mm_and_si128(_mm_xor_si128(a, b), _mm_set1_epi8(1)));
 
         d = _mm_add_epi8(d, avg);
-        store3(current_row.try_into().unwrap(), d);
+        _mm_storeu_si128(x.as_mut_ptr().cast(), d);
+
+        // store3(current,d)
+        current_row.copy_from_slice(&x[0..SIZE]);
     }
 }
 
-pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
+pub fn defilter_avg_sse<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 {
     #[cfg(feature = "std")]
     {
@@ -708,20 +332,6 @@ pub fn defilter_avg3_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
         }
     }
     unsafe {
-        defilter_avg3_sse2_inner(prev_row, raw, current);
-    }
-}
-
-pub fn defilter_avg4_sse(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    #[cfg(feature = "std")]
-    {
-        if !is_x86_feature_detected!("sse2")
-        {
-            panic!("Internal error, calling platform specific function where not supported")
-        }
-    }
-    unsafe {
-        defilter_avg4_sse2_inner(prev_row, raw, current);
+        defilter_avg_sse2_inner::<SIZE>(prev_row, raw, current);
     }
 }
