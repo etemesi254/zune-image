@@ -129,6 +129,9 @@ impl<'a> HdrEncoder<'a>
                 }
             }
         }
+        // truncate position to where we reached
+        let position = writer.position();
+        out.truncate(position);
         Ok(out)
     }
 }
