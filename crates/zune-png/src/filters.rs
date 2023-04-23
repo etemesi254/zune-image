@@ -3,6 +3,8 @@
 //! scanlines.
 //!
 
+use crate::enums::FilterMethod;
+
 mod sse4;
 
 #[allow(clippy::manual_memcpy)]
@@ -23,11 +25,19 @@ pub fn handle_avg(
         {
             if components == 3
             {
-                return crate::filters::sse4::defilter_avg3_sse(prev_row, raw, current);
+                return sse4::defilter_avg_sse::<3>(prev_row, raw, current);
             }
             if components == 4
             {
-                return crate::filters::sse4::defilter_avg4_sse(prev_row, raw, current);
+                return sse4::defilter_avg_sse::<4>(prev_row, raw, current);
+            }
+            if components == 6
+            {
+                return sse4::defilter_avg_sse::<6>(prev_row, raw, current);
+            }
+            if components == 8
+            {
+                return sse4::defilter_avg_sse::<8>(prev_row, raw, current);
             }
         }
     }
@@ -77,19 +87,19 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
         {
             if components == 3
             {
-                return crate::filters::sse4::de_filter_sub3_sse2(raw, current);
+                return sse4::de_filter_sub_sse2::<3>(raw, current);
             }
             if components == 4
             {
-                return crate::filters::sse4::de_filter_sub4_sse2(raw, current);
+                return sse4::de_filter_sub_sse2::<4>(raw, current);
             }
             if components == 6
             {
-                return crate::filters::sse4::de_filter_sub6_sse2(raw, current);
+                return sse4::de_filter_sub_sse2::<6>(raw, current);
             }
             if components == 8
             {
-                return crate::filters::sse4::de_filter_sub8_sse2(raw, current);
+                return sse4::de_filter_sub_sse2::<8>(raw, current);
             }
         }
     }
@@ -125,19 +135,19 @@ pub fn handle_paeth(
         {
             if components == 3
             {
-                return crate::filters::sse4::de_filter_paeth3_sse41(prev_row, raw, current);
+                return sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current);
             }
             if components == 4
             {
-                return crate::filters::sse4::de_filter_paeth4_sse41(prev_row, raw, current);
+                return sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current);
             }
             if components == 6
             {
-                return crate::filters::sse4::de_filter_paeth6_sse41(prev_row, raw, current);
+                return sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current);
             }
             if components == 8
             {
-                return crate::filters::sse4::de_filter_paeth8_sse41(prev_row, raw, current);
+                return sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current);
             }
         }
     }
@@ -247,4 +257,31 @@ pub fn paeth(a: u8, b: u8, c: u8) -> u8
         return b as u8;
     }
     c as u8
+}
+
+pub fn choose_compression_filter(_previous_row: &[u8], _current_row: &[u8]) -> FilterMethod
+{
+    if _previous_row.is_empty()
+    {
+        // first row
+        return FilterMethod::None;
+    }
+    return FilterMethod::None;
+}
+
+pub fn filter_scanline(input: &[u8], previous_row: &[u8], output: &mut [u8], filter: FilterMethod)
+{
+    let (filter_byte, filter_scanline) = output.split_at_mut(1);
+    // add
+    filter_byte[0] = filter.to_int();
+
+    match filter
+    {
+        FilterMethod::None =>
+        {
+            // copy input to output
+            filter_scanline.copy_from_slice(input);
+        }
+        _ => unreachable!("Unexpected input")
+    }
 }
