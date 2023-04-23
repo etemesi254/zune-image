@@ -218,6 +218,34 @@ impl<'a> ZByteWriter<'a>
     {
         self.position = self.position.saturating_add(by);
     }
+
+    /// Look ahead position bytes and return a reference
+    /// to num_bytes from that position, or an error if the
+    /// peek would be out of bounds.
+    ///
+    /// This doesn't increment the position, bytes would have to be discarded
+    /// at a later point.
+    #[inline]
+    pub fn peek_at(&'a self, position: usize, num_bytes: usize) -> Result<&'a [u8], &'static str>
+    {
+        let start = self.position + position;
+        let end = self.position + position + num_bytes;
+
+        match self.buffer.get(start..end)
+        {
+            Some(bytes) => Ok(bytes),
+            None => Err(ERROR_MSG)
+        }
+    }
+
+    /// Set position for the internal cursor
+    ///
+    /// Further calls to write bytes will proceed from the
+    /// position set
+    pub fn set_position(&mut self, position: usize)
+    {
+        self.position = position;
+    }
 }
 
 macro_rules! write_single_type {
