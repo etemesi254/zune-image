@@ -257,7 +257,7 @@ unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
         /* Note `_epi8`: we need addition to wrap modulo 255. */
         d = _mm_add_epi8(d, nearest);
 
-        _mm_storeu_si128(f.as_mut_ptr().cast(), d);
+        _mm_storeu_si128(f.as_mut_ptr().cast(), _mm_packus_epi16(d, d));
 
         current_row.copy_from_slice(&f[0..SIZE]);
     }
