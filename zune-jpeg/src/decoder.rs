@@ -198,6 +198,24 @@ impl<'a> JpegDecoder<'a>
         Ok(out)
     }
 
+    /// Decode a buffer already in memory with a different colorspace than autodetect
+    /// Useful if the metadata has a misleading or problematic colorspace by default
+    ///
+    /// The buffer should be a valid jpeg file, perhaps created by the command
+    /// `std:::fs::read()` or a JPEG file downloaded from the internet.
+    ///
+    /// # Errors
+    /// See DecodeErrors for an explanation
+    pub fn decode_with_colorspace(&mut self, colorspace: ColorSpace) -> Result<Vec<u8>, DecodeErrors>
+    {
+        self.decode_headers()?;
+        self.input_colorspace = colorspace;
+        let size = self.output_buffer_size().unwrap();
+        let mut out = vec![0; size];
+        self.decode_into(&mut out)?;
+        Ok(out)
+    }
+
     /// Create a new Decoder instance
     ///
     /// # Arguments
@@ -327,6 +345,10 @@ impl<'a> JpegDecoder<'a>
     pub fn set_options(&mut self, options: DecoderOptions)
     {
         self.options = options;
+    }
+    pub fn set_input_colorspace(&mut self, colorspace: ColorSpace)
+    {
+        self.input_colorspace = colorspace;
     }
     /// Decode Decoder headers
     ///
