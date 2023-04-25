@@ -4,11 +4,11 @@ use log::warn;
 use zune_core::bit_depth::BitType;
 
 use crate::errors::ImageErrors;
+use crate::filters::flip::Flip;
+use crate::filters::flop::Flop;
+use crate::filters::rotate::Rotate;
+use crate::filters::transpose::Transpose;
 use crate::image::Image;
-use crate::impls::flip::Flip;
-use crate::impls::flop::Flop;
-use crate::impls::rotate::Rotate;
-use crate::impls::transpose::Transpose;
 use crate::traits::OperationsTrait;
 
 pub enum OrientationType
