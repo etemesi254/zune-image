@@ -1,11 +1,7 @@
-use crate::traits::NumOps;
-
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub(crate) fn convert_rgb_to_grayscale_scalar<T>(
-    r: &[T], g: &[T], b: &[T], gr: &mut [T], max_value: T
-) where
-    T: Copy + NumOps<T>,
-    u32: From<T>
+pub(crate) fn convert_rgb_to_grayscale_scalar(
+    r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8], max_value: u8
+)
 {
     let max_value = u32::from(max_value);
 
@@ -26,7 +22,7 @@ pub(crate) fn convert_rgb_to_grayscale_scalar<T>(
 
         let g = (g1 + g2 + g3) / 64;
 
-        *g_out = T::from_u32(g.min(max_value));
+        *g_out = g.min(max_value) as u8;
     }
 }
 
@@ -39,11 +35,9 @@ pub(crate) fn convert_rgb_to_grayscale_scalar<T>(
     clippy::cast_possible_truncation,
     clippy::unreadable_literal
 )]
-pub(crate) fn convert_rgb_to_grayscale_scalar_u16<T>(
-    r: &[T], g: &[T], b: &[T], gr: &mut [T], max_value: T
-) where
-    T: Copy + NumOps<T>,
-    u64: From<T>
+pub(crate) fn convert_rgb_to_grayscale_scalar_u16(
+    r: &[u16], g: &[u16], b: &[u16], gr: &mut [u16], max_value: u16
+)
 {
     let max_value = u64::from(max_value);
 
@@ -64,6 +58,6 @@ pub(crate) fn convert_rgb_to_grayscale_scalar_u16<T>(
 
         let g = (g1 + g2 + g3) / 64;
 
-        *g_out = T::from_u64(g.min(max_value));
+        *g_out = g.min(max_value) as u16;
     }
 }
