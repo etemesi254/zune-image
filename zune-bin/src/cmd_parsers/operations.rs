@@ -1,16 +1,16 @@
 use clap::ArgMatches;
 use log::debug;
 use zune_core::bit_depth::BitDepth;
+use zune_core::colorspace::ColorSpace;
+use zune_image::core_filters::colorspace::ColorspaceConv;
+use zune_image::core_filters::depth::Depth;
 use zune_image::filters::brighten::Brighten;
-use zune_image::filters::colorspace::ColorspaceConv;
 use zune_image::filters::contrast::Contrast;
 use zune_image::filters::crop::Crop;
-use zune_image::filters::depth::Depth;
 use zune_image::filters::exposure::Exposure;
 use zune_image::filters::flip::Flip;
 use zune_image::filters::flop::Flop;
 use zune_image::filters::gamma::Gamma;
-use zune_image::filters::grayscale::RgbToGrayScale;
 use zune_image::filters::invert::Invert;
 use zune_image::filters::median::Median;
 use zune_image::filters::mirror::{Mirror, MirrorMode};
@@ -37,7 +37,7 @@ pub fn parse_options<T: IntoImage>(
     else if argument == "grayscale"
     {
         debug!("Added grayscale operation");
-        workflow.add_operation(Box::new(RgbToGrayScale::new()));
+        workflow.add_operation(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
     }
     else if argument == "transpose"
     {
