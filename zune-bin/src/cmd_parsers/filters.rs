@@ -1,12 +1,12 @@
 use clap::ArgMatches;
 use log::debug;
-use zune_image::impls::box_blur::BoxBlur;
-use zune_image::impls::convolve::Convolve;
-use zune_image::impls::gaussian_blur::GaussianBlur;
-use zune_image::impls::scharr::Scharr;
-use zune_image::impls::sobel::Sobel;
-use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::impls::unsharpen::Unsharpen;
+use zune_image::filters::box_blur::BoxBlur;
+use zune_image::filters::convolve::Convolve;
+use zune_image::filters::gaussian_blur::GaussianBlur;
+use zune_image::filters::scharr::Scharr;
+use zune_image::filters::sobel::Sobel;
+use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
+use zune_image::filters::unsharpen::Unsharpen;
 use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 

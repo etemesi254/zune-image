@@ -9,6 +9,7 @@ pub mod contrast;
 pub mod convolve;
 pub mod crop;
 pub mod depth;
+pub mod exposure;
 pub mod flip;
 pub mod flop;
 pub mod gamma;

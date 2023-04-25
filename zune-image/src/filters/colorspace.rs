@@ -3,8 +3,8 @@ use zune_core::colorspace::ColorSpace;
 
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
+use crate::filters::grayscale::RgbToGrayScale;
 use crate::image::Image;
-use crate::impls::grayscale::RgbToGrayScale;
 use crate::traits::OperationsTrait;
 
 pub struct ColorspaceConv
