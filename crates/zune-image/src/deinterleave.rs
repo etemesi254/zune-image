@@ -10,14 +10,20 @@
 //!The latter representation makes it easier for processing and it allows multi-threaded
 //! post processing for scenarios where processing is slow.
 use zune_core::colorspace::ColorSpace;
-use zune_imageprocs::deinterleave::{
+
+use crate::channel::Channel;
+use crate::deinterleave::deinterleave_impls::{
     de_interleave_four_channels_f32, de_interleave_four_channels_u16,
     de_interleave_three_channels_f32, de_interleave_three_channels_u16,
     de_interleave_three_channels_u8, deinterleave_four_channels_u8
 };
-
-use crate::channel::Channel;
 use crate::errors::{ImageErrors, ImageOperationsErrors};
+
+mod scalar;
+mod sse2;
+mod sse41;
+
+mod deinterleave_impls;
 
 /// Separates image u8's into various components
 pub fn deinterleave_u8(
