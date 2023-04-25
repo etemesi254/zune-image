@@ -269,6 +269,12 @@ fn add_operations() -> (Vec<Arg>, ArgGroup)
             .help_heading(HELP_HEADING)
             .help("Automatically orient the image based on exif tag")
             .action(ArgAction::SetTrue)
+            .group(GROUP),
+        Arg::new("exposure")
+            .long("exposure")
+            .help_heading(HELP_HEADING)
+            .help("Adjust exposure of image, value is capped between -3 and 3")
+            .value_parser(value_parser!(f32))
             .group(GROUP)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
