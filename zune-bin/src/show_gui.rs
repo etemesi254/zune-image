@@ -3,14 +3,14 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::UNIX_EPOCH;
 
-use zune_image::codecs::ppm::PPMEncoder;
+use zune_image::codecs::png::PngEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
 pub fn open_in_default_app(image: &Image)
 {
     let time = format!(
-        "{}.ppm",
+        "{}.png",
         std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -27,7 +27,7 @@ pub fn open_in_default_app(image: &Image)
         .open(&path)
         .unwrap();
 
-    let data = PPMEncoder::new().encode(image).unwrap();
+    let data = PngEncoder::new().encode(image).unwrap();
     file.write_all(&data).unwrap();
 
     #[cfg(target_os = "linux")]
