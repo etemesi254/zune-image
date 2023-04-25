@@ -1,24 +1,25 @@
 use clap::ArgMatches;
 use log::debug;
 use zune_core::bit_depth::BitDepth;
-use zune_image::impls::brighten::Brighten;
-use zune_image::impls::colorspace::ColorspaceConv;
-use zune_image::impls::contrast::Contrast;
-use zune_image::impls::crop::Crop;
-use zune_image::impls::depth::Depth;
-use zune_image::impls::flip::Flip;
-use zune_image::impls::flop::Flop;
-use zune_image::impls::gamma::Gamma;
-use zune_image::impls::grayscale::RgbToGrayScale;
-use zune_image::impls::invert::Invert;
-use zune_image::impls::median::Median;
-use zune_image::impls::mirror::{Mirror, MirrorMode};
-use zune_image::impls::orientation::AutoOrient;
-use zune_image::impls::resize::{Resize, ResizeMethod};
-use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::impls::stretch_contrast::StretchContrast;
-use zune_image::impls::threshold::{Threshold, ThresholdMethod};
-use zune_image::impls::transpose::Transpose;
+use zune_image::filters::brighten::Brighten;
+use zune_image::filters::colorspace::ColorspaceConv;
+use zune_image::filters::contrast::Contrast;
+use zune_image::filters::crop::Crop;
+use zune_image::filters::depth::Depth;
+use zune_image::filters::exposure::Exposure;
+use zune_image::filters::flip::Flip;
+use zune_image::filters::flop::Flop;
+use zune_image::filters::gamma::Gamma;
+use zune_image::filters::grayscale::RgbToGrayScale;
+use zune_image::filters::invert::Invert;
+use zune_image::filters::median::Median;
+use zune_image::filters::mirror::{Mirror, MirrorMode};
+use zune_image::filters::orientation::AutoOrient;
+use zune_image::filters::resize::{Resize, ResizeMethod};
+use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
+use zune_image::filters::stretch_contrast::StretchContrast;
+use zune_image::filters::threshold::{Threshold, ThresholdMethod};
+use zune_image::filters::transpose::Transpose;
 use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
 
@@ -219,6 +220,13 @@ pub fn parse_options<T: IntoImage>(
     {
         debug!("Add auto orient operation");
         workflow.add_operation(Box::new(AutoOrient))
+    }
+    else if argument == "exposure"
+    {
+        let exposure = *args.get_one::<f32>(argument).unwrap();
+
+        workflow.add_operation(Box::new(Exposure::new(exposure, 0.)));
+        debug!("Adding exposure argument with value {}", exposure);
     }
 
     Ok(())
