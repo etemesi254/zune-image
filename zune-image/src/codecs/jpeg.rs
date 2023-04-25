@@ -18,7 +18,6 @@ use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::deinterleave::deinterleave_u8;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
-use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait, OperationsTrait};
 
