@@ -64,8 +64,16 @@ impl<'a> PngEncoder<'a>
         write_header_fn(self, writer, b"IHDR", write_ihdr);
 
         // extra headers
-        write_header_fn(self, writer, b"eXIf", write_exif);
-        write_header_fn(self, writer, b"gAMA", write_gamma);
+        // need to check their existence because  write_header_fn will do
+        // some writing even if they don't exist
+        if self.exif.is_some()
+        {
+            write_header_fn(self, writer, b"eXIf", write_exif);
+        }
+        if self.gamma.is_some()
+        {
+            write_header_fn(self, writer, b"gAMA", write_gamma);
+        }
     }
 
     fn create_buffer(&self) -> Vec<u8>
