@@ -1,11 +1,80 @@
+/*
+* Copyright (c) 2023.
+*
+* This software is free software;
+
+ You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+*/
+
 use log::trace;
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_imageprocs::depth::{depth_u16_to_u8, depth_u8_to_u16};
 
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
+
+/// Convert an image depth from u16 to u8
+///
+/// This is a simple division depth rescaling, we simply rescale the image pixels
+/// mapping the brightest image pixel (e.g 65535 for 16 bit images) to 255 and darkest to
+/// zero, squeezing everything else in between.
+///
+/// # Arguments
+///  - `from`: A reference to pixels in 16 bit format
+///  - `to`: A mutable reference to pixels in 8 bit format where we will
+/// write our pixels
+/// - `max_value`: Maximum value we expect this pixel to store.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16)
+{
+    if max_value == u16::MAX
+    {
+        // divide by 257, this clamps it to 0..255
+        for (old, new) in from.iter().zip(to.iter_mut())
+        {
+            let new_val = (old / 257) as u8;
+            *new = new_val;
+        }
+    }
+    else
+    {
+        //okay do scaling
+        let max = 1.0 / f32::from(max_value);
+        let scale = 255.0;
+
+        for (old, new) in from.iter().zip(to.iter_mut())
+        {
+            let new_val = ((f32::from(*old) * max) * scale) as u8;
+            *new = new_val;
+        }
+    }
+}
+
+/// Convert an image depth from u8 to u16
+///
+/// This is a simple multiplication depth rescaling, we simply rescale the image pixels
+/// mapping the brightest image pixel (e.g 255 for 16 bit images) to 65535(16 bit) and darkest to
+/// zero, stretching everything else in between.
+///
+/// # Arguments
+///  - `from`: A reference to pixels in 16 bit format
+///  - `to`: A mutable reference to pixels in 8 bit format where we will
+/// write our pixels
+/// - `max_value`: Maximum value we expect this pixel to store.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+pub(crate) fn depth_u8_to_u16(from: &[u8], to: &mut [u16], max_value: u16)
+{
+    // okay do scaling
+    let max = 1.0 / 255.0;
+    let scale = f32::from(max_value);
+
+    for (old, new) in from.iter().zip(to.iter_mut())
+    {
+        let new_val = ((f32::from(*old) * max) * scale) as u16;
+        *new = new_val;
+    }
+}
 
 /// Change the image's bit depth from it's initial
 /// value to the one specified by this operation.
