@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::time::Instant;
 
 use log::Level::Info;
@@ -146,8 +152,8 @@ where
     /// ```no_run
     /// #
     /// use zune_image::image::Image;
-    /// use zune_image::impls::grayscale::RgbToGrayScale;
-    /// use zune_image::impls::transpose::Transpose;
+    /// use zune_image::filters::grayscale::RgbToGrayScale;
+    /// use zune_image::filters::transpose::Transpose;
     /// use zune_image::workflow::WorkFlow;
     ///
     ///
@@ -184,12 +190,6 @@ where
     {
         if let Some(state) = self.state
         {
-            if log_enabled!(Info)
-            {
-                println!();
-                info!("Current state: {:?}\n", state);
-            }
-
             match state
             {
                 WorkFlowState::Decode =>
@@ -210,6 +210,12 @@ where
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
+                    if log_enabled!(Info)
+                    {
+                        println!();
+                        info!("Current state: {:?}\n", state);
+                    }
+
                     let decode_op = self.decode.take().unwrap();
 
                     let img = decode_op.into_image()?;
@@ -227,6 +233,12 @@ where
                     if self.image.is_empty()
                     {
                         return Err(ImageErrors::NoImageForOperations);
+                    }
+
+                    if log_enabled!(Info) && !self.operations.is_empty()
+                    {
+                        println!();
+                        info!("Current state: {:?}\n", state);
                     }
 
                     for image in self.image.iter_mut()
@@ -257,6 +269,13 @@ where
                     {
                         return Err(ImageErrors::NoImageForOperations);
                     }
+
+                    if log_enabled!(Info) && !self.encode.is_empty()
+                    {
+                        println!();
+                        info!("Current state: {:?}\n", state);
+                    }
+
                     for image in self.image.iter()
                     {
                         for encoder in self.encode.iter_mut()
