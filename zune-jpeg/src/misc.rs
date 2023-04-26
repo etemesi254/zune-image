@@ -6,6 +6,7 @@ use core::cmp::max;
 use core::fmt;
 
 use zune_core::bytestream::ZByteReader;
+use zune_core::colorspace::ColorSpace;
 
 use crate::components::SampleRatios;
 use crate::errors::DecodeErrors;
@@ -215,6 +216,20 @@ pub(crate) fn setup_component_params(img: &mut JpegDecoder) -> Result<(), Decode
 {
     let img_width = img.width();
     let img_height = img.height();
+
+    // in case of adobe app14 being present, zero may indicate
+    // either CMYK if components are 4 or RGB if components are 3,
+    // see https://docs.oracle.com/javase/6/docs/api/javax/imageio/metadata/doc-files/jpeg_metadata.html
+    // so since we may not know how many number of components
+    // we have when decoding app14, we have to defer that check
+    // until now.
+    //
+    // We know adobe app14 was present since it's the only one that can modify
+    // input colorspace to be CMYK
+    if img.components.len() == 3 && img.input_colorspace == ColorSpace::CMYK
+    {
+        img.input_colorspace = ColorSpace::RGB;
+    }
 
     for component in &mut img.components
     {
