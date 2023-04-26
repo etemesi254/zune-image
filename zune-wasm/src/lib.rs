@@ -5,16 +5,15 @@ use wasm_bindgen::prelude::*;
 use zune_core::bit_depth::BitDepth;
 // use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
+use zune_image::core_filters::depth::Depth;
+use zune_image::filters::brighten::Brighten;
+use zune_image::filters::contrast::Contrast;
+use zune_image::filters::gamma::Gamma;
+use zune_image::filters::invert::Invert;
+use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
+use zune_image::filters::stretch_contrast::StretchContrast;
+use zune_image::filters::threshold::{Threshold, ThresholdMethod};
 use zune_image::image::Image;
-use zune_image::impls::brighten::Brighten;
-use zune_image::impls::contrast::Contrast;
-use zune_image::impls::depth::Depth;
-use zune_image::impls::gamma::Gamma;
-use zune_image::impls::grayscale::RgbToGrayScale;
-use zune_image::impls::invert::Invert;
-use zune_image::impls::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::impls::stretch_contrast::StretchContrast;
-use zune_image::impls::threshold::{Threshold, ThresholdMethod};
 use zune_image::traits::OperationsTrait;
 
 use crate::enums::{WasmColorspace, WasmImageDecodeFormats};
@@ -174,8 +173,8 @@ impl WasmImage
     /// Convert from RGB to grayscale
     pub fn grayscale(&mut self)
     {
-        let ops = RgbToGrayScale::new();
-        self.execute_ops(&ops);
+        //let ops = self.image.convert();
+        //self.execute_ops(&ops);
     }
 
     /// Carry out a mean filter on the image
