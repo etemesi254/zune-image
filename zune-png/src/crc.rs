@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "crc")]
 
 use crate::crc::crc_tables::{CRC32_SLICE1_TABLE, CRC32_SLICE8_TABLE};
@@ -43,6 +49,11 @@ pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32
         crc = (crc >> 8) ^ CRC32_SLICE1_TABLE[((crc & 0xFF) ^ u32::from(*datum)) as usize];
     }
     crc
+}
+
+pub fn calc_crc(data: &[u8]) -> u32
+{
+    !crc32_slice8(data, u32::MAX)
 }
 
 #[test]

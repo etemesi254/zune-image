@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
@@ -14,7 +20,7 @@ use zune_inflate::DeflateOptions;
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
-use crate::filters::{
+use crate::filters::de_filter::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};

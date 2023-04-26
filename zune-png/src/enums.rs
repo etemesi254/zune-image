@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(dead_code, unused_must_use)]
 #![allow(clippy::upper_case_acronyms, non_camel_case_types)]
 
@@ -95,6 +101,18 @@ impl FilterMethod
             3 => Some(FilterMethod::Average),
             4 => Some(FilterMethod::Paeth),
             _ => None
+        }
+    }
+    pub fn to_int(self) -> u8
+    {
+        match self
+        {
+            FilterMethod::None => 0,
+            FilterMethod::Sub => 1,
+            FilterMethod::Up => 2,
+            FilterMethod::Average => 3,
+            FilterMethod::Paeth => 4,
+            _ => unimplemented!("Should not match")
         }
     }
 }
