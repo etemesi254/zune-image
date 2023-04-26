@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This module represents a single image
 //!
 //!
@@ -17,13 +23,13 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
-use zune_imageprocs::traits::NumOps;
 
 use crate::channel::{Channel, ChannelErrors};
+use crate::core_filters::colorspace::ColorspaceConv;
+use crate::core_filters::depth::Depth;
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
 use crate::frame::Frame;
-use crate::impls::depth::Depth;
 use crate::metadata::ImageMetadata;
 use crate::traits::{OperationsTrait, ZuneInts};
 
@@ -179,6 +185,25 @@ impl Image
             todo!("Unimplemented")
         }
     }
+    pub fn to_u8_be(&self) -> Vec<Vec<u8>>
+    {
+        let colorspace = self.get_colorspace();
+        if self.metadata.get_depth() == BitDepth::Eight
+        {
+            self.flatten_frames::<u8>()
+        }
+        else if self.metadata.get_depth() == BitDepth::Sixteen
+        {
+            self.frames
+                .iter()
+                .map(|z| z.u16_to_big_endian(colorspace))
+                .collect()
+        }
+        else
+        {
+            todo!("Unimplemented")
+        }
+    }
 
     /// Force flattening of all frames to RGBA format
     ///
@@ -214,7 +239,7 @@ impl Image
         pixel: T, colorspace: ColorSpace, width: usize, height: usize
     ) -> Result<Image, ImageErrors>
     where
-        T: Copy + Clone + NumOps<T> + 'static + ZuneInts<T> + Zeroable + Pod
+        T: Copy + Clone + 'static + ZuneInts<T> + Zeroable + Pod
     {
         let dims = width * height * T::depth().size_of();
 
@@ -510,6 +535,22 @@ impl Image
             }
         }
         Ok(())
+    }
+}
+
+/// Image conversion routines
+impl Image
+{
+    /// Convert an image from one colorspace to another
+    ///
+    ///
+    pub fn convert_color(&mut self, to: ColorSpace) -> Result<(), ImageErrors>
+    {
+        ColorspaceConv::new(to).execute(self)
+    }
+    pub fn convert_depth(&mut self, to: BitDepth) -> Result<(), ImageErrors>
+    {
+        Depth::new(to).execute(self)
     }
 }
 
