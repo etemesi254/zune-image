@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! A png decoder
 //!
 //! This features a simple PNG reader in Rust which supports decoding of valid
@@ -108,12 +114,14 @@
 extern crate alloc;
 
 pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
+pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;
 pub use zune_core;
 
 mod constants;
 mod crc;
 mod decoder;
+mod encoder;
 mod enums;
 pub mod error;
 mod filters;
