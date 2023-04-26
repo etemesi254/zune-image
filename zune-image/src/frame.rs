@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! A single image frame
 
 #![allow(dead_code)]
@@ -399,6 +405,86 @@ impl Frame
         out_pixel
     }
 
+    /// convert type to native endian
+    pub fn u16_to_big_endian(&self, colorspace: ColorSpace) -> Vec<u8>
+    {
+        // confirm all channels are in u16
+        for channel in &self.channels
+        {
+            if channel.get_type_id() != TypeId::of::<u16>()
+            {
+                panic!("Wrong type ID, expected u16 but got another type");
+                // wrong type id, that's an error
+                //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));
+            }
+        }
+        let length = self.channels[0].len() * colorspace.num_components();
+
+        let mut out_pixel = vec![0_u8; length];
+
+        match colorspace.num_components()
+        {
+            // reinterpret as u16 first then native endian
+            1 => self.channels[0]
+                .reinterpret_as::<u16>()
+                .unwrap()
+                .iter()
+                .zip(out_pixel.chunks_exact_mut(2))
+                .for_each(|(x, y)| y.copy_from_slice(&x.to_be_bytes())),
+
+            2 =>
+            {
+                let luma_channel = self.channels[0].reinterpret_as::<u16>().unwrap();
+                let alpha_channel = self.channels[1].reinterpret_as::<u16>().unwrap();
+
+                for ((out, luma), alpha) in out_pixel
+                    .chunks_exact_mut(4)
+                    .zip(luma_channel)
+                    .zip(alpha_channel)
+                {
+                    out[0..2].copy_from_slice(&luma.to_be_bytes());
+                    out[2..4].copy_from_slice(&alpha.to_be_bytes());
+                }
+            }
+            3 =>
+            {
+                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
+
+                for (((out, first), second), third) in
+                    out_pixel.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
+                {
+                    out[0..2].copy_from_slice(&first.to_be_bytes());
+                    out[2..4].copy_from_slice(&second.to_be_bytes());
+                    out[4..6].copy_from_slice(&third.to_be_bytes());
+                }
+            }
+            4 =>
+            {
+                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
+                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
+                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
+                let c4 = self.channels[3].reinterpret_as::<u16>().unwrap();
+
+                for ((((out, first), second), third), fourth) in out_pixel
+                    .chunks_exact_mut(8)
+                    .zip(c1)
+                    .zip(c2)
+                    .zip(c3)
+                    .zip(c4)
+                {
+                    out[0..2].copy_from_slice(&first.to_be_bytes());
+                    out[2..4].copy_from_slice(&second.to_be_bytes());
+                    out[4..6].copy_from_slice(&third.to_be_bytes());
+                    out[6..8].copy_from_slice(&fourth.to_be_bytes());
+                }
+            }
+            // panics, all the way down
+            _ => unreachable!()
+        }
+        out_pixel
+    }
     pub fn set_channels(&mut self, channels: Vec<Channel>)
     {
         self.channels = channels;
