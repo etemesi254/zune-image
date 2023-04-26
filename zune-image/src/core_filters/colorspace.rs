@@ -9,6 +9,7 @@ use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 mod grayscale;
+mod rgb_to_xyb;
 
 pub struct ColorspaceConv
 {
