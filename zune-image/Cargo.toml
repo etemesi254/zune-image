@@ -21,15 +21,17 @@ serde-support = ["zune-core/serde", "serde"]
 image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr"]
 # External crates that help us handle metadata
 metadata = ["kamadak-exif"]
+# Image filters
+filters = ["zune-imageprocs"]
 # Every supported thing
 default = ["all"]
 # Whether to use threads or not for some operations
 threads = ["zune-jpegxl/threads"]
 
-all = ["image_formats", "serde-support", "metadata", "threads"]
+all = ["image_formats", "serde-support", "metadata", "threads", "filters"]
 
 [dependencies]
-zune-imageprocs = { path = "../zune-imageprocs" }
+zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
 zune-core = { path = "../zune-core", version = "0.2.1" }
 # Images

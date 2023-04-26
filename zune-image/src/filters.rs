@@ -1,20 +1,24 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Contains image manipulation algorithms
 //!
 //! This contains structs that implement `OperationsTrait`
 //! meaning they can manipulate images
+#![cfg(feature = "filters")]
 pub mod box_blur;
 pub mod brighten;
-pub mod colorspace;
 pub mod contrast;
 pub mod convolve;
 pub mod crop;
-pub mod depth;
 pub mod exposure;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
 pub mod gaussian_blur;
-pub mod grayscale;
 pub mod invert;
 pub mod median;
 pub mod mirror;
