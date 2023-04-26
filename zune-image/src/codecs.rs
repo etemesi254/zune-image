@@ -292,6 +292,17 @@ impl ImageFormat
                     None
                 }
             }
+            Self::PNG =>
+            {
+                #[cfg(feature = "png")]
+                {
+                    Some(Box::new(codecs::png::PngEncoder::new_with_options(options)))
+                }
+                #[cfg(not(feature = "png"))]
+                {
+                    None
+                }
+            }
             // all encoders not implemented default to none
             _ => None
         }
@@ -401,6 +412,17 @@ impl ImageFormat
                     Some((ImageFormat::HDR, ImageFormat::HDR.get_encoder().unwrap()))
                 }
                 #[cfg(not(feature = "hdr"))]
+                {
+                    None
+                }
+            }
+            "png" =>
+            {
+                #[cfg(feature = "png")]
+                {
+                    Some((ImageFormat::PNG, ImageFormat::PNG.get_encoder().unwrap()))
+                }
+                #[cfg(not(feature = "png"))]
                 {
                     None
                 }
