@@ -359,29 +359,27 @@ impl<'a> PngDecoder<'a>
             return Err(PngDecodeErrors::Generic(err));
         }
         // Confirm the CRC here.
-        #[cfg(feature = "crc")]
+
+        if self.options.png_get_confirm_crc()
         {
-            if self.options.png_get_confirm_crc()
+            use crate::crc::crc32_slice8;
+
+            // go back and point to chunk type.
+            self.stream.rewind(4);
+            // read chunk type + chunk data
+            let bytes = self.stream.peek_at(0, chunk_length + 4).unwrap();
+
+            // calculate crc
+            let calc_crc = !crc32_slice8(bytes, u32::MAX);
+
+            if crc != calc_crc
             {
-                use crate::crc::crc32_slice8;
-
-                // go back and point to chunk type.
-                self.stream.rewind(4);
-                // read chunk type + chunk data
-                let bytes = self.stream.peek_at(0, chunk_length + 4).unwrap();
-
-                // calculate crc
-                let calc_crc = !crc32_slice8(bytes, u32::MAX);
-
-                if crc != calc_crc
-                {
-                    return Err(PngDecodeErrors::BadCrc(crc, calc_crc));
-                }
-                // go point after the chunk type
-                // The other parts expect the bit-reader to point to the
-                // start of the chunk data.
-                self.stream.skip(4);
+                return Err(PngDecodeErrors::BadCrc(crc, calc_crc));
             }
+            // go point after the chunk type
+            // The other parts expect the bit-reader to point to the
+            // start of the chunk data.
+            self.stream.skip(4);
         }
 
         Ok(PngChunk {

@@ -17,10 +17,9 @@ description = "A fast, correct and safe png decoder"
 ## Disabling this disables CRC checking and the associated code for that
 ## Can save some bytes on images.
 ## Note, this can be disabled manually using options
-crc = []
 sse = []
 std = ["zune-core/std"]
-default = ["crc", "sse", "std"]
+default = ["sse", "std"]
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.2.13" }

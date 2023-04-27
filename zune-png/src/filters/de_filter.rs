@@ -4,8 +4,6 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use crate::filters::sse4;
-
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
     prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
@@ -24,10 +22,10 @@ pub fn handle_avg(
         {
             match components
             {
-                3 => return sse4::defilter_avg_sse::<3>(prev_row, raw, current),
-                4 => return sse4::defilter_avg_sse::<4>(prev_row, raw, current),
-                6 => return sse4::defilter_avg_sse::<6>(prev_row, raw, current),
-                8 => return sse4::defilter_avg_sse::<8>(prev_row, raw, current),
+                3 => return crate::filters::sse4::defilter_avg_sse::<3>(prev_row, raw, current),
+                4 => return crate::filters::sse4::defilter_avg_sse::<4>(prev_row, raw, current),
+                6 => return crate::filters::sse4::defilter_avg_sse::<6>(prev_row, raw, current),
+                8 => return crate::filters::sse4::defilter_avg_sse::<8>(prev_row, raw, current),
                 _ => ()
             }
         }
@@ -78,10 +76,10 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
         {
             match components
             {
-                3 => return sse4::de_filter_sub_sse2::<3>(raw, current),
-                4 => return sse4::de_filter_sub_sse2::<4>(raw, current),
-                6 => return sse4::de_filter_sub_sse2::<6>(raw, current),
-                8 => return sse4::de_filter_sub_sse2::<8>(raw, current),
+                3 => return crate::filters::sse4::de_filter_sub_sse2::<3>(raw, current),
+                4 => return crate::filters::sse4::de_filter_sub_sse2::<4>(raw, current),
+                6 => return crate::filters::sse4::de_filter_sub_sse2::<6>(raw, current),
+                8 => return crate::filters::sse4::de_filter_sub_sse2::<8>(raw, current),
                 _ => ()
             }
         }
@@ -118,10 +116,22 @@ pub fn handle_paeth(
         {
             match components
             {
-                3 => return sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current),
-                4 => return sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current),
-                6 => return sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current),
-                8 => return sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current),
+                3 =>
+                {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current)
+                }
+                4 =>
+                {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current)
+                }
+                6 =>
+                {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current)
+                }
+                8 =>
+                {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current)
+                }
                 _ => ()
             }
         }
