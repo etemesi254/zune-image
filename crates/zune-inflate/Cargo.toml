@@ -13,9 +13,10 @@ license = "MIT OR Apache-2.0 or Zlib"
 [features]
 zlib = ["simd-adler32"]
 gzip = []
-std = []
+std = ["simd-adler32/std"]
+
 
 default = ["zlib", "gzip", "std"]
 
 [dependencies]
-simd-adler32 = { version = "0.3.4", optional = true }
+simd-adler32 = { version = "0.3.4", optional = true, default-features = false }
