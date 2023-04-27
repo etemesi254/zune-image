@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+use alloc::vec;
+use alloc::vec::Vec;
+
 use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_core::options::EncoderOptions;

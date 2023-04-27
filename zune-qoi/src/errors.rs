@@ -1,5 +1,12 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+use alloc::string::String;
 /// Errors possible during decoding.
-use std::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Formatter};
 
 use zune_core::colorspace::ColorSpace;
 
@@ -36,7 +43,7 @@ pub enum QoiErrors
 
 impl Debug for QoiErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
@@ -107,7 +114,7 @@ pub enum QoiEncodeErrors
 
 impl Debug for QoiEncodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
