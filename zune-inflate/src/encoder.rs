@@ -8,7 +8,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::constants::DEFLATE_BLOCKTYPE_UNCOMPRESSED;
-use crate::utils::calc_adler_hash;
 
 #[derive(Debug, Copy, Clone)]
 pub enum DeflateEncodingStrategy
@@ -18,6 +17,7 @@ pub enum DeflateEncodingStrategy
 
 impl DeflateEncodingStrategy
 {
+    #[allow(dead_code)]
     fn to_level(self) -> u8
     {
         match self
@@ -74,6 +74,7 @@ impl<'a> DeflateEncoder<'a>
         }
     }
 
+    #[cfg(feature = "zlib")]
     fn write_zlib_header(&mut self)
     {
         const ZLIB_CM_DEFLATE: u16 = 8;
@@ -151,13 +152,9 @@ impl<'a> DeflateEncoder<'a>
         }
     }
 
-    pub fn encode_zlib(&mut self) -> Vec<u8>
+    /// Encode a deflate stream
+    pub fn encode_deflate(&mut self)
     {
-        let extra = 40 * ((self.data.len() + 41) / 40);
-        self.output = vec![0_u8; self.data.len() + extra];
-        self.write_zlib_header();
-        self.output_position = 2;
-
         match self.options.strategy
         {
             DeflateEncodingStrategy::NoCompression =>
@@ -165,8 +162,20 @@ impl<'a> DeflateEncoder<'a>
                 self.encode_no_compression();
             }
         }
+    }
+
+    #[cfg(feature = "zlib")]
+    pub fn encode_zlib(&mut self) -> Vec<u8>
+    {
+        let extra = 40 * ((self.data.len() + 41) / 40);
+        self.output = vec![0_u8; self.data.len() + extra];
+        self.write_zlib_header();
+        self.output_position = 2;
+
+        self.encode_deflate();
+
         // add adler hash
-        let hash = calc_adler_hash(self.data);
+        let hash = crate::utils::calc_adler_hash(self.data);
         self.output[self.output_position..self.output_position + 4]
             .copy_from_slice(&hash.to_be_bytes());
         self.output_position += 4;
