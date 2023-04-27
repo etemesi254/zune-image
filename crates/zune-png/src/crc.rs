@@ -4,8 +4,6 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-#![cfg(feature = "crc")]
-
 use crate::crc::crc_tables::{CRC32_SLICE1_TABLE, CRC32_SLICE8_TABLE};
 
 mod crc_tables;
