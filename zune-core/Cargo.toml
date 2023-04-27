@@ -12,9 +12,10 @@ license = "MIT OR Apache-2.0 OR Zlib"
 [features]
 # When present, we can use std facilities to detect
 # if a specific feature exists
+# Not enabled by default. Other zune crates can enable dep:zune-core/std by default.
+# But if we enable it here, they can't disable it anymore.
+# See: https://github.com/rust-lang/cargo/issues/8366
 std = []
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-default = ["std"]
 
 [dependencies]
 bitflags = "2.1.0"
