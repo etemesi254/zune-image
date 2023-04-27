@@ -23,7 +23,11 @@ jobs:
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
         # Target below does not have a CI
       - run: rustup target add x86_64-unknown-uefi
+        # Below targets run in no-std environments
+      - run: cargo build -p zune-core    --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-inflate --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-jpeg    --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-png     --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-qoi     --target x86_64-unknown-uefi --no-default-features
+
 
