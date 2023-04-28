@@ -1,9 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! A RADIANCE HDR decoder and encoder
 //!
 //!
 //! # Features
 //! - Minimal interface, few dependencies
-//! - `no_std` by default with alloc feature
 //! - Fast.
 //!
 //! # Usage notes
@@ -20,9 +25,12 @@
 //! Some important metadata include the image colorspace, which may be present or not,
 //! color primaries, exposure,gamma e.t.c,
 //!
-#![no_std]
-#![macro_use]
-extern crate alloc;
+
+// CAE: No std doesn't work because we haven't implemented
+// floor and exp2 for floats, which do not exist in no std land
+// #![no_std]
+// #![macro_use]
+//extern crate alloc;
 
 pub use decoder::HdrDecoder;
 pub use encoder::HdrEncoder;
