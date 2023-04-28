@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Radiance HDR encoder
 
 use alloc::vec::Vec;
@@ -214,6 +220,44 @@ fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4])
     }
 }
 
+#[rustfmt::skip]
+pub fn abs(num: f32) -> f32
+{
+    if num < 0.0 { -num } else { num }
+}
+
+/// Implementation of signum that works in no_std
+#[rustfmt::skip]
+pub fn signum(num: f32) -> f32
+{
+    if num.is_nan() { f32::NAN } else if num.is_infinite()
+    {
+        if num.is_sign_positive() { 0.0 } else { -0.0 }
+    } else if num > 0.0 { 1.0 } else { -1.0 }
+}
+
+/// Fast log2 approximation
+/// (we really don't need that accurate)
+#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+fn fast_log2(x: f32) -> f32
+{
+    /*
+     * Fast log approximation from
+     * https://github.com/romeric/fastapprox
+     *
+     * Some pretty good stuff.
+     */
+    let vx = x.to_bits();
+    let mx = (vx & 0x007F_FFFF) | 0x3f00_0000;
+    let mx_f = f32::from_bits(mx);
+
+    let mut y = vx as f32;
+    // 1/(1<<23)
+    y *= 1.192_092_9e-7;
+
+    y - 124.225_52 - 1.498_030_3 * mx_f - 1.725_88 / (0.352_088_72 + mx_f)
+}
+
 /// non standard frexp implementation
 fn frexp(s: f32) -> (f32, i32)
 {
@@ -224,9 +268,9 @@ fn frexp(s: f32) -> (f32, i32)
     }
     else
     {
-        let lg = s.abs().log2();
+        let lg = fast_log2(abs(s));
         let x = (lg - lg.floor() - 1.0).exp2();
         let exp = lg.floor() + 1.0;
-        (s.signum() * x, exp as i32)
+        (signum(s) * x, exp as i32)
     }
 }
