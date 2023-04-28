@@ -51,4 +51,4 @@ pub static ALL_COLORSPACES: [ColorSpace; 10] = [
 It is recommended to add a mapping that converts the colorspace from RGB to it and vice versa, as most
 decoders and encoders understand RGB.
 
-This is done in the `zune-image/src/impls/colorspace.rs` file
+This is done in the `zune-image/src/core_filters/colorspace.rs` file
