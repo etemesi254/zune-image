@@ -14,7 +14,6 @@ use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
-use zune_core::utils::{convert_be_to_target_endian_u16, is_le};
 use zune_inflate::DeflateOptions;
 
 use crate::constants::PNG_SIGNATURE;
@@ -24,7 +23,10 @@ use crate::filters::de_filter::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
 use crate::options::{default_chunk_handler, UnkownChunkHandler};
-use crate::utils::{add_alpha, expand_bits_to_byte, expand_palette, expand_trns};
+use crate::utils::{
+    add_alpha, convert_be_to_target_endian_u16, expand_bits_to_byte, expand_palette, expand_trns,
+    is_le
+};
 
 /// A palette entry.
 ///
