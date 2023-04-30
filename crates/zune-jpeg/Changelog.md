@@ -1,3 +1,7 @@
+## Version 0.3.17
+
+- Fix no-std compilation
+
 ## Version 0.3.16
 
 - Add support for decoding to BGR and BGRA
