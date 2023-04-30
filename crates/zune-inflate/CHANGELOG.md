@@ -1,3 +1,8 @@
+## Version 0.2.54
+
+- Add simple encoder
+- Fix no_std compilation
+
 ## Version 0.2.52
 
 - Add small fix for refilling where the decoder lacked bits
