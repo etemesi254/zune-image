@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -113,6 +121,14 @@ impl<'a> FarbFeldDecoder<'a>
     ///
     /// # Arguments
     /// - `sink`: The output buffer which we will fill with bytes
+    ///
+    /// # Endianness
+    ///
+    /// Since Farbfeld uses 16 bit big endian samples, each two bytes
+    /// represent a single pixel.
+    ///
+    /// The endianness of these is converted to native endian which means
+    /// each two consecutive bytes represents the two bytes that make the u16
     pub fn decode_into(&mut self, sink: &mut [u8]) -> Result<(), &'static str>
     {
         if !self.decoded_headers

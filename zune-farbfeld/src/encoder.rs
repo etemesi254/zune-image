@@ -1,4 +1,13 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Encoding support for Farbfeld image format
+
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
@@ -60,6 +69,7 @@ impl Debug for FarbFeldEncoderErrors
 ///
 ///
 /// # NOTE.
+///  
 /// Data is expected to be in16 bit NATIVE ENDIAN in RGBA format
 /// and BitDepth of 16, if not so this is an error.
 ///
@@ -68,6 +78,32 @@ impl Debug for FarbFeldEncoderErrors
 /// yourself with a simple loop.
 ///
 /// [bytemuck]:https://docs.rs/bytemuck/latest/bytemuck/index.html
+///
+/// # Example
+/// - Encodes a 10 by 4 RGBA image
+/// ```
+/// use zune_core::bit_depth::BitDepth;
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_core::options::EncoderOptions;
+/// use zune_farbfeld::FarbFeldEncoder;
+/// //
+/// let image:[u16;160] =std::array::from_fn(|c| c as u16);
+///
+///  // encoder options for depth and colorspace must be specified
+///let options = EncoderOptions::default()
+///     .set_width(10)
+///     .set_height(4)
+///     .set_depth(BitDepth::Sixteen)
+///     .set_colorspace(ColorSpace::RGBA);
+///
+/// // we need u8 as an image but we created u16, so alias to u8
+/// let (_,alias,_) = unsafe{image.align_to::<u8>()};
+/// assert_eq!(alias.len(),320);
+///
+/// // encode to farbfeld format
+/// // it expects native endian so no need to change
+/// FarbFeldEncoder::new(&alias,options).encode().unwrap();
+/// ```
 pub struct FarbFeldEncoder<'a>
 {
     data:    &'a [u8],
@@ -78,6 +114,11 @@ impl<'a> FarbFeldEncoder<'a>
 {
     /// Create a new encode which will encode the specified data
     /// whose format is contained in options
+    ///
+    /// # Arguments
+    /// - data: The data to encode
+    /// - options: Meta information about the image
+    ///  contains image width, color and depth
     pub fn new(data: &'a [u8], options: EncoderOptions) -> FarbFeldEncoder<'a>
     {
         FarbFeldEncoder { data, options }
@@ -109,6 +150,8 @@ impl<'a> FarbFeldEncoder<'a>
         Ok(())
     }
 
+    /// Encode the contents returning a vector containing
+    /// encoded contents or an error if anything occurs
     pub fn encode(&self) -> Result<Vec<u8>, FarbFeldEncoderErrors>
     {
         if self.options.get_depth() != BitDepth::Sixteen
