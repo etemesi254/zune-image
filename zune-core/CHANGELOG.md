@@ -1,4 +1,11 @@
-## 0.2.2
+## 0.2.14
+
+- Fixed building with no-std
+- Add `peek_at` and `pos` for writer
+- Make serde non default
+- Add option to make PNG add an alpha channel
+
+## 0.2.12
 
 - Add endianness conversion
 - Hide exposed values for EncoderOptions
