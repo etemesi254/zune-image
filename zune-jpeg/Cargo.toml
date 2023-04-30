@@ -1,6 +1,6 @@
 [package]
 name = "zune-jpeg"
-version = "0.3.16"
+version = "0.3.17"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/zune-jpeg"
@@ -21,5 +21,5 @@ default = ["x86", "std"]
 
 [dependencies]
 log = "0.4.11" # logging facilities
-zune-core = { path = "../zune-core", version = "0.2.13" }
+zune-core = { path = "../zune-core", version = "0.2" }
 
