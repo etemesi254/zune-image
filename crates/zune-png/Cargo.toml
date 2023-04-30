@@ -1,6 +1,6 @@
 [package]
 name = "zune-png"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/zune-png"
@@ -22,9 +22,9 @@ std = ["zune-core/std"]
 default = ["sse", "std"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2.13" }
+zune-core = { path = "../zune-core", version = "0.2" }
 log = "0.4.17"
-zune-inflate = { path = "../zune-inflate", version = "0.2.53", default-features = false, features = ["zlib"] }
+zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
 bytemuck = { version = "1.13.1", default-features = false }
 
 [dev-dependencies]
