@@ -9,6 +9,27 @@ use alloc::vec::Vec;
 
 use crate::constants::DEFLATE_BLOCKTYPE_UNCOMPRESSED;
 
+mod fast_match_finder;
+
+const _SEQ_LENGTH_SHIFT: u32 = 23;
+
+const _SEQ_LITRUNLEN_MASK: u32 = (1_u32 << _SEQ_LENGTH_SHIFT) - 1;
+
+pub(crate) struct _Sequence
+{
+    /*
+     * Bits 0..22: the number of literals in this run.  This may be 0 and
+     * can be at most MAX_BLOCK_LENGTH.  The literals are not stored
+     * explicitly in this structure; instead, they are read directly from
+     * the uncompressed data.
+     *
+     * Bits 23..31: the length of the match which follows the literals, or 0
+     * if this literal run was the last in the block, so there is no match
+     * which follows it.
+     */
+    litrunlen_and_length: u32
+}
+
 #[derive(Debug, Copy, Clone)]
 pub enum DeflateEncodingStrategy
 {
@@ -42,6 +63,9 @@ impl Default for DeflateEncodingOptions
     }
 }
 
+/// A simple Deflate Encoder.
+///
+/// Not yet complete
 pub struct DeflateEncoder<'a>
 {
     data:            &'a [u8],
@@ -91,8 +115,14 @@ impl<'a> DeflateEncoder<'a>
             .copy_from_slice(&hdr.to_be_bytes());
     }
     /// Encode a deflate data block with no compression
-    fn encode_no_compression(&mut self)
+    ///
+    /// # Argument
+    /// - `bytes`: number of bytes to compress from input as non-compressed
+    /// bytes
+    fn encode_no_compression(&mut self, bytes: usize)
     {
+        let final_position = self.input_position + bytes;
+
         /*
          * If the input is zero-length, we still must output a block in order
          * for the output to be a valid DEFLATE stream.  Handle this case
@@ -115,10 +145,10 @@ impl<'a> DeflateEncoder<'a>
             let mut bfinal = 0;
             let mut len = usize::from(u16::MAX);
 
-            if self.data.len() - self.input_position <= usize::from(u16::MAX)
+            if final_position - self.input_position <= usize::from(u16::MAX)
             {
                 bfinal = 1;
-                len = self.data.len() - self.input_position;
+                len = final_position - self.input_position;
             }
             /*
              * Output BFINAL and BTYPE.  The stream is already byte-aligned
@@ -145,7 +175,7 @@ impl<'a> DeflateEncoder<'a>
             self.output_position += len;
             self.input_position += len;
 
-            if self.input_position == self.data.len()
+            if self.input_position == final_position
             {
                 break;
             }
@@ -159,7 +189,7 @@ impl<'a> DeflateEncoder<'a>
         {
             DeflateEncodingStrategy::NoCompression =>
             {
-                self.encode_no_compression();
+                self.encode_no_compression(self.data.len());
             }
         }
     }
