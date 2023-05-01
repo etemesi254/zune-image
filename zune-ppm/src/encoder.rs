@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::fmt::{Debug, Display, Formatter};
 
 use zune_core::bit_depth::BitType;
@@ -15,7 +25,7 @@ pub enum PPMEncodeErrors
 
 impl Debug for PPMEncodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
@@ -44,7 +54,7 @@ pub enum PPMVersions
 
 impl Display for PPMVersions
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
