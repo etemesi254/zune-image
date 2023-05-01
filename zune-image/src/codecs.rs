@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Entry point for all supported codecs the library understands
 //!
 //! The codecs here can be enabled and disabled at will depending on the configured interface,
@@ -35,6 +43,7 @@ use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
+pub mod bmp;
 pub mod exr;
 pub mod farbfeld;
 pub mod hdr;
@@ -89,6 +98,8 @@ pub enum ImageFormat
     JPEG_XL,
     /// Radiance HDR decoder
     HDR,
+    /// Windows Bitmap Files
+    BMP,
     /// Any unknown format
     Unknown
 }
@@ -209,6 +220,19 @@ impl ImageFormat
                     )))
                 }
                 #[cfg(not(feature = "hdr"))]
+                {
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
+            }
+            ImageFormat::BMP =>
+            {
+                #[cfg(feature = "bmp")]
+                {
+                    Ok(Box::new(zune_bmp::BmpDecoder::new_with_options(
+                        data, options
+                    )))
+                }
+                #[cfg(not(feature = "bmp"))]
                 {
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
@@ -335,6 +359,14 @@ impl ImageFormat
                 return Some(decoder);
             }
         }
+        #[cfg(feature = "bmp")]
+        {
+            if zune_bmp::probe_bmp(bytes)
+            {
+                return Some(ImageFormat::BMP);
+            }
+        }
+
         None
     }
 
