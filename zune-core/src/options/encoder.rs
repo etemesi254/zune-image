@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use bitflags::bitflags;
 
 use crate::bit_depth::BitDepth;
@@ -63,6 +71,29 @@ impl Default for EncoderOptions
 
 impl EncoderOptions
 {
+    ///  Create  new encode options
+    ///
+    /// # Arguments
+    ///  
+    /// * `width`: Image width
+    /// * `height`: Image height
+    /// * `colorspace`:  Image colorspaces
+    /// * `depth`: Image depth
+    ///
+    /// returns: EncoderOptions
+    ///
+    pub fn new(
+        width: usize, height: usize, colorspace: ColorSpace, depth: BitDepth
+    ) -> EncoderOptions
+    {
+        EncoderOptions {
+            width,
+            height,
+            colorspace,
+            depth,
+            ..Default::default()
+        }
+    }
     /// Get the width for which the image will be encoded in
     pub const fn get_width(&self) -> usize
     {
