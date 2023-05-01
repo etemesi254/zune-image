@@ -16,7 +16,7 @@ use crate::decoder::PngChunk;
 use crate::enums::{FilterMethod, PngChunkType};
 use crate::filters::{choose_compression_filter, filter_scanline};
 use crate::headers::writers::{
-    write_exif, write_gamma, write_header, write_header_fn, write_iend, write_ihdr
+    write_chunk, write_exif, write_gamma, write_header_fn, write_iend, write_ihdr
 };
 
 #[derive(Default)]
@@ -92,6 +92,16 @@ impl<'a> PngEncoder<'a>
             .checked_add(MAX_HEADER_SIZE)
             .unwrap();
 
+        // now calculate how much uncompressed ihdrs would add
+        {
+            let raw_len = self.data.len() + self.options.get_height() /*each row has a filter byte */;
+            // divide each into 8192 bytes
+            let mut extra_bytes = (raw_len + 8191) / 8192;
+            // for each extra byte, add header, length and crc
+            extra_bytes = extra_bytes * (4 + 4 + 4);
+
+            out_dims += extra_bytes;
+        }
         if let Some(exif) = self.exif
         {
             out_dims += exif.len() + 40;
@@ -183,7 +193,7 @@ impl<'a> PngEncoder<'a>
                 chunk:      *b"IDAT",
                 crc:        0 // not needed
             };
-            write_header(chunk_type, chunk, writer);
+            write_chunk(chunk_type, chunk, writer);
         }
     }
 }

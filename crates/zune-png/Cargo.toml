@@ -14,9 +14,6 @@ description = "A fast, correct and safe png decoder"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-## Disabling this disables CRC checking and the associated code for that
-## Can save some bytes on images.
-## Note, this can be disabled manually using options
 sse = []
 std = ["zune-core/std"]
 default = ["sse", "std"]
