@@ -1,3 +1,17 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+//! Colorspace conversion routines
+//!
+//!
+//! This contains simple colorspace conversion routines
+//! that convert between different colorspaces in image
+//!
 use log::warn;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;

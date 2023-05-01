@@ -17,16 +17,17 @@
 //! ### Image decoders and encoders
 //! By default, a feature includes both format decoder and encoder if present.
 //!
-//! | Feature      | Decoder       | Encoder        |
-//! |--------------|---------------|----------------|
-//! | jpeg         | zune-jpeg     | [jpeg-encoder] |
-//! | png          | zune-png      | zune-png       |
-//! | ppm          | zune-ppm      | zune-ppm       |
-//! | qoi          | zune-qoi      | zune-qoi       |
-//! | farbfeld     | zune-farbfeld | zune-farbfeld  |
-//! | psd          | zune-psd      | -              |
-//! | jpeg-xl      | -             | zune-jpegxl    |
-//! | hdr          | zune-hdr      | zune-hdr       |
+//!
+//!| Feature      | Decoder       | Encoder        |
+//!|--------------|---------------|----------------|
+//!| jpeg         | zune-jpeg     | [jpeg-encoder] |
+//!| png          | zune-png      | zune-png       |
+//!| ppm          | zune-ppm      | zune-ppm       |
+//!| qoi          | zune-qoi      | zune-qoi       |
+//!| farbfeld     | zune-farbfeld | zune-farbfeld  |
+//!| psd          | zune-psd      | -              |
+//!| jpeg-xl      | -             | zune-jpegxl    |
+//!| hdr          | zune-hdr      | zune-hdr       |
 //!
 //!
 //! ### Image filters

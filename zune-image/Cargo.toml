@@ -14,11 +14,12 @@ farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
 jpeg-xl = ["zune-jpegxl"]
 hdr = ["zune-hdr"]
+bmp = ["zune-bmp"]
 
 # Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
 # All image formats
-image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr"]
+image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr", "bmp"]
 # External crates that help us handle metadata
 metadata = ["kamadak-exif"]
 # Image filters
@@ -33,7 +34,7 @@ all = ["image_formats", "serde-support", "metadata", "threads", "filters"]
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
-zune-core = { path = "../zune-core", version = "0.2.1" }
+zune-core = { path = "../zune-core", version = "0.2" }
 # Images
 zune-png = { path = "../zune-png", optional = true }
 zune-jpeg = { path = "../zune-jpeg", optional = true }
@@ -43,6 +44,7 @@ zune-farbfeld = { path = "../zune-farbfeld", optional = true }
 zune-qoi = { path = "../zune-qoi", optional = true }
 zune-jpegxl = { path = "../zune-jpegxl", optional = true }
 zune-hdr = { path = "../zune-hdr", optional = true }
+zune-bmp = { path = "../zune-bmp", optional = true }
 # Logging information
 log = "0.4.17"
 # Channel conversions in a safe way
