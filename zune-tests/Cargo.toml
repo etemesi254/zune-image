@@ -14,3 +14,4 @@ zune-jpeg = { version = "0.3.12", path = "../zune-jpeg" }
 zune-psd = { version = "0.1.0", path = "../zune-psd" }
 zune-png = { version = "0.2.0", path = "../zune-png" }
 zune-inflate = { version = "0.2.51", path = "../zune-inflate" }
+zune-bmp = { version = "0.1.0", path = "../zune-bmp" }
