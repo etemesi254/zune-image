@@ -1,4 +1,15 @@
-use std::fmt::{Debug, Formatter};
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use alloc::{format, vec};
+use core::fmt::{Debug, Formatter};
 
 use log::info;
 use zune_core::bit_depth::{BitDepth, BitType, ByteEndian};
@@ -37,7 +48,7 @@ pub enum PPMDecodeErrors
 
 impl Debug for PPMDecodeErrors
 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
     {
         match self
         {
