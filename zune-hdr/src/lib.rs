@@ -29,8 +29,8 @@
 // CAE: No std doesn't work because we haven't implemented
 // floor and exp2 for floats, which do not exist in no std land
 // #![no_std]
-// #![macro_use]
-//extern crate alloc;
+#![macro_use]
+extern crate alloc;
 
 pub use decoder::HdrDecoder;
 pub use encoder::HdrEncoder;

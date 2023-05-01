@@ -103,7 +103,7 @@ pub fn write_header_fn<F: Fn(&PngEncoder, &mut ZByteWriter)>(
     writer.write_u32_be(crc32);
 }
 
-pub(crate) fn write_header(chunk: PngChunk, data: &[u8], writer: &mut ZByteWriter)
+pub(crate) fn write_chunk(chunk: PngChunk, data: &[u8], writer: &mut ZByteWriter)
 {
     // write length
     writer.write_u32_be(chunk.length as u32);

@@ -16,6 +16,7 @@ members = [
     # Image processing routines.
     "zune-imageprocs",
     # Image formats
+    "zune-bmp",
     "zune-farbfeld",
     "zune-hdr",
     "zune-jpeg",
