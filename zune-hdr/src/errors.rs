@@ -1,4 +1,5 @@
 use alloc::string::String;
+use core::convert::From;
 use core::fmt::{Debug, Formatter};
 use core::num::ParseIntError;
 
