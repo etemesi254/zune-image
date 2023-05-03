@@ -26,9 +26,7 @@
 //! color primaries, exposure,gamma e.t.c,
 //!
 
-// CAE: No std doesn't work because we haven't implemented
-// floor and exp2 for floats, which do not exist in no std land
-// #![no_std]
+#![no_std]
 #![macro_use]
 extern crate alloc;
 

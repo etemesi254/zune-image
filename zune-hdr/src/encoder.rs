@@ -9,6 +9,8 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
+use libm::{floorf, exp2f};
+
 use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
@@ -269,8 +271,8 @@ fn frexp(s: f32) -> (f32, i32)
     else
     {
         let lg = fast_log2(abs(s));
-        let x = (lg - lg.floor() - 1.0).exp2();
-        let exp = lg.floor() + 1.0;
+        let x = exp2f(lg - floorf(lg) - 1.0);
+        let exp = floorf(lg) + 1.0;
         (signum(s) * x, exp as i32)
     }
 }

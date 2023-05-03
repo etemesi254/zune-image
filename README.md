@@ -24,7 +24,7 @@ The set of codecs aim to have the following features in order of priority
 | farbfeld     | zune-farbfeld | zune-farbfeld  | Yes              |
 | psd          | zune-psd      | -              | Yes              |
 | jpeg-xl      | -             | zune-jpegxl    | No               |
-| hdr          | zune-hdr      | zune-hdr       | No               |
+| hdr          | zune-hdr      | zune-hdr       | Yes              |
 
 ## Safety
 

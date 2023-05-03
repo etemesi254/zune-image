@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 zune-core = { version = "0.2.13", path = "../zune-core" }
+libm = "0.2.6"
 log = "0.4.17"
