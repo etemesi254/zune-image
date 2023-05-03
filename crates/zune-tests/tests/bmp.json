@@ -2,6 +2,41 @@
   {
     "name": "pal8.bmp",
     "comment": "8 bit palette, RGBA, A is 255",
-    "hash": 306475540142464560678053480980768011352
+    "hash": 210961376999799840244335734601069082281
+  },
+  {
+    "name": "pal1.bmp",
+    "comment": "1 bit palette, 2 colors",
+    "hash": 74484576406615275230058188918848437139
+  },
+  {
+    "name": "pal1bg.bmp",
+    "comment": "1 bit palette black and white,white is the first color in palette",
+    "hash": 298490505480669182463797944686756829117
+  },
+  {
+    "name": "pal1wb.bmp",
+    "comment": "1 bit pixel paletted images with colors other than black and white",
+    "hash": 74484576406615275230058188918848437139
+  },
+  {
+    "name": "pal2.bmp",
+    "comment": "A paletted image with 2 bits/pixel. Usually only 1, 4, and 8 are allowed, but 2 is legal on Windows CE",
+    "hash": 258583705257579956598083621075444584120
+  },
+  {
+    "name": "pal2color.bmp",
+    "comment": "Same as pal2.bmp, but with a color palette instead of grayscale palette.",
+    "hash": 245195697127267904918503195696832211837
+  },
+  {
+    "name": "pal4.bmp",
+    "comment": "Paletted image with 12 palette colors, and 4 bits/pixel.",
+    "hash": 166564879634322152079482666472302578484
+  },
+  {
+    "name": "pal4gs.bmp",
+    "comment": "Paletted image with 12 grayscale palette colors, and 4 bits/pixel.",
+    "hash": 58337882393990265328188720673163171444
   }
 ]
