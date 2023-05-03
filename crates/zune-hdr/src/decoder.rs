@@ -2,6 +2,9 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::iter::Iterator;
+use core::option::Option::{self, *};
+use core::result::Result::{self, *};
 
 use log::{info, trace};
 use zune_core::bytestream::ZByteReader;
