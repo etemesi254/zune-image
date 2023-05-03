@@ -8,7 +8,9 @@
 //! and masks but such functionality will be added with time
 //!
 //!
-use std::cmp::Ordering;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
 
 use log::info;
 use zune_core::bit_depth::BitDepth;
