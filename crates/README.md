@@ -22,7 +22,7 @@ The set of codecs aim to have the following features in order of priority
 | ppm          | zune-ppm      | zune-ppm       | Yes              |
 | qoi          | zune-qoi      | zune-qoi       | Yes              |
 | farbfeld     | zune-farbfeld | zune-farbfeld  | Yes              |
-| psd          | zune-psd      | -              | No               |
+| psd          | zune-psd      | -              | Yes              |
 | jpeg-xl      | -             | zune-jpegxl    | No               |
 | hdr          | zune-hdr      | zune-hdr       | No               |
 
