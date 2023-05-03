@@ -151,15 +151,16 @@ where
     /// 3. Transpose the image channels   
     /// ```no_run
     /// #
+    /// use zune_image::filters::box_blur::BoxBlur;
     /// use zune_image::image::Image;
-    /// use zune_image::filters::grayscale::RgbToGrayScale;
+    ///
     /// use zune_image::filters::transpose::Transpose;
     /// use zune_image::workflow::WorkFlow;
     ///
     ///
     /// let image = WorkFlow::<Image>::new()
-    ///     .chain_operations(Box::new(RgbToGrayScale::new()))
-    ///     .chain_operations(Box::new(Transpose::new()))    
+    ///     .chain_operations(Box::new(Transpose::new()))
+    ///     .chain_operations(Box::new(BoxBlur::new(10)))   
     ///     .advance_to_end();
     /// ```
     pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T>
