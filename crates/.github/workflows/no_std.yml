@@ -24,10 +24,13 @@ jobs:
         # Target below does not have a standard library
       - run: rustup target add x86_64-unknown-uefi
         # Below targets run in no-std environments
-      - run: cargo build -p zune-core    --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-inflate --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-jpeg    --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-png     --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-qoi     --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-core     --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-inflate  --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-jpeg     --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-png      --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-ppm      --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-qoi      --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-farbfeld --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-psd      --target x86_64-unknown-uefi --no-default-features
 
 
