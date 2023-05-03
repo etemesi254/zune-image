@@ -15,16 +15,16 @@ The set of codecs aim to have the following features in order of priority
 
 ## Formats
 
-| Image Format | Decoder       | Encoder        |
-|--------------|---------------|----------------|
-| jpeg         | zune-jpeg     | [jpeg-encoder] |
-| png          | zune-png      | -              |
-| ppm          | zune-ppm      | zune-ppm       |
-| qoi          | zune-qoi      | zune-qoi       |
-| farbfeld     | zune-farbfeld | zune-farbfeld  |
-| psd          | zune-psd      | -              |
-| jpeg-xl      | -             | zune-jpegxl    |
-| hdr          | zune-hdr      | zune-hdr       |
+| Image Format | Decoder       | Encoder        | `no_std` Support |
+|--------------|---------------|----------------|------------------|
+| jpeg         | zune-jpeg     | [jpeg-encoder] | Yes              |
+| png          | zune-png      | -              | Yes              |
+| ppm          | zune-ppm      | zune-ppm       | Yes              |
+| qoi          | zune-qoi      | zune-qoi       | Yes              |
+| farbfeld     | zune-farbfeld | zune-farbfeld  | Yes              |
+| psd          | zune-psd      | -              | No               |
+| jpeg-xl      | -             | zune-jpegxl    | No               |
+| hdr          | zune-hdr      | zune-hdr       | No               |
 
 ## Safety
 
