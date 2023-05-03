@@ -14,7 +14,7 @@
 //!
 use log::warn;
 use zune_core::bit_depth::BitType;
-use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{rgb_to_grayscale_u16, rgb_to_grayscale_u8};
@@ -266,6 +266,11 @@ impl OperationsTrait for ColorspaceConv
     fn supported_types(&self) -> &'static [BitType]
     {
         &[BitType::U16, BitType::U8, BitType::F32]
+    }
+
+    fn supported_colorspaces(&self) -> &'static [ColorSpace]
+    {
+        &ALL_COLORSPACES
     }
 }
 
