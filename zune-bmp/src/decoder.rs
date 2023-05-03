@@ -9,13 +9,14 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use log::info;
+use log::{info, warn};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
 use crate::common::{BmpCompression, BmpPixelFormat};
+use crate::utils::expand_bits_to_byte;
 use crate::BmpDecoderErrors;
 use crate::BmpDecoderErrors::GenericStatic;
 
@@ -94,7 +95,6 @@ impl<'a> BmpDecoder<'a>
             is_alpha: false
         }
     }
-    #[rustfmt::skip]
     pub fn decode_headers(&mut self) -> Result<(), BmpDecoderErrors>
     {
         if self.decoded_headers
@@ -132,21 +132,21 @@ impl<'a> BmpDecoder<'a>
         match ihsize
         {
             40 | 56 | 64 | 108 | 124 =>
-                {
-                    width = self.bytes.get_u32_le();
-                    height = self.bytes.get_u32_le();
-                }
+            {
+                width = self.bytes.get_u32_le();
+                height = self.bytes.get_u32_le();
+            }
             12 =>
-                {
-                    width = self.bytes.get_u16_le() as u32;
-                    height = self.bytes.get_u16_le() as u32;
-                }
+            {
+                width = self.bytes.get_u16_le() as u32;
+                height = self.bytes.get_u16_le() as u32;
+            }
             _ =>
-                {
-                    return Err(BmpDecoderErrors::GenericStatic(
-                        "Unknown information header size"
-                    ))
-                }
+            {
+                return Err(BmpDecoderErrors::GenericStatic(
+                    "Unknown information header size"
+                ))
+            }
         }
 
         self.flip_vertically = (height as i32) > 0;
@@ -159,7 +159,7 @@ impl<'a> BmpDecoder<'a>
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "height",
                 self.options.get_max_height(),
-                self.height,
+                self.height
             ));
         }
 
@@ -168,7 +168,7 @@ impl<'a> BmpDecoder<'a>
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "width",
                 self.options.get_max_width(),
-                self.width,
+                self.width
             ));
         }
 
@@ -189,13 +189,15 @@ impl<'a> BmpDecoder<'a>
             {
                 Some(c) => c,
                 None =>
-                    {
-                        return Err(BmpDecoderErrors::GenericStatic(
-                            "Unsupported BMP compression scheme"
-                        ))
-                    }
+                {
+                    return Err(BmpDecoderErrors::GenericStatic(
+                        "Unsupported BMP compression scheme"
+                    ))
+                }
             }
-        } else {
+        }
+        else
+        {
             BmpCompression::RGB
         };
         if compression == BmpCompression::BITFIELDS
@@ -214,103 +216,53 @@ impl<'a> BmpDecoder<'a>
 
         match depth
         {
-            32 =>
-                {
-                    if compression == BmpCompression::BITFIELDS
-                    {
-                        let alpha = self.rgb_bitfields[3] != 0;
-
-                        if self.rgb_bitfields[0] == 0xFF000000
-                            && self.rgb_bitfields[1] == 0x00FF0000
-                            && self.rgb_bitfields[2] == 0x0000FF00
-                        {
-                            self.pix_fmt =
-                                if alpha { BmpPixelFormat::ABGR } else { BmpPixelFormat::OBGR };
-                        } else if self.rgb_bitfields[0] == 0x00FF0000
-                            && self.rgb_bitfields[1] == 0x0000FF00
-                            && self.rgb_bitfields[2] == 0x000000FF
-                        {
-                            self.pix_fmt =
-                                if alpha { BmpPixelFormat::BGRA } else { BmpPixelFormat::BGRO };
-                        } else if self.rgb_bitfields[0] == 0x0000FF00
-                            && self.rgb_bitfields[1] == 0x00FF0000
-                            && self.rgb_bitfields[2] == 0xFF000000
-                        {
-                            self.pix_fmt =
-                                if alpha { BmpPixelFormat::ARGB } else { BmpPixelFormat::ORGB };
-                        } else if self.rgb_bitfields[0] == 0x000000FF
-                            && self.rgb_bitfields[1] == 0x0000FF00
-                            && self.rgb_bitfields[2] == 0x00FF0000
-                        {
-                            self.pix_fmt = if alpha { BmpPixelFormat::RGBA } else { BmpPixelFormat::RGB0 };
-                        } else {
-                            let message = format!(
-                                "Unknown bitfields {:x} {:x} {:x}",
-                                self.rgb_bitfields[0], self.rgb_bitfields[1], self.rgb_bitfields[2]
-                            );
-                            return Err(BmpDecoderErrors::Generic(message));
-                        }
-                    } else {
-                        self.pix_fmt = BmpPixelFormat::BGRA;
-                    }
-                }
+            32 => self.pix_fmt = BmpPixelFormat::RGBA,
             24 => self.pix_fmt = BmpPixelFormat::RGB,
             16 =>
+            {
+                if compression == BmpCompression::RGB
                 {
-                    if compression == BmpCompression::RGB
-                    {
-                        self.pix_fmt = BmpPixelFormat::RGB555
-                    } else if compression == BmpCompression::BITFIELDS
-                    {
-                        if self.rgb_bitfields[0] == 0xF800
-                            && self.rgb_bitfields[1] == 0x07E0
-                            && self.rgb_bitfields[2] == 0x001F
-                        {
-                            self.pix_fmt = BmpPixelFormat::RGB565;
-                        } else if self.rgb_bitfields[0] == 0x7C00
-                            && self.rgb_bitfields[1] == 0x03E0
-                            && self.rgb_bitfields[2] == 0x001F
-                        {
-                            self.pix_fmt = BmpPixelFormat::RGB555;
-                        } else if self.rgb_bitfields[0] == 0x0F00
-                            && self.rgb_bitfields[1] == 0x00F0
-                            && self.rgb_bitfields[2] == 0x000F
-                        {
-                            self.pix_fmt = BmpPixelFormat::RGB444;
-                        } else {
-                            let message = format!(
-                                "Unknown bitfields {:x} {:x} {:x}",
-                                self.rgb_bitfields[0], self.rgb_bitfields[1], self.rgb_bitfields[2]
-                            );
-                            return Err(BmpDecoderErrors::Generic(message));
-                        }
-                    }
+                    self.pix_fmt = BmpPixelFormat::RGB;
                 }
+                else if compression == BmpCompression::BITFIELDS
+                {
+                    self.pix_fmt = BmpPixelFormat::RGBA;
+                }
+            }
             8 =>
+            {
+                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0
                 {
-                    if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0
-                    {
-                        self.pix_fmt = BmpPixelFormat::PAL8;
-                    } else {
-                        self.pix_fmt = BmpPixelFormat::GRAY8;
-                    }
+                    self.pix_fmt = BmpPixelFormat::PAL8;
                 }
-            1 | 4 =>
+                else
                 {
-                    if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0
-                    {
-                        self.pix_fmt = BmpPixelFormat::PAL8;
-                    } else {
-                        let message = format!("Unknown palette for {}-color bmp", 1 << depth);
-                        return Err(BmpDecoderErrors::Generic(message));
-                    }
+                    self.pix_fmt = BmpPixelFormat::GRAY8;
+                }
+            }
+            1 | 2 | 4 =>
+            {
+                if depth == 2
+                {
+                    warn!("Depth of 2 not officially supported");
                 }
 
-            _ =>
+                if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0
                 {
-                    let message = format!("Depth {depth} unsupported");
+                    self.pix_fmt = BmpPixelFormat::PAL8;
+                }
+                else
+                {
+                    let message = format!("Unknown palette for {}-color bmp", 1 << depth);
                     return Err(BmpDecoderErrors::Generic(message));
                 }
+            }
+
+            _ =>
+            {
+                let message = format!("Depth {depth} unsupported");
+                return Err(BmpDecoderErrors::Generic(message));
+            }
         };
         if self.pix_fmt == BmpPixelFormat::None
         {
@@ -332,11 +284,14 @@ impl<'a> BmpDecoder<'a>
                 {
                     let msg = format!("Incorrect number of colors {} for depth {}", t, depth);
                     return Err(BmpDecoderErrors::Generic(msg));
-                } else if t != 0
+                }
+                else if t != 0
                 {
                     colors = t as u32;
                 }
-            } else {
+            }
+            else
+            {
                 colors = 256.min(p / 3);
             }
             // palette location
@@ -359,7 +314,9 @@ impl<'a> BmpDecoder<'a>
                     x.green = g;
                     x.blue = b;
                 });
-            } else {
+            }
+            else
+            {
                 self.palette.resize(256, PaletteEntry::default());
 
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
@@ -372,9 +329,12 @@ impl<'a> BmpDecoder<'a>
                     // but i will match that behaviour
                     x.alpha = 255;
                 });
-                self.is_alpha = true;
+                //self.is_alpha = true;
             }
         }
+
+        info!("Pixel format : {:?}", self.pix_fmt);
+        info!("Compression  : {:?}", compression);
 
         self.comp = compression;
         self.depth = depth;
@@ -397,7 +357,7 @@ impl<'a> BmpDecoder<'a>
             self.width
                 .checked_mul(self.height)
                 .unwrap()
-                .checked_mul(self.pix_fmt.num_components(self.is_alpha))
+                .checked_mul(self.pix_fmt.num_components())
                 .unwrap()
         )
     }
@@ -423,7 +383,7 @@ impl<'a> BmpDecoder<'a>
             return None;
         }
 
-        Some(self.pix_fmt.into_colorspace(self.is_alpha))
+        Some(self.pix_fmt.into_colorspace())
     }
     pub fn decode(&mut self) -> Result<Vec<u8>, BmpDecoderErrors>
     {
@@ -442,16 +402,7 @@ impl<'a> BmpDecoder<'a>
 
         let buf = &mut buf[0..output_size];
 
-        let pad = ((-(self.width as i32)) as u32) & 3;
-
-        if self.depth == 1
-        {
-            self.width = (self.width + 7) >> 3;
-        }
-        else if self.depth == 4
-        {
-            self.width = (self.width + 1) >> 1;
-        }
+        let pad = (((-(self.width as i32)) as u32) & 3) as usize;
 
         if self.comp == BmpCompression::RLE4 || self.comp == BmpCompression::RLE8
         {
@@ -460,11 +411,13 @@ impl<'a> BmpDecoder<'a>
         {
             match self.depth
             {
-                8 | 24 | 32 =>
+                8 | 16 | 24 | 32 =>
                 {
                     if self.pix_fmt == BmpPixelFormat::PAL8
                     {
-                        self.expand_palette(buf);
+                        let in_bytes = self.bytes.remaining_bytes();
+
+                        self.expand_palette(in_bytes, buf);
                         // do not flip for palette, orientation is good
                         self.flip_vertically = false;
                     }
@@ -478,30 +431,111 @@ impl<'a> BmpDecoder<'a>
                             return Err(BmpDecoderErrors::TooSmallBuffer(output_size, bytes.len()));
                         }
 
-                        // bmp rounds up each line to be a multiple of 4, padding the end if necessary
-                        // remove padding bytes
-                        for i in 0..self.height
+                        if self.depth == 32
                         {
-                            let start = i * self.width * self.pix_fmt.num_components(self.is_alpha);
-                            let end =
-                                (i + 1) * self.width * self.pix_fmt.num_components(self.is_alpha);
+                            // bpp of 32 doesn't have padding
 
-                            let offset = pad as usize * i;
+                            let pad_size = self.width * self.pix_fmt.num_components();
 
-                            buf[start..end].copy_from_slice(&bytes[start + offset..end + offset]);
+                            if self.rgb_bitfields == [0; 4]
+                            {
+                                // if there are no bitfields, it's simply a copy, adding alpha channel
+                                // as 255
+                                for (out, input) in buf
+                                    .rchunks_exact_mut(pad_size)
+                                    .zip(bytes.chunks_exact(pad_size))
+                                {
+                                    for (a, b) in out.chunks_exact_mut(4).zip(input.chunks_exact(4))
+                                    {
+                                        a.copy_from_slice(b);
+                                        a[3] = 255;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // extract bitfields
+                                let [mr, mg, mb, ma] = self.rgb_bitfields;
+
+                                let rshift = (32 - mr.leading_zeros()).wrapping_sub(8) as i32;
+                                let gshift = (32 - mg.leading_zeros()).wrapping_sub(8) as i32;
+                                let bshift = (32 - mb.leading_zeros()).wrapping_sub(8) as i32;
+                                let ashift = (32 - ma.leading_zeros()).wrapping_sub(8) as i32;
+
+                                let rcount = mr.count_ones();
+                                let gcount = mg.count_ones();
+                                let bcount = mb.count_ones();
+                                let acount = ma.count_ones();
+
+                                if self.depth == 32
+                                {
+                                    for (out, input) in buf
+                                        .rchunks_exact_mut(pad_size)
+                                        .zip(bytes.chunks_exact(pad_size))
+                                    {
+                                        for (a, b) in
+                                            out.chunks_exact_mut(4).zip(input.chunks_exact(4))
+                                        {
+                                            let v = u32::from_le_bytes(b.try_into().unwrap());
+
+                                            a[0] = shift_signed(v & mr, rshift, rcount) as u8;
+                                            a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                            a[2] = shift_signed(v & mb, bshift, bcount) as u8;
+                                            a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                        }
+                                    }
+                                }
+                            }
+
+                            self.flip_vertically = false;
+                        }
+                        else
+                        {
+                            // bmp rounds up each line to be a multiple of 4, padding the end if necessary
+                            // remove padding bytes
+
+                            let pad_size = self.width * self.pix_fmt.num_components();
+
+                            for (out, input) in buf
+                                .chunks_exact_mut(pad_size)
+                                .zip(bytes.chunks_exact(pad_size + pad))
+                            {
+                                out.copy_from_slice(&input[..pad_size]);
+                            }
                         }
                     }
                 }
-                1 =>
+                1 | 2 | 4 =>
                 {
-                    if self.pix_fmt == BmpPixelFormat::PAL8
+                    if self.pix_fmt != BmpPixelFormat::PAL8
                     {
-                        self.expand_palette(buf);
-                        // do not flip for simple rle
-                        self.flip_vertically = false;
+                        return Err(BmpDecoderErrors::GenericStatic(
+                            "Bit Depths less than 8 must have a palette"
+                        ));
                     }
+                    let index_bytes = self.bytes.remaining_bytes();
+                    let width_bytes = ((self.width + 7) >> 3) << 3;
+                    let in_width_bytes = ((self.width * usize::from(self.depth)) + 7) / 8;
+
+                    let scanline_size = width_bytes * 3;
+                    let mut scanline_bytes = vec![0_u8; scanline_size];
+
+                    for (in_bytes, out_bytes) in index_bytes
+                        .chunks_exact(in_width_bytes)
+                        .zip(buf.rchunks_exact_mut((3 + usize::from(self.is_alpha)) * self.width))
+                    {
+                        expand_bits_to_byte(
+                            self.depth as usize,
+                            true,
+                            in_bytes,
+                            &mut scanline_bytes
+                        );
+
+                        self.expand_palette(&scanline_bytes, out_bytes);
+                    }
+                    self.flip_vertically = false;
                 }
-                _ => unreachable!()
+                d => panic!("Unhandled depth {}", d)
             }
         }
 
@@ -520,32 +554,23 @@ impl<'a> BmpDecoder<'a>
         Ok(())
     }
 
-    fn expand_palette(&self, buf: &mut [u8])
+    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8])
     {
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();
 
-        // copy
-        let bytes = self.bytes.remaining_bytes();
-        let pad = ((-(self.width as i32)) as u32) & 3;
+        let pad = (((-(self.width as i32)) as u32) & 3) as usize;
 
         if self.is_alpha
         {
             // bmp rounds up each line to be a multiple of 4, padding the end if necessary
             // remove padding bytes
 
-            for (i, height_chunk) in buf
+            for (out_stride, in_stride) in buf
                 .rchunks_exact_mut(self.width * 4)
-                .enumerate()
                 .take(self.height)
+                .zip(in_bytes.chunks_exact(self.width + pad))
             {
-                let start = i * self.width;
-                let end = (i + 1) * self.width;
-
-                let offset = pad as usize * i;
-
-                for (pal_byte, chunks) in bytes[start + offset..end + offset]
-                    .iter()
-                    .zip(height_chunk.chunks_exact_mut(4))
+                for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(4))
                 {
                     let entry = palette[usize::from(*pal_byte)];
 
@@ -558,19 +583,12 @@ impl<'a> BmpDecoder<'a>
         }
         else
         {
-            for (i, height_chunk) in buf
+            for (out_stride, in_stride) in buf
                 .rchunks_exact_mut(self.width * 3)
-                .enumerate()
                 .take(self.height)
+                .zip(in_bytes.chunks_exact(self.width + pad))
             {
-                let start = i * self.width;
-                let end = (i + 1) * self.width;
-
-                let offset = pad as usize * i;
-
-                for (pal_byte, chunks) in bytes[start + offset..end + offset]
-                    .iter()
-                    .zip(height_chunk.chunks_exact_mut(3))
+                for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(3))
                 {
                     let entry = palette[usize::from(*pal_byte)];
 
@@ -581,4 +599,35 @@ impl<'a> BmpDecoder<'a>
             }
         }
     }
+}
+
+fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32
+{
+    const MUL_TABLE: [u32; 9] = [
+        0,    /*Hello world*/
+        0xff, /*0b11111111*/
+        0x55, /*0b01010101*/
+        0x49, /*0b01001001*/
+        0x11, /*0b00010001*/
+        0x21, /*0b00100001*/
+        0x41, /*0b01000001*/
+        0x81, /*0b10000001*/
+        0x01  /*0b00000001*/
+    ];
+    const SHIFT_TABLE: [i32; 9] = [0, 0, 0, 1, 0, 2, 4, 6, 0];
+
+    if shift < 0
+    {
+        v <<= -shift;
+    }
+    else
+    {
+        v >>= shift;
+    }
+
+    debug_assert!(v < 256);
+
+    bits = bits.clamp(0, 8);
+    v >>= 8 - bits;
+    (v * MUL_TABLE[bits as usize]) >> SHIFT_TABLE[bits as usize]
 }

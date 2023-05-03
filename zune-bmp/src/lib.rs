@@ -16,3 +16,4 @@ pub use crate::errors::BmpDecoderErrors;
 mod common;
 mod decoder;
 mod errors;
+mod utils;
