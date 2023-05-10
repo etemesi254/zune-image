@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Decode Decoder markers/segments
 //!
 //! This file deals with decoding header information in a jpeg file
@@ -6,6 +14,7 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 
 use crate::components::Components;
@@ -16,7 +25,9 @@ use crate::misc::{SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
-pub(crate) fn parse_huffman(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_huffman<T: ZReaderTrait>(
+    decoder: &mut JpegDecoder<T>
+) -> Result<(), DecodeErrors>
 where
 {
     // Read the length of the Huffman table
@@ -115,7 +126,7 @@ where
 
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation, clippy::needless_range_loop)]
-pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(), DecodeErrors>
 {
     // read length
     let mut qt_length =
@@ -189,8 +200,8 @@ pub(crate) fn parse_dqt(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
 
 /// Section:`B.2.2 Frame header syntax`
 
-pub(crate) fn parse_start_of_frame(
-    sof: SOFMarkers, img: &mut JpegDecoder
+pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
+    sof: SOFMarkers, img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors>
 {
     if img.seen_sof
@@ -297,8 +308,9 @@ pub(crate) fn parse_start_of_frame(
 
     Ok(())
 }
+
 /// Parse a start of scan data
-pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(), DecodeErrors>
 {
     // Scan header length
     let ls = image.stream.get_u16_be_err()?;
@@ -438,7 +450,8 @@ pub(crate) fn parse_sos(image: &mut JpegDecoder) -> Result<(), DecodeErrors>
 }
 
 /// Parse Adobe App14 segment
-pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_app14<T: ZReaderTrait>(decoder: &mut JpegDecoder<T>)
+    -> Result<(), DecodeErrors>
 {
     // skip length
     let mut length = usize::from(decoder.stream.get_u16_be());
@@ -498,7 +511,8 @@ pub(crate) fn parse_app14(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
 /// Parse the APP1 segment
 ///
 /// This contains the exif tag
-pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_app1<T: ZReaderTrait>(decoder: &mut JpegDecoder<T>)
+    -> Result<(), DecodeErrors>
 {
     // contains exif data
     let mut length = usize::from(decoder.stream.get_u16_be());
@@ -517,7 +531,7 @@ pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
         decoder.stream.skip(6);
         length -= 6;
 
-        let exif_bytes = decoder.stream.peek_at(0, length).unwrap();
+        let exif_bytes = decoder.stream.peek_at(0, length).unwrap().to_vec();
 
         decoder.exif_data = Some(exif_bytes);
     }
@@ -530,7 +544,8 @@ pub(crate) fn parse_app1(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
     Ok(())
 }
 
-pub(crate) fn parse_app2(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn parse_app2<T: ZReaderTrait>(decoder: &mut JpegDecoder<T>)
+    -> Result<(), DecodeErrors>
 {
     let mut length = usize::from(decoder.stream.get_u16_be());
 
@@ -552,7 +567,7 @@ pub(crate) fn parse_app2(decoder: &mut JpegDecoder) -> Result<(), DecodeErrors>
         // deduct the two bytes we read above
         length -= 2;
 
-        let data = decoder.stream.peek_at(0, length).unwrap();
+        let data = decoder.stream.peek_at(0, length).unwrap().to_vec();
 
         let icc_chunk = ICCChunk {
             seq_no,

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Main image logic.
 #![allow(clippy::doc_markdown)]
 
@@ -5,7 +13,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
@@ -60,16 +68,16 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// An encapsulation of an ICC chunk
-pub(crate) struct ICCChunk<'a>
+pub(crate) struct ICCChunk
 {
     pub(crate) seq_no:      u8,
     pub(crate) num_markers: u8,
-    pub(crate) data:        &'a [u8]
+    pub(crate) data:        Vec<u8>
 }
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
-pub struct JpegDecoder<'a>
+pub struct JpegDecoder<T: ZReaderTrait>
 {
     /// Struct to hold image information from SOI
     pub(crate) info:              ImageInfo,
@@ -131,20 +139,22 @@ pub struct JpegDecoder<'a>
     // decoder options
     pub(crate) options:          DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZByteReader<'a>,
+    pub(crate) stream:           ZByteReader<T>,
     // Indicate whether headers have been decoded
     pub(crate) headers_decoded:  bool,
     pub(crate) seen_sof:         bool,
     // exif data, lifted from app2
-    pub(crate) exif_data:        Option<&'a [u8]>,
+    pub(crate) exif_data:        Option<Vec<u8>>,
 
-    pub(crate) icc_data: Vec<ICCChunk<'a>>
+    pub(crate) icc_data: Vec<ICCChunk>
 }
 
-impl<'a> JpegDecoder<'a>
+impl<T> JpegDecoder<T>
+where
+    T: ZReaderTrait
 {
     #[allow(clippy::redundant_field_names)]
-    fn default(options: DecoderOptions, buffer: &'a [u8]) -> Self
+    fn default(options: DecoderOptions, buffer: T) -> Self
     {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
@@ -204,7 +214,7 @@ impl<'a> JpegDecoder<'a>
     ///  - `stream`: The raw bytes of a jpeg file.
     #[must_use]
     #[allow(clippy::new_without_default)]
-    pub fn new(stream: &'a [u8]) -> JpegDecoder
+    pub fn new(stream: T) -> JpegDecoder<T>
     {
         JpegDecoder::default(DecoderOptions::default(), stream)
     }
@@ -609,7 +619,7 @@ impl<'a> JpegDecoder<'a>
     #[must_use]
     pub fn icc_profile(&self) -> Option<Vec<u8>>
     {
-        let mut marker_present: [Option<&ICCChunk<'a>>; 256] = [None; 256];
+        let mut marker_present: [Option<&ICCChunk>; 256] = [None; 256];
 
         if !self.headers_decoded
         {
@@ -649,7 +659,7 @@ impl<'a> JpegDecoder<'a>
         {
             if let Some(ch) = chunk
             {
-                data.extend_from_slice(ch.data);
+                data.extend_from_slice(&ch.data);
             }
             else
             {
@@ -672,9 +682,9 @@ impl<'a> JpegDecoder<'a>
     ///    1. The image doesn't have exif data
     ///    2. The image headers haven't been decoded
     #[must_use]
-    pub fn exif(&self) -> Option<&'a [u8]>
+    pub fn exif(&self) -> Option<&Vec<u8>>
     {
-        return self.exif_data;
+        return self.exif_data.as_ref();
     }
     /// Get the output colorspace the image pixels will be decoded into
     ///
@@ -785,7 +795,7 @@ impl<'a> JpegDecoder<'a>
     /// Create a new decoder with the specified options to be used for decoding
     /// an image
     #[must_use]
-    pub fn new_with_options(options: DecoderOptions, buf: &'a [u8]) -> JpegDecoder
+    pub fn new_with_options(options: DecoderOptions, buf: T) -> JpegDecoder<T>
     {
         JpegDecoder::default(options, buf)
     }
