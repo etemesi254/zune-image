@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 
 use log::info;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
@@ -22,28 +22,30 @@ const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 ///
 /// One can modify the decoder accepted dimensions
 /// via `DecoderOptions`
-pub struct FarbFeldDecoder<'a>
+pub struct FarbFeldDecoder<T: ZReaderTrait>
 {
-    stream:          ZByteReader<'a>,
+    stream:          ZByteReader<T>,
     width:           usize,
     height:          usize,
     decoded_headers: bool,
     options:         DecoderOptions
 }
 
-impl<'a> FarbFeldDecoder<'a>
+impl<T> FarbFeldDecoder<T>
+where
+    T: ZReaderTrait
 {
     ///Create a new decoder.
     ///
     /// Data is the raw compressed farbfeld data
-    pub fn new(data: &'a [u8]) -> FarbFeldDecoder<'a>
+    pub fn new(data: T) -> FarbFeldDecoder<T>
     {
         Self::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new decoder with non default options as opposed to
     /// `new`
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(data: &'a [u8], option: DecoderOptions) -> FarbFeldDecoder<'a>
+    pub fn new_with_options(data: T, option: DecoderOptions) -> FarbFeldDecoder<T>
     {
         FarbFeldDecoder {
             stream:          ZByteReader::new(data),
