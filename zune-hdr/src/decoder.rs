@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec;
@@ -7,7 +15,7 @@ use core::option::Option::{self, *};
 use core::result::Result::{self, *};
 
 use log::{info, trace};
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
@@ -22,9 +30,9 @@ use crate::errors::HdrDecodeErrors;
 /// the map as an API access method.
 ///
 /// For sophisticated algorithms, they may use the metadata to further understand the data
-pub struct HdrDecoder<'a>
+pub struct HdrDecoder<T: ZReaderTrait>
 {
-    buf:             ZByteReader<'a>,
+    buf:             ZByteReader<T>,
     options:         DecoderOptions,
     metadata:        BTreeMap<String, String>,
     width:           usize,
@@ -32,7 +40,9 @@ pub struct HdrDecoder<'a>
     decoded_headers: bool
 }
 
-impl<'a> HdrDecoder<'a>
+impl<T> HdrDecoder<T>
+where
+    T: ZReaderTrait
 {
     /// Create a new HDR decoder
     ///
@@ -50,7 +60,7 @@ impl<'a> HdrDecoder<'a>
     /// let file_data = std::fs::read("sample.hdr").unwrap();
     /// let decoder = HdrDecoder::new(&file_data);
     /// ```
-    pub fn new(data: &'a [u8]) -> HdrDecoder<'a>
+    pub fn new(data: T) -> HdrDecoder<T>
     {
         Self::new_with_options(data, DecoderOptions::default())
     }
@@ -77,7 +87,7 @@ impl<'a> HdrDecoder<'a>
     /// // use the options set
     /// let decoder = HdrDecoder::new_with_options(&file_data,options);
     /// ```
-    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> HdrDecoder<'a>
+    pub fn new_with_options(data: T, options: DecoderOptions) -> HdrDecoder<T>
     {
         HdrDecoder {
             buf: ZByteReader::new(data),
@@ -103,30 +113,36 @@ impl<'a> HdrDecoder<'a>
     /// extracted from appropriate getters.
     pub fn decode_headers(&mut self) -> Result<(), HdrDecodeErrors>
     {
+        // todo: In-case this causes a valid header not to be decoded
+        //       we should switch to vec, but for now it works
+        //
+        // maximum size for which we expect the buffer to be
+        let mut max_header_size = [0; 1024];
+
         if self.decoded_headers
         {
             return Ok(());
         }
-        let header_line = self.get_buffer_until(b'\n')?;
+        self.get_buffer_until(b'\n', &mut max_header_size)?;
 
-        if !matches!(header_line, b"#?RADIANCE\n" | b"#?RGBE\n")
+        if max_header_size.starts_with(b"#?RADIANCE\n") | max_header_size.starts_with(b"#?RGBE\n")
         {
             return Err(HdrDecodeErrors::InvalidMagicBytes);
         }
 
         loop
         {
-            let header_line = self.get_buffer_until(b'\n')?;
-            if header_line.starts_with(b"#")
+            let size = self.get_buffer_until(b'\n', &mut max_header_size)?;
+            if max_header_size.starts_with(b"#")
             // comment
             {
                 continue;
             }
-            if header_line.contains(&b'=')
+            if max_header_size.contains(&b'=')
             {
                 // key value, it should be lossy to avoid failure when the key is not valid
                 // utf-8, we throw garbage to the dictionary if the image is garbage
-                let keys_and_values = String::from_utf8_lossy(header_line);
+                let keys_and_values = String::from_utf8_lossy(&max_header_size[..size]);
 
                 let mut keys_and_values_split = keys_and_values.trim().split('=');
                 let key = keys_and_values_split.next().unwrap().trim().to_string();
@@ -134,23 +150,33 @@ impl<'a> HdrDecoder<'a>
                 self.metadata.insert(key, value);
             }
 
-            if header_line.is_empty() || header_line[0] == b'\n'
+            if size == 0 || max_header_size[0] == b'\n'
             {
                 trace!("Metadata: {:?}", self.metadata);
                 break;
             }
         }
-        let first_type = String::from_utf8_lossy(self.get_buffer_until(b' ')?)
+        let header_size = self.get_buffer_until(b' ', &mut max_header_size)?;
+
+        let first_type = String::from_utf8_lossy(&max_header_size[..header_size])
             .trim()
             .to_string();
 
-        let coords1 = String::from_utf8_lossy(self.get_buffer_until(b' ')?)
+        let header_size = self.get_buffer_until(b' ', &mut max_header_size)?;
+
+        let coords1 = String::from_utf8_lossy(&max_header_size[..header_size])
             .trim()
             .to_string();
-        let second_type = String::from_utf8_lossy(self.get_buffer_until(b' ')?)
+
+        let header_size = self.get_buffer_until(b' ', &mut max_header_size)?;
+
+        let second_type = String::from_utf8_lossy(&max_header_size[..header_size])
             .trim()
             .to_string();
-        let coords2 = String::from_utf8_lossy(self.get_buffer_until(b'\n')?)
+
+        let header_size = self.get_buffer_until(b' ', &mut max_header_size)?;
+
+        let coords2 = String::from_utf8_lossy(&max_header_size[..header_size])
             .trim()
             .to_string();
 
@@ -471,7 +497,9 @@ impl<'a> HdrDecoder<'a>
 
     /// Get a whole radiance line and increment the buffer
     /// cursor past that line.
-    fn get_buffer_until(&mut self, needle: u8) -> Result<&'a [u8], HdrDecodeErrors>
+    fn get_buffer_until(
+        &mut self, needle: u8, write_to: &mut [u8]
+    ) -> Result<usize, HdrDecodeErrors>
     {
         let start = self.buf.get_position();
 
@@ -485,16 +513,14 @@ impl<'a> HdrDecoder<'a>
         self.buf.set_position(start);
 
         // read those bytes
-        let bytes = self
-            .buf
-            .peek_at(0, diff)
+        self.buf
+            .read_exact(&mut write_to[..diff])
             .map_err(HdrDecodeErrors::Generic)?;
 
         // return position
         // +1 increments past needle
         self.buf.set_position(end + 1);
-
-        Ok(bytes)
+        Ok(diff)
     }
 }
 
