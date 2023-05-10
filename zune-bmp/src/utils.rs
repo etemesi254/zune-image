@@ -25,8 +25,6 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
         }
     };
 
-    let out = &mut out[..];
-
     if depth == 1
     {
         let mut in_iter = input.iter();

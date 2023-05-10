@@ -5,8 +5,16 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
-//#![no_std]
+//! A versatile BMP decoder
+//!
+//! This crate features a BMP decoder capable of decoding
+//! multiple BMP images fast
+//!
+//! # Features
+//! - `no_std` by default with `alloc` feature
+//! - Fast
+//! - Minimal dependencies
+#![no_std]
 #![macro_use]
 extern crate alloc;
 

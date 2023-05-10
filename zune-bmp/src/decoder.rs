@@ -11,7 +11,7 @@ use alloc::{format, vec};
 
 use log::{info, warn};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
@@ -52,9 +52,11 @@ struct PaletteEntry
     alpha: u8
 }
 
-pub struct BmpDecoder<'a>
+pub struct BmpDecoder<T>
+where
+    T: ZReaderTrait
 {
-    bytes:           ZByteReader<'a>,
+    bytes:           ZByteReader<T>,
     options:         DecoderOptions,
     width:           usize,
     height:          usize,
@@ -67,16 +69,36 @@ pub struct BmpDecoder<'a>
     hsize:           u32,
     palette:         Vec<PaletteEntry>,
     depth:           u16,
-    is_alpha:        bool
+    is_alpha:        bool,
+    palette_numbers: usize
 }
 
-impl<'a> BmpDecoder<'a>
+impl<T> BmpDecoder<T>
+where
+    T: ZReaderTrait
 {
-    pub fn new(data: &'a [u8]) -> BmpDecoder<'a>
+    /// Create a new bmp decoder that reads data from
+    /// `data
+    ///
+    /// # Arguments
+    /// - `data`: The buffer from which we will read bytes from
+    ///
+    /// # Returns
+    /// - A BMP decoder instance
+    pub fn new(data: T) -> BmpDecoder<T>
     {
         BmpDecoder::new_with_options(data, DecoderOptions::default())
     }
-    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> BmpDecoder<'a>
+    /// Create a new decoder instance with specified options
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: The buffer from which we will read data from
+    /// * `options`:  Specialized options for this decoder
+    ///
+    /// returns: BmpDecoder<T>
+    ///
+    pub fn new_with_options(data: T, options: DecoderOptions) -> BmpDecoder<T>
     {
         BmpDecoder {
             bytes: ZByteReader::new(data),
@@ -92,9 +114,16 @@ impl<'a> BmpDecoder<'a>
             hsize: 0,
             depth: 0,
             palette: vec![],
-            is_alpha: false
+            is_alpha: false,
+            palette_numbers: 0
         }
     }
+
+    /// Decode headers stored in the bmp file and store
+    /// information in the decode context
+    ///
+    /// After calling this, most information fields will be filled
+    /// except the actual decoding bytes
     pub fn decode_headers(&mut self) -> Result<(), BmpDecoderErrors>
     {
         if self.decoded_headers
@@ -329,8 +358,8 @@ impl<'a> BmpDecoder<'a>
                     // but i will match that behaviour
                     x.alpha = 255;
                 });
-                //self.is_alpha = true;
             }
+            self.palette_numbers = colors as usize;
         }
 
         info!("Pixel format : {:?}", self.pix_fmt);
@@ -363,10 +392,23 @@ impl<'a> BmpDecoder<'a>
     }
 
     /// Return the BMP bit depth
+    ///
+    /// This is always [BitDepth::Eight](zune_core::bit_depth::BitDepth::Eight)
+    /// since it's the only one BMP supports
+    ///
+    /// Images with less than 8 bits per pixel are usually scaled to be eight bits
     pub fn get_depth(&self) -> BitDepth
     {
         BitDepth::Eight
     }
+    /// Get dimensions of the image
+    ///
+    /// This is a tuple of width,height
+    ///
+    /// # Returns
+    /// - `Some((width,height))`  - The image dimensions
+    /// - `None`: Indicates that the image headers weren't decoded
+    ///    or an error occurred during decoding the headers   
     pub fn get_dimensions(&self) -> Option<(usize, usize)>
     {
         if !self.decoded_headers
@@ -375,7 +417,12 @@ impl<'a> BmpDecoder<'a>
         }
         Some((self.width, self.height))
     }
-    /// Convert to the needed colorspace
+    /// Get the image colorspace or none if the headers weren't decoded
+    ///
+    /// # Returns
+    /// - `Some(colorspace)`: The colorspace of the image
+    /// - `None`: Indicates headers weren't decoded or an error occured
+    /// during decoding of headers
     pub fn get_colorspace(&self) -> Option<ColorSpace>
     {
         if !self.decoded_headers
@@ -385,6 +432,12 @@ impl<'a> BmpDecoder<'a>
 
         Some(self.pix_fmt.into_colorspace())
     }
+    /// Decode an image returning the decoded bytes as an
+    /// allocated `Vec<u8>` or an error if decoding could not be completed
+    ///
+    ///
+    /// Also see [`decode_into`](Self::decode_into) which decodes into
+    /// a pre-allocated buffer
     pub fn decode(&mut self) -> Result<Vec<u8>, BmpDecoderErrors>
     {
         self.decode_headers()?;
@@ -395,9 +448,15 @@ impl<'a> BmpDecoder<'a>
         Ok(output)
     }
 
+    /// Decode an encoded image into a buffer or return an error
+    /// if something bad occured
+    ///
+    /// Also see [`decode_into`](Self::decode_into) which decodes into
+    /// a pre-allocated buffer
     pub fn decode_into(&mut self, buf: &mut [u8]) -> Result<(), BmpDecoderErrors>
     {
         self.decode_headers()?;
+
         let output_size = self.output_buf_size().unwrap();
 
         let buf = &mut buf[0..output_size];
@@ -426,7 +485,7 @@ impl<'a> BmpDecoder<'a>
                         // copy
                         let bytes = self.bytes.remaining_bytes();
 
-                        if bytes.len() < output_size
+                        if bytes.len() < (output_size * 8) / usize::from(self.depth)
                         {
                             return Err(BmpDecoderErrors::TooSmallBuffer(output_size, bytes.len()));
                         }
@@ -477,6 +536,26 @@ impl<'a> BmpDecoder<'a>
                                             out.chunks_exact_mut(4).zip(input.chunks_exact(4))
                                         {
                                             let v = u32::from_le_bytes(b.try_into().unwrap());
+
+                                            a[0] = shift_signed(v & mr, rshift, rcount) as u8;
+                                            a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                            a[2] = shift_signed(v & mb, bshift, bcount) as u8;
+                                            a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                        }
+                                    }
+                                }
+                                else if self.depth == 16
+                                {
+                                    for (out, input) in buf
+                                        .rchunks_exact_mut(pad_size)
+                                        .zip(bytes.chunks_exact(pad_size))
+                                    {
+                                        for (a, b) in
+                                            out.chunks_exact_mut(2).zip(input.chunks_exact(4))
+                                        {
+                                            let v = u32::from(u16::from_le_bytes(
+                                                b.try_into().unwrap()
+                                            ));
 
                                             a[0] = shift_signed(v & mr, rshift, rcount) as u8;
                                             a[1] = shift_signed(v & mg, gshift, gcount) as u8;
