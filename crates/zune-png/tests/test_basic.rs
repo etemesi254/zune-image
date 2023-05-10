@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::path::Path;
 
@@ -39,8 +47,16 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 #[test]
 fn test_1bpp_basic()
 {
-    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
-    test_decoding(path);
+    let path = "/home/caleb/Downloads/1603452522445567021368131.png"; //env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
+    let contents = open_and_read(path);
+    let mut decoder = zune_png::PngDecoder::new(&contents);
+
+    decoder.decode_headers().unwrap();
+    while decoder.more_frames()
+    {
+        println!("{:?}", decoder.get_depth());
+        decoder.decode().unwrap();
+    }
 }
 
 #[test]

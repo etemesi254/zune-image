@@ -1,21 +1,23 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::format;
 
 use log::trace;
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 
 use crate::error::PngDecodeErrors;
 
-///
-pub type UnkownChunkHandler = fn(
-    length: usize,
-    chunk_type: [u8; 4],
-    reader: &mut ZByteReader,
-    crc: u32
-) -> Result<(), PngDecodeErrors>;
-
-pub fn default_chunk_handler(
-    length: usize, chunk_type: [u8; 4], reader: &mut ZByteReader, _crc: u32
+pub fn default_chunk_handler<T>(
+    length: usize, chunk_type: [u8; 4], reader: &mut ZByteReader<T>, _crc: u32
 ) -> Result<(), PngDecodeErrors>
+where
+    T: ZReaderTrait
 {
     let chunk_name = core::str::from_utf8(&chunk_type).unwrap_or("XXXX");
 

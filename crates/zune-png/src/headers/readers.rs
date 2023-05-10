@@ -4,17 +4,19 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use alloc::format;
+use alloc::{format, vec};
 
-use log::{error, info, warn};
+use log::{info, warn};
+use zune_core::bytestream::ZReaderTrait;
 use zune_inflate::DeflateDecoder;
 
+use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
-use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
+use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::PngDecoder;
 
-impl<'a> PngDecoder<'a>
+impl<T: ZReaderTrait> PngDecoder<T>
 {
     pub(crate) fn parse_ihdr(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
@@ -171,13 +173,20 @@ impl<'a> PngDecoder<'a>
 
     pub(crate) fn parse_idat(&mut self, png_chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
+        if self.frames.is_empty()
+        {
+            self.frames.push(SingleFrame::new(vec![], None));
+        }
         // get a reference to the IDAT chunk stream and push it,
         // we will later pass these to the deflate decoder as a whole, to get the whole
         // uncompressed stream.
 
         let idat_stream = self.stream.get(png_chunk.length)?;
 
-        self.idat_chunks.extend_from_slice(idat_stream);
+        // the first frame always contains the idat chunks
+        // so we push this chunk there
+        self.frames[0].push_chunk(idat_stream);
+        //self.idat_chunks.extend_from_slice(idat_stream);
 
         // skip crc
         self.stream.skip(4);
@@ -257,16 +266,23 @@ impl<'a> PngDecoder<'a>
     /// Parse the animation control chunk
     pub(crate) fn parse_actl(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
     {
-        if self.options.get_strict_mode()
+        if chunk.length != 8
         {
-            return Err(PngDecodeErrors::UnsupportedAPNGImage);
+            warn!("Invalid chunk length for ACTL, skipping");
+            self.stream.skip(chunk.length + 4);
         }
-        else
-        {
-            error!("APNG support is not yet present,this will only decode the first frame of the image");
-        }
-        // skip bytes plus CRC
-        self.stream.skip(chunk.length + 4);
+        // extract num_frames
+        let num_frames = self.stream.get_u32_be();
+        let num_plays = self.stream.get_u32_be();
+
+        let actl = ActlChunk {
+            num_frames,
+            num_plays
+        };
+        self.actl_info = Some(actl);
+
+        // skip CRC
+        self.stream.skip(4);
 
         Ok(())
     }
@@ -339,7 +355,7 @@ impl<'a> PngDecoder<'a>
             self.stream.skip(chunk.length + 4);
             return Ok(());
         }
-        self.png_info.exif = Some(data);
+        self.png_info.exif = Some(data.to_vec());
         // skip past crc
         self.stream.skip(chunk.length + 4);
 
@@ -400,7 +416,7 @@ impl<'a> PngDecoder<'a>
 
         if let Some(pos) = keyword_position
         {
-            let keyword = &keyword_bytes[..pos];
+            let keyword = keyword_bytes[..pos].to_vec();
             // skip name plus null byte
             self.stream.skip(pos + 1);
 
@@ -408,7 +424,7 @@ impl<'a> PngDecoder<'a>
 
             // read remaining chunk
 
-            let text = self.stream.peek_at(0, remainder).unwrap();
+            let text = self.stream.peek_at(0, remainder).unwrap().to_vec();
 
             let text_chunk = TextChunk { keyword, text };
             self.png_info.text_chunk.push(text_chunk);
@@ -433,7 +449,7 @@ impl<'a> PngDecoder<'a>
 
         if let Some(pos) = keyword_position
         {
-            let keyword = &keyword_bytes[..pos];
+            let keyword = keyword_bytes[..pos].to_vec();
             // skip name plus null byte
             let bytes_to_skip = pos + 1 // null separator
                 + 1  // compression flag
@@ -443,7 +459,7 @@ impl<'a> PngDecoder<'a>
 
             self.stream.skip(bytes_to_skip);
             let remainder = chunk.length.saturating_sub(bytes_to_skip);
-            let raw_data = self.stream.peek_at(0, remainder).unwrap();
+            let raw_data = self.stream.peek_at(0, remainder).unwrap().to_vec();
 
             let itxt_chunk = ItxtChunk {
                 keyword,
@@ -471,7 +487,7 @@ impl<'a> PngDecoder<'a>
 
         if let Some(pos) = keyword_position
         {
-            let keyword = &keyword_bytes[..pos];
+            let keyword = keyword_bytes[..pos].to_vec();
 
             // skip name plus null byte
             self.stream.skip(pos + 1);
@@ -511,5 +527,108 @@ impl<'a> PngDecoder<'a>
         }
         // skip crc
         self.stream.skip(4);
+    }
+
+    /// Parse the FCTL chunk
+    pub(crate) fn parse_fctl(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors>
+    {
+        // after a fcTL chunk, what follows is either
+        // idat chunks or fdAT chunks
+        // so we usually want to collect them together
+        // so this furthers the stream
+
+        // parse the fctl info that brought us here
+        let fctl_info = self.parse_fctl_external(chunk)?;
+
+        let mut should_add_fctl = true;
+        loop
+        {
+            let next_header = self.read_chunk_header()?;
+
+            if next_header.chunk_type == PngChunkType::IEND
+            {
+                // REVERT , REVERT
+                // moves behind chunk length and chunk header
+                // the caller will read it as IEND and terminate
+                self.stream.rewind(8);
+                break;
+            }
+            // we have a chunk, this chunk if idat is associated with the first frame
+            else if next_header.chunk_type == PngChunkType::IDAT
+            {
+                self.parse_idat(next_header)?;
+                // set fctl information
+                self.frames[0].set_fctl(fctl_info);
+            }
+            else if next_header.chunk_type == PngChunkType::fcTL
+            {
+                // we are starting a new frame
+                // get fctl
+                let frame_fctl = self.parse_fctl_external(next_header)?;
+
+                self.frames.push(SingleFrame::new(vec![], Some(frame_fctl)));
+            }
+            else if next_header.chunk_type == PngChunkType::fdAT
+            {
+                if should_add_fctl
+                {
+                    // fctl + fdat only in the first frame
+                    //
+                    // captures fctl->fdat sequence of apng
+                    self.frames.push(SingleFrame::new(vec![], Some(fctl_info)));
+                }
+                // get frame data
+                // skip four  bytes since it's usually sequence number
+                //
+                let stream = &self.stream.peek_at(0, next_header.length)?[4..];
+                self.frames.last_mut().unwrap().push_chunk(stream);
+                // skip crc
+                self.stream.skip(next_header.length + 4);
+            }
+            else
+            {
+                // this can recurse
+                // this is the function that called us
+                // we are calling it again :)
+                self.parse_header(next_header)?;
+            }
+            should_add_fctl = false;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn parse_fctl_external(
+        &mut self, chunk: PngChunk
+    ) -> Result<FrameInfo, PngDecodeErrors>
+    {
+        if chunk.length != 26
+        {
+            return Err(PngDecodeErrors::GenericStatic("Invalid fcTL length"));
+        }
+        let seq_number = self.stream.get_u32_be();
+        let width = self.stream.get_u32_be() as usize;
+        let height = self.stream.get_u32_be() as usize;
+        let x_offset = self.stream.get_u32_be() as usize;
+        let y_offset = self.stream.get_u32_be() as usize;
+        let delay_num = self.stream.get_u16_be();
+        let delay_denom = self.stream.get_u16_be();
+        let dispose_op = DisposeOp::from_int(self.stream.get_u8())?;
+        let blend_op = BlendOp::from_int(self.stream.get_u8())?;
+
+        let fctl_info = FrameInfo {
+            seq_number,
+            width,
+            height,
+            x_offset,
+            y_offset,
+            delay_num,
+            delay_denom,
+            dispose_op,
+            blend_op
+        };
+        // skip crc
+        self.stream.skip(4);
+        Ok(fctl_info)
     }
 }

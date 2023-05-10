@@ -118,6 +118,7 @@ pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;
 pub use zune_core;
 
+mod apng;
 mod constants;
 mod crc;
 mod decoder;
