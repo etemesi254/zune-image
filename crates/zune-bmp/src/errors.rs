@@ -9,12 +9,20 @@
 use alloc::string::String;
 use core::fmt::{Debug, Formatter};
 
+/// BMP errors that can occur during decoding
 pub enum BmpDecoderErrors
 {
+    /// The file/bytes do not start with `BM`
     InvalidMagicBytes,
+    /// The output buffer is too small, expected at least
+    /// a size but got another size
     TooSmallBuffer(usize, usize),
+    /// Generic message
     GenericStatic(&'static str),
+    /// Generic allocated message
     Generic(String),
+    /// Too large dimensions for a given width or
+    /// height
     TooLargeDimensions(&'static str, usize, usize)
 }
 
