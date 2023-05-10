@@ -10,19 +10,20 @@ use core::cmp::min;
 
 use log::info;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
 use zune_inflate::DeflateOptions;
 
+use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::filters::de_filter::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
-use crate::options::{default_chunk_handler, UnkownChunkHandler};
+use crate::options::default_chunk_handler;
 use crate::utils::{
     add_alpha, convert_be_to_target_endian_u16, expand_bits_to_byte, expand_palette, expand_trns,
     is_le
@@ -85,10 +86,10 @@ pub struct TimeInfo
 ///
 /// Extracted from iXTt chunk where present
 #[derive(Clone)]
-pub struct ItxtChunk<'a>
+pub struct ItxtChunk
 {
-    pub keyword: &'a [u8],
-    pub text:    &'a [u8]
+    pub keyword: Vec<u8>,
+    pub text:    Vec<u8>
 }
 
 /// tEXt chunk details
@@ -97,19 +98,19 @@ pub struct ItxtChunk<'a>
 ///
 /// Extracted from tEXt chunk where present
 #[derive(Clone)]
-pub struct TextChunk<'a>
+pub struct TextChunk
 {
-    pub keyword: &'a [u8],
-    pub text:    &'a [u8]
+    pub keyword: Vec<u8>,
+    pub text:    Vec<u8>
 }
 
 /// zTxt details
 ///
 /// Extracted from zTXt chunk where present
 #[derive(Clone)]
-pub struct ZtxtChunk<'a>
+pub struct ZtxtChunk
 {
-    pub keyword: &'a [u8],
+    pub keyword: Vec<u8>,
     /// Uncompressed text
     pub text:    Vec<u8>
 }
@@ -117,7 +118,7 @@ pub struct ZtxtChunk<'a>
 /// Represents PNG information that can be extracted
 /// from a png file.
 #[derive(Default, Clone)]
-pub struct PngInfo<'a>
+pub struct PngInfo
 {
     /// Image width
     pub width:                usize,
@@ -130,15 +131,15 @@ pub struct PngInfo<'a>
     /// Image time info
     pub time_info:            Option<TimeInfo>,
     /// Image exif data
-    pub exif:                 Option<&'a [u8]>,
+    pub exif:                 Option<Vec<u8>>,
     /// Icc profile
     pub icc_profile:          Option<Vec<u8>>,
     /// UTF-8 encoded text chunk
-    pub itxt_chunk:           Vec<ItxtChunk<'a>>,
+    pub itxt_chunk:           Vec<ItxtChunk>,
     /// ztxt chunk
-    pub ztxt_chunk:           Vec<ZtxtChunk<'a>>,
+    pub ztxt_chunk:           Vec<ZtxtChunk>,
     /// tEXt chunk
-    pub text_chunk:           Vec<TextChunk<'a>>,
+    pub text_chunk:           Vec<TextChunk>,
     // no need to expose these ones
     pub(crate) depth:         u8,
     // use bit_depth
@@ -164,23 +165,26 @@ pub struct PngInfo<'a>
 ///
 /// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::get_info)
 /// and access the relevant fields exposed
-pub struct PngDecoder<'a>
+pub struct PngDecoder<T>
+where
+    T: ZReaderTrait
 {
-    pub(crate) stream:          ZByteReader<'a>,
+    pub(crate) stream:          ZByteReader<T>,
     pub(crate) options:         DecoderOptions,
-    pub(crate) png_info:        PngInfo<'a>,
+    pub(crate) png_info:        PngInfo,
     pub(crate) palette:         Vec<PLTEEntry>,
-    pub(crate) idat_chunks:     Vec<u8>,
+    pub(crate) frames:          Vec<SingleFrame>,
+    pub(crate) actl_info:       Option<ActlChunk>,
     pub(crate) previous_stride: Vec<u8>,
     pub(crate) trns_bytes:      [u16; 4],
-    pub(crate) chunk_handler:   UnkownChunkHandler,
     pub(crate) seen_hdr:        bool,
     pub(crate) seen_ptle:       bool,
     pub(crate) seen_headers:    bool,
-    pub(crate) seen_trns:       bool
+    pub(crate) seen_trns:       bool,
+    pub(crate) current_frame:   usize
 }
 
-impl<'a> PngDecoder<'a>
+impl<T: ZReaderTrait> PngDecoder<T>
 {
     /// Create a new PNG decoder
     ///
@@ -192,7 +196,7 @@ impl<'a> PngDecoder<'a>
     ///
     /// The decoder settings are set to be default which is
     ///  strict mode + intrinsics
-    pub fn new(data: &'a [u8]) -> PngDecoder<'a>
+    pub fn new(data: T) -> PngDecoder<T>
     {
         let default_opt = DecoderOptions::default();
 
@@ -208,7 +212,7 @@ impl<'a> PngDecoder<'a>
     /// returns: PngDecoder
     ///
     #[allow(unused_mut, clippy::redundant_field_names)]
-    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PngDecoder<'a>
+    pub fn new_with_options(data: T, options: DecoderOptions) -> PngDecoder<T>
     {
         PngDecoder {
             seen_hdr:        false,
@@ -216,13 +220,14 @@ impl<'a> PngDecoder<'a>
             options:         options,
             palette:         Vec::new(),
             png_info:        PngInfo::default(),
+            actl_info:       None,
             previous_stride: vec![],
-            idat_chunks:     Vec::with_capacity(37), // randomly chosen size, my favourite number,
+            frames:          vec![],
             seen_ptle:       false,
             seen_trns:       false,
             seen_headers:    false,
             trns_bytes:      [0; 4],
-            chunk_handler:   default_chunk_handler
+            current_frame:   0
         }
     }
 
@@ -315,7 +320,29 @@ impl<'a> PngDecoder<'a>
             }
         }
     }
-    fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors>
+    /// Returns true if the image is animated
+    ///
+    /// # Note
+    /// Png has an  unofficial specification that allows it to
+    /// support Animated files, or otherwise known as
+    /// APNG  (with extension .apng) supported in various capaccities
+    /// in software.
+    ///
+    /// Such animated files can be decoded by this decoder, returning individual frames
+    /// There are functions provided that allow you to further process
+    /// such chunks to get the animated frames
+    pub fn is_animated(&self) -> bool
+    {
+        self.actl_info.is_some() && self.frames.len() > 1
+    }
+
+    /// Return true if image has more frames available
+    pub fn more_frames(&self) -> bool
+    {
+        self.frames.len() > self.current_frame
+    }
+
+    pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors>
     {
         // Format is length - chunk type - [data] -  crc chunk, load crc chunk now
         let chunk_length = self.stream.get_u32_be_err()? as usize;
@@ -346,6 +373,7 @@ impl<'a> PngDecoder<'a>
             b"eXIf" => PngChunkType::eXIf,
             b"zTXt" => PngChunkType::zTXt,
             b"tEXt" => PngChunkType::tEXt,
+            b"fdAT" => PngChunkType::fdAT,
             _ => PngChunkType::unkn
         };
 
@@ -391,6 +419,7 @@ impl<'a> PngDecoder<'a>
             crc
         })
     }
+
     /// Decode headers from the ong stream and store information
     /// in the internal structure
     ///
@@ -417,93 +446,81 @@ impl<'a> PngDecoder<'a>
                 "First chunk not IHDR, Corrupt PNG"
             ));
         }
-        let mut seen_first_fctl = false;
         loop
         {
             let header = self.read_chunk_header()?;
 
-            match header.chunk_type
+            self.parse_header(header)?;
+
+            if header.chunk_type == PngChunkType::IEND
             {
-                PngChunkType::IHDR =>
-                {
-                    self.parse_ihdr(header)?;
-                }
-                PngChunkType::PLTE =>
-                {
-                    self.parse_plte(header)?;
-                }
-                PngChunkType::IDAT =>
-                {
-                    self.parse_idat(header)?;
-                }
-                PngChunkType::tRNS =>
-                {
-                    self.parse_trns(header)?;
-                }
-                PngChunkType::gAMA =>
-                {
-                    self.parse_gama(header)?;
-                }
-                PngChunkType::acTL =>
-                {
-                    self.parse_actl(header)?;
-                }
-                PngChunkType::tIME =>
-                {
-                    self.parse_time(header)?;
-                }
-                PngChunkType::eXIf =>
-                {
-                    self.parse_exif(header)?;
-                }
-                PngChunkType::iCCP =>
-                {
-                    self.parse_iccp(header);
-                }
-                PngChunkType::iTXt =>
-                {
-                    self.parse_itxt(header);
-                }
-                PngChunkType::zTXt =>
-                {
-                    self.parse_ztxt(header);
-                }
-                PngChunkType::tEXt =>
-                {
-                    self.parse_text(header);
-                }
-                PngChunkType::fcTL =>
-                {
-                    // If we have seen a fcTL chunk and we are
-                    // about to see another one, means we
-                    // have another frame incoming,
-                    // so just exit since we do not support animated
-                    // png
-                    if seen_first_fctl
-                    {
-                        break;
-                    }
-
-                    (self.chunk_handler)(
-                        header.length,
-                        header.chunk,
-                        &mut self.stream,
-                        header.crc
-                    )?;
-
-                    seen_first_fctl = true;
-                }
-                PngChunkType::IEND =>
-                {
-                    break;
-                }
-                _ =>
-                {
-                    (self.chunk_handler)(header.length, header.chunk, &mut self.stream, header.crc)?
-                }
+                break;
             }
         }
         self.seen_headers = true;
+        Ok(())
+    }
+
+    pub(crate) fn parse_header(&mut self, header: PngChunk) -> Result<(), PngDecodeErrors>
+    {
+        match header.chunk_type
+        {
+            PngChunkType::IHDR =>
+            {
+                self.parse_ihdr(header)?;
+            }
+            PngChunkType::PLTE =>
+            {
+                self.parse_plte(header)?;
+            }
+            PngChunkType::IDAT =>
+            {
+                self.parse_idat(header)?;
+            }
+            PngChunkType::tRNS =>
+            {
+                self.parse_trns(header)?;
+            }
+            PngChunkType::gAMA =>
+            {
+                self.parse_gama(header)?;
+            }
+            PngChunkType::acTL =>
+            {
+                self.parse_actl(header)?;
+            }
+            PngChunkType::tIME =>
+            {
+                self.parse_time(header)?;
+            }
+            PngChunkType::eXIf =>
+            {
+                self.parse_exif(header)?;
+            }
+            PngChunkType::iCCP =>
+            {
+                self.parse_iccp(header);
+            }
+            PngChunkType::iTXt =>
+            {
+                self.parse_itxt(header);
+            }
+            PngChunkType::zTXt =>
+            {
+                self.parse_ztxt(header);
+            }
+            PngChunkType::tEXt =>
+            {
+                self.parse_text(header);
+            }
+            PngChunkType::fcTL =>
+            {
+                // may read more headers internally
+                self.parse_fctl(header)?;
+            }
+            PngChunkType::IEND => (),
+            _ => default_chunk_handler(header.length, header.chunk, &mut self.stream, header.crc)?
+        }
         Ok(())
     }
     /// Return the configured image byte endian which the pixels
@@ -555,7 +572,7 @@ impl<'a> PngDecoder<'a>
     /// # Returns
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
-    pub const fn get_info(&self) -> Option<&PngInfo<'a>>
+    pub const fn get_info(&self) -> Option<&PngInfo>
     {
         if self.seen_headers
         {
@@ -607,11 +624,50 @@ impl<'a> PngDecoder<'a>
             self.decode_headers()?;
         }
 
+        if self.frames[0].fctl_info.is_none()
+        {
+            // there is a layout in apng that looks like
+            //  (none)             `acTL`
+            //  (none)             `IDAT` default image
+            //  0                  `fcTL` first frame
+            //  1                  first `fdAT` for first frame
+            //  2                  second `fdAT` for first frame
+            //
+            // and we extract width and height from frame,
+            // so it means for such cases, fctlinfo for first frame
+            // is none, since it doesn't exist, so we fill data from
+            // PngInfo from ihdr since we assume width and height
+            // is same as those defined in IHDR
+
+            let fctl_info = FrameInfo {
+                seq_number:  0,
+                width:       self.png_info.width,
+                height:      self.png_info.height,
+                x_offset:    0,
+                y_offset:    0,
+                delay_num:   0,
+                delay_denom: 0,
+                dispose_op:  DisposeOp::None,
+                blend_op:    BlendOp::Source
+            };
+            self.frames[0].set_fctl(fctl_info);
+        }
+
         info!("Input Colorspace: {:?} ", self.png_info.color);
 
         info!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
 
-        let info = self.png_info.clone();
+        if self.frames.get(self.current_frame).is_none()
+        {
+            return Err(PngDecodeErrors::GenericStatic("No more frames"));
+        }
+        if self.frames[self.current_frame].fctl_info.is_none()
+        {
+            return Err(PngDecodeErrors::GenericStatic("Unimplemented frame info"));
+        }
+        let info = self.frames[self.current_frame].fctl_info.unwrap();
+
+        let png_info = self.png_info.clone();
 
         let image_len = self.output_buffer_size().unwrap();
 
@@ -625,19 +681,20 @@ impl<'a> PngDecoder<'a>
         // go parse IDAT chunks returning the inflate
         let deflate_data = self.inflate()?;
 
+        // then release it, we no longer need it
+        self.frames[self.current_frame].fdat = vec![];
         // remove idat chunks from memory
         // we are already done with them.
-        self.idat_chunks = Vec::new();
 
-        if info.interlace_method == InterlaceMethod::Standard
+        if png_info.interlace_method == InterlaceMethod::Standard
         {
             // allocate out to be enough to hold raw decoded bytes
 
-            self.create_png_image_raw(&deflate_data, info.width, info.height, out, &info)?;
+            self.create_png_image_raw(&deflate_data, info.width, info.height, out, &png_info)?;
         }
-        else if info.interlace_method == InterlaceMethod::Adam7
+        else if png_info.interlace_method == InterlaceMethod::Adam7
         {
-            self.decode_interlaced(&deflate_data, out, &info)?;
+            self.decode_interlaced(&deflate_data, out, &png_info, &info)?;
         }
 
         // convert to set endian if need be
@@ -645,7 +702,8 @@ impl<'a> PngDecoder<'a>
         {
             convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
         }
-
+        // one more frame decoded
+        self.current_frame += 1;
         Ok(())
     }
 
@@ -673,7 +731,7 @@ impl<'a> PngDecoder<'a>
     }
 
     fn decode_interlaced(
-        &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo
+        &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo, frame_info: &FrameInfo
     ) -> Result<(), PngDecodeErrors>
     {
         const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
@@ -686,7 +744,7 @@ impl<'a> PngDecoder<'a>
 
         let out_n = self.get_colorspace().unwrap().num_components();
 
-        let new_len = info.width * info.height * out_n * bytes;
+        let new_len = frame_info.width * frame_info.height * out_n * bytes;
 
         // A mad idea would be to make this multithreaded :)
         // They called me a mad man - Thanos
@@ -700,14 +758,14 @@ impl<'a> PngDecoder<'a>
         // get the maximum height and width for the whole interlace part
         for p in 0..7
         {
-            let x = (info
+            let x = (frame_info
                 .width
                 .saturating_sub(XORIG[p])
                 .saturating_add(XSPC[p])
                 .saturating_sub(1))
                 / XSPC[p];
 
-            let y = (info
+            let y = (frame_info
                 .height
                 .saturating_sub(YORIG[p])
                 .saturating_add(YSPC[p])
@@ -1237,6 +1295,8 @@ impl<'a> PngDecoder<'a>
     #[allow(clippy::manual_memcpy)]
     fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
     {
+        let flat_data = &self.frames[self.current_frame];
+
         // An annoying thing is that deflate doesn't
         // store its uncompressed size,
         // so we can't pre-allocate storage and pass that willy nilly
@@ -1265,7 +1325,7 @@ impl<'a> PngDecoder<'a>
             .set_limit(size_hint + 4 * (self.png_info.height))
             .set_confirm_checksum(self.options.inflate_get_confirm_adler());
 
-        let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&self.idat_chunks, option);
+        let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&flat_data.fdat, option);
 
         decoder
             .decode_zlib()

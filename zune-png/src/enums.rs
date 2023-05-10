@@ -33,6 +33,7 @@ pub enum PngChunkType
     zTXt,
     fcTL,
     acTL,
+    fdAT,
     unkn
 }
 
