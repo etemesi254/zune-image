@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(
     clippy::if_not_else,
     clippy::similar_names,
@@ -42,7 +50,7 @@ use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
 
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 
 use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -163,7 +171,9 @@ impl BitStream
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
-    fn refill(&mut self, reader: &mut ZByteReader) -> Result<bool, DecodeErrors>
+    fn refill<T>(&mut self, reader: &mut ZByteReader<T>) -> Result<bool, DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -270,9 +280,11 @@ impl BitStream
         clippy::unwrap_used
     )]
     #[inline(always)]
-    fn decode_dc(
-        &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, dc_prediction: &mut i32
+    fn decode_dc<T>(
+        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         let (mut symbol, r);
 
@@ -312,10 +324,12 @@ impl BitStream
         clippy::cast_sign_loss
     )]
     #[inline(never)]
-    pub fn decode_mcu_block(
-        &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+    pub fn decode_mcu_block<T>(
+        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
         qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -410,19 +424,23 @@ impl BitStream
     /// Decode a DC block
     #[allow(clippy::cast_possible_truncation)]
     #[inline]
-    pub(crate) fn decode_prog_dc_first(
-        &mut self, reader: &mut ZByteReader, dc_table: &HuffmanTable, block: &mut i16,
+    pub(crate) fn decode_prog_dc_first<T>(
+        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
         *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
         return Ok(());
     }
     #[inline]
-    pub(crate) fn decode_prog_dc_refine(
-        &mut self, reader: &mut ZByteReader, block: &mut i16
+    pub(crate) fn decode_prog_dc_refine<T>(
+        &mut self, reader: &mut ZByteReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         // refinement scan
         if self.bits_left < 1
@@ -446,9 +464,11 @@ impl BitStream
         self.drop_bits(1);
         return k;
     }
-    pub(crate) fn decode_mcu_ac_first(
-        &mut self, reader: &mut ZByteReader, ac_table: &HuffmanTable, block: &mut [i16; 64]
+    pub(crate) fn decode_mcu_ac_first<T>(
+        &mut self, reader: &mut ZByteReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         let shift = self.successive_low;
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
@@ -510,9 +530,11 @@ impl BitStream
         return Ok(true);
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
-    pub(crate) fn decode_mcu_ac_refine(
-        &mut self, reader: &mut ZByteReader, table: &HuffmanTable, block: &mut [i16; 64]
+    pub(crate) fn decode_mcu_ac_refine<T>(
+        &mut self, reader: &mut ZByteReader<T>, table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
+    where
+        T: ZReaderTrait
     {
         let bit = (1 << self.successive_low) as i16;
 

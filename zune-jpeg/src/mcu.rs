@@ -1,6 +1,15 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::{format, vec};
 use core::cmp::min;
 
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
@@ -18,7 +27,7 @@ use crate::JpegDecoder;
 
 pub const DCT_BLOCK: usize = 64;
 
-impl<'a> JpegDecoder<'a>
+impl<T: ZReaderTrait> JpegDecoder<T>
 {
     /// Check for existence of DC and AC Huffman Tables
     pub(crate) fn check_tables(&self) -> Result<(), DecodeErrors>

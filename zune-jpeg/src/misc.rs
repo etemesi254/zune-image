@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //!Miscellaneous stuff
 #![allow(dead_code)]
 
@@ -5,7 +13,7 @@ use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 
 use crate::components::SampleRatios;
@@ -198,7 +206,9 @@ impl fmt::Debug for SOFMarkers
 /// - reader: A mutable reference to the underlying reader.
 /// - buf: A mutable reference to a slice containing u16's
 #[inline]
-pub fn read_u16_into(reader: &mut ZByteReader, buf: &mut [u16]) -> Result<(), DecodeErrors>
+pub fn read_u16_into<T>(reader: &mut ZByteReader<T>, buf: &mut [u16]) -> Result<(), DecodeErrors>
+where
+    T: ZReaderTrait
 {
     for i in buf
     {
@@ -212,7 +222,9 @@ pub fn read_u16_into(reader: &mut ZByteReader, buf: &mut [u16]) -> Result<(), De
 ///
 /// This modifies the components in place setting up details needed by other
 /// parts fo the decoder.
-pub(crate) fn setup_component_params(img: &mut JpegDecoder) -> Result<(), DecodeErrors>
+pub(crate) fn setup_component_params<T: ZReaderTrait>(
+    img: &mut JpegDecoder<T>
+) -> Result<(), DecodeErrors>
 {
     let img_width = img.width();
     let img_height = img.height();

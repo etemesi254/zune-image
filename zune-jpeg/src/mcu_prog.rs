@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //!Routines for progressive decoding
 /*
 This file is needlessly complicated,
@@ -16,7 +24,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 
 use crate::bitstream::BitStream;
@@ -29,7 +37,7 @@ use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
-impl<'a> JpegDecoder<'a>
+impl<T: ZReaderTrait> JpegDecoder<T>
 {
     /// Decode a progressive image
     ///
@@ -629,7 +637,11 @@ impl<'a> JpegDecoder<'a>
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
-fn get_marker(reader: &mut ZByteReader, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
+fn get_marker<T>(
+    reader: &mut ZByteReader<T>, stream: &mut BitStream
+) -> Result<Marker, DecodeErrors>
+where
+    T: ZReaderTrait
 {
     if let Some(marker) = stream.marker
     {
