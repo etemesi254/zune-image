@@ -236,6 +236,26 @@ pub fn signum(num: f32) -> f32
     } else if num > 0.0 { 1.0 } else { -1.0 }
 }
 
+fn floor(num: f32) -> f32
+{
+    if num.is_nan() || num.is_infinite()
+    {
+        /* handle infinities and nan */
+        return num;
+    }
+    let n = num as u64;
+    let d = n as f32;
+
+    if d == num || num >= 0.0
+    {
+        d
+    }
+    else
+    {
+        d - 1.0
+    }
+}
+
 /// Fast log2 approximation
 /// (we really don't need that accurate)
 #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
@@ -269,8 +289,9 @@ fn frexp(s: f32) -> (f32, i32)
     else
     {
         let lg = fast_log2(abs(s));
-        let x = (lg - lg.floor() - 1.0).exp2();
-        let exp = lg.floor() + 1.0;
+        let lg_floor = floor(lg);
+        let x = (lg - lg_floor - 1.0).exp2();
+        let exp = lg_floor + 1.0;
         (signum(s) * x, exp as i32)
     }
 }

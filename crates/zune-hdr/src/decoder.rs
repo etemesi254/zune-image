@@ -125,7 +125,8 @@ where
         }
         self.get_buffer_until(b'\n', &mut max_header_size)?;
 
-        if max_header_size.starts_with(b"#?RADIANCE\n") | max_header_size.starts_with(b"#?RGBE\n")
+        if !(max_header_size.starts_with(b"#?RADIANCE\n")
+            || max_header_size.starts_with(b"#?RGBE\n"))
         {
             return Err(HdrDecodeErrors::InvalidMagicBytes);
         }
@@ -138,7 +139,7 @@ where
             {
                 continue;
             }
-            if max_header_size.contains(&b'=')
+            if max_header_size[..size].contains(&b'=')
             {
                 // key value, it should be lossy to avoid failure when the key is not valid
                 // utf-8, we throw garbage to the dictionary if the image is garbage
@@ -174,7 +175,7 @@ where
             .trim()
             .to_string();
 
-        let header_size = self.get_buffer_until(b' ', &mut max_header_size)?;
+        let header_size = self.get_buffer_until(b'\n', &mut max_header_size)?;
 
         let coords2 = String::from_utf8_lossy(&max_header_size[..header_size])
             .trim()
