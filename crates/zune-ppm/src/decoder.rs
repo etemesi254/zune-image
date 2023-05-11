@@ -13,7 +13,7 @@ use core::fmt::{Debug, Formatter};
 
 use log::info;
 use zune_core::bit_depth::{BitDepth, BitType, ByteEndian};
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
@@ -21,12 +21,14 @@ use zune_core::result::DecodingResult;
 /// An instance of a PPM decoder
 ///
 /// The decoder can currently decode P5 and P6 formats
-pub struct PPMDecoder<'a>
+pub struct PPMDecoder<T>
+where
+    T: ZReaderTrait
 {
     width:           usize,
     height:          usize,
     decoded_headers: bool,
-    reader:          ZByteReader<'a>,
+    reader:          ZByteReader<T>,
     colorspace:      ColorSpace,
     bit_depth:       BitDepth,
     options:         DecoderOptions
@@ -76,7 +78,9 @@ impl Debug for PPMDecodeErrors
     }
 }
 
-impl<'a> PPMDecoder<'a>
+impl<T> PPMDecoder<T>
+where
+    T: ZReaderTrait
 {
     /// Create a new ppm decoder with default options
     ///
@@ -90,7 +94,7 @@ impl<'a> PPMDecoder<'a>
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn new(data: &'a [u8]) -> PPMDecoder<'a>
+    pub fn new(data: T) -> PPMDecoder<T>
     {
         PPMDecoder::new_with_options(DecoderOptions::default(), data)
     }
@@ -107,7 +111,7 @@ impl<'a> PPMDecoder<'a>
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn new_with_options(options: DecoderOptions, data: &'a [u8]) -> PPMDecoder<'a>
+    pub fn new_with_options(options: DecoderOptions, data: T) -> PPMDecoder<T>
     {
         let reader = ZByteReader::new(data);
 
@@ -220,8 +224,13 @@ impl<'a> PPMDecoder<'a>
 
         skip_spaces(&mut self.reader);
 
+        let mut byte_header = [0; 20];
+
+        let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
+        let value = &byte_header[..value_size];
+
         // get the magnitude byte
-        let int_bytes = match core::str::from_utf8(get_bytes_until_whitespace(&mut self.reader))
+        let int_bytes = match core::str::from_utf8(value)
         {
             Ok(valid_str) => match valid_str.trim().parse::<f32>()
             {
@@ -261,6 +270,8 @@ impl<'a> PPMDecoder<'a>
         let mut seen_max_val = false;
         let mut seen_tuple_type = false;
 
+        let mut byte_header = [0; 128];
+
         'infinite: loop
         {
             if self.reader.eof()
@@ -269,7 +280,8 @@ impl<'a> PPMDecoder<'a>
             }
             skip_spaces(&mut self.reader);
 
-            let value = get_bytes_until_whitespace(&mut self.reader);
+            let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
+            let value = &byte_header[..value_size];
 
             match value
             {
@@ -338,7 +350,8 @@ impl<'a> PPMDecoder<'a>
                 }
                 b"TUPLTYPE " =>
                 {
-                    let new_value = get_bytes_until_whitespace(&mut self.reader);
+                    let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
+                    let new_value = &byte_header[..value_size];
 
                     // Order matters here.
                     // we want to match RGB_ALPHA before matching RGB
@@ -705,7 +718,9 @@ impl<'a> PPMDecoder<'a>
 /// Skip all whitespace characters and comments
 /// until one hits a character that isn't a space or
 /// we reach eof
-fn skip_spaces(byte_stream: &mut ZByteReader)
+fn skip_spaces<T>(byte_stream: &mut ZByteReader<T>)
+where
+    T: ZReaderTrait
 {
     while !byte_stream.eof()
     {
@@ -736,7 +751,9 @@ fn skip_spaces(byte_stream: &mut ZByteReader)
 ///
 /// # Panics
 /// If end < start
-fn get_bytes_until_whitespace<'a>(z: &'a mut ZByteReader) -> &'a [u8]
+fn get_bytes_until_whitespace<T>(z: &mut ZByteReader<T>, write_to: &mut [u8]) -> usize
+where
+    T: ZReaderTrait
 {
     let start = z.get_position();
 
@@ -752,12 +769,11 @@ fn get_bytes_until_whitespace<'a>(z: &'a mut ZByteReader) -> &'a [u8]
     }
     let end = z.get_position();
     // rewind back to where we currently were
-    z.rewind(end - start);
     // then take that as a reference
-    let stream = z.peek_at(0, end - start).unwrap();
+    z.read_exact(&mut write_to[..end - start]).unwrap();
     // then bump up position to indicate we read those bytes
-    z.skip(end - start);
-    stream
+    // z.skip(end - start);
+    end - start
 }
 
 // #[test]
