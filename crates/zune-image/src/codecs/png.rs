@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "png")]
 #![allow(unused_variables)]
 
@@ -5,6 +13,7 @@
 use exif::experimental::Writer;
 use log::{debug, info};
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -17,30 +26,46 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-impl<'a> DecoderTrait<'a> for PngDecoder<'a>
+impl<T> DecoderTrait for PngDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors>
     {
         let metadata = self.read_headers()?.unwrap();
 
-        let pixels = self
-            .decode()
-            .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
-
         let depth = self.get_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
-        let mut image = match pixels
+        if self.is_animated()
         {
-            DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-            DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
-            _ => unreachable!()
-        };
-        // metadata
-        image.metadata = metadata;
+            // decode apng frames
+            //let mut previous_frame
+            while self.more_frames()
+            {
+                println!("{:?}", self.get_depth());
+                self.decode().unwrap();
+            }
+            todo!();
+        }
+        else
+        {
+            let pixels = self
+                .decode()
+                .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
 
-        Ok(image)
+            let mut image = match pixels
+            {
+                DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
+                DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
+                _ => unreachable!()
+            };
+            // metadata
+            image.metadata = metadata;
+
+            Ok(image)
+        }
     }
     fn get_dimensions(&self) -> Option<(usize, usize)>
     {
@@ -78,7 +103,7 @@ impl<'a> DecoderTrait<'a> for PngDecoder<'a>
         {
             let info = self.get_info().unwrap();
             // see if we have an exif chunk
-            if let Some(exif) = info.exif
+            if let Some(exif) = &info.exif
             {
                 metadata.parse_raw_exif(exif)
             }

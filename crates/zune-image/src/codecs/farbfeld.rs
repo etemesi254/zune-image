@@ -1,9 +1,18 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "farbfeld")]
 //! Farbfeld decoding and encoding support
 //!
 //! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
 //! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
@@ -15,7 +24,9 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<'a> DecoderTrait<'a> for FarbFeldDecoder<'a>
+impl<T> DecoderTrait for FarbFeldDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors>
     {
@@ -154,7 +165,9 @@ impl From<FarbFeldEncoderErrors> for ImgEncodeErrors
     }
 }
 
-impl<'b> DecodeInto for FarbFeldDecoder<'b>
+impl<T> DecodeInto for FarbFeldDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>
     {
