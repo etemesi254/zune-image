@@ -5,7 +5,27 @@
 
  You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
 */
-
+//! Depth conversion routines
+//!
+//! This helps to convert from one bit depth to another
+//!
+//! zune-image associates bit depths with native representations
+//!, the following mapping indicates the types and range
+//!
+//!|BitDepth         |native type    |range      |
+//!|-----------------|---------------|-----------|
+//!|BitDepth::Eight  | [`u8`]        |0   - 255  |
+//!|BitDepth::Sixteen| [`u16`]       |0   - 65535|
+//!|BitDepth::F32    | [`f32`]       |0.0 - 1.0  |
+//!  
+//!
+//! Conversions are supported from any depth to another, both
+//! from and to a depth.
+//!
+//! The library automatically rescales the pixels during conversion, i.e
+//! when moving from `BitDepth::Eight` to `BitDepth::F32`, the library will automatically
+//! divide all pixels by `255.0` after converting them to f32's
+//!
 use log::trace;
 use zune_core::bit_depth::{BitDepth, BitType};
 
@@ -174,9 +194,10 @@ impl OperationsTrait for Depth
                     let new_channel_raw = new_channel.reinterpret_as_mut::<f32>().unwrap();
 
                     // scale by dividing with 255
+                    let recip = 1.0 / 255.0;
                     for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
                     {
-                        *new_chan = f32::from(*old_chan) / 255.0;
+                        *new_chan = f32::from(*old_chan) * recip;
                     }
 
                     *channel = new_channel;
@@ -189,9 +210,11 @@ impl OperationsTrait for Depth
                     let new_channel_raw = new_channel.reinterpret_as_mut::<f32>().unwrap();
 
                     // scale by dividing with 65535
+                    let recip = 1.0 / 65535.0;
+
                     for (old_chan, new_chan) in old_data.iter().zip(new_channel_raw.iter_mut())
                     {
-                        *new_chan = f32::from(*old_chan) / 65535.0;
+                        *new_chan = f32::from(*old_chan) * recip;
                     }
 
                     *channel = new_channel;
