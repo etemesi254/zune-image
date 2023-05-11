@@ -21,7 +21,7 @@ use crate::workflow::EncodeResult;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait<'a>
+pub trait DecoderTrait
 {
     /// Decode a buffer already in memory
     ///
