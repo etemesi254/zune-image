@@ -1,4 +1,15 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Calculate image contrast
+//!
+//! # Algorithm
+//!
 //! Algorithm is from [here](https://www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/)
 //!
 //! Steps repeated here for convenience
@@ -18,7 +29,9 @@
 
 /// Calculate the contrast of an image
 ///
-/// See module docs for formula
+/// # Arguments
+/// - channel: Input channel , modified in place
+/// - contrast: The contrast to adjust the channel with
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn contrast_u8(channel: &mut [u8], contrast: f32)
 {

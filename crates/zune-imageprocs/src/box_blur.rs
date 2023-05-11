@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::f32;
 
 use log::warn;
@@ -57,7 +65,7 @@ where
     T: Copy + NumOps<T>,
     u32: std::convert::From<T>
 {
-    let radius = radius;
+    let radius = (radius * 2) + 1;
     // 1D-Box blurs can be seen as the average of radius pixels iterating
     // through a window
     // A box blur therefore is
