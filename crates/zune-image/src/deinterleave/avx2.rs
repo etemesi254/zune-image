@@ -1,5 +1,13 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#![cfg(feature = "avx2")]
+#![cfg(feature = "simd")]
 
 use crate::deinterleave::scalar::{
     de_interleave_four_channels_scalar, de_interleave_three_channels_scalar

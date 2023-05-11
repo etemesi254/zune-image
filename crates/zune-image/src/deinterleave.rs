@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Deinterleave de-interleaves image channels into separate channels
 //!
 //! Multiple image formats store  images in `R`,`G`,`B`,`R`,`G`,`B`...
@@ -19,6 +27,7 @@ use crate::deinterleave::deinterleave_impls::{
 };
 use crate::errors::{ImageErrors, ImageOperationsErrors};
 
+mod avx2;
 mod scalar;
 mod sse2;
 mod sse41;
