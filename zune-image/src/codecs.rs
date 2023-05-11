@@ -117,16 +117,15 @@ impl ImageFormat
     {
         return self.get_decoder(&[]).is_ok();
     }
-    pub fn get_decoder<'a>(
-        &self, data: &'a [u8]
-    ) -> Result<Box<dyn DecoderTrait<'a> + 'a>, ImageErrors>
+    pub fn get_decoder<'a>(&self, data: &'a [u8])
+        -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
 
     pub fn get_decoder_with_options<'a>(
         &self, data: &'a [u8], options: DecoderOptions
-    ) -> Result<Box<dyn DecoderTrait<'a> + 'a>, ImageErrors>
+    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     {
         match self
         {
@@ -203,7 +202,7 @@ impl ImageFormat
                 #[cfg(feature = "qoi")]
                 {
                     Ok(Box::new(zune_qoi::QoiDecoder::new_with_options(
-                        options, data
+                        data, options
                     )))
                 }
                 #[cfg(not(feature = "qoi"))]

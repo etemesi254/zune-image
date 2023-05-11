@@ -1,6 +1,15 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "psd")]
 
 use log::debug;
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 pub use zune_psd::*;
@@ -12,7 +21,9 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
-impl<'a> DecoderTrait<'a> for PSDDecoder<'a>
+impl<T> DecoderTrait for PSDDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors>
     {

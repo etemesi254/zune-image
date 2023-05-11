@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "jpeg")]
 //! Jpeg decoding and encoding support
 //!
@@ -9,6 +17,7 @@
 use jpeg_encoder::{ColorType, EncodingError, JpegColorType};
 use log::{info, warn};
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_jpeg::errors::DecodeErrors;
@@ -21,7 +30,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait, OperationsTrait};
 
-impl<'a> DecoderTrait<'a> for zune_jpeg::JpegDecoder<'a>
+impl<T: ZReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T>
 {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors>
     {
@@ -271,7 +280,9 @@ impl From<EncodingError> for ImageErrors
     }
 }
 
-impl<'b> DecodeInto for JpegDecoder<'b>
+impl<T> DecodeInto for JpegDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>
     {

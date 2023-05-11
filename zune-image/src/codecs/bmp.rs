@@ -8,13 +8,16 @@
 #![cfg(feature = "bmp")]
 
 use zune_bmp::{BmpDecoder, BmpDecoderErrors};
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::DecoderTrait;
 
-impl<'a> DecoderTrait<'a> for BmpDecoder<'a>
+impl<T> DecoderTrait for BmpDecoder<T>
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors>
     {
