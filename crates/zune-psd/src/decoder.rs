@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! A simple PSD reader.
 //!
 //! This crate features a simple and performant PSD reader
@@ -14,7 +22,7 @@ use core::cmp::Ordering;
 
 use log::info;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
@@ -30,12 +38,14 @@ use crate::errors::PSDDecodeErrors;
 ///
 /// Further work will go onto adding a renderer that flattens
 /// image pixels. But for now this is a good basis.
-pub struct PSDDecoder<'a>
+pub struct PSDDecoder<T>
+where
+    T: ZReaderTrait
 {
     width:          usize,
     height:         usize,
     decoded_header: bool,
-    stream:         ZByteReader<'a>,
+    stream:         ZByteReader<T>,
     options:        DecoderOptions,
     depth:          BitDepth,
     color_type:     Option<ColorModes>,
@@ -43,14 +53,16 @@ pub struct PSDDecoder<'a>
     channel_count:  usize
 }
 
-impl<'a> PSDDecoder<'a>
+impl<T> PSDDecoder<T>
+where
+    T: ZReaderTrait
 {
-    pub fn new(data: &'a [u8]) -> PSDDecoder<'a>
+    pub fn new(data: T) -> PSDDecoder<T>
     {
         Self::new_with_options(data, DecoderOptions::default())
     }
 
-    pub fn new_with_options(data: &'a [u8], options: DecoderOptions) -> PSDDecoder<'a>
+    pub fn new_with_options(data: T, options: DecoderOptions) -> PSDDecoder<T>
     {
         PSDDecoder {
             width: 0,
