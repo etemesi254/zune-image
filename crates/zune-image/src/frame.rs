@@ -14,6 +14,7 @@ use bytemuck::Pod;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::{Channel, ChannelErrors};
+use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::traits::ZuneInts;
 
 /// A single image frame
@@ -56,6 +57,22 @@ impl Frame
             channels,
             duration: 0
         }
+    }
+    pub fn from_f32(pixels: &[f32], colorspace: ColorSpace, duration: u64) -> Frame
+    {
+        let channels = deinterleave_f32(pixels, colorspace).unwrap();
+        Frame { channels, duration }
+    }
+    pub fn from_u16(pixels: &[u16], colorspace: ColorSpace, duration: u64) -> Frame
+    {
+        let channels = deinterleave_u16(pixels, colorspace).unwrap();
+        Frame { channels, duration }
+    }
+
+    pub fn from_u8(pixels: &[u8], colorspace: ColorSpace, duration: u64) -> Frame
+    {
+        let channels = deinterleave_u8(pixels, colorspace).unwrap();
+        Frame { channels, duration }
     }
 
     /// Return a mutable reference to the vector of
