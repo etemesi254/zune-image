@@ -554,7 +554,9 @@ impl Image
     }
 }
 
-fn checked_mul(width: usize, height: usize, depth: usize, colorspace_components: usize) -> usize
+pub(crate) fn checked_mul(
+    width: usize, height: usize, depth: usize, colorspace_components: usize
+) -> usize
 {
     width
         .checked_mul(height)
