@@ -14,8 +14,7 @@ const ERROR_MSG: &str = "No more bytes";
 
 /// An encapsulation of a byte stream reader
 ///
-/// This provides an interface similar to [std::io::Cursor]
-/// but with the exception that this doesn't use generics and
+/// This provides an interface similar to [std::io::Cursor] but
 /// it provides fine grained options for reading different integer data types from
 /// the underlying buffer.
 ///
