@@ -11,7 +11,7 @@ use alloc::{format, vec};
 
 use log::{debug, error, info};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReader;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
@@ -40,18 +40,22 @@ enum QoiColorspace
 ///
 /// [`decode_headers`]:QoiDecoder::decode_headers
 /// [`decode`]:QoiDecoder::decode
-pub struct QoiDecoder<'a>
+pub struct QoiDecoder<T>
+where
+    T: ZReaderTrait
 {
     width:             usize,
     height:            usize,
     colorspace:        ColorSpace,
     colorspace_layout: QoiColorspace,
     decoded_headers:   bool,
-    stream:            ZByteReader<'a>,
+    stream:            ZByteReader<T>,
     options:           DecoderOptions
 }
 
-impl<'a> QoiDecoder<'a>
+impl<T> QoiDecoder<T>
+where
+    T: ZReaderTrait
 {
     /// Create a new QOI format decoder with the default options
     ///
@@ -67,7 +71,7 @@ impl<'a> QoiDecoder<'a>
     /// let mut decoder = zune_qoi::QoiDecoder::new(&[]);
     /// // additional code
     /// ```
-    pub fn new(data: &'a [u8]) -> QoiDecoder<'a>
+    pub fn new(data: T) -> QoiDecoder<T>
     {
         QoiDecoder::new_with_options(DecoderOptions::default(), data)
     }
@@ -90,7 +94,7 @@ impl<'a> QoiDecoder<'a>
     /// let mut decoder=QoiDecoder::new_with_options(options,&[]);
     /// ```
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(options: DecoderOptions, data: &'a [u8]) -> QoiDecoder<'a>
+    pub fn new_with_options(options: DecoderOptions, data: T) -> QoiDecoder<T>
     {
         QoiDecoder {
             width:             0,
