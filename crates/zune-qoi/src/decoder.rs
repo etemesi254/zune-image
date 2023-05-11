@@ -73,7 +73,7 @@ where
     /// ```
     pub fn new(data: T) -> QoiDecoder<T>
     {
-        QoiDecoder::new_with_options(DecoderOptions::default(), data)
+        QoiDecoder::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new QOI format decoder that obeys specified restrictions
     ///
@@ -91,10 +91,10 @@ where
     ///
     /// let  options = DecoderOptions::default().set_max_width(10).set_max_height(10);
     ///
-    /// let mut decoder=QoiDecoder::new_with_options(options,&[]);
+    /// let mut decoder=QoiDecoder::new_with_options(&[],options);
     /// ```
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(options: DecoderOptions, data: T) -> QoiDecoder<T>
+    pub fn new_with_options(data: T, options: DecoderOptions) -> QoiDecoder<T>
     {
         QoiDecoder {
             width:             0,
