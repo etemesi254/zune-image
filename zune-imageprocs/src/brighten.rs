@@ -1,5 +1,40 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+//! Brighten operation
+//!
+//! # Algorithm
+//!
+//! The brightness algorithm is implemented as
+//!
+//! ```rust
+//! x = a + c
+//! ```
+//!
+//! where
+//! - `x`: New pixel
+//! - `a`: Old pixel
+//! - `c`: How bright to increase the pixel
+//!
+//! The `a+c` is saturating on the maximum value for the type
+//!
 use crate::traits::NumOps;
 
+/// Brighten operation
+///
+/// # Arguments
+///
+/// * `channel`: Input channel pixel, operates in place
+/// * `value`: Value to increase the channel values with
+/// * `_max_value`:  Currently unused
+///
+/// returns: ()
+///
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
     channel: &mut [T], value: T, _max_value: T

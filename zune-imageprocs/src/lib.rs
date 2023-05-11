@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 // Benchmark support needs sse
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![warn(
@@ -25,7 +33,6 @@ pub mod brighten;
 pub mod contrast;
 pub mod convolve;
 pub mod crop;
-pub mod filter;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
