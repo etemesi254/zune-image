@@ -164,7 +164,7 @@ where
     /// # Example
     /// ```
     /// use zune_farbfeld::FarbFeldDecoder;
-    /// let mut decoder = FarbFeldDecoder::new(b"NOT A VALID FILE");
+    /// let mut decoder = FarbFeldDecoder::new(b"NOT A VALID FILE".as_slice());
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
@@ -218,7 +218,7 @@ where
     ///
     /// ```no_run
     /// use zune_farbfeld::FarbFeldDecoder;
-    /// let mut decoder = FarbFeldDecoder::new(&[]);
+    /// let mut decoder = FarbFeldDecoder::new([].as_slice());
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.

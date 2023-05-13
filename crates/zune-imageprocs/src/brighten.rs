@@ -12,7 +12,7 @@
 //!
 //! The brightness algorithm is implemented as
 //!
-//! ```rust
+//! ```text
 //! x = a + c
 //! ```
 //!

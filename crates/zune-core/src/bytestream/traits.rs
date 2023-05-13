@@ -108,3 +108,42 @@ impl ZReaderTrait for Vec<u8>
         self.len()
     }
 }
+
+impl ZReaderTrait for &Vec<u8>
+{
+    #[inline(always)]
+    fn get_byte(&self, index: usize) -> Option<&u8>
+    {
+        self.get(index)
+    }
+
+    #[inline(always)]
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
+    {
+        self.get(index)
+    }
+
+    #[inline(always)]
+    fn get_len(&self) -> usize
+    {
+        self.len()
+    }
+}
+
+impl<const N: usize> ZReaderTrait for &[u8; N]
+{
+    fn get_byte(&self, index: usize) -> Option<&u8>
+    {
+        self.get(index)
+    }
+
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
+    {
+        self.get(index)
+    }
+
+    fn get_len(&self) -> usize
+    {
+        N
+    }
+}

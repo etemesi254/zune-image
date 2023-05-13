@@ -106,8 +106,8 @@ impl<T: ZReaderTrait> ZByteReader<T>
     ///
     /// ```
     /// use zune_core::bytestream::ZByteReader;
-    /// let data = [0;120];
-    /// let reader = ZByteReader::new(&data);
+    /// let data = [0_u8;120];
+    /// let reader = ZByteReader::new(data.as_slice());
     /// assert!(reader.has(3));
     /// assert!(!reader.has(121));
     /// ```
@@ -212,7 +212,7 @@ impl<T: ZReaderTrait> ZByteReader<T>
     /// # Example
     /// ```rust
     /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new(&[0x0,0x5,0x3,0x2]);
+    /// let mut stream = ZByteReader::new([0x0,0x5,0x3,0x2].as_slice());
     /// let first_bytes = stream.get_fixed_bytes_or_err::<10>(); // not enough bytes
     /// assert!(first_bytes.is_err());
     /// ```
@@ -248,7 +248,7 @@ impl<T: ZReaderTrait> ZByteReader<T>
     /// # Example
     /// ```rust
     /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new(&[0x0,0x5,0x3,0x2]);
+    /// let mut stream = ZByteReader::new([0x0,0x5,0x3,0x2].as_slice());
     /// let first_bytes = stream.get_fixed_bytes_or_zero::<2>();
     /// assert_eq!(first_bytes,[0x0,0x5]);
     /// ```
@@ -279,7 +279,7 @@ impl<T: ZReaderTrait> ZByteReader<T>
     ///
     /// ```rust
     /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new(&[0;10]);
+    /// let mut stream = ZByteReader::new([0;10].as_slice());
     /// stream.skip_until_false(|x| x.is_ascii()) // skip until we meet a non ascii character
     /// ```
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F)
