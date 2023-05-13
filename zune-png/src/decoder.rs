@@ -20,6 +20,7 @@ use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
+use crate::error::PngDecodeErrors::GenericStatic;
 use crate::filters::de_filter::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up
 };
@@ -521,6 +522,12 @@ impl<T: ZReaderTrait> PngDecoder<T>
             PngChunkType::IEND => (),
             _ => default_chunk_handler(header.length, header.chunk, &mut self.stream, header.crc)?
         }
+
+        if !self.seen_hdr
+        {
+            return Err(GenericStatic("IHDR block not encountered,corrupt jpeg"));
+        }
+
         Ok(())
     }
     /// Return the configured image byte endian which the pixels

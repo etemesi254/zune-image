@@ -73,7 +73,6 @@
 ///
 /// # Panics
 /// - If `in_width` > `out_width`
-
 pub fn crop<T: Copy>(
     in_image: &[T], in_width: usize, out_image: &mut [T], out_width: usize, out_height: usize,
     x: usize, y: usize
