@@ -134,7 +134,7 @@ impl ImageFormat
                 #[cfg(feature = "jpeg")]
                 {
                     Ok(Box::new(zune_jpeg::JpegDecoder::new_with_options(
-                        options, data
+                        data, options
                     )))
                 }
                 #[cfg(not(feature = "jpeg"))]
