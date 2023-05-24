@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Global Decoder options
 use bitflags::bitflags;
 
@@ -329,7 +337,7 @@ impl DecoderOptions
 
     /// Get the byte endian for which samples that span more than one byte will
     /// be treated
-    pub const fn get_bye_endian(&self) -> ByteEndian
+    pub const fn get_byte_endian(&self) -> ByteEndian
     {
         self.endianness
     }

@@ -547,7 +547,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// no effect
     pub const fn byte_endian(&self) -> ByteEndian
     {
-        self.options.get_bye_endian()
+        self.options.get_byte_endian()
     }
 
     /// Return the number of bytes required to hold a decoded image frame
