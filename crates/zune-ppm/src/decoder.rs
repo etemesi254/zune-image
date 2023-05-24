@@ -662,7 +662,7 @@ where
             {
                 // match endianness
                 // specified by the decoder options
-                let mut result = if self.options.get_bye_endian() == ByteEndian::BE
+                let mut result = if self.options.get_byte_endian() == ByteEndian::BE
                 {
                     let remaining = self.reader.remaining_bytes();
 
@@ -672,7 +672,7 @@ where
                         .map(|b| f32::from_be_bytes(b.try_into().unwrap()))
                         .collect::<Vec<f32>>()
                 }
-                else if self.options.get_bye_endian() == ByteEndian::LE
+                else if self.options.get_byte_endian() == ByteEndian::LE
                 {
                     let remaining = self.reader.remaining_bytes();
 
