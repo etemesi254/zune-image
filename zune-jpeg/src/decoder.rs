@@ -794,8 +794,12 @@ where
     }
     /// Create a new decoder with the specified options to be used for decoding
     /// an image
+    ///
+    /// # Arguments
+    /// - `buf`: The input buffer from where we will pull in compressed jpeg bytes from
+    /// - `options`: Options specific to this decoder instance
     #[must_use]
-    pub fn new_with_options(options: DecoderOptions, buf: T) -> JpegDecoder<T>
+    pub fn new_with_options(buf: T, options: DecoderOptions) -> JpegDecoder<T>
     {
         JpegDecoder::default(options, buf)
     }
