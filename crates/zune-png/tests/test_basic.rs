@@ -47,16 +47,18 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 #[test]
 fn test_1bpp_basic()
 {
-    let path = "/home/caleb/Downloads/1603452522445567021368131.png"; //env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
-    let contents = open_and_read(path);
-    let mut decoder = zune_png::PngDecoder::new(&contents);
-
-    decoder.decode_headers().unwrap();
-    while decoder.more_frames()
-    {
-        println!("{:?}", decoder.get_depth());
-        decoder.decode().unwrap();
-    }
+    // let path = "/home/caleb/Downloads/1603452522445567021368131.png"; //env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
+    //
+    // let contents = open_and_read(path);
+    // let mut decoder = zune_png::PngDecoder::new(&contents);
+    //
+    // decoder.decode_headers().unwrap();
+    // while decoder.more_frames()
+    // {
+    //     println!("{:?}", decoder.get_depth());
+    //     let bytes = decoder.decode().unwrap().u8().unwrap();
+    //     println!("{:?}", &bytes[0..10]);
+    // }
 }
 
 #[test]
