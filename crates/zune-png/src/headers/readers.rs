@@ -143,6 +143,20 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
         self.seen_hdr = true;
 
+        let frame_info = FrameInfo {
+            seq_number:  0,
+            width:       self.png_info.width,
+            height:      self.png_info.height,
+            x_offset:    0,
+            y_offset:    0,
+            delay_num:   0,
+            delay_denom: 0,
+            dispose_op:  DisposeOp::None,
+            blend_op:    BlendOp::Source
+        };
+
+        self.frames.push(SingleFrame::new(vec![], Some(frame_info)));
+
         Ok(())
     }
 
@@ -547,10 +561,10 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
             if next_header.chunk_type == PngChunkType::IEND
             {
-                // REVERT , REVERT
                 // moves behind chunk length and chunk header
                 // the caller will read it as IEND and terminate
                 self.stream.rewind(8);
+                self.seen_iend = true;
                 break;
             }
             // we have a chunk, this chunk if idat is associated with the first frame
@@ -562,11 +576,12 @@ impl<T: ZReaderTrait> PngDecoder<T>
             }
             else if next_header.chunk_type == PngChunkType::fcTL
             {
-                // we are starting a new frame
-                // get fctl
-                let frame_fctl = self.parse_fctl_external(next_header)?;
-
-                self.frames.push(SingleFrame::new(vec![], Some(frame_fctl)));
+                // next frame, stop and go back
+                //
+                // we will decode the frame we have before we
+                // go to the next frame
+                self.stream.rewind(8);
+                break;
             }
             else if next_header.chunk_type == PngChunkType::fdAT
             {
