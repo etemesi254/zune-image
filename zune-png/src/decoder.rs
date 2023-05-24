@@ -16,7 +16,7 @@ use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
 use zune_inflate::DeflateOptions;
 
-use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
+use crate::apng::{ActlChunk, FrameInfo, SingleFrame};
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
@@ -182,6 +182,7 @@ where
     pub(crate) seen_ptle:       bool,
     pub(crate) seen_headers:    bool,
     pub(crate) seen_trns:       bool,
+    pub(crate) seen_iend:       bool,
     pub(crate) current_frame:   usize
 }
 
@@ -227,6 +228,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
             seen_ptle:       false,
             seen_trns:       false,
             seen_headers:    false,
+            seen_iend:       false,
             trns_bytes:      [0; 4],
             current_frame:   0
         }
@@ -428,24 +430,26 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// be accessed by public headers
     pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors>
     {
-        if self.seen_headers
+        if self.seen_headers && self.seen_iend
         {
             return Ok(());
         }
-        // READ PNG signature
-        let signature = self.stream.get_u64_be_err()?;
-
-        if signature != PNG_SIGNATURE
+        if !self.seen_hdr
         {
-            return Err(PngDecodeErrors::BadSignature);
-        }
+            // READ PNG signature
+            let signature = self.stream.get_u64_be_err()?;
 
-        // check if first chunk is ihdr here
-        if self.stream.peek_at(4, 4)? != b"IHDR"
-        {
-            return Err(PngDecodeErrors::GenericStatic(
-                "First chunk not IHDR, Corrupt PNG"
-            ));
+            if signature != PNG_SIGNATURE
+            {
+                return Err(PngDecodeErrors::BadSignature);
+            }
+            // check if first chunk is ihdr here
+            if self.stream.peek_at(4, 4)? != b"IHDR"
+            {
+                return Err(PngDecodeErrors::GenericStatic(
+                    "First chunk not IHDR, Corrupt PNG"
+                ));
+            }
         }
         loop
         {
@@ -454,6 +458,12 @@ impl<T: ZReaderTrait> PngDecoder<T>
             self.parse_header(header)?;
 
             if header.chunk_type == PngChunkType::IEND
+            {
+                break;
+            }
+            // break here, we already have content for one
+            // frame, subsequent calls will fetch the next frames
+            if header.chunk_type == PngChunkType::fcTL
             {
                 break;
             }
@@ -519,7 +529,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                 // may read more headers internally
                 self.parse_fctl(header)?;
             }
-            PngChunkType::IEND => (),
+            PngChunkType::IEND => self.seen_iend = true,
             _ => default_chunk_handler(header.length, header.chunk, &mut self.stream, header.crc)?
         }
 
@@ -626,38 +636,9 @@ impl<T: ZReaderTrait> PngDecoder<T>
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors>
     {
         // decode headers
-        if !self.seen_headers
+        if !self.seen_headers || !self.seen_iend
         {
             self.decode_headers()?;
-        }
-
-        if self.frames[0].fctl_info.is_none()
-        {
-            // there is a layout in apng that looks like
-            //  (none)             `acTL`
-            //  (none)             `IDAT` default image
-            //  0                  `fcTL` first frame
-            //  1                  first `fdAT` for first frame
-            //  2                  second `fdAT` for first frame
-            //
-            // and we extract width and height from frame,
-            // so it means for such cases, fctlinfo for first frame
-            // is none, since it doesn't exist, so we fill data from
-            // PngInfo from ihdr since we assume width and height
-            // is same as those defined in IHDR
-
-            let fctl_info = FrameInfo {
-                seq_number:  0,
-                width:       self.png_info.width,
-                height:      self.png_info.height,
-                x_offset:    0,
-                y_offset:    0,
-                delay_num:   0,
-                delay_denom: 0,
-                dispose_op:  DisposeOp::None,
-                blend_op:    BlendOp::Source
-            };
-            self.frames[0].set_fctl(fctl_info);
         }
 
         info!("Input Colorspace: {:?} ", self.png_info.color);
@@ -855,7 +836,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
         //  3 - We use bytemuck to to safe align, hence keeping the no unsafe mantra except
         //      for platform specific intrinsics
 
-        if !self.seen_headers {
+        if !self.seen_headers || !self.seen_iend {
             self.decode_headers()?;
         }
         // configure that the decoder converts samples to native endian
