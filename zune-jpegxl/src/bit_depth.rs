@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Bit depth operations
 //!
 //! Apparently jpeg xl has to handle  different bit
@@ -9,8 +17,8 @@
 //! come with how they chose to support jpeg xl
 //!
 //!
-use std::fmt::Debug;
-use std::ops::{Add, BitXor, Shr, Sub};
+use core::fmt::Debug;
+use core::ops::{Add, BitXor, Shr, Sub};
 
 use crate::bit_writer::{encode_hybrid_unit_000, BitWriter};
 use crate::encoder::PrefixCode;

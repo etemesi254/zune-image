@@ -1,6 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(clippy::uninlined_format_args)]
 
-use std::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
