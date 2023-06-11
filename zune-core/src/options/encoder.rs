@@ -16,11 +16,11 @@ bitflags! {
     #[derive(Copy,Debug,Clone)]
     struct EncoderFlags:u64{
         /// Whether JPEG images should be encoded as progressive images
-        const JPEG_ENCODE_PROGRESSIVE = 0b0000_0000_0000_0000_0000_0000_0000_0001;
+        const JPEG_ENCODE_PROGRESSIVE = 1<<1;
         /// Whether JPEG images should use optimized huffman tables
-        const JPEG_OPTIMIZED_HUFFMAN  = 0b0000_0000_0000_0000_0000_0000_0000_0010;
+        const JPEG_OPTIMIZED_HUFFMAN  = 1<<2;
         /// Whether to not preserve metadata across image transformations
-        const IMAGE_STRIP_METADATA    = 0b0000_0000_0000_0000_0000_0000_0000_0100;
+        const IMAGE_STRIP_METADATA    = 1<<3;
 
     }
 }
