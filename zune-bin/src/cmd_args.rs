@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::ffi::OsString;
 
 use clap::builder::PossibleValue;
@@ -189,13 +197,19 @@ fn add_operations() -> (Vec<Arg>, ArgGroup)
             .long("flip")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
-            .help("Flip an image")
+            .help("Flip an image on the vertical axis")
             .group(GROUP),
         Arg::new("flop")
             .long("flop")
             .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flop an image")
+            .group(GROUP),
+        Arg::new("h-flip")
+            .long("h-flip")
+            .help_heading(HELP_HEADING)
+            .action(ArgAction::SetTrue)
+            .help("Flip an image on the horizontal axis")
             .group(GROUP),
         Arg::new("mirror")
             .long("mirror")

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 /// Flip an image
 ///
 /// ```text
@@ -30,6 +38,30 @@ pub fn flip<T: Copy>(in_out_image: &mut [T])
     for (in_dim, out_dim) in in_img_top.iter_mut().zip(in_img_bottom.iter_mut().rev())
     {
         std::mem::swap(in_dim, out_dim);
+    }
+}
+
+/// Flip an image on the horizontal axis
+///
+///
+/// ```text
+///
+///old image     new image
+/// ┌─────────┐   ┌──────────┐
+/// │a b c d e│   │e d c b a │
+/// │f g h i j│   │j i h g f │
+/// └─────────┘   └──────────┘
+/// ```
+///
+pub fn horizontal_flip<T: Copy>(channel: &mut [T], width: usize)
+{
+    for single_stride in channel.chunks_exact_mut(width)
+    {
+        let (f1, f2) = single_stride.split_at_mut(width / 2);
+        for (a, b) in f1.iter_mut().zip(f2.iter_mut().rev())
+        {
+            core::mem::swap(a, b);
+        }
     }
 }
 
