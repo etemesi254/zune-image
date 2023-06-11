@@ -1,5 +1,13 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use crate::pad::{pad, PadMethod};
-use crate::spatial::spatial;
+use crate::spatial::{spatial, spatial_NxN};
 use crate::traits::NumOps;
 
 /// Calculate scharr for f32 images
@@ -8,12 +16,11 @@ use crate::traits::NumOps;
 /// -  in_values: An array which is expected to contain 9 elements 
 ///  that represents a 3x3 window for which we are to calculate the sobel 
 #[rustfmt::skip]
-fn scharr_inner_f32<T>(in_values: &[T]) -> T
+fn scharr_inner_f32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
         f32: std::convert::From<T>
 {
-    let c: &[T; 9] = in_values.try_into().unwrap();
     // matrix
     //   -3, 0,  3,
     //  -10, 0, 10,
@@ -43,12 +50,11 @@ fn scharr_inner_f32<T>(in_values: &[T]) -> T
 ///  that represents a 3x3 window for which we are to calculate the sobel values
 #[allow(clippy::neg_multiply, clippy::identity_op, clippy::zero_prefixed_literal)]
 #[rustfmt::skip]
-fn scharr_inner_i32<T>(in_values: &[T]) -> T
+fn scharr_inner_i32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
         i32: std::convert::From<T>
 {
-    let c: &[T; 9] = in_values.try_into().unwrap();
     // Gx matrix
     //   -3, 0,  3,
     //  -10, 0, 10,
@@ -88,14 +94,7 @@ where
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
 
-    spatial(
-        &padded_input,
-        out_channel,
-        1,
-        width,
-        height,
-        scharr_inner_f32
-    );
+    spatial_NxN::<_, _, 1, 9>(&padded_input, out_channel, width, height, scharr_inner_f32);
 }
 
 /// Carry out the scharr filter for an integer channel
@@ -115,12 +114,5 @@ where
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
 
-    spatial(
-        &padded_input,
-        out_channel,
-        1,
-        width,
-        height,
-        scharr_inner_i32
-    );
+    spatial_NxN::<_, _, 1, 9>(&padded_input, out_channel, width, height, scharr_inner_i32);
 }
