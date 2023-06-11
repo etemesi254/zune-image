@@ -233,8 +233,8 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
     let img_width = img.stream.get_u16_be_err()?;
     img.info.set_width(img_width);
 
-    info!("Image width  :{}", img_width);
-    info!("Image height :{}", img_height);
+    trace!("Image width  :{}", img_width);
+    trace!("Image height :{}", img_height);
 
     if usize::from(img_width) > img.options.get_max_width()
     {
@@ -271,7 +271,7 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
         )));
     }
 
-    info!("Image components : {}", num_components);
+    trace!("Image components : {}", num_components);
 
     if num_components == 1
     {
@@ -526,7 +526,7 @@ pub(crate) fn parse_app1<T: ZReaderTrait>(decoder: &mut JpegDecoder<T>)
 
     if length > 6 && decoder.stream.peek_at(0, 6).unwrap() == b"Exif\x00\x00"
     {
-        info!("Exif segment present");
+        trace!("Exif segment present");
         // skip bytes we read above
         decoder.stream.skip(6);
         length -= 6;
@@ -558,7 +558,7 @@ pub(crate) fn parse_app2<T: ZReaderTrait>(decoder: &mut JpegDecoder<T>)
 
     if length > 14 && decoder.stream.peek_at(0, 12).unwrap() == *b"ICC_PROFILE\0"
     {
-        info!("ICC Profile present");
+        trace!("ICC Profile present");
         // skip 12 bytes which indicate ICC profile
         length -= 12;
         decoder.stream.skip(12);
