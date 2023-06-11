@@ -301,7 +301,7 @@ impl<T: ZReaderTrait> ZByteReader<T>
     /// Return the remaining unread bytes in this byte reader
     pub fn remaining_bytes(&self) -> &[u8]
     {
-        &self.stream.get_slice(self.position..self.len()).unwrap()
+        self.stream.get_slice(self.position..self.len()).unwrap()
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, &'static str>
@@ -311,7 +311,7 @@ impl<T: ZReaderTrait> ZByteReader<T>
         let end = min(self.len(), self.position + buf_length);
         let diff = end - start;
 
-        buf[0..diff].copy_from_slice(&self.stream.get_slice(start..end).unwrap());
+        buf[0..diff].copy_from_slice(self.stream.get_slice(start..end).unwrap());
 
         self.skip(diff);
 
