@@ -203,7 +203,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             )?;
         }
 
-        info!("Finished decoding image");
+        trace!("Finished decoding image");
 
         Ok(())
     }
@@ -281,7 +281,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                 {
                     // acknowledge and ignore EOI marker.
                     stream.marker.take();
-                    info!("Found EOI marker");
+                    trace!("Found EOI marker");
                 }
                 else if let Marker::RST(_) = m
                 {

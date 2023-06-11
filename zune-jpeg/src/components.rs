@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This module exports a single struct to store information about
 //! JPEG image components
 //!
@@ -117,9 +125,12 @@ impl Components
             )));
         }
 
-        info!(
+        trace!(
             "Component ID:{:?} \tHS:{} VS:{} QT:{}",
-            id, horizontal_sample, vertical_sample, quantization_table_number
+            id,
+            horizontal_sample,
+            vertical_sample,
+            quantization_table_number
         );
 
         Ok(Components {

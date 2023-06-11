@@ -357,7 +357,7 @@ where
     {
         if self.headers_decoded
         {
-            warn!("Headers decoded!");
+            trace!("Headers decoded!");
             return Ok(());
         }
         // match output colorspace here
@@ -448,7 +448,7 @@ where
                     if n == Marker::SOS
                     {
                         self.headers_decoded = true;
-                        info!("Input colorspace {:?}", self.input_colorspace);
+                        trace!("Input colorspace {:?}", self.input_colorspace);
                         return Ok(());
                     }
                 }
@@ -495,7 +495,7 @@ where
                     }
                 };
 
-                info!("Image encoding scheme =`{:?}`", marker);
+                trace!("Image encoding scheme =`{:?}`", marker);
                 // get components
                 parse_start_of_frame(marker, self)?;
             }
@@ -566,7 +566,7 @@ where
             }
             Marker::DRI =>
             {
-                info!("DRI marker present");
+                trace!("DRI marker present");
 
                 if self.stream.get_u16_be_err()? != 4
                 {
@@ -821,7 +821,7 @@ where
             {
                 self.sub_sample_ratio = SampleRatios::H;
                 // horizontal sub-sampling
-                info!("Horizontal sub-sampling (2,1)");
+                trace!("Horizontal sub-sampling (2,1)");
 
                 let up_sampler = choose_horizontal_samp_function(self.options.get_use_unsafe());
 
@@ -834,7 +834,7 @@ where
             {
                 self.sub_sample_ratio = SampleRatios::V;
                 // Vertical sub-sampling
-                info!("Vertical sub-sampling (1,2)");
+                trace!("Vertical sub-sampling (1,2)");
 
                 self.components[..].iter_mut().for_each(|x| {
                     x.up_sampler = choose_v_samp_function(self.options.get_use_unsafe());
@@ -845,7 +845,7 @@ where
             {
                 self.sub_sample_ratio = SampleRatios::HV;
                 // vertical and horizontal sub sampling
-                info!("Vertical and horizontal sub-sampling(2,2)");
+                trace!("Vertical and horizontal sub-sampling(2,2)");
 
                 self.components[..].iter_mut().for_each(|x| {
                     x.up_sampler = choose_hv_samp_function(self.options.get_use_unsafe());
