@@ -1,6 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Scharr operations
 use crate::pad::{pad, PadMethod};
-use crate::spatial::spatial;
+use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
 
 /// Calculate sobel for f32 images
@@ -9,12 +17,11 @@ use crate::traits::NumOps;
 /// -  in_values: An array which is expected to contain 9 elements 
 ///  that represents a 3x3 window for which we are to calculate the sobel 
 #[rustfmt::skip]
-fn sobel_inner_f32<T>(in_values: &[T]) -> T
+fn sobel_inner_f32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
         f32: std::convert::From<T>
 {
-    let c: &[T; 9] = in_values.try_into().unwrap();
     // matrix
     //  -1, 0, 1,
     //  -2, 0, 2,
@@ -44,12 +51,11 @@ fn sobel_inner_f32<T>(in_values: &[T]) -> T
 ///  that represents a 3x3 window for which we are to calculate the sobel values
 #[allow(clippy::neg_multiply, clippy::identity_op)]
 #[rustfmt::skip]
-fn sobel_inner_i32<T>(in_values: &[T]) -> T
+fn sobel_inner_i32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
         i32: std::convert::From<T>
 {
-    let c: &[T; 9] = in_values.try_into().unwrap();
     // matrix
     //  -1, 0, 1,
     //  -2, 0, 2,
@@ -81,7 +87,7 @@ fn sobel_inner_i32<T>(in_values: &[T]) -> T
 /// - out_channel: Output channel for which we will fill with new sobel coefficients
 /// - width: Width of input channel
 /// - height: Height of input channel
-pub fn sobel_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
+pub fn sobel_float<T>(in_channel: &[T; 9], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
     f32: std::convert::From<T>
@@ -89,14 +95,7 @@ where
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
 
-    spatial(
-        &padded_input,
-        out_channel,
-        1,
-        width,
-        height,
-        sobel_inner_f32
-    );
+    spatial_NxN::<_, _, 1, 9>(&padded_input, out_channel, width, height, sobel_inner_f32);
 }
 
 /// Carry out the sobel filter for an integer channel
@@ -116,12 +115,5 @@ where
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
 
-    spatial(
-        &padded_input,
-        out_channel,
-        1,
-        width,
-        height,
-        sobel_inner_i32
-    );
+    spatial_NxN::<_, _, 1, 9>(&padded_input, out_channel, width, height, sobel_inner_i32);
 }
