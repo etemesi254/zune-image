@@ -7,7 +7,7 @@
  */
 
 use crate::pad::{pad, PadMethod};
-use crate::spatial::{spatial, spatial_NxN};
+use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
 
 /// Calculate scharr for f32 images

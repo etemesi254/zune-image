@@ -87,7 +87,7 @@ fn sobel_inner_i32<T>(c: &[T; 9]) -> T
 /// - out_channel: Output channel for which we will fill with new sobel coefficients
 /// - width: Width of input channel
 /// - height: Height of input channel
-pub fn sobel_float<T>(in_channel: &[T; 9], out_channel: &mut [T], width: usize, height: usize)
+pub fn sobel_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
     f32: std::convert::From<T>
