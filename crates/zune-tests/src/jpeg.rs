@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
@@ -40,7 +48,7 @@ fn test_jpeg()
             options = options.jpeg_set_out_colorspace(color.to_colorspace());
         }
 
-        let mut decoder = JpegDecoder::new_with_options(options, &file_contents);
+        let mut decoder = JpegDecoder::new_with_options(&file_contents, options);
         let pixels = decoder.decode().unwrap();
 
         let hash = hash(&pixels);
