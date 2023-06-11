@@ -17,7 +17,7 @@ sse41 = []
 ## Needs nightly, disabled by default
 benchmarks=[]
 
-default = ["avx2", "sse2", "sse3", "sse41", "benchmarks"]
+default = ["avx2", "sse2", "sse3", "sse41"]
 
 
 [dev-dependencies]

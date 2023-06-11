@@ -1,10 +1,15 @@
 [package]
 name = "zune-farbfeld"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-
+description = "Core utilities for image processing in the zune family of crates"
+exclude = ["tests/"]
+homepage = "https://github.com/etemesi254/zune-image/tree/dev/zune-farbfeld"
+keywords = ["image"]
+categories = ["multimedia::images", "multimedia::encoding"]
+license = "MIT OR Apache-2.0 OR Zlib"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2.1" }
+zune-core = { path = "../zune-core", version = "0.2" }
 log = "0.4.17"
