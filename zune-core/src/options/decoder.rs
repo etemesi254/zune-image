@@ -118,7 +118,7 @@ bitflags! {
         /// Whether the png decoder should add alpha channel where possible.
         const PNG_ADD_ALPHA_CHANNEL         =  1<<10;
         /// Whether we should use neon instructions where possible.
-        const ZUNE_USE_NEON                 =  0b0000_0000_0000_0000_0000_0010_0000_0000;
+        const ZUNE_USE_NEON                 =  1<<11;
     }
 }
 
