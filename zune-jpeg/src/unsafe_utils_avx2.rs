@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(all(feature = "x86", any(target_arch = "x86", target_arch = "x86_64")))]
 //! This module provides unsafe ways to do some things
 #![allow(clippy::wildcard_imports)]
@@ -7,6 +15,14 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Sub};
+
+/// A copy of `_MM_SHUFFLE()` that doesn't require
+/// a nightly compiler
+#[inline]
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
+{
+    (z << 6) | (y << 4) | (x << 2) | w
+}
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly

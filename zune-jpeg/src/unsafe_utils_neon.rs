@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+#![cfg(target_arch = "aarch64")]
 // TODO can this be extended to armv7
 
 //! This module provides unsafe ways to do some things
