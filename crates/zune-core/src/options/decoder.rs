@@ -7,6 +7,8 @@
  */
 
 //! Global Decoder options
+#![allow(clippy::zero_prefixed_literal)]
+
 use bitflags::bitflags;
 
 use crate::bit_depth::ByteEndian;
@@ -27,6 +29,7 @@ fn decoder_strict_mode() -> DecoderFlags
     flags.set(DecoderFlags::ZUNE_USE_SSE2, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE3, true);
     flags.set(DecoderFlags::ZUNE_USE_SSE41, true);
+    flags.set(DecoderFlags::PNG_ADD_ALPHA_CHANNEL, false);
 
     flags
 }
@@ -90,11 +93,11 @@ bitflags! {
     #[derive(Copy,Debug,Clone)]
     pub struct  DecoderFlags:u64{
         /// Whether the decoder should confirm and report adler mismatch
-        const INFLATE_CONFIRM_ADLER         = 0b0000_0000_0000_0000_0000_0000_0000_0001;
+        const INFLATE_CONFIRM_ADLER         = 1<<01;
         /// Whether the PNG decoder should confirm crc
-        const PNG_CONFIRM_CRC               = 0b0000_0000_0000_0000_0000_0000_0000_0010;
+        const PNG_CONFIRM_CRC               = 1<<02;
         /// Whether the png decoder should error out on image non-conformance
-        const JPG_ERROR_ON_NON_CONFORMANCE  = 0b0000_0000_0000_0000_0000_0000_0000_0100;
+        const JPG_ERROR_ON_NON_CONFORMANCE  = 1<<03;
         /// Whether the decoder should use unsafe  platform specific intrinsics
         ///
         /// This will also shut down platform specific intrinsics `(ZUNE_USE_{EXT})` value
@@ -103,17 +106,17 @@ bitflags! {
         ///
         /// This should be enabled for all x64 platforms but can be turned off if
         /// `ZUNE_USE_UNSAFE` is false
-        const ZUNE_USE_SSE2                 =  0b0000_0000_0000_0000_0000_0000_0001_0000;
+        const ZUNE_USE_SSE2                 =  1<<05;
         /// Whether we should use SSE3 instructions where possible.
-        const ZUNE_USE_SSE3                 =  0b0000_0000_0000_0000_0000_0000_0010_0000;
+        const ZUNE_USE_SSE3                 =  1<<06;
         /// Whether we should use sse4.1 instructions where possible.
-        const ZUNE_USE_SSE41                =  0b0000_0000_0000_0000_0000_0000_0100_0000;
+        const ZUNE_USE_SSE41                =  1<<07;
         /// Whether we should use avx instructions where possible.
-        const ZUNE_USE_AVX                  =  0b0000_0000_0000_0000_0000_0000_1000_0000;
+        const ZUNE_USE_AVX                  =  1<<08;
         /// Whether we should use avx2 instructions where possible.
-        const ZUNE_USE_AVX2                 =  0b0000_0000_0000_0000_0000_0001_0000_0000;
+        const ZUNE_USE_AVX2                 =  1<<09;
         /// Whether the png decoder should add alpha channel where possible.
-        const PNG_ADD_ALPHA_CHANNEL         =  0b0000_0000_0000_0000_0000_0010_0000_0000;
+        const PNG_ADD_ALPHA_CHANNEL         =  1<<10;
         /// Whether we should use neon instructions where possible.
         const ZUNE_USE_NEON                 =  0b0000_0000_0000_0000_0000_0010_0000_0000;
     }
