@@ -6,7 +6,7 @@
 
 use log::info;
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::options::EncoderOptions;
 
 use crate::codecs::ImageFormat;
@@ -110,15 +110,7 @@ pub trait OperationsTrait
     /// if it doesn't support it, an error will be raised during execution
     fn supported_colorspaces(&self) -> &'static [ColorSpace]
     {
-        &[
-            ColorSpace::RGBA,
-            ColorSpace::RGB,
-            ColorSpace::LumaA,
-            ColorSpace::Luma,
-            ColorSpace::CMYK,
-            ColorSpace::YCbCr,
-            ColorSpace::YCCK
-        ]
+        &ALL_COLORSPACES
     }
     /// Get supported bit types for this operation
     ///
