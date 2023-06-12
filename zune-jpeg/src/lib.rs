@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //!This crate provides a library for decoding valid
 //! ITU-T Rec. T.851 (09/2005) ITU-T T.81 (JPEG-1) or JPEG images.
 //!
@@ -39,7 +47,7 @@
 //!
 //! let mut options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
 //!
-//! let mut decoder = JpegDecoder::new_with_options(options,&[]);
+//! let mut decoder = JpegDecoder::new_with_options(&[],options);
 //! let pixels = decoder.decode().unwrap();
 //! ```
 //!
