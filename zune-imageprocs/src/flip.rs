@@ -41,27 +41,36 @@ pub fn flip<T: Copy>(in_out_image: &mut [T])
     }
 }
 
-/// Flip an image on the horizontal axis
+/// Flip an image on the vertical axis
 ///
 ///
 /// ```text
 ///
 ///old image     new image
 /// ┌─────────┐   ┌──────────┐
-/// │a b c d e│   │e d c b a │
-/// │f g h i j│   │j i h g f │
+/// │a b c d e│   │f g h i j │
+/// │f g h i j│   │a b c d e │
 /// └─────────┘   └──────────┘
 /// ```
 ///
-pub fn horizontal_flip<T: Copy>(channel: &mut [T], width: usize)
+pub fn vertical_flip<T: Copy + Default>(channel: &mut [T], width: usize)
 {
-    for single_stride in channel.chunks_exact_mut(width)
+    // Simply split the image in half
+    // on one end read from the start to the halfway point
+    // on the other end read from the end to the halfway point
+
+    let len = channel.len();
+
+    let (top, bottom) = channel.split_at_mut(len / 2);
+
+    let mut stride = vec![T::default(); width];
+    for (t, b) in top
+        .chunks_exact_mut(width)
+        .zip(bottom.rchunks_exact_mut(width))
     {
-        let (f1, f2) = single_stride.split_at_mut(width / 2);
-        for (a, b) in f1.iter_mut().zip(f2.iter_mut().rev())
-        {
-            core::mem::swap(a, b);
-        }
+        stride.copy_from_slice(t);
+        t.copy_from_slice(b);
+        b.copy_from_slice(&stride);
     }
 }
 

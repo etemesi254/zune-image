@@ -16,7 +16,7 @@ use zune_image::filters::brighten::Brighten;
 use zune_image::filters::contrast::Contrast;
 use zune_image::filters::crop::Crop;
 use zune_image::filters::exposure::Exposure;
-use zune_image::filters::flip::{Flip, HorizontalFlip};
+use zune_image::filters::flip::{Flip, VerticalFlip};
 use zune_image::filters::flop::Flop;
 use zune_image::filters::gamma::Gamma;
 use zune_image::filters::invert::Invert;
@@ -236,10 +236,10 @@ pub fn parse_options<T: IntoImage>(
         workflow.add_operation(Box::new(Exposure::new(exposure, 0.)));
         debug!("Adding exposure argument with value {}", exposure);
     }
-    else if argument == "h-flip"
+    else if argument == "v-flip"
     {
-        debug!("Added h-flip argument");
-        workflow.add_operation(Box::new(HorizontalFlip::new()))
+        debug!("Added v-flip argument");
+        workflow.add_operation(Box::new(VerticalFlip::new()))
     }
 
     Ok(())

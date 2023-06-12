@@ -7,7 +7,7 @@
  */
 
 use zune_core::bit_depth::BitType;
-use zune_imageprocs::flip::{flip, horizontal_flip};
+use zune_imageprocs::flip::{flip, vertical_flip};
 
 use crate::errors::{ImageErrors, ImageOperationsErrors};
 use crate::image::Image;
@@ -63,23 +63,23 @@ impl OperationsTrait for Flip
     }
 }
 
-/// Rearrange the pixels up side down
+/// Flip the image vertically,( rotate image by 180 degrees)
 #[derive(Default)]
-pub struct HorizontalFlip;
+pub struct VerticalFlip;
 
-impl HorizontalFlip
+impl VerticalFlip
 {
-    pub fn new() -> HorizontalFlip
+    pub fn new() -> VerticalFlip
     {
         Self::default()
     }
 }
 
-impl OperationsTrait for HorizontalFlip
+impl OperationsTrait for VerticalFlip
 {
     fn get_name(&self) -> &'static str
     {
-        "Horizontal Flip"
+        "Vertical Flip"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
@@ -93,15 +93,15 @@ impl OperationsTrait for HorizontalFlip
             {
                 BitType::U8 =>
                 {
-                    horizontal_flip(inp.reinterpret_as_mut::<u8>()?, width);
+                    vertical_flip(inp.reinterpret_as_mut::<u8>()?, width);
                 }
                 BitType::U16 =>
                 {
-                    horizontal_flip(inp.reinterpret_as_mut::<u16>()?, width);
+                    vertical_flip(inp.reinterpret_as_mut::<u16>()?, width);
                 }
                 BitType::F32 =>
                 {
-                    horizontal_flip(inp.reinterpret_as_mut::<f32>()?, width);
+                    vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                 }
                 _ =>
                 {
