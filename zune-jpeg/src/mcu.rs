@@ -410,7 +410,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             )?;
 
             // increment pointer to number of pixels written
-            *pixels_written += width * out_colorspace_components * 8;
+            *pixels_written += width * out_colorspace_components * self.mcu_height;
         }
 
         Ok(())
