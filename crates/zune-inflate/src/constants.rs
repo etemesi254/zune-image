@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use crate::utils::const_min_usize;
 
 /// Number of symbols in each Huffman code.  Note: for the literal/length
@@ -154,3 +162,16 @@ pub const FASTCOPY_BYTES: usize = 16;
 /// Worst case maximum number of output bytes writtern during each iteration of the
 /// fastloop.
 pub const FASTLOOP_MAX_BYTES_WRITTEN: usize = 6 + DEFLATE_MAX_MATCH_LEN + (2 * FASTCOPY_BYTES);
+
+/// Max Size of a deflate compressed block
+///
+/// offsets are limited to this length hence it is the maximum allowed
+pub const DEFLATE_MAX_BLOCK_SIZE: usize = 1 << 15;
+/// Minimum supported match length for deflate
+pub const DEFLATE_MIN_LENGTH: usize = 3;
+/// Size for which the match fidner should not try to find matches
+/// if we are this close to the end
+pub const DEFLATE_WINDOW_SIZE: usize = 10;
+
+/// Max sequnces expected to be found in a block
+pub const MAX_SEQ_PER_BLOCK: usize = DEFLATE_MAX_BLOCK_SIZE / 3;

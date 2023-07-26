@@ -4,16 +4,26 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::constants::DEFLATE_BLOCKTYPE_UNCOMPRESSED;
+use crate::constants::{DEFLATE_BLOCKTYPE_UNCOMPRESSED, MAX_SEQ_PER_BLOCK};
 
-mod fast_match_finder;
+mod hc_matchfinder;
 
 const _SEQ_LENGTH_SHIFT: u32 = 23;
 
 const _SEQ_LITRUNLEN_MASK: u32 = (1_u32 << _SEQ_LENGTH_SHIFT) - 1;
+
+#[derive(Default, Copy, Clone)]
+pub struct MatchSequence
+{
+    pub start: usize,
+    pub ll:    usize,
+    pub ml:    usize,
+    pub ol:    usize
+}
 
 pub(crate) struct _Sequence
 {
@@ -28,6 +38,47 @@ pub(crate) struct _Sequence
      * which follows it.
      */
     litrunlen_and_length: u32
+}
+
+pub struct EncodedSequences
+{
+    pub literals: Box<[u32; MAX_SEQ_PER_BLOCK]>,
+    pub matches:  Box<[u32; MAX_SEQ_PER_BLOCK]>,
+    pub offsets:  Box<[u32; MAX_SEQ_PER_BLOCK]>,
+
+    pub current_pos: usize
+}
+
+impl EncodedSequences
+{
+    /// Add a new encoded sequence
+    pub fn add(&mut self, seq: MatchSequence)
+    {
+        self.literals[self.current_pos % MAX_SEQ_PER_BLOCK] = seq.ll as u32;
+        self.matches[self.current_pos % MAX_SEQ_PER_BLOCK] = seq.ml as u32;
+        self.offsets[self.current_pos % MAX_SEQ_PER_BLOCK] = seq.ol as u32;
+
+        self.current_pos += 1;
+    }
+    /// Create a new encoder
+    pub fn new() -> EncodedSequences
+    {
+        let t1 = vec![0_u32; MAX_SEQ_PER_BLOCK].into_boxed_slice();
+        let t2 = vec![0_u32; MAX_SEQ_PER_BLOCK].into_boxed_slice();
+        let t3 = vec![0_u32; MAX_SEQ_PER_BLOCK].into_boxed_slice();
+
+        EncodedSequences {
+            literals:    Box::try_from(t1).unwrap(),
+            matches:     Box::try_from(t2).unwrap(),
+            offsets:     Box::try_from(t3).unwrap(),
+            current_pos: 0
+        }
+    }
+    /// Reset the sequences
+    pub fn clear(&mut self)
+    {
+        self.current_pos = 0;
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -213,5 +264,42 @@ impl<'a> DeflateEncoder<'a>
         self.output.truncate(self.output_position);
 
         core::mem::take(&mut self.output)
+    }
+}
+
+#[inline(always)]
+pub fn v_hash(bytes: &[u8], num_bits: usize, min_length: usize) -> usize
+{
+    debug_assert!(num_bits <= 32);
+    debug_assert!(min_length < 8);
+
+    match min_length
+    {
+        4 =>
+        {
+            const PRIME_BYTES: u32 = 2654435761;
+            (u32::from_le_bytes(bytes[0..4].try_into().unwrap()).wrapping_mul(PRIME_BYTES)
+                >> (32 - num_bits)) as usize
+        }
+        5 =>
+        {
+            const PRIME_BYTES: u64 = 889523592379;
+            ((u64::from_le_bytes(bytes[0..8].try_into().unwrap()) << (64 - 40))
+                .wrapping_mul(PRIME_BYTES)
+                >> (64 - num_bits)) as usize
+        }
+        6 =>
+        {
+            const PRIME_BYTES: u64 = 227718039650203;
+            ((u64::from_le_bytes(bytes[0..8].try_into().unwrap()) << (64 - 40))
+                .wrapping_mul(PRIME_BYTES)
+                >> (64 - num_bits)) as usize
+        }
+
+        _ =>
+        {
+            debug_assert!(false, "Unknown min length {}", min_length);
+            0
+        }
     }
 }
