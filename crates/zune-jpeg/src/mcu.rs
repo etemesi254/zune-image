@@ -112,6 +112,19 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             mcu_width = ((self.info.width + 7) / 8) as usize;
             mcu_height = ((self.info.height + 7) / 8) as usize;
         }
+        if self.is_interleaved
+            && self.input_colorspace.num_components() > 1
+            && self.options.jpeg_get_out_colorspace().num_components() == 1
+        {
+            // For a specific set of images, e.g interleaved,
+            // when converting from YcbCr to grayscale, we need to
+            // take into account mcu height since the MCU decoding needs to take
+            // it into account for padding purposes and the post processor
+            // parses two rows per mcu width.
+            //
+            //TODO: Check if this test works over time
+            mcu_height /= self.h_max;
+        }
 
         if self.input_colorspace.num_components() > self.components.len()
         {

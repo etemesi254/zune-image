@@ -100,5 +100,10 @@
     "hash": 145881769686590241353562665580548083291,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
+  },
+  {
+    "name": "mjpeg_huffman.jpg",
+    "hash": 309069272274389382301715239622093501038,
+    "comment": "Image needs to be filled with default huffman tables"
   }
 ]
