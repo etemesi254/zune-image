@@ -147,3 +147,21 @@ impl<const N: usize> ZReaderTrait for &[u8; N]
         N
     }
 }
+
+impl ZReaderTrait for dyn AsRef<&[u8]>
+{
+    fn get_byte(&self, index: usize) -> Option<&u8>
+    {
+        self.as_ref().get(index)
+    }
+
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
+    {
+        self.as_ref().get(index)
+    }
+
+    fn get_len(&self) -> usize
+    {
+        self.as_ref().len()
+    }
+}
