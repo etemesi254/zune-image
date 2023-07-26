@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This file contains a single struct `HuffmanTable` that
 //! stores Huffman tables needed during `BitStream` decoding.
 #![allow(clippy::similar_names, clippy::module_name_repetitions)]
@@ -59,6 +67,17 @@ impl HuffmanTable
         p.make_derived_table(is_dc, is_progressive, codes)?;
 
         Ok(p)
+    }
+
+    /// Create a new huffman tables with values that aren't fixed
+    /// used by fill_mjpeg_tables
+    pub fn new_unfilled(
+        codes: &[u8; 17], values: &[u8], is_dc: bool, is_progressive: bool
+    ) -> Result<HuffmanTable, DecodeErrors>
+    {
+        let mut buf = [0; 256];
+        buf[..values.len()].copy_from_slice(values);
+        HuffmanTable::new(codes, buf, is_dc, is_progressive)
     }
 
     /// Compute derived values for a Huffman table

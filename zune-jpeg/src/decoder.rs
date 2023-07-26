@@ -13,9 +13,10 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
+use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
+use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
@@ -146,7 +147,8 @@ pub struct JpegDecoder<T: ZReaderTrait>
     // exif data, lifted from app2
     pub(crate) exif_data:        Option<Vec<u8>>,
 
-    pub(crate) icc_data: Vec<ICCChunk>
+    pub(crate) icc_data: Vec<ICCChunk>,
+    pub(crate) is_mjpeg: bool
 }
 
 impl<T> JpegDecoder<T>
@@ -189,7 +191,8 @@ where
             headers_decoded:   false,
             seen_sof:          false,
             exif_data:         None,
-            icc_data:          vec![]
+            icc_data:          vec![],
+            is_mjpeg:          false
         }
     }
     /// Decode a buffer already in memory
@@ -514,7 +517,7 @@ where
             //APP(0) segment
             Marker::APP(0) =>
             {
-                let length = self.stream.get_u16_be_err()?;
+                let mut length = self.stream.get_u16_be_err()?;
 
                 if length < 2
                 {
@@ -523,6 +526,16 @@ where
                     )));
                 }
                 // skip for now
+                if length > 5 && self.stream.has(5)
+                {
+                    let mut buffer = [0u8; 5];
+                    self.stream.read_exact(&mut buffer).unwrap();
+                    if &buffer == b"AVI1\0"
+                    {
+                        self.is_mjpeg = true;
+                    }
+                    length -= 5;
+                }
                 self.stream.skip((length - 2) as usize);
 
                 //parse_app(buf, m, &mut self.info)?;
