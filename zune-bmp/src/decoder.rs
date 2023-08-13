@@ -404,6 +404,23 @@ where
         } else {
             match self.depth {
                 8 | 16 | 24 | 32 => {
+                    // NOTE: Most of these images have a weird
+                    // rchunks iteration on output buffer, this is intended to skip
+                    // the output buffer flip most decoders do.
+                    //
+                    //
+                    // BMP format writes from bottom to top meaning the first byte in the stream
+                    // points to the last strip, first byte, or [x,1]  in this iteration
+                    //   ┌───────────────┐
+                    //   │               │
+                    //   │               │
+                    //   │               │
+                    //   │[x,1]          │
+                    //   └───────────────┘
+                    //
+                    // Furthermore, bmp has padding bytes to make buffers round off to 4 bytes, so
+                    // most input iterations take that into account.
+
                     if self.pix_fmt == BmpPixelFormat::PAL8 {
                         let in_bytes = self.bytes.remaining_bytes();
 
@@ -418,12 +435,17 @@ where
                             return Err(BmpDecoderErrors::TooSmallBuffer(output_size, bytes.len()));
                         }
 
-                        if self.depth == 32 {
-                            // bpp of 32 doesn't have padding
+                        if self.depth == 32 || self.depth == 16 {
+                            // bpp of 32 doesn't have padding, width should be a multiple of 4 already
 
                             let pad_size = self.width * self.pix_fmt.num_components();
 
-                            if self.rgb_bitfields == [0; 4] {
+                            if self.rgb_bitfields == [0; 4] && self.depth == 16 {
+                                // no bitfields. set default bitfields masks
+                                self.rgb_bitfields = [31 << 10, 31 << 5, 31, 31];
+                            }
+
+                            if self.rgb_bitfields == [0; 4] && self.depth == 32 {
                                 // if there are no bitfields, it's simply a copy, adding alpha channel
                                 // as 255
                                 for (out, input) in buf
@@ -451,6 +473,12 @@ where
                                 let acount = ma.count_ones();
 
                                 if self.depth == 32 {
+                                    // for the case where the bit-depth is 32, there are no padding bytes
+                                    // hence we can iterate simply
+                                    assert_eq!(
+                                        pad, 0,
+                                        "An image with a depth of 32 should not have padding bytes"
+                                    );
                                     for (out, input) in buf
                                         .rchunks_exact_mut(pad_size)
                                         .zip(bytes.chunks_exact(pad_size))
@@ -467,12 +495,34 @@ where
                                         }
                                     }
                                 } else if self.depth == 16 {
+                                    // this path is confirmed by the rgb16.bmp image in test-images/bmp
+
+                                    // optimizer hint to say that the inner loop will always
+                                    // have more than three
+                                    // PS: Not sure if it works
+                                    assert!(self.pix_fmt.num_components() >= 3);
+
+                                    // Number of iterations we expect to go
+                                    let num_iters = buf.len() / pad_size;
+                                    // Input bytes per every output byte width
+                                    //
+                                    // this does ceil division to ensure input is appropriately rounded
+                                    // of to a multiple of 4 to handle pad bytes in BMP
+                                    let input_bytes_per_width = (((num_iters * 2) + 3) / 4) * 4;
+
+                                    // we chunk according to number of iterations, which is usually the
+                                    // image dimensions (w*h*color components), this is given by the size of
+                                    // buf - output buffer is appropriately sized for this-.
+                                    // for the input, we are reading two bytes( for every three bytes (or four)
+                                    // consumed hence if we know how many iterations we will be doing
+                                    // we can use that to chunk appropriately
                                     for (out, input) in buf
                                         .rchunks_exact_mut(pad_size)
-                                        .zip(bytes.chunks_exact(pad_size))
+                                        .zip(bytes.chunks_exact(input_bytes_per_width * 2))
                                     {
-                                        for (a, b) in
-                                            out.chunks_exact_mut(2).zip(input.chunks_exact(4))
+                                        for (a, b) in out
+                                            .chunks_exact_mut(self.pix_fmt.num_components())
+                                            .zip(input.chunks_exact(2))
                                         {
                                             let v = u32::from(u16::from_le_bytes(
                                                 b.try_into().unwrap()
@@ -481,7 +531,11 @@ where
                                             a[0] = shift_signed(v & mr, rshift, rcount) as u8;
                                             a[1] = shift_signed(v & mg, gshift, gcount) as u8;
                                             a[2] = shift_signed(v & mb, bshift, bcount) as u8;
-                                            a[3] = shift_signed(v & ma, ashift, acount) as u8;
+
+                                            if a.len() > 3 {
+                                                // handle alpha channel
+                                                a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                            }
                                         }
                                     }
                                 }
