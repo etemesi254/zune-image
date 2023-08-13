@@ -534,7 +534,12 @@ where
 
                                             if a.len() > 3 {
                                                 // handle alpha channel
-                                                a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                                if ma == 0 {
+                                                    a[3] = 255;
+                                                } else {
+                                                    a[3] =
+                                                        shift_signed(v & ma, ashift, acount) as u8;
+                                                }
                                             }
                                         }
                                     }
