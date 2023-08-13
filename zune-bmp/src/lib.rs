@@ -14,6 +14,8 @@
 //! - `no_std` by default with `alloc` feature
 //! - Fast
 //! - Minimal dependencies
+//! - Very minimal internal allocation. (most paths do not allocate any more than output buffer)
+//!
 #![no_std]
 #![macro_use]
 extern crate alloc;
