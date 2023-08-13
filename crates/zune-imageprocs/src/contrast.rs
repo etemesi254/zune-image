@@ -33,14 +33,12 @@
 /// - channel: Input channel , modified in place
 /// - contrast: The contrast to adjust the channel with
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub fn contrast_u8(channel: &mut [u8], contrast: f32)
-{
+pub fn contrast_u8(channel: &mut [u8], contrast: f32) {
     // calculate correlation factor
     // These constants may not work for u16
     let factor = (259.0 * (contrast + 255.0)) / (255.0 * (259.0 - contrast));
 
-    for pix in channel
-    {
+    for pix in channel {
         let float_pix = f32::from(*pix);
         let new_val = ((factor * (float_pix - 128.0)) + 128.0).clamp(0.0, 255.0);
         // clamp should happen automatically??

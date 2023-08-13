@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::env::temp_dir;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -7,8 +15,7 @@ use zune_image::codecs::png::PngEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
-pub fn open_in_default_app(image: &Image)
-{
+pub fn open_in_default_app(image: &Image) {
     let time = format!(
         "{}.png",
         std::time::SystemTime::now()

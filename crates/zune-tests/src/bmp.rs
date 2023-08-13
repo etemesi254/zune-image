@@ -11,19 +11,16 @@ use std::path::{Path, PathBuf};
 
 use zune_bmp::BmpDecoder;
 use zune_core::options::DecoderOptions;
-use zune_psd::PSDDecoder;
 
 use crate::{hash, sample_path, TestEntry};
 
-pub fn bmp_path() -> PathBuf
-{
+pub fn bmp_path() -> PathBuf {
     sample_path().join("test-images/bmp")
 }
 
 #[test]
 #[allow(clippy::uninlined_format_args)]
-fn test_bmp()
-{
+fn test_bmp() {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/bmp.json");
 
     let json_file = read(file).unwrap();
@@ -33,8 +30,7 @@ fn test_bmp()
     let default_path = bmp_path();
     let mut error = false;
     let mut files = Vec::new();
-    for path in &paths
-    {
+    for path in &paths {
         let file_name = default_path.join(&path.name);
 
         let expected_hash = path.hash;
@@ -49,8 +45,7 @@ fn test_bmp()
 
         let hash = hash(&pixels);
 
-        if hash != expected_hash
-        {
+        if hash != expected_hash {
             error = true;
             files.push(path.to_owned());
             // report error
@@ -61,8 +56,7 @@ fn test_bmp()
             eprintln!("{}\n", err)
         }
     }
-    if error
-    {
+    if error {
         panic!("Errors found during test decoding\n {:#?}", files);
     }
 }

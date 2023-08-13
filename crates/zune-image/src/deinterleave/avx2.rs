@@ -16,8 +16,7 @@ use crate::deinterleave::scalar::{
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn de_interleave_three_channels_avx2<T: Copy>(
     source: &[T], c1: &mut [T], c2: &mut [T], c3: &mut [T]
-)
-{
+) {
     // Rely on the auto-vectorizer
     // it does a decent work, i.e https://godbolt.org/z/W8brrdv4K
     // and I'm too lazy to figure out mine.
@@ -27,8 +26,7 @@ pub(crate) unsafe fn de_interleave_three_channels_avx2<T: Copy>(
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn de_interleave_four_channels_avx2<T: Copy>(
     source: &[T], c1: &mut [T], c2: &mut [T], c3: &mut [T], c4: &mut [T]
-)
-{
+) {
     // Rely on the auto-vectorizer
     // it does a decent work, i.e https://godbolt.org/z/W8brrdv4K
     // and I'm too lazy to figure out mine.

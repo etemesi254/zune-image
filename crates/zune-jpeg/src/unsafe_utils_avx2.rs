@@ -19,27 +19,23 @@ use core::ops::{Add, AddAssign, Mul, MulAssign, Sub};
 /// A copy of `_MM_SHUFFLE()` that doesn't require
 /// a nightly compiler
 #[inline]
-const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
-{
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     (z << 6) | (y << 4) | (x << 2) | w
 }
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
 #[derive(Clone, Copy)]
-pub struct YmmRegister
-{
+pub struct YmmRegister {
     /// An AVX register
     pub(crate) mm256: __m256i
 }
 
-impl Add for YmmRegister
-{
+impl Add for YmmRegister {
     type Output = YmmRegister;
 
     #[inline]
-    fn add(self, rhs: Self) -> Self::Output
-    {
+    fn add(self, rhs: Self) -> Self::Output {
         unsafe {
             return YmmRegister {
                 mm256: _mm256_add_epi32(self.mm256, rhs.mm256)
@@ -48,13 +44,11 @@ impl Add for YmmRegister
     }
 }
 
-impl Add<i32> for YmmRegister
-{
+impl Add<i32> for YmmRegister {
     type Output = YmmRegister;
 
     #[inline]
-    fn add(self, rhs: i32) -> Self::Output
-    {
+    fn add(self, rhs: i32) -> Self::Output {
         unsafe {
             let tmp = _mm256_set1_epi32(rhs);
 
@@ -65,13 +59,11 @@ impl Add<i32> for YmmRegister
     }
 }
 
-impl Sub for YmmRegister
-{
+impl Sub for YmmRegister {
     type Output = YmmRegister;
 
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output
-    {
+    fn sub(self, rhs: Self) -> Self::Output {
         unsafe {
             return YmmRegister {
                 mm256: _mm256_sub_epi32(self.mm256, rhs.mm256)
@@ -80,22 +72,18 @@ impl Sub for YmmRegister
     }
 }
 
-impl AddAssign for YmmRegister
-{
+impl AddAssign for YmmRegister {
     #[inline]
-    fn add_assign(&mut self, rhs: Self)
-    {
+    fn add_assign(&mut self, rhs: Self) {
         unsafe {
             self.mm256 = _mm256_add_epi32(self.mm256, rhs.mm256);
         }
     }
 }
 
-impl AddAssign<i32> for YmmRegister
-{
+impl AddAssign<i32> for YmmRegister {
     #[inline]
-    fn add_assign(&mut self, rhs: i32)
-    {
+    fn add_assign(&mut self, rhs: i32) {
         unsafe {
             let tmp = _mm256_set1_epi32(rhs);
 
@@ -104,13 +92,11 @@ impl AddAssign<i32> for YmmRegister
     }
 }
 
-impl Mul for YmmRegister
-{
+impl Mul for YmmRegister {
     type Output = YmmRegister;
 
     #[inline]
-    fn mul(self, rhs: Self) -> Self::Output
-    {
+    fn mul(self, rhs: Self) -> Self::Output {
         unsafe {
             YmmRegister {
                 mm256: _mm256_mullo_epi32(self.mm256, rhs.mm256)
@@ -119,13 +105,11 @@ impl Mul for YmmRegister
     }
 }
 
-impl Mul<i32> for YmmRegister
-{
+impl Mul<i32> for YmmRegister {
     type Output = YmmRegister;
 
     #[inline]
-    fn mul(self, rhs: i32) -> Self::Output
-    {
+    fn mul(self, rhs: i32) -> Self::Output {
         unsafe {
             let tmp = _mm256_set1_epi32(rhs);
 
@@ -136,22 +120,18 @@ impl Mul<i32> for YmmRegister
     }
 }
 
-impl MulAssign for YmmRegister
-{
+impl MulAssign for YmmRegister {
     #[inline]
-    fn mul_assign(&mut self, rhs: Self)
-    {
+    fn mul_assign(&mut self, rhs: Self) {
         unsafe {
             self.mm256 = _mm256_mullo_epi32(self.mm256, rhs.mm256);
         }
     }
 }
 
-impl MulAssign<i32> for YmmRegister
-{
+impl MulAssign<i32> for YmmRegister {
     #[inline]
-    fn mul_assign(&mut self, rhs: i32)
-    {
+    fn mul_assign(&mut self, rhs: i32) {
         unsafe {
             let tmp = _mm256_set1_epi32(rhs);
 
@@ -160,11 +140,9 @@ impl MulAssign<i32> for YmmRegister
     }
 }
 
-impl MulAssign<__m256i> for YmmRegister
-{
+impl MulAssign<__m256i> for YmmRegister {
     #[inline]
-    fn mul_assign(&mut self, rhs: __m256i)
-    {
+    fn mul_assign(&mut self, rhs: __m256i) {
         unsafe {
             self.mm256 = _mm256_mullo_epi32(self.mm256, rhs);
         }
@@ -182,8 +160,7 @@ type Reg = YmmRegister;
 pub unsafe fn transpose(
     v0: &mut Reg, v1: &mut Reg, v2: &mut Reg, v3: &mut Reg, v4: &mut Reg, v5: &mut Reg,
     v6: &mut Reg, v7: &mut Reg
-)
-{
+) {
     macro_rules! merge_epi32 {
         ($v0:tt,$v1:tt,$v2:tt,$v3:tt) => {
             let va = _mm256_permute4x64_epi64($v0, shuffle(3, 1, 2, 0));

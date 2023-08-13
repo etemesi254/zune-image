@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use clap::ArgMatches;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
@@ -6,8 +14,7 @@ pub mod global_options;
 pub mod filters;
 pub mod operations;
 
-pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
-{
+pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions {
     let max_width = *options.get_one::<usize>("max-width").unwrap();
     let max_height = *options.get_one::<usize>("max-height").unwrap();
     let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
@@ -20,8 +27,7 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions
         .set_strict_mode(strict_mode)
 }
 
-pub fn get_encoder_options(options: &ArgMatches) -> EncoderOptions
-{
+pub fn get_encoder_options(options: &ArgMatches) -> EncoderOptions {
     let quality = *options.get_one::<u8>("quality").unwrap();
     let encode_threads = *options.get_one::<u8>("encode-threads").unwrap();
     let effort = *options.get_one::<u8>("effort").unwrap();

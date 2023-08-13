@@ -57,13 +57,11 @@ impl<T> PSDDecoder<T>
 where
     T: ZReaderTrait
 {
-    pub fn new(data: T) -> PSDDecoder<T>
-    {
+    pub fn new(data: T) -> PSDDecoder<T> {
         Self::new_with_options(data, DecoderOptions::default())
     }
 
-    pub fn new_with_options(data: T, options: DecoderOptions) -> PSDDecoder<T>
-    {
+    pub fn new_with_options(data: T, options: DecoderOptions) -> PSDDecoder<T> {
         PSDDecoder {
             width: 0,
             height: 0,
@@ -77,21 +75,18 @@ where
         }
     }
 
-    pub fn decode_headers(&mut self) -> Result<(), PSDDecodeErrors>
-    {
+    pub fn decode_headers(&mut self) -> Result<(), PSDDecodeErrors> {
         // Check identifier
         let magic = self.stream.get_u32_be_err()?;
 
-        if magic != PSD_IDENTIFIER_BE
-        {
+        if magic != PSD_IDENTIFIER_BE {
             return Err(PSDDecodeErrors::WrongMagicBytes(magic));
         }
 
         //  file version
         let version = self.stream.get_u16_be_err()?;
 
-        if version != 1
-        {
+        if version != 1 {
             return Err(PSDDecodeErrors::UnsupportedFileType(version));
         }
         // Skip 6 reserved bytes
@@ -99,8 +94,7 @@ where
         // Read the number of channels (R, G, B, A, etc).
         let channel_count = self.stream.get_u16_be_err()?;
 
-        if channel_count > 4
-        {
+        if channel_count > 4 {
             return Err(PSDDecodeErrors::UnsupportedChannelCount(channel_count));
         }
 
@@ -109,16 +103,14 @@ where
         let height = self.stream.get_u32_be_err()? as usize;
         let width = self.stream.get_u32_be_err()? as usize;
 
-        if width > self.options.get_max_width()
-        {
+        if width > self.options.get_max_width() {
             return Err(PSDDecodeErrors::LargeDimensions(
                 self.options.get_max_width(),
                 width
             ));
         }
 
-        if height > self.options.get_max_height()
-        {
+        if height > self.options.get_max_height() {
             return Err(PSDDecodeErrors::LargeDimensions(
                 self.options.get_max_height(),
                 height
@@ -128,19 +120,16 @@ where
         self.width = width;
         self.height = height;
 
-        if self.width == 0 || self.height == 0 || self.channel_count == 0
-        {
+        if self.width == 0 || self.height == 0 || self.channel_count == 0 {
             return Err(PSDDecodeErrors::ZeroDimensions);
         }
 
         let depth = self.stream.get_u16_be_err()?;
 
-        if depth != 8 && depth != 16
-        {
+        if depth != 8 && depth != 16 {
             return Err(PSDDecodeErrors::UnsupportedBitDepth(depth));
         }
-        let im_depth = match depth
-        {
+        let im_depth = match depth {
             8 => BitDepth::Eight,
             16 => BitDepth::Sixteen,
             _ => unreachable!()
@@ -152,18 +141,14 @@ where
 
         let color_enum = ColorModes::from_int(color_mode);
 
-        if let Some(color) = color_enum
-        {
+        if let Some(color) = color_enum {
             if !matches!(
                 color,
                 ColorModes::RGB | ColorModes::Grayscale | ColorModes::CYMK
-            )
-            {
+            ) {
                 return Err(PSDDecodeErrors::UnsupportedColorFormat(color_enum));
             }
-        }
-        else
-        {
+        } else {
             return Err(PSDDecodeErrors::Generic("Unknown color mode"));
         }
         self.color_type = color_enum;
@@ -183,12 +168,10 @@ where
         // find out if data is compressed
         let compression = self.stream.get_u16_be_err()?;
 
-        if compression > 1
-        {
+        if compression > 1 {
             return Err(PSDDecodeErrors::UnknownCompression);
         }
-        if self.color_type == Some(ColorModes::Grayscale)
-        {
+        if self.color_type == Some(ColorModes::Grayscale) {
             // PSD may have grayscale images with more than one
             // channel and will specify channel_count as 3.
             // So let's fix that here
@@ -207,19 +190,15 @@ where
         Ok(())
     }
 
-    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors>
-    {
-        if !self.decoded_header
-        {
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors> {
+        if !self.decoded_header {
             self.decode_headers()?;
         }
 
         let pixel_count = self.width * self.height;
 
-        let mut result = match (self.compression, self.depth)
-        {
-            (CompressionMethod::RLE, BitDepth::Eight) =>
-            {
+        let mut result = match (self.compression, self.depth) {
+            (CompressionMethod::RLE, BitDepth::Eight) => {
                 // RLE
                 // Loop until you get the number of unpacked bytes you are expecting:
                 //     Read the next source byte into n.
@@ -235,8 +214,7 @@ where
 
                 let mut out_channel = vec![0; pixel_count * self.channel_count + 10];
 
-                for channel in 0..self.channel_count
-                {
+                for channel in 0..self.channel_count {
                     let pixel_count = self.width * self.height;
                     self.psd_decode_rle(pixel_count, &mut out_channel[channel..])?;
                 }
@@ -245,8 +223,7 @@ where
 
                 out_channel
             }
-            (CompressionMethod::NoCompression, BitDepth::Eight) =>
-            {
+            (CompressionMethod::NoCompression, BitDepth::Eight) => {
                 // We're at the raw image data.  It's each channel in order (Red, Green,
                 // Blue, Alpha, ...) where each channel consists of an 8-bit
                 // value for each pixel in the image.
@@ -257,17 +234,14 @@ where
                 let pixel_count = self.width * self.height;
 
                 // check we have enough data
-                if !self.stream.has(pixel_count * self.channel_count)
-                {
+                if !self.stream.has(pixel_count * self.channel_count) {
                     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
                 }
 
-                for channel in 0..self.channel_count
-                {
+                for channel in 0..self.channel_count {
                     let mut i = channel;
 
-                    while i < pixel_count
-                    {
+                    while i < pixel_count {
                         out_channel[i] = self.stream.get_u8();
                         i += self.channel_count;
                     }
@@ -277,8 +251,7 @@ where
                 out_channel
             }
 
-            (CompressionMethod::NoCompression, BitDepth::Sixteen) =>
-            {
+            (CompressionMethod::NoCompression, BitDepth::Sixteen) => {
                 // We're at the raw image data.  It's each channel in order (Red, Green,
                 // Blue, Alpha, ...) where each channel consists of an 8-bit
                 // value for each pixel in the image.
@@ -293,20 +266,17 @@ where
                 let pixel_count = channel_dimensions * 2;
 
                 // check we have enough data
-                if !self.stream.has(pixel_count * self.channel_count)
-                {
+                if !self.stream.has(pixel_count * self.channel_count) {
                     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
                 }
 
                 // iterate per channel
-                for channel in 0..self.channel_count
-                {
+                for channel in 0..self.channel_count {
                     let i = channel * 2;
                     let out_chunks = out_channel[i..].chunks_exact_mut(self.channel_count * 2);
 
                     // iterate only taking the image dimensions
-                    for out in out_chunks.take(channel_dimensions)
-                    {
+                    for out in out_chunks.take(channel_dimensions) {
                         let value = self.stream.get_u16_be();
 
                         out[..2].copy_from_slice(&value.to_ne_bytes());
@@ -319,17 +289,12 @@ where
             _ => return Err(PSDDecodeErrors::Generic("Not implemented or Unknown"))
         };
         // remove white matte from psd
-        if self.channel_count >= 4
-        {
-            match self.depth
-            {
-                BitDepth::Sixteen =>
-                {
-                    for pixel in result.chunks_exact_mut(8)
-                    {
+        if self.channel_count >= 4 {
+            match self.depth {
+                BitDepth::Sixteen => {
+                    for pixel in result.chunks_exact_mut(8) {
                         let px3 = u16::from_be_bytes(pixel[6..8].try_into().unwrap());
-                        if px3 != 0 && px3 != 65535
-                        {
+                        if px3 != 0 && px3 != 65535 {
                             let px0 = u16::from_be_bytes(pixel[0..2].try_into().unwrap());
                             let px1 = u16::from_be_bytes(pixel[2..4].try_into().unwrap());
                             let px2 = u16::from_be_bytes(pixel[4..6].try_into().unwrap());
@@ -348,12 +313,9 @@ where
                         }
                     }
                 }
-                BitDepth::Eight =>
-                {
-                    for pixel in result.chunks_exact_mut(4)
-                    {
-                        if pixel[3] != 0 && pixel[3] != 255
-                        {
+                BitDepth::Eight => {
+                    for pixel in result.chunks_exact_mut(4) {
+                        if pixel[3] != 0 && pixel[3] != 255 {
                             let a = f32::from(pixel[3]) / 255.0;
                             let ra = 1.0 / a;
                             let inv_a = 255.0 * (1.0 - ra);
@@ -375,16 +337,13 @@ where
     /// most useful one.
     ///
     /// But such functionality will be added soon.
-    pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors>
-    {
+    pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors> {
         let raw = self.decode_raw()?;
 
-        if self.depth == BitDepth::Eight
-        {
+        if self.depth == BitDepth::Eight {
             return Ok(DecodingResult::U8(raw));
         }
-        if self.depth == BitDepth::Sixteen
-        {
+        if self.depth == BitDepth::Sixteen {
             // https://github.com/etemesi254/zune-image/issues/36
             let new_array: Vec<u16> = raw
                 .chunks_exact(2)
@@ -402,62 +361,51 @@ where
 
     fn psd_decode_rle(
         &mut self, pixel_count: usize, buffer: &mut [u8]
-    ) -> Result<(), PSDDecodeErrors>
-    {
+    ) -> Result<(), PSDDecodeErrors> {
         let mut count = 0;
         let mut nleft = pixel_count - count;
 
         let mut position = 0;
 
-        while nleft > 0
-        {
+        while nleft > 0 {
             let mut len = usize::from(self.stream.get_u8());
 
-            match len.cmp(&128)
-            {
-                Ordering::Less =>
-                {
+            match len.cmp(&128) {
+                Ordering::Less => {
                     // copy next len+1 bytes literally
                     len += 1;
-                    if len > nleft
-                    {
+                    if len > nleft {
                         return Err(PSDDecodeErrors::BadRLE);
                     }
                     count += len;
 
-                    if position + (self.channel_count * len) > buffer.len()
-                    {
+                    if position + (self.channel_count * len) > buffer.len() {
                         return Err(PSDDecodeErrors::BadRLE);
                     }
 
-                    while len > 0
-                    {
+                    while len > 0 {
                         buffer[position] = self.stream.get_u8();
                         position += self.channel_count;
                         len -= 1;
                     }
                 }
                 Ordering::Equal => (),
-                Ordering::Greater =>
-                {
+                Ordering::Greater => {
                     // Next -len+1 bytes in the dest are replicated from next source byte.
                     // (Interpret len as a negative 8-bit int.)
                     len = 257_usize.wrapping_sub(len) & 255;
 
-                    if len > nleft
-                    {
+                    if len > nleft {
                         return Err(PSDDecodeErrors::BadRLE);
                     }
                     count += len;
                     let val = self.stream.get_u8();
 
-                    if position + (self.channel_count * len) > buffer.len()
-                    {
+                    if position + (self.channel_count * len) > buffer.len() {
                         return Err(PSDDecodeErrors::BadRLE);
                     }
 
-                    while len > 0
-                    {
+                    while len > 0 {
                         buffer[position] = val;
                         position += self.channel_count;
                         len -= 1;
@@ -471,57 +419,39 @@ where
     }
 
     /// Get image bit depth
-    pub const fn get_bit_depth(&self) -> Option<BitDepth>
-    {
-        if self.decoded_header
-        {
+    pub const fn get_bit_depth(&self) -> Option<BitDepth> {
+        if self.decoded_header {
             return Some(self.depth);
         }
         None
     }
 
     /// Get image width and height respectively
-    pub fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if self.decoded_header
-        {
+    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if self.decoded_header {
             return Some((self.width, self.height));
         }
         None
     }
     /// Get image bit colorspace
-    pub fn get_colorspace(&self) -> Option<ColorSpace>
-    {
-        if let Some(color) = self.color_type
-        {
-            if color == ColorModes::RGB
-            {
-                return if self.channel_count == 4
-                {
+    pub fn get_colorspace(&self) -> Option<ColorSpace> {
+        if let Some(color) = self.color_type {
+            if color == ColorModes::RGB {
+                return if self.channel_count == 4 {
                     Some(ColorSpace::RGBA)
-                }
-                else
-                {
+                } else {
                     Some(ColorSpace::RGB)
                 };
-            }
-            else if color == ColorModes::Grayscale
-            {
-                return if self.channel_count == 1
-                {
+            } else if color == ColorModes::Grayscale {
+                return if self.channel_count == 1 {
                     Some(ColorSpace::Luma)
-                }
-                else if self.channel_count == 2
-                {
+                } else if self.channel_count == 2 {
                     Some(ColorSpace::LumaA)
-                }
-                else
-                {
+                } else {
                     None
                 };
             }
-            if color == ColorModes::CYMK
-            {
+            if color == ColorModes::CYMK {
                 return Some(ColorSpace::CMYK);
             }
         }

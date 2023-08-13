@@ -21,8 +21,7 @@ use crate::deinterleave::scalar::{
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn de_interleave_three_channels_sse3_u8(
     source: &[u8], c1: &mut [u8], c2: &mut [u8], c3: &mut [u8]
-)
-{
+) {
     const CHUNK_SIZE: usize = 48;
     const OUT_CHUNK_SIZE: usize = CHUNK_SIZE / 3;
 
@@ -90,8 +89,7 @@ pub unsafe fn de_interleave_three_channels_sse3_u8(
         _mm_storeu_si128(b.as_mut_ptr().cast(), green);
         _mm_storeu_si128(c.as_mut_ptr().cast(), blue);
     }
-    if source.len() % CHUNK_SIZE != 0
-    {
+    if source.len() % CHUNK_SIZE != 0 {
         // do the remainder
         let rem = source.len() % CHUNK_SIZE;
         let start = source.len() - rem;

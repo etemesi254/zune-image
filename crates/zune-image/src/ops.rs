@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Overloadable operators
 //!
 //! This module provides overloadable operators for the image struct
@@ -12,8 +20,7 @@ use zune_core::bit_depth::BitType;
 use crate::image::Image;
 
 #[track_caller]
-fn check_full_compatibility(img1: &Image, img2: &Image)
-{
+fn check_full_compatibility(img1: &Image, img2: &Image) {
     assert_eq!(
         img1.get_depth(),
         img2.get_depth(),
@@ -39,20 +46,16 @@ fn check_full_compatibility(img1: &Image, img2: &Image)
     );
 }
 
-impl Add for Image
-{
+impl Add for Image {
     type Output = Image;
 
-    fn add(self, rhs: Image) -> Self::Output
-    {
+    fn add(self, rhs: Image) -> Self::Output {
         check_full_compatibility(&self, &rhs);
 
         let mut new_img = self.clone();
 
-        match self.get_depth().bit_type()
-        {
-            BitType::U8 =>
-            {
+        match self.get_depth().bit_type() {
+            BitType::U8 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
                     .iter_mut()
@@ -67,8 +70,7 @@ impl Add for Image
                         .for_each(|(x, y)| *x = x.saturating_add(*y));
                 }
             }
-            BitType::U16 =>
-            {
+            BitType::U16 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
                     .iter_mut()
@@ -89,20 +91,16 @@ impl Add for Image
     }
 }
 
-impl Sub for Image
-{
+impl Sub for Image {
     type Output = Image;
 
-    fn sub(self, rhs: Image) -> Self::Output
-    {
+    fn sub(self, rhs: Image) -> Self::Output {
         check_full_compatibility(&self, &rhs);
 
         let mut new_img = self.clone();
 
-        match self.get_depth().bit_type()
-        {
-            BitType::U8 =>
-            {
+        match self.get_depth().bit_type() {
+            BitType::U8 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
                     .iter_mut()
@@ -117,8 +115,7 @@ impl Sub for Image
                         .for_each(|(x, y)| *x = x.saturating_sub(*y));
                 }
             }
-            BitType::U16 =>
-            {
+            BitType::U16 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
                     .iter_mut()

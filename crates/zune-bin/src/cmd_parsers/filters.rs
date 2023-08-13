@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use clap::ArgMatches;
 use log::debug;
 use zune_image::filters::box_blur::BoxBlur;
@@ -12,31 +20,24 @@ use zune_image::workflow::WorkFlow;
 
 pub fn parse_options<T: IntoImage>(
     workflow: &mut WorkFlow<T>, argument: &str, args: &ArgMatches
-) -> Result<(), String>
-{
-    if argument == "box-blur"
-    {
+) -> Result<(), String> {
+    if argument == "box-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added box blur filter with radius {}", radius);
 
         let box_blur = BoxBlur::new(radius);
         workflow.add_operation(Box::new(box_blur));
-    }
-    else if argument == "blur"
-    {
+    } else if argument == "blur" {
         let sigma = *args.get_one::<f32>(argument).unwrap();
         debug!("Added gaussian blur filter with radius {}", sigma);
 
         let gaussian_blur = GaussianBlur::new(sigma);
         workflow.add_operation(Box::new(gaussian_blur));
-    }
-    else if argument == "unsharpen"
-    {
+    } else if argument == "unsharpen" {
         let value = args.get_one::<String>(argument).unwrap();
         let split_args: Vec<&str> = value.split(':').collect();
 
-        if split_args.len() != 2
-        {
+        if split_args.len() != 2 {
             return Err(format!("Unsharpen operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
         }
         // parse first one as threshold
@@ -53,27 +54,19 @@ pub fn parse_options<T: IntoImage>(
 
         let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, 0);
         workflow.add_operation(Box::new(unsharpen))
-    }
-    else if argument == "mean-blur"
-    {
+    } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added mean blur filter with radius {}", radius);
 
         let mean_blur = StatisticsOps::new(radius, StatisticOperations::Mean);
         workflow.add_operation(Box::new(mean_blur));
-    }
-    else if argument == "sobel"
-    {
+    } else if argument == "sobel" {
         debug!("Added sobel filter");
         workflow.add_operation(Box::new(Sobel::new()));
-    }
-    else if argument == "scharr"
-    {
+    } else if argument == "scharr" {
         debug!("Added scharr filter");
         workflow.add_operation(Box::new(Scharr::new()))
-    }
-    else if argument == "convolve"
-    {
+    } else if argument == "convolve" {
         debug!("Adding convolution filter");
 
         let values: Vec<f32> = args

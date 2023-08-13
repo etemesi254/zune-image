@@ -75,8 +75,7 @@ impl<T> Default for Aligned16<T>
 where
     T: Default
 {
-    fn default() -> Self
-    {
+    fn default() -> Self {
         Aligned16(T::default())
     }
 }
@@ -90,8 +89,7 @@ impl<T> Default for Aligned32<T>
 where
     T: Default
 {
-    fn default() -> Self
-    {
+    fn default() -> Self {
         Aligned32(T::default())
     }
 }
@@ -101,9 +99,7 @@ where
 /// lossless compression and whether we use Huffman or arithmetic coding schemes
 #[derive(Eq, PartialEq, Copy, Clone)]
 #[allow(clippy::upper_case_acronyms)]
-
-pub enum SOFMarkers
-{
+pub enum SOFMarkers {
     /// Baseline DCT markers
     BaselineDct,
     /// SOF_1 Extended sequential DCT,Huffman coding
@@ -120,20 +116,16 @@ pub enum SOFMarkers
     LosslessArithmetic
 }
 
-impl Default for SOFMarkers
-{
-    fn default() -> Self
-    {
+impl Default for SOFMarkers {
+    fn default() -> Self {
         Self::BaselineDct
     }
 }
 
-impl SOFMarkers
-{
+impl SOFMarkers {
     /// Check if a certain marker is sequential DCT or not
 
-    pub fn is_sequential_dct(self) -> bool
-    {
+    pub fn is_sequential_dct(self) -> bool {
         matches!(
             self,
             Self::BaselineDct
@@ -144,15 +136,13 @@ impl SOFMarkers
 
     /// Check if a marker is a Lossles type or not
 
-    pub fn is_lossless(self) -> bool
-    {
+    pub fn is_lossless(self) -> bool {
         matches!(self, Self::LosslessHuffman | Self::LosslessArithmetic)
     }
 
     /// Check whether a marker is a progressive marker or not
 
-    pub fn is_progressive(self) -> bool
-    {
+    pub fn is_progressive(self) -> bool {
         matches!(
             self,
             Self::ProgressiveDctHuffman | Self::ProgressiveDctArithmetic
@@ -161,10 +151,8 @@ impl SOFMarkers
 
     /// Create a marker from an integer
 
-    pub fn from_int(int: u16) -> Option<SOFMarkers>
-    {
-        match int
-        {
+    pub fn from_int(int: u16) -> Option<SOFMarkers> {
+        match int {
             START_OF_FRAME_BASE => Some(Self::BaselineDct),
             START_OF_FRAME_PROG_DCT => Some(Self::ProgressiveDctHuffman),
             START_OF_FRAME_PROG_DCT_AR => Some(Self::ProgressiveDctArithmetic),
@@ -177,21 +165,16 @@ impl SOFMarkers
     }
 }
 
-impl fmt::Debug for SOFMarkers
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result
-    {
-        match &self
-        {
+impl fmt::Debug for SOFMarkers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
             Self::BaselineDct => write!(f, "Baseline DCT"),
-            Self::ExtendedSequentialHuffman =>
-            {
+            Self::ExtendedSequentialHuffman => {
                 write!(f, "Extended sequential DCT, Huffman Coding")
             }
             Self::ProgressiveDctHuffman => write!(f, "Progressive DCT,Huffman Encoding"),
             Self::LosslessHuffman => write!(f, "Lossless (sequential) Huffman encoding"),
-            Self::ExtendedSequentialDctArithmetic =>
-            {
+            Self::ExtendedSequentialDctArithmetic => {
                 write!(f, "Extended sequential DCT, arithmetic coding")
             }
             Self::ProgressiveDctArithmetic => write!(f, "Progressive DCT, arithmetic coding"),
@@ -211,8 +194,7 @@ pub fn read_u16_into<T>(reader: &mut ZByteReader<T>, buf: &mut [u16]) -> Result<
 where
     T: ZReaderTrait
 {
-    for i in buf
-    {
+    for i in buf {
         *i = reader.get_u16_be_err()?;
     }
 
@@ -225,8 +207,7 @@ where
 /// parts fo the decoder.
 pub(crate) fn setup_component_params<T: ZReaderTrait>(
     img: &mut JpegDecoder<T>
-) -> Result<(), DecodeErrors>
-{
+) -> Result<(), DecodeErrors> {
     let img_width = img.width();
     let img_height = img.height();
 
@@ -239,13 +220,11 @@ pub(crate) fn setup_component_params<T: ZReaderTrait>(
     //
     // We know adobe app14 was present since it's the only one that can modify
     // input colorspace to be CMYK
-    if img.components.len() == 3 && img.input_colorspace == ColorSpace::CMYK
-    {
+    if img.components.len() == 3 && img.input_colorspace == ColorSpace::CMYK {
         img.input_colorspace = ColorSpace::RGB;
     }
 
-    for component in &mut img.components
-    {
+    for component in &mut img.components {
         // compute interleaved image info
         // h_max contains the maximum horizontal component
         img.h_max = max(img.h_max, component.horizontal_sample);
@@ -258,8 +237,7 @@ pub(crate) fn setup_component_params<T: ZReaderTrait>(
         // Number of MCU's per height
         img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1) / img.mcu_height;
 
-        if img.h_max != 1 || img.v_max != 1
-        {
+        if img.h_max != 1 || img.v_max != 1 {
             // interleaved images have horizontal and vertical sampling factors
             // not equal to 1.
             img.is_interleaved = true;
@@ -293,8 +271,7 @@ pub(crate) fn setup_component_params<T: ZReaderTrait>(
         ));
     }
 
-    if img.is_mjpeg
-    {
+    if img.is_mjpeg {
         fill_default_mjpeg_tables(
             img.is_progressive,
             &mut img.dc_huffman_tables,
@@ -318,17 +295,13 @@ pub(crate) fn setup_component_params<T: ZReaderTrait>(
 ///
 /// # Returns
 /// The padded width, this is how long the width is for a particular image
-pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> usize
-{
-    match sub_sample
-    {
-        SampleRatios::None | SampleRatios::V =>
-        {
+pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> usize {
+    match sub_sample {
+        SampleRatios::None | SampleRatios::V => {
             // None+V sends one MCU row, so that's a simple calculation
             ((actual_width + 7) / 8) * 8
         }
-        SampleRatios::H | SampleRatios::HV =>
-        {
+        SampleRatios::H | SampleRatios::HV => {
             // sends two rows, width can be expanded by up to 15 more bytes
             ((actual_width + 15) / 16) * 16
         }
@@ -346,13 +319,11 @@ pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> 
 pub fn fill_default_mjpeg_tables(
     is_progressive: bool, dc_huffman_tables: &mut [Option<HuffmanTable>],
     ac_huffman_tables: &mut [Option<HuffmanTable>]
-)
-{
+) {
     // Section K.3.3
     trace!("Filling with default mjpeg tables");
 
-    if dc_huffman_tables[0].is_none()
-    {
+    if dc_huffman_tables[0].is_none() {
         // Table K.3
         dc_huffman_tables[0] = Some(
             HuffmanTable::new_unfilled(
@@ -369,8 +340,7 @@ pub fn fill_default_mjpeg_tables(
             .unwrap()
         );
     }
-    if dc_huffman_tables[1].is_none()
-    {
+    if dc_huffman_tables[1].is_none() {
         // Table K.4
         dc_huffman_tables[1] = Some(
             HuffmanTable::new_unfilled(
@@ -387,8 +357,7 @@ pub fn fill_default_mjpeg_tables(
             .unwrap()
         );
     }
-    if ac_huffman_tables[0].is_none()
-    {
+    if ac_huffman_tables[0].is_none() {
         // Table K.5
         ac_huffman_tables[0] = Some(
             HuffmanTable::new_unfilled(
@@ -417,8 +386,7 @@ pub fn fill_default_mjpeg_tables(
             .unwrap()
         );
     }
-    if ac_huffman_tables[1].is_none()
-    {
+    if ac_huffman_tables[1].is_none() {
         // Table K.6
         ac_huffman_tables[1] = Some(
             HuffmanTable::new_unfilled(

@@ -9,8 +9,7 @@
 use zune_core::colorspace::ColorSpace;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub enum BmpCompression
-{
+pub enum BmpCompression {
     RGB,
     RLE8,
     RLE4,
@@ -18,12 +17,9 @@ pub enum BmpCompression
     Unknown
 }
 
-impl BmpCompression
-{
-    pub fn from_u32(num: u32) -> Option<BmpCompression>
-    {
-        match num
-        {
+impl BmpCompression {
+    pub fn from_u32(num: u32) -> Option<BmpCompression> {
+        match num {
             0 => Some(BmpCompression::RGB),
             1 => Some(BmpCompression::RLE8),
             2 => Some(BmpCompression::RLE4),
@@ -34,8 +30,7 @@ impl BmpCompression
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum BmpPixelFormat
-{
+pub enum BmpPixelFormat {
     None,
     RGBA,
     PAL8,
@@ -43,12 +38,9 @@ pub enum BmpPixelFormat
     RGB
 }
 
-impl BmpPixelFormat
-{
-    pub fn num_components(&self) -> usize
-    {
-        match self
-        {
+impl BmpPixelFormat {
+    pub fn num_components(&self) -> usize {
+        match self {
             BmpPixelFormat::None => 0,
             BmpPixelFormat::RGBA => 4,
             BmpPixelFormat::PAL8 => 3,
@@ -56,10 +48,8 @@ impl BmpPixelFormat
             BmpPixelFormat::RGB => 3
         }
     }
-    pub fn into_colorspace(self) -> ColorSpace
-    {
-        match self
-        {
+    pub fn into_colorspace(self) -> ColorSpace {
+        match self {
             BmpPixelFormat::None => ColorSpace::Unknown,
             BmpPixelFormat::RGBA => ColorSpace::RGBA,
             BmpPixelFormat::PAL8 => ColorSpace::RGB,

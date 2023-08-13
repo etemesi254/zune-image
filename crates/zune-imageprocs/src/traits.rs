@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 //! Various operations useful for generic image processing.
 //!
@@ -7,8 +15,7 @@
 
 /// Various number traits useful for generic image
 /// processing.
-pub trait NumOps<T>
-{
+pub trait NumOps<T> {
     /// Return the maximum value possible for this
     /// type
     fn max_val() -> T;
@@ -80,82 +87,66 @@ impl ZFloat for f64 {}
 
 macro_rules! numops_for_int {
     ($int:tt) => {
-        impl NumOps<$int> for $int
-        {
+        impl NumOps<$int> for $int {
             #[inline(always)]
-            fn max_val() -> $int
-            {
+            fn max_val() -> $int {
                 $int::MAX
             }
             #[inline(always)]
-            fn min_val() -> $int
-            {
+            fn min_val() -> $int {
                 $int::MIN
             }
             #[inline(always)]
-            fn from_u32(x: u32) -> $int
-            {
+            fn from_u32(x: u32) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn from_f64(x: f64) -> $int
-            {
+            fn from_f64(x: f64) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn from_f32(x: f32) -> $int
-            {
+            fn from_f32(x: f32) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn one() -> $int
-            {
+            fn one() -> $int {
                 1 as $int
             }
             #[inline(always)]
-            fn from_u8(x: u8) -> $int
-            {
+            fn from_u8(x: u8) -> $int {
                 x as $int
             }
 
             #[inline(always)]
-            fn from_usize(x: usize) -> $int
-            {
+            fn from_usize(x: usize) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn from_i32(x: i32) -> $int
-            {
+            fn from_i32(x: i32) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn from_u64(x: u64) -> $int
-            {
+            fn from_u64(x: u64) -> $int {
                 x as $int
             }
             #[inline(always)]
-            fn saturating_add(self, other: $int) -> $int
-            {
+            fn saturating_add(self, other: $int) -> $int {
                 self.saturating_add(other)
             }
             #[inline(always)]
-            fn saturating_sub(self, other: $int) -> $int
-            {
+            fn saturating_sub(self, other: $int) -> $int {
                 self.saturating_sub(other)
             }
             #[inline(always)]
-            fn to_usize(self) -> usize
-            {
+            fn to_usize(self) -> usize {
                 self as usize
             }
             #[inline(always)]
-            fn to_f64(self) -> f64
-            {
+            fn to_f64(self) -> f64 {
                 self as f64
             }
             #[inline(always)]
-            fn zclamp(self, min: $int, max: $int) -> $int
-            {
+            fn zclamp(self, min: $int, max: $int) -> $int {
                 <$int>::clamp(self, min, max)
             }
         }
@@ -166,80 +157,64 @@ numops_for_int!(u8);
 numops_for_int!(u16);
 numops_for_int!(i32);
 
-impl NumOps<f32> for f32
-{
-    fn max_val() -> f32
-    {
+impl NumOps<f32> for f32 {
+    fn max_val() -> f32 {
         1.0
     }
 
-    fn min_val() -> f32
-    {
+    fn min_val() -> f32 {
         0.0
     }
 
-    fn from_u8(x: u8) -> f32
-    {
+    fn from_u8(x: u8) -> f32 {
         f32::from(x)
     }
 
-    fn from_u32(x: u32) -> f32
-    {
+    fn from_u32(x: u32) -> f32 {
         x as f32
     }
 
-    fn from_f64(x: f64) -> f32
-    {
+    fn from_f64(x: f64) -> f32 {
         x as f32
     }
 
-    fn from_f32(x: f32) -> f32
-    {
+    fn from_f32(x: f32) -> f32 {
         x
     }
 
-    fn from_usize(x: usize) -> f32
-    {
+    fn from_usize(x: usize) -> f32 {
         x as f32
     }
 
-    fn from_i32(x: i32) -> f32
-    {
+    fn from_i32(x: i32) -> f32 {
         x as f32
     }
 
-    fn from_u64(x: u64) -> f32
-    {
+    fn from_u64(x: u64) -> f32 {
         x as f32
     }
 
-    fn saturating_add(self, other: f32) -> f32
-    {
+    fn saturating_add(self, other: f32) -> f32 {
         self + other
     }
 
-    fn saturating_sub(self, other: f32) -> f32
-    {
+    fn saturating_sub(self, other: f32) -> f32 {
         self - other
     }
 
-    fn one() -> f32
-    {
+    fn one() -> f32 {
         1.0
     }
 
-    fn to_usize(self) -> usize
-    {
+    fn to_usize(self) -> usize {
         self as _
     }
 
-    fn to_f64(self) -> f64
-    {
+    fn to_f64(self) -> f64 {
         self as _
     }
 
-    fn zclamp(self, min: f32, max: f32) -> f32
-    {
+    fn zclamp(self, min: f32, max: f32) -> f32 {
         self.clamp(min, max)
     }
 }

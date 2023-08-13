@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::flop::flop;
 
@@ -9,39 +17,30 @@ use crate::traits::OperationsTrait;
 #[derive(Default)]
 pub struct Flop;
 
-impl Flop
-{
-    pub fn new() -> Flop
-    {
+impl Flop {
+    pub fn new() -> Flop {
         Self::default()
     }
 }
-impl OperationsTrait for Flop
-{
-    fn get_name(&self) -> &'static str
-    {
+
+impl OperationsTrait for Flop {
+    fn get_name(&self) -> &'static str {
         "Flop"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let (width, _) = image.get_dimensions();
         let depth = image.get_depth();
 
-        for channel in image.get_channels_mut(false)
-        {
-            match depth.bit_type()
-            {
-                BitType::U8 =>
-                {
+        for channel in image.get_channels_mut(false) {
+            match depth.bit_type() {
+                BitType::U8 => {
                     flop(channel.reinterpret_as_mut::<u8>().unwrap(), width);
                 }
-                BitType::U16 =>
-                {
+                BitType::U16 => {
                     flop(channel.reinterpret_as_mut::<u16>().unwrap(), width);
                 }
-                BitType::F32 =>
-                {
+                BitType::F32 => {
                     flop(channel.reinterpret_as_mut::<f32>().unwrap(), width);
                 }
                 _ => todo!()
@@ -50,8 +49,7 @@ impl OperationsTrait for Flop
 
         Ok(())
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }

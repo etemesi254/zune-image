@@ -16,8 +16,7 @@ use zune_core::colorspace::ColorSpace;
 const MAX_DIMENSIONS: usize = 1 << 30;
 
 /// Errors that may arise during encoding
-pub enum JxlEncodeErrors
-{
+pub enum JxlEncodeErrors {
     ZeroDimension(&'static str),
     UnsupportedColorspace(ColorSpace),
     UnsupportedDepth(BitDepth),
@@ -33,35 +32,29 @@ pub const SUPPORTED_COLORSPACES: [ColorSpace; 4] = [
 ];
 pub const SUPPORTED_DEPTHS: [BitDepth; 2] = [BitDepth::Eight, BitDepth::Sixteen];
 
-impl Debug for JxlEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
+impl Debug for JxlEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
             JxlEncodeErrors::ZeroDimension(param) => writeln!(f, "The {param} is zero"),
             JxlEncodeErrors::UnsupportedColorspace(color) => writeln!(
                 f,
                 "JXL encoder cannot encode images in colorspace {color:?}, supported ones are {:?}",
                 SUPPORTED_COLORSPACES
             ),
-            JxlEncodeErrors::UnsupportedDepth(depth) =>
-            {
+            JxlEncodeErrors::UnsupportedDepth(depth) => {
                 writeln!(
                     f,
                     "JXL encoder cannot encode images in depth {depth:?},supported ones are {:?}",
                     SUPPORTED_DEPTHS
                 )
             }
-            JxlEncodeErrors::TooLargeDimensions(value) =>
-            {
+            JxlEncodeErrors::TooLargeDimensions(value) => {
                 writeln!(
                         f,
                         "Too large dimensions {value} greater than supported dimensions {MAX_DIMENSIONS}"
                     )
             }
-            JxlEncodeErrors::LengthMismatch(expected, found) =>
-            {
+            JxlEncodeErrors::LengthMismatch(expected, found) => {
                 writeln!(f, "Expected array of length {expected} but found {found}")
             }
         }

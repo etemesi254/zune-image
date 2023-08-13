@@ -20,8 +20,7 @@ use crate::headers::writers::{
 };
 
 #[derive(Default)]
-pub struct PngEncoder<'a>
-{
+pub struct PngEncoder<'a> {
     pub(crate) options:         EncoderOptions,
     pub(crate) data:            &'a [u8],
     pub(crate) row_filter:      FilterMethod,
@@ -31,8 +30,7 @@ pub struct PngEncoder<'a>
     pub(crate) exif:            Option<&'a [u8]>
 }
 
-impl<'a> PngEncoder<'a>
-{
+impl<'a> PngEncoder<'a> {
     /// Create a new encoder that can encode an image into a PNG chunk
     ///
     /// # Endianness
@@ -40,8 +38,7 @@ impl<'a> PngEncoder<'a>
     /// If you are encoding 16 bit data, it is expected that
     /// the data is laid  out in big endian (in order to avoid a
     /// potentially expensive clone and conversion step)
-    pub fn new(data: &'a [u8], options: EncoderOptions) -> PngEncoder<'a>
-    {
+    pub fn new(data: &'a [u8], options: EncoderOptions) -> PngEncoder<'a> {
         PngEncoder {
             options,
             data,
@@ -51,13 +48,11 @@ impl<'a> PngEncoder<'a>
     }
 
     /// Add exif data which will be encoded
-    pub fn add_exif_segment(&mut self, exif: &'a [u8])
-    {
+    pub fn add_exif_segment(&mut self, exif: &'a [u8]) {
         self.exif = Some(exif);
     }
 
-    pub fn encode_headers(&self, writer: &mut ZByteWriter)
-    {
+    pub fn encode_headers(&self, writer: &mut ZByteWriter) {
         // write signature
         writer.write_u64_be(PNG_SIGNATURE);
         // write ihdr
@@ -66,18 +61,15 @@ impl<'a> PngEncoder<'a>
         // extra headers
         // need to check their existence because  write_header_fn will do
         // some writing even if they don't exist
-        if self.exif.is_some()
-        {
+        if self.exif.is_some() {
             write_header_fn(self, writer, b"eXIf", write_exif);
         }
-        if self.gamma.is_some()
-        {
+        if self.gamma.is_some() {
             write_header_fn(self, writer, b"gAMA", write_gamma);
         }
     }
 
-    fn create_buffer(&self) -> Vec<u8>
-    {
+    fn create_buffer(&self) -> Vec<u8> {
         const MAX_HEADER_SIZE: usize = 2048;
 
         let mut out_dims = self
@@ -102,15 +94,13 @@ impl<'a> PngEncoder<'a>
 
             out_dims += extra_bytes;
         }
-        if let Some(exif) = self.exif
-        {
+        if let Some(exif) = self.exif {
             out_dims += exif.len() + 40;
         }
 
         vec![0; out_dims]
     }
-    pub fn encode(&mut self) -> Vec<u8>
-    {
+    pub fn encode(&mut self) -> Vec<u8> {
         let mut out_size = self.create_buffer();
         let mut writer = ZByteWriter::new(&mut out_size);
 
@@ -129,15 +119,13 @@ impl<'a> PngEncoder<'a>
         out_size
     }
 
-    const fn calculate_scanline_size(&self) -> usize
-    {
+    const fn calculate_scanline_size(&self) -> usize {
         self.options.get_width()
             * self.options.get_depth().size_of()
             * self.options.get_colorspace().num_components()
     }
 
-    fn add_filters(&mut self)
-    {
+    fn add_filters(&mut self) {
         let scanline_length = (self.calculate_scanline_size() + 1)
             .checked_mul(self.options.get_height())
             .unwrap();
@@ -160,8 +148,7 @@ impl<'a> PngEncoder<'a>
         {
             let (previous, current) = self.data.split_at(i * scanline_size);
 
-            if i > 0
-            {
+            if i > 0 {
                 // previous row now becomes defined
                 previous_scanline = &previous[(i - 1) * scanline_size..];
             }
@@ -179,14 +166,12 @@ impl<'a> PngEncoder<'a>
         // encode filtered scanline
         self.encoded_chunks = DeflateEncoder::new(&self.filter_scanline).encode_zlib();
     }
-    fn write_idat_chunks(&self, writer: &mut ZByteWriter)
-    {
+    fn write_idat_chunks(&self, writer: &mut ZByteWriter) {
         debug_assert!(!self.encoded_chunks.is_empty());
         // Most decoders love data in 8KB chunks, since
         // probably libpng does that by default
         // so let's try emulating that
-        for chunk in self.encoded_chunks.chunks(8192)
-        {
+        for chunk in self.encoded_chunks.chunks(8192) {
             let chunk_type = PngChunk {
                 length:     chunk.len(),
                 chunk_type: PngChunkType::IDAT, // not needed
@@ -199,8 +184,7 @@ impl<'a> PngEncoder<'a>
 }
 
 #[test]
-fn test_simple_write()
-{
+fn test_simple_write() {
     use zune_core::bit_depth::BitDepth;
     use zune_core::colorspace::ColorSpace;
 

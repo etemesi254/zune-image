@@ -38,14 +38,12 @@ pub const MAX_CHANNELS: usize = 4;
 
 /// Represents a single image
 #[derive(Clone)]
-pub struct Image
-{
+pub struct Image {
     pub(crate) frames:   Vec<Frame>,
     pub(crate) metadata: ImageMetadata
 }
 
-impl Image
-{
+impl Image {
     /// Create a new image instance
     ///
     /// This constructs a single image frame (non-animated) with the
@@ -54,8 +52,7 @@ impl Image
     pub fn new(
         channels: Vec<Channel>, depth: BitDepth, width: usize, height: usize,
         colorspace: ColorSpace
-    ) -> Image
-    {
+    ) -> Image {
         // setup metadata information
         let mut meta = ImageMetadata::default();
 
@@ -77,29 +74,24 @@ impl Image
     /// - true : Image contains a series of frames which can be animated
     /// - false: Image contains a single frame  
     ///
-    pub fn is_animated(&self) -> bool
-    {
+    pub fn is_animated(&self) -> bool {
         self.frames.len() > 1
     }
     /// Get image dimensions as a tuple of (width,height)
-    pub const fn get_dimensions(&self) -> (usize, usize)
-    {
+    pub const fn get_dimensions(&self) -> (usize, usize) {
         self.metadata.get_dimensions()
     }
 
     /// Get the image depth of this image
-    pub const fn get_depth(&self) -> BitDepth
-    {
+    pub const fn get_depth(&self) -> BitDepth {
         self.metadata.get_depth()
     }
     /// Set image depth
-    pub fn set_depth(&mut self, depth: BitDepth)
-    {
+    pub fn set_depth(&mut self, depth: BitDepth) {
         self.metadata.set_depth(depth)
     }
 
-    pub const fn get_metadata(&self) -> &ImageMetadata
-    {
+    pub const fn get_metadata(&self) -> &ImageMetadata {
         &self.metadata
     }
 
@@ -109,18 +101,15 @@ impl Image
     /// All frames in the image
     ///
     ///
-    pub fn get_frames_ref(&self) -> &[Frame]
-    {
+    pub fn get_frames_ref(&self) -> &[Frame] {
         &self.frames
     }
 
-    pub fn get_frames_mut(&mut self) -> &mut [Frame]
-    {
+    pub fn get_frames_mut(&mut self) -> &mut [Frame] {
         &mut self.frames
     }
     /// Return a reference to the underlying channels
-    pub fn get_channels_ref(&self, ignore_alpha: bool) -> Vec<&Channel>
-    {
+    pub fn get_channels_ref(&self, ignore_alpha: bool) -> Vec<&Channel> {
         let colorspace = self.get_colorspace();
 
         self.frames
@@ -133,8 +122,7 @@ impl Image
     ///
     /// This gives mutable access to the chanel data allowing
     /// single or multithreaded manipulation of images
-    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> Vec<&mut Channel>
-    {
+    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> Vec<&mut Channel> {
         let colorspace = self.get_colorspace();
 
         self.frames
@@ -144,15 +132,13 @@ impl Image
     }
     /// Get the colorspace this image is stored
     /// in
-    pub const fn get_colorspace(&self) -> ColorSpace
-    {
+    pub const fn get_colorspace(&self) -> ColorSpace {
         self.metadata.colorspace
     }
     /// Flatten channels in this image.
     ///
     /// Flatten can be used to interleave all channels into one vector
-    pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>>
-    {
+    pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>> {
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
         let colorspace = self.get_colorspace();
@@ -166,41 +152,29 @@ impl Image
     /// For images using anything larger than 8 bit,
     /// u8 as native endian is used
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
-    pub fn to_u8(&self) -> Vec<Vec<u8>>
-    {
+    pub fn to_u8(&self) -> Vec<Vec<u8>> {
         let colorspace = self.get_colorspace();
-        if self.metadata.get_depth() == BitDepth::Eight
-        {
+        if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
-        }
-        else if self.metadata.get_depth() == BitDepth::Sixteen
-        {
+        } else if self.metadata.get_depth() == BitDepth::Sixteen {
             self.frames
                 .iter()
                 .map(|z| z.u16_to_native_endian(colorspace))
                 .collect()
-        }
-        else
-        {
+        } else {
             todo!("Unimplemented")
         }
     }
-    pub fn to_u8_be(&self) -> Vec<Vec<u8>>
-    {
+    pub fn to_u8_be(&self) -> Vec<Vec<u8>> {
         let colorspace = self.get_colorspace();
-        if self.metadata.get_depth() == BitDepth::Eight
-        {
+        if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
-        }
-        else if self.metadata.get_depth() == BitDepth::Sixteen
-        {
+        } else if self.metadata.get_depth() == BitDepth::Sixteen {
             self.frames
                 .iter()
                 .map(|z| z.u16_to_big_endian(colorspace))
                 .collect()
-        }
-        else
-        {
+        } else {
             todo!("Unimplemented")
         }
     }
@@ -208,10 +182,8 @@ impl Image
     /// Force flattening of all frames to RGBA format
     ///
     /// This will iterate through all
-    pub fn flatten_rgba_frames_u8(&mut self, out_pixel: Vec<&mut [u8]>)
-    {
-        if self.metadata.depth != BitDepth::Eight
-        {
+    pub fn flatten_rgba_frames_u8(&mut self, out_pixel: Vec<&mut [u8]>) {
+        if self.metadata.depth != BitDepth::Eight {
             // convert depth if it doesn't match
             let operation = Depth::new(BitDepth::Eight);
 
@@ -219,18 +191,15 @@ impl Image
         }
         let colorspace = self.get_colorspace();
 
-        for (frame, out) in self.frames.iter_mut().zip(out_pixel)
-        {
+        for (frame, out) in self.frames.iter_mut().zip(out_pixel) {
             frame.write_rgba(colorspace, out).unwrap();
         }
     }
-    pub fn set_dimensions(&mut self, width: usize, height: usize)
-    {
+    pub fn set_dimensions(&mut self, width: usize, height: usize) {
         self.metadata.set_dimensions(width, height);
     }
 
-    pub fn set_colorspace(&mut self, colorspace: ColorSpace)
-    {
+    pub fn set_colorspace(&mut self, colorspace: ColorSpace) {
         self.metadata.set_colorspace(colorspace);
     }
 
@@ -298,8 +267,7 @@ impl Image
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
         T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod
     {
-        match colorspace.num_components()
-        {
+        match colorspace.num_components() {
             1 => Image::from_fn_inner::<_, _, 1>(width, height, func, colorspace),
             2 => Image::from_fn_inner::<_, _, 2>(width, height, func, colorspace),
             3 => Image::from_fn_inner::<_, _, 3>(width, height, func, colorspace),
@@ -342,16 +310,13 @@ impl Image
 
         let mut pxs = [T::default(); MAX_CHANNELS];
 
-        for y in 0..height
-        {
-            for x in 0..width
-            {
+        for y in 0..height {
+            for x in 0..width {
                 (func)(y, x, &mut pxs);
 
                 let offset = y * height + x;
 
-                for i in 0..COMPONENTS
-                {
+                for i in 0..COMPONENTS {
                     channels_ref[i][offset] = pxs[i];
                 }
             }
@@ -362,8 +327,7 @@ impl Image
 }
 
 /// Pixel constructors
-impl Image
-{
+impl Image {
     /// Create a new image from a raw pixels
     ///
     /// The image depth is treated as [BitDepth::U8](zune_core::bit_depth::BitDepth::Eight)
@@ -382,8 +346,7 @@ impl Image
     /// this indicates that the array cannot be indexed by usize,hence values are invalid
     ///
     /// - If the length of pixels doesn't match the expected length
-    pub fn from_u8(pixels: &[u8], width: usize, height: usize, colorspace: ColorSpace) -> Image
-    {
+    pub fn from_u8(pixels: &[u8], width: usize, height: usize, colorspace: ColorSpace) -> Image {
         let expected_len = checked_mul(width, height, 1, colorspace.num_components());
 
         assert_eq!(
@@ -415,8 +378,7 @@ impl Image
     /// - If image `depth.size_of()` is not 2
     ///
     /// - If pixels length is not equal to expected length
-    pub fn from_u16(pixels: &[u16], width: usize, height: usize, colorspace: ColorSpace) -> Image
-    {
+    pub fn from_u16(pixels: &[u16], width: usize, height: usize, colorspace: ColorSpace) -> Image {
         let expected_len = checked_mul(width, height, 1, colorspace.num_components());
 
         assert_eq!(
@@ -431,8 +393,7 @@ impl Image
         Image::new(pixels, BitDepth::Sixteen, width, height, colorspace)
     }
 
-    pub fn from_f32(pixels: &[f32], width: usize, height: usize, colorspace: ColorSpace) -> Image
-    {
+    pub fn from_f32(pixels: &[f32], width: usize, height: usize, colorspace: ColorSpace) -> Image {
         let expected_len = checked_mul(width, height, 1, colorspace.num_components());
         assert_eq!(
             pixels.len(),
@@ -448,8 +409,7 @@ impl Image
 }
 
 /// Pixel manipulation methods
-impl Image
-{
+impl Image {
     /// Modify pixels in place using function `func`
     ///
     /// This iterates through all frames in the channel and calls
@@ -500,19 +460,15 @@ impl Image
 
         let (width, height) = self.get_dimensions();
 
-        for frame in self.frames.iter_mut()
-        {
+        for frame in self.frames.iter_mut() {
             let mut pixel_muts: Vec<&mut [T]> = vec![];
 
             // convert all channels to type T
-            for channel in frame.get_channels_mut(colorspace, false)
-            {
+            for channel in frame.get_channels_mut(colorspace, false) {
                 pixel_muts.push(channel.reinterpret_as_mut()?)
             }
-            for y in 0..height
-            {
-                for x in 0..width
-                {
+            for y in 0..height {
+                for x in 0..width {
                     let position = y * height + x;
 
                     // This must be kept in sync with
@@ -525,8 +481,7 @@ impl Image
                         &mut T::default()
                     ];
                     // push pixels from channel to temporary output
-                    for (i, j) in (pixel_muts.iter_mut()).zip(output.iter_mut())
-                    {
+                    for (i, j) in (pixel_muts.iter_mut()).zip(output.iter_mut()) {
                         *j = &mut i[position]
                     }
 
@@ -539,25 +494,21 @@ impl Image
 }
 
 /// Image conversion routines
-impl Image
-{
+impl Image {
     /// Convert an image from one colorspace to another
     ///
     ///
-    pub fn convert_color(&mut self, to: ColorSpace) -> Result<(), ImageErrors>
-    {
+    pub fn convert_color(&mut self, to: ColorSpace) -> Result<(), ImageErrors> {
         ColorspaceConv::new(to).execute(self)
     }
-    pub fn convert_depth(&mut self, to: BitDepth) -> Result<(), ImageErrors>
-    {
+    pub fn convert_depth(&mut self, to: BitDepth) -> Result<(), ImageErrors> {
         Depth::new(to).execute(self)
     }
 }
 
 pub(crate) fn checked_mul(
     width: usize, height: usize, depth: usize, colorspace_components: usize
-) -> usize
-{
+) -> usize {
     width
         .checked_mul(height)
         .unwrap()

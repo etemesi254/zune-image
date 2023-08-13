@@ -8,7 +8,6 @@
 
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
-use log::debug;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
@@ -17,41 +16,33 @@ use zune_core::result::DecodingResult;
 pub use zune_ppm::{PPMDecodeErrors, PPMDecoder, PPMEncodeErrors, PPMEncoder as PPMEnc};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
-use crate::deinterleave::{deinterleave_u16, deinterleave_u8};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 #[derive(Copy, Clone, Default)]
-pub struct PPMEncoder
-{
+pub struct PPMEncoder {
     options: Option<EncoderOptions>
 }
 
-impl PPMEncoder
-{
-    pub fn new() -> PPMEncoder
-    {
+impl PPMEncoder {
+    pub fn new() -> PPMEncoder {
         PPMEncoder { options: None }
     }
-    pub fn new_with_options(options: EncoderOptions) -> PPMEncoder
-    {
+    pub fn new_with_options(options: EncoderOptions) -> PPMEncoder {
         PPMEncoder {
             options: Some(options)
         }
     }
 }
 
-impl EncoderTrait for PPMEncoder
-{
-    fn get_name(&self) -> &'static str
-    {
+impl EncoderTrait for PPMEncoder {
+    fn get_name(&self) -> &'static str {
         "PPM Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
-    {
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
@@ -65,8 +56,7 @@ impl EncoderTrait for PPMEncoder
         Ok(data)
     }
 
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[
             ColorSpace::RGB,  // p7
             ColorSpace::Luma, // p7
@@ -75,23 +65,19 @@ impl EncoderTrait for PPMEncoder
         ]
     }
 
-    fn format(&self) -> ImageFormat
-    {
+    fn format(&self) -> ImageFormat {
         ImageFormat::PPM
     }
 
-    fn supported_bit_depth(&self) -> &'static [BitDepth]
-    {
+    fn supported_bit_depth(&self) -> &'static [BitDepth] {
         &[BitDepth::Sixteen, BitDepth::Eight]
     }
 
     /// Get appropriate depth for this image
     ///
     /// Float32 types, they are converted to Float16 types
-    fn default_depth(&self, depth: BitDepth) -> BitDepth
-    {
-        match depth
-        {
+    fn default_depth(&self, depth: BitDepth) -> BitDepth {
+        match depth {
             BitDepth::Float32 | BitDepth::Sixteen => BitDepth::Sixteen,
             _ => BitDepth::Eight
         }
@@ -102,16 +88,14 @@ impl<T> DecoderTrait for PPMDecoder<T>
 where
     T: ZReaderTrait
 {
-    fn decode(&mut self) -> Result<Image, ImageErrors>
-    {
+    fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
 
         let depth = self.get_bit_depth().unwrap();
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
-        let mut image = match pixels
-        {
+        let mut image = match pixels {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
             DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
             DecodingResult::F32(data) => Image::from_f32(&data, width, height, colorspace),
@@ -124,23 +108,19 @@ where
         Ok(image)
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
+    fn get_dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace
-    {
+    fn get_out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap_or(ColorSpace::Unknown)
     }
 
-    fn get_name(&self) -> &'static str
-    {
+    fn get_name(&self) -> &'static str {
         "PPM Decoder"
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
-    {
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
         self.read_headers()
             .map_err(<PPMDecodeErrors as Into<ImageErrors>>::into)?;
 
@@ -161,10 +141,8 @@ where
 }
 
 #[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMDecodeErrors> for ImageErrors
-{
-    fn from(from: zune_ppm::PPMDecodeErrors) -> Self
-    {
+impl From<zune_ppm::PPMDecodeErrors> for ImageErrors {
+    fn from(from: zune_ppm::PPMDecodeErrors) -> Self {
         let err = format!("ppm: {from:?}");
 
         ImageErrors::ImageDecodeErrors(err)
@@ -172,10 +150,8 @@ impl From<zune_ppm::PPMDecodeErrors> for ImageErrors
 }
 
 #[cfg(feature = "ppm")]
-impl From<zune_ppm::PPMEncodeErrors> for ImgEncodeErrors
-{
-    fn from(error: zune_ppm::PPMEncodeErrors) -> Self
-    {
+impl From<zune_ppm::PPMEncodeErrors> for ImgEncodeErrors {
+    fn from(error: zune_ppm::PPMEncodeErrors) -> Self {
         let err = format!("ppm: {error:?}");
 
         ImgEncodeErrors::ImageEncodeErrors(err)

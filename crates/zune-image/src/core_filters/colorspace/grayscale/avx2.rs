@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "avx2")]
 
@@ -10,8 +18,7 @@ use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
 #[target_feature(enable = "avx2")]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub(crate) unsafe fn convert_rgb_to_grayscale_u8_avx2(r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8])
-{
+pub(crate) unsafe fn convert_rgb_to_grayscale_u8_avx2(r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8]) {
     // Code is from https://stackoverflow.com/questions/57832444/efficient-c-code-no-libs-for-image-transformation-into-custom-rgb-pixel-grey
     // Code is from https://stackoverflow.com/questions/57832444/efficient-c-code-no-libs-for-image-transformation-into-custom-rgb-pixel-grey
     const CHUNK_SIZE: usize = 16;
@@ -66,8 +73,7 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_u8_avx2(r: &[u8], g: &[u8], b: &[u
         );
     }
     // remainders
-    if r.len() % CHUNK_SIZE != 0
-    {
+    if r.len() % CHUNK_SIZE != 0 {
         // do the remainder
         let rem = r.len() % CHUNK_SIZE;
         let start = r.len() - rem;

@@ -18,8 +18,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
 /// Errors possible during encoding
-pub enum FarbFeldEncoderErrors
-{
+pub enum FarbFeldEncoderErrors {
     /// Too large dimensions, above 2^32.
     /// Farbfeld uses 4 bytes for width and height, if image cannot fit in it
     /// then it's undefined
@@ -34,26 +33,19 @@ pub enum FarbFeldEncoderErrors
     TooShortInput(usize, usize)
 }
 
-impl Debug for FarbFeldEncoderErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            FarbFeldEncoderErrors::TooLargeDimensions(dims) =>
-            {
+impl Debug for FarbFeldEncoderErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            FarbFeldEncoderErrors::TooLargeDimensions(dims) => {
                 writeln!(f, "Too large dimensions {dims}")
             }
-            FarbFeldEncoderErrors::UnsupportedBitDepth(depth) =>
-            {
+            FarbFeldEncoderErrors::UnsupportedBitDepth(depth) => {
                 writeln!(f, "Unsupported bit depth {depth:?}")
             }
-            FarbFeldEncoderErrors::UnsupportedColorSpace(color) =>
-            {
+            FarbFeldEncoderErrors::UnsupportedColorSpace(color) => {
                 writeln!(f, "Unsupported color space {color:?}")
             }
-            FarbFeldEncoderErrors::TooShortInput(expected, found) =>
-            {
+            FarbFeldEncoderErrors::TooShortInput(expected, found) => {
                 writeln!(
                     f,
                     "Too short of input, expected {expected:?}, found {found:?}",
@@ -104,14 +96,12 @@ impl Debug for FarbFeldEncoderErrors
 /// // it expects native endian so no need to change
 /// FarbFeldEncoder::new(&alias,options).encode().unwrap();
 /// ```
-pub struct FarbFeldEncoder<'a>
-{
+pub struct FarbFeldEncoder<'a> {
     data:    &'a [u8],
     options: EncoderOptions
 }
 
-impl<'a> FarbFeldEncoder<'a>
-{
+impl<'a> FarbFeldEncoder<'a> {
     /// Create a new encode which will encode the specified data
     /// whose format is contained in options
     ///
@@ -119,26 +109,22 @@ impl<'a> FarbFeldEncoder<'a>
     /// - data: The data to encode
     /// - options: Meta information about the image
     ///  contains image width, color and depth
-    pub fn new(data: &'a [u8], options: EncoderOptions) -> FarbFeldEncoder<'a>
-    {
+    pub fn new(data: &'a [u8], options: EncoderOptions) -> FarbFeldEncoder<'a> {
         FarbFeldEncoder { data, options }
     }
 
-    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), FarbFeldEncoderErrors>
-    {
+    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), FarbFeldEncoderErrors> {
         // these routines panic because I need them
         // to panic as it is a me problem
         stream.write_all(b"farbfeld").unwrap();
 
-        if (self.options.get_width() as u64) > u64::from(u32::MAX)
-        {
+        if (self.options.get_width() as u64) > u64::from(u32::MAX) {
             // error out
             return Err(FarbFeldEncoderErrors::TooLargeDimensions(
                 self.options.get_width()
             ));
         }
-        if (self.options.get_height() as u64) > u64::from(u32::MAX)
-        {
+        if (self.options.get_height() as u64) > u64::from(u32::MAX) {
             return Err(FarbFeldEncoderErrors::TooLargeDimensions(
                 self.options.get_height()
             ));
@@ -152,16 +138,13 @@ impl<'a> FarbFeldEncoder<'a>
 
     /// Encode the contents returning a vector containing
     /// encoded contents or an error if anything occurs
-    pub fn encode(&self) -> Result<Vec<u8>, FarbFeldEncoderErrors>
-    {
-        if self.options.get_depth() != BitDepth::Sixteen
-        {
+    pub fn encode(&self) -> Result<Vec<u8>, FarbFeldEncoderErrors> {
+        if self.options.get_depth() != BitDepth::Sixteen {
             return Err(FarbFeldEncoderErrors::UnsupportedBitDepth(
                 self.options.get_depth()
             ));
         }
-        if self.options.get_colorspace() != ColorSpace::RGBA
-        {
+        if self.options.get_colorspace() != ColorSpace::RGBA {
             return Err(FarbFeldEncoderErrors::UnsupportedColorSpace(
                 self.options.get_colorspace()
             ));
@@ -170,8 +153,7 @@ impl<'a> FarbFeldEncoder<'a>
         let expected = calc_expected_size(self.options);
         let found = self.data.len();
 
-        if expected != found
-        {
+        if expected != found {
             return Err(FarbFeldEncoderErrors::TooShortInput(expected, found));
         }
 
@@ -185,8 +167,7 @@ impl<'a> FarbFeldEncoder<'a>
 
         // write in big endian
         // chunk in two and write to stream
-        for slice in self.data.chunks_exact(2)
-        {
+        for slice in self.data.chunks_exact(2) {
             let byte = u16::from_ne_bytes(slice.try_into().unwrap());
             stream.write_u16_be(byte)
         }
@@ -207,8 +188,7 @@ impl<'a> FarbFeldEncoder<'a>
 const FARBFELD_HEADER_SIZE: usize = 20;
 
 #[inline]
-fn calc_out_size(options: EncoderOptions) -> usize
-{
+fn calc_out_size(options: EncoderOptions) -> usize {
     options
         .get_width()
         .checked_mul(2)
@@ -221,8 +201,7 @@ fn calc_out_size(options: EncoderOptions) -> usize
         .unwrap()
 }
 
-fn calc_expected_size(options: EncoderOptions) -> usize
-{
+fn calc_expected_size(options: EncoderOptions) -> usize {
     calc_out_size(options)
         .checked_sub(FARBFELD_HEADER_SIZE)
         .unwrap()

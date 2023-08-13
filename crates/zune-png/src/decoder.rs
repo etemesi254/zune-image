@@ -35,18 +35,15 @@ use crate::utils::{
 /// The alpha field is used if the image has a tRNS
 /// chunk and pLTE chunk.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct PLTEEntry
-{
+pub(crate) struct PLTEEntry {
     pub red:   u8,
     pub green: u8,
     pub blue:  u8,
     pub alpha: u8
 }
 
-impl Default for PLTEEntry
-{
-    fn default() -> Self
-    {
+impl Default for PLTEEntry {
+    fn default() -> Self {
         // but a tRNS chunk may contain fewer values than there are palette entries.
         // In this case, the alpha value for all remaining palette entries is assumed to be 255
         PLTEEntry {
@@ -59,8 +56,7 @@ impl Default for PLTEEntry
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct PngChunk
-{
+pub(crate) struct PngChunk {
     pub length:     usize,
     pub chunk_type: PngChunkType,
     pub chunk:      [u8; 4],
@@ -71,8 +67,7 @@ pub(crate) struct PngChunk
 ///
 /// Extracted from tIME chunk
 #[derive(Debug, Default, Copy, Clone)]
-pub struct TimeInfo
-{
+pub struct TimeInfo {
     pub year:   u16,
     pub month:  u8,
     pub day:    u8,
@@ -87,8 +82,7 @@ pub struct TimeInfo
 ///
 /// Extracted from iXTt chunk where present
 #[derive(Clone)]
-pub struct ItxtChunk
-{
+pub struct ItxtChunk {
     pub keyword: Vec<u8>,
     pub text:    Vec<u8>
 }
@@ -99,8 +93,7 @@ pub struct ItxtChunk
 ///
 /// Extracted from tEXt chunk where present
 #[derive(Clone)]
-pub struct TextChunk
-{
+pub struct TextChunk {
     pub keyword: Vec<u8>,
     pub text:    Vec<u8>
 }
@@ -109,8 +102,7 @@ pub struct TextChunk
 ///
 /// Extracted from zTXt chunk where present
 #[derive(Clone)]
-pub struct ZtxtChunk
-{
+pub struct ZtxtChunk {
     pub keyword: Vec<u8>,
     /// Uncompressed text
     pub text:    Vec<u8>
@@ -119,8 +111,7 @@ pub struct ZtxtChunk
 /// Represents PNG information that can be extracted
 /// from a png file.
 #[derive(Default, Clone)]
-pub struct PngInfo
-{
+pub struct PngInfo {
     /// Image width
     pub width:                usize,
     /// Image height
@@ -186,8 +177,7 @@ where
     pub(crate) current_frame:   usize
 }
 
-impl<T: ZReaderTrait> PngDecoder<T>
-{
+impl<T: ZReaderTrait> PngDecoder<T> {
     /// Create a new PNG decoder
     ///
     /// # Arguments
@@ -198,8 +188,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// The decoder settings are set to be default which is
     ///  strict mode + intrinsics
-    pub fn new(data: T) -> PngDecoder<T>
-    {
+    pub fn new(data: T) -> PngDecoder<T> {
         let default_opt = DecoderOptions::default();
 
         PngDecoder::new_with_options(data, default_opt)
@@ -214,8 +203,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// returns: PngDecoder
     ///
     #[allow(unused_mut, clippy::redundant_field_names)]
-    pub fn new_with_options(data: T, options: DecoderOptions) -> PngDecoder<T>
-    {
+    pub fn new_with_options(data: T, options: DecoderOptions) -> PngDecoder<T> {
         PngDecoder {
             seen_hdr:        false,
             stream:          ZByteReader::new(data),
@@ -240,10 +228,8 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// - `Some((width,height))`
     /// - `None`: The image headers haven't been decoded
     ///   or there was an error decoding them
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if !self.seen_hdr
-        {
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if !self.seen_hdr {
             return None;
         }
 
@@ -256,14 +242,11 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// # Returns
     /// - `Some(depth)`:  The bit depth of the image.
     /// - `None`: The header wasn't decoded hence the depth wasn't discovered.
-    pub const fn get_depth(&self) -> Option<BitDepth>
-    {
-        if !self.seen_hdr
-        {
+    pub const fn get_depth(&self) -> Option<BitDepth> {
+        if !self.seen_hdr {
             return None;
         }
-        match self.png_info.depth
-        {
+        match self.png_info.depth {
             1 | 2 | 4 | 8 => Some(BitDepth::Eight),
             16 => Some(BitDepth::Sixteen),
             _ => unreachable!()
@@ -281,25 +264,19 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
     ///  - `None`: If the image headers haven't been decoded, or there was an error
     ///     during decoding
-    pub const fn get_colorspace(&self) -> Option<ColorSpace>
-    {
-        if !self.seen_hdr
-        {
+    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+        if !self.seen_hdr {
             return None;
         }
-        if self.options.png_get_add_alpha_channel()
-        {
-            return match self.png_info.color
-            {
+        if self.options.png_get_add_alpha_channel() {
+            return match self.png_info.color {
                 PngColor::Luma | PngColor::LumaA => Some(ColorSpace::LumaA),
                 PngColor::Palette | PngColor::RGB | PngColor::RGBA => Some(ColorSpace::RGBA),
                 PngColor::Unknown => unreachable!()
             };
         }
-        if !self.seen_trns
-        {
-            match self.png_info.color
-            {
+        if !self.seen_trns {
+            match self.png_info.color {
                 PngColor::Palette => Some(ColorSpace::RGB),
                 PngColor::Luma => Some(ColorSpace::Luma),
                 PngColor::LumaA => Some(ColorSpace::LumaA),
@@ -307,14 +284,11 @@ impl<T: ZReaderTrait> PngDecoder<T>
                 PngColor::RGBA => Some(ColorSpace::RGBA),
                 PngColor::Unknown => unreachable!()
             }
-        }
-        else
-        {
+        } else {
             // for tRNS chunks, RGB=>RGBA
             // Luma=>LumaA, but if we are already in RGB and RGBA, just return
             // them
-            match self.png_info.color
-            {
+            match self.png_info.color {
                 PngColor::Palette | PngColor::RGB => Some(ColorSpace::RGBA),
                 PngColor::Luma => Some(ColorSpace::LumaA),
                 PngColor::LumaA => Some(ColorSpace::LumaA),
@@ -334,19 +308,16 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// Such animated files can be decoded by this decoder, returning individual frames
     /// There are functions provided that allow you to further process
     /// such chunks to get the animated frames
-    pub fn is_animated(&self) -> bool
-    {
+    pub fn is_animated(&self) -> bool {
         self.actl_info.is_some() && self.frames.len() > 1
     }
 
     /// Return true if image has more frames available
-    pub fn more_frames(&self) -> bool
-    {
+    pub fn more_frames(&self) -> bool {
         self.frames.len() > self.current_frame
     }
 
-    pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors>
-    {
+    pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors> {
         // Format is length - chunk type - [data] -  crc chunk, load crc chunk now
         let chunk_length = self.stream.get_u32_be_err()? as usize;
         let chunk_type_int = self.stream.get_u32_be_err()?.to_be_bytes();
@@ -359,8 +330,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
         let crc = u32::from_be_bytes(crc_bytes);
 
-        let chunk_type = match &chunk_type_int
-        {
+        let chunk_type = match &chunk_type_int {
             b"IHDR" => PngChunkType::IHDR,
             b"tRNS" => PngChunkType::tRNS,
             b"PLTE" => PngChunkType::PLTE,
@@ -380,8 +350,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
             _ => PngChunkType::unkn
         };
 
-        if !self.stream.has(chunk_length + 4 /*crc stream*/)
-        {
+        if !self.stream.has(chunk_length + 4 /*crc stream*/) {
             let err = format!(
                 "Not enough bytes for chunk {:?}, bytes requested are {}, but bytes present are {}",
                 chunk_type,
@@ -393,8 +362,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
         }
         // Confirm the CRC here.
 
-        if self.options.png_get_confirm_crc()
-        {
+        if self.options.png_get_confirm_crc() {
             use crate::crc::crc32_slice8;
 
             // go back and point to chunk type.
@@ -405,8 +373,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
             // calculate crc
             let calc_crc = !crc32_slice8(bytes, u32::MAX);
 
-            if crc != calc_crc
-            {
+            if crc != calc_crc {
                 return Err(PngDecodeErrors::BadCrc(crc, calc_crc));
             }
             // go point after the chunk type
@@ -428,43 +395,35 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// After calling this, header information can
     /// be accessed by public headers
-    pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors>
-    {
-        if self.seen_headers && self.seen_iend
-        {
+    pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors> {
+        if self.seen_headers && self.seen_iend {
             return Ok(());
         }
-        if !self.seen_hdr
-        {
+        if !self.seen_hdr {
             // READ PNG signature
             let signature = self.stream.get_u64_be_err()?;
 
-            if signature != PNG_SIGNATURE
-            {
+            if signature != PNG_SIGNATURE {
                 return Err(PngDecodeErrors::BadSignature);
             }
             // check if first chunk is ihdr here
-            if self.stream.peek_at(4, 4)? != b"IHDR"
-            {
+            if self.stream.peek_at(4, 4)? != b"IHDR" {
                 return Err(PngDecodeErrors::GenericStatic(
                     "First chunk not IHDR, Corrupt PNG"
                 ));
             }
         }
-        loop
-        {
+        loop {
             let header = self.read_chunk_header()?;
 
             self.parse_header(header)?;
 
-            if header.chunk_type == PngChunkType::IEND
-            {
+            if header.chunk_type == PngChunkType::IEND {
                 break;
             }
             // break here, we already have content for one
             // frame, subsequent calls will fetch the next frames
-            if header.chunk_type == PngChunkType::fcTL
-            {
+            if header.chunk_type == PngChunkType::fcTL {
                 break;
             }
         }
@@ -472,60 +431,45 @@ impl<T: ZReaderTrait> PngDecoder<T>
         Ok(())
     }
 
-    pub(crate) fn parse_header(&mut self, header: PngChunk) -> Result<(), PngDecodeErrors>
-    {
-        match header.chunk_type
-        {
-            PngChunkType::IHDR =>
-            {
+    pub(crate) fn parse_header(&mut self, header: PngChunk) -> Result<(), PngDecodeErrors> {
+        match header.chunk_type {
+            PngChunkType::IHDR => {
                 self.parse_ihdr(header)?;
             }
-            PngChunkType::PLTE =>
-            {
+            PngChunkType::PLTE => {
                 self.parse_plte(header)?;
             }
-            PngChunkType::IDAT =>
-            {
+            PngChunkType::IDAT => {
                 self.parse_idat(header)?;
             }
-            PngChunkType::tRNS =>
-            {
+            PngChunkType::tRNS => {
                 self.parse_trns(header)?;
             }
-            PngChunkType::gAMA =>
-            {
+            PngChunkType::gAMA => {
                 self.parse_gama(header)?;
             }
-            PngChunkType::acTL =>
-            {
+            PngChunkType::acTL => {
                 self.parse_actl(header)?;
             }
-            PngChunkType::tIME =>
-            {
+            PngChunkType::tIME => {
                 self.parse_time(header)?;
             }
-            PngChunkType::eXIf =>
-            {
+            PngChunkType::eXIf => {
                 self.parse_exif(header)?;
             }
-            PngChunkType::iCCP =>
-            {
+            PngChunkType::iCCP => {
                 self.parse_iccp(header);
             }
-            PngChunkType::iTXt =>
-            {
+            PngChunkType::iTXt => {
                 self.parse_itxt(header);
             }
-            PngChunkType::zTXt =>
-            {
+            PngChunkType::zTXt => {
                 self.parse_ztxt(header);
             }
-            PngChunkType::tEXt =>
-            {
+            PngChunkType::tEXt => {
                 self.parse_text(header);
             }
-            PngChunkType::fcTL =>
-            {
+            PngChunkType::fcTL => {
                 // may read more headers internally
                 self.parse_fctl(header)?;
             }
@@ -533,8 +477,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
             _ => default_chunk_handler(header.length, header.chunk, &mut self.stream, header.crc)?
         }
 
-        if !self.seen_hdr
-        {
+        if !self.seen_hdr {
             return Err(GenericStatic("IHDR block not encountered,corrupt jpeg"));
         }
 
@@ -545,8 +488,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// If the image depth is less than 16 bit, then the endianness has
     /// no effect
-    pub const fn byte_endian(&self) -> ByteEndian
-    {
+    pub const fn byte_endian(&self) -> ByteEndian {
         self.options.get_byte_endian()
     }
 
@@ -559,10 +501,8 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// # Panics
     /// In case `width*height*colorspace` calculation may overflow a usize
-    pub fn output_buffer_size(&self) -> Option<usize>
-    {
-        if !self.seen_hdr
-        {
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        if !self.seen_hdr {
             return None;
         }
 
@@ -589,14 +529,10 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// # Returns
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
-    pub const fn get_info(&self) -> Option<&PngInfo>
-    {
-        if self.seen_headers
-        {
+    pub const fn get_info(&self) -> Option<&PngInfo> {
+        if self.seen_headers {
             Some(&self.png_info)
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -605,8 +541,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// Can be used to modify options before actual decoding but after initial
     /// creation
-    pub const fn get_options(&self) -> &DecoderOptions
-    {
+    pub const fn get_options(&self) -> &DecoderOptions {
         &self.options
     }
 
@@ -614,8 +549,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// Can be used to modify decoding after initialization but before
     /// decoding, it does not do anything after decoding an image
-    pub fn set_options(&mut self, options: DecoderOptions)
-    {
+    pub fn set_options(&mut self, options: DecoderOptions) {
         self.options = options;
     }
 
@@ -633,11 +567,9 @@ impl<T: ZReaderTrait> PngDecoder<T>
     /// - PNG uses Big Endian while most machines today are Little Endian (x86 and mainstream Arm),
     ///   hence if the configured endianness is little endian the library will implicitly convert
     ///   samples to little endian
-    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors>
-    {
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         // decode headers
-        if !self.seen_headers || !self.seen_iend
-        {
+        if !self.seen_headers || !self.seen_iend {
             self.decode_headers()?;
         }
 
@@ -645,12 +577,10 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
         info!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
 
-        if self.frames.get(self.current_frame).is_none()
-        {
+        if self.frames.get(self.current_frame).is_none() {
             return Err(PngDecodeErrors::GenericStatic("No more frames"));
         }
-        if self.frames[self.current_frame].fctl_info.is_none()
-        {
+        if self.frames[self.current_frame].fctl_info.is_none() {
             return Err(PngDecodeErrors::GenericStatic("Unimplemented frame info"));
         }
         let info = self.frames[self.current_frame].fctl_info.unwrap();
@@ -659,8 +589,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
         let image_len = self.output_buffer_size().unwrap();
 
-        if out.len() < image_len
-        {
+        if out.len() < image_len {
             return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
         }
 
@@ -674,20 +603,16 @@ impl<T: ZReaderTrait> PngDecoder<T>
         // remove idat chunks from memory
         // we are already done with them.
 
-        if png_info.interlace_method == InterlaceMethod::Standard
-        {
+        if png_info.interlace_method == InterlaceMethod::Standard {
             // allocate out to be enough to hold raw decoded bytes
 
             self.create_png_image_raw(&deflate_data, info.width, info.height, out, &png_info)?;
-        }
-        else if png_info.interlace_method == InterlaceMethod::Adam7
-        {
+        } else if png_info.interlace_method == InterlaceMethod::Adam7 {
             self.decode_interlaced(&deflate_data, out, &png_info, &info)?;
         }
 
         // convert to set endian if need be
-        if self.get_depth().unwrap() == BitDepth::Sixteen
-        {
+        if self.get_depth().unwrap() == BitDepth::Sixteen {
             convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
         }
         // one more frame decoded
@@ -702,10 +627,8 @@ impl<T: ZReaderTrait> PngDecoder<T>
     ///
     /// returns: `Result<Vec<u8, Global>, PngErrors>`
     ///
-    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
-    {
-        if !self.seen_headers
-        {
+    pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
+        if !self.seen_headers {
             self.decode_headers()?;
         }
 
@@ -720,8 +643,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
     fn decode_interlaced(
         &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo, frame_info: &FrameInfo
-    ) -> Result<(), PngDecodeErrors>
-    {
+    ) -> Result<(), PngDecodeErrors> {
         const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
         const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
 
@@ -744,8 +666,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
         let mut image_offset = 0;
 
         // get the maximum height and width for the whole interlace part
-        for p in 0..7
-        {
+        for p in 0..7 {
             let x = (frame_info
                 .width
                 .saturating_sub(XORIG[p])
@@ -760,8 +681,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                 .saturating_sub(1))
                 / YSPC[p];
 
-            if x != 0 && y != 0
-            {
+            if x != 0 && y != 0 {
                 let mut image_len = usize::from(info.color.num_components()) * x;
 
                 image_len *= usize::from(info.depth);
@@ -770,8 +690,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                 image_len += 1; // filter byte
                 image_len *= y;
 
-                if image_offset + image_len > deflate_data.len()
-                {
+                if image_offset + image_len > deflate_data.len() {
                     return Err(PngDecodeErrors::GenericStatic("Too short data"));
                 }
 
@@ -779,10 +698,8 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
                 self.create_png_image_raw(deflate_slice, x, y, &mut final_out, info)?;
 
-                for j in 0..y
-                {
-                    for i in 0..x
-                    {
+                for j in 0..y {
+                    for i in 0..x {
                         let out_y = j * YSPC[p] + YORIG[p];
                         let out_x = i * XSPC[p] + XORIG[p];
 
@@ -894,8 +811,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
     #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
     fn create_png_image_raw(
         &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8], info: &PngInfo
-    ) -> Result<(), PngDecodeErrors>
-    {
+    ) -> Result<(), PngDecodeErrors> {
         let use_sse4 = self.options.use_sse41();
         let use_sse2 = self.options.use_sse2();
 
@@ -928,8 +844,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
         let mut chunk_size;
         let mut components = usize::from(info.color.num_components()) * bytes;
 
-        if info.depth < 8
-        {
+        if info.depth < 8 {
             // if the bit depth is 8, the spec says the byte before
             // X to be used by the filter
             components = 1;
@@ -962,14 +877,12 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
         will_post_process |= add_alpha_channel;
 
-        if will_post_process && self.previous_stride.len() < out_chunk_size
-        {
+        if will_post_process && self.previous_stride.len() < out_chunk_size {
             self.previous_stride.resize(out_chunk_size, 0);
         }
         let n_components = usize::from(info.color.num_components());
 
-        for (i, in_stride) in chunks.take(height).enumerate()
-        {
+        for (i, in_stride) in chunks.take(height).enumerate() {
             // Split output into current and previous
             // current points to the start of the row where we are writing de-filtered output to
             // prev is all rows we already wrote output to.
@@ -983,8 +896,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
             // row, we actually take the real slice a line down
             let mut prev_row: &[u8] = &[0_u8];
 
-            if !first_row
-            {
+            if !first_row {
                 // normal bit depth, use the previous row as normal
                 prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
                 prev_row_start += out_chunk_size;
@@ -1001,31 +913,26 @@ impl<T: ZReaderTrait> PngDecoder<T>
             let mut filter = FilterMethod::from_int(filter_byte)
                 .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))?;
 
-            if first_row
-            {
+            if first_row {
                 // match our filters to special filters for first row
                 // these special filters do not need the previous scanline and treat it
                 // as zero
 
-                if filter == FilterMethod::Paeth
-                {
+                if filter == FilterMethod::Paeth {
                     filter = FilterMethod::PaethFirst;
                 }
-                if filter == FilterMethod::Up
-                {
+                if filter == FilterMethod::Up {
                     // up for the first row becomes a memcpy
                     filter = FilterMethod::None;
                 }
-                if filter == FilterMethod::Average
-                {
+                if filter == FilterMethod::Average {
                     filter = FilterMethod::AvgFirst;
                 }
 
                 first_row = false;
             }
 
-            match filter
-            {
+            match filter {
                 FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
 
                 FilterMethod::Average => handle_avg(prev_row, raw, current, components, use_sse4),
@@ -1043,21 +950,18 @@ impl<T: ZReaderTrait> PngDecoder<T>
                 FilterMethod::Unknown => unreachable!()
             }
 
-            if will_post_process && i > 0
-            {
+            if will_post_process && i > 0 {
                 // run the post processor two scanlines behind so that we
                 // don't mess with any filters that require previous row
 
                 // read the row we are about to filter
                 let to_filter_row = &mut prev[(i - 1) * out_chunk_size..(i) * out_chunk_size];
 
-                if info.depth < 8
-                {
+                if info.depth < 8 {
                     // check if we will run any other transform
                     let extra_transform = self.seen_ptle | self.seen_trns | add_alpha_channel;
 
-                    if extra_transform
-                    {
+                    if extra_transform {
                         // input data is  in_to_filter_row,
                         // we write output to previous_stride
                         // since other parts use previous_stride
@@ -1069,9 +973,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             to_filter_row,
                             &mut self.previous_stride
                         )
-                    }
-                    else
-                    {
+                    } else {
                         // no extra transform, just depth upscaling, so let's
                         // do that,
 
@@ -1088,21 +990,17 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             to_filter_row
                         )
                     }
-                }
-                else
-                {
+                } else {
                     // copy the row to a temporary space
                     self.previous_stride[..width_stride]
                         .copy_from_slice(&to_filter_row[..width_stride]);
                 }
 
-                if self.seen_trns && self.png_info.color != PngColor::Palette
-                {
+                if self.seen_trns && self.png_info.color != PngColor::Palette {
                     // the expansion is a trns expansion
                     // bytes are already in position, so finish the business
 
-                    if info.depth <= 8
-                    {
+                    if info.depth <= 8 {
                         expand_trns::<false>(
                             &self.previous_stride,
                             to_filter_row,
@@ -1110,9 +1008,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             self.trns_bytes,
                             info.depth
                         );
-                    }
-                    else if info.depth == 16
-                    {
+                    } else if info.depth == 16 {
                         // Tested by test_palette_trns_16bit.
                         expand_trns::<true>(
                             &self.previous_stride,
@@ -1124,10 +1020,8 @@ impl<T: ZReaderTrait> PngDecoder<T>
                     }
                 }
 
-                if self.seen_ptle && self.png_info.color == PngColor::Palette
-                {
-                    if self.palette.is_empty()
-                    {
+                if self.seen_ptle && self.png_info.color == PngColor::Palette {
+                    if self.palette.is_empty() {
                         return Err(PngDecodeErrors::EmptyPalette);
                     }
                     let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
@@ -1137,8 +1031,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                     // the row to fill the palette sored in to_filter row,
                     // so we can finally expand the entries
 
-                    if self.seen_trns | add_alpha_channel
-                    {
+                    if self.seen_trns | add_alpha_channel {
                         // if tRNS chunk is present in paletted images, it contains
                         // alpha byte values, so that means we create alpha data from
                         // raw bytes
@@ -1149,15 +1042,11 @@ impl<T: ZReaderTrait> PngDecoder<T>
                         // The palette is set that the alpha channel is initialized as 255 for non alpha
                         // images,
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
-                    }
-                    else
-                    {
+                    } else {
                         // Normal expansion
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
                     }
-                }
-                else if add_alpha_channel
-                {
+                } else if add_alpha_channel {
                     // the image is a normal RGB/ Luma image, which we need to add the alpha channel
                     // do it here
                     add_alpha(
@@ -1170,19 +1059,15 @@ impl<T: ZReaderTrait> PngDecoder<T>
             }
         }
 
-        if will_post_process
-        {
-            for i in height..height + min(height, 1)
-            {
+        if will_post_process {
+            for i in height..height + min(height, 1) {
                 let to_filter_row = &mut out[(i - 1) * out_chunk_size..i * out_chunk_size];
 
                 // check if we will run any other transform
                 let extra_transform = self.seen_ptle | self.seen_trns;
 
-                if info.depth < 8
-                {
-                    if extra_transform
-                    {
+                if info.depth < 8 {
+                    if extra_transform {
                         // input data is  in_to_filter_row,
                         // we write output to previous_stride
                         // since other parts use previous_stride
@@ -1194,9 +1079,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             to_filter_row,
                             &mut self.previous_stride
                         )
-                    }
-                    else
-                    {
+                    } else {
                         // no extra transform, just depth upscaling, so let's
                         // do that,
 
@@ -1213,20 +1096,16 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             to_filter_row
                         )
                     }
-                }
-                else
-                {
+                } else {
                     // copy the row to a temporary space
                     self.previous_stride[..width_stride]
                         .copy_from_slice(&to_filter_row[..width_stride]);
                 }
-                if self.seen_trns && self.png_info.color != PngColor::Palette
-                {
+                if self.seen_trns && self.png_info.color != PngColor::Palette {
                     // the expansion is a trns expansion
                     // bytes are already in position, so finish the business
 
-                    if info.depth <= 8
-                    {
+                    if info.depth <= 8 {
                         expand_trns::<false>(
                             &self.previous_stride,
                             to_filter_row,
@@ -1234,9 +1113,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
                             self.trns_bytes,
                             info.depth
                         );
-                    }
-                    else if info.depth == 16
-                    {
+                    } else if info.depth == 16 {
                         // Tested by test_palette_trns_16bit.
                         expand_trns::<true>(
                             &self.previous_stride,
@@ -1247,26 +1124,19 @@ impl<T: ZReaderTrait> PngDecoder<T>
                         );
                     }
                 }
-                if self.seen_ptle && self.png_info.color == PngColor::Palette
-                {
-                    if self.palette.is_empty()
-                    {
+                if self.seen_ptle && self.png_info.color == PngColor::Palette {
+                    if self.palette.is_empty() {
                         return Err(PngDecodeErrors::EmptyPalette);
                     }
 
                     let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
 
-                    if self.seen_trns | add_alpha_channel
-                    {
+                    if self.seen_trns | add_alpha_channel {
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
-                    }
-                    else
-                    {
+                    } else {
                         expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
                     }
-                }
-                else if add_alpha_channel
-                {
+                } else if add_alpha_channel {
                     add_alpha(
                         &self.previous_stride,
                         to_filter_row,
@@ -1281,8 +1151,7 @@ impl<T: ZReaderTrait> PngDecoder<T>
 
     /// Undo deflate decoding
     #[allow(clippy::manual_memcpy)]
-    fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors>
-    {
+    fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         let flat_data = &self.frames[self.current_frame];
 
         // An annoying thing is that deflate doesn't

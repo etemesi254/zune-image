@@ -10,8 +10,7 @@ use alloc::string::String;
 use core::fmt::{Debug, Formatter};
 
 /// BMP errors that can occur during decoding
-pub enum BmpDecoderErrors
-{
+pub enum BmpDecoderErrors {
     /// The file/bytes do not start with `BM`
     InvalidMagicBytes,
     /// The output buffer is too small, expected at least
@@ -26,37 +25,29 @@ pub enum BmpDecoderErrors
     TooLargeDimensions(&'static str, usize, usize)
 }
 
-impl Debug for BmpDecoderErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            Self::InvalidMagicBytes =>
-            {
+impl Debug for BmpDecoderErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidMagicBytes => {
                 writeln!(f, "Invalid magic bytes, file does not start with BM")
             }
-            Self::TooSmallBuffer(expected, found) =>
-            {
+            Self::TooSmallBuffer(expected, found) => {
                 writeln!(
                     f,
                     "Too small of buffer, expected {} but found {}",
                     expected, found
                 )
             }
-            Self::GenericStatic(header) =>
-            {
+            Self::GenericStatic(header) => {
                 writeln!(f, "{}", header)
             }
-            Self::TooLargeDimensions(dimension, expected, found) =>
-            {
+            Self::TooLargeDimensions(dimension, expected, found) => {
                 writeln!(
                     f,
                     "Too large dimensions for {dimension} , {found} exceeds {expected}"
                 )
             }
-            Self::Generic(message) =>
-            {
+            Self::Generic(message) => {
                 writeln!(f, "{}", message)
             }
         }

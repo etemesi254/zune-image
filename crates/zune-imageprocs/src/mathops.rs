@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Mathematical operations shared amongst functions
 
 /// Implement fast integer division from
@@ -7,8 +15,7 @@
 /// Software: Practice and Experience  49 (6), 2019.
 #[inline(always)]
 #[must_use]
-pub fn compute_mod_u32(d: u64) -> u128
-{
+pub fn compute_mod_u32(d: u64) -> u128 {
     // operator precedence will be the end of me,,
     return (u128::from(0xFFFF_FFFF_FFFF_FFFF_u64) / u128::from(d)) + 1;
 }
@@ -32,17 +39,14 @@ pub fn compute_mod_u32(d: u64) -> u128
 #[inline(always)]
 #[allow(clippy::cast_possible_truncation)]
 #[must_use]
-pub fn fastdiv_u32(a: u32, m: u128) -> u32
-{
+pub fn fastdiv_u32(a: u32, m: u128) -> u32 {
     return ((m * u128::from(a)) >> 64) as u32;
 }
 
 /// Test fast_div works
 #[test]
-fn test_u8_div()
-{
-    for i in 1..1000
-    {
+fn test_u8_div() {
+    for i in 1..1000 {
         let num = compute_mod_u32(i);
         let divisor = fastdiv_u32(13459, num);
 

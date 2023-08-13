@@ -21,8 +21,7 @@ where
 {
     let chunk_name = core::str::from_utf8(&chunk_type).unwrap_or("XXXX");
 
-    if chunk_type[0] & (1 << 5) == 0
-    {
+    if chunk_type[0] & (1 << 5) == 0 {
         return Err(PngDecodeErrors::Generic(format!(
             "Marker {chunk_name} unknown but deemed necessary",
         )));

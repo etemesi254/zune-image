@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::File;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -10,16 +18,11 @@ use zune_core::options::DecoderOptions;
 use crate::serde::Metadata;
 
 /// Probe input files, extract metadata, and print to standard output.
-pub fn probe_input_files(args: &ArgMatches)
-{
-    if let Some(view) = args.value_source("probe")
-    {
-        if view == CommandLine
-        {
-            for in_file in args.get_raw("in").unwrap()
-            {
-                if PathBuf::from(in_file).exists()
-                {
+pub fn probe_input_files(args: &ArgMatches) {
+    if let Some(view) = args.value_source("probe") {
+        if view == CommandLine {
+            for in_file in args.get_raw("in").unwrap() {
+                if PathBuf::from(in_file).exists() {
                     let file = File::open(in_file).unwrap();
                     let file_size = file.metadata().unwrap().len();
                     // Unsafety: Mmap in Linux is not protected, interesting things
@@ -41,8 +44,7 @@ pub fn probe_input_files(args: &ArgMatches)
                             .get_decoder_with_options(file_contents, options)
                             .unwrap();
 
-                        if let Ok(Some(metadata)) = decoder.read_headers()
-                        {
+                        if let Ok(Some(metadata)) = decoder.read_headers() {
                             let real_metadata =
                                 Metadata::new(in_file.to_os_string(), file_size, &metadata);
 

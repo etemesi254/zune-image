@@ -21,8 +21,7 @@ use crate::constants::{
 use crate::errors::QoiErrors;
 
 #[allow(non_camel_case_types)]
-enum QoiColorspace
-{
+enum QoiColorspace {
     sRGB,
     // SRGB with Linear alpha
     Linear
@@ -71,8 +70,7 @@ where
     /// let mut decoder = zune_qoi::QoiDecoder::new(&[]);
     /// // additional code
     /// ```
-    pub fn new(data: T) -> QoiDecoder<T>
-    {
+    pub fn new(data: T) -> QoiDecoder<T> {
         QoiDecoder::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new QOI format decoder that obeys specified restrictions
@@ -94,8 +92,7 @@ where
     /// let mut decoder=QoiDecoder::new_with_options(&[],options);
     /// ```
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(data: T, options: DecoderOptions) -> QoiDecoder<T>
-    {
+    pub fn new_with_options(data: T, options: DecoderOptions) -> QoiDecoder<T> {
         QoiDecoder {
             width:             0,
             height:            0,
@@ -117,12 +114,10 @@ where
     ///     error type will be an instance of [QoiErrors]
     ///
     /// [QoiErrors]:crate::errors::QoiErrors
-    pub fn decode_headers(&mut self) -> Result<(), QoiErrors>
-    {
+    pub fn decode_headers(&mut self) -> Result<(), QoiErrors> {
         let header_bytes = 4/*magic*/ + 8/*Width+height*/ + 1/*channels*/ + 1 /*colorspace*/;
 
-        if !self.stream.has(header_bytes)
-        {
+        if !self.stream.has(header_bytes) {
             return Err(QoiErrors::InsufficientData(
                 header_bytes,
                 self.stream.remaining()
@@ -131,8 +126,7 @@ where
         // match magic bytes.
         let magic = self.stream.get(4).unwrap();
 
-        if magic != b"qoif"
-        {
+        if magic != b"qoif" {
             return Err(QoiErrors::WrongMagicBytes);
         }
 
@@ -143,8 +137,7 @@ where
         let colorspace = self.stream.get_u8();
         let colorspace_layout = self.stream.get_u8();
 
-        if width > self.options.get_max_width()
-        {
+        if width > self.options.get_max_width() {
             let msg = format!(
                 "Width {} greater than max configured width {}",
                 width,
@@ -153,8 +146,7 @@ where
             return Err(QoiErrors::Generic(msg));
         }
 
-        if height > self.options.get_max_height()
-        {
+        if height > self.options.get_max_height() {
             let msg = format!(
                 "Height {} greater than max configured height {}",
                 height,
@@ -163,24 +155,18 @@ where
             return Err(QoiErrors::Generic(msg));
         }
 
-        self.colorspace = match colorspace
-        {
+        self.colorspace = match colorspace {
             3 => ColorSpace::RGB,
             4 => ColorSpace::RGBA,
             _ => return Err(QoiErrors::UnknownChannels(colorspace))
         };
-        self.colorspace_layout = match colorspace_layout
-        {
+        self.colorspace_layout = match colorspace_layout {
             0 => QoiColorspace::sRGB,
             1 => QoiColorspace::Linear,
-            _ =>
-            {
-                if self.options.get_strict_mode()
-                {
+            _ => {
+                if self.options.get_strict_mode() {
                     return Err(QoiErrors::UnknownColorspace(colorspace_layout));
-                }
-                else
-                {
+                } else {
                     error!("Unknown/invalid colorspace value {colorspace_layout}, expected 0 or 1");
                     QoiColorspace::sRGB
                 }
@@ -205,17 +191,13 @@ where
     ///
     /// # Panics
     /// In case `width*height*colorspace` calculation may overflow a usize
-    pub fn output_buffer_size(&self) -> Option<usize>
-    {
-        if self.decoded_headers
-        {
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        if self.decoded_headers {
             self.width
                 .checked_mul(self.height)
                 .unwrap()
                 .checked_mul(self.colorspace.num_components())
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -235,10 +217,8 @@ where
     /// [`decode_headers`]:Self::decode_headers
     /// [`get_dimensions`]:Self::get_dimensions
     /// [QoiErrors]:crate::errors::QoiErrors
-    pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors>
-    {
-        if !self.decoded_headers
-        {
+    pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors> {
+        if !self.decoded_headers {
             self.decode_headers()?;
         }
         let mut output = vec![0; self.output_buffer_size().unwrap()];
@@ -261,23 +241,19 @@ where
     ///
     /// returns: Result<(), QoiErrors>
     #[allow(clippy::identity_op)]
-    pub fn decode_into(&mut self, pixels: &mut [u8]) -> Result<(), QoiErrors>
-    {
-        if !self.decoded_headers
-        {
+    pub fn decode_into(&mut self, pixels: &mut [u8]) -> Result<(), QoiErrors> {
+        if !self.decoded_headers {
             self.decode_headers()?;
         }
 
-        if pixels.len() < self.output_buffer_size().unwrap()
-        {
+        if pixels.len() < self.output_buffer_size().unwrap() {
             return Err(QoiErrors::InsufficientData(
                 self.output_buffer_size().unwrap(),
                 pixels.len()
             ));
         }
 
-        match self.colorspace.num_components()
-        {
+        match self.colorspace.num_components() {
             3 => self.decode_inner_generic::<3>(pixels)?,
             4 => self.decode_inner_generic::<4>(pixels)?,
             _ => unreachable!()
@@ -286,8 +262,7 @@ where
     }
     fn decode_inner_generic<const SIZE: usize>(
         &mut self, pixels: &mut [u8]
-    ) -> Result<(), QoiErrors>
-    {
+    ) -> Result<(), QoiErrors> {
         const LAST_BYTES: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
 
         let mut index = [[0_u8; 4]; 64];
@@ -296,58 +271,41 @@ where
 
         let mut run = 0;
 
-        for pix_chunk in pixels.chunks_exact_mut(SIZE)
-        {
-            if run > 0
-            {
+        for pix_chunk in pixels.chunks_exact_mut(SIZE) {
+            if run > 0 {
                 run -= 1;
                 pix_chunk.copy_from_slice(&px[0..SIZE]);
-            }
-            else if !self.stream.has(5)
-            {
+            } else if !self.stream.has(5) {
                 // worst case should be chunk type + RGBA
                 // too little bytes
                 return Err(QoiErrors::InsufficientData(5, self.stream.remaining()));
-            }
-            else
-            {
+            } else {
                 let chunk = self.stream.get_u8();
 
-                if SIZE == 3 && chunk == QOI_OP_RGB
-                {
+                if SIZE == 3 && chunk == QOI_OP_RGB {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<3>();
 
                     px[0] = packed_bytes[0];
                     px[1] = packed_bytes[1];
                     px[2] = packed_bytes[2];
-                }
-                else if SIZE == 4 && chunk == QOI_OP_RGBA
-                {
+                } else if SIZE == 4 && chunk == QOI_OP_RGBA {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<4>();
 
                     px.copy_from_slice(&packed_bytes);
-                }
-                else if (chunk & QOI_MASK_2) == QOI_OP_INDEX
-                {
+                } else if (chunk & QOI_MASK_2) == QOI_OP_INDEX {
                     px.copy_from_slice(&index[usize::from(chunk) & 63]);
-                }
-                else if (chunk & QOI_MASK_2) == QOI_OP_DIFF
-                {
+                } else if (chunk & QOI_MASK_2) == QOI_OP_DIFF {
                     px[0] = px[0].wrapping_add(((chunk >> 4) & 0x03).wrapping_sub(2));
                     px[1] = px[1].wrapping_add(((chunk >> 2) & 0x03).wrapping_sub(2));
                     px[2] = px[2].wrapping_add(((chunk >> 0) & 0x03).wrapping_sub(2));
-                }
-                else if (chunk & QOI_MASK_2) == QOI_OP_LUMA
-                {
+                } else if (chunk & QOI_MASK_2) == QOI_OP_LUMA {
                     let b2 = self.stream.get_u8();
                     let vg = (chunk & 0x3f).wrapping_sub(32);
 
                     px[0] = px[0].wrapping_add(vg.wrapping_sub(8).wrapping_add((b2 >> 4) & 0x0f));
                     px[1] = px[1].wrapping_add(vg);
                     px[2] = px[2].wrapping_add(vg.wrapping_sub(8).wrapping_add((b2 >> 0) & 0x0f));
-                }
-                else if (chunk & QOI_MASK_2) == QOI_OP_RUN
-                {
+                } else if (chunk & QOI_MASK_2) == QOI_OP_RUN {
                     run = usize::from(chunk & 0x3f);
                 }
 
@@ -367,8 +325,7 @@ where
         }
         let remaining = self.stream.remaining_bytes();
 
-        if remaining != LAST_BYTES
-        {
+        if remaining != LAST_BYTES {
             return Err(QoiErrors::GenericStatic(
                 "Last bytes do not match QOI signature"
             ));
@@ -390,14 +347,10 @@ where
     ///
     /// [RGB]: zune_core::colorspace::ColorSpace::RGB
     /// [RGBA]: zune_core::colorspace::ColorSpace::RGB
-    pub const fn get_colorspace(&self) -> Option<ColorSpace>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+        if self.decoded_headers {
             Some(self.colorspace)
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -418,8 +371,7 @@ where
     /// ```
     ///
     /// [`BitDepth::U8`]:zune_core::bit_depth::BitDepth::Eight
-    pub const fn get_bit_depth(&self) -> BitDepth
-    {
+    pub const fn get_bit_depth(&self) -> BitDepth {
         BitDepth::Eight
     }
 
@@ -442,10 +394,8 @@ where
     /// // get dimensions now.
     /// let (w,h)=decoder.get_dimensions().unwrap();
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if self.decoded_headers {
             return Some((self.width, self.height));
         }
         None

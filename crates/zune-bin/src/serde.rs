@@ -1,20 +1,25 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::ffi::OsString;
 
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use zune_image::metadata::ImageMetadata;
 
-pub struct Metadata<'a>
-{
+pub struct Metadata<'a> {
     file:     OsString,
     size:     u64,
     metadata: &'a ImageMetadata
 }
 
-impl<'a> Metadata<'a>
-{
-    pub fn new(file: OsString, size: u64, metadata: &ImageMetadata) -> Metadata
-    {
+impl<'a> Metadata<'a> {
+    pub fn new(file: OsString, size: u64, metadata: &ImageMetadata) -> Metadata {
         Metadata {
             file,
             size,
@@ -23,8 +28,7 @@ impl<'a> Metadata<'a>
     }
 }
 
-impl<'a> Serialize for Metadata<'a>
-{
+impl<'a> Serialize for Metadata<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer

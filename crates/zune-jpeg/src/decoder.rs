@@ -13,10 +13,9 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
-use zune_core::options::{DecoderOptions, EncoderOptions};
+use zune_core::options::DecoderOptions;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
@@ -69,8 +68,7 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// An encapsulation of an ICC chunk
-pub(crate) struct ICCChunk
-{
+pub(crate) struct ICCChunk {
     pub(crate) seq_no:      u8,
     pub(crate) num_markers: u8,
     pub(crate) data:        Vec<u8>
@@ -78,8 +76,7 @@ pub(crate) struct ICCChunk
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
-pub struct JpegDecoder<T: ZReaderTrait>
-{
+pub struct JpegDecoder<T: ZReaderTrait> {
     /// Struct to hold image information from SOI
     pub(crate) info:              ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
@@ -156,8 +153,7 @@ where
     T: ZReaderTrait
 {
     #[allow(clippy::redundant_field_names)]
-    fn default(options: DecoderOptions, buffer: T) -> Self
-    {
+    fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
             info:              ImageInfo::default(),
@@ -202,8 +198,7 @@ where
     ///
     /// # Errors
     /// See DecodeErrors for an explanation
-    pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors>
-    {
+    pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_headers()?;
         let size = self.output_buffer_size().unwrap();
         let mut out = vec![0; size];
@@ -217,8 +212,7 @@ where
     ///  - `stream`: The raw bytes of a jpeg file.
     #[must_use]
     #[allow(clippy::new_without_default)]
-    pub fn new(stream: T) -> JpegDecoder<T>
-    {
+    pub fn new(stream: T) -> JpegDecoder<T> {
         JpegDecoder::default(DecoderOptions::default(), stream)
     }
 
@@ -234,14 +228,12 @@ where
     /// [`decode`]: JpegDecoder::decode
     /// [`decode_headers`]: JpegDecoder::decode_headers
     #[must_use]
-    pub fn info(&self) -> Option<ImageInfo>
-    {
+    pub fn info(&self) -> Option<ImageInfo> {
         // we check for fails to that call by comparing what we have to the default, if
         // it's default we assume that the caller failed to uphold the
         // guarantees. We can be sure that an image cannot be the default since
         // its a hard panic in-case width or height are set to zero.
-        if !self.headers_decoded
-        {
+        if !self.headers_decoded {
             return None;
         }
 
@@ -258,10 +250,8 @@ where
     /// # Panics
     /// In case `width*height*colorspace` calculation may overflow a usize
     #[must_use]
-    pub fn output_buffer_size(&self) -> Option<usize>
-    {
-        return if self.headers_decoded
-        {
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        return if self.headers_decoded {
             Some(
                 usize::from(self.width())
                     .checked_mul(usize::from(self.height()))
@@ -269,9 +259,7 @@ where
                     .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
                     .unwrap()
             )
-        }
-        else
-        {
+        } else {
             None
         };
     }
@@ -296,8 +284,7 @@ where
     ///
     /// ```
     #[must_use]
-    pub const fn get_options(&self) -> &DecoderOptions
-    {
+    pub const fn get_options(&self) -> &DecoderOptions {
         &self.options
     }
     /// Return the input colorspace of the image
@@ -310,8 +297,7 @@ where
     /// -`Some(Colorspace)`: Input colorspace
     /// - None : Indicates the headers weren't decoded
     #[must_use]
-    pub fn get_input_colorspace(&self) -> Option<ColorSpace>
-    {
+    pub fn get_input_colorspace(&self) -> Option<ColorSpace> {
         return if self.headers_decoded { Some(self.input_colorspace) } else { None };
     }
     /// Set decoder options
@@ -337,8 +323,7 @@ where
     /// // now decode
     /// decoder.decode().unwrap();
     /// ```
-    pub fn set_options(&mut self, options: DecoderOptions)
-    {
+    pub fn set_options(&mut self, options: DecoderOptions) {
         self.options = options;
     }
     /// Decode Decoder headers
@@ -356,10 +341,8 @@ where
     ///  - SOF(n) -> Decoder images which are not baseline/progressive
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
-    fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors>
-    {
-        if self.headers_decoded
-        {
+    fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors> {
+        if self.headers_decoded {
             trace!("Headers decoded!");
             return Ok(());
         }
@@ -374,8 +357,7 @@ where
         if matches!(
             out_colorspace,
             ColorSpace::BGR | ColorSpace::BGRA | ColorSpace::RGB | ColorSpace::RGBA
-        )
-        {
+        ) {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
                 self.options.jpeg_get_out_colorspace(),
                 &self.options
@@ -388,13 +370,11 @@ where
         let mut last_byte = 0;
         let mut bytes_before_marker = 0;
 
-        if magic_bytes != 0xffd8
-        {
+        if magic_bytes != 0xffd8 {
             return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
         }
 
-        loop
-        {
+        loop {
             // read a byte
             let mut m = self.stream.get_u8_err()?;
 
@@ -402,8 +382,7 @@ where
             // bitstreams because why not.
             //
             // I am disappointed as a man.
-            if (m == 0xFF || m == 0) && last_byte == 0xFF
-            {
+            if (m == 0xFF || m == 0) && last_byte == 0xFF {
                 // This handles the edge case where
                 // images have markers with fill bytes(0xFF)
                 // or byte stuffing (0)
@@ -414,21 +393,17 @@ where
                 // I don't know why such images exist
                 // but they do.
                 // so this is for you (with love)
-                while m == 0xFF || m == 0x0
-                {
+                while m == 0xFF || m == 0x0 {
                     last_byte = m;
                     m = self.stream.get_u8_err()?;
                 }
             }
             // Last byte should be 0xFF to confirm existence of a marker since markers look
             // like OxFF(some marker data)
-            if last_byte == 0xFF
-            {
+            if last_byte == 0xFF {
                 let marker = Marker::from_u8(m);
-                if let Some(n) = marker
-                {
-                    if bytes_before_marker > 3
-                    {
+                if let Some(n) = marker {
+                    if bytes_before_marker > 3 {
                         if self.options.get_strict_mode()
                         /*No reason to use this*/
                         {
@@ -448,23 +423,19 @@ where
 
                     self.parse_marker_inner(n)?;
 
-                    if n == Marker::SOS
-                    {
+                    if n == Marker::SOS {
                         self.headers_decoded = true;
                         trace!("Input colorspace {:?}", self.input_colorspace);
                         return Ok(());
                     }
-                }
-                else
-                {
+                } else {
                     bytes_before_marker = 0;
 
                     warn!("Marker 0xFF{:X} not known", m);
 
                     let length = self.stream.get_u16_be_err()?;
 
-                    if length < 2
-                    {
+                    if length < 2 {
                         return Err(DecodeErrors::Format(format!(
                             "Found a marker with invalid length : {length}"
                         )));
@@ -479,20 +450,14 @@ where
         }
     }
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors>
-    {
-        match m
-        {
-            Marker::SOF(0 | 1 | 2) =>
-            {
+    pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
+        match m {
+            Marker::SOF(0 | 1 | 2) => {
                 let marker = {
                     // choose marker
-                    if m == Marker::SOF(0) || m == Marker::SOF(1)
-                    {
+                    if m == Marker::SOF(0) || m == Marker::SOF(1) {
                         SOFMarkers::BaselineDct
-                    }
-                    else
-                    {
+                    } else {
                         self.is_progressive = true;
                         SOFMarkers::ProgressiveDctHuffman
                     }
@@ -503,35 +468,29 @@ where
                 parse_start_of_frame(marker, self)?;
             }
             // Start of Frame Segments not supported
-            Marker::SOF(v) =>
-            {
+            Marker::SOF(v) => {
                 let feature = UnsupportedSchemes::from_int(v);
 
-                if let Some(feature) = feature
-                {
+                if let Some(feature) = feature {
                     return Err(DecodeErrors::Unsupported(feature));
                 }
 
                 return Err(DecodeErrors::Format("Unsupported image format".to_string()));
             }
             //APP(0) segment
-            Marker::APP(0) =>
-            {
+            Marker::APP(0) => {
                 let mut length = self.stream.get_u16_be_err()?;
 
-                if length < 2
-                {
+                if length < 2 {
                     return Err(DecodeErrors::Format(format!(
                         "Found a marker with invalid length:{length}\n"
                     )));
                 }
                 // skip for now
-                if length > 5 && self.stream.has(5)
-                {
+                if length > 5 && self.stream.has(5) {
                     let mut buffer = [0u8; 5];
                     self.stream.read_exact(&mut buffer).unwrap();
-                    if &buffer == b"AVI1\0"
-                    {
+                    if &buffer == b"AVI1\0" {
                         self.is_mjpeg = true;
                     }
                     length -= 5;
@@ -540,28 +499,23 @@ where
 
                 //parse_app(buf, m, &mut self.info)?;
             }
-            Marker::APP(1) =>
-            {
+            Marker::APP(1) => {
                 parse_app1(self)?;
             }
 
-            Marker::APP(2) =>
-            {
+            Marker::APP(2) => {
                 parse_app2(self)?;
             }
             // Quantization tables
-            Marker::DQT =>
-            {
+            Marker::DQT => {
                 parse_dqt(self)?;
             }
             // Huffman tables
-            Marker::DHT =>
-            {
+            Marker::DHT => {
                 parse_huffman(self)?;
             }
             // Start of Scan Data
-            Marker::SOS =>
-            {
+            Marker::SOS => {
                 parse_sos(self)?;
 
                 // break after reading the start of scan.
@@ -570,19 +524,16 @@ where
             }
             Marker::EOI => return Err(DecodeErrors::FormatStatic("Premature End of image")),
 
-            Marker::DAC | Marker::DNL =>
-            {
+            Marker::DAC | Marker::DNL => {
                 return Err(DecodeErrors::Format(format!(
                     "Parsing of the following header `{m:?}` is not supported,\
                                 cannot continue"
                 )));
             }
-            Marker::DRI =>
-            {
+            Marker::DRI => {
                 trace!("DRI marker present");
 
-                if self.stream.get_u16_be_err()? != 4
-                {
+                if self.stream.get_u16_be_err()? != 4 {
                     return Err(DecodeErrors::Format(
                         "Bad DRI length, Corrupt JPEG".to_string()
                     ));
@@ -591,12 +542,10 @@ where
                 self.restart_interval = usize::from(self.stream.get_u16_be_err()?);
                 self.todo = self.restart_interval;
             }
-            Marker::APP(14) =>
-            {
+            Marker::APP(14) => {
                 parse_app14(self)?;
             }
-            _ =>
-            {
+            _ => {
                 warn!(
                     "Capabilities for processing marker \"{:?}\" not implemented",
                     m
@@ -604,8 +553,7 @@ where
 
                 let length = self.stream.get_u16_be_err()?;
 
-                if length < 2
-                {
+                if length < 2 {
                     return Err(DecodeErrors::Format(format!(
                         "Found a marker with invalid length:{length}\n"
                     )));
@@ -630,35 +578,28 @@ where
     ///
     /// [`decode_headers`]:Self::decode_headers
     #[must_use]
-    pub fn icc_profile(&self) -> Option<Vec<u8>>
-    {
+    pub fn icc_profile(&self) -> Option<Vec<u8>> {
         let mut marker_present: [Option<&ICCChunk>; 256] = [None; 256];
 
-        if !self.headers_decoded
-        {
+        if !self.headers_decoded {
             return None;
         }
         let num_markers = self.icc_data.len();
 
-        if num_markers == 0 || num_markers >= 255
-        {
+        if num_markers == 0 || num_markers >= 255 {
             return None;
         }
         // check validity
-        for chunk in &self.icc_data
-        {
-            if usize::from(chunk.num_markers) != num_markers
-            {
+        for chunk in &self.icc_data {
+            if usize::from(chunk.num_markers) != num_markers {
                 // all the lengths must match
                 return None;
             }
-            if chunk.seq_no == 0
-            {
+            if chunk.seq_no == 0 {
                 warn!("Zero sequence number in ICC, corrupt ICC chunk");
                 return None;
             }
-            if marker_present[usize::from(chunk.seq_no)].is_some()
-            {
+            if marker_present[usize::from(chunk.seq_no)].is_some() {
                 // duplicate seq_no
                 warn!("Duplicate sequence number in ICC, corrupt chunk");
                 return None;
@@ -668,14 +609,10 @@ where
         }
         let mut data = Vec::with_capacity(1000);
         // assemble the data now
-        for chunk in marker_present.get(1..=num_markers).unwrap()
-        {
-            if let Some(ch) = chunk
-            {
+        for chunk in marker_present.get(1..=num_markers).unwrap() {
+            if let Some(ch) = chunk {
                 data.extend_from_slice(&ch.data);
-            }
-            else
-            {
+            } else {
                 warn!("Missing icc sequence number, corrupt ICC chunk ");
                 return None;
             }
@@ -695,8 +632,7 @@ where
     ///    1. The image doesn't have exif data
     ///    2. The image headers haven't been decoded
     #[must_use]
-    pub fn exif(&self) -> Option<&Vec<u8>>
-    {
+    pub fn exif(&self) -> Option<&Vec<u8>> {
         return self.exif_data.as_ref();
     }
     /// Get the output colorspace the image pixels will be decoded into
@@ -720,14 +656,10 @@ where
     ///output array will be in
     ///- `None
     #[must_use]
-    pub fn get_output_colorspace(&self) -> Option<ColorSpace>
-    {
-        return if self.headers_decoded
-        {
+    pub fn get_output_colorspace(&self) -> Option<ColorSpace> {
+        return if self.headers_decoded {
             Some(self.options.jpeg_get_out_colorspace())
-        }
-        else
-        {
+        } else {
             None
         };
     }
@@ -756,14 +688,12 @@ where
     /// ```
     ///
     ///
-    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors>
-    {
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         self.decode_headers_internal()?;
 
         let expected_size = self.output_buffer_size().unwrap();
 
-        if out.len() < expected_size
-        {
+        if out.len() < expected_size {
             // too small of a size
             return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
         }
@@ -772,12 +702,9 @@ where
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
 
-        if self.is_progressive
-        {
+        if self.is_progressive {
             self.decode_mcu_ycbcr_progressive(out)
-        }
-        else
-        {
+        } else {
             self.decode_mcu_ycbcr_baseline(out)
         }
     }
@@ -800,8 +727,7 @@ where
     /// ```
     /// # Errors
     /// See DecodeErrors enum for list of possible errors during decoding
-    pub fn decode_headers(&mut self) -> Result<(), DecodeErrors>
-    {
+    pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
         self.decode_headers_internal()?;
         Ok(())
     }
@@ -812,26 +738,21 @@ where
     /// - `buf`: The input buffer from where we will pull in compressed jpeg bytes from
     /// - `options`: Options specific to this decoder instance
     #[must_use]
-    pub fn new_with_options(buf: T, options: DecoderOptions) -> JpegDecoder<T>
-    {
+    pub fn new_with_options(buf: T, options: DecoderOptions) -> JpegDecoder<T> {
         JpegDecoder::default(options, buf)
     }
 
     /// Set up-sampling routines in case an image is down sampled
-    pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors>
-    {
+    pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors> {
         // no sampling, return early
         // check if horizontal max ==1
-        if self.h_max == self.v_max && self.h_max == 1
-        {
+        if self.h_max == self.v_max && self.h_max == 1 {
             return Ok(());
         }
 
         // match for other ratios
-        match (self.h_max, self.v_max)
-        {
-            (2, 1) =>
-            {
+        match (self.h_max, self.v_max) {
+            (2, 1) => {
                 self.sub_sample_ratio = SampleRatios::H;
                 // horizontal sub-sampling
                 trace!("Horizontal sub-sampling (2,1)");
@@ -843,8 +764,7 @@ where
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
             }
-            (1, 2) =>
-            {
+            (1, 2) => {
                 self.sub_sample_ratio = SampleRatios::V;
                 // Vertical sub-sampling
                 trace!("Vertical sub-sampling (1,2)");
@@ -854,8 +774,7 @@ where
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
             }
-            (2, 2) =>
-            {
+            (2, 2) => {
                 self.sub_sample_ratio = SampleRatios::HV;
                 // vertical and horizontal sub sampling
                 trace!("Vertical and horizontal sub-sampling(2,2)");
@@ -865,8 +784,7 @@ where
                     x.setup_upsample_scanline(self.h_max, self.v_max);
                 });
             }
-            (_, _) =>
-            {
+            (_, _) => {
                 // no op. Do nothing
                 // Jokes , panic...
                 return Err(DecodeErrors::Format(
@@ -881,8 +799,7 @@ where
     /// Get the width of the image as a u16
     ///
     /// The width lies between 1 and 65535
-    pub(crate) fn width(&self) -> u16
-    {
+    pub(crate) fn width(&self) -> u16 {
         self.info.width
     }
 
@@ -890,8 +807,7 @@ where
     ///
     /// The height lies between 1 and 65535
     #[must_use]
-    pub(crate) fn height(&self) -> u16
-    {
+    pub(crate) fn height(&self) -> u16 {
         self.info.height
     }
 
@@ -902,14 +818,10 @@ where
     /// - `Some(width,height)`: Image dimensions
     /// -  None : The image headers haven't been decoded
     #[must_use]
-    pub const fn dimensions(&self) -> Option<(u16, u16)>
-    {
-        return if self.headers_decoded
-        {
+    pub const fn dimensions(&self) -> Option<(u16, u16)> {
+        return if self.headers_decoded {
             Some((self.info.width, self.info.height))
-        }
-        else
-        {
+        } else {
             None
         };
     }
@@ -918,8 +830,7 @@ where
 /// A struct representing Image Information
 #[derive(Default, Clone, Eq, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
-pub struct ImageInfo
-{
+pub struct ImageInfo {
     /// Width of the image
     pub width:         u16,
     /// Height of image
@@ -936,14 +847,12 @@ pub struct ImageInfo
     pub components:    u8
 }
 
-impl ImageInfo
-{
+impl ImageInfo {
     /// Set width of the image
     ///
     /// Found in the start of frame
 
-    pub(crate) fn set_width(&mut self, width: u16)
-    {
+    pub(crate) fn set_width(&mut self, width: u16) {
         self.width = width;
     }
 
@@ -951,8 +860,7 @@ impl ImageInfo
     ///
     /// Found in the start of frame
 
-    pub(crate) fn set_height(&mut self, height: u16)
-    {
+    pub(crate) fn set_height(&mut self, height: u16) {
         self.height = height;
     }
 
@@ -960,8 +868,7 @@ impl ImageInfo
     ///
     /// Found in the start of frame
 
-    pub(crate) fn set_density(&mut self, density: u8)
-    {
+    pub(crate) fn set_density(&mut self, density: u8) {
         self.pixel_density = density;
     }
 
@@ -969,8 +876,7 @@ impl ImageInfo
     ///
     /// found in the Start of frame header
 
-    pub(crate) fn set_sof_marker(&mut self, marker: SOFMarkers)
-    {
+    pub(crate) fn set_sof_marker(&mut self, marker: SOFMarkers) {
         self.sof = marker;
     }
 
@@ -978,8 +884,7 @@ impl ImageInfo
     ///
     /// Found in the APP(0) marker
     #[allow(dead_code)]
-    pub(crate) fn set_x(&mut self, sample: u16)
-    {
+    pub(crate) fn set_x(&mut self, sample: u16) {
         self.x_density = sample;
     }
 
@@ -987,8 +892,7 @@ impl ImageInfo
     ///
     /// Found in the APP(0) marker
     #[allow(dead_code)]
-    pub(crate) fn set_y(&mut self, sample: u16)
-    {
+    pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
     }
 }

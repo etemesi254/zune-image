@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Image metadata
 //!
 //! This module provides the ability to store image metadata and transfer it
@@ -13,8 +21,7 @@ mod exif;
 /// is pre multiplied with it's alpha
 /// or it's not
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum AlphaState
-{
+pub enum AlphaState {
     PreMultiplied,
     NonPreMultiplied
 }
@@ -24,8 +31,7 @@ pub enum AlphaState
 /// The decoder usually sets this up while the encoder
 /// can get these details from the user/image struct
 #[derive(Clone, Debug)]
-pub struct ImageMetadata
-{
+pub struct ImageMetadata {
     // REMEMBER: If you add a field here add it's serialization
     // to mod file
     pub(crate) color_trc:     Option<ColorCharacteristics>,
@@ -40,10 +46,8 @@ pub struct ImageMetadata
     pub(crate) exif:          Option<Vec<::exif::Field>>
 }
 
-impl Default for ImageMetadata
-{
-    fn default() -> Self
-    {
+impl Default for ImageMetadata {
+    fn default() -> Self {
         ImageMetadata {
             color_trc: None,
             default_gamma: None,
@@ -59,8 +63,7 @@ impl Default for ImageMetadata
     }
 }
 
-impl ImageMetadata
-{
+impl ImageMetadata {
     /// Get image dimensions as a tuple of width and height
     ///  
     /// # Example
@@ -71,8 +74,7 @@ impl ImageMetadata
     /// // default dimensions are usually zero
     /// assert_eq!(meta.get_dimensions(),(0,0));
     /// ```
-    pub const fn get_dimensions(&self) -> (usize, usize)
-    {
+    pub const fn get_dimensions(&self) -> (usize, usize) {
         (self.width, self.height)
     }
     /// Set image dimensions
@@ -86,8 +88,7 @@ impl ImageMetadata
     /// // get image dimensions
     /// assert_eq!(meta.get_dimensions(),(23,24));
     /// ```
-    pub fn set_dimensions(&mut self, width: usize, height: usize)
-    {
+    pub fn set_dimensions(&mut self, width: usize, height: usize) {
         self.width = width;
         self.height = height;
     }
@@ -95,13 +96,11 @@ impl ImageMetadata
     ///
     /// The default colorspace is usually [`ColorSpace::Unknown`](zune_core::colorspace::ColorSpace::Unknown)
     /// which represents an uninitialized image
-    pub const fn get_colorspace(&self) -> ColorSpace
-    {
+    pub const fn get_colorspace(&self) -> ColorSpace {
         self.colorspace
     }
     /// Set the image's colorspace
-    pub fn set_colorspace(&mut self, colorspace: ColorSpace)
-    {
+    pub fn set_colorspace(&mut self, colorspace: ColorSpace) {
         self.colorspace = colorspace;
     }
     /// Get color transfer characteristics
@@ -109,13 +108,11 @@ impl ImageMetadata
     /// Color transfer characteristics tell us more about how
     /// the colorspace values are represented
     /// whether they are linear or gamma encoded
-    pub const fn get_color_trc(&self) -> Option<ColorCharacteristics>
-    {
+    pub const fn get_color_trc(&self) -> Option<ColorCharacteristics> {
         self.color_trc
     }
     /// Set color transfer characteristics for this image
-    pub fn set_color_trc(&mut self, trc: ColorCharacteristics)
-    {
+    pub fn set_color_trc(&mut self, trc: ColorCharacteristics) {
         self.color_trc = Some(trc);
     }
     /// Get the image bit depth
@@ -123,13 +120,11 @@ impl ImageMetadata
     /// Default value is [`BitDepth::Unknown`](zune_core::bit_depth::BitDepth::Unknown)
     /// which indicates that the bit-depth is currently unknown for a
     /// particular image
-    pub const fn get_depth(&self) -> BitDepth
-    {
+    pub const fn get_depth(&self) -> BitDepth {
         self.depth
     }
     /// Set the image bit depth
-    pub fn set_depth(&mut self, depth: BitDepth)
-    {
+    pub fn set_depth(&mut self, depth: BitDepth) {
         self.depth = depth;
     }
     /// Set the default gamma for this image
@@ -145,16 +140,14 @@ impl ImageMetadata
     ///
     /// # Arguments
     /// - gamma : The new gamma value
-    pub fn set_default_gamma(&mut self, gamma: f32)
-    {
+    pub fn set_default_gamma(&mut self, gamma: f32) {
         self.default_gamma = Some(gamma);
     }
 
     /// Get the image for which this metadata was fetched from
     ///
     /// May be None if the caller didn't set a format
-    pub const fn get_image_format(&self) -> Option<ImageFormat>
-    {
+    pub const fn get_image_format(&self) -> Option<ImageFormat> {
         self.format
     }
 }

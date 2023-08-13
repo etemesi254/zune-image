@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::ops::Sub;
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
@@ -37,18 +45,12 @@ where
     // Probably due to better pipelining.
     let mod_len = compute_mod_u32(u64::from(len));
 
-    for pixel in image.iter_mut()
-    {
-        if *pixel >= upper
-        {
+    for pixel in image.iter_mut() {
+        if *pixel >= upper {
             *pixel = T::max_val();
-        }
-        else if *pixel <= lower
-        {
+        } else if *pixel <= lower {
             *pixel = T::min_val();
-        }
-        else
-        {
+        } else {
             let numerator = maximum * u32::from(*pixel - lower);
             let scaled = fastdiv_u32(numerator, mod_len);
             *pixel = T::from_u32(scaled);
@@ -58,15 +60,13 @@ where
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::stretch_contrast::stretch_contrast;
 
     #[bench]
-    fn bench_stretch_contrast(b: &mut test::Bencher)
-    {
+    fn bench_stretch_contrast(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let dimensions = width * height;

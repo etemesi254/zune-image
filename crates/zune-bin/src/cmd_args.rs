@@ -21,24 +21,19 @@ pub mod arg_parsers;
 pub mod help_strings;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum MmapOptions
-{
+pub enum MmapOptions {
     No,
     Always,
     Auto
 }
 
-impl ValueEnum for MmapOptions
-{
-    fn value_variants<'a>() -> &'a [Self]
-    {
+impl ValueEnum for MmapOptions {
+    fn value_variants<'a>() -> &'a [Self] {
         &[Self::No, Self::Auto, Self::Always]
     }
 
-    fn to_possible_value(&self) -> Option<PossibleValue>
-    {
-        Some(match self
-        {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
             Self::No => PossibleValue::new("no"),
             Self::Always => PossibleValue::new("always"),
             Self::Auto => PossibleValue::new("auto")
@@ -106,8 +101,7 @@ pub fn create_cmd_args() -> Command {
         .group(encode_group)
 }
 
-fn add_logging_options() -> [Arg; 4]
-{
+fn add_logging_options() -> [Arg; 4] {
     [
         Arg::new("debug")
             .long("debug")
@@ -131,8 +125,8 @@ fn add_logging_options() -> [Arg; 4]
             .help("Display information about the decoding options")
     ]
 }
-fn add_settings() -> Vec<Arg>
-{
+
+fn add_settings() -> Vec<Arg> {
     const HELP_HEADING: &str = "Image Settings";
     let mut args = [
         Arg::new("colorspace")
@@ -173,8 +167,7 @@ fn add_settings() -> Vec<Arg>
     args.to_vec()
 }
 
-fn add_operations() -> (Vec<Arg>, ArgGroup)
-{
+fn add_operations() -> (Vec<Arg>, ArgGroup) {
     static HELP_HEADING: &str = "Image Operations";
     static GROUP: &str = "Operations";
 
@@ -300,8 +293,7 @@ fn add_operations() -> (Vec<Arg>, ArgGroup)
     (args.to_vec(), arg_group)
 }
 
-fn add_encode_options() -> (Vec<Arg>, ArgGroup)
-{
+fn add_encode_options() -> (Vec<Arg>, ArgGroup) {
     static HELP_HEADING: &str = "Encode Operations";
     static GROUP: &str = "Encode operations";
     let mut args = [
@@ -348,8 +340,7 @@ fn add_encode_options() -> (Vec<Arg>, ArgGroup)
     (args.to_vec(), arg_group)
 }
 
-fn add_filters() -> (Vec<Arg>, ArgGroup)
-{
+fn add_filters() -> (Vec<Arg>, ArgGroup) {
     static GROUP: &str = "filters";
 
     let mut args = [
@@ -420,7 +411,6 @@ fn add_filters() -> (Vec<Arg>, ArgGroup)
 }
 
 #[test]
-fn verify_cli()
-{
+fn verify_cli() {
     create_cmd_args().debug_assert();
 }

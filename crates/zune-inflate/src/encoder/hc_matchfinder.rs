@@ -78,8 +78,7 @@ const HASH_FOUR_SIZE: usize = 1 << HASH_FOUR_LOG_SIZE;
 #[allow(clippy::too_many_lines, unused_assignments)]
 pub fn compress_block(
     src: &[u8], dest: &mut [u8], table: &mut HcMatchFinder, sequences: &mut EncodedSequences
-) -> usize
-{
+) -> usize {
     let mut window_start = 0;
     let mut literals_before_match = 0;
     let skip_literals = 1;
@@ -88,19 +87,15 @@ pub fn compress_block(
 
     let mut sequence = MatchSequence::default();
 
-    'match_loop: loop
-    {
+    'match_loop: loop {
         // main match finder loop
-        'inner_loop: loop
-        {
-            if window_start + skip_literals + DEFLATE_WINDOW_SIZE > src.len()
-            {
+        'inner_loop: loop {
+            if window_start + skip_literals + DEFLATE_WINDOW_SIZE > src.len() {
                 // close to input end
                 break 'match_loop;
             }
 
-            if table.longest_four_match(src, window_start, literals_before_match, &mut sequence)
-            {
+            if table.longest_four_match(src, window_start, literals_before_match, &mut sequence) {
                 sequence.ll = literals_before_match;
                 break 'inner_loop;
             }
@@ -118,8 +113,7 @@ pub fn compress_block(
 
         sequence.ml = 0;
 
-        if window_start + DEFLATE_WINDOW_SIZE + skip_literals > src.len()
-        {
+        if window_start + DEFLATE_WINDOW_SIZE + skip_literals > src.len() {
             // close to input end
             break 'match_loop;
         }
@@ -145,8 +139,7 @@ pub fn compress_block(
     return out_position;
 }
 
-pub struct HcMatchFinder
-{
+pub struct HcMatchFinder {
     next_hash:    [usize; 2],
     hc_tab:       [u32; 1 << HASH_FOUR_LOG_SIZE],
     next_tab:     Box<[u32; DEFLATE_MAX_BLOCK_SIZE]>,
@@ -155,13 +148,11 @@ pub struct HcMatchFinder
     nice_length:  usize
 }
 
-impl HcMatchFinder
-{
+impl HcMatchFinder {
     /// create a new match finder
     pub fn new(
         buf_size: usize, search_depth: i32, min_length: usize, nice_length: usize
-    ) -> HcMatchFinder
-    {
+    ) -> HcMatchFinder {
         let n_tab = vec![0; buf_size].into_boxed_slice();
         //debug_assert!(min_length == 4);
         HcMatchFinder {
@@ -174,16 +165,14 @@ impl HcMatchFinder
         }
     }
 
-    pub fn reset(&mut self)
-    {
+    pub fn reset(&mut self) {
         self.hc_tab.fill(0);
         self.next_hash.fill(0);
     }
     #[inline(always)]
     pub fn longest_four_match(
         &mut self, bytes: &[u8], start: usize, literal_length: usize, sequence: &mut MatchSequence
-    ) -> bool
-    {
+    ) -> bool {
         let curr_start = &bytes[start..];
         // store the current first byte in the hash, we use this to
         // determine if a match is either a true mach or a hash collision
@@ -206,8 +195,7 @@ impl HcMatchFinder
         self.next_hash[1] = n_hash4 as usize;
         let mut match_found = false;
 
-        if cur_offset != 0
-        {
+        if cur_offset != 0 {
             // top byte is usually first match offset, so remove it
             let mut first_match_byte = cur_offset >> FIRST_BYTE_OFFSET;
 
@@ -215,20 +203,16 @@ impl HcMatchFinder
 
             let mut depth = self.search_depth;
 
-            'outer: loop
-            {
-                if cur_offset == 0 || depth <= 0
-                {
+            'outer: loop {
+                if cur_offset == 0 || depth <= 0 {
                     return match_found;
                 }
-                'inner: loop
-                {
+                'inner: loop {
                     depth -= 1;
 
                     // compare first byte usually stored in hc_tab and next tab for
                     // the offset
-                    if first_match_byte == curr_match_byte
-                    {
+                    if first_match_byte == curr_match_byte {
                         // found a possible match, break to see how
                         // long it is
                         // this calls into extend
@@ -239,15 +223,13 @@ impl HcMatchFinder
                     first_match_byte = cur_offset >> FIRST_BYTE_OFFSET;
                     cur_offset &= (1 << FIRST_BYTE_OFFSET) - 1;
 
-                    if depth <= 0 || cur_offset == 0
-                    {
+                    if depth <= 0 || cur_offset == 0 {
                         // no match found
                         // go and try the other tab
                         break 'outer;
                     }
                 }
-                if match_found
-                {
+                if match_found {
                     // we have a previous match, check if current match length will go past
                     // the previous match length by looking at the byte in current length plus 1
                     // if they match, then this has the potential to beat the previous ML
@@ -255,8 +237,7 @@ impl HcMatchFinder
                     // N.B: This may read +1 byte past curr_start, but that is okay
                     let curr_match_end = curr_start[sequence.ml];
 
-                    if prev_match_end != curr_match_end
-                    {
+                    if prev_match_end != curr_match_end {
                         // go to next node
                         cur_offset = self.next_tab[cur_offset % DEFLATE_MAX_BLOCK_SIZE] as usize;
                         first_match_byte = cur_offset >> FIRST_BYTE_OFFSET;
@@ -280,8 +261,7 @@ impl HcMatchFinder
 
                     match_found = true;
 
-                    if new_match_length > self.nice_length
-                    {
+                    if new_match_length > self.nice_length {
                         return true;
                     }
                 }
@@ -297,13 +277,10 @@ impl HcMatchFinder
     }
 
     #[inline(always)]
-    pub fn advance_four_match(&mut self, window_start: &[u8], mut start: usize, mut length: usize)
-    {
-        if (start + length + 100) < window_start.len()
-        {
+    pub fn advance_four_match(&mut self, window_start: &[u8], mut start: usize, mut length: usize) {
+        if (start + length + 100) < window_start.len() {
             let mut hash4 = self.next_hash[1];
-            loop
-            {
+            loop {
                 let next_window = &window_start[start + 1..];
 
                 let curr_byte = u32::from(window_start[start]) << FIRST_BYTE_OFFSET;
@@ -315,8 +292,7 @@ impl HcMatchFinder
                 hash4 = v_hash(next_window, HASH_FOUR_LOG_SIZE, self.min_length);
                 length -= 1;
 
-                if length == 0
-                {
+                if length == 0 {
                     break;
                 }
             }
@@ -325,8 +301,7 @@ impl HcMatchFinder
     }
 }
 
-pub fn count(window: &[u8], match_window: &[u8], max_match: usize) -> usize
-{
+pub fn count(window: &[u8], match_window: &[u8], max_match: usize) -> usize {
     /*
      * This is pretty neat and worth an explanation
      * a ^ b ==  0  if a==b
@@ -348,18 +323,14 @@ pub fn count(window: &[u8], match_window: &[u8], max_match: usize) -> usize
     // let it be one less max match to ensure we never go past that
     let num_iters = (max_match / SIZE).saturating_sub(1);
 
-    for (sm_window, sm_match) in window_chunks.zip(match_chunks).take(num_iters)
-    {
+    for (sm_window, sm_match) in window_chunks.zip(match_chunks).take(num_iters) {
         let sm_w: usize = usize::from_ne_bytes(sm_window.try_into().unwrap());
         let sm_m: usize = usize::from_ne_bytes(sm_match.try_into().unwrap());
         let diff = sm_w ^ sm_m; // it's associative.
 
-        if diff == 0
-        {
+        if diff == 0 {
             match_length += SIZE;
-        }
-        else
-        {
+        } else {
             // naa they don't match fully
             match_length += (diff.trailing_zeros() >> 3) as usize;
             return match_length;

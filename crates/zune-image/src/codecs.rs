@@ -55,15 +55,11 @@ pub mod psd;
 pub mod qoi;
 pub(crate) fn create_options_for_encoder(
     options: Option<EncoderOptions>, image: &Image
-) -> EncoderOptions
-{
+) -> EncoderOptions {
     // choose if we take options from pre-configured , or we create default options
-    let start_options = if let Some(configured_opts) = options
-    {
+    let start_options = if let Some(configured_opts) = options {
         configured_opts
-    }
-    else
-    {
+    } else {
         EncoderOptions::default()
     };
     let (width, height) = image.get_dimensions();
@@ -80,8 +76,7 @@ pub(crate) fn create_options_for_encoder(
 /// encoders or decoders for a particular image
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum ImageFormat
-{
+pub enum ImageFormat {
     /// Joint Photographic Experts Group
     JPEG,
     /// Portable Network Graphics
@@ -104,33 +99,27 @@ pub enum ImageFormat
     Unknown
 }
 
-impl ImageFormat
-{
+impl ImageFormat {
     /// Return true if an image format has an encoder that can convert the image
     /// into that format
-    pub fn has_encoder(self) -> bool
-    {
+    pub fn has_encoder(self) -> bool {
         return self.get_encoder().is_some();
     }
 
-    pub fn has_decoder(self) -> bool
-    {
+    pub fn has_decoder(self) -> bool {
         return self.get_decoder(&[]).is_ok();
     }
-    pub fn get_decoder<'a>(&self, data: &'a [u8])
-        -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
-    {
+    pub fn get_decoder<'a>(
+        &self, data: &'a [u8]
+    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors> {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
 
     pub fn get_decoder_with_options<'a>(
         &self, data: &'a [u8], options: DecoderOptions
-    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
-    {
-        match self
-        {
-            ImageFormat::JPEG =>
-            {
+    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors> {
+        match self {
+            ImageFormat::JPEG => {
                 #[cfg(feature = "jpeg")]
                 {
                     Ok(Box::new(zune_jpeg::JpegDecoder::new_with_options(
@@ -143,8 +132,7 @@ impl ImageFormat
                 }
             }
 
-            ImageFormat::PNG =>
-            {
+            ImageFormat::PNG => {
                 #[cfg(feature = "png")]
                 {
                     Ok(Box::new(zune_png::PngDecoder::new_with_options(
@@ -156,8 +144,7 @@ impl ImageFormat
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
-            ImageFormat::PPM =>
-            {
+            ImageFormat::PPM => {
                 #[cfg(feature = "ppm")]
                 {
                     Ok(Box::new(zune_ppm::PPMDecoder::new_with_options(
@@ -169,8 +156,7 @@ impl ImageFormat
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
-            ImageFormat::PSD =>
-            {
+            ImageFormat::PSD => {
                 #[cfg(feature = "ppm")]
                 {
                     Ok(Box::new(zune_psd::PSDDecoder::new_with_options(
@@ -183,8 +169,7 @@ impl ImageFormat
                 }
             }
 
-            ImageFormat::Farbfeld =>
-            {
+            ImageFormat::Farbfeld => {
                 #[cfg(feature = "farbfeld")]
                 {
                     Ok(Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
@@ -197,8 +182,7 @@ impl ImageFormat
                 }
             }
 
-            ImageFormat::QOI =>
-            {
+            ImageFormat::QOI => {
                 #[cfg(feature = "qoi")]
                 {
                     Ok(Box::new(zune_qoi::QoiDecoder::new_with_options(
@@ -210,8 +194,7 @@ impl ImageFormat
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
-            ImageFormat::HDR =>
-            {
+            ImageFormat::HDR => {
                 #[cfg(feature = "hdr")]
                 {
                     Ok(Box::new(zune_hdr::HdrDecoder::new_with_options(
@@ -223,8 +206,7 @@ impl ImageFormat
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
-            ImageFormat::BMP =>
-            {
+            ImageFormat::BMP => {
                 #[cfg(feature = "bmp")]
                 {
                     Ok(Box::new(zune_bmp::BmpDecoder::new_with_options(
@@ -241,17 +223,14 @@ impl ImageFormat
         }
     }
 
-    pub fn get_encoder(&self) -> Option<Box<dyn EncoderTrait>>
-    {
+    pub fn get_encoder(&self) -> Option<Box<dyn EncoderTrait>> {
         self.get_encoder_with_options(EncoderOptions::default())
     }
-    pub fn get_encoder_with_options(&self, options: EncoderOptions)
-        -> Option<Box<dyn EncoderTrait>>
-    {
-        match self
-        {
-            Self::PPM =>
-            {
+    pub fn get_encoder_with_options(
+        &self, options: EncoderOptions
+    ) -> Option<Box<dyn EncoderTrait>> {
+        match self {
+            Self::PPM => {
                 #[cfg(feature = "ppm")]
                 {
                     Some(Box::new(crate::codecs::ppm::PPMEncoder::new_with_options(
@@ -263,8 +242,7 @@ impl ImageFormat
                     None
                 }
             }
-            Self::QOI =>
-            {
+            Self::QOI => {
                 #[cfg(feature = "qoi")]
                 {
                     Some(Box::new(crate::codecs::qoi::QoiEncoder::new_with_options(
@@ -276,8 +254,7 @@ impl ImageFormat
                     None
                 }
             }
-            Self::JPEG =>
-            {
+            Self::JPEG => {
                 #[cfg(feature = "jpeg")]
                 {
                     Some(Box::new(
@@ -289,8 +266,7 @@ impl ImageFormat
                     None
                 }
             }
-            Self::JPEG_XL =>
-            {
+            Self::JPEG_XL => {
                 #[cfg(feature = "jpeg-xl")]
                 {
                     Some(Box::new(
@@ -302,8 +278,7 @@ impl ImageFormat
                     None
                 }
             }
-            Self::HDR =>
-            {
+            Self::HDR => {
                 #[cfg(feature = "hdr")]
                 {
                     Some(Box::new(crate::codecs::hdr::HdrEncoder::new_with_options(
@@ -315,8 +290,7 @@ impl ImageFormat
                     None
                 }
             }
-            Self::PNG =>
-            {
+            Self::PNG => {
                 #[cfg(feature = "png")]
                 {
                     Some(Box::new(codecs::png::PngEncoder::new_with_options(options)))
@@ -330,8 +304,7 @@ impl ImageFormat
             _ => None
         }
     }
-    pub fn guess_format(bytes: &[u8]) -> Option<ImageFormat>
-    {
+    pub fn guess_format(bytes: &[u8]) -> Option<ImageFormat> {
         // stolen from imagers
         let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
             (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
@@ -351,17 +324,14 @@ impl ImageFormat
             (b"#?RGBE\n", ImageFormat::HDR),
         ];
 
-        for (magic, decoder) in magic_bytes
-        {
-            if bytes.starts_with(magic)
-            {
+        for (magic, decoder) in magic_bytes {
+            if bytes.starts_with(magic) {
                 return Some(decoder);
             }
         }
         #[cfg(feature = "bmp")]
         {
-            if zune_bmp::probe_bmp(bytes)
-            {
+            if zune_bmp::probe_bmp(bytes) {
                 return Some(ImageFormat::BMP);
             }
         }
@@ -371,12 +341,9 @@ impl ImageFormat
 
     pub fn get_encoder_for_extension<P: AsRef<str>>(
         extension: P
-    ) -> Option<(ImageFormat, Box<dyn EncoderTrait>)>
-    {
-        match extension.as_ref()
-        {
-            "qoi" =>
-            {
+    ) -> Option<(ImageFormat, Box<dyn EncoderTrait>)> {
+        match extension.as_ref() {
+            "qoi" => {
                 #[cfg(feature = "qoi")]
                 {
                     Some((ImageFormat::QOI, ImageFormat::QOI.get_encoder().unwrap()))
@@ -386,8 +353,7 @@ impl ImageFormat
                     None
                 }
             }
-            "ppm" | "pam" | "pgm" | "pbm" | "pfm" =>
-            {
+            "ppm" | "pam" | "pgm" | "pbm" | "pfm" => {
                 #[cfg(feature = "ppm")]
                 {
                     Some((ImageFormat::PPM, ImageFormat::PPM.get_encoder().unwrap()))
@@ -397,8 +363,7 @@ impl ImageFormat
                     None
                 }
             }
-            "jpeg" | "jpg" =>
-            {
+            "jpeg" | "jpg" => {
                 #[cfg(feature = "jpeg")]
                 {
                     Some((ImageFormat::JPEG, ImageFormat::JPEG.get_encoder().unwrap()))
@@ -408,8 +373,7 @@ impl ImageFormat
                     None
                 }
             }
-            "jxl" =>
-            {
+            "jxl" => {
                 #[cfg(feature = "jpeg-xl")]
                 {
                     Some((
@@ -422,8 +386,7 @@ impl ImageFormat
                     None
                 }
             }
-            "ff" =>
-            {
+            "ff" => {
                 #[cfg(feature = "farbfeld")]
                 {
                     Some((
@@ -436,8 +399,7 @@ impl ImageFormat
                     None
                 }
             }
-            "hdr" =>
-            {
+            "hdr" => {
                 #[cfg(feature = "hdr")]
                 {
                     Some((ImageFormat::HDR, ImageFormat::HDR.get_encoder().unwrap()))
@@ -447,8 +409,7 @@ impl ImageFormat
                     None
                 }
             }
-            "png" =>
-            {
+            "png" => {
                 #[cfg(feature = "png")]
                 {
                     Some((ImageFormat::PNG, ImageFormat::PNG.get_encoder().unwrap()))
@@ -464,8 +425,7 @@ impl ImageFormat
 }
 
 // save options
-impl Image
-{
+impl Image {
     /// Save the image to a file and use the extension to
     /// determine the format
     ///
@@ -489,23 +449,17 @@ impl Image
     /// // save to jpeg
     /// image.save("hello.jpg").unwrap();
     /// ```
-    pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors>
-    {
-        return if let Some(ext) = file.as_ref().extension()
-        {
+    pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors> {
+        return if let Some(ext) = file.as_ref().extension() {
             if let Some((format, _)) = ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
             {
                 self.save_to(file, format)
-            }
-            else
-            {
+            } else {
                 let msg = format!("No encoder for extension {ext:?}");
 
                 Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(msg)))
             }
-        }
-        else
-        {
+        } else {
             let msg = format!("No extension for file {:?}", file.as_ref());
 
             Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(msg)))
@@ -539,8 +493,7 @@ impl Image
     /// // save that to jpeg
     /// image.save_to("black.jpg",ImageFormat::JPEG).unwrap();
     /// ```
-    pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors>
-    {
+    pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
         let contents = self.save_to_vec(format)?;
         std::fs::write(file, contents)?;
         Ok(())
@@ -574,15 +527,11 @@ impl Image
     /// // write to qoi now
     /// let contents = image.save_to_vec(ImageFormat::QOI).unwrap();
     /// ```
-    pub fn save_to_vec(&self, format: ImageFormat) -> Result<Vec<u8>, ImageErrors>
-    {
-        if let Some(mut encoder) = format.get_encoder()
-        {
+    pub fn save_to_vec(&self, format: ImageFormat) -> Result<Vec<u8>, ImageErrors> {
+        if let Some(mut encoder) = format.get_encoder() {
             // encode
             encoder.encode(self)
-        }
-        else
-        {
+        } else {
             Err(ImageErrors::EncodeErrors(
                 crate::errors::ImgEncodeErrors::NoEncoderForFormat(format)
             ))
@@ -604,8 +553,7 @@ impl Image
     /// otherwise it's an error to try and decode
     ///
     /// See also [open_from_mem](Self::open_from_mem) for reading from memory
-    pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors>
-    {
+    pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors> {
         Self::open_with_options(file, DecoderOptions::default())
     }
 
@@ -627,8 +575,7 @@ impl Image
     /// ```
     pub fn open_with_options<P: AsRef<Path>>(
         file: P, options: DecoderOptions
-    ) -> Result<Image, ImageErrors>
-    {
+    ) -> Result<Image, ImageErrors> {
         let file = std::fs::read(file)?;
 
         Self::open_from_mem(&file, options)
@@ -647,18 +594,14 @@ impl Image
     /// // create a simple ppm p5 grayscale format
     /// let image = Image::open_from_mem(b"P5 1 1 255 1",DecoderOptions::default());
     ///```
-    pub fn open_from_mem(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors>
-    {
+    pub fn open_from_mem(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors> {
         let decoder = ImageFormat::guess_format(src);
 
-        if let Some(format) = decoder
-        {
+        if let Some(format) = decoder {
             let mut image_decoder = format.get_decoder_with_options(src, options)?;
 
             image_decoder.decode()
-        }
-        else
-        {
+        } else {
             Err(ImageErrors::ImageDecoderNotImplemented(
                 ImageFormat::Unknown
             ))

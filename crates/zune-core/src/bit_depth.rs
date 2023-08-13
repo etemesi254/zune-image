@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Image bit depth, information and manipulations
 
 /// The image bit depth.
@@ -9,8 +17,7 @@
 /// e.g 10 bit av1, 16 bit png and ppm.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum BitDepth
-{
+pub enum BitDepth {
     /// U8 bit depth.
     ///
     /// Images with such bit depth use [`u8`] to store
@@ -44,8 +51,7 @@ pub enum BitDepth
 /// by `Channel` struct in zune-image
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum BitType
-{
+pub enum BitType {
     /// Images represented using a [`u8`] as their
     /// underlying pixel storage
     U8,
@@ -57,16 +63,13 @@ pub enum BitType
     F32
 }
 
-impl Default for BitDepth
-{
-    fn default() -> Self
-    {
+impl Default for BitDepth {
+    fn default() -> Self {
         Self::Unknown
     }
 }
 
-impl BitDepth
-{
+impl BitDepth {
     /// Get the max value supported by the bit depth
     ///
     /// During conversion from one bit depth to another
@@ -105,10 +108,8 @@ impl BitDepth
     /// ```
     ///
     /// See also [size_of](BitDepth::size_of)
-    pub const fn bit_type(self) -> BitType
-    {
-        match self
-        {
+    pub const fn bit_type(self) -> BitType {
+        match self {
             Self::Eight => BitType::U8,
             Self::Sixteen => BitType::U16,
             Self::Float32 => BitType::F32,
@@ -130,18 +131,15 @@ impl BitDepth
     /// // greater 12 bits is greater than 8 and less than 16
     /// assert_eq!(depth.size_of(),2);
     /// ```
-    pub const fn size_of(self) -> usize
-    {
-        match self
-        {
+    pub const fn size_of(self) -> usize {
+        match self {
             Self::Eight => core::mem::size_of::<u8>(),
             Self::Sixteen => core::mem::size_of::<u16>(),
             Self::Float32 => core::mem::size_of::<f32>(),
             Self::Unknown => panic!("Unknown bit type")
         }
     }
-    pub const fn bit_size(&self) -> usize
-    {
+    pub const fn bit_size(&self) -> usize {
         self.size_of() * 8
     }
 }
@@ -152,8 +150,7 @@ impl BitDepth
 /// This helps you interpret how those bytes should be reconstructed
 /// to a higher order type
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum ByteEndian
-{
+pub enum ByteEndian {
     /// Little Endian byte-order
     LE,
     /// Big Endian byte-order

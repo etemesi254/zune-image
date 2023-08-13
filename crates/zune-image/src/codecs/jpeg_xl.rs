@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "jpeg-xl")]
 //! A simple jxl lossless encoder
 //!
@@ -18,39 +26,32 @@ use crate::traits::EncoderTrait;
 /// A simple JXL encoder that ties the bridge between
 /// Image struct and the [zune_jpegxl::SimpleJxlEncoder](zune_jpegxl::JxlSimpleEncoder)
 #[derive(Default, Copy, Clone)]
-pub struct JxlEncoder
-{
+pub struct JxlEncoder {
     options: Option<EncoderOptions>
 }
 
-impl JxlEncoder
-{
+impl JxlEncoder {
     /// Create a new encoder with default options
     ///
     /// Default options include 4 threads for encoding,and an effort
     /// od 4
-    pub fn new() -> JxlEncoder
-    {
+    pub fn new() -> JxlEncoder {
         JxlEncoder::default()
     }
     /// Create new encoder with custom options
-    pub fn new_with_options(options: EncoderOptions) -> JxlEncoder
-    {
+    pub fn new_with_options(options: EncoderOptions) -> JxlEncoder {
         JxlEncoder {
             options: Some(options)
         }
     }
 }
 
-impl EncoderTrait for JxlEncoder
-{
-    fn get_name(&self) -> &'static str
-    {
+impl EncoderTrait for JxlEncoder {
+    fn get_name(&self) -> &'static str {
         "jxl-encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
-    {
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
@@ -64,8 +65,7 @@ impl EncoderTrait for JxlEncoder
         Ok(data)
     }
 
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[
             ColorSpace::Luma,
             ColorSpace::LumaA,
@@ -74,35 +74,28 @@ impl EncoderTrait for JxlEncoder
         ]
     }
 
-    fn format(&self) -> ImageFormat
-    {
+    fn format(&self) -> ImageFormat {
         ImageFormat::JPEG_XL
     }
 
-    fn supported_bit_depth(&self) -> &'static [BitDepth]
-    {
+    fn supported_bit_depth(&self) -> &'static [BitDepth] {
         &[BitDepth::Eight, BitDepth::Sixteen]
     }
 
-    fn default_depth(&self, depth: BitDepth) -> BitDepth
-    {
-        match depth
-        {
+    fn default_depth(&self, depth: BitDepth) -> BitDepth {
+        match depth {
             BitDepth::Sixteen | BitDepth::Float32 => BitDepth::Sixteen,
             _ => BitDepth::Eight
         }
     }
 
-    fn set_options(&mut self, options: EncoderOptions)
-    {
+    fn set_options(&mut self, options: EncoderOptions) {
         self.options = Some(options)
     }
 }
 
-impl From<JxlEncodeErrors> for ImgEncodeErrors
-{
-    fn from(value: JxlEncodeErrors) -> Self
-    {
+impl From<JxlEncodeErrors> for ImgEncodeErrors {
+    fn from(value: JxlEncodeErrors) -> Self {
         ImgEncodeErrors::ImageEncodeErrors(format!("{:?}", value))
     }
 }

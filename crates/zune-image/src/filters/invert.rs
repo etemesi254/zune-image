@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::invert::invert;
@@ -10,27 +18,21 @@ use crate::traits::OperationsTrait;
 #[derive(Default)]
 pub struct Invert;
 
-impl Invert
-{
-    pub fn new() -> Invert
-    {
+impl Invert {
+    pub fn new() -> Invert {
         Self::default()
     }
 }
-impl OperationsTrait for Invert
-{
-    fn get_name(&self) -> &'static str
-    {
+
+impl OperationsTrait for Invert {
+    fn get_name(&self) -> &'static str {
         "Invert"
     }
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.get_depth().bit_type();
 
-        for channel in image.get_channels_mut(true)
-        {
-            match depth
-            {
+        for channel in image.get_channels_mut(true) {
+            match depth {
                 BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
                 BitType::U16 => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
                 BitType::F32 => invert(channel.reinterpret_as_mut::<f32>().unwrap()),
@@ -41,8 +43,7 @@ impl OperationsTrait for Invert
         Ok(())
     }
 
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[
             ColorSpace::RGB,
             ColorSpace::RGBA,
@@ -50,8 +51,7 @@ impl OperationsTrait for Invert
             ColorSpace::Luma
         ]
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }

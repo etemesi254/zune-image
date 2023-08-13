@@ -30,8 +30,7 @@ use crate::errors::HdrDecodeErrors;
 /// the map as an API access method.
 ///
 /// For sophisticated algorithms, they may use the metadata to further understand the data
-pub struct HdrDecoder<T: ZReaderTrait>
-{
+pub struct HdrDecoder<T: ZReaderTrait> {
     buf:             ZByteReader<T>,
     options:         DecoderOptions,
     metadata:        BTreeMap<String, String>,
@@ -60,8 +59,7 @@ where
     /// let file_data = std::fs::read("sample.hdr").unwrap();
     /// let decoder = HdrDecoder::new(&file_data);
     /// ```
-    pub fn new(data: T) -> HdrDecoder<T>
-    {
+    pub fn new(data: T) -> HdrDecoder<T> {
         Self::new_with_options(data, DecoderOptions::default())
     }
 
@@ -87,8 +85,7 @@ where
     /// // use the options set
     /// let decoder = HdrDecoder::new_with_options(&file_data,options);
     /// ```
-    pub fn new_with_options(data: T, options: DecoderOptions) -> HdrDecoder<T>
-    {
+    pub fn new_with_options(data: T, options: DecoderOptions) -> HdrDecoder<T> {
         HdrDecoder {
             buf: ZByteReader::new(data),
             options,
@@ -103,24 +100,21 @@ where
     ///
     /// In case the key or value contains non-valid UTF-8, the
     /// characters are replaced with [REPLACEMENT_CHARACTER](core::char::REPLACEMENT_CHARACTER)
-    pub const fn get_metadata(&self) -> &BTreeMap<String, String>
-    {
+    pub const fn get_metadata(&self) -> &BTreeMap<String, String> {
         &self.metadata
     }
     /// Decode headers for the HDR image
     ///
     /// The struct is modified in place and data can be
     /// extracted from appropriate getters.
-    pub fn decode_headers(&mut self) -> Result<(), HdrDecodeErrors>
-    {
+    pub fn decode_headers(&mut self) -> Result<(), HdrDecodeErrors> {
         // todo: In-case this causes a valid header not to be decoded
         //       we should switch to vec, but for now it works
         //
         // maximum size for which we expect the buffer to be
         let mut max_header_size = [0; 1024];
 
-        if self.decoded_headers
-        {
+        if self.decoded_headers {
             return Ok(());
         }
         self.get_buffer_until(b'\n', &mut max_header_size)?;
@@ -131,16 +125,14 @@ where
             return Err(HdrDecodeErrors::InvalidMagicBytes);
         }
 
-        loop
-        {
+        loop {
             let size = self.get_buffer_until(b'\n', &mut max_header_size)?;
             if max_header_size.starts_with(b"#")
             // comment
             {
                 continue;
             }
-            if max_header_size[..size].contains(&b'=')
-            {
+            if max_header_size[..size].contains(&b'=') {
                 // key value, it should be lossy to avoid failure when the key is not valid
                 // utf-8, we throw garbage to the dictionary if the image is garbage
                 let keys_and_values = String::from_utf8_lossy(&max_header_size[..size]);
@@ -151,8 +143,7 @@ where
                 self.metadata.insert(key, value);
             }
 
-            if size == 0 || max_header_size[0] == b'\n'
-            {
+            if size == 0 || max_header_size[0] == b'\n' {
                 trace!("Metadata: {:?}", self.metadata);
                 break;
             }
@@ -181,28 +172,23 @@ where
             .trim()
             .to_string();
 
-        match (first_type.as_str(), second_type.as_str())
-        {
-            ("-Y", "+X") =>
-            {
+        match (first_type.as_str(), second_type.as_str()) {
+            ("-Y", "+X") => {
                 self.height = coords1.parse::<usize>()?;
                 self.width = coords2.parse::<usize>()?;
             }
-            ("+X", "-Y") =>
-            {
+            ("+X", "-Y") => {
                 self.height = coords2.parse::<usize>()?;
                 self.width = coords1.parse::<usize>()?;
             }
-            (_, _) =>
-            {
+            (_, _) => {
                 return Err(HdrDecodeErrors::UnsupportedOrientation(
                     first_type,
                     second_type
                 ));
             }
         }
-        if self.height > self.options.get_max_height()
-        {
+        if self.height > self.options.get_max_height() {
             return Err(HdrDecodeErrors::TooLargeDimensions(
                 "height",
                 self.options.get_max_height(),
@@ -210,8 +196,7 @@ where
             ));
         }
 
-        if self.width > self.options.get_max_width()
-        {
+        if self.width > self.options.get_max_width() {
             return Err(HdrDecodeErrors::TooLargeDimensions(
                 "width",
                 self.options.get_max_width(),
@@ -233,14 +218,10 @@ where
     /// # Returns
     /// - `Some(width,height)`: Image dimensions
     /// -  None : The image headers haven't been decoded
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if self.decoded_headers {
             Some((self.width, self.height))
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -250,14 +231,10 @@ where
     /// # Returns
     /// -`Some(Colorspace)`: Input colorspace
     /// - None : Indicates the headers weren't decoded
-    pub fn get_colorspace(&self) -> Option<ColorSpace>
-    {
-        if self.decoded_headers
-        {
+    pub fn get_colorspace(&self) -> Option<ColorSpace> {
+        if self.decoded_headers {
             Some(ColorSpace::RGB)
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -269,8 +246,7 @@ where
     /// - `Ok(Vec<f32>)`: The actual decoded coefficients
     /// - `Err(HdrDecodeErrors)`: Indicates an unrecoverable
     ///  error occurred during decoding.
-    pub fn decode(&mut self) -> Result<Vec<f32>, HdrDecodeErrors>
-    {
+    pub fn decode(&mut self) -> Result<Vec<f32>, HdrDecodeErrors> {
         self.decode_headers()?;
         let mut buffer = vec![0.0f32; self.width * self.height * 3];
 
@@ -287,10 +263,8 @@ where
     ///
     /// # Panics
     /// In case `width*height*colorspace` calculation may overflow a usize
-    pub fn output_buffer_size(&self) -> Option<usize>
-    {
-        if self.decoded_headers
-        {
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        if self.decoded_headers {
             Some(
                 self.width
                     .checked_mul(self.height)
@@ -298,9 +272,7 @@ where
                     .checked_mul(3)
                     .unwrap()
             )
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -327,17 +299,14 @@ where
     /// // write into out
     /// decoder.decode_into(&mut out).unwrap();
     /// ```
-    pub fn decode_into(&mut self, buffer: &mut [f32]) -> Result<(), HdrDecodeErrors>
-    {
-        if !self.decoded_headers
-        {
+    pub fn decode_into(&mut self, buffer: &mut [f32]) -> Result<(), HdrDecodeErrors> {
+        if !self.decoded_headers {
             self.decode_headers()?;
         }
 
         let output_size = self.output_buffer_size().unwrap();
 
-        if buffer.len() < output_size
-        {
+        if buffer.len() < output_size {
             return Err(HdrDecodeErrors::TooSmallOutputArray(
                 output_size,
                 buffer.len()
@@ -354,8 +323,7 @@ where
             .chunks_exact_mut(output_scanline_size)
             .take(self.height)
         {
-            if self.width < 8 || self.width > 0x7fff
-            {
+            if self.width < 8 || self.width > 0x7fff {
                 self.decompress(&mut scanline, self.width as i32)?;
                 convert_scanline(&scanline, out_scanline);
                 continue;
@@ -363,8 +331,7 @@ where
 
             let mut i = self.buf.get_u8();
 
-            if i != 2
-            {
+            if i != 2 {
                 // undo byte read
                 self.buf.rewind(1);
 
@@ -372,8 +339,7 @@ where
                 convert_scanline(&scanline, out_scanline);
                 continue;
             }
-            if !self.buf.has(3)
-            {
+            if !self.buf.has(3) {
                 // not enough bytes for below
                 // panic.
                 return Err(HdrDecodeErrors::Generic("Not enough bytes"));
@@ -383,8 +349,7 @@ where
             scanline[2] = self.buf.get_u8();
             i = self.buf.get_u8();
 
-            if scanline[1] != 2 || (scanline[2] & 128) != 0
-            {
+            if scanline[1] != 2 || (scanline[2] & 128) != 0 {
                 scanline[0] = 2;
                 scanline[3] = i;
 
@@ -393,45 +358,35 @@ where
                 continue;
             }
 
-            for i in 0..4
-            {
+            for i in 0..4 {
                 let new_scanline = &mut scanline[i..];
 
                 let mut j = 0;
 
-                loop
-                {
-                    if j >= self.width * 4 || self.buf.eof()
-                    {
+                loop {
+                    if j >= self.width * 4 || self.buf.eof() {
                         break;
                     }
                     let mut run = i32::from(self.buf.get_u8());
 
-                    if run > 128
-                    {
+                    if run > 128 {
                         let val = self.buf.get_u8();
                         run &= 127;
 
-                        while run > 0
-                        {
+                        while run > 0 {
                             run -= 1;
 
-                            if j >= self.width * 4
-                            {
+                            if j >= self.width * 4 {
                                 break;
                             }
                             new_scanline[j] = val;
                             j += 4;
                         }
-                    }
-                    else if run > 0
-                    {
-                        while run > 0
-                        {
+                    } else if run > 0 {
+                        while run > 0 {
                             run -= 1;
 
-                            if j >= self.width * 4
-                            {
+                            if j >= self.width * 4 {
                                 break;
                             }
 
@@ -447,15 +402,12 @@ where
         Ok(())
     }
 
-    fn decompress(&mut self, scanline: &mut [u8], mut width: i32) -> Result<(), HdrDecodeErrors>
-    {
+    fn decompress(&mut self, scanline: &mut [u8], mut width: i32) -> Result<(), HdrDecodeErrors> {
         let mut shift = 0;
         let mut scanline_offset = 0;
 
-        while width > 0
-        {
-            if !self.buf.has(4)
-            {
+        while width > 0 {
+            if !self.buf.has(4) {
                 // not enough bytes for below
                 // panic.
                 return Err(HdrDecodeErrors::Generic("Not enough bytes"));
@@ -466,14 +418,12 @@ where
             scanline[2] = self.buf.get_u8();
             scanline[3] = self.buf.get_u8();
 
-            if scanline[0] == 1 && scanline[1] == 1 && scanline[2] == 1
-            {
+            if scanline[0] == 1 && scanline[1] == 1 && scanline[2] == 1 {
                 let run = scanline[3];
 
                 let mut i = i32::from(run) << shift;
 
-                while width > 0 && scanline_offset > 4 && i > 0
-                {
+                while width > 0 && scanline_offset > 4 && i > 0 {
                     scanline.copy_within(scanline_offset - 4..scanline_offset, 4);
                     scanline_offset += 4;
                     i -= 1;
@@ -481,13 +431,10 @@ where
                 }
                 shift += 8;
 
-                if shift > 16
-                {
+                if shift > 16 {
                     break;
                 }
-            }
-            else
-            {
+            } else {
                 scanline_offset += 4;
                 width -= 1;
                 shift = 0;
@@ -500,8 +447,7 @@ where
     /// cursor past that line.
     fn get_buffer_until(
         &mut self, needle: u8, write_to: &mut [u8]
-    ) -> Result<usize, HdrDecodeErrors>
-    {
+    ) -> Result<usize, HdrDecodeErrors> {
         let start = self.buf.get_position();
 
         // skip until you get a newline
@@ -525,8 +471,7 @@ where
     }
 }
 
-fn convert_scanline(in_scanline: &[u8], out_scanline: &mut [f32])
-{
+fn convert_scanline(in_scanline: &[u8], out_scanline: &mut [f32]) {
     for (rgbe, out) in in_scanline
         .chunks_exact(4)
         .zip(out_scanline.chunks_exact_mut(3))
@@ -543,32 +488,24 @@ fn convert_scanline(in_scanline: &[u8], out_scanline: &mut [f32])
 ///
 /// exp is assumed to be integer
 #[inline]
-fn ldxep(x: f32, exp: i32) -> f32
-{
-    if exp.is_negative()
-    {
+fn ldxep(x: f32, exp: i32) -> f32 {
+    if exp.is_negative() {
         // if negative 2 ^ exp is the same as 1 / (1<<exp.abs()) since
         // 2^(-exp) is expressed as 1/(2^exp)
         let pow_inv = (1_i32 << (exp.abs() & 31)) as f32;
 
         x / pow_inv
-    }
-    else
-    {
+    } else {
         // 2^exp is same as 1<<exp, but latter is way faster
         x * ((1_i32 << (exp & 31)) as f32)
     }
 }
 
 #[inline]
-fn convert(val: i32, exponent: i32) -> f32
-{
-    if exponent == -128
-    {
+fn convert(val: i32, exponent: i32) -> f32 {
+    if exponent == -128 {
         0.0_f32
-    }
-    else
-    {
+    } else {
         let v = (val as f32) / 256.0;
         ldxep(v, exponent)
     }

@@ -103,8 +103,7 @@ macro_rules! decode_huff {
 
 /// A `BitStream` struct, a bit by bit reader with super powers
 ///
-pub(crate) struct BitStream
-{
+pub(crate) struct BitStream {
     /// A MSB type buffer that is used for some certain operations
     pub buffer:           u64,
     /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
@@ -126,11 +125,9 @@ pub(crate) struct BitStream
     pub overread_by:     usize
 }
 
-impl BitStream
-{
+impl BitStream {
     /// Create a new BitStream
-    pub(crate) const fn new() -> BitStream
-    {
+    pub(crate) const fn new() -> BitStream {
         BitStream {
             buffer:          0,
             aligned_buffer:  0,
@@ -147,8 +144,7 @@ impl BitStream
 
     /// Create a new Bitstream for progressive decoding
     #[allow(clippy::redundant_field_names)]
-    pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream
-    {
+    pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
         BitStream {
             buffer:          0,
             aligned_buffer:  0,
@@ -192,27 +188,22 @@ impl BitStream
                 // Increment bits left
                 $bits_left += 8;
                 // Check for special case  of OxFF, to see if it's a stream or a marker
-                if $byte == 0xff
-                {
+                if $byte == 0xff {
                     // read next byte
                     let mut next_byte = u64::from(reader.get_u8());
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
-                    if next_byte != 0x00
-                    {
+                    if next_byte != 0x00 {
                         // skip that byte we read
-                        while next_byte == 0xFF
-                        {
+                        while next_byte == 0xFF {
                             next_byte = u64::from(reader.get_u8());
                         }
 
-                        if next_byte != 0x00
-                        {
+                        if next_byte != 0x00 {
                             // Undo the byte append and return
                             $buffer >>= 8;
                             $bits_left -= 8;
 
-                            if $bits_left != 0
-                            {
+                            if $bits_left != 0 {
                                 self.aligned_buffer = $buffer << (64 - $bits_left);
                             }
 
@@ -232,18 +223,15 @@ impl BitStream
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
-        if self.bits_left < 32 && self.marker.is_none()
-        {
+        if self.bits_left < 32 && self.marker.is_none() {
             // So before we do anything, check if we have a 0xFF byte
 
-            if reader.has(4)
-            {
+            if reader.has(4) {
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
                 let msb_buf = reader.get_u32_be();
                 // check if we have 0xff
-                if !has_byte(msb_buf, 255)
-                {
+                if !has_byte(msb_buf, 255) {
                     self.bits_left += 32;
                     self.buffer <<= 32;
                     self.buffer |= u64::from(msb_buf);
@@ -288,8 +276,7 @@ impl BitStream
     {
         let (mut symbol, r);
 
-        if self.bits_left < 32
-        {
+        if self.bits_left < 32 {
             self.refill(reader)?;
         };
         // look a head HUFF_LOOKAHEAD bits into the bitstream
@@ -298,8 +285,7 @@ impl BitStream
 
         decode_huff!(self, symbol, dc_table);
 
-        if symbol != 0
-        {
+        if symbol != 0 {
             r = self.get_bits(symbol as u8);
             symbol = huff_extend(r, symbol);
         }
@@ -344,15 +330,13 @@ impl BitStream
         // set dc to be the dc prediction.
         block[0] = *dc_prediction * qt_table[0];
 
-        while pos < 64
-        {
+        while pos < 64 {
             self.refill(reader)?;
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
             fast_ac = ac_lookup[symbol as usize];
             symbol = ac_table.lookup[symbol as usize];
 
-            if fast_ac != 0
-            {
+            if fast_ac != 0 {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
                 let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
@@ -360,16 +344,13 @@ impl BitStream
                 block[t_pos] = i32::from(fast_ac >> 8) * (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
-            }
-            else
-            {
+            } else {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
                 symbol &= 15;
 
-                if symbol != 0
-                {
+                if symbol != 0 {
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
@@ -378,13 +359,9 @@ impl BitStream
                     block[t_pos] = symbol * qt_table[t_pos];
 
                     pos += 1;
-                }
-                else if r != 15
-                {
+                } else if r != 15 {
                     return Ok(());
-                }
-                else
-                {
+                } else {
                     pos += 16;
                 }
             }
@@ -395,15 +372,13 @@ impl BitStream
     /// Peek `look_ahead` bits ahead without discarding them from the buffer
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
-    const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32
-    {
+    const fn peek_bits<const LOOKAHEAD: u8>(&self) -> i32 {
         (self.aligned_buffer >> (64 - LOOKAHEAD)) as i32
     }
 
     /// Discard the next `N` bits without checking
     #[inline]
-    fn drop_bits(&mut self, n: u8)
-    {
+    fn drop_bits(&mut self, n: u8) {
         self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
     }
@@ -411,8 +386,7 @@ impl BitStream
     /// Read `n_bits` from the buffer  and discard them
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
-    fn get_bits(&mut self, n_bits: u8) -> i32
-    {
+    fn get_bits(&mut self, n_bits: u8) -> i32 {
         let mask = (1_u64 << n_bits) - 1;
 
         self.aligned_buffer = self.aligned_buffer.rotate_left(u32::from(n_bits));
@@ -443,13 +417,11 @@ impl BitStream
         T: ZReaderTrait
     {
         // refinement scan
-        if self.bits_left < 1
-        {
+        if self.bits_left < 1 {
             self.refill(reader)?;
         }
 
-        if self.get_bit() == 1
-        {
+        if self.get_bit() == 1 {
             *block = block.wrapping_add(1 << self.successive_low);
         }
 
@@ -457,8 +429,7 @@ impl BitStream
     }
 
     /// Get a single bit from the bitstream
-    fn get_bit(&mut self) -> u8
-    {
+    fn get_bit(&mut self) -> u8 {
         let k = (self.aligned_buffer >> 63) as u8;
         // discard a bit
         self.drop_bits(1);
@@ -477,41 +448,33 @@ impl BitStream
         let (mut symbol, mut r, mut fac);
 
         // EOB runs are handled in mcu_prog.rs
-        'block: loop
-        {
+        'block: loop {
             self.refill(reader)?;
 
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
             fac = fast_ac[symbol as usize];
             symbol = ac_table.lookup[symbol as usize];
 
-            if fac != 0
-            {
+            if fac != 0 {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
                 block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(1 << shift); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
-            }
-            else
-            {
+            } else {
                 decode_huff!(self, symbol, ac_table);
 
                 r = symbol >> 4;
                 symbol &= 15;
 
-                if symbol != 0
-                {
+                if symbol != 0 {
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
                     block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(1 << shift);
                     k += 1;
-                }
-                else
-                {
-                    if r != 15
-                    {
+                } else {
+                    if r != 15 {
                         self.eob_run = 1 << r;
                         self.eob_run += self.get_bits(r as u8);
                         self.eob_run -= 1;
@@ -522,8 +485,7 @@ impl BitStream
                 }
             }
 
-            if k > self.spec_end as usize
-            {
+            if k > self.spec_end as usize {
                 break 'block;
             }
         }
@@ -541,10 +503,8 @@ impl BitStream
         let mut k = self.spec_start;
         let (mut symbol, mut r);
 
-        if self.eob_run == 0
-        {
-            'no_eob: loop
-            {
+        if self.eob_run == 0 {
+            'no_eob: loop {
                 // Decode a coefficient from the bit stream
                 self.refill(reader)?;
 
@@ -556,21 +516,16 @@ impl BitStream
                 r = symbol >> 4;
                 symbol &= 15;
 
-                if symbol == 0
-                {
-                    if r != 15
-                    {
+                if symbol == 0 {
+                    if r != 15 {
                         // EOB run is 2^r + bits
                         self.eob_run = 1 << r;
                         self.eob_run += self.get_bits(r as u8);
                         // EOB runs are handled by the eob logic
                         break 'no_eob;
                     }
-                }
-                else
-                {
-                    if symbol != 1
-                    {
+                } else {
+                    if symbol != 1 {
                         return Err(DecodeErrors::HuffmanDecode(
                             "Bad Huffman code, corrupt JPEG?".to_string()
                         ));
@@ -578,12 +533,9 @@ impl BitStream
                     // get sign bit
                     // We assume we have enough bits, which should be correct for sane images
                     // since we refill by 32 above
-                    if self.get_bit() == 1
-                    {
+                    if self.get_bit() == 1 {
                         symbol = i32::from(bit);
-                    }
-                    else
-                    {
+                    } else {
                         symbol = i32::from(-bit);
                     }
                 }
@@ -592,44 +544,32 @@ impl BitStream
                 // correction bits to the non-zeroes.
                 // A correction bit is 1 if the absolute value of the coefficient must be increased
 
-                if k <= self.spec_end
-                {
-                    'advance_nonzero: loop
-                    {
+                if k <= self.spec_end {
+                    'advance_nonzero: loop {
                         let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
-                        if *coefficient != 0
-                        {
-                            if self.get_bit() == 1 && (*coefficient & bit) == 0
-                            {
-                                if *coefficient >= 0
-                                {
+                        if *coefficient != 0 {
+                            if self.get_bit() == 1 && (*coefficient & bit) == 0 {
+                                if *coefficient >= 0 {
                                     *coefficient += bit;
-                                }
-                                else
-                                {
+                                } else {
                                     *coefficient -= bit;
                                 }
                             }
 
-                            if self.bits_left < 1
-                            {
+                            if self.bits_left < 1 {
                                 self.refill(reader)?;
                             }
-                        }
-                        else
-                        {
+                        } else {
                             r -= 1;
 
-                            if r < 0
-                            {
+                            if r < 0 {
                                 // reached target zero coefficient.
                                 break 'advance_nonzero;
                             }
                         };
 
-                        if k == self.spec_end
-                        {
+                        if k == self.spec_end {
                             break 'advance_nonzero;
                         }
 
@@ -637,8 +577,7 @@ impl BitStream
                     }
                 }
 
-                if symbol != 0
-                {
+                if symbol != 0 {
                     let pos = UN_ZIGZAG[k as usize & 63];
                     // output new non-zero coefficient.
                     block[pos & 63] = symbol as i16;
@@ -646,41 +585,31 @@ impl BitStream
 
                 k += 1;
 
-                if k > self.spec_end
-                {
+                if k > self.spec_end {
                     break 'no_eob;
                 }
             }
         }
-        if self.eob_run > 0
-        {
+        if self.eob_run > 0 {
             // only run if block does not consists of purely zeroes
-            if &block[1..] != &[0; 63]
-            {
+            if &block[1..] != &[0; 63] {
                 self.refill(reader)?;
 
-                while k <= self.spec_end
-                {
+                while k <= self.spec_end {
                     let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
-                    if *coefficient != 0 && self.get_bit() == 1
-                    {
+                    if *coefficient != 0 && self.get_bit() == 1 {
                         // check if we already modified it, if so do nothing, otherwise
                         // append the correction bit.
-                        if (*coefficient & bit) == 0
-                        {
-                            if *coefficient >= 0
-                            {
+                        if (*coefficient & bit) == 0 {
+                            if *coefficient >= 0 {
                                 *coefficient = coefficient.wrapping_add(bit);
-                            }
-                            else
-                            {
+                            } else {
                                 *coefficient = coefficient.wrapping_sub(bit);
                             }
                         }
                     }
-                    if self.bits_left < 1
-                    {
+                    if self.bits_left < 1 {
                         // refill at the last possible moment
                         self.refill(reader)?;
                     }
@@ -693,8 +622,7 @@ impl BitStream
         return Ok(true);
     }
 
-    pub fn update_progressive_params(&mut self, ah: u8, al: u8, spec_start: u8, spec_end: u8)
-    {
+    pub fn update_progressive_params(&mut self, ah: u8, al: u8, spec_start: u8, spec_end: u8) {
         self.successive_high = ah;
         self.successive_low = al;
         self.spec_start = spec_start;
@@ -706,8 +634,7 @@ impl BitStream
     /// Restart markers indicate drop those bits in the stream and zero out
     /// everything
     #[cold]
-    pub fn reset(&mut self)
-    {
+    pub fn reset(&mut self) {
         self.bits_left = 0;
         self.marker = None;
         self.buffer = 0;
@@ -718,21 +645,18 @@ impl BitStream
 
 /// Do the equivalent of JPEG HUFF_EXTEND
 #[inline(always)]
-fn huff_extend(x: i32, s: i32) -> i32
-{
+fn huff_extend(x: i32, s: i32) -> i32 {
     // if x<s return x else return x+offset[s] where offset[s] = ( (-1<<s)+1)
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
 }
 
-fn has_zero(v: u32) -> bool
-{
+fn has_zero(v: u32) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     return !((((v & 0x7F7F_7F7F) + 0x7F7F_7F7F) | v) | 0x7F7F_7F7F) != 0;
 }
 
-fn has_byte(b: u32, val: u8) -> bool
-{
+fn has_byte(b: u32, val: u8) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     has_zero(b ^ ((!0_u32 / 255) * u32::from(val)))

@@ -31,8 +31,7 @@ pub type UpSampler = fn(
 
 /// Component Data from start of frame
 #[derive(Clone)]
-pub(crate) struct Components
-{
+pub(crate) struct Components {
     /// The type of component that has the metadata below, can be Y,Cb or Cr
     pub component_id: ComponentID,
     /// Sub-sampling ratio of this component in the x-plane
@@ -72,12 +71,10 @@ pub(crate) struct Components
     pub y: usize
 }
 
-impl Components
-{
+impl Components {
     /// Create a new instance from three bytes from the start of frame
     #[inline]
-    pub fn from(a: [u8; 3], pos: u8) -> Result<Components, DecodeErrors>
-    {
+    pub fn from(a: [u8; 3], pos: u8) -> Result<Components, DecodeErrors> {
         // it's a unique identifier.
         // doesn't have to be ascending
         // see tests/inputs/huge_sof_number
@@ -85,14 +82,12 @@ impl Components
         // For such cases, use the position of the component
         // to determine width
 
-        let id = match pos
-        {
+        let id = match pos {
             0 => ComponentID::Y,
             1 => ComponentID::Cb,
             2 => ComponentID::Cr,
             3 => ComponentID::Q,
-            _ =>
-            {
+            _ => {
                 return Err(DecodeErrors::Format(format!(
                     "Unknown component id found,{pos}, expected value between 1 and 4"
                 )))
@@ -103,23 +98,20 @@ impl Components
         let vertical_sample = (a[1] & 0x0f) as usize;
         let quantization_table_number = a[2];
         // confirm quantization number is between 0 and MAX_COMPONENTS
-        if usize::from(quantization_table_number) >= MAX_COMPONENTS
-        {
+        if usize::from(quantization_table_number) >= MAX_COMPONENTS {
             return Err(DecodeErrors::Format(format!(
                 "Too large quantization number :{quantization_table_number}, expected value between 0 and {MAX_COMPONENTS}"
             )));
         }
         // check that upsampling ratios are powers of two
         // if these fail, it's probably a corrupt image.
-        if !horizontal_sample.is_power_of_two()
-        {
+        if !horizontal_sample.is_power_of_two() {
             return Err(DecodeErrors::Format(format!(
                 "Horizontal sample is not a power of two({horizontal_sample}) cannot decode"
             )));
         }
 
-        if !vertical_sample.is_power_of_two()
-        {
+        if !vertical_sample.is_power_of_two() {
             return Err(DecodeErrors::Format(format!(
                 "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
             )));
@@ -168,8 +160,7 @@ impl Components
     ///
     /// # Requirements
     ///  - width stride of this element is set for the component.
-    pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize)
-    {
+    pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize) {
         self.current_row = vec![0; self.width_stride * self.vertical_sample];
         self.prev_row = vec![0; self.width_stride * self.vertical_sample];
         self.upsample_dest = vec![128; self.width_stride * h_max * v_max];
@@ -178,8 +169,7 @@ impl Components
 
 /// Component ID's
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-pub enum ComponentID
-{
+pub enum ComponentID {
     /// Luminance channel
     Y,
     /// Blue chrominance
@@ -191,8 +181,7 @@ pub enum ComponentID
 }
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
-pub enum SampleRatios
-{
+pub enum SampleRatios {
     HV,
     V,
     H,

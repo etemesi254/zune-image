@@ -76,10 +76,8 @@
 pub fn crop<T: Copy>(
     in_image: &[T], in_width: usize, out_image: &mut [T], out_width: usize, out_height: usize,
     x: usize, y: usize
-)
-{
-    if in_width == 0 || out_width == 0
-    {
+) {
+    if in_width == 0 || out_width == 0 {
         // these generate panic paths for chunks_exact so just eliminate them
         return;
     }
@@ -98,15 +96,13 @@ pub fn crop<T: Copy>(
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::crop::crop;
 
     #[bench]
-    fn crop_bench(b: &mut test::Bencher)
-    {
+    fn crop_bench(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let dimensions = width * height;

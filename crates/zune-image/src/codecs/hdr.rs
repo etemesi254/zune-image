@@ -24,8 +24,7 @@ impl<T> DecoderTrait for HdrDecoder<T>
 where
     T: ZReaderTrait
 {
-    fn decode(&mut self) -> Result<Image, ImageErrors>
-    {
+    fn decode(&mut self) -> Result<Image, ImageErrors> {
         let bytes = self.decode()?;
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
@@ -33,23 +32,19 @@ where
         Ok(Image::from_f32(&bytes, width, height, colorspace))
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
+    fn get_dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace
-    {
+    fn get_out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str
-    {
+    fn get_name(&self) -> &'static str {
         "HDR decoder"
     }
 
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors>
-    {
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
         self.decode_headers()?;
 
         let (width, height) = self.get_dimensions().unwrap();
@@ -66,43 +61,34 @@ where
     }
 }
 
-impl From<HdrDecodeErrors> for ImageErrors
-{
-    fn from(value: HdrDecodeErrors) -> Self
-    {
+impl From<HdrDecodeErrors> for ImageErrors {
+    fn from(value: HdrDecodeErrors) -> Self {
         Self::ImageDecodeErrors(format!("hdr: {value:?}"))
     }
 }
 
 #[derive(Default)]
-pub struct HdrEncoder
-{
+pub struct HdrEncoder {
     options: Option<EncoderOptions>
 }
 
-impl HdrEncoder
-{
-    pub fn new() -> HdrEncoder
-    {
+impl HdrEncoder {
+    pub fn new() -> HdrEncoder {
         Self::default()
     }
-    pub fn new_with_options(options: EncoderOptions) -> HdrEncoder
-    {
+    pub fn new_with_options(options: EncoderOptions) -> HdrEncoder {
         HdrEncoder {
             options: Some(options)
         }
     }
 }
 
-impl EncoderTrait for HdrEncoder
-{
-    fn get_name(&self) -> &'static str
-    {
+impl EncoderTrait for HdrEncoder {
+    fn get_name(&self) -> &'static str {
         "Hdr"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
-    {
+    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.get_depth(), BitDepth::Float32);
@@ -118,36 +104,29 @@ impl EncoderTrait for HdrEncoder
         Ok(data)
     }
 
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[ColorSpace::RGB]
     }
 
-    fn format(&self) -> ImageFormat
-    {
+    fn format(&self) -> ImageFormat {
         ImageFormat::HDR
     }
 
-    fn supported_bit_depth(&self) -> &'static [BitDepth]
-    {
+    fn supported_bit_depth(&self) -> &'static [BitDepth] {
         &[BitDepth::Float32]
     }
 
-    fn default_depth(&self, _: BitDepth) -> BitDepth
-    {
+    fn default_depth(&self, _: BitDepth) -> BitDepth {
         BitDepth::Float32
     }
 
-    fn default_colorspace(&self, _: ColorSpace) -> ColorSpace
-    {
+    fn default_colorspace(&self, _: ColorSpace) -> ColorSpace {
         ColorSpace::RGB
     }
 }
 
-impl From<HdrEncodeErrors> for ImgEncodeErrors
-{
-    fn from(value: HdrEncodeErrors) -> Self
-    {
+impl From<HdrEncodeErrors> for ImgEncodeErrors {
+    fn from(value: HdrEncodeErrors) -> Self {
         ImgEncodeErrors::ImageEncodeErrors(format!("HDR: {:?}", value))
     }
 }

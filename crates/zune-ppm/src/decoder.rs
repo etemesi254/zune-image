@@ -34,8 +34,7 @@ where
     options:         DecoderOptions
 }
 
-pub enum PPMDecodeErrors
-{
+pub enum PPMDecodeErrors {
     Generic(String),
     GenericStatic(&'static str),
     /// There is a problem with the header
@@ -48,27 +47,20 @@ pub enum PPMDecodeErrors
     LargeDimensions(usize, usize)
 }
 
-impl Debug for PPMDecodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            Self::Generic(val) =>
-            {
+impl Debug for PPMDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Generic(val) => {
                 writeln!(f, "{val}")
             }
             Self::GenericStatic(val) => writeln!(f, "{val}"),
-            Self::InvalidHeader(val) =>
-            {
+            Self::InvalidHeader(val) => {
                 writeln!(f, "Invalid header, reason: {val}")
             }
-            Self::UnsupportedImpl(val) =>
-            {
+            Self::UnsupportedImpl(val) => {
                 writeln!(f, "Invalid header, reason: {val}")
             }
-            Self::LargeDimensions(expected, found) =>
-            {
+            Self::LargeDimensions(expected, found) => {
                 writeln!(
                     f,
                     "Too large dimensions, expected a value less than {expected} but found {found}"
@@ -94,8 +86,7 @@ where
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn new(data: T) -> PPMDecoder<T>
-    {
+    pub fn new(data: T) -> PPMDecoder<T> {
         PPMDecoder::new_with_options(DecoderOptions::default(), data)
     }
     /// Create a new PPM decoder with the specified options
@@ -111,8 +102,7 @@ where
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn new_with_options(options: DecoderOptions, data: T) -> PPMDecoder<T>
-    {
+    pub fn new_with_options(options: DecoderOptions, data: T) -> PPMDecoder<T> {
         let reader = ZByteReader::new(data);
 
         PPMDecoder {
@@ -137,38 +127,26 @@ where
     /// will more information about what went wrong
     ///
     /// [`get_dimensions`]:Self::get_dimensions
-    pub fn read_headers(&mut self) -> Result<(), PPMDecodeErrors>
-    {
-        if self.reader.has(3)
-        {
+    pub fn read_headers(&mut self) -> Result<(), PPMDecodeErrors> {
+        if self.reader.has(3) {
             let p = self.reader.get_u8();
             let version = self.reader.get_u8();
 
-            if p != b'P'
-            {
+            if p != b'P' {
                 let msg = format!("Expected P as first PPM byte but got '{}' ", p as char);
 
                 return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
 
-            if version == b'5' || version == b'6'
-            {
+            if version == b'5' || version == b'6' {
                 self.decode_p5_and_p6_header(version)?;
-            }
-            else if version == b'7'
-            {
+            } else if version == b'7' {
                 self.decode_p7_header()?;
-            }
-            else if version == b'f'
-            {
+            } else if version == b'f' {
                 self.decode_pf_header(ColorSpace::Luma)?;
-            }
-            else if version == b'F'
-            {
+            } else if version == b'F' {
                 self.decode_pf_header(ColorSpace::RGB)?;
-            }
-            else
-            {
+            } else {
                 let msg = format!(
                     "Unsupported PPM version `{}`, supported versions are 5,6 and 7",
                     version as char
@@ -176,9 +154,7 @@ where
 
                 return Err(PPMDecodeErrors::InvalidHeader(msg));
             }
-        }
-        else
-        {
+        } else {
             let len = self.reader.remaining();
             let msg = format!("Expected at least 3 bytes in header but stream has {len}");
 
@@ -187,8 +163,7 @@ where
 
         Ok(())
     }
-    fn decode_pf_header(&mut self, colorspace: ColorSpace) -> Result<(), PPMDecodeErrors>
-    {
+    fn decode_pf_header(&mut self, colorspace: ColorSpace) -> Result<(), PPMDecodeErrors> {
         self.colorspace = colorspace;
         // read width and height
         // skip whitespace
@@ -196,8 +171,7 @@ where
         // read width
         self.width = self.get_integer();
 
-        if self.width > self.options.get_max_width()
-        {
+        if self.width > self.options.get_max_width() {
             let msg = format!(
                 "Width {} greater than max width {}",
                 self.width,
@@ -210,8 +184,7 @@ where
 
         self.height = self.get_integer();
 
-        if self.height > self.options.get_max_height()
-        {
+        if self.height > self.options.get_max_height() {
             let msg = format!(
                 "Height {} greater than max height {}",
                 self.width,
@@ -230,13 +203,10 @@ where
         let value = &byte_header[..value_size];
 
         // get the magnitude byte
-        let int_bytes = match core::str::from_utf8(value)
-        {
-            Ok(valid_str) => match valid_str.trim().parse::<f32>()
-            {
+        let int_bytes = match core::str::from_utf8(value) {
+            Ok(valid_str) => match valid_str.trim().parse::<f32>() {
                 Ok(number) => number,
-                Err(_) =>
-                {
+                Err(_) => {
                     return Err(PPMDecodeErrors::Generic(format!(
                         "Invalid number {valid_str:?}"
                     )))
@@ -248,12 +218,9 @@ where
         // A positive number (e.g. "1.0") indicates big-endian
         //
         // If the number is negative (e.g. "-1.0") this indicates little-endian, with the least significant byte first.
-        if int_bytes < 0.0
-        {
+        if int_bytes < 0.0 {
             self.options = self.options.set_byte_endian(ByteEndian::LE);
-        }
-        else
-        {
+        } else {
             self.options = self.options.set_byte_endian(ByteEndian::BE);
         }
         self.decoded_headers = true;
@@ -262,8 +229,7 @@ where
         Ok(())
     }
     /// Decode header types from P7 format
-    fn decode_p7_header(&mut self) -> Result<(), PPMDecodeErrors>
-    {
+    fn decode_p7_header(&mut self) -> Result<(), PPMDecodeErrors> {
         let mut seen_depth = false;
         let mut seen_width = false;
         let mut seen_height = false;
@@ -272,10 +238,8 @@ where
 
         let mut byte_header = [0; 128];
 
-        'infinite: loop
-        {
-            if self.reader.eof()
-            {
+        'infinite: loop {
+            if self.reader.eof() {
                 return Err(PPMDecodeErrors::InvalidHeader("No more bytes".to_string()));
             }
             skip_spaces(&mut self.reader);
@@ -283,16 +247,13 @@ where
             let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
             let value = &byte_header[..value_size];
 
-            match value
-            {
+            match value {
                 // Notice the explicit space,
                 // It's needed
-                b"WIDTH " =>
-                {
+                b"WIDTH " => {
                     self.width = self.get_integer();
 
-                    if self.width > self.options.get_max_width()
-                    {
+                    if self.width > self.options.get_max_width() {
                         return Err(PPMDecodeErrors::LargeDimensions(
                             self.options.get_max_width(),
                             self.width
@@ -300,12 +261,10 @@ where
                     }
                     seen_width = true;
                 }
-                b"HEIGHT " =>
-                {
+                b"HEIGHT " => {
                     self.height = self.get_integer();
 
-                    if self.height > self.options.get_max_height()
-                    {
+                    if self.height > self.options.get_max_height() {
                         return Err(PPMDecodeErrors::LargeDimensions(
                             self.options.get_max_height(),
                             self.height
@@ -314,65 +273,48 @@ where
 
                     seen_height = true;
                 }
-                b"DEPTH " =>
-                {
+                b"DEPTH " => {
                     let depth = self.get_integer();
 
-                    if depth > 4
-                    {
+                    if depth > 4 {
                         let msg = format!("Depth {depth} is greater than 4");
                         return Err(PPMDecodeErrors::InvalidHeader(msg));
                     }
 
                     seen_depth = true;
                 }
-                b"MAXVAL " =>
-                {
+                b"MAXVAL " => {
                     let max_value = self.get_integer();
 
-                    if max_value > usize::from(u16::MAX)
-                    {
+                    if max_value > usize::from(u16::MAX) {
                         let msg = format!("MAX value {max_value} greater than 65535");
 
                         return Err(PPMDecodeErrors::Generic(msg));
                     }
 
-                    if max_value > 255
-                    {
+                    if max_value > 255 {
                         // 16 bit
                         self.bit_depth = BitDepth::Sixteen;
-                    }
-                    else
-                    {
+                    } else {
                         self.bit_depth = BitDepth::Eight;
                     }
                     seen_max_val = true;
                 }
-                b"TUPLTYPE " =>
-                {
+                b"TUPLTYPE " => {
                     let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
                     let new_value = &byte_header[..value_size];
 
                     // Order matters here.
                     // we want to match RGB_ALPHA before matching RGB
-                    if new_value.starts_with(b"RGB_ALPHA")
-                    {
+                    if new_value.starts_with(b"RGB_ALPHA") {
                         self.colorspace = ColorSpace::RGBA;
-                    }
-                    else if new_value.starts_with(b"RGB")
-                    {
+                    } else if new_value.starts_with(b"RGB") {
                         self.colorspace = ColorSpace::RGB;
-                    }
-                    else if new_value.starts_with(b"GRAYSCALE_ALPHA")
-                    {
+                    } else if new_value.starts_with(b"GRAYSCALE_ALPHA") {
                         self.colorspace = ColorSpace::LumaA;
-                    }
-                    else if new_value.starts_with(b"GRAYSCALE")
-                    {
+                    } else if new_value.starts_with(b"GRAYSCALE") {
                         self.colorspace = ColorSpace::Luma;
-                    }
-                    else
-                    {
+                    } else {
                         let msg = format!(
                             "Unknown/unsupported tuple type {}",
                             String::from_utf8_lossy(new_value)
@@ -381,14 +323,10 @@ where
                     }
                     seen_tuple_type = true;
                 }
-                _ =>
-                {
-                    if value.starts_with(b"ENDHDR")
-                    {
+                _ => {
+                    if value.starts_with(b"ENDHDR") {
                         break 'infinite;
-                    }
-                    else
-                    {
+                    } else {
                         let msg = format!(
                             "Unknown/unsupported header declaration {}",
                             String::from_utf8_lossy(value)
@@ -398,8 +336,7 @@ where
                 }
             }
         }
-        if !seen_max_val || !seen_tuple_type || !seen_height || !seen_width || !seen_depth
-        {
+        if !seen_max_val || !seen_tuple_type || !seen_height || !seen_width || !seen_depth {
             return Err(PPMDecodeErrors::InvalidHeader(
                 "Not all expected headers were found".to_string()
             ));
@@ -415,10 +352,8 @@ where
         Ok(())
     }
     /// Decode header types from P5 and P6 format
-    fn decode_p5_and_p6_header(&mut self, version: u8) -> Result<(), PPMDecodeErrors>
-    {
-        let colorspace = match version
-        {
+    fn decode_p5_and_p6_header(&mut self, version: u8) -> Result<(), PPMDecodeErrors> {
+        let colorspace = match version {
             b'5' => ColorSpace::Luma,
             b'6' => ColorSpace::RGB,
             _ => unreachable!()
@@ -432,8 +367,7 @@ where
         // read width
         self.width = self.get_integer();
 
-        if self.width > self.options.get_max_width()
-        {
+        if self.width > self.options.get_max_width() {
             let msg = format!(
                 "Width {} greater than max width {}",
                 self.width,
@@ -446,8 +380,7 @@ where
 
         self.height = self.get_integer();
 
-        if self.height > self.options.get_max_height()
-        {
+        if self.height > self.options.get_max_height() {
             let msg = format!(
                 "Height {} greater than max height {}",
                 self.width,
@@ -464,15 +397,13 @@ where
         // skip ascii space
         skip_spaces(&mut self.reader);
 
-        if max_value > usize::from(u16::MAX)
-        {
+        if max_value > usize::from(u16::MAX) {
             let msg = format!("MAX value {max_value} greater than 65535");
 
             return Err(PPMDecodeErrors::Generic(msg));
         }
 
-        if max_value > 255
-        {
+        if max_value > 255 {
             // 16 bit
             self.bit_depth = BitDepth::Sixteen;
         }
@@ -483,23 +414,18 @@ where
         Ok(())
     }
 
-    fn get_integer(&mut self) -> usize
-    {
+    fn get_integer(&mut self) -> usize {
         let mut value = 0_usize;
 
-        while !self.reader.eof()
-        {
+        while !self.reader.eof() {
             let byte = self.reader.get_u8();
 
-            if byte.is_ascii_digit()
-            {
+            if byte.is_ascii_digit() {
                 // if it overflows, we have bigger problems.
                 value = value
                     .wrapping_mul(10_usize)
                     .wrapping_add(usize::from(byte - b'0'))
-            }
-            else
-            {
+            } else {
                 // rewind to the previous byte
                 self.reader.rewind(1);
                 break;
@@ -516,14 +442,10 @@ where
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
-    pub const fn get_bit_depth(&self) -> Option<BitDepth>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_bit_depth(&self) -> Option<BitDepth> {
+        if self.decoded_headers {
             Some(self.bit_depth)
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -534,14 +456,10 @@ where
     /// - `Some(ColorSpace)`: The colorspace of the input image
     /// - None: Indicates headers weren't decoded or an unhandled error occurred
     /// during header decoding
-    pub const fn get_colorspace(&self) -> Option<ColorSpace>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+        if self.decoded_headers {
             Some(self.colorspace)
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -564,14 +482,10 @@ where
     /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Eight));
     /// assert_eq!(decoder.get_dimensions(),Some((34,32)))
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if self.decoded_headers {
             Some((self.width, self.height))
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -603,16 +517,13 @@ where
     /// assert_eq!(&bytes.u16().unwrap(),&[12851]); // 23 in ascii is 12851
     ///
     /// ```
-    pub fn decode(&mut self) -> Result<DecodingResult, PPMDecodeErrors>
-    {
+    pub fn decode(&mut self) -> Result<DecodingResult, PPMDecodeErrors> {
         // decode headers only if no previous call was made.
-        if !self.decoded_headers
-        {
+        if !self.decoded_headers {
             self.read_headers()?;
         }
 
-        if self.width == 0 || self.height == 0
-        {
+        if self.width == 0 || self.height == 0 {
             return Err(PPMDecodeErrors::GenericStatic(
                 "Zero dimensions not allowed"
             ));
@@ -623,24 +534,20 @@ where
 
         let remaining = self.reader.remaining();
 
-        if size != remaining
-        {
+        if size != remaining {
             let msg = format!("Expected {size} number of bytes but found {remaining}");
 
             return Err(PPMDecodeErrors::Generic(msg));
         }
-        return match self.bit_depth.bit_type()
-        {
-            BitType::U8 =>
-            {
+        return match self.bit_depth.bit_type() {
+            BitType::U8 => {
                 let mut data = vec![0; size];
                 // get the bytes
                 data.copy_from_slice(self.reader.get(size).unwrap());
 
                 Ok(DecodingResult::U8(data))
             }
-            BitType::U16 =>
-            {
+            BitType::U16 => {
                 // size is divided by 2 since sizeof added 2 for u16
                 // and when channel stores u16 it uses double the size
                 // as that of u8
@@ -658,12 +565,10 @@ where
 
                 Ok(DecodingResult::U16(data))
             }
-            BitType::F32 =>
-            {
+            BitType::F32 => {
                 // match endianness
                 // specified by the decoder options
-                let mut result = if self.options.get_byte_endian() == ByteEndian::BE
-                {
+                let mut result = if self.options.get_byte_endian() == ByteEndian::BE {
                     let remaining = self.reader.remaining_bytes();
 
                     remaining
@@ -671,9 +576,7 @@ where
                         .take(size / 4)
                         .map(|b| f32::from_be_bytes(b.try_into().unwrap()))
                         .collect::<Vec<f32>>()
-                }
-                else if self.options.get_byte_endian() == ByteEndian::LE
-                {
+                } else if self.options.get_byte_endian() == ByteEndian::LE {
                     let remaining = self.reader.remaining_bytes();
 
                     remaining
@@ -681,9 +584,7 @@ where
                         .take(size / 4)
                         .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
                         .collect::<Vec<f32>>()
-                }
-                else
-                {
+                } else {
                     unreachable!()
                 };
 
@@ -722,21 +623,16 @@ fn skip_spaces<T>(byte_stream: &mut ZByteReader<T>)
 where
     T: ZReaderTrait
 {
-    while !byte_stream.eof()
-    {
+    while !byte_stream.eof() {
         let mut byte = byte_stream.get_u8();
 
-        if byte == b'#'
-        {
+        if byte == b'#' {
             // comment
             // skip the whole comment
-            while byte != b'\n' && !byte_stream.eof()
-            {
+            while byte != b'\n' && !byte_stream.eof() {
                 byte = byte_stream.get_u8();
             }
-        }
-        else if !byte.is_ascii_whitespace()
-        {
+        } else if !byte.is_ascii_whitespace() {
             // go back one step, we hit something that is not a space
             byte_stream.rewind(1);
             break;
@@ -757,11 +653,9 @@ where
 {
     let start = z.get_position();
 
-    while !z.eof()
-    {
+    while !z.eof() {
         let byte = z.get_u8();
-        if byte.is_ascii_whitespace()
-        {
+        if byte.is_ascii_whitespace() {
             // skip any proceeding whitespace
             skip_spaces(z);
             break;

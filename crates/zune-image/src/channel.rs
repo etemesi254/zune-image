@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This module encapsulates a single image channel instance
 //!
 //! The channel is analogous to C/C++ `void *` but comes with some safety
@@ -35,8 +43,7 @@ pub const MIN_ALIGNMENT: usize = 64;
 /// Encapsulates errors that can occur
 /// when manipulating channels
 #[derive(Copy, Clone)]
-pub enum ChannelErrors
-{
+pub enum ChannelErrors {
     /// rarely, since all allocations are aligned to 16, but just in case
     UnalignedPointer(usize, usize),
     /// The length of the type does not evenly divide the channel length
@@ -46,25 +53,19 @@ pub enum ChannelErrors
     DifferentType(TypeId, TypeId)
 }
 
-impl Debug for ChannelErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
-            ChannelErrors::UnalignedPointer(expected, found) =>
-            {
+impl Debug for ChannelErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChannelErrors::UnalignedPointer(expected, found) => {
                 writeln!(f, "Channel pointer {expected} is not aligned to {found}")
             }
-            ChannelErrors::UnevenLength(length, size_of_1) =>
-            {
+            ChannelErrors::UnevenLength(length, size_of_1) => {
                 writeln!(
                     f,
                     "Size of {size_of_1} cannot evenly divide length {length}"
                 )
             }
-            ChannelErrors::DifferentType(expected, found) =>
-            {
+            ChannelErrors::DifferentType(expected, found) => {
                 writeln!(f, "Different type id {:?} from expected {:?}. This indicates you are converting a channel
              to a type it wasn't instantiated with", expected, found)
             }
@@ -79,8 +80,7 @@ impl Debug for ChannelErrors
 ///
 /// Most of the operations in the channel work by calling
 /// `reinterpret` methods, both as reference and as mutable.
-pub struct Channel
-{
+pub struct Channel {
     ptr:      *mut u8,
     length:   usize,
     capacity: usize,
@@ -96,10 +96,8 @@ unsafe impl Send for Channel {}
 
 unsafe impl Sync for Channel {}
 
-impl Clone for Channel
-{
-    fn clone(&self) -> Self
-    {
+impl Clone for Channel {
+    fn clone(&self) -> Self {
         let mut new_channel = Channel::new_with_capacity_and_type(self.capacity(), self.type_id);
         // copy items by calling extend
 
@@ -115,18 +113,14 @@ impl Clone for Channel
     }
 }
 
-impl PartialEq for Channel
-{
-    fn eq(&self, other: &Self) -> bool
-    {
+impl PartialEq for Channel {
+    fn eq(&self, other: &Self) -> bool {
         // check if length matches
-        if self.length != other.length
-        {
+        if self.length != other.length {
             return false;
         }
         // check if type matches
-        if self.type_id != other.type_id
-        {
+        if self.type_id != other.type_id {
             return false;
         }
         unsafe {
@@ -140,10 +134,8 @@ impl PartialEq for Channel
             let us = self.reinterpret_as_unchecked::<u8>();
             let them = other.reinterpret_as_unchecked::<u8>();
 
-            for (a, b) in us.iter().zip(them)
-            {
-                if *a != *b
-                {
+            for (a, b) in us.iter().zip(them) {
+                if *a != *b {
                     return false;
                 }
             }
@@ -153,10 +145,8 @@ impl PartialEq for Channel
     }
 }
 
-impl Debug for Channel
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
+impl Debug for Channel {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // safety.
         // all types can alias u8,
         // length points to the length spanning the ptr
@@ -165,15 +155,13 @@ impl Debug for Channel
     }
 }
 
-impl Channel
-{
+impl Channel {
     /// Return the number of elements the
     /// channel can store without reallocating
     ///
     /// It returns the number of raw bytes, not respecting
     /// type stored
-    pub const fn capacity(&self) -> usize
-    {
+    pub const fn capacity(&self) -> usize {
         self.capacity
     }
     /// Return the length of the underlying array
@@ -187,14 +175,12 @@ impl Channel
     ///
     /// # Example
     ///
-    pub const fn len(&self) -> usize
-    {
+    pub const fn len(&self) -> usize {
         self.length
     }
 
     /// Return true whether this length is zero
-    pub const fn is_empty(&self) -> bool
-    {
+    pub const fn is_empty(&self) -> bool {
         self.length == 0
     }
 
@@ -203,8 +189,7 @@ impl Channel
     ///
     /// It is not unsafe to call this, it's just left as unsafe
     /// to remind one to be careful of what they are doing
-    unsafe fn alloc(size: usize) -> *mut u8
-    {
+    unsafe fn alloc(size: usize) -> *mut u8 {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
         // Safety
         //  alloc zeroed == alloc + std::mem::zeroed()
@@ -215,8 +200,7 @@ impl Channel
     }
     /// Reallocate the pointer in place increasing
     /// it's capacity
-    unsafe fn realloc(&mut self, new_size: usize)
-    {
+    unsafe fn realloc(&mut self, new_size: usize) {
         let layout = Layout::from_size_align(new_size, MIN_ALIGNMENT).unwrap();
 
         self.ptr = realloc(self.ptr, layout, new_size);
@@ -224,8 +208,7 @@ impl Channel
         self.capacity = new_size;
     }
     /// Deallocate storage allocated for this channel
-    unsafe fn dealloc(&mut self)
-    {
+    unsafe fn dealloc(&mut self) {
         let layout = Layout::from_size_align(self.capacity, MIN_ALIGNMENT).unwrap();
 
         // safety
@@ -238,8 +221,7 @@ impl Channel
     ///
     ///
     /// This stores a single plane for an image
-    pub fn new<T: 'static + Zeroable>() -> Channel
-    {
+    pub fn new<T: 'static + Zeroable>() -> Channel {
         Self::new_with_capacity::<T>(10)
     }
     /// Create a new channel with the specified length and capacity
@@ -248,8 +230,7 @@ impl Channel
     ///
     /// # Arguments
     ///  - length: The length of the new channel
-    pub fn new_with_length<T: 'static + Zeroable>(length: usize) -> Channel
-    {
+    pub fn new_with_length<T: 'static + Zeroable>(length: usize) -> Channel {
         let mut channel = Channel::new_with_capacity::<T>(length);
         channel.length = length;
 
@@ -263,8 +244,7 @@ impl Channel
     ///  - length: The new lenghth of the array
     ///  - type_id: The type id of the type this is supposed to store
     ///
-    pub(crate) fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel
-    {
+    pub(crate) fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel {
         let mut channel = Channel::new_with_capacity_and_type(length, type_id);
         channel.length = length;
 
@@ -288,10 +268,8 @@ impl Channel
     /// use zune_image::channel::Channel;
     /// let channel = Channel::new_with_bit_type(0,BitType::U8);
     /// ```
-    pub fn new_with_bit_type(length: usize, depth: BitType) -> Channel
-    {
-        let t_r = match depth
-        {
+    pub fn new_with_bit_type(length: usize, depth: BitType) -> Channel {
+        let t_r = match depth {
             BitType::U8 => TypeId::of::<u8>(),
             BitType::U16 => TypeId::of::<u16>(),
             BitType::F32 => TypeId::of::<f32>(),
@@ -314,8 +292,7 @@ impl Channel
     ///
     /// assert_eq!(channel.get_type_id(),TypeId::of::<u8>());
     /// ```
-    pub fn get_type_id(&self) -> TypeId
-    {
+    pub fn get_type_id(&self) -> TypeId {
         self.type_id
     }
     /// Create a new channel with the specified capacity
@@ -327,8 +304,7 @@ impl Channel
     /// let channel = Channel::new_with_capacity::<u16>(100);    
     /// assert!(channel.is_empty());
     /// ```
-    pub fn new_with_capacity<T: 'static + Zeroable>(capacity: usize) -> Channel
-    {
+    pub fn new_with_capacity<T: 'static + Zeroable>(capacity: usize) -> Channel {
         Self::new_with_capacity_and_type(capacity, TypeId::of::<T>())
     }
 
@@ -342,8 +318,7 @@ impl Channel
     ///
     /// returns: Channel
     ///
-    pub(crate) fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel
-    {
+    pub(crate) fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel {
         let ptr = unsafe { Self::alloc(capacity) };
 
         Self {
@@ -383,15 +358,13 @@ impl Channel
     }
     /// Return true if we can store `extra`
     /// items without resizing/reallocating
-    fn has_capacity(&self, extra: usize) -> bool
-    {
+    fn has_capacity(&self, extra: usize) -> bool {
         self.length.saturating_add(extra) <= self.capacity
     }
     /// Extend this channel with items from data
     ///
     ///
-    pub fn extend<T: Copy + 'static + Zeroable>(&mut self, data: &[T])
-    {
+    pub fn extend<T: Copy + 'static + Zeroable>(&mut self, data: &[T]) {
         assert_eq!(
             TypeId::of::<T>(),
             self.type_id,
@@ -408,15 +381,13 @@ impl Channel
     ///
     /// - Type of element should match, otherwise behaviour is undefined
     /// - Alignment must match
-    unsafe fn extend_unchecked<T: Copy + 'static + Zeroable>(&mut self, data: &[T])
-    {
+    unsafe fn extend_unchecked<T: Copy + 'static + Zeroable>(&mut self, data: &[T]) {
         // get size of the generic type
         let data_size = core::mem::size_of::<T>();
         // get number of items we need to store
         let items = data.len().saturating_mul(data_size);
         // check if we need to realloc
-        if !self.has_capacity(items)
-        {
+        if !self.has_capacity(items) {
             // reallocate to handle enough of the length.
             // realloc will set the new capacity
             // but as callers we have to set the new length
@@ -441,8 +412,7 @@ impl Channel
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default + 'static + Pod>(&self) -> Result<&[T], ChannelErrors>
-    {
+    pub fn reinterpret_as<T: Default + 'static + Pod>(&self) -> Result<&[T], ChannelErrors> {
         // check if the alignment is correct
         // plus we can evenly divide this
         self.confirm_suspicions::<T>()?;
@@ -464,8 +434,7 @@ impl Channel
     ///
     /// # Returns
     /// - `Some(&[T])`: THe re-interpreted bits
-    unsafe fn reinterpret_as_unchecked<T: Default + 'static + Pod>(&self) -> &[T]
-    {
+    unsafe fn reinterpret_as_unchecked<T: Default + 'static + Pod>(&self) -> &[T] {
         // Safety:
         //  validity: We own the data
         //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
@@ -481,8 +450,7 @@ impl Channel
         b
     }
     /// Reinterpret a slice of `&[u8]` into another type
-    pub fn reinterpret_as_mut<T: 'static + Pod>(&mut self) -> Result<&mut [T], ChannelErrors>
-    {
+    pub fn reinterpret_as_mut<T: 'static + Pod>(&mut self) -> Result<&mut [T], ChannelErrors> {
         // Get size of pointer
         // check if the alignment is correct + size evenly divides
         self.confirm_suspicions::<T>()?;
@@ -521,12 +489,10 @@ impl Channel
     /// // assert that length matches
     /// assert_eq!(channel.len(),len);
     /// ```
-    pub fn push<T: Copy + 'static + Zeroable>(&mut self, elm: T)
-    {
+    pub fn push<T: Copy + 'static + Zeroable>(&mut self, elm: T) {
         let size = core::mem::size_of::<T>(); // compile time
 
-        if !self.has_capacity(size)
-        {
+        if !self.has_capacity(size) {
             unsafe {
                 // extend
                 // use 3/2 formula
@@ -578,11 +544,9 @@ impl Channel
     /// Confirm that data is aligned and
     ///
     /// the type T can evenly divide length
-    fn confirm_suspicions<T: 'static>(&self) -> Result<(), ChannelErrors>
-    {
+    fn confirm_suspicions<T: 'static>(&self) -> Result<(), ChannelErrors> {
         // confirm the data is aligned for T
-        if !is_aligned::<T>(self.ptr)
-        {
+        if !is_aligned::<T>(self.ptr) {
             return Err(ChannelErrors::UnalignedPointer(
                 self.ptr as usize,
                 size_of::<T>()
@@ -590,14 +554,12 @@ impl Channel
         }
 
         // confirm we can evenly divide length
-        if self.length % size_of::<T>() != 0
-        {
+        if self.length % size_of::<T>() != 0 {
             return Err(ChannelErrors::UnevenLength(self.length, size_of::<T>()));
         }
         let converted_type_id = TypeId::of::<T>();
 
-        if converted_type_id != self.type_id
-        {
+        if converted_type_id != self.type_id {
             return Err(ChannelErrors::DifferentType(
                 self.type_id,
                 converted_type_id
@@ -608,10 +570,8 @@ impl Channel
     }
 }
 
-impl Drop for Channel
-{
-    fn drop(&mut self)
-    {
+impl Drop for Channel {
+    fn drop(&mut self) {
         // dealloc storage
         unsafe {
             self.dealloc();
@@ -620,30 +580,26 @@ impl Drop for Channel
 }
 
 /// Check if a pointer is aligned.
-fn is_aligned<T>(ptr: *const u8) -> bool
-{
+fn is_aligned<T>(ptr: *const u8) -> bool {
     let size = core::mem::size_of::<T>();
 
     (ptr as usize) & ((size) - 1) == 0
 }
 
 #[allow(unused_imports)]
-mod tests
-{
+mod tests {
     use crate::channel::Channel;
 
     /// check that we cant convert from a type we made
     #[test]
-    fn test_wrong_interpretation()
-    {
+    fn test_wrong_interpretation() {
         let ch = Channel::new::<u8>();
         assert!(ch.reinterpret_as::<u16>().is_err());
     }
 
     // test that we return for interpretations that match
     #[test]
-    fn test_correct_interpretation()
-    {
+    fn test_correct_interpretation() {
         let mut ch = Channel::new::<u16>();
         ch.push(70_u16);
         let expected = [70_u16];
@@ -651,8 +607,7 @@ mod tests
     }
 
     #[test]
-    fn test_clone_works()
-    {
+    fn test_clone_works() {
         let mut ch = Channel::new::<u8>();
         ch.extend::<u8>(&[10; 10]);
         // test clone works

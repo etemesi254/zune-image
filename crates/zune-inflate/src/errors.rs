@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Errors possible when decoding deflate/zlib/gzip
 //! streams
 
@@ -16,16 +24,14 @@ use core::fmt::{Debug, Display, Formatter};
 ///
 /// One can recover data up to the error if they so wish but
 /// guarantees about data state is not given
-pub struct InflateDecodeErrors
-{
+pub struct InflateDecodeErrors {
     /// reason why decompression fails
     pub error: DecodeErrorStatus,
     /// Decoded data up until that decompression error
     pub data:  Vec<u8>
 }
 
-impl InflateDecodeErrors
-{
+impl InflateDecodeErrors {
     /// Create a new decode wrapper with data being
     /// how many bytes we actually decoded before hitting an error
     ///
@@ -35,30 +41,25 @@ impl InflateDecodeErrors
     ///
     /// # Returns
     /// Itself
-    pub fn new(error: DecodeErrorStatus, data: Vec<u8>) -> InflateDecodeErrors
-    {
+    pub fn new(error: DecodeErrorStatus, data: Vec<u8>) -> InflateDecodeErrors {
         InflateDecodeErrors { error, data }
     }
     /// Create a new decode wrapper with an empty vector
     ///
     /// # Arguments
     /// - `error`: Error encountered during decoding.
-    pub fn new_with_error(error: DecodeErrorStatus) -> InflateDecodeErrors
-    {
+    pub fn new_with_error(error: DecodeErrorStatus) -> InflateDecodeErrors {
         InflateDecodeErrors::new(error, vec![])
     }
 }
 
-impl Debug for InflateDecodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
+impl Debug for InflateDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "{:?}", self.error)
     }
 }
 
-pub enum DecodeErrorStatus
-{
+pub enum DecodeErrorStatus {
     /// Input data is not enough to construct
     /// a full output
     InsufficientData,
@@ -82,12 +83,9 @@ pub enum DecodeErrorStatus
     MismatchedAdler(u32, u32)
 }
 
-impl Debug for DecodeErrorStatus
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
+impl Debug for DecodeErrorStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
             Self::InsufficientData => writeln!(f, "Insufficient data"),
             Self::Generic(reason) => writeln!(f, "{reason}"),
             Self::GenericStr(reason) => writeln!(f, "{reason}"),
@@ -96,23 +94,19 @@ impl Debug for DecodeErrorStatus
                 f,
                 "Output limit exceeded, set limit was {limit} and output size is {current}"
             ),
-            Self::MismatchedCRC(expected, found) =>
-            {
+            Self::MismatchedCRC(expected, found) => {
                 writeln!(f, "Mismatched CRC, expected {expected} but found {found}")
             }
-            Self::MismatchedAdler(expected, found) =>
-            {
+            Self::MismatchedAdler(expected, found) => {
                 writeln!(f, "Mismatched Adler, expected {expected} but found {found}")
             }
         }
     }
 }
 
-impl Display for InflateDecodeErrors
-{
+impl Display for InflateDecodeErrors {
     #[allow(clippy::uninlined_format_args)]
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "{:?}", self)
     }
 }

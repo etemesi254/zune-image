@@ -6,18 +6,13 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8], out: &mut [u8])
-{
-    let scale = if plte_present
-    {
+pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8], out: &mut [u8]) {
+    let scale = if plte_present {
         // When a palette is used we only separate the indexes in this pass,
         // the palette pass will convert indexes to the right colors later.
         1
-    }
-    else
-    {
-        match depth
-        {
+    } else {
+        match depth {
             1 => 0xFF,
             2 => 0x55,
             4 => 0x11,
@@ -25,8 +20,7 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
         }
     };
 
-    if depth == 1
-    {
+    if depth == 1 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(8);
 
@@ -53,17 +47,14 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
             });
 
         // handle the remainder at the end where the output is less than 8 bytes long
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (7_usize).wrapping_sub(pos);
                 *out_val = scale * ((in_val >> shift) & 0x01);
             });
         }
-    }
-    else if depth == 2
-    {
+    } else if depth == 2 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(4);
 
@@ -80,17 +71,14 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
             });
 
         // handle the remainder at the end where the output is less than 4 bytes long
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (6_usize).wrapping_sub(pos * 2);
                 *out_val = scale * ((in_val >> shift) & 0x03);
             });
         }
-    }
-    else if depth == 4
-    {
+    } else if depth == 4 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(2);
 
@@ -105,8 +93,7 @@ pub(crate) fn expand_bits_to_byte(depth: usize, plte_present: bool, input: &[u8]
             });
 
         // handle the remainder at the end
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (4_usize).wrapping_sub(pos * 4);

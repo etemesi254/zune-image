@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "sse2")]
 
@@ -10,15 +18,13 @@ use std::mem::size_of;
 use crate::premul_alpha::unpremultiply_f32_scalar;
 
 /// Un-premultiply the channel with the alpha channel
-pub(crate) unsafe fn unpremultiply_sse_f32(input: &mut [f32], alpha: &[f32])
-{
+pub(crate) unsafe fn unpremultiply_sse_f32(input: &mut [f32], alpha: &[f32]) {
     const VECTOR_SIZE: usize = size_of::<__m128>() / size_of::<f32>();
 
     let in_chunk = input.chunks_exact_mut(VECTOR_SIZE);
     let alpha_chunk = alpha.chunks_exact(VECTOR_SIZE);
 
-    for (chunk, alpha_values) in in_chunk.zip(alpha_chunk)
-    {
+    for (chunk, alpha_values) in in_chunk.zip(alpha_chunk) {
         // load items
         let ab = _mm_loadu_ps(chunk.as_ptr());
         let al = _mm_loadu_ps(alpha_values.as_ptr());
@@ -40,8 +46,7 @@ pub(crate) unsafe fn unpremultiply_sse_f32(input: &mut [f32], alpha: &[f32])
 }
 
 #[test]
-fn test_inverse_sse_scalar()
-{
+fn test_inverse_sse_scalar() {
     use nanorand::Rng;
 
     let mut in_array = [0.0f32; 256];
@@ -57,8 +62,7 @@ fn test_inverse_sse_scalar()
     unsafe {
         unpremultiply_sse_f32(&mut in_copy, &in_alpha);
     }
-    for (a, b) in in_array.iter().zip(&in_copy)
-    {
+    for (a, b) in in_array.iter().zip(&in_copy) {
         let diff = a - b;
 
         assert!(a.is_finite());

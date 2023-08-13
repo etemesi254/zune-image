@@ -35,36 +35,24 @@ use crate::cmd_args::arg_parsers::IColorSpace;
 
 pub fn parse_options<T: IntoImage>(
     workflow: &mut WorkFlow<T>, argument: &str, args: &ArgMatches
-) -> Result<(), String>
-{
-    if argument == "flip"
-    {
+) -> Result<(), String> {
+    if argument == "flip" {
         debug!("Added flip operation");
         workflow.add_operation(Box::new(Flip::new()));
-    }
-    else if argument == "grayscale"
-    {
+    } else if argument == "grayscale" {
         debug!("Added grayscale operation");
         workflow.add_operation(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
-    }
-    else if argument == "transpose"
-    {
+    } else if argument == "transpose" {
         debug!("Added transpose operation");
         workflow.add_operation(Box::new(Transpose::new()));
-    }
-    else if argument == "flop"
-    {
+    } else if argument == "flop" {
         debug!("Added flop operation");
         workflow.add_operation(Box::new(Flop::new()))
-    }
-    else if argument == "median"
-    {
+    } else if argument == "median" {
         let radius = *args.get_one::<usize>("median").unwrap();
         workflow.add_operation(Box::new(Median::new(radius)));
         debug!("Added Median operation");
-    }
-    else if argument == "statistic"
-    {
+    } else if argument == "statistic" {
         let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
 
         // parse first one as radius
@@ -73,49 +61,32 @@ pub fn parse_options<T: IntoImage>(
 
         workflow.add_operation(Box::new(StatisticsOps::new(radius, stats_mode)));
         debug!("Added StatisticsOps operation");
-    }
-    else if argument == "mirror"
-    {
+    } else if argument == "mirror" {
         let value = args.get_one::<String>("mirror").unwrap().trim();
         let direction;
 
-        if value == "north"
-        {
+        if value == "north" {
             direction = MirrorMode::North;
-        }
-        else if value == "south"
-        {
+        } else if value == "south" {
             direction = MirrorMode::South;
-        }
-        else if value == "east"
-        {
+        } else if value == "east" {
             direction = MirrorMode::East;
-        }
-        else if value == "west"
-        {
+        } else if value == "west" {
             direction = MirrorMode::West;
-        }
-        else
-        {
+        } else {
             return Err(format!("Unknown mirror mode {value:?}"));
         }
 
         debug!("Added mirror with direction {:?}", value);
         workflow.add_operation(Box::new(Mirror::new(direction)))
-    }
-    else if argument == "invert"
-    {
+    } else if argument == "invert" {
         debug!("Added invert operation");
         workflow.add_operation(Box::new(Invert::new()))
-    }
-    else if argument == "brighten"
-    {
+    } else if argument == "brighten" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added brighten operation with {:?}", value);
         workflow.add_operation(Box::new(Brighten::new(value)))
-    }
-    else if argument == "crop"
-    {
+    } else if argument == "crop" {
         let crop_args = args
             .get_many::<usize>(argument)
             .unwrap()
@@ -129,9 +100,7 @@ pub fn parse_options<T: IntoImage>(
         );
 
         workflow.add_operation(Box::new(crop));
-    }
-    else if argument == "threshold"
-    {
+    } else if argument == "threshold" {
         let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
 
         // parse first one as radius
@@ -145,9 +114,7 @@ pub fn parse_options<T: IntoImage>(
             "Added threshold operation with mode {:?}  and value {:?}",
             thresh_mode, radius
         )
-    }
-    else if argument == "stretch_contrast"
-    {
+    } else if argument == "stretch_contrast" {
         let values = args
             .get_many::<u16>(argument)
             .unwrap()
@@ -163,21 +130,15 @@ pub fn parse_options<T: IntoImage>(
         );
         let stretch_contrast = StretchContrast::new(lower, upper);
         workflow.add_operation(Box::new(stretch_contrast));
-    }
-    else if argument == "gamma"
-    {
+    } else if argument == "gamma" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added gamma filter with value {}", value);
         workflow.add_operation(Box::new(Gamma::new(value)));
-    }
-    else if argument == "contrast"
-    {
+    } else if argument == "contrast" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added contrast filter with value {},", value);
         workflow.add_operation(Box::new(Contrast::new(value)));
-    }
-    else if argument == "resize"
-    {
+    } else if argument == "resize" {
         let values = args
             .get_many::<usize>(argument)
             .unwrap()
@@ -194,16 +155,12 @@ pub fn parse_options<T: IntoImage>(
             width, height
         );
         workflow.add_operation(Box::new(func));
-    }
-    else if argument == "depth"
-    {
+    } else if argument == "depth" {
         let value = *args.get_one::<u8>(argument).unwrap();
-        let depth = match value
-        {
+        let depth = match value {
             8 => BitDepth::Eight,
             16 => BitDepth::Sixteen,
-            _ =>
-            {
+            _ => {
                 return Err(format!(
                     "Unknown depth value {value}, supported depths are 8 and 16"
                 ))
@@ -212,9 +169,7 @@ pub fn parse_options<T: IntoImage>(
         debug!("Added depth operation with depth of {value}");
 
         workflow.add_operation(Box::new(Depth::new(depth)));
-    }
-    else if argument == "colorspace"
-    {
+    } else if argument == "colorspace" {
         let colorspace = args
             .get_one::<IColorSpace>("colorspace")
             .unwrap()
@@ -223,21 +178,15 @@ pub fn parse_options<T: IntoImage>(
         debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
 
         workflow.add_operation(Box::new(ColorspaceConv::new(colorspace)))
-    }
-    else if argument == "auto-orient"
-    {
+    } else if argument == "auto-orient" {
         debug!("Add auto orient operation");
         workflow.add_operation(Box::new(AutoOrient))
-    }
-    else if argument == "exposure"
-    {
+    } else if argument == "exposure" {
         let exposure = *args.get_one::<f32>(argument).unwrap();
 
         workflow.add_operation(Box::new(Exposure::new(exposure, 0.)));
         debug!("Adding exposure argument with value {}", exposure);
-    }
-    else if argument == "v-flip"
-    {
+    } else if argument == "v-flip" {
         debug!("Added v-flip argument");
         workflow.add_operation(Box::new(VerticalFlip::new()))
     }

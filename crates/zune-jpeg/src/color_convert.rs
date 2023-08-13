@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(
     clippy::many_single_char_names,
     clippy::similar_names,
@@ -53,19 +61,16 @@ mod scalar;
 #[allow(unused_variables)]
 pub fn choose_ycbcr_to_rgb_convert_func(
     type_need: ColorSpace, options: &DecoderOptions
-) -> Option<ColorConvert16Ptr>
-{
+) -> Option<ColorConvert16Ptr> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if options.use_avx2()
-        {
+        if options.use_avx2() {
             debug!("Using AVX optimised color conversion functions");
 
             // I believe avx2 means sse4 is also available
             // match colorspace
-            match type_need
-            {
+            match type_need {
                 ColorSpace::RGB => return Some(ycbcr_to_rgb_avx2),
                 ColorSpace::RGBA => return Some(ycbcr_to_rgba_avx2),
                 _ => () // fall through to scalar, which has more types
@@ -73,8 +78,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
         }
     }
     // when there is no x86 or we haven't returned by here, resort to scalar
-    return match type_need
-    {
+    return match type_need {
         ColorSpace::RGB => Some(scalar::ycbcr_to_rgb_inner_16_scalar::<false>),
         ColorSpace::RGBA => Some(scalar::ycbcr_to_rgba_inner_16_scalar::<false>),
         ColorSpace::BGRA => Some(scalar::ycbcr_to_rgba_inner_16_scalar::<true>),

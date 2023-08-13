@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Benchmarks for
 
 use std::fs::read;
@@ -9,15 +17,13 @@ use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
 
-fn decode_jpeg(buf: &[u8]) -> Vec<u8>
-{
+fn decode_jpeg(buf: &[u8]) -> Vec<u8> {
     let mut d = JpegDecoder::new(buf);
 
     d.decode().unwrap()
 }
 
-fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]>
-{
+fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]> {
     let p = std::panic::catch_unwind(|| {
         let d = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS)
             .from_mem(buf)
@@ -37,15 +43,13 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]>
     p
 }
 
-fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8>
-{
+fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8> {
     let mut decoder = jpeg_decoder::Decoder::new(buf);
 
     decoder.decode().unwrap()
 }
 
-fn decode_no_samp(c: &mut Criterion)
-{
+fn decode_no_samp(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
 
     let data = read(a).unwrap();
@@ -66,8 +70,7 @@ fn decode_no_samp(c: &mut Criterion)
     });
 }
 
-fn decode_h_samp(c: &mut Criterion)
-{
+fn decode_h_samp(c: &mut Criterion) {
     let data = read(
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_horizontal_subsampling.jpg")
     )
@@ -88,8 +91,7 @@ fn decode_h_samp(c: &mut Criterion)
     });
 }
 
-fn decode_v_samp(c: &mut Criterion)
-{
+fn decode_v_samp(c: &mut Criterion) {
     let data = read(
         sample_path().join("test-images/jpeg/benchmarks/speed_bench_vertical_subsampling.jpg")
     )
@@ -110,8 +112,7 @@ fn decode_v_samp(c: &mut Criterion)
     });
 }
 
-fn decode_hv_samp(c: &mut Criterion)
-{
+fn decode_hv_samp(c: &mut Criterion) {
     let data =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
             .unwrap();
@@ -131,8 +132,7 @@ fn decode_hv_samp(c: &mut Criterion)
     });
 }
 
-fn decode_jpeg_grayscale(buf: &[u8]) -> Vec<u8>
-{
+fn decode_jpeg_grayscale(buf: &[u8]) -> Vec<u8> {
     let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
 
     let mut d = JpegDecoder::new_with_options(options, buf);
@@ -140,8 +140,7 @@ fn decode_jpeg_grayscale(buf: &[u8]) -> Vec<u8>
     d.decode().unwrap()
 }
 
-fn decode_jpeg_mozjpeg_grayscale(buf: &[u8]) -> Vec<[u8; 1]>
-{
+fn decode_jpeg_mozjpeg_grayscale(buf: &[u8]) -> Vec<[u8; 1]> {
     let p = std::panic::catch_unwind(|| {
         let d = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS)
             .from_mem(buf)
@@ -161,8 +160,7 @@ fn decode_jpeg_mozjpeg_grayscale(buf: &[u8]) -> Vec<[u8; 1]>
     p
 }
 
-fn criterion_benchmark_grayscale(c: &mut Criterion)
-{
+fn criterion_benchmark_grayscale(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
 
     let data = read(a).unwrap();
@@ -180,8 +178,7 @@ fn criterion_benchmark_grayscale(c: &mut Criterion)
     });
 }
 
-fn decode_no_samp_prog(c: &mut Criterion)
-{
+fn decode_no_samp_prog(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog.jpg");
     let data = read(a).unwrap();
     let mut group = c.benchmark_group("jpeg: No sampling Progressive decoding");
@@ -201,8 +198,7 @@ fn decode_no_samp_prog(c: &mut Criterion)
     });
 }
 
-fn decode_h_samp_prog(c: &mut Criterion)
-{
+fn decode_h_samp_prog(c: &mut Criterion) {
     let x = read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_h_sampling.jpg"))
         .unwrap();
     let mut group = c.benchmark_group("jpeg: Progressive Horizontal Sub Sampling");
@@ -219,8 +215,7 @@ fn decode_h_samp_prog(c: &mut Criterion)
     });
 }
 
-fn decode_v_samp_prog(c: &mut Criterion)
-{
+fn decode_v_samp_prog(c: &mut Criterion) {
     let x = read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_v_sampling.jpg"))
         .unwrap();
 
@@ -239,8 +234,7 @@ fn decode_v_samp_prog(c: &mut Criterion)
     });
 }
 
-fn decode_hv_samp_prog(c: &mut Criterion)
-{
+fn decode_hv_samp_prog(c: &mut Criterion) {
     let x =
         read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog_hv_sampling.jpg"))
             .unwrap();
@@ -258,15 +252,13 @@ fn decode_hv_samp_prog(c: &mut Criterion)
     });
 }
 
-fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8>
-{
+fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8> {
     let mut d = JpegDecoder::new_with_options(options, buf);
 
     d.decode().unwrap()
 }
 
-fn decode_no_samp_opts(c: &mut Criterion)
-{
+fn decode_no_samp_opts(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
 
     let data = read(a).unwrap();

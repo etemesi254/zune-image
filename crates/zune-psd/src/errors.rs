@@ -1,10 +1,17 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use core::fmt::{Debug, Formatter};
 
 use crate::constants::{ColorModes, PSD_IDENTIFIER_BE};
 
 /// PSDDecodeErrors that can occur during PSD decoding
-pub enum PSDDecodeErrors
-{
+pub enum PSDDecodeErrors {
     WrongMagicBytes(u32),
     UnsupportedFileType(u16),
     UnsupportedChannelCount(u16),
@@ -17,18 +24,13 @@ pub enum PSDDecodeErrors
     BadRLE
 }
 
-impl Debug for PSDDecodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            PSDDecodeErrors::Generic(reason) =>
-            {
+impl Debug for PSDDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PSDDecodeErrors::Generic(reason) => {
                 writeln!(f, "{reason}")
             }
-            PSDDecodeErrors::WrongMagicBytes(bytes) =>
-            {
+            PSDDecodeErrors::WrongMagicBytes(bytes) => {
                 writeln!(
                     f,
                     "Expected {:?} but found  {:?}, not a PSD image",
@@ -36,65 +38,52 @@ impl Debug for PSDDecodeErrors
                     bytes.to_be_bytes()
                 )
             }
-            PSDDecodeErrors::UnsupportedFileType(version) =>
-            {
+            PSDDecodeErrors::UnsupportedFileType(version) => {
                 writeln!(
                     f,
                     "Unsupported file version {version:?}, known versions are 1",
                 )
             }
-            PSDDecodeErrors::UnsupportedChannelCount(channels) =>
-            {
+            PSDDecodeErrors::UnsupportedChannelCount(channels) => {
                 writeln!(f, "Unsupported channel count {channels:?}")
             }
-            PSDDecodeErrors::UnsupportedBitDepth(depth) =>
-            {
+            PSDDecodeErrors::UnsupportedBitDepth(depth) => {
                 writeln!(
                     f,
                     "Unsupported bit depth {depth:?}, supported depths are 8 and 16",
                 )
             }
-            PSDDecodeErrors::UnsupportedColorFormat(color) =>
-            {
-                if let Some(color) = color
-                {
+            PSDDecodeErrors::UnsupportedColorFormat(color) => {
+                if let Some(color) = color {
                     writeln!(
                         f,
                         "Unsupported color format  {color:?}, supported formats RGB,CMYK and Grayscale currently",
                     )
-                }
-                else
-                {
+                } else {
                     writeln!(f, "Unknown color format")
                 }
             }
-            PSDDecodeErrors::UnknownCompression =>
-            {
+            PSDDecodeErrors::UnknownCompression => {
                 writeln!(f, "Unknown compression format")
             }
-            PSDDecodeErrors::BadRLE =>
-            {
+            PSDDecodeErrors::BadRLE => {
                 writeln!(f, "Bad RLE")
             }
-            PSDDecodeErrors::LargeDimensions(supported, found) =>
-            {
+            PSDDecodeErrors::LargeDimensions(supported, found) => {
                 writeln!(
                     f,
                     "Too large dimensions, supported {supported} but found {found}",
                 )
             }
-            PSDDecodeErrors::ZeroDimensions =>
-            {
+            PSDDecodeErrors::ZeroDimensions => {
                 writeln!(f, "Zero found where not expected")
             }
         }
     }
 }
 
-impl From<&'static str> for PSDDecodeErrors
-{
-    fn from(r: &'static str) -> Self
-    {
+impl From<&'static str> for PSDDecodeErrors {
+    fn from(r: &'static str) -> Self {
         Self::Generic(r)
     }
 }

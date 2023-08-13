@@ -1,15 +1,21 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
 
-fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
-{
+fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
 }
 
-fn decode_ref(data: &[u8]) -> Vec<u8>
-{
+fn decode_ref(data: &[u8]) -> Vec<u8> {
     let mut decoder = png::Decoder::new(data);
     let expand = Transformations::EXPAND;
     decoder.set_transformations(expand);
@@ -24,13 +30,11 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
     buf
 }
 
-fn decode_zune(data: &[u8]) -> Vec<u8>
-{
+fn decode_zune(data: &[u8]) -> Vec<u8> {
     zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
 
-fn test_decoding<P: AsRef<Path>>(path: P)
-{
+fn test_decoding<P: AsRef<Path>>(path: P) {
     let contents = open_and_read(path);
 
     let zune_results = decode_zune(&contents);
@@ -39,16 +43,14 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 }
 
 #[test]
-fn test_palette_trns_16bit()
-{
+fn test_palette_trns_16bit() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/tbwn0g16.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_palette_trns_8bit()
-{
+fn test_palette_trns_8bit() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/tbgn3p08.png";
 
     test_decoding(path);

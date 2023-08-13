@@ -15,20 +15,17 @@ use crate::image::Image;
 use crate::traits::{EncoderTrait, IntoImage, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
-enum WorkFlowState
-{
+enum WorkFlowState {
     Initialized,
     Decode,
     Operations,
     Encode,
     Finished
 }
-impl WorkFlowState
-{
-    pub fn next(self) -> Option<Self>
-    {
-        match self
-        {
+
+impl WorkFlowState {
+    pub fn next(self) -> Option<Self> {
+        match self {
             WorkFlowState::Initialized => Some(WorkFlowState::Decode),
             WorkFlowState::Decode => Some(WorkFlowState::Operations),
             WorkFlowState::Operations => Some(WorkFlowState::Encode),
@@ -38,20 +35,16 @@ impl WorkFlowState
     }
 }
 
-pub struct EncodeResult
-{
+pub struct EncodeResult {
     pub(crate) format: ImageFormat,
     pub(crate) data:   Vec<u8>
 }
 
-impl EncodeResult
-{
-    pub fn get_data(&self) -> &[u8]
-    {
+impl EncodeResult {
+    pub fn get_data(&self) -> &[u8] {
         &self.data
     }
-    pub fn get_format(&self) -> ImageFormat
-    {
+    pub fn get_format(&self) -> ImageFormat {
         self.format
     }
 }
@@ -62,8 +55,7 @@ impl EncodeResult
 /// it can load multiple images (by queing decoders) and batch apply an operation
 /// to all the images and then encode images to a specified format.
 ///
-pub struct WorkFlow<T: IntoImage>
-{
+pub struct WorkFlow<T: IntoImage> {
     state:         Option<WorkFlowState>,
     decode:        Option<T>,
     image:         Vec<Image>,
@@ -78,8 +70,7 @@ where
 {
     /// Create a new workflow that encapsulates a
     #[allow(clippy::new_without_default)]
-    pub fn new() -> WorkFlow<T>
-    {
+    pub fn new() -> WorkFlow<T> {
         WorkFlow {
             image:         vec![],
             state:         Some(WorkFlowState::Initialized),
@@ -107,33 +98,27 @@ where
     /// let x= WorkFlow::<Image>::new().add_encoder(Box::new(encoder));
     ///
     /// ```
-    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>)
-    {
+    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>) {
         self.encode.push(encoder);
     }
     /// Add a single decoder for this image
-    pub fn add_decoder(&mut self, decoder: T)
-    {
+    pub fn add_decoder(&mut self, decoder: T) {
         self.decode = Some(decoder);
     }
 
-    pub fn add_operation(&mut self, operations: Box<dyn OperationsTrait>)
-    {
+    pub fn add_operation(&mut self, operations: Box<dyn OperationsTrait>) {
         self.operations.push(operations);
     }
     /// Add an image to this chain.
-    pub fn chain_image(&mut self, image: Image)
-    {
+    pub fn chain_image(&mut self, image: Image) {
         self.image.push(image);
     }
 
-    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<T>
-    {
+    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<T> {
         self.encode.push(encoder);
         self
     }
-    pub fn chain_decoder(&mut self, decoder: T) -> &mut WorkFlow<T>
-    {
+    pub fn chain_decoder(&mut self, decoder: T) -> &mut WorkFlow<T> {
         self.decode = Some(decoder);
         self
     }
@@ -163,18 +148,15 @@ where
     ///     .chain_operations(Box::new(BoxBlur::new(10)))   
     ///     .advance_to_end();
     /// ```
-    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T>
-    {
+    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T> {
         self.operations.push(operations);
         self
     }
-    pub fn get_images(&self) -> &[Image]
-    {
+    pub fn get_images(&self) -> &[Image] {
         self.image.as_ref()
     }
     /// Return all images in the workflow as mutable references
-    pub fn get_image_mut(&mut self) -> &mut [Image]
-    {
+    pub fn get_image_mut(&mut self) -> &mut [Image] {
         self.image.as_mut()
     }
     /// Advance the workflow one state forward
@@ -187,21 +169,15 @@ where
     /// 4. Finish
     ///
     /// Calling `Workflow::advance()` will run one of this operation
-    pub fn advance(&mut self) -> Result<(), ImageErrors>
-    {
-        if let Some(state) = self.state
-        {
-            match state
-            {
-                WorkFlowState::Decode =>
-                {
+    pub fn advance(&mut self) -> Result<(), ImageErrors> {
+        if let Some(state) = self.state {
+            match state {
+                WorkFlowState::Decode => {
                     let start = Instant::now();
                     // do the actual decode
-                    if self.decode.is_none()
-                    {
+                    if self.decode.is_none() {
                         // we have an image, no need to decode a new one
-                        if self.image.is_empty()
-                        {
+                        if self.image.is_empty() {
                             info!("Image already present, no need to decode");
                             // move to the next state
                             self.state = state.next();
@@ -211,8 +187,7 @@ where
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info)
-                    {
+                    if log_enabled!(Info) {
                         println!();
                         info!("Current state: {:?}\n", state);
                     }
@@ -229,23 +204,18 @@ where
 
                     info!("Finished decoding in {} ms", (stop - start).as_millis());
                 }
-                WorkFlowState::Operations =>
-                {
-                    if self.image.is_empty()
-                    {
+                WorkFlowState::Operations => {
+                    if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info) && !self.operations.is_empty()
-                    {
+                    if log_enabled!(Info) && !self.operations.is_empty() {
                         println!();
                         info!("Current state: {:?}\n", state);
                     }
 
-                    for image in self.image.iter_mut()
-                    {
-                        for operation in &self.operations
-                        {
+                    for image in self.image.iter_mut() {
+                        for operation in &self.operations {
                             let operation_name = operation.get_name();
 
                             info!("Running {}", operation_name);
@@ -264,23 +234,18 @@ where
                         self.state = state.next();
                     }
                 }
-                WorkFlowState::Encode =>
-                {
-                    if self.image.is_empty()
-                    {
+                WorkFlowState::Encode => {
+                    if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info) && !self.encode.is_empty()
-                    {
+                    if log_enabled!(Info) && !self.encode.is_empty() {
                         println!();
                         info!("Current state: {:?}\n", state);
                     }
 
-                    for image in self.image.iter()
-                    {
-                        for encoder in self.encode.iter_mut()
-                        {
+                    for image in self.image.iter() {
+                        for encoder in self.encode.iter_mut() {
                             let encoder_name = encoder.get_name();
 
                             info!("Running {}", encoder_name);
@@ -295,8 +260,7 @@ where
                                 "Finished running `{encoder_name}` in {} ms",
                                 (stop - start).as_millis()
                             );
-                            if log_enabled!(Level::Info)
-                            {
+                            if log_enabled!(Level::Info) {
                                 eprintln!();
                             }
                         }
@@ -304,15 +268,13 @@ where
 
                     self.state = state.next();
                 }
-                WorkFlowState::Finished =>
-                {
+                WorkFlowState::Finished => {
                     info!("Finished operations for this workflow");
 
                     self.state = state.next();
                     return Ok(());
                 }
-                _ =>
-                {
+                _ => {
                     self.state = state.next();
                 }
             }
@@ -324,19 +286,15 @@ where
     ///
     /// This will run a decoder, all operations and all encoders
     /// for this particular workflow
-    pub fn advance_to_end(&mut self) -> Result<(), ImageErrors>
-    {
-        if self.state.is_some()
-        {
-            while self.state.is_some()
-            {
+    pub fn advance_to_end(&mut self) -> Result<(), ImageErrors> {
+        if self.state.is_some() {
+            while self.state.is_some() {
                 self.advance()?;
             }
         }
         Ok(())
     }
-    pub fn get_results(&self) -> &[EncodeResult]
-    {
+    pub fn get_results(&self) -> &[EncodeResult] {
         &self.encode_result
     }
 }

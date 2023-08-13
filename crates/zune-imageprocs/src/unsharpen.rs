@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use crate::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
 
 ///  Sharpen an image
@@ -24,16 +32,14 @@ use crate::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
 pub fn unsharpen_u16(
     channel: &mut [u16], blur_buffer: &mut [u16], blur_scratch_buffer: &mut [u16], sigma: f32,
     threshold: u16, _percentage: u16, width: usize, height: usize
-)
-{
+) {
     // copy channel to scratch space
     blur_buffer.copy_from_slice(channel);
     // carry out gaussian blur
     gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma);
     // blur buffer now contains gaussian blurred pixels
     // so iterate replacing them
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter())
-    {
+    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
         let diff = in_pix.saturating_sub(*blur_pix);
         // pull some branchless tricks to help the optimizer
         // here
@@ -74,16 +80,14 @@ pub fn unsharpen_u16(
 pub fn unsharpen_u8(
     channel: &mut [u8], blur_buffer: &mut [u8], blur_scratch_buffer: &mut [u8], sigma: f32,
     threshold: u8, _percentage: u8, width: usize, height: usize
-)
-{
+) {
     // copy channel to scratch space
     blur_buffer.copy_from_slice(channel);
     // carry out gaussian blur
     gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma);
     // blur buffer now contains gaussian blurred pixels
     // so iterate replacing them
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter())
-    {
+    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
         let diff = in_pix.wrapping_sub(*blur_pix);
         // pull some branchless tricks to help the optimizer
         // here

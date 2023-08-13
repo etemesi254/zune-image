@@ -17,38 +17,29 @@ use crate::traits::OperationsTrait;
 #[derive(Default)]
 pub struct Flip;
 
-impl Flip
-{
-    pub fn new() -> Flip
-    {
+impl Flip {
+    pub fn new() -> Flip {
         Self::default()
     }
 }
-impl OperationsTrait for Flip
-{
-    fn get_name(&self) -> &'static str
-    {
+
+impl OperationsTrait for Flip {
+    fn get_name(&self) -> &'static str {
         "Flip"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.get_depth();
 
-        for inp in image.get_channels_mut(false)
-        {
-            match depth.bit_type()
-            {
-                BitType::U8 =>
-                {
+        for inp in image.get_channels_mut(false) {
+            match depth.bit_type() {
+                BitType::U8 => {
                     flip(inp.reinterpret_as_mut::<u8>()?);
                 }
-                BitType::U16 =>
-                {
+                BitType::U16 => {
                     flip(inp.reinterpret_as_mut::<u16>()?);
                 }
-                BitType::F32 =>
-                {
+                BitType::F32 => {
                     flip(inp.reinterpret_as_mut::<f32>()?);
                 }
                 _ => todo!()
@@ -57,8 +48,7 @@ impl OperationsTrait for Flip
 
         Ok(())
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
@@ -67,44 +57,33 @@ impl OperationsTrait for Flip
 #[derive(Default)]
 pub struct VerticalFlip;
 
-impl VerticalFlip
-{
-    pub fn new() -> VerticalFlip
-    {
+impl VerticalFlip {
+    pub fn new() -> VerticalFlip {
         Self::default()
     }
 }
 
-impl OperationsTrait for VerticalFlip
-{
-    fn get_name(&self) -> &'static str
-    {
+impl OperationsTrait for VerticalFlip {
+    fn get_name(&self) -> &'static str {
         "Vertical Flip"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.get_depth();
         let width = image.get_dimensions().0;
 
-        for inp in image.get_channels_mut(false)
-        {
-            match depth.bit_type()
-            {
-                BitType::U8 =>
-                {
+        for inp in image.get_channels_mut(false) {
+            match depth.bit_type() {
+                BitType::U8 => {
                     vertical_flip(inp.reinterpret_as_mut::<u8>()?, width);
                 }
-                BitType::U16 =>
-                {
+                BitType::U16 => {
                     vertical_flip(inp.reinterpret_as_mut::<u16>()?, width);
                 }
-                BitType::F32 =>
-                {
+                BitType::F32 => {
                     vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                 }
-                _ =>
-                {
+                _ => {
                     return Err(ImageOperationsErrors::UnsupportedType(
                         self.get_name(),
                         depth.bit_type()
@@ -116,8 +95,7 @@ impl OperationsTrait for VerticalFlip
 
         Ok(())
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }

@@ -24,8 +24,7 @@ use core::ops::Range;
 ///
 /// - If you are reading from a file and it's small , it is preferable to read it into memory
 /// instead of using a file reader.
-pub trait ZReaderTrait
-{
+pub trait ZReaderTrait {
     /// Get a single byte which is at position `index`
     ///
     /// # Arguments
@@ -67,101 +66,81 @@ pub trait ZReaderTrait
     fn get_len(&self) -> usize;
 }
 
-impl ZReaderTrait for &[u8]
-{
+impl ZReaderTrait for &[u8] {
     #[inline(always)]
-    fn get_byte(&self, index: usize) -> Option<&u8>
-    {
+    fn get_byte(&self, index: usize) -> Option<&u8> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
-    {
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_len(&self) -> usize
-    {
+    fn get_len(&self) -> usize {
         self.len()
     }
 }
 
-impl ZReaderTrait for Vec<u8>
-{
+impl ZReaderTrait for Vec<u8> {
     #[inline(always)]
-    fn get_byte(&self, index: usize) -> Option<&u8>
-    {
+    fn get_byte(&self, index: usize) -> Option<&u8> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
-    {
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_len(&self) -> usize
-    {
+    fn get_len(&self) -> usize {
         self.len()
     }
 }
 
-impl ZReaderTrait for &Vec<u8>
-{
+impl ZReaderTrait for &Vec<u8> {
     #[inline(always)]
-    fn get_byte(&self, index: usize) -> Option<&u8>
-    {
+    fn get_byte(&self, index: usize) -> Option<&u8> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
-    {
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]> {
         self.get(index)
     }
 
     #[inline(always)]
-    fn get_len(&self) -> usize
-    {
+    fn get_len(&self) -> usize {
         self.len()
     }
 }
 
-impl<const N: usize> ZReaderTrait for &[u8; N]
-{
-    fn get_byte(&self, index: usize) -> Option<&u8>
-    {
+impl<const N: usize> ZReaderTrait for &[u8; N] {
+    fn get_byte(&self, index: usize) -> Option<&u8> {
         self.get(index)
     }
 
-    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
-    {
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]> {
         self.get(index)
     }
 
-    fn get_len(&self) -> usize
-    {
+    fn get_len(&self) -> usize {
         N
     }
 }
 
-impl ZReaderTrait for dyn AsRef<&[u8]>
-{
-    fn get_byte(&self, index: usize) -> Option<&u8>
-    {
+impl ZReaderTrait for dyn AsRef<&[u8]> {
+    fn get_byte(&self, index: usize) -> Option<&u8> {
         self.as_ref().get(index)
     }
 
-    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]>
-    {
+    fn get_slice(&self, index: Range<usize>) -> Option<&[u8]> {
         self.as_ref().get(index)
     }
 
-    fn get_len(&self) -> usize
-    {
+    fn get_len(&self) -> usize {
         self.as_ref().len()
     }
 }

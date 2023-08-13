@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Routines for IDCT
 //!
 //! Essentially we provide 2 routines for IDCT, a scalar implementation and a not super optimized
@@ -39,13 +47,11 @@ pub mod scalar;
 
 /// Choose an appropriate IDCT function
 #[allow(unused_variables)]
-pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr
-{
+pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if options.use_avx2()
-        {
+        if options.use_avx2() {
             debug!("Using vector integer IDCT");
             // use avx one
             return crate::idct::avx2::idct_avx2;
@@ -54,8 +60,7 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr
     #[cfg(target_arch = "aarch64")]
     #[cfg(feature = "neon")]
     {
-        if options.use_neon()
-        {
+        if options.use_neon() {
             debug!("Using vector integer IDCT");
             return crate::idct::neon::idct_neon;
         }
@@ -68,14 +73,11 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr
 #[cfg(test)]
 #[allow(unreachable_code)]
 #[allow(dead_code)]
-mod tests
-{
-
+mod tests {
     use super::*;
 
     #[test]
-    fn idct_test0()
-    {
+    fn idct_test0() {
         let stride = 8;
         let mut coeff = [10; 64];
         let mut coeff2 = [10; 64];
@@ -87,8 +89,7 @@ mod tests
     }
 
     #[test]
-    fn do_idct_test1()
-    {
+    fn do_idct_test1() {
         let stride = 8;
         let mut coeff = [14; 64];
         let mut coeff2 = [14; 64];
@@ -100,8 +101,7 @@ mod tests
     }
 
     #[test]
-    fn do_idct_test2()
-    {
+    fn do_idct_test2() {
         let stride = 8;
         let mut coeff = [0; 64];
         coeff[0] = 255;
@@ -115,8 +115,7 @@ mod tests
     }
 
     #[test]
-    fn do_idct_zeros()
-    {
+    fn do_idct_zeros() {
         let stride = 8;
         let mut coeff = [0; 64];
         let mut coeff2 = [0; 64];
@@ -127,8 +126,7 @@ mod tests
         assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
     }
 
-    fn idct_fnc() -> IDCTPtr
-    {
+    fn idct_fnc() -> IDCTPtr {
         #[cfg(feature = "neon")]
         #[cfg(target_arch = "aarch64")]
         {

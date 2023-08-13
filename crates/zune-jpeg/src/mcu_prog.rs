@@ -37,8 +37,7 @@ use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
-impl<T: ZReaderTrait> JpegDecoder<T>
-{
+impl<T: ZReaderTrait> JpegDecoder<T> {
     /// Decode a progressive image
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
@@ -51,8 +50,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_progressive(
         &mut self, pixels: &mut [u8]
-    ) -> Result<(), DecodeErrors>
-    {
+    ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
         let mcu_height;
@@ -63,32 +61,26 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
         let mut seen_scans = 1;
 
-        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
-        {
+        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved {
             warn!("Grayscale image with down-sampled component, resetting component details");
             self.reset_params();
         }
 
-        if self.is_interleaved
-        {
+        if self.is_interleaved {
             // this helps us catch component errors.
             self.set_upsampling()?;
         }
-        if self.is_interleaved
-        {
+        if self.is_interleaved {
             mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;
-        }
-        else
-        {
+        } else {
             mcu_width = (self.info.width as usize + 7) / 8;
             mcu_height = (self.info.height as usize + 7) / 8;
         }
 
         mcu_width *= 64;
 
-        if self.input_colorspace.num_components() > self.components.len()
-        {
+        if self.input_colorspace.num_components() > self.components.len() {
             let msg = format!(
                 " Expected {} number of components but found {}",
                 self.input_colorspace.num_components(),
@@ -96,8 +88,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             );
             return Err(DecodeErrors::Format(msg));
         }
-        for i in 0..self.input_colorspace.num_components()
-        {
+        for i in 0..self.input_colorspace.num_components() {
             let comp = &self.components[i];
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
 
@@ -125,16 +116,12 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         // In case we have a premature image, we print a warning or return
         // an error, depending on the strictness of the decoder, so there
         // is that logic to handle too
-        'eoi: while marker != Marker::EOI
-        {
-            match marker
-            {
-                Marker::DHT =>
-                {
+        'eoi: while marker != Marker::EOI {
+            match marker {
+                Marker::DHT => {
                     parse_huffman(self)?;
                 }
-                Marker::SOS =>
-                {
+                Marker::SOS => {
                     parse_sos(self)?;
 
                     stream.update_progressive_params(
@@ -148,14 +135,11 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                     self.parse_entropy_coded_data(&mut stream, &mut block)?;
                     // extract marker, might either indicate end of image or we continue
                     // scanning(hence the continue statement to determine).
-                    match get_marker(&mut self.stream, &mut stream)
-                    {
-                        Ok(marker_n) =>
-                        {
+                    match get_marker(&mut self.stream, &mut stream) {
+                        Ok(marker_n) => {
                             marker = marker_n;
                             seen_scans += 1;
-                            if seen_scans > self.options.jpeg_get_max_scans()
-                            {
+                            if seen_scans > self.options.jpeg_get_max_scans() {
                                 return Err(DecodeErrors::Format(format!(
                                     "Too many scans, exceeded limit of {}",
                                     self.options.jpeg_get_max_scans()
@@ -165,10 +149,8 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                             stream.reset();
                             continue 'eoi;
                         }
-                        Err(msg) =>
-                        {
-                            if self.options.get_strict_mode()
-                            {
+                        Err(msg) => {
+                            if self.options.get_strict_mode() {
                                 return Err(msg);
                             }
                             error!("{:?}", msg);
@@ -176,22 +158,17 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                         }
                     }
                 }
-                _ =>
-                {
+                _ => {
                     break 'eoi;
                 }
             }
 
-            match get_marker(&mut self.stream, &mut stream)
-            {
-                Ok(marker_n) =>
-                {
+            match get_marker(&mut self.stream, &mut stream) {
+                Ok(marker_n) => {
                     marker = marker_n;
                 }
-                Err(e) =>
-                {
-                    if self.options.get_strict_mode()
-                    {
+                Err(e) => {
+                    if self.options.get_strict_mode() {
                         return Err(e);
                     }
                     error!("{}", e);
@@ -205,13 +182,11 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data(
         &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
-    ) -> Result<(), DecodeErrors>
-    {
+    ) -> Result<(), DecodeErrors> {
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 
-        if usize::from(self.num_scans) > self.input_colorspace.num_components()
-        {
+        if usize::from(self.num_scans) > self.input_colorspace.num_components() {
             return Err(Format(format!(
                 "Number of scans {} cannot be greater than number of components, {}",
                 self.num_scans,
@@ -219,11 +194,9 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             )));
         }
 
-        if self.num_scans == 1
-        {
+        if self.num_scans == 1 {
             // Safety checks
-            if self.spec_end != 0 && self.spec_start == 0
-            {
+            if self.spec_end != 0 && self.spec_start == 0 {
                 return Err(DecodeErrors::FormatStatic(
                     "Can't merge DC and AC corrupt jpeg"
                 ));
@@ -232,8 +205,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
             let k = self.z_order[0];
 
-            if k >= self.components.len()
-            {
+            if k >= self.components.len() {
                 return Err(DecodeErrors::Format(format!(
                     "Cannot find component {k}, corrupt image"
                 )));
@@ -250,21 +222,16 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                 // mcu's is the image dimensions divided by 8
                 mcu_width = ((self.info.width + 7) / 8) as usize;
                 mcu_height = ((self.info.height + 7) / 8) as usize;
-            }
-            else
-            {
+            } else {
                 // For other channels, in an interleaved mcu, number of MCU's
                 // are determined by some weird maths done in headers.rs->parse_sos()
                 mcu_width = self.mcu_x;
                 mcu_height = self.mcu_y;
             }
 
-            for i in 0..mcu_height
-            {
-                for j in 0..mcu_width
-                {
-                    if self.spec_start != 0 && self.succ_high == 0 && stream.eob_run > 0
-                    {
+            for i in 0..mcu_height {
+                for j in 0..mcu_width {
+                    if self.spec_start != 0 && self.succ_high == 0 && stream.eob_run > 0 {
                         // handle EOB runs here.
                         stream.eob_run -= 1;
                         continue;
@@ -279,8 +246,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                         .try_into()
                         .unwrap();
 
-                    if self.spec_start == 0
-                    {
+                    if self.spec_start == 0 {
                         let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
                         let dc_table = self
                             .dc_huffman_tables
@@ -295,8 +261,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
                         let dc_pred = &mut self.components[k].dc_pred;
 
-                        if self.succ_high == 0
-                        {
+                        if self.succ_high == 0 {
                             // first scan for this mcu
                             stream.decode_prog_dc_first(
                                 &mut self.stream,
@@ -304,15 +269,11 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                                 &mut data[0],
                                 dc_pred
                             )?;
-                        }
-                        else
-                        {
+                        } else {
                             // refining scans for this MCU
                             stream.decode_prog_dc_refine(&mut self.stream, &mut data[0])?;
                         }
-                    }
-                    else
-                    {
+                    } else {
                         let pos = self.components[k].ac_huff_table;
                         let ac_table = self
                             .ac_huffman_tables
@@ -329,14 +290,11 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                                 ))
                             })?;
 
-                        if self.succ_high == 0
-                        {
+                        if self.succ_high == 0 {
                             debug_assert!(stream.eob_run == 0, "EOB run is not zero");
 
                             stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
-                        }
-                        else
-                        {
+                        } else {
                             // refinement scan
                             stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
                         }
@@ -344,17 +302,13 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                     // + EOB and investigate effect.
                     self.todo -= 1;
 
-                    if self.todo == 0
-                    {
+                    if self.todo == 0 {
                         self.handle_rst(stream)?;
                     }
                 }
             }
-        }
-        else
-        {
-            if self.spec_end != 0
-            {
+        } else {
+            if self.spec_end != 0 {
                 return Err(DecodeErrors::HuffmanDecode(
                     "Can't merge dc and AC corrupt jpeg".to_string()
                 ));
@@ -363,12 +317,10 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
             // Do the error checking with allocs here.
             // Make the one in the inner loop free of allocations.
-            for k in 0..self.num_scans
-            {
+            for k in 0..self.num_scans {
                 let n = self.z_order[k as usize];
 
-                if n >= self.components.len()
-                {
+                if n >= self.components.len() {
                     return Err(DecodeErrors::Format(format!(
                         "Cannot find component {n}, corrupt image"
                     )));
@@ -396,13 +348,10 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
             // Components shall not be interleaved in progressive mode, except for
             // the DC coefficients in the first scan for each component of a progressive frame.
-            for i in 0..self.mcu_y
-            {
-                for j in 0..self.mcu_x
-                {
+            for i in 0..self.mcu_y {
+                for j in 0..self.mcu_x {
                     // process scan n elements in order
-                    for k in 0..self.num_scans
-                    {
+                    for k in 0..self.num_scans {
                         let n = self.z_order[k as usize];
                         let component = &mut self.components[n];
                         let huff_table = self
@@ -414,27 +363,22 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                                 "Huffman table at index not initialized"
                             ))?;
 
-                        for v_samp in 0..component.vertical_sample
-                        {
-                            for h_samp in 0..component.horizontal_sample
-                            {
+                        for v_samp in 0..component.vertical_sample {
+                            for h_samp in 0..component.horizontal_sample {
                                 let x2 = j * component.horizontal_sample + h_samp;
                                 let y2 = i * component.vertical_sample + v_samp;
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
 
                                 let data = &mut buffer[n][position];
 
-                                if self.succ_high == 0
-                                {
+                                if self.succ_high == 0 {
                                     stream.decode_prog_dc_first(
                                         &mut self.stream,
                                         huff_table,
                                         data,
                                         &mut component.dc_pred
                                     )?;
-                                }
-                                else
-                                {
+                                } else {
                                     stream.decode_prog_dc_refine(&mut self.stream, data)?;
                                 }
                             }
@@ -444,8 +388,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                     // we get a higher number in the case this underflows
                     self.todo = self.todo.wrapping_sub(1);
                     // after every scan that's a mcu, count down restart markers.
-                    if self.todo == 0
-                    {
+                    if self.todo == 0 {
                         self.handle_rst(stream)?;
                     }
                 }
@@ -458,8 +401,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
         &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
-    ) -> Result<(), DecodeErrors>
-    {
+    ) -> Result<(), DecodeErrors> {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
         //
@@ -479,12 +421,9 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         //
         //
 
-        let mcu_height = if self.is_interleaved
-        {
+        let mcu_height = if self.is_interleaved {
             self.mcu_y
-        }
-        else
-        {
+        } else {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided by 8.
             ((self.info.height + 7) / 8) as usize
@@ -500,8 +439,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
-        for (pos, comp) in self.components.iter_mut().enumerate()
-        {
+        for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
             // For special colorspaces i.e YCCK and CMYK, just allocate all of the needed
@@ -520,9 +458,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
                 comp.needed = true;
                 comp.raw_coeff = vec![0; len];
-            }
-            else
-            {
+            } else {
                 comp.needed = false;
             }
         }
@@ -530,12 +466,9 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         let mut pixels_written = 0;
 
         // dequantize, idct and color convert.
-        for i in 0..mcu_height
-        {
-            'component: for (position, component) in &mut self.components.iter_mut().enumerate()
-            {
-                if !component.needed
-                {
+        for i in 0..mcu_height {
+            'component: for (position, component) in &mut self.components.iter_mut().enumerate() {
+                if !component.needed {
                     continue 'component;
                 }
                 let qt_table = &component.quantization_table;
@@ -562,10 +495,8 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                 let mcu_x = component.width_stride / 8;
 
                 // iterate per every vertical sample.
-                for k in 0..component.vertical_sample
-                {
-                    for j in 0..mcu_x
-                    {
+                for k in 0..component.vertical_sample {
+                    for j in 0..mcu_x {
                         // after writing a single stride, we need to skip 8 rows.
                         // This does the row calculation
                         let width_stride = k * 8 * component.width_stride;
@@ -613,8 +544,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
         return Ok(());
     }
-    pub(crate) fn reset_params(&mut self)
-    {
+    pub(crate) fn reset_params(&mut self) {
         /*
         Apparently, grayscale images which can be down sampled exists, which is weird in the sense
         that it has one component Y, which is not usually down sampled.
@@ -643,29 +573,24 @@ fn get_marker<T>(
 where
     T: ZReaderTrait
 {
-    if let Some(marker) = stream.marker
-    {
+    if let Some(marker) = stream.marker {
         stream.marker = None;
         return Ok(marker);
     }
 
     // read until we get a marker
 
-    while !reader.eof()
-    {
+    while !reader.eof() {
         let marker = reader.get_u8_err()?;
 
-        if marker == 255
-        {
+        if marker == 255 {
             let mut r = reader.get_u8_err()?;
             // 0xFF 0XFF(some images may be like that)
-            while r == 0xFF
-            {
+            while r == 0xFF {
                 r = reader.get_u8_err()?;
             }
 
-            if r != 0
-            {
+            if r != 0 {
                 return Marker::from_u8(r)
                     .ok_or_else(|| DecodeErrors::Format(format!("Unknown marker 0xFF{r:X}")));
             }

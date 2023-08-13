@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::gaussian_blur::{gaussian_blur_f32, gaussian_blur_u16, gaussian_blur_u8};
@@ -8,28 +16,22 @@ use crate::traits::OperationsTrait;
 
 /// Perform a gaussian blur
 #[derive(Default)]
-pub struct GaussianBlur
-{
+pub struct GaussianBlur {
     sigma: f32
 }
 
-impl GaussianBlur
-{
-    pub fn new(sigma: f32) -> GaussianBlur
-    {
+impl GaussianBlur {
+    pub fn new(sigma: f32) -> GaussianBlur {
         GaussianBlur { sigma }
     }
 }
 
-impl OperationsTrait for GaussianBlur
-{
-    fn get_name(&self) -> &'static str
-    {
+impl OperationsTrait for GaussianBlur {
+    fn get_name(&self) -> &'static str {
         "Gaussian blur"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let (width, height) = image.get_dimensions();
         let depth = image.get_depth();
 
@@ -37,14 +39,11 @@ impl OperationsTrait for GaussianBlur
         {
             trace!("Running gaussian blur in single threaded mode");
 
-            match depth.bit_type()
-            {
-                BitType::U8 =>
-                {
+            match depth.bit_type() {
+                BitType::U8 => {
                     let mut temp = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false)
-                    {
+                    for channel in image.get_channels_mut(false) {
                         gaussian_blur_u8(
                             channel.reinterpret_as_mut::<u8>().unwrap(),
                             &mut temp,
@@ -54,12 +53,10 @@ impl OperationsTrait for GaussianBlur
                         );
                     }
                 }
-                BitType::U16 =>
-                {
+                BitType::U16 => {
                     let mut temp = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false)
-                    {
+                    for channel in image.get_channels_mut(false) {
                         gaussian_blur_u16(
                             channel.reinterpret_as_mut::<u16>().unwrap(),
                             &mut temp,
@@ -69,8 +66,7 @@ impl OperationsTrait for GaussianBlur
                         );
                     }
                 }
-                BitType::F32 =>
-                {
+                BitType::F32 => {
                     let mut temp = vec![0.0; width * height];
 
                     gaussian_blur_f32(
@@ -90,12 +86,9 @@ impl OperationsTrait for GaussianBlur
             trace!("Running gaussian blur in multithreaded mode");
             std::thread::scope(|s| {
                 // blur each channel on a separate thread
-                for channel in image.get_channels_mut(false)
-                {
-                    s.spawn(|| match depth.bit_type()
-                    {
-                        BitType::U8 =>
-                        {
+                for channel in image.get_channels_mut(false) {
+                    s.spawn(|| match depth.bit_type() {
+                        BitType::U8 => {
                             let mut temp = vec![0; width * height];
 
                             gaussian_blur_u8(
@@ -106,8 +99,7 @@ impl OperationsTrait for GaussianBlur
                                 self.sigma
                             );
                         }
-                        BitType::U16 =>
-                        {
+                        BitType::U16 => {
                             let mut temp = vec![0; width * height];
 
                             gaussian_blur_u16(
@@ -118,8 +110,7 @@ impl OperationsTrait for GaussianBlur
                                 self.sigma
                             );
                         }
-                        BitType::F32 =>
-                        {
+                        BitType::F32 => {
                             let mut temp = vec![0.0; width * height];
 
                             gaussian_blur_f32(
@@ -138,8 +129,7 @@ impl OperationsTrait for GaussianBlur
 
         Ok(())
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16]
     }
 }

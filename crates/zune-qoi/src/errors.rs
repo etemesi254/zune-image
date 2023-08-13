@@ -11,8 +11,7 @@ use core::fmt::{Debug, Formatter};
 use zune_core::colorspace::ColorSpace;
 
 /// Possible Errors that may occur during decoding
-pub enum QoiErrors
-{
+pub enum QoiErrors {
     /// The image does not start with QOI magic bytes `qoif`
     ///
     /// Indicates that image is not a qoi file
@@ -41,47 +40,37 @@ pub enum QoiErrors
     TooSmallOutput(usize, usize)
 }
 
-impl Debug for QoiErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            QoiErrors::WrongMagicBytes =>
-            {
+impl Debug for QoiErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            QoiErrors::WrongMagicBytes => {
                 writeln!(f, "Wrong magic bytes, expected `qoif` as image start")
             }
-            QoiErrors::InsufficientData(expected, found) =>
-            {
+            QoiErrors::InsufficientData(expected, found) => {
                 writeln!(
                     f,
                     "Insufficient data required {expected} but remaining stream has {found}"
                 )
             }
-            QoiErrors::UnknownChannels(channel) =>
-            {
+            QoiErrors::UnknownChannels(channel) => {
                 writeln!(
                     f,
                     "Unknown channel number {channel}, expected either 3 or 4"
                 )
             }
-            QoiErrors::UnknownColorspace(colorspace) =>
-            {
+            QoiErrors::UnknownColorspace(colorspace) => {
                 writeln!(
                     f,
                     "Unknown colorspace number {colorspace}, expected either 0 or 1"
                 )
             }
-            QoiErrors::Generic(val) =>
-            {
+            QoiErrors::Generic(val) => {
                 writeln!(f, "{val}")
             }
-            QoiErrors::GenericStatic(val) =>
-            {
+            QoiErrors::GenericStatic(val) => {
                 writeln!(f, "{val}")
             }
-            QoiErrors::TooSmallOutput(expected, found) =>
-            {
+            QoiErrors::TooSmallOutput(expected, found) => {
                 writeln!(
                     f,
                     "Too small output size, expected {expected}, but found {found}"
@@ -91,16 +80,13 @@ impl Debug for QoiErrors
     }
 }
 
-impl From<&'static str> for QoiErrors
-{
-    fn from(r: &'static str) -> Self
-    {
+impl From<&'static str> for QoiErrors {
+    fn from(r: &'static str) -> Self {
         Self::GenericStatic(r)
     }
 }
 
-pub enum QoiEncodeErrors
-{
+pub enum QoiEncodeErrors {
     /// Unsupported colorspace
     ///
     /// The first argument is the colorspace encountered
@@ -112,18 +98,13 @@ pub enum QoiEncodeErrors
     TooLargeDimensions(usize)
 }
 
-impl Debug for QoiEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            QoiEncodeErrors::UnsupportedColorspace(found, supported) =>
-            {
+impl Debug for QoiEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            QoiEncodeErrors::UnsupportedColorspace(found, supported) => {
                 writeln!(f, "Cannot encode image with colorspace {found:?} into QOI, supported ones are {supported:?}")
             }
-            QoiEncodeErrors::TooLargeDimensions(found) =>
-            {
+            QoiEncodeErrors::TooLargeDimensions(found) => {
                 writeln!(
                     f,
                     "Too large image dimensions {found}, QOI can only encode images less than {}",

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Sse capable defilter routines.
 //!
 //! These techniques enable faster png de-filtering in
@@ -164,13 +172,11 @@ use core::arch::x86_64::*;
 
 #[allow(unused_assignments)]
 #[target_feature(enable = "sse2")]
-unsafe fn de_filter_sub_generic_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8])
-{
+unsafe fn de_filter_sub_generic_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8]) {
     let mut zero = [0; 16];
     let (mut a, mut d) = (_mm_setzero_si128(), _mm_setzero_si128());
 
-    for (raw, out) in raw.chunks_exact(SIZE).zip(current.chunks_exact_mut(SIZE))
-    {
+    for (raw, out) in raw.chunks_exact(SIZE).zip(current.chunks_exact_mut(SIZE)) {
         zero[0..SIZE].copy_from_slice(raw);
 
         a = d;
@@ -182,12 +188,10 @@ unsafe fn de_filter_sub_generic_sse2<const SIZE: usize>(raw: &[u8], current: &mu
     }
 }
 
-pub fn de_filter_sub_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8])
-{
+pub fn de_filter_sub_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse2")
-        {
+        if !is_x86_feature_detected!("sse2") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }
@@ -196,8 +200,7 @@ pub fn de_filter_sub_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8])
 
 #[inline]
 #[target_feature(enable = "sse4.1")]
-unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i
-{
+unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i {
     _mm_blendv_epi8(e, t, c)
 
     // SSE 2
@@ -209,8 +212,7 @@ unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i
 #[allow(unused_assignments)]
 unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
     prev_row: &[u8], raw: &[u8], current: &mut [u8]
-)
-{
+) {
     let zero = _mm_setzero_si128();
 
     let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
@@ -263,12 +265,10 @@ unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
     }
 }
 
-pub fn de_filter_paeth_sse41<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
+pub fn de_filter_paeth_sse41<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse4.1")
-        {
+        if !is_x86_feature_detected!("sse4.1") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }
@@ -280,8 +280,7 @@ pub fn de_filter_paeth_sse41<const SIZE: usize>(prev_row: &[u8], raw: &[u8], cur
 #[cfg(target_feature = "sse2")]
 unsafe fn defilter_avg_sse2_inner<const SIZE: usize>(
     prev_row: &[u8], raw: &[u8], current: &mut [u8]
-)
-{
+) {
     /* The Avg filter predicts each pixel as the (truncated) average of a and b.
      * There's no pixel to the left of the first pixel.  Luckily, it's
      * predicted to be half of the pixel above it.  So again, this works
@@ -322,12 +321,10 @@ unsafe fn defilter_avg_sse2_inner<const SIZE: usize>(
     }
 }
 
-pub fn defilter_avg_sse<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
+pub fn defilter_avg_sse<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse2")
-        {
+        if !is_x86_feature_detected!("sse2") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }

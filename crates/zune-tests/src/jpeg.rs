@@ -14,15 +14,13 @@ use zune_jpeg::JpegDecoder;
 
 use crate::{hash, sample_path, TestEntry};
 
-pub fn jpeg_path() -> PathBuf
-{
+pub fn jpeg_path() -> PathBuf {
     sample_path().join("test-images/jpeg")
 }
 
 #[test]
 #[allow(clippy::uninlined_format_args)]
-fn test_jpeg()
-{
+fn test_jpeg() {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/jpeg.json");
 
     let json_file = read(file).unwrap();
@@ -32,8 +30,7 @@ fn test_jpeg()
     let default_path = jpeg_path();
     let mut error = false;
     let mut files = Vec::new();
-    for path in &paths
-    {
+    for path in &paths {
         let file_name = default_path.join(&path.name);
 
         let expected_hash = path.hash;
@@ -43,8 +40,7 @@ fn test_jpeg()
 
         let mut options = DecoderOptions::default();
 
-        if let Some(color) = path.colorspace
-        {
+        if let Some(color) = path.colorspace {
             options = options.jpeg_set_out_colorspace(color.to_colorspace());
         }
 
@@ -53,8 +49,7 @@ fn test_jpeg()
 
         let hash = hash(&pixels);
 
-        if hash != expected_hash
-        {
+        if hash != expected_hash {
             error = true;
             files.push(path.to_owned());
             // report error
@@ -65,8 +60,7 @@ fn test_jpeg()
             eprintln!("{}\n", err)
         }
     }
-    if error
-    {
+    if error {
         panic!("Errors found during test decoding\n {:#?}", files);
     }
 }

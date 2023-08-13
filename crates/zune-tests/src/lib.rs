@@ -24,8 +24,7 @@ mod psd;
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum JsonColorspace
-{
+pub enum JsonColorspace {
     RGB,
     RGBA,
     CMYK,
@@ -36,12 +35,9 @@ pub enum JsonColorspace
     BGRA
 }
 
-impl JsonColorspace
-{
-    pub fn to_colorspace(self) -> ColorSpace
-    {
-        match self
-        {
+impl JsonColorspace {
+    pub fn to_colorspace(self) -> ColorSpace {
+        match self {
             Self::CMYK => ColorSpace::CMYK,
             Self::YCCK => ColorSpace::YCCK,
             Self::RGB => ColorSpace::RGB,
@@ -55,22 +51,19 @@ impl JsonColorspace
 }
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct TestEntry
-{
+pub struct TestEntry {
     pub name:       String,
     pub hash:       u128,
     pub colorspace: Option<JsonColorspace>,
     pub comment:    Option<String>
 }
 
-pub fn sample_path() -> PathBuf
-{
+pub fn sample_path() -> PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"));
     // get parent path
     path.parent().unwrap().to_owned()
 }
 
-fn hash(contents: &[u8]) -> u128
-{
+fn hash(contents: &[u8]) -> u128 {
     xxh3_128(contents)
 }

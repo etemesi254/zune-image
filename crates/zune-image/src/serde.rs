@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "serde-support")]
 
 use std::collections::BTreeMap;
@@ -8,8 +16,7 @@ use serde::{Serialize, Serializer};
 use crate::codecs::ImageFormat;
 use crate::metadata::ImageMetadata;
 
-impl Serialize for ImageMetadata
-{
+impl Serialize for ImageMetadata {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer
@@ -26,10 +33,8 @@ impl Serialize for ImageMetadata
         state.serialize_field("gamma_value", &self.default_gamma)?;
 
         let mut fields = BTreeMap::new();
-        if let Some(ex) = &self.exif
-        {
-            for f in ex
-            {
+        if let Some(ex) = &self.exif {
+            for f in ex {
                 let key = f.tag.to_string();
 
                 // some tags may have leading quotes yet they
@@ -42,18 +47,14 @@ impl Serialize for ImageMetadata
                     .trim_end_matches(|x| x == '\"')
                     .to_string();
 
-                if value.len() < 100
-                {
+                if value.len() < 100 {
                     fields.insert(key, value);
                 }
             }
         }
-        if fields.is_empty()
-        {
+        if fields.is_empty() {
             state.serialize_field::<Option<BTreeMap<String, String>>>("exif", &None)?;
-        }
-        else
-        {
+        } else {
             state.serialize_field("exif", &fields)?;
         }
 
@@ -61,8 +62,7 @@ impl Serialize for ImageMetadata
     }
 }
 
-impl Serialize for ImageFormat
-{
+impl Serialize for ImageFormat {
     #[allow(clippy::uninlined_format_args)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

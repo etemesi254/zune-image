@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use crate::utils::z_prefetch;
 
 /// spatial goes through each pixel on an image collecting its neighbors and picking one
@@ -42,17 +50,14 @@ pub fn spatial<T, F>(
 
     let mut local_storage = vec![T::default(); radius_size * radius_size];
 
-    for y in radius_loop..height - radius_loop
-    {
-        for x in radius_loop..width - radius_loop
-        {
+    for y in radius_loop..height - radius_loop {
+        for x in radius_loop..width - radius_loop {
             let iy = y - radius_loop;
             let ix = x - radius_loop;
 
             let mut i = 0;
 
-            for ky in 0..radius_size
-            {
+            for ky in 0..radius_size {
                 let iy_i = iy + ky;
 
                 let in_slice = &in_channel[(iy_i * width) + ix..(iy_i * width) + ix + radius_size];
@@ -91,17 +96,14 @@ pub(crate) fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
 
     let mut local_storage = [T::default(); OUT_SIZE];
 
-    for y in radius_loop..height - radius_loop
-    {
-        for x in radius_loop..width - radius_loop
-        {
+    for y in radius_loop..height - radius_loop {
+        for x in radius_loop..width - radius_loop {
             let iy = y - radius_loop;
             let ix = x - radius_loop;
 
             let mut i = 0;
 
-            for ky in 0..radius_size
-            {
+            for ky in 0..radius_size {
                 let iy_i = iy + ky;
 
                 let in_slice = &in_channel[(iy_i * width) + ix..(iy_i * width) + ix + radius_size];

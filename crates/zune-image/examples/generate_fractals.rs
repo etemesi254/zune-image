@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This example generates the same fractals present in the
 //! image-rs examples
 //!
@@ -5,8 +13,7 @@
 
 use zune_core::colorspace::ColorSpace;
 
-fn main()
-{
+fn main() {
     let img_x = 800;
     let img_y = 800;
 
@@ -33,8 +40,7 @@ fn main()
             let mut z = num_complex::Complex::new(cx, cy);
 
             let mut i = 0;
-            while i < 255 && z.norm() <= 2.0
-            {
+            while i < 255 && z.norm() <= 2.0 {
                 z = z * z + c;
                 i += 1;
             }

@@ -10,8 +10,7 @@
 /// Chunk type according to table 5.3 of
 /// the jpeg spec, see https://www.w3.org/TR/2003/REC-PNG-20031110/
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PngChunkType
-{
+pub enum PngChunkType {
     IHDR,
     PLTE,
     IDAT,
@@ -37,12 +36,10 @@ pub enum PngChunkType
     unkn
 }
 
-impl PngChunkType
-{
+impl PngChunkType {
     /// Return true if a chunk should appear
     /// before the PLTE chunk
-    pub const fn should_appear_before_ptle(self) -> bool
-    {
+    pub const fn should_appear_before_ptle(self) -> bool {
         matches!(
             self,
             Self::cHRM | Self::gAMA | Self::iCCP | Self::sBit | Self::sRGB
@@ -50,15 +47,13 @@ impl PngChunkType
     }
     /// Return true if a chunk should appear
     /// after the PLTE chunk
-    pub const fn should_appear_after_ptle(self) -> bool
-    {
+    pub const fn should_appear_after_ptle(self) -> bool {
         matches!(self, Self::bKGD | Self::hIST | Self::tRNS)
     }
 
     /// Return true if a chunk should appear
     /// before the IDAT chunk
-    pub const fn should_appear_before_idat(self) -> bool
-    {
+    pub const fn should_appear_before_idat(self) -> bool {
         matches!(
             self,
             Self::PLTE
@@ -77,8 +72,7 @@ impl PngChunkType
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum FilterMethod
-{
+pub enum FilterMethod {
     None,
     Sub,
     Up,
@@ -90,12 +84,10 @@ pub enum FilterMethod
     // Unknown type of filter
     Unknown
 }
-impl FilterMethod
-{
-    pub fn from_int(int: u8) -> Option<FilterMethod>
-    {
-        match int
-        {
+
+impl FilterMethod {
+    pub fn from_int(int: u8) -> Option<FilterMethod> {
+        match int {
             0 => Some(FilterMethod::None),
             1 => Some(FilterMethod::Sub),
             2 => Some(FilterMethod::Up),
@@ -104,10 +96,8 @@ impl FilterMethod
             _ => None
         }
     }
-    pub fn to_int(self) -> u8
-    {
-        match self
-        {
+    pub fn to_int(self) -> u8 {
+        match self {
             FilterMethod::None => 0,
             FilterMethod::Sub => 1,
             FilterMethod::Up => 2,
@@ -118,10 +108,8 @@ impl FilterMethod
     }
 }
 #[allow(clippy::derivable_impls)]
-impl Default for FilterMethod
-{
-    fn default() -> Self
-    {
+impl Default for FilterMethod {
+    fn default() -> Self {
         FilterMethod::Unknown
     }
 }
@@ -131,8 +119,7 @@ impl Default for FilterMethod
 /// Default is `Unknown` but should change it to
 /// the image interlace when headers are decoded
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum InterlaceMethod
-{
+pub enum InterlaceMethod {
     /// Standard/ No interlacing
     Standard,
     /// Adam7 interlacing
@@ -141,19 +128,15 @@ pub enum InterlaceMethod
     Unknown
 }
 
-impl Default for InterlaceMethod
-{
-    fn default() -> Self
-    {
+impl Default for InterlaceMethod {
+    fn default() -> Self {
         Self::Unknown
     }
 }
-impl InterlaceMethod
-{
-    pub fn from_int(int: u8) -> Option<InterlaceMethod>
-    {
-        match int
-        {
+
+impl InterlaceMethod {
+    pub fn from_int(int: u8) -> Option<InterlaceMethod> {
+        match int {
             0 => Some(Self::Standard),
             1 => Some(Self::Adam7),
             _ => None
@@ -162,8 +145,7 @@ impl InterlaceMethod
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum PngColor
-{
+pub enum PngColor {
     Luma,
     Palette,
     LumaA,
@@ -171,19 +153,16 @@ pub enum PngColor
     RGBA,
     Unknown
 }
-impl Default for PngColor
-{
-    fn default() -> Self
-    {
+
+impl Default for PngColor {
+    fn default() -> Self {
         Self::Unknown
     }
 }
-impl PngColor
-{
-    pub(crate) fn num_components(self) -> u8
-    {
-        match self
-        {
+
+impl PngColor {
+    pub(crate) fn num_components(self) -> u8 {
+        match self {
             PngColor::Luma => 1,
             PngColor::Palette => 1,
             PngColor::LumaA => 2,
@@ -192,14 +171,11 @@ impl PngColor
             PngColor::Unknown => unreachable!()
         }
     }
-    pub(crate) fn has_alpha(&self) -> bool
-    {
+    pub(crate) fn has_alpha(&self) -> bool {
         matches!(self, PngColor::RGBA | PngColor::LumaA)
     }
-    pub(crate) fn from_int(int: u8) -> Option<PngColor>
-    {
-        match int
-        {
+    pub(crate) fn from_int(int: u8) -> Option<PngColor> {
+        match int {
             0 => Some(Self::Luma),
             2 => Some(Self::RGB),
             3 => Some(Self::Palette),
