@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Alpha pre-multiplication routines
 //!
 //! This module contains routines to convert to and from
@@ -45,12 +53,10 @@ mod sse;
 /// Useful for speeding up un-pre-multiplying alpha
 #[allow(clippy::needless_range_loop)]
 #[must_use]
-pub fn create_unpremul_table_u8() -> [u128; 256]
-{
+pub fn create_unpremul_table_u8() -> [u128; 256] {
     let mut array = [0; 256];
 
-    for i in 1..256
-    {
+    for i in 1..256 {
         array[i] = compute_mod_u32(i as u64);
     }
 
@@ -62,12 +68,10 @@ pub fn create_unpremul_table_u8() -> [u128; 256]
 /// Useful for speeding up un-pre-multiplying alpha
 #[must_use]
 #[allow(clippy::needless_range_loop)]
-pub fn create_unpremul_table_u16() -> Vec<u128>
-{
+pub fn create_unpremul_table_u16() -> Vec<u128> {
     let mut array = vec![0; 65536];
 
-    for i in 1..65536
-    {
+    for i in 1..65536 {
         array[i] = compute_mod_u32(i as u64);
     }
 
@@ -83,8 +87,7 @@ pub fn create_unpremul_table_u16() -> Vec<u128>
 ///
 /// Items in input are modified in place.
 #[allow(clippy::cast_possible_truncation)]
-pub fn premultiply_u8(input: &mut [u8], alpha: &[u8])
-{
+pub fn premultiply_u8(input: &mut [u8], alpha: &[u8]) {
     const MAX_VALUE: u16 = 255;
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
@@ -103,8 +106,7 @@ pub fn premultiply_u8(input: &mut [u8], alpha: &[u8])
 ///
 /// returns: Array modified in place
 #[allow(clippy::cast_possible_truncation)]
-pub fn premultiply_u16(input: &mut [u16], alpha: &[u16])
-{
+pub fn premultiply_u16(input: &mut [u16], alpha: &[u16]) {
     const MAX_VALUE: u32 = 65535;
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
@@ -119,8 +121,7 @@ pub fn premultiply_u16(input: &mut [u16], alpha: &[u16])
 ///
 /// * `input` : Input u8 values which are pre-multiplied with alpha
 /// * `alpha` : The alpha value pre-multiplied
-pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 256])
-{
+pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 256]) {
     // we did         pa = (color * alpha)/255,
     // to undo we do  pb = (color * 255  )/alpha
 
@@ -146,16 +147,14 @@ pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 25
 ///   [create_unpremul_table_u16](create_unpremul_table_u16)
 ///
 /// Array is modified in place
-pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128])
-{
+pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128]) {
     // we did         pa = (color * alpha)/65535,
     // to undo we do  pb = (color * 65535)/alpha
 
     const MAX_VALUE: u32 = 65535;
 
     debug_assert!(premul_table.len() > 65535);
-    if premul_table.len() < 65536
-    {
+    if premul_table.len() < 65536 {
         // this invariant ensures that we remove bounds check from below loop
         // u16 range from 0..65535, hence premul_table[usize::from(u16)] will
         // always be in bounds if this is true
@@ -181,23 +180,18 @@ pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128]
 ///
 ///
 /// Array is modified in place
-pub fn premultiply_f32(input: &mut [f32], alpha: &[f32])
-{
+pub fn premultiply_f32(input: &mut [f32], alpha: &[f32]) {
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         *color *= al;
     });
 }
 
-fn unpremultiply_f32_scalar(input: &mut [f32], alpha: &[f32])
-{
+fn unpremultiply_f32_scalar(input: &mut [f32], alpha: &[f32]) {
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
-        if *al != 0.0
-        {
+        if *al != 0.0 {
             // avoid div by zero
             *color /= *al;
-        }
-        else
-        {
+        } else {
             *color = 0.0;
         }
     });
@@ -214,14 +208,12 @@ fn unpremultiply_f32_scalar(input: &mut [f32], alpha: &[f32])
 /// - When alpha channel is zero, input also becomes zero
 ///
 /// Array is modified in place
-pub fn unpremultiply_f32(input: &mut [f32], alpha: &[f32])
-{
+pub fn unpremultiply_f32(input: &mut [f32], alpha: &[f32]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         #[cfg(feature = "sse2")]
         {
-            if is_x86_feature_detected!("sse")
-            {
+            if is_x86_feature_detected!("sse") {
                 return unsafe { crate::premul_alpha::sse::unpremultiply_sse_f32(input, alpha) };
             }
         }

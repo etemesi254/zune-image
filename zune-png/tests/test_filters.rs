@@ -1,13 +1,19 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::path::Path;
 
-fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
-{
+fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
 }
 
-fn decode_ref(data: &[u8]) -> Vec<u8>
-{
+fn decode_ref(data: &[u8]) -> Vec<u8> {
     let decoder = png::Decoder::new(data);
     let mut reader = decoder.read_info().unwrap();
 
@@ -19,12 +25,11 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
     buf
 }
 
-fn decode_zune(data: &[u8]) -> Vec<u8>
-{
+fn decode_zune(data: &[u8]) -> Vec<u8> {
     zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
-fn test_decoding<P: AsRef<Path>>(path: P)
-{
+
+fn test_decoding<P: AsRef<Path>>(path: P) {
     let contents = open_and_read(path);
 
     let zune_results = decode_zune(&contents);
@@ -33,8 +38,7 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 }
 
 #[test]
-fn test_none()
-{
+fn test_none() {
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f00n0g08.png";
 
@@ -48,8 +52,7 @@ fn test_none()
 }
 
 #[test]
-fn test_sub()
-{
+fn test_sub() {
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f01n0g08.png";
 
@@ -63,8 +66,7 @@ fn test_sub()
 }
 
 #[test]
-fn test_up()
-{
+fn test_up() {
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f02n0g08.png";
 
@@ -78,8 +80,7 @@ fn test_up()
 }
 
 #[test]
-fn test_avg()
-{
+fn test_avg() {
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f03n0g08.png";
 
@@ -93,8 +94,7 @@ fn test_avg()
 }
 
 #[test]
-fn test_paeth()
-{
+fn test_paeth() {
     {
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/f04n0g08.png";
 

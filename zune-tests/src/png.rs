@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
@@ -6,15 +14,13 @@ use zune_png::PngDecoder;
 
 use crate::{hash, sample_path, TestEntry};
 
-pub fn png_path() -> PathBuf
-{
+pub fn png_path() -> PathBuf {
     sample_path().join("test-images/png")
 }
 
 #[test]
 #[allow(clippy::uninlined_format_args)]
-fn test_png()
-{
+fn test_png() {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/png.json");
 
     let json_file = read(file).unwrap();
@@ -24,8 +30,7 @@ fn test_png()
     let default_path = png_path();
     let mut error = false;
     let mut files = Vec::new();
-    for path in &paths
-    {
+    for path in &paths {
         let file_name = default_path.join(&path.name);
 
         let expected_hash = path.hash;
@@ -40,8 +45,7 @@ fn test_png()
 
         let hash = hash(&pixels);
 
-        if hash != expected_hash
-        {
+        if hash != expected_hash {
             error = true;
             files.push(path.to_owned());
             // report error
@@ -52,8 +56,7 @@ fn test_png()
             eprintln!("{}\n", err)
         }
     }
-    if error
-    {
+    if error {
         panic!("Errors found during test decoding\n {:#?}", files);
     }
 }

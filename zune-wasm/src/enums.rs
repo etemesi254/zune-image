@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(clippy::upper_case_acronyms)]
 
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -7,8 +15,7 @@ use zune_image::codecs::ImageFormat;
 /// A 1 to 1 mapping of supported colorspaces
 /// but with the `wasm_bindgen` attribute.
 #[wasm_bindgen]
-pub enum WasmColorspace
-{
+pub enum WasmColorspace {
     RGB,
     RGBA,
     YCbCr,
@@ -20,12 +27,9 @@ pub enum WasmColorspace
     Unknown
 }
 
-impl WasmColorspace
-{
-    pub fn from_colorspace(colorspace: ColorSpace) -> WasmColorspace
-    {
-        match colorspace
-        {
+impl WasmColorspace {
+    pub fn from_colorspace(colorspace: ColorSpace) -> WasmColorspace {
+        match colorspace {
             ColorSpace::RGB => Self::RGB,
             ColorSpace::RGBA => Self::RGBA,
             ColorSpace::YCbCr => Self::YCbCr,
@@ -42,8 +46,7 @@ impl WasmColorspace
 /// A one-to-one mapping of the image formats currently supported by
 /// the decoder but with a `wasm_bindgen` attribute
 #[wasm_bindgen]
-pub enum WasmImageDecodeFormats
-{
+pub enum WasmImageDecodeFormats {
     /// Fully complete
     Jpeg,
     /// Not yet complete
@@ -60,12 +63,9 @@ pub enum WasmImageDecodeFormats
     Unknown
 }
 
-impl WasmImageDecodeFormats
-{
-    pub fn from_formats(format: ImageFormat) -> WasmImageDecodeFormats
-    {
-        match format
-        {
+impl WasmImageDecodeFormats {
+    pub fn from_formats(format: ImageFormat) -> WasmImageDecodeFormats {
+        match format {
             ImageFormat::JPEG => Self::Jpeg,
             ImageFormat::PNG => Self::Png,
             ImageFormat::PPM => Self::PPM,

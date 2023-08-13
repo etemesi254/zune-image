@@ -19,8 +19,7 @@ impl<T> DecoderTrait for BmpDecoder<T>
 where
     T: ZReaderTrait
 {
-    fn decode(&mut self) -> Result<Image, ImageErrors>
-    {
+    fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
@@ -28,26 +27,21 @@ where
         Ok(Image::from_u8(&pixels, width, height, colorspace))
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
+    fn get_dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace
-    {
+    fn get_out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str
-    {
+    fn get_name(&self) -> &'static str {
         "BMP Decoder"
     }
 }
 
-impl From<BmpDecoderErrors> for ImageErrors
-{
-    fn from(value: BmpDecoderErrors) -> Self
-    {
+impl From<BmpDecoderErrors> for ImageErrors {
+    fn from(value: BmpDecoderErrors) -> Self {
         Self::ImageDecodeErrors(format!("bmp: {:?}", value))
     }
 }

@@ -11,11 +11,9 @@ mod crc_tables;
 /// Calculate crc for a data and an initial crc value
 ///
 #[allow(clippy::identity_op, clippy::zero_prefixed_literal)]
-pub fn crc32_slice8(data: &[u8], mut crc: u32) -> u32
-{
+pub fn crc32_slice8(data: &[u8], mut crc: u32) -> u32 {
     // main loop
-    for chunk in data.chunks_exact(8)
-    {
+    for chunk in data.chunks_exact(8) {
         let chunk_loaded = u64::from_le_bytes(chunk.try_into().unwrap());
 
         let v1 = (chunk_loaded & u64::from(u32::MAX)) as u32;
@@ -31,8 +29,7 @@ pub fn crc32_slice8(data: &[u8], mut crc: u32) -> u32
             ^ CRC32_SLICE8_TABLE[0x000 + (((v2 >> 24) & 0xFF) as usize)];
     }
     // handle remainder
-    for remainder in data.chunks_exact(8).remainder()
-    {
+    for remainder in data.chunks_exact(8).remainder() {
         crc = (crc >> 8) ^ CRC32_SLICE1_TABLE[((crc & 0xFF) ^ u32::from(*remainder)) as usize];
     }
 
@@ -40,23 +37,19 @@ pub fn crc32_slice8(data: &[u8], mut crc: u32) -> u32
 }
 
 /// A smaller CRC function used by hot loops to handle extra data
-pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32
-{
-    for datum in data
-    {
+pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32 {
+    for datum in data {
         crc = (crc >> 8) ^ CRC32_SLICE1_TABLE[((crc & 0xFF) ^ u32::from(*datum)) as usize];
     }
     crc
 }
 
-pub fn calc_crc(data: &[u8]) -> u32
-{
+pub fn calc_crc(data: &[u8]) -> u32 {
     !crc32_slice8(data, u32::MAX)
 }
 
 #[test]
-fn test_crc_same()
-{
+fn test_crc_same() {
     use alloc::vec;
 
     use nanorand::Rng;

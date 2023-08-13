@@ -1,17 +1,23 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use crate::traits::NumOps;
 
 #[derive(Copy, Clone, Debug)]
-pub enum ThresholdMethod
-{
+pub enum ThresholdMethod {
     Binary,
     BinaryInv,
     ThreshTrunc,
     ThreshToZero
 }
-impl ThresholdMethod
-{
-    pub fn from_string_result(input: &str) -> Result<Self, String>
-    {
+
+impl ThresholdMethod {
+    pub fn from_string_result(input: &str) -> Result<Self, String> {
         match input
         {
             "binary" => Ok(Self::Binary),
@@ -65,13 +71,11 @@ pub fn threshold<T>(in_channel: &mut [T], threshold: T, method: ThresholdMethod)
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     #[bench]
-    fn threshold_scalar_u8(b: &mut test::Bencher)
-    {
+    fn threshold_scalar_u8(b: &mut test::Bencher) {
         use crate::threshold::threshold;
 
         let width = 800;
@@ -86,8 +90,7 @@ mod benchmarks
     }
 
     #[bench]
-    fn threshold_scalar_u16(b: &mut test::Bencher)
-    {
+    fn threshold_scalar_u16(b: &mut test::Bencher) {
         use crate::threshold::threshold;
 
         let width = 800;

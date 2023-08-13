@@ -1,9 +1,15 @@
-pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T])
-{
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T]) {
     let angle = angle % 360.0;
 
-    if angle == 180.0
-    {
+    if angle == 180.0 {
         // copy in image to out image
         out_image.copy_from_slice(in_image);
         rotate_180(out_image, width);
@@ -14,8 +20,7 @@ pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut
 ///
 /// This method is preferred as it does it in place as opposed
 /// to the generic rotate which does it out of place
-pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize)
-{
+pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
     // swap bottom row with top row
 
     // divide array into two
@@ -26,15 +31,13 @@ pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize)
         .chunks_exact_mut(width)
         .zip(bottom.chunks_exact_mut(width).rev())
     {
-        for (a, b) in top_chunk.iter_mut().zip(bottom_chunk.iter_mut())
-        {
+        for (a, b) in top_chunk.iter_mut().zip(bottom_chunk.iter_mut()) {
             core::mem::swap(a, b);
         }
     }
 }
 
-fn _rotate_90(_in_image: &[u8], _out_image: &mut [u8], _width: usize, _height: usize)
-{
+fn _rotate_90(_in_image: &[u8], _out_image: &mut [u8], _width: usize, _height: usize) {
     // a 90 degree rotation is a bit cache unfriendly,
     // since widths become heights, but we can still optimize it
     //                   ┌──────┐

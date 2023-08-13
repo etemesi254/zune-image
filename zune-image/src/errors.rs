@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Errors possible during image processing
 use std::any::TypeId;
 use std::fmt::{Debug, Formatter};
@@ -13,8 +21,7 @@ use crate::codecs::ImageFormat;
 ///
 /// This is the grandfather of image errors and contains
 /// all decoding,processing and encoding errors possible
-pub enum ImageErrors
-{
+pub enum ImageErrors {
     ImageDecodeErrors(String),
     DimensionsMisMatch(usize, usize),
     UnsupportedColorspace(ColorSpace, &'static str, &'static [ColorSpace]),
@@ -33,8 +40,7 @@ pub enum ImageErrors
 }
 
 /// Errors that may occur during image operations
-pub enum ImageOperationsErrors
-{
+pub enum ImageOperationsErrors {
     /// Unexpected colorspace
     WrongColorspace(ColorSpace, ColorSpace),
     /// Wrong number of components
@@ -52,8 +58,7 @@ pub enum ImageOperationsErrors
 }
 
 /// All errors possible during image encoding
-pub enum ImgEncodeErrors
-{
+pub enum ImgEncodeErrors {
     Generic(String),
     GenericStatic(&'static str),
     UnsupportedColorspace(ColorSpace, &'static [ColorSpace]),
@@ -61,32 +66,24 @@ pub enum ImgEncodeErrors
     NoEncoderForFormat(ImageFormat)
 }
 
-impl Debug for ImageErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
-            Self::ImageDecodeErrors(err) =>
-            {
+impl Debug for ImageErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ImageDecodeErrors(err) => {
                 writeln!(f, "{err}")
             }
 
-            Self::GenericStr(err) =>
-            {
+            Self::GenericStr(err) => {
                 writeln!(f, "{err}")
             }
 
-            Self::GenericString(err) =>
-            {
+            Self::GenericString(err) => {
                 writeln!(f, "{err}")
             }
-            Self::NoImageForOperations =>
-            {
+            Self::NoImageForOperations => {
                 writeln!(f, "No image found for which we can execute operations")
             }
-            Self::NoImageForEncoding =>
-            {
+            Self::NoImageForEncoding => {
                 writeln!(f, "No image found for which we can encode")
             }
             Self::NoImageBuffer => writeln!(f, "No image buffer present"),
@@ -94,156 +91,122 @@ impl Debug for ImageErrors
             Self::OperationsError(ref error) => writeln!(f, "{error:?}"),
 
             Self::EncodeErrors(ref err) => writeln!(f, "{err:?}"),
-            ImageErrors::UnsupportedColorspace(present, operation, supported) =>
-            {
+            ImageErrors::UnsupportedColorspace(present, operation, supported) => {
                 writeln!(f, "Unsupported colorspace {present:?}, for the operation {operation}\nSupported colorspaces are {supported:?}")
             }
-            ImageErrors::DimensionsMisMatch(expected, found) =>
-            {
+            ImageErrors::DimensionsMisMatch(expected, found) => {
                 writeln!(
                     f,
                     "Dimensions mismatch, expected {expected} but found {found}"
                 )
             }
-            ImageErrors::WrongTypeId(expected, found) =>
-            {
+            ImageErrors::WrongTypeId(expected, found) => {
                 writeln!(
                     f,
                     "Expected type with ID of {expected:?} but found {found:?}"
                 )
             }
-            ImageErrors::IoError(reason) =>
-            {
+            ImageErrors::IoError(reason) => {
                 writeln!(f, "IO error, {:?}", reason)
             }
-            ImageErrors::ImageDecoderNotIncluded(format) =>
-            {
+            ImageErrors::ImageDecoderNotIncluded(format) => {
                 writeln!(
                     f,
                     "The feature required to decode {format:?} has not been included"
                 )
             }
-            ImageErrors::ImageDecoderNotImplemented(format) =>
-            {
+            ImageErrors::ImageDecoderNotImplemented(format) => {
                 writeln!(
                     f,
                     "The decoder to parse {format:?} has not been implemented"
                 )
             }
-            ImageErrors::ChannelErrors(err) =>
-            {
+            ImageErrors::ChannelErrors(err) => {
                 writeln!(f, "Channel error : {:?}", err)
             }
         }
     }
 }
 
-impl From<std::io::Error> for ImageErrors
-{
-    fn from(value: Error) -> Self
-    {
+impl From<std::io::Error> for ImageErrors {
+    fn from(value: Error) -> Self {
         Self::IoError(value)
     }
 }
 
-impl From<ImageOperationsErrors> for ImageErrors
-{
-    fn from(from: ImageOperationsErrors) -> Self
-    {
+impl From<ImageOperationsErrors> for ImageErrors {
+    fn from(from: ImageOperationsErrors) -> Self {
         ImageErrors::OperationsError(from)
     }
 }
 
-impl From<ImgEncodeErrors> for ImageErrors
-{
-    fn from(from: ImgEncodeErrors) -> Self
-    {
+impl From<ImgEncodeErrors> for ImageErrors {
+    fn from(from: ImgEncodeErrors) -> Self {
         ImageErrors::EncodeErrors(from)
     }
 }
 
-impl Debug for ImageOperationsErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
-            Self::UnsupportedType(operation, depth) =>
-            {
+impl Debug for ImageOperationsErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedType(operation, depth) => {
                 writeln!(
                     f,
                     "Unsupported bit type {depth:?} for operation {operation}"
                 )
             }
-            Self::InvalidChannelLayout(reason) =>
-            {
+            Self::InvalidChannelLayout(reason) => {
                 writeln!(f, "{reason:}")
             }
-            Self::Generic(reason) =>
-            {
+            Self::Generic(reason) => {
                 writeln!(f, "{reason:}")
             }
-            Self::GenericString(err) =>
-            {
+            Self::GenericString(err) => {
                 writeln!(f, "{err}")
             }
-            Self::WrongColorspace(ref expected, ref found) =>
-            {
+            Self::WrongColorspace(ref expected, ref found) => {
                 writeln!(f, "Expected {expected:?} colorspace but found {found:?}")
             }
-            Self::WrongComponents(expected, found) =>
-            {
+            Self::WrongComponents(expected, found) => {
                 writeln!(f, "Expected {expected} components and found {found}")
             }
         }
     }
 }
 
-impl From<String> for ImageErrors
-{
-    fn from(s: String) -> ImageErrors
-    {
+impl From<String> for ImageErrors {
+    fn from(s: String) -> ImageErrors {
         ImageErrors::GenericString(s)
     }
 }
 
-impl From<&'static str> for ImageErrors
-{
-    fn from(s: &'static str) -> ImageErrors
-    {
+impl From<&'static str> for ImageErrors {
+    fn from(s: &'static str) -> ImageErrors {
         ImageErrors::GenericStr(s)
     }
 }
 
-impl From<ChannelErrors> for ImageErrors
-{
-    fn from(value: ChannelErrors) -> Self
-    {
+impl From<ChannelErrors> for ImageErrors {
+    fn from(value: ChannelErrors) -> Self {
         ImageErrors::ChannelErrors(value)
     }
 }
 
-impl Debug for ImgEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
-    {
-        match self
-        {
+impl Debug for ImgEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
             Self::Generic(ref string) => writeln!(f, "{string}"),
             Self::GenericStatic(ref string) => writeln!(f, "{string}"),
-            Self::UnsupportedColorspace(ref found, ref expected) =>
-            {
+            Self::UnsupportedColorspace(ref found, ref expected) => {
                 writeln!(
                     f,
                     "Found colorspace {found:?} but the encoder supports {expected:?}"
                 )
             }
-            Self::ImageEncodeErrors(err) =>
-            {
+            Self::ImageEncodeErrors(err) => {
                 writeln!(f, "Image could not be encoded, reason: {err}")
             }
-            Self::NoEncoderForFormat(format) =>
-            {
+            Self::NoEncoderForFormat(format) => {
                 writeln!(f, "No encoder for image format {:?}", format)
             }
         }

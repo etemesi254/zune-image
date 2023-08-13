@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 //! AVX optimised IDCT.
 //!
@@ -41,8 +49,7 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///
 /// For documentation see module docs.
 
-pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
-{
+pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     unsafe {
         // We don't call this method directly because we need to flag the code function
         // with #[target_feature] so that the compiler does do weird stuff with
@@ -60,8 +67,9 @@ pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usiz
     unused_assignments,
     clippy::zero_prefixed_literal
 )]
-pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
-{
+pub unsafe fn idct_int_avx2_inner(
+    in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
+) {
     let mut pos = 0;
 
     // load into registers
@@ -106,8 +114,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
     non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw6, zero));
     non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw7, zero));
 
-    if non_zero == -8
-    {
+    if non_zero == -8 {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
         let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).clamp(0, 255) as i16);
@@ -264,8 +271,7 @@ pub unsafe fn idct_int_avx2_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
 
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn clamp_avx(reg: __m256i) -> __m256i
-{
+unsafe fn clamp_avx(reg: __m256i) -> __m256i {
     let min_s = _mm256_set1_epi16(0);
     let max_s = _mm256_set1_epi16(255);
 
@@ -277,7 +283,6 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
 /// A copy of `_MM_SHUFFLE()` that doesn't require
 /// a nightly compiler
 #[inline]
-const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
-{
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     ((z << 6) | (y << 4) | (x << 2) | w)
 }

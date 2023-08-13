@@ -21,8 +21,7 @@ use crate::workflow::EncodeResult;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait
-{
+pub trait DecoderTrait {
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed
@@ -69,14 +68,12 @@ pub trait DecoderTrait
     ///
     /// Currently set to true but a codec that is experimental should override it
     /// to be false
-    fn is_experimental(&self) -> bool
-    {
+    fn is_experimental(&self) -> bool {
         false
     }
     /// Read image metadata returning the values as
     /// a struct
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors>
-    {
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
         Ok(None)
     }
 }
@@ -85,8 +82,7 @@ pub trait DecoderTrait
 ///
 /// All operations that can be stored in a workflow
 /// need to encapsulate this struct.
-pub trait OperationsTrait
-{
+pub trait OperationsTrait {
     /// Get the name of this operation
     fn get_name(&self) -> &'static str;
 
@@ -108,8 +104,7 @@ pub trait OperationsTrait
     ///
     /// During execution, the image colorspace will be matched to this colorspace and
     /// if it doesn't support it, an error will be raised during execution
-    fn supported_colorspaces(&self) -> &'static [ColorSpace]
-    {
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &ALL_COLORSPACES
     }
     /// Get supported bit types for this operation
@@ -135,8 +130,7 @@ pub trait OperationsTrait
     ///
     ///
     /// [`execute_impl`]: Self::execute_impl
-    fn execute(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // Confirm colorspace
         let colorspace = image.get_colorspace();
 
@@ -145,8 +139,7 @@ pub trait OperationsTrait
             .iter()
             .any(|x| *x == colorspace);
 
-        if !supported
-        {
+        if !supported {
             return Err(ImageErrors::UnsupportedColorspace(
                 colorspace,
                 self.get_name(),
@@ -162,8 +155,7 @@ pub trait OperationsTrait
 
         let supported = self.supported_types().iter().any(|x| *x == bit_type);
 
-        if !supported
-        {
+        if !supported {
             return Err(ImageErrors::OperationsError(
                 ImageOperationsErrors::UnsupportedType(self.get_name(), bit_type)
             ));
@@ -183,22 +175,19 @@ pub trait OperationsTrait
     /// Most image expect a premultiplied alpha state to work correctly
     /// this allows one to override the alpha state the image will
     /// be converted into before carrying out an operation
-    fn alpha_state(&self) -> AlphaState
-    {
+    fn alpha_state(&self) -> AlphaState {
         AlphaState::PreMultiplied
     }
 }
 
 /// Confirm that image invariants have been respected across image
 /// operations
-fn confirm_invariants(image: &Image) -> Result<(), ImageErrors>
-{
+fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
     // Ensure dimensions are correct
 
     let components = image.get_channels_ref(false).len();
 
-    if components != image.get_colorspace().num_components()
-    {
+    if components != image.get_colorspace().num_components() {
         return Err(ImageErrors::GenericString(format!(
             "Components mismatch, expected {} channels since image format is {:?}, but found {}",
             image.get_colorspace().num_components(),
@@ -211,10 +200,8 @@ fn confirm_invariants(image: &Image) -> Result<(), ImageErrors>
 
     let expected_length = image.get_depth().size_of() * width * height;
 
-    for channel in image.get_channels_ref(true)
-    {
-        if channel.len() != expected_length
-        {
+    for channel in image.get_channels_ref(true) {
+        if channel.len() != expected_length {
             return Err(ImageErrors::DimensionsMisMatch(
                 expected_length,
                 channel.len()
@@ -225,8 +212,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImageErrors>
     Ok(())
 }
 
-pub trait EncoderTrait
-{
+pub trait EncoderTrait {
     /// Get the name of the encoder
     fn get_name(&self) -> &'static str;
 
@@ -274,8 +260,7 @@ pub trait EncoderTrait
     /// e.g to do colorspace conversions or bit-depth conversions, hence it
     /// is recommended to have the image in a format that can be encoded
     /// directly to prevent such
-    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>
-    {
+    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         // confirm things hold themselves
         confirm_invariants(image)?;
 
@@ -294,8 +279,7 @@ pub trait EncoderTrait
         {
             let mut image_clone = image.clone();
 
-            if !supported_colorspaces.contains(&colorspace)
-            {
+            if !supported_colorspaces.contains(&colorspace) {
                 // get default colorspace
                 let default_colorspace = self.default_colorspace(colorspace);
                 let image_format = self.format();
@@ -308,8 +292,7 @@ pub trait EncoderTrait
             }
             let image_depth = image.get_depth();
 
-            if !self.supported_bit_depth().contains(&depth)
-            {
+            if !self.supported_bit_depth().contains(&depth) {
                 info!(
                     "Image depth is in {:?}, but {} encoder supports {:?}",
                     image.get_depth(),
@@ -330,9 +313,7 @@ pub trait EncoderTrait
             confirm_invariants(&image_clone)?;
 
             self.encode_inner(&image_clone)
-        }
-        else
-        {
+        } else {
             self.encode_inner(image)
         }
     }
@@ -354,8 +335,7 @@ pub trait EncoderTrait
 
     /// Call `encode` and then store the image
     /// and format in `EncodeResult`
-    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImageErrors>
-    {
+    fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImageErrors> {
         let data = self.encode(image)?;
 
         Ok(EncodeResult {
@@ -385,8 +365,7 @@ pub trait EncoderTrait
     ///
     /// # Arguments
     /// - colorspace: The colorspace the image is currently in
-    fn default_colorspace(&self, _: ColorSpace) -> ColorSpace
-    {
+    fn default_colorspace(&self, _: ColorSpace) -> ColorSpace {
         ColorSpace::RGB
     }
 
@@ -395,8 +374,7 @@ pub trait EncoderTrait
 }
 /// Trait that encapsulates supported
 /// integers which work with the image crates
-pub trait ZuneInts<T>
-{
+pub trait ZuneInts<T> {
     fn depth() -> BitDepth;
 
     ///Maximum value for this type
@@ -406,44 +384,35 @@ pub trait ZuneInts<T>
     fn max_value() -> T;
 }
 
-impl ZuneInts<u8> for u8
-{
+impl ZuneInts<u8> for u8 {
     #[inline(always)]
-    fn depth() -> BitDepth
-    {
+    fn depth() -> BitDepth {
         BitDepth::Eight
     }
     #[inline(always)]
-    fn max_value() -> u8
-    {
+    fn max_value() -> u8 {
         255
     }
 }
 
-impl ZuneInts<u16> for u16
-{
+impl ZuneInts<u16> for u16 {
     #[inline(always)]
-    fn depth() -> BitDepth
-    {
+    fn depth() -> BitDepth {
         BitDepth::Sixteen
     }
     #[inline(always)]
-    fn max_value() -> u16
-    {
+    fn max_value() -> u16 {
         u16::MAX
     }
 }
 
-impl ZuneInts<f32> for f32
-{
+impl ZuneInts<f32> for f32 {
     #[inline(always)]
-    fn depth() -> BitDepth
-    {
+    fn depth() -> BitDepth {
         BitDepth::Sixteen
     }
     #[inline(always)]
-    fn max_value() -> f32
-    {
+    fn max_value() -> f32 {
         1.0
     }
 }
@@ -451,8 +420,7 @@ impl ZuneInts<f32> for f32
 /// Trait that encapsulates image decoders that
 /// can write data as raw native endian into
 /// a buffer of u8
-pub trait DecodeInto
-{
+pub trait DecodeInto {
     /// Decode raw image bytes into a buffer that can
     /// hold u8 bytes
     ///
@@ -468,16 +436,13 @@ pub trait DecodeInto
     fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
 }
 
-pub trait IntoImage
-{
+pub trait IntoImage {
     /// Consumes this and returns an image
     fn into_image(self) -> Result<Image, ImageErrors>;
 }
 
-impl IntoImage for Image
-{
-    fn into_image(self) -> Result<Image, ImageErrors>
-    {
+impl IntoImage for Image {
+    fn into_image(self) -> Result<Image, ImageErrors> {
         Ok(self)
     }
 }

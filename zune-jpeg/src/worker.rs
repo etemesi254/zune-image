@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::format;
 use core::convert::TryInto;
 
@@ -13,8 +21,7 @@ use crate::errors::DecodeErrors;
 /// Borrowed from stb
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 #[inline]
-fn blinn_8x8(in_val: u8, y: u8) -> u8
-{
+fn blinn_8x8(in_val: u8, y: u8) -> u8 {
     let t = i32::from(in_val) * i32::from(y) + 128;
     return ((t + (t >> 8)) >> 8) as u8;
 }
@@ -28,24 +35,20 @@ pub(crate) fn color_convert_no_sampling(
 {
     // maximum sampling factors are in Y-channel, no need to pass them.
 
-    if input_colorspace.num_components() == 3 && input_colorspace == output_colorspace
-    {
+    if input_colorspace.num_components() == 3 && input_colorspace == output_colorspace {
         // sort things like RGB to RGB conversion
         copy_removing_padding(unprocessed, width, padded_width, output);
         return Ok(());
     }
     // color convert
-    match (input_colorspace, output_colorspace)
-    {
-        (ColorSpace::YCbCr | ColorSpace::Luma, ColorSpace::Luma) =>
-        {
+    match (input_colorspace, output_colorspace) {
+        (ColorSpace::YCbCr | ColorSpace::Luma, ColorSpace::Luma) => {
             ycbcr_to_grayscale(unprocessed[0], width, padded_width, output);
         }
         (
             ColorSpace::YCbCr,
             ColorSpace::RGB | ColorSpace::RGBA | ColorSpace::BGR | ColorSpace::BGRA
-        ) =>
-        {
+        ) => {
             color_convert_ycbcr(
                 unprocessed,
                 width,
@@ -55,8 +58,7 @@ pub(crate) fn color_convert_no_sampling(
                 output
             );
         }
-        (ColorSpace::YCCK, ColorSpace::RGB) =>
-        {
+        (ColorSpace::YCCK, ColorSpace::RGB) => {
             color_convert_ycck_to_rgb::<3>(
                 unprocessed,
                 width,
@@ -67,8 +69,7 @@ pub(crate) fn color_convert_no_sampling(
             );
         }
 
-        (ColorSpace::YCCK, ColorSpace::RGBA) =>
-        {
+        (ColorSpace::YCCK, ColorSpace::RGBA) => {
             color_convert_ycck_to_rgb::<4>(
                 unprocessed,
                 width,
@@ -78,17 +79,14 @@ pub(crate) fn color_convert_no_sampling(
                 output
             );
         }
-        (ColorSpace::CMYK, ColorSpace::RGB) =>
-        {
+        (ColorSpace::CMYK, ColorSpace::RGB) => {
             color_convert_cymk_to_rgb::<3>(unprocessed, width, padded_width, output);
         }
-        (ColorSpace::CMYK, ColorSpace::RGBA) =>
-        {
+        (ColorSpace::CMYK, ColorSpace::RGBA) => {
             color_convert_cymk_to_rgb::<4>(unprocessed, width, padded_width, output);
         }
         // For the other components we do nothing(currently)
-        _ =>
-        {
+        _ => {
             let msg = format!(
                     "Unimplemented colorspace mapping from {input_colorspace:?} to {output_colorspace:?}");
 
@@ -103,16 +101,14 @@ pub(crate) fn color_convert_no_sampling(
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn copy_removing_padding(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
-)
-{
+) {
     for (((pix_w, c_w), m_w), y_w) in output
         .chunks_exact_mut(width * 3)
         .zip(mcu_block[0].chunks_exact(padded_width))
         .zip(mcu_block[1].chunks_exact(padded_width))
         .zip(mcu_block[2].chunks_exact(padded_width))
     {
-        for (((pix, c), y), m) in pix_w.chunks_exact_mut(3).zip(c_w).zip(m_w).zip(y_w)
-        {
+        for (((pix, c), y), m) in pix_w.chunks_exact_mut(3).zip(c_w).zip(m_w).zip(y_w) {
             pix[0] = *c as u8;
             pix[1] = *y as u8;
             pix[2] = *m as u8;
@@ -125,8 +121,7 @@ fn copy_removing_padding(
 fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
     output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8]
-)
-{
+) {
     color_convert_ycbcr(
         mcu_block,
         width,
@@ -139,8 +134,7 @@ fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
         .chunks_exact_mut(width * 3)
         .zip(mcu_block[3].chunks_exact(padded_width))
     {
-        for (pix, m) in pix_w.chunks_exact_mut(NUM_COMPONENTS).zip(m_w)
-        {
+        for (pix, m) in pix_w.chunks_exact_mut(NUM_COMPONENTS).zip(m_w) {
             let m = (*m) as u8;
             pix[0] = blinn_8x8(255 - pix[0], m);
             pix[1] = blinn_8x8(255 - pix[1], m);
@@ -152,8 +146,7 @@ fn color_convert_ycck_to_rgb<const NUM_COMPONENTS: usize>(
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
-)
-{
+) {
     for ((((pix_w, c_w), m_w), y_w), k_w) in output
         .chunks_exact_mut(width * NUM_COMPONENTS)
         .zip(mcu_block[0].chunks_exact(padded_width))
@@ -190,8 +183,7 @@ fn color_convert_cymk_to_rgb<const NUM_COMPONENTS: usize>(
 fn color_convert_ycbcr(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize,
     output_colorspace: ColorSpace, color_convert_16: ColorConvert16Ptr, output: &mut [u8]
-)
-{
+) {
     let num_components = output_colorspace.num_components();
 
     let stride = width * num_components;
@@ -206,8 +198,7 @@ fn color_convert_ycbcr(
         .zip(mcu_block[2].chunks_exact(padded_width))
         .zip(output.chunks_exact_mut(stride))
     {
-        if width < 16
-        {
+        if width < 16 {
             // allocate temporary buffers for the values received from idct
             let mut y_out = [0; 16];
             let mut cb_out = [0; 16];
@@ -273,8 +264,7 @@ pub(crate) fn upsample_and_color_convert_h(
     component_data: &mut [Components], color_convert_16: ColorConvert16Ptr,
     input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
     padded_width: usize
-) -> Result<(), DecodeErrors>
-{
+) -> Result<(), DecodeErrors> {
     let v_samp = component_data[0].vertical_sample;
 
     let out_stride = width * output_colorspace.num_components() * v_samp;
@@ -287,8 +277,7 @@ pub(crate) fn upsample_and_color_convert_h(
         .enumerate()
         .zip(y[0].raw_coeff.chunks(width_stride))
     {
-        for component in remainder.iter_mut()
-        {
+        for component in remainder.iter_mut() {
             let raw_data = &component.raw_coeff;
 
             let comp_stride_start = pos * component.width_stride;
@@ -306,12 +295,9 @@ pub(crate) fn upsample_and_color_convert_h(
         let cb_stride = &remainder[0].upsample_dest;
         let cr_stride = &remainder[1].upsample_dest;
 
-        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
-        {
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2) {
             &component.upsample_dest
-        }
-        else
-        {
+        } else {
             &[]
         };
 
@@ -334,8 +320,7 @@ pub(crate) fn upsample_and_color_convert_v(
     input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
     padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16], i: usize,
     mcu_height: usize
-) -> Result<(), DecodeErrors>
-{
+) -> Result<(), DecodeErrors> {
     // HV and V sampling are a bust.
     // They suck because we need top row and bottom row.
     // but we haven't decoded the whole image, we only did a single
@@ -380,13 +365,11 @@ pub(crate) fn upsample_and_color_convert_v(
     let width_stride = y_component[0].width_stride * 2;
     let stop_offset = y_component[0].raw_coeff.len() / width_stride;
 
-    if i > 0
-    {
+    if i > 0 {
         // Handle the last MCU of the previous row
         // This wasn't up-sampled as we didn't have the row_down
         // so we do it now
-        for c in remainder.iter_mut()
-        {
+        for c in remainder.iter_mut() {
             if c.horizontal_sample == max_h_sample
                 && c.vertical_sample == max_v_sample
                 && c.horizontal_sample == 2
@@ -421,12 +404,9 @@ pub(crate) fn upsample_and_color_convert_v(
         let cb_stride = &remainder[0].upsample_dest;
         let cr_stride = &remainder[1].upsample_dest;
 
-        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
-        {
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2) {
             &component.upsample_dest
-        }
-        else
-        {
+        } else {
             &[]
         };
         // color convert row
@@ -456,8 +436,7 @@ pub(crate) fn upsample_and_color_convert_v(
         // set to false on the last row of an mcu
         let mut upsample = true;
 
-        for c in remainder.iter_mut()
-        {
+        for c in remainder.iter_mut() {
             if c.horizontal_sample == max_h_sample
                 && c.vertical_sample == max_v_sample
                 && c.horizontal_sample == 2
@@ -475,35 +454,26 @@ pub(crate) fn upsample_and_color_convert_v(
             // get current row
             let row = &c.raw_coeff[pos * stride..(pos + 1) * stride];
 
-            if i == 0 && pos == 0
-            {
+            if i == 0 && pos == 0 {
                 // first IMAGE row, row_up is the same as current row
                 // row_down is the row below.
                 row_up = &c.raw_coeff[pos * stride..(pos + 1) * stride];
                 row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
-            }
-            else if pos == 0
-            {
+            } else if pos == 0 {
                 // first row of a new mcu, previous row was copied so use that
                 row_up = &c.prev_row;
                 row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
-            }
-            else if pos > 0 && pos < stop_offset - 1
-            {
+            } else if pos > 0 && pos < stop_offset - 1 {
                 // other rows, get row up and row down relative to our current row
                 row_up = &c.raw_coeff[(pos - 1) * stride..pos * stride];
                 row_down = &c.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
-            }
-            else if i == mcu_height.saturating_sub(1) && pos == stop_offset - 1
-            {
+            } else if i == mcu_height.saturating_sub(1) && pos == stop_offset - 1 {
                 // last IMAGE row, adjust pointer to use previous row and current row
 
                 // other rows, get row up and row down relative to our current row
                 row_up = &c.raw_coeff[(pos - 1) * stride..pos * stride];
                 row_down = &c.raw_coeff[pos * stride..(pos + 1) * stride];
-            }
-            else
-            {
+            } else {
                 // the only fallthrough to this point is the last MCU in a row
                 // we need a row at the next MCU but we haven't decoded that MCU yet
                 // so we should save this and when we have the next MCU,
@@ -517,33 +487,27 @@ pub(crate) fn upsample_and_color_convert_v(
                 upsample = false;
             }
 
-            if upsample
-            {
+            if upsample {
                 // upsample
                 (c.up_sampler)(row, row_up, row_down, upsampler_scratch_space, dest);
             }
-            if pos == stop_offset - 1
-            {
+            if pos == stop_offset - 1 {
                 // copy current last MCU row to be used in the next mcu row
                 c.prev_row.copy_from_slice(row);
             }
         }
         // if we didn't upsample,means we are in the last row, so then there is no need
         // to color convert
-        if !upsample
-        {
+        if !upsample {
             break 'top;
         }
         // by here, each component has been up-sampled, so let's color convert a row(s)
         let cb_stride = &remainder[0].upsample_dest;
         let cr_stride = &remainder[1].upsample_dest;
 
-        let iq_stride: &[i16] = if let Some(component) = remainder.get(2)
-        {
+        let iq_stride: &[i16] = if let Some(component) = remainder.get(2) {
             &component.upsample_dest
-        }
-        else
-        {
+        } else {
             &[]
         };
         // color convert row
@@ -559,8 +523,7 @@ pub(crate) fn upsample_and_color_convert_v(
         *pixels_written += out_stride;
     }
     // copy last row of current y to be used in the next invocation
-    if i < mcu_height - 1
-    {
+    if i < mcu_height - 1 {
         let last_row = y_component[0]
             .raw_coeff
             .rchunks_exact(width_stride)

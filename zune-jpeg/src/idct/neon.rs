@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(target_arch = "aarch64")]
 //! AVX optimised IDCT.
 //!
@@ -37,8 +45,7 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 ///
 /// For documentation see module docs.
 
-pub fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
-{
+pub fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     unsafe {
         // We don't call this method directly because we need to flag the code function
         // with #[target_feature] so that the compiler does do weird stuff with
@@ -49,15 +56,13 @@ pub fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usiz
 
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn pack_16(a: int32x4x2_t) -> int16x8_t
-{
+unsafe fn pack_16(a: int32x4x2_t) -> int16x8_t {
     vcombine_s16(vqmovn_s32(a.0), vqmovn_s32(a.1))
 }
 
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn condense_bottom_16(a: int32x4x2_t, b: int32x4x2_t) -> int16x8x2_t
-{
+unsafe fn condense_bottom_16(a: int32x4x2_t, b: int32x4x2_t) -> int16x8x2_t {
     int16x8x2_t(pack_16(a), pack_16(b))
 }
 
@@ -70,8 +75,9 @@ unsafe fn condense_bottom_16(a: int32x4x2_t, b: int32x4x2_t) -> int16x8x2_t
     unused_assignments,
     clippy::zero_prefixed_literal
 )]
-pub unsafe fn idct_int_neon_inner(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
-{
+pub unsafe fn idct_int_neon_inner(
+    in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
+) {
     let mut pos = 0;
 
     // load into registers
@@ -105,8 +111,7 @@ pub unsafe fn idct_int_neon_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
 
     let or_tree = (((row1 | row8) | (row2 | row3)) | ((row4 | row5) | (row6 | row7)));
 
-    if or_tree.all_zero()
-    {
+    if or_tree.all_zero() {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
         let clamped_16 = ((in_vector[0] >> 3) + 128).clamp(0, 255) as i16;
@@ -252,8 +257,7 @@ pub unsafe fn idct_int_neon_inner(in_vector: &mut [i32; 64], out_vector: &mut [i
 
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn clamp_neon(reg: int16x8_t) -> int16x8_t
-{
+unsafe fn clamp_neon(reg: int16x8_t) -> int16x8_t {
     let min_s = vdupq_n_s16(0);
     let max_s = vdupq_n_s16(255);
 
@@ -264,19 +268,16 @@ unsafe fn clamp_neon(reg: int16x8_t) -> int16x8_t
 
 #[inline]
 #[target_feature(enable = "neon")]
-unsafe fn clamp256_neon(reg: int16x8x2_t) -> int16x8x2_t
-{
+unsafe fn clamp256_neon(reg: int16x8x2_t) -> int16x8x2_t {
     int16x8x2_t(clamp_neon(reg.0), clamp_neon(reg.1))
 }
 
 #[cfg(test)]
-mod test
-{
+mod test {
     use super::*;
 
     #[test]
-    fn test_neon_clamp_256()
-    {
+    fn test_neon_clamp_256() {
         unsafe {
             let vals: [i16; 16] = [-1, -2, -3, 4, 256, 257, 258, 240, -1, 290, 2, 3, 4, 5, 6, 7];
             let loaded = vld1q_s16_x2(vals.as_ptr().cast());

@@ -15,8 +15,7 @@ mod avx;
 mod sse;
 
 /// scalar impl of big-endian to native endian
-fn convert_be_to_ne_scalar(out: &mut [u8])
-{
+fn convert_be_to_ne_scalar(out: &mut [u8]) {
     out.chunks_exact_mut(2).for_each(|chunk| {
         let value: [u8; 2] = chunk.try_into().unwrap();
         let pix = u16::from_be_bytes(value);
@@ -33,19 +32,16 @@ fn convert_be_to_ne_scalar(out: &mut [u8])
 /// * `out`:  The output array for which we will convert in place
 /// * `use_sse4`:  Whether to use SSE intrinsics for conversion
 ///
-fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool)
-{
+fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool) {
     #[cfg(feature = "std")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if _use_sse4 && is_x86_feature_detected!("avx2")
-        {
+        if _use_sse4 && is_x86_feature_detected!("avx2") {
             unsafe {
                 return avx::convert_be_to_ne_avx(out);
             };
         }
-        if _use_sse4 && is_x86_feature_detected!("ssse3")
-        {
+        if _use_sse4 && is_x86_feature_detected!("ssse3") {
             unsafe {
                 return sse::convert_be_to_ne_sse4(out);
             }
@@ -66,17 +62,16 @@ fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool)
 /// sample array is modified in place
 ///
 #[inline]
-pub fn convert_be_to_target_endian_u16(sample: &mut [u8], endian: ByteEndian, use_intrinsics: bool)
-{
+pub fn convert_be_to_target_endian_u16(
+    sample: &mut [u8], endian: ByteEndian, use_intrinsics: bool
+) {
     // if target is BE no conversion
-    if endian == ByteEndian::BE
-    {
+    if endian == ByteEndian::BE {
         return;
     }
     // if system is BE, no conversion
     // poor man's check
-    if u16::from_be_bytes([234, 231]) == u16::from_ne_bytes([234, 231])
-    {
+    if u16::from_be_bytes([234, 231]) == u16::from_ne_bytes([234, 231]) {
         return;
     }
     // convert then
@@ -84,36 +79,28 @@ pub fn convert_be_to_target_endian_u16(sample: &mut [u8], endian: ByteEndian, us
 }
 
 /// Return true if the system is little endian
-pub const fn is_le() -> bool
-{
+pub const fn is_le() -> bool {
     // see if le and be conversion return the same number
     u16::from_le_bytes([234, 231]) == u16::from_ne_bytes([234, 231])
 }
 
 pub(crate) fn expand_palette(
     input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize
-)
-{
-    if components == 0
-    {
+) {
+    if components == 0 {
         return;
     }
 
-    if components == 3
-    {
-        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(3))
-        {
+    if components == 3 {
+        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(3)) {
             let entry = palette[usize::from(*in_px) % 256];
 
             px[0] = entry.red;
             px[1] = entry.green;
             px[2] = entry.blue;
         }
-    }
-    else if components == 4
-    {
-        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(4))
-        {
+    } else if components == 4 {
+        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(4)) {
             let entry = palette[usize::from(*in_px) % 256];
 
             px[0] = entry.red;
@@ -134,8 +121,7 @@ pub(crate) fn expand_palette(
 ///
 pub fn expand_trns<const SIXTEEN_BITS: bool>(
     input: &[u8], out: &mut [u8], color: PngColor, trns_bytes: [u16; 4], depth: u8
-)
-{
+) {
     const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
     // for images whose color types are not paletted
@@ -146,32 +132,24 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
     // it is to be treated as fully transparent.
     // We indicate that by replacing the pixel with pixel+alpha and setting alpha to be zero;
     // to indicate fully transparent.
-    if SIXTEEN_BITS
-    {
-        match color
-        {
-            PngColor::Luma =>
-            {
+    if SIXTEEN_BITS {
+        match color {
+            PngColor::Luma => {
                 let trns_byte = trns_bytes[0].to_ne_bytes();
 
-                for (in_chunk, chunk) in input.chunks_exact(2).zip(out.chunks_exact_mut(4))
-                {
+                for (in_chunk, chunk) in input.chunks_exact(2).zip(out.chunks_exact_mut(4)) {
                     chunk[..2].copy_from_slice(in_chunk);
 
-                    if trns_byte != &in_chunk[0..2]
-                    {
+                    if trns_byte != &in_chunk[0..2] {
                         chunk[2] = 255;
                         chunk[3] = 255;
-                    }
-                    else
-                    {
+                    } else {
                         chunk[2] = 0;
                         chunk[3] = 0;
                     }
                 }
             }
-            PngColor::RGB =>
-            {
+            PngColor::RGB => {
                 let r = trns_bytes[0].to_ne_bytes();
                 let g = trns_bytes[1].to_ne_bytes();
                 let b = trns_bytes[2].to_ne_bytes();
@@ -183,19 +161,15 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                 all[2..4].copy_from_slice(&g);
                 all[4..6].copy_from_slice(&b);
 
-                for (in_chunk, chunk) in input.chunks_exact(6).zip(out.chunks_exact_mut(8))
-                {
+                for (in_chunk, chunk) in input.chunks_exact(6).zip(out.chunks_exact_mut(8)) {
                     chunk[..6].copy_from_slice(in_chunk);
 
                     // the read does not match the bytes
                     // so set it to opaque
-                    if all != &in_chunk[..6]
-                    {
+                    if all != &in_chunk[..6] {
                         chunk[6] = 255;
                         chunk[7] = 255;
-                    }
-                    else
-                    {
+                    } else {
                         chunk[6] = 0;
                         chunk[7] = 0;
                     }
@@ -203,27 +177,21 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
             }
             _ => unreachable!()
         }
-    }
-    else
-    {
-        match color
-        {
-            PngColor::Luma =>
-            {
+    } else {
+        match color {
+            PngColor::Luma => {
                 let scale = DEPTH_SCALE_TABLE[usize::from(depth)];
 
                 let depth_mask = (1_u16 << depth) - 1;
                 // BUG: This overflowing is indicative of a wrong tRNS value
                 let trns_byte = (((trns_bytes[0]) & 255 & depth_mask) as u8) * scale;
 
-                for (in_byte, chunk) in input.iter().zip(out.chunks_exact_mut(2))
-                {
+                for (in_byte, chunk) in input.iter().zip(out.chunks_exact_mut(2)) {
                     chunk[0] = *in_byte;
                     chunk[1] = u8::from(*in_byte != trns_byte) * 255;
                 }
             }
-            PngColor::RGB =>
-            {
+            PngColor::RGB => {
                 let depth_mask = (1_u16 << depth) - 1;
 
                 let scale = DEPTH_SCALE_TABLE[usize::from(depth)];
@@ -234,8 +202,7 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
 
                 let r_matrix = [r, g, b];
 
-                for (in_chunk, chunk) in input.chunks_exact(3).zip(out.chunks_exact_mut(4))
-                {
+                for (in_chunk, chunk) in input.chunks_exact(3).zip(out.chunks_exact_mut(4)) {
                     let mask = &in_chunk[0..3] != &r_matrix;
 
                     chunk[0..3].copy_from_slice(in_chunk);
@@ -250,18 +217,13 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
 /// Expand bits to bytes expand images with less than 8 bpp
 pub(crate) fn expand_bits_to_byte(
     width: usize, depth: usize, out_n: usize, plte_present: bool, input: &[u8], out: &mut [u8]
-)
-{
-    let scale = if plte_present
-    {
+) {
+    let scale = if plte_present {
         // When a palette is used we only separate the indexes in this pass,
         // the palette pass will convert indexes to the right colors later.
         1
-    }
-    else
-    {
-        match depth
-        {
+    } else {
+        match depth {
             1 => 0xFF,
             2 => 0x55,
             4 => 0x11,
@@ -271,8 +233,7 @@ pub(crate) fn expand_bits_to_byte(
 
     let out = &mut out[..width * out_n];
 
-    if depth == 1
-    {
+    if depth == 1 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(8);
 
@@ -299,17 +260,14 @@ pub(crate) fn expand_bits_to_byte(
             });
 
         // handle the remainder at the end where the output is less than 8 bytes long
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (7_usize).wrapping_sub(pos);
                 *out_val = scale * ((in_val >> shift) & 0x01);
             });
         }
-    }
-    else if depth == 2
-    {
+    } else if depth == 2 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(4);
 
@@ -326,17 +284,14 @@ pub(crate) fn expand_bits_to_byte(
             });
 
         // handle the remainder at the end where the output is less than 4 bytes long
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (6_usize).wrapping_sub(pos * 2);
                 *out_val = scale * ((in_val >> shift) & 0x03);
             });
         }
-    }
-    else if depth == 4
-    {
+    } else if depth == 4 {
         let mut in_iter = input.iter();
         let mut out_iter = out.chunks_exact_mut(2);
 
@@ -351,8 +306,7 @@ pub(crate) fn expand_bits_to_byte(
             });
 
         // handle the remainder at the end
-        if let Some(in_val) = in_iter.next()
-        {
+        if let Some(in_val) = in_iter.next() {
             let remainder_iter = out_iter.into_remainder().iter_mut();
             remainder_iter.enumerate().for_each(|(pos, out_val)| {
                 let shift = (4_usize).wrapping_sub(pos * 4);
@@ -365,39 +319,29 @@ pub(crate) fn expand_bits_to_byte(
 /// Add an alpha channel to an image with no alpha
 ///
 /// This feels the alpha channel with 255 or 65535 depending on image depth
-pub(crate) fn add_alpha(input: &[u8], output: &mut [u8], colorspace: PngColor, depth: BitDepth)
-{
-    match (colorspace, depth)
-    {
-        (PngColor::Luma, BitDepth::Eight) =>
-        {
-            for (in_array, out_chunk) in input.iter().zip(output.chunks_exact_mut(2))
-            {
+pub(crate) fn add_alpha(input: &[u8], output: &mut [u8], colorspace: PngColor, depth: BitDepth) {
+    match (colorspace, depth) {
+        (PngColor::Luma, BitDepth::Eight) => {
+            for (in_array, out_chunk) in input.iter().zip(output.chunks_exact_mut(2)) {
                 out_chunk[0] = *in_array;
                 out_chunk[1] = 255;
             }
         }
-        (PngColor::Luma, BitDepth::Sixteen) =>
-        {
-            for (in_array, out_chunk) in input.chunks_exact(2).zip(output.chunks_exact_mut(4))
-            {
+        (PngColor::Luma, BitDepth::Sixteen) => {
+            for (in_array, out_chunk) in input.chunks_exact(2).zip(output.chunks_exact_mut(4)) {
                 out_chunk[0..2].copy_from_slice(in_array);
                 out_chunk[2] = 255;
                 out_chunk[3] = 255;
             }
         }
-        (PngColor::RGB, BitDepth::Eight) =>
-        {
-            for (in_array, out_chunk) in input.chunks_exact(3).zip(output.chunks_exact_mut(4))
-            {
+        (PngColor::RGB, BitDepth::Eight) => {
+            for (in_array, out_chunk) in input.chunks_exact(3).zip(output.chunks_exact_mut(4)) {
                 out_chunk[0..3].copy_from_slice(in_array);
                 out_chunk[3] = 255;
             }
         }
-        (PngColor::RGB, BitDepth::Sixteen) =>
-        {
-            for (in_array, out_chunk) in input.chunks_exact(6).zip(output.chunks_exact_mut(8))
-            {
+        (PngColor::RGB, BitDepth::Sixteen) => {
+            for (in_array, out_chunk) in input.chunks_exact(6).zip(output.chunks_exact_mut(8)) {
                 out_chunk[0..6].copy_from_slice(in_array);
                 out_chunk[6] = 255;
                 out_chunk[7] = 255;

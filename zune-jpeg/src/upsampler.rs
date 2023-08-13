@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Up-sampling routines
 //!
 //! The main upsampling method is a bi-linear interpolation or a "triangle
@@ -72,17 +80,15 @@ use crate::components::UpSampler;
 mod scalar;
 
 // choose best possible implementation for this platform
-pub fn choose_horizontal_samp_function(_use_unsafe: bool) -> UpSampler
-{
+pub fn choose_horizontal_samp_function(_use_unsafe: bool) -> UpSampler {
     return scalar::upsample_horizontal;
 }
 
-pub fn choose_hv_samp_function(_use_unsafe: bool) -> UpSampler
-{
+pub fn choose_hv_samp_function(_use_unsafe: bool) -> UpSampler {
     return scalar::upsample_hv;
 }
-pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler
-{
+
+pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler {
     return scalar::upsample_vertical;
 }
 
@@ -91,6 +97,5 @@ pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler
 pub fn upsample_no_op(
     _input: &[i16], _in_ref: &[i16], _in_near: &[i16], _scratch_space: &mut [i16],
     _output: &mut [i16]
-)
-{
+) {
 }

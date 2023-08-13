@@ -1,7 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 pub fn transpose_scalar<T: Copy + Default>(
     in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
-)
-{
+) {
     // A slightly more optimized scalar transpose_u16,
     // 2x faster than the naive one
     //
@@ -29,18 +36,14 @@ pub fn transpose_scalar<T: Copy + Default>(
     let width_iterations = width / 8;
     let sin_height = 8 * width;
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate()
-    {
-        for j in 0..width_iterations
-        {
+    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
+        for j in 0..width_iterations {
             let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
 
             let in_width = in_width_stride[(j * 8)..].chunks(width);
 
-            for (k, w_d) in in_width.enumerate().take(8)
-            {
-                for (l, h) in w_d.iter().enumerate().take(8)
-                {
+            for (k, w_d) in in_width.enumerate().take(8) {
+                for (l, h) in w_d.iter().enumerate().take(8) {
                     temp_matrix[(l * 8) + k] = *h;
                     // Optimizer is really trying stuff here
                     // Not a perf boost but a code bloat, so tell it
@@ -54,8 +57,7 @@ pub fn transpose_scalar<T: Copy + Default>(
             // copy out height stride in chunks of 8
             let mut stride_start = 0;
 
-            for small_m in temp_matrix.chunks_exact(8)
-            {
+            for small_m in temp_matrix.chunks_exact(8) {
                 out_height_stride[stride_start..stride_start + 8].copy_from_slice(small_m);
                 stride_start += height;
             }
@@ -64,17 +66,13 @@ pub fn transpose_scalar<T: Copy + Default>(
     let rem_w = width - (width & 7) - 1;
     let rem_h = height - (height & 7) - 1;
 
-    for i in rem_h..height
-    {
-        for j in 0..width
-        {
+    for i in rem_h..height {
+        for j in 0..width {
             out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
         }
     }
-    for i in rem_w..width
-    {
-        for j in 0..height
-        {
+    for i in rem_w..width {
+        for j in 0..height {
             out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
         }
     }

@@ -11,13 +11,11 @@ use std::path::Path;
 
 use zune_bmp::BmpDecoder;
 
-fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
-{
+fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
 }
 
-fn decode(file: &String) -> Vec<u8>
-{
+fn decode(file: &String) -> Vec<u8> {
     let file = open_and_read(file);
     BmpDecoder::new(&file).decode().unwrap()
 }

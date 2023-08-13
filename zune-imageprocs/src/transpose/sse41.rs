@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "sse41")]
 //! The algorithm
@@ -123,8 +131,9 @@ unsafe fn transpose_8_by_8_u16(
 }
 
 #[target_feature(enable = "sse4.1")]
-unsafe fn transpose_8_by_8_u8(in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize)
-{
+unsafe fn transpose_8_by_8_u8(
+    in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize
+) {
     // Godbolt :https://godbolt.org/z/axoorxT8o
     // Stack overflow: https://stackoverflow.com/a/42316675
 
@@ -215,8 +224,7 @@ unsafe fn transpose_8_by_8_u8(in_matrix: &[u8], out: &mut [u8], in_stride: usize
 
 pub unsafe fn transpose_sse41_u16(
     in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize
-)
-{
+) {
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
     let dimensions = width * height;
@@ -233,8 +241,7 @@ pub unsafe fn transpose_sse41_u16(
         "Out matrix dimensions do not match width and height"
     );
 
-    if width < SMALL_WIDTH_THRESHOLD
-    {
+    if width < SMALL_WIDTH_THRESHOLD {
         return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
     }
 
@@ -252,10 +259,8 @@ pub unsafe fn transpose_sse41_u16(
     let width_iterations = width / 8;
     let sin_height = 8 * width;
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate()
-    {
-        for j in 0..width_iterations
-        {
+    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
+        for j in 0..width_iterations {
             let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
 
             transpose_8_by_8_u16(
@@ -282,17 +287,13 @@ pub unsafe fn transpose_sse41_u16(
     let rem_w = width - (width & 7);
     let rem_h = height - (height & 7);
 
-    for i in rem_h..height
-    {
-        for j in 0..width
-        {
+    for i in rem_h..height {
+        for j in 0..width {
             out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
         }
     }
-    for i in rem_w..width
-    {
-        for j in 0..height
-        {
+    for i in rem_w..width {
+        for j in 0..height {
             out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
         }
     }
@@ -300,8 +301,7 @@ pub unsafe fn transpose_sse41_u16(
 
 pub unsafe fn transpose_sse41_u8(
     in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize
-)
-{
+) {
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
     let dimensions = width * height;
@@ -318,8 +318,7 @@ pub unsafe fn transpose_sse41_u8(
         "Out matrix dimensions do not match width and height"
     );
 
-    if width < SMALL_WIDTH_THRESHOLD
-    {
+    if width < SMALL_WIDTH_THRESHOLD {
         return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
     }
 
@@ -337,10 +336,8 @@ pub unsafe fn transpose_sse41_u8(
     let width_iterations = width / 8;
     let sin_height = 8 * width;
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate()
-    {
-        for j in 0..width_iterations
-        {
+    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
+        for j in 0..width_iterations {
             let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
 
             transpose_8_by_8_u8(
@@ -367,17 +364,13 @@ pub unsafe fn transpose_sse41_u8(
     let rem_w = width - (width & 7);
     let rem_h = height - (height & 7);
 
-    for i in rem_h..height
-    {
-        for j in 0..width
-        {
+    for i in rem_h..height {
+        for j in 0..width {
             out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
         }
     }
-    for i in rem_w..width
-    {
-        for j in 0..height
-        {
+    for i in rem_w..width {
+        for j in 0..height {
             out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
         }
     }

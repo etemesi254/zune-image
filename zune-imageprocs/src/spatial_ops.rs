@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::cmp::{max, min};
 use std::fmt::Debug;
 use std::ops::{Add, Div, Sub};
@@ -7,8 +15,7 @@ use crate::spatial::spatial;
 use crate::traits::NumOps;
 
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
-pub enum StatisticOperations
-{
+pub enum StatisticOperations {
     Contrast,
     Maximum,
     Gradient,
@@ -16,10 +23,8 @@ pub enum StatisticOperations
     Mean
 }
 
-impl StatisticOperations
-{
-    pub fn from_string_result(input: &str) -> Result<Self, String>
-    {
+impl StatisticOperations {
+    pub fn from_string_result(input: &str) -> Result<Self, String> {
         match input
         {
             "contrast" => Ok(Self::Contrast),
@@ -35,12 +40,10 @@ impl StatisticOperations
     }
 }
 
-fn find_min<T: Ord + Default + Copy + NumOps<T>>(data: &[T]) -> T
-{
+fn find_min<T: Ord + Default + Copy + NumOps<T>>(data: &[T]) -> T {
     let mut minimum = T::max_val();
 
-    for datum in data
-    {
+    for datum in data {
         minimum = min(*datum, minimum);
     }
     minimum
@@ -50,13 +53,11 @@ fn find_contrast<
     T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
 >(
     data: &[T]
-) -> T
-{
+) -> T {
     let mut minimum = T::max_val();
     let mut maximum = T::min_val();
 
-    for datum in data
-    {
+    for datum in data {
         minimum = min(*datum, minimum);
         maximum = max(*datum, maximum);
     }
@@ -70,13 +71,11 @@ fn find_gradient<
     T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
 >(
     data: &[T]
-) -> T
-{
+) -> T {
     let mut minimum = T::max_val();
     let mut maximum = T::min_val();
 
-    for datum in data
-    {
+    for datum in data {
         minimum = min(*datum, minimum);
         maximum = max(*datum, maximum);
     }
@@ -84,12 +83,10 @@ fn find_gradient<
 }
 
 #[inline(always)]
-fn find_max<T: Ord + Copy + NumOps<T>>(data: &[T]) -> T
-{
+fn find_max<T: Ord + Copy + NumOps<T>>(data: &[T]) -> T {
     let mut maximum = T::min_val();
 
-    for datum in data
-    {
+    for datum in data {
         maximum = max(*datum, maximum);
     }
     maximum
@@ -105,8 +102,7 @@ where
     let mut maximum = u32::default();
     let len = data.len() as u32;
 
-    for datum in data
-    {
+    for datum in data {
         maximum += u32::from(*datum);
     }
     T::from_u32(maximum / len)
@@ -144,8 +140,7 @@ pub fn spatial_ops<T>(
     //
     //
     // Fn pointers have it 2x faster , yea tell me that we understand computers.
-    let ptr = match operations
-    {
+    let ptr = match operations {
         StatisticOperations::Contrast => find_contrast::<T>,
         StatisticOperations::Maximum => find_max::<T>,
         StatisticOperations::Gradient => find_gradient::<T>,
@@ -158,15 +153,13 @@ pub fn spatial_ops<T>(
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::spatial_ops::{spatial_ops, StatisticOperations};
 
     #[bench]
-    fn bench_spatial_mean(b: &mut test::Bencher)
-    {
+    fn bench_spatial_mean(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -189,8 +182,7 @@ mod benchmarks
     }
 
     #[bench]
-    fn bench_spatial_min(b: &mut test::Bencher)
-    {
+    fn bench_spatial_min(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let dimensions = width * height;

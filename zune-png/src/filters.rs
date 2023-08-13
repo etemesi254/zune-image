@@ -15,10 +15,8 @@ pub mod de_filter;
 mod filter;
 mod sse4;
 
-pub fn choose_compression_filter(_previous_row: &[u8], _current_row: &[u8]) -> FilterMethod
-{
-    if _previous_row.is_empty()
-    {
+pub fn choose_compression_filter(_previous_row: &[u8], _current_row: &[u8]) -> FilterMethod {
+    if _previous_row.is_empty() {
         // first row
         return FilterMethod::None;
     }
@@ -27,14 +25,12 @@ pub fn choose_compression_filter(_previous_row: &[u8], _current_row: &[u8]) -> F
 
 pub fn filter_scanline(
     input: &[u8], previous_row: &[u8], output: &mut [u8], filter: FilterMethod, components: usize
-)
-{
+) {
     let (filter_byte, filter_scanline) = output.split_at_mut(1);
     // add
     filter_byte[0] = filter.to_int();
 
-    match filter
-    {
+    match filter {
         FilterMethod::None => filter_scanline.copy_from_slice(input),
         FilterMethod::Sub => filter::sub_filter(input, filter_scanline, components),
         FilterMethod::Up => filter::up_filter(input, previous_row, filter_scanline),

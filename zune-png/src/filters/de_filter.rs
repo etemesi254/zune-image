@@ -7,10 +7,8 @@
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
     prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
-)
-{
-    if raw.len() < components || current.len() < components
-    {
+) {
+    if raw.len() < components || current.len() < components {
         return;
     }
 
@@ -18,10 +16,8 @@ pub fn handle_avg(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // use sse features where applicable
-        if use_sse4
-        {
-            match components
-            {
+        if use_sse4 {
+            match components {
                 3 => return crate::filters::sse4::defilter_avg_sse::<3>(prev_row, raw, current),
                 4 => return crate::filters::sse4::defilter_avg_sse::<4>(prev_row, raw, current),
                 6 => return crate::filters::sse4::defilter_avg_sse::<6>(prev_row, raw, current),
@@ -34,21 +30,18 @@ pub fn handle_avg(
     // no simd, so just do it the old fashioned way
 
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
+    for i in 0..components {
         current[i] = raw[i].wrapping_add(prev_row[i] >> 1);
     }
     // raw length is one row,so always keep it in check
     let end = current.len().min(raw.len()).min(prev_row.len());
 
-    if components > 8
-    {
+    if components > 8 {
         // optimizer hint to tell the compiler that we don't see this ever happening
         return;
     }
 
-    for i in components..end
-    {
+    for i in components..end {
         let a = current[i - components];
         let b = prev_row[i];
 
@@ -63,19 +56,15 @@ pub fn handle_avg(
 }
 
 #[allow(clippy::manual_memcpy)]
-pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: bool)
-{
-    if current.len() < components || raw.len() < components
-    {
+pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: bool) {
+    if current.len() < components || raw.len() < components {
         return;
     }
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if use_sse2
-        {
-            match components
-            {
+        if use_sse2 {
+            match components {
                 3 => return crate::filters::sse4::de_filter_sub_sse2::<3>(raw, current),
                 4 => return crate::filters::sse4::de_filter_sub_sse2::<4>(raw, current),
                 6 => return crate::filters::sse4::de_filter_sub_sse2::<6>(raw, current),
@@ -85,15 +74,13 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
         }
     }
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
+    for i in 0..components {
         current[i] = raw[i];
     }
     // raw length is one row,so always keep it in check
     let end = current.len().min(raw.len());
 
-    for i in components..end
-    {
+    for i in components..end {
         let a = current[i - components];
         current[i] = raw[i].wrapping_add(a);
     }
@@ -102,34 +89,26 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
 #[allow(clippy::manual_memcpy)]
 pub fn handle_paeth(
     prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
-)
-{
-    if raw.len() < components || current.len() < components
-    {
+) {
+    if raw.len() < components || current.len() < components {
         return;
     }
 
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if use_sse4
-        {
-            match components
-            {
-                3 =>
-                {
+        if use_sse4 {
+            match components {
+                3 => {
                     return crate::filters::sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current)
                 }
-                4 =>
-                {
+                4 => {
                     return crate::filters::sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current)
                 }
-                6 =>
-                {
+                6 => {
                     return crate::filters::sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current)
                 }
-                8 =>
-                {
+                8 => {
                     return crate::filters::sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current)
                 }
                 _ => ()
@@ -138,21 +117,18 @@ pub fn handle_paeth(
     }
 
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
+    for i in 0..components {
         current[i] = raw[i].wrapping_add(paeth(0, prev_row[i], 0));
     }
     // raw length is one row,so always keep it in check
     let end = current.len().min(raw.len()).min(prev_row.len());
 
-    if components > 8
-    {
+    if components > 8 {
         // optimizer hint to tell the CPU that we don't see this ever happening
         return;
     }
 
-    for i in components..end
-    {
+    for i in components..end {
         let paeth_res = paeth(
             current[i - components],
             prev_row[i],
@@ -162,10 +138,8 @@ pub fn handle_paeth(
     }
 }
 
-pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8])
-{
-    for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row)
-    {
+pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
+    for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row) {
         *recon = (*filt).wrapping_add(*up)
     }
 }
@@ -174,23 +148,19 @@ pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8])
 ///
 /// Special in that the above row is treated as zero
 #[allow(clippy::manual_memcpy)]
-pub fn handle_paeth_first(raw: &[u8], current: &mut [u8], components: usize)
-{
-    if raw.len() < components || current.len() < components
-    {
+pub fn handle_paeth_first(raw: &[u8], current: &mut [u8], components: usize) {
+    if raw.len() < components || current.len() < components {
         return;
     }
 
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
+    for i in 0..components {
         current[i] = raw[i];
     }
     // raw length is one row,so always keep it in check
     let end = current.len().min(raw.len());
 
-    for i in components..end
-    {
+    for i in components..end {
         let paeth_res = paeth(current[i - components], 0, 0);
         current[i] = raw[i].wrapping_add(paeth_res)
     }
@@ -200,31 +170,26 @@ pub fn handle_paeth_first(raw: &[u8], current: &mut [u8], components: usize)
 ///
 /// The above row is treated as zero
 #[allow(clippy::manual_memcpy)]
-pub fn handle_avg_first(raw: &[u8], current: &mut [u8], components: usize)
-{
-    if raw.len() < components || current.len() < components
-    {
+pub fn handle_avg_first(raw: &[u8], current: &mut [u8], components: usize) {
+    if raw.len() < components || current.len() < components {
         return;
     }
 
     // handle leftmost byte explicitly
-    for i in 0..components
-    {
+    for i in 0..components {
         current[i] = raw[i];
     }
     // raw length is one row,so always keep it in check
     let end = current.len().min(raw.len());
 
-    for i in components..end
-    {
+    for i in components..end {
         let avg = current[i - components] >> 1;
         current[i] = raw[i].wrapping_add(avg)
     }
 }
 
 #[inline(always)]
-pub fn paeth(a: u8, b: u8, c: u8) -> u8
-{
+pub fn paeth(a: u8, b: u8, c: u8) -> u8 {
     let a = i16::from(a);
     let b = i16::from(b);
     let c = i16::from(c);
@@ -233,12 +198,10 @@ pub fn paeth(a: u8, b: u8, c: u8) -> u8
     let pb = (p - b).abs();
     let pc = (p - c).abs();
 
-    if pa <= pb && pa <= pc
-    {
+    if pa <= pb && pa <= pc {
         return a as u8;
     }
-    if pb <= pc
-    {
+    if pb <= pc {
         return b as u8;
     }
     c as u8

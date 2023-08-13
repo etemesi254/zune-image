@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::resize::resize;
 pub use zune_imageprocs::resize::ResizeMethod;
@@ -8,17 +16,14 @@ use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 #[derive(Copy, Clone)]
-pub struct Resize
-{
+pub struct Resize {
     new_width:  usize,
     new_height: usize,
     method:     ResizeMethod
 }
 
-impl Resize
-{
-    pub fn new(new_width: usize, new_height: usize, method: ResizeMethod) -> Resize
-    {
+impl Resize {
+    pub fn new(new_width: usize, new_height: usize, method: ResizeMethod) -> Resize {
         Resize {
             new_height,
             new_width,
@@ -27,26 +32,20 @@ impl Resize
     }
 }
 
-impl OperationsTrait for Resize
-{
-    fn get_name(&self) -> &'static str
-    {
+impl OperationsTrait for Resize {
+    fn get_name(&self) -> &'static str {
         "Resize"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let (old_w, old_h) = image.get_dimensions();
         let depth = image.get_depth().bit_type();
 
         let new_length = self.new_width * self.new_height * image.get_depth().size_of();
 
-        match depth
-        {
-            BitType::U8 =>
-            {
-                for old_channel in image.get_channels_mut(false)
-                {
+        match depth {
+            BitType::U8 => {
+                for old_channel in image.get_channels_mut(false) {
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
                     resize::<u8>(
@@ -61,10 +60,8 @@ impl OperationsTrait for Resize
                     *old_channel = new_channel;
                 }
             }
-            BitType::U16 =>
-            {
-                for old_channel in image.get_channels_mut(true)
-                {
+            BitType::U16 => {
+                for old_channel in image.get_channels_mut(true) {
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
                     resize::<u16>(
@@ -85,8 +82,7 @@ impl OperationsTrait for Resize
 
         Ok(())
     }
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16]
     }
 }

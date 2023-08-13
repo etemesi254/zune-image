@@ -1,8 +1,15 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![allow(clippy::upper_case_acronyms)]
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Marker
-{
+pub enum Marker {
     /// Start Of Frame markers
     ///
     /// - SOF(0):  Baseline DCT (Huffman coding)
@@ -43,14 +50,11 @@ pub enum Marker
     COM
 }
 
-impl Marker
-{
-    pub fn from_u8(n: u8) -> Option<Marker>
-    {
+impl Marker {
+    pub fn from_u8(n: u8) -> Option<Marker> {
         use self::Marker::{APP, COM, DAC, DHT, DNL, DQT, DRI, EOI, RST, SOF, SOI, SOS};
 
-        match n
-        {
+        match n {
             0xFE => Some(COM),
             0xC0 => Some(SOF(0)),
             0xC1 => Some(SOF(1)),

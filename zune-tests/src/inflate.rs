@@ -1,23 +1,27 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::ffi::OsStr;
 use std::fs::read;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use zune_core::options::DecoderOptions;
 use zune_inflate::DeflateDecoder;
-use zune_psd::PSDDecoder;
 
 use crate::{hash, sample_path, TestEntry};
 
-pub fn inflate_path() -> PathBuf
-{
+pub fn inflate_path() -> PathBuf {
     sample_path().join("test-images/inflate")
 }
 
 #[test]
 #[allow(clippy::uninlined_format_args)]
-fn test_inflate()
-{
+fn test_inflate() {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/inflate.json");
 
     let json_file = read(file).unwrap();
@@ -28,8 +32,7 @@ fn test_inflate()
     let mut error = false;
     let mut files = Vec::new();
 
-    for path in &paths
-    {
+    for path in &paths {
         let file_name = default_path.join(&path.name);
 
         let expected_hash = path.hash;
@@ -39,23 +42,17 @@ fn test_inflate()
 
         let mut decoder = DeflateDecoder::new(&file_contents);
 
-        let pixels = if file_name.extension() == Some(OsStr::from_bytes(b"zlib"))
-        {
+        let pixels = if file_name.extension() == Some(OsStr::from_bytes(b"zlib")) {
             decoder.decode_zlib().unwrap()
-        }
-        else if file_name.extension() == Some(OsStr::from_bytes(b"gz"))
-        {
+        } else if file_name.extension() == Some(OsStr::from_bytes(b"gz")) {
             decoder.decode_gzip().unwrap()
-        }
-        else
-        {
+        } else {
             todo!("Format {:?}", file_name.extension());
         };
 
         let hash = hash(&pixels);
 
-        if hash != expected_hash
-        {
+        if hash != expected_hash {
             error = true;
             files.push(path.to_owned());
             // report error
@@ -66,8 +63,7 @@ fn test_inflate()
             eprintln!("{}\n", err)
         }
     }
-    if error
-    {
+    if error {
         panic!("Errors found during test decoding\n {:#?}", files);
     }
 }

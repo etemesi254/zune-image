@@ -22,8 +22,7 @@ const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 ///
 /// One can modify the decoder accepted dimensions
 /// via `DecoderOptions`
-pub struct FarbFeldDecoder<T: ZReaderTrait>
-{
+pub struct FarbFeldDecoder<T: ZReaderTrait> {
     stream:          ZByteReader<T>,
     width:           usize,
     height:          usize,
@@ -38,15 +37,13 @@ where
     ///Create a new decoder.
     ///
     /// Data is the raw compressed farbfeld data
-    pub fn new(data: T) -> FarbFeldDecoder<T>
-    {
+    pub fn new(data: T) -> FarbFeldDecoder<T> {
         Self::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new decoder with non default options as opposed to
     /// `new`
     #[allow(clippy::redundant_field_names)]
-    pub fn new_with_options(data: T, option: DecoderOptions) -> FarbFeldDecoder<T>
-    {
+    pub fn new_with_options(data: T, option: DecoderOptions) -> FarbFeldDecoder<T> {
         FarbFeldDecoder {
             stream:          ZByteReader::new(data),
             height:          0,
@@ -56,18 +53,15 @@ where
         }
     }
     /// Decode a header for this specific image
-    pub fn decode_headers(&mut self) -> Result<(), &'static str>
-    {
+    pub fn decode_headers(&mut self) -> Result<(), &'static str> {
         const HEADER_SIZE: usize = 8/*magic*/ + 4/*width*/ + 4 /*height*/;
         // read magic
-        if !self.stream.has(HEADER_SIZE)
-        {
+        if !self.stream.has(HEADER_SIZE) {
             return Err("Not enough bytes for header, need 16");
         }
         let magic_value = self.stream.get_u64_be().to_be_bytes();
 
-        if &magic_value != b"farbfeld"
-        {
+        if &magic_value != b"farbfeld" {
             return Err("Farbfeld magic bytes not found");
         }
         // 32 bit BE width
@@ -78,12 +72,10 @@ where
         info!("Image width: {}", self.width);
         info!("Image height: {}", self.height);
 
-        if self.height > self.options.get_max_height()
-        {
+        if self.height > self.options.get_max_height() {
             return Err("Image Height is greater than max height. Bump up max_height to support such images");
         }
-        if self.width > self.options.get_max_width()
-        {
+        if self.width > self.options.get_max_width() {
             return Err("Image width is greater than max width. Bump up max_width in options to support such images");
         }
 
@@ -97,10 +89,8 @@ where
     /// ## Returns
     /// -  The size expected for a buffer of `&[u8]` which can
     ///  hold the whole decoded bytes without overflow
-    pub fn output_buffer_size(&self) -> Option<usize>
-    {
-        if self.decoded_headers
-        {
+    pub fn output_buffer_size(&self) -> Option<usize> {
+        if self.decoded_headers {
             Some(
                 (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
                     .checked_mul(self.width)
@@ -110,9 +100,7 @@ where
                     .checked_mul(2 /*depth*/)
                     .unwrap()
             )
-        }
-        else
-        {
+        } else {
             None
         }
     }
@@ -131,18 +119,14 @@ where
     ///
     /// The endianness of these is converted to native endian which means
     /// each two consecutive bytes represents the two bytes that make the u16
-    pub fn decode_into(&mut self, sink: &mut [u8]) -> Result<(), &'static str>
-    {
-        if !self.decoded_headers
-        {
+    pub fn decode_into(&mut self, sink: &mut [u8]) -> Result<(), &'static str> {
+        if !self.decoded_headers {
             self.decode_headers()?;
         }
-        if sink.len() < self.output_buffer_size().unwrap()
-        {
+        if sink.len() < self.output_buffer_size().unwrap() {
             return Err("Too small output buffer size");
         }
-        if !self.stream.has(self.output_buffer_size().unwrap())
-        {
+        if !self.stream.has(self.output_buffer_size().unwrap()) {
             return Err("Incomplete data");
         }
 
@@ -168,8 +152,7 @@ where
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn decode(&mut self) -> Result<Vec<u16>, &'static str>
-    {
+    pub fn decode(&mut self) -> Result<Vec<u16>, &'static str> {
         self.decode_headers()?;
 
         let size = (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
@@ -180,8 +163,7 @@ where
         // but that's unsafe, and doesn't please the Rust gods
         let mut data = vec![0; size];
 
-        if !self.stream.has(size * FARBFELD_BIT_DEPTH.size_of())
-        {
+        if !self.stream.has(size * FARBFELD_BIT_DEPTH.size_of()) {
             return Err("Incomplete data");
         }
 
@@ -190,8 +172,7 @@ where
 
         assert_eq!(remaining_bytes.len(), data.len() * 2);
 
-        for (datum, pix) in data.iter_mut().zip(remaining_bytes.chunks_exact(2))
-        {
+        for (datum, pix) in data.iter_mut().zip(remaining_bytes.chunks_exact(2)) {
             *datum = u16::from_be_bytes(pix.try_into().unwrap());
         }
         Ok(data)
@@ -200,15 +181,13 @@ where
     /// Returns farbfeld default image colorspace.
     ///
     /// This is always RGBA
-    pub const fn get_colorspace(&self) -> ColorSpace
-    {
+    pub const fn get_colorspace(&self) -> ColorSpace {
         FARBFELD_COLORSPACE
     }
     /// Return farbfeld default bit depth
     ///
     /// This is always 16
-    pub const fn get_bit_depth(&self) -> BitDepth
-    {
+    pub const fn get_bit_depth(&self) -> BitDepth {
         FARBFELD_BIT_DEPTH
     }
 
@@ -224,10 +203,8 @@ where
     /// // get dimensions now.
     /// let (w,h)=decoder.get_dimensions().unwrap();
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)>
-    {
-        if self.decoded_headers
-        {
+    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+        if self.decoded_headers {
             return Some((self.width, self.height));
         }
         None

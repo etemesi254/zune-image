@@ -1,10 +1,17 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(test)]
 
 use crate::codecs::ImageFormat;
 
 #[test]
-fn test_fractal()
-{
+fn test_fractal() {
     use zune_core::colorspace::ColorSpace;
 
     let img_x = 800;
@@ -29,8 +36,7 @@ fn test_fractal()
             let mut z = num_complex::Complex::new(cx, cy);
 
             let mut i = 0;
-            while i < 255 && z.norm() <= 2.0
-            {
+            while i < 255 && z.norm() <= 2.0 {
                 z = z * z + c;
                 i += 1;
             }

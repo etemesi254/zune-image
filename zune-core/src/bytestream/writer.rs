@@ -1,7 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use core::mem::size_of;
 
-enum Mode
-{
+enum Mode {
     // Big endian
     BE,
     // Little Endian
@@ -12,14 +19,12 @@ static ERROR_MSG: &str = "No more space";
 
 /// Encapsulates a simple Byte writer with
 /// support for Endian aware writes
-pub struct ZByteWriter<'a>
-{
+pub struct ZByteWriter<'a> {
     buffer:   &'a mut [u8],
     position: usize
 }
 
-impl<'a> ZByteWriter<'a>
-{
+impl<'a> ZByteWriter<'a> {
     /// Write bytes from the buf into the bytestream
     /// and return how many bytes were written
     ///
@@ -34,8 +39,7 @@ impl<'a> ZByteWriter<'a>
     /// If you want to be sure that all bytes were written, see [`write_all`](Self::write_all)
     ///
     #[inline]
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize, &'static str>
-    {
+    pub fn write(&mut self, buf: &[u8]) -> Result<usize, &'static str> {
         let min = buf.len().min(self.bytes_left());
         // write
         self.buffer[self.position..self.position + min].copy_from_slice(&buf[0..min]);
@@ -53,12 +57,10 @@ impl<'a> ZByteWriter<'a>
     /// - `Ok(())`: Indicates all bytes were written into the bytestream
     /// - `Err(&static str)`: In case all the bytes could not be written
     /// to the stream
-    pub fn write_all(&mut self, buf: &[u8]) -> Result<(), &'static str>
-    {
+    pub fn write_all(&mut self, buf: &[u8]) -> Result<(), &'static str> {
         let size = self.write(buf)?;
 
-        if size != buf.len()
-        {
+        if size != buf.len() {
             return Err("Could not write the whole buffer");
         }
         Ok(())
@@ -68,8 +70,7 @@ impl<'a> ZByteWriter<'a>
     /// are made of the nature of the underlying stream
     ///
     /// # Arguments
-    pub fn new(data: &'a mut [u8]) -> ZByteWriter<'a>
-    {
+    pub fn new(data: &'a mut [u8]) -> ZByteWriter<'a> {
         ZByteWriter {
             buffer:   data,
             position: 0
@@ -85,8 +86,7 @@ impl<'a> ZByteWriter<'a>
     /// let writer = ZByteWriter::new(&mut storage);
     /// assert_eq!(writer.bytes_left(),10); // no bytes were written
     /// ```
-    pub const fn bytes_left(&self) -> usize
-    {
+    pub const fn bytes_left(&self) -> usize {
         self.buffer.len().saturating_sub(self.position)
     }
 
@@ -97,8 +97,7 @@ impl<'a> ZByteWriter<'a>
     /// let mut stream = ZByteWriter::new(&mut []);
     /// assert_eq!(stream.position(),0);
     /// ```
-    pub const fn position(&self) -> usize
-    {
+    pub const fn position(&self) -> usize {
         self.position
     }
 
@@ -119,12 +118,9 @@ impl<'a> ZByteWriter<'a>
     /// assert!(stream.write_u8_err(32).is_err());
     /// ```
     ///
-    pub fn write_u8_err(&mut self, byte: u8) -> Result<(), &'static str>
-    {
-        match self.buffer.get_mut(self.position)
-        {
-            Some(m_byte) =>
-            {
+    pub fn write_u8_err(&mut self, byte: u8) -> Result<(), &'static str> {
+        match self.buffer.get_mut(self.position) {
+            Some(m_byte) => {
                 self.position += 1;
                 *m_byte = byte;
 
@@ -138,10 +134,8 @@ impl<'a> ZByteWriter<'a>
     /// anything if the buffer is full and cannot support the byte read
     ///
     /// Should be combined with [`has`](Self::has)
-    pub fn write_u8(&mut self, byte: u8)
-    {
-        if let Some(m_byte) = self.buffer.get_mut(self.position)
-        {
+    pub fn write_u8(&mut self, byte: u8) {
+        if let Some(m_byte) = self.buffer.get_mut(self.position) {
             self.position += 1;
             *m_byte = byte;
         }
@@ -157,21 +151,18 @@ impl<'a> ZByteWriter<'a>
     /// assert!(stream.has(5));
     /// assert!(!stream.has(100));
     /// ```
-    pub const fn has(&self, bytes: usize) -> bool
-    {
+    pub const fn has(&self, bytes: usize) -> bool {
         self.position.saturating_add(bytes) <= self.buffer.len()
     }
 
     /// Get length of the underlying buffer.
     #[inline]
-    pub const fn len(&self) -> usize
-    {
+    pub const fn len(&self) -> usize {
         self.buffer.len()
     }
     /// Return true if the underlying buffer stream is empty
     #[inline]
-    pub const fn is_empty(&self) -> bool
-    {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
@@ -184,8 +175,7 @@ impl<'a> ZByteWriter<'a>
     ///
     ///
     #[inline]
-    pub const fn eof(&self) -> bool
-    {
+    pub const fn eof(&self) -> bool {
         self.position >= self.len()
     }
 
@@ -205,8 +195,7 @@ impl<'a> ZByteWriter<'a>
     /// assert_eq!(stream.position(),0);
     /// ```
     #[inline]
-    pub fn rewind(&mut self, by: usize)
-    {
+    pub fn rewind(&mut self, by: usize) {
         self.position = self.position.saturating_sub(by);
     }
     /// Move the internal cursor forward some bytes
@@ -214,8 +203,7 @@ impl<'a> ZByteWriter<'a>
     ///
     /// This saturates at maximum value of usize in your platform.
     #[inline]
-    pub fn skip(&mut self, by: usize)
-    {
+    pub fn skip(&mut self, by: usize) {
         self.position = self.position.saturating_add(by);
     }
 
@@ -226,13 +214,11 @@ impl<'a> ZByteWriter<'a>
     /// This doesn't increment the position, bytes would have to be discarded
     /// at a later point.
     #[inline]
-    pub fn peek_at(&'a self, position: usize, num_bytes: usize) -> Result<&'a [u8], &'static str>
-    {
+    pub fn peek_at(&'a self, position: usize, num_bytes: usize) -> Result<&'a [u8], &'static str> {
         let start = self.position + position;
         let end = self.position + position + num_bytes;
 
-        match self.buffer.get(start..end)
-        {
+        match self.buffer.get(start..end) {
             Some(bytes) => Ok(bytes),
             None => Err(ERROR_MSG)
         }
@@ -242,8 +228,7 @@ impl<'a> ZByteWriter<'a>
     ///
     /// Further calls to write bytes will proceed from the
     /// position set
-    pub fn set_position(&mut self, position: usize)
-    {
+    pub fn set_position(&mut self, position: usize) {
         self.position = position;
     }
 }

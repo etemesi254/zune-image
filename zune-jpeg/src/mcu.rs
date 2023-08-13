@@ -27,14 +27,11 @@ use crate::JpegDecoder;
 
 pub const DCT_BLOCK: usize = 64;
 
-impl<T: ZReaderTrait> JpegDecoder<T>
-{
+impl<T: ZReaderTrait> JpegDecoder<T> {
     /// Check for existence of DC and AC Huffman Tables
-    pub(crate) fn check_tables(&self) -> Result<(), DecodeErrors>
-    {
+    pub(crate) fn check_tables(&self) -> Result<(), DecodeErrors> {
         // check that dc and AC tables exist outside the hot path
-        for component in &self.components
-        {
+        for component in &self.components {
             let _ = &self
                 .dc_huffman_tables
                 .get(component.dc_huff_table)
@@ -88,8 +85,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(
         &mut self, pixels: &mut [u8]
-    ) -> Result<(), DecodeErrors>
-    {
+    ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
         // check dc and AC tables
@@ -97,16 +93,13 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
         let (mut mcu_width, mut mcu_height);
 
-        if self.is_interleaved
-        {
+        if self.is_interleaved {
             // set upsampling functions
             self.set_upsampling()?;
 
             mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;
-        }
-        else
-        {
+        } else {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided bu 8.
             mcu_width = ((self.info.width + 7) / 8) as usize;
@@ -126,8 +119,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             mcu_height /= self.h_max;
         }
 
-        if self.input_colorspace.num_components() > self.components.len()
-        {
+        if self.input_colorspace.num_components() > self.components.len() {
             let msg = format!(
                 " Expected {} number of components but found {}",
                 self.input_colorspace.num_components(),
@@ -136,8 +128,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             return Err(DecodeErrors::Format(msg));
         }
 
-        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved
-        {
+        if self.input_colorspace == ColorSpace::Luma && self.is_interleaved {
             warn!("Grayscale image with down-sampled component, resetting component details");
 
             self.reset_params();
@@ -152,8 +143,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         let mut stream = BitStream::new();
         let mut tmp = [0_i32; DCT_BLOCK];
 
-        for (pos, comp) in self.components.iter_mut().enumerate()
-        {
+        for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
             // For special colorspaces i.e YCCK and CMYK, just allocate all of the needed
@@ -172,9 +162,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
                 comp.needed = true;
                 comp.raw_coeff = vec![0; len];
-            }
-            else
-            {
+            } else {
                 comp.needed = false;
             }
         }
@@ -185,16 +173,14 @@ impl<T: ZReaderTrait> JpegDecoder<T>
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
-        for i in 0..mcu_height
-        {
+        for i in 0..mcu_height {
             // Report if we have no more bytes
             // This may generate false negatives since we over-read bytes
             // hence that why 37 is chosen(we assume if we over-read more than 37 bytes, we have a problem)
             if stream.overread_by > 37
             // favourite number :)
             {
-                if self.options.get_strict_mode()
-                {
+                if self.options.get_strict_mode() {
                     return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
                 };
 
@@ -222,13 +208,10 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     }
     fn decode_mcu_width(
         &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
-    ) -> Result<(), DecodeErrors>
-    {
-        for j in 0..mcu_width
-        {
+    ) -> Result<(), DecodeErrors> {
+        for j in 0..mcu_width {
             // iterate over components
-            for component in &mut self.components
-            {
+            for component in &mut self.components {
                 let dc_table = self.dc_huffman_tables[component.dc_huff_table % MAX_COMPONENTS]
                     .as_ref()
                     .unwrap();
@@ -243,10 +226,8 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
-                for v_samp in 0..component.vertical_sample
-                {
-                    for h_samp in 0..component.horizontal_sample
-                    {
+                for v_samp in 0..component.vertical_sample {
+                    for h_samp in 0..component.horizontal_sample {
                         // Fill the array with zeroes, decode_mcu_block expects
                         // a zero based array.
                         tmp.fill(0);
@@ -260,8 +241,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                             &mut component.dc_pred
                         )?;
 
-                        if component.needed
-                        {
+                        if component.needed {
                             let idct_position = {
                                 // derived from stb and rewritten for my tastes
                                 let c2 = v_samp * 8;
@@ -288,25 +268,17 @@ impl<T: ZReaderTrait> JpegDecoder<T>
             //
             // But libjpeg-turbo allows it because of some weird reason. so I'll also
             // allow it because of some weird reason.
-            if let Some(m) = stream.marker
-            {
-                if m == Marker::EOI
-                {
+            if let Some(m) = stream.marker {
+                if m == Marker::EOI {
                     // acknowledge and ignore EOI marker.
                     stream.marker.take();
                     trace!("Found EOI marker");
-                }
-                else if let Marker::RST(_) = m
-                {
-                    if self.todo == 0
-                    {
+                } else if let Marker::RST(_) = m {
+                    if self.todo == 0 {
                         self.handle_rst(stream)?;
                     }
-                }
-                else
-                {
-                    if self.options.get_strict_mode()
-                    {
+                } else {
+                    if self.options.get_strict_mode() {
                         return Err(DecodeErrors::Format(format!(
                             "Marker {m:?} found where not expected"
                         )));
@@ -326,30 +298,24 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     // No-op if not using restarts
     // this routine is shared with mcu_prog
     #[cold]
-    pub(crate) fn handle_rst(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors>
-    {
+    pub(crate) fn handle_rst(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors> {
         self.todo = self.restart_interval;
 
-        if let Some(marker) = stream.marker
-        {
+        if let Some(marker) = stream.marker {
             // Found a marker
             // Read stream and see what marker is stored there
-            match marker
-            {
-                Marker::RST(_) =>
-                {
+            match marker {
+                Marker::RST(_) => {
                     // reset stream
                     stream.reset();
                     // Initialize dc predictions to zero for all components
                     self.components.iter_mut().for_each(|x| x.dc_pred = 0);
                     // Start iterating again. from position.
                 }
-                Marker::EOI =>
-                {
+                Marker::EOI => {
                     // silent pass
                 }
-                _ =>
-                {
+                _ => {
                     return Err(DecodeErrors::MCUError(format!(
                         "Marker {marker:?} found in bitstream, possibly corrupt jpeg"
                     )));
@@ -362,14 +328,11 @@ impl<T: ZReaderTrait> JpegDecoder<T>
     pub(crate) fn post_process(
         &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
         padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
-    ) -> Result<(), DecodeErrors>
-    {
+    ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
-        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma
-        {
-            if self.sub_sample_ratio == SampleRatios::H
-            {
+        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
+            if self.sub_sample_ratio == SampleRatios::H {
                 // H sample has it easy since it doesn't require the rows below or above
 
                 upsample_and_color_convert_h(
@@ -384,9 +347,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
 
                 // increment pointer to number of pixels written
                 *pixels_written += width * out_colorspace_components * 8;
-            }
-            else
-            {
+            } else {
                 // an abomination this one ...
                 upsample_and_color_convert_v(
                     &mut self.components,
@@ -402,9 +363,7 @@ impl<T: ZReaderTrait> JpegDecoder<T>
                     mcu_height
                 )?;
             }
-        }
-        else
-        {
+        } else {
             let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
 
             self.components

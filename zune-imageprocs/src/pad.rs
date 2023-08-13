@@ -1,7 +1,14 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 /// Methods used for duplicating pixels
 #[derive(Copy, Clone)]
-pub enum PadMethod
-{
+pub enum PadMethod {
     Constant,
     Replicate
 }
@@ -49,10 +56,8 @@ pub enum PadMethod
 ///  - A vec containing padded pixels.
 pub fn pad<T: Copy + Default>(
     pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize, method: PadMethod
-) -> Vec<T>
-{
-    match method
-    {
+) -> Vec<T> {
+    match method {
         PadMethod::Constant => no_fill(pixels, width, height, pad_x, pad_y),
         PadMethod::Replicate => replicate(pixels, width, height, pad_x, pad_y)
     }
@@ -60,8 +65,7 @@ pub fn pad<T: Copy + Default>(
 
 fn no_fill<T: Copy + Default>(
     pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize
-) -> Vec<T>
-{
+) -> Vec<T> {
     let padded_w = width + pad_x * 2;
     let padded_h = height + pad_y * 2;
 
@@ -84,8 +88,7 @@ fn no_fill<T: Copy + Default>(
 
 fn replicate<T: Copy + Default>(
     pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize
-) -> Vec<T>
-{
+) -> Vec<T> {
     let padded_w = width + pad_x * 2;
     let padded_h = height + pad_y * 2;
 
@@ -131,15 +134,13 @@ fn replicate<T: Copy + Default>(
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::pad::{pad, PadMethod};
 
     #[bench]
-    fn bench_pad_replicate(b: &mut test::Bencher)
-    {
+    fn bench_pad_replicate(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
 
@@ -160,8 +161,7 @@ mod benchmarks
     }
 
     #[bench]
-    fn bench_pad_constant(b: &mut test::Bencher)
-    {
+    fn bench_pad_constant(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
 

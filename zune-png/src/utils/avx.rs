@@ -14,16 +14,14 @@
 ///  supports executing ssse3 instructions or higher
 #[target_feature(enable = "avx2")]
 #[allow(dead_code)]
-pub unsafe fn convert_be_to_ne_avx(out: &mut [u8])
-{
+pub unsafe fn convert_be_to_ne_avx(out: &mut [u8]) {
     #[cfg(target_arch = "x86")]
     use core::arch::x86::*;
     #[cfg(target_arch = "x86_64")]
     use core::arch::x86_64::*;
 
     // chunk in type of u16
-    for chunk in out.chunks_exact_mut(32)
-    {
+    for chunk in out.chunks_exact_mut(32) {
         let data = _mm256_loadu_si256(chunk.as_ptr().cast());
         let mask = _mm256_set_epi8(
             14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1, 14, 15, 12, 13, 10, 11, 8, 9, 6,

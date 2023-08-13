@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(feature = "serde")]
 //! Serde support for serializing
 //! crate datastructures
@@ -13,8 +21,7 @@ use serde::ser::*;
 use crate::bit_depth::BitDepth;
 use crate::colorspace::{ColorCharacteristics, ColorSpace};
 
-impl Serialize for ColorSpace
-{
+impl Serialize for ColorSpace {
     #[allow(clippy::uninlined_format_args)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -25,8 +32,7 @@ impl Serialize for ColorSpace
     }
 }
 
-impl Serialize for BitDepth
-{
+impl Serialize for BitDepth {
     #[allow(clippy::uninlined_format_args)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -36,8 +42,7 @@ impl Serialize for BitDepth
     }
 }
 
-impl Serialize for ColorCharacteristics
-{
+impl Serialize for ColorCharacteristics {
     #[allow(clippy::uninlined_format_args)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

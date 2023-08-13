@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Platform independent IDCT algorithm
 //!
 //! Not as fast as AVX one.
@@ -10,8 +18,7 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
     clippy::op_ref,
     clippy::cast_possible_truncation
 )]
-pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
-{
+pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     // Temporary variables.
 
     let mut pos = 0;
@@ -19,8 +26,7 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
     let mut i = 0;
     // Don't check for zeroes inside loop, lift it and check outside
     // we want to accelerate the case with 63 0 ac coeff
-    if &in_vector[1..] == &[0_i32; 63]
-    {
+    if &in_vector[1..] == &[0_i32; 63] {
         // okay then if you work, yay, let's write you really quick
         let coeff = [(((in_vector[0] >> 3) + 128) as i16).clamp(0, 255); 8];
 
@@ -48,13 +54,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         store!(pos);
         store!(pos);
         store!(pos);
-    }
-    else
-    {
+    } else {
         // because the compiler fails to see that it can be auto_vectorised so i'll
         // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9
-        for ptr in 0..8
-        {
+        for ptr in 0..8 {
             let p2 = in_vector[ptr + 16];
             let p3 = in_vector[ptr + 48];
 
@@ -113,8 +116,7 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
         }
 
         // This is vectorised in architectures supporting SSE 4.1
-        while i < 64
-        {
+        while i < 64 {
             // We won't try to short circuit here because it rarely works
 
             // Even part
@@ -192,22 +194,19 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
 #[inline]
 #[allow(clippy::cast_possible_truncation)]
 /// Multiply a number by 4096
-fn f2f(x: f32) -> i32
-{
+fn f2f(x: f32) -> i32 {
     (x * 4096.0 + 0.5) as i32
 }
 
 #[inline]
 /// Multiply a number by 4096
-fn fsh(x: i32) -> i32
-{
+fn fsh(x: i32) -> i32 {
     x << 12
 }
 
 /// Clamp values between 0 and 255
 #[inline]
 #[allow(clippy::cast_possible_truncation)]
-fn clamp(a: i32) -> i16
-{
+fn clamp(a: i32) -> i16 {
     a.clamp(0, 255) as i16
 }

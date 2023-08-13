@@ -1,11 +1,18 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 use zune_core::colorspace::ColorSpace;
 
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::upper_case_acronyms)]
-pub enum IColorSpace
-{
+pub enum IColorSpace {
     RGB,
     GRAYSCALE,
     YCbCr,
@@ -13,13 +20,11 @@ pub enum IColorSpace
     Luma,
     LumaA
 }
-impl IColorSpace
-{
+
+impl IColorSpace {
     #[allow(dead_code)]
-    pub const fn to_colorspace(self) -> ColorSpace
-    {
-        match self
-        {
+    pub const fn to_colorspace(self) -> ColorSpace {
+        match self {
             IColorSpace::RGB => ColorSpace::RGB,
             IColorSpace::GRAYSCALE => ColorSpace::Luma,
             IColorSpace::YCbCr => ColorSpace::YCbCr,
@@ -29,10 +34,9 @@ impl IColorSpace
         }
     }
 }
-impl ValueEnum for IColorSpace
-{
-    fn value_variants<'a>() -> &'a [Self]
-    {
+
+impl ValueEnum for IColorSpace {
+    fn value_variants<'a>() -> &'a [Self] {
         &[
             Self::RGBA,
             Self::RGB,
@@ -43,10 +47,8 @@ impl ValueEnum for IColorSpace
         ]
     }
 
-    fn to_possible_value(&self) -> Option<PossibleValue>
-    {
-        Some(match self
-        {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
             Self::RGBA => PossibleValue::new("rgba"),
             Self::RGB => PossibleValue::new("rgb"),
             Self::YCbCr => PossibleValue::new("ycbcr"),
@@ -56,16 +58,13 @@ impl ValueEnum for IColorSpace
         })
     }
 }
-impl std::str::FromStr for IColorSpace
-{
+
+impl std::str::FromStr for IColorSpace {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err>
-    {
-        for variant in Self::value_variants()
-        {
-            if variant.to_possible_value().unwrap().matches(s, false)
-            {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        for variant in Self::value_variants() {
+            if variant.to_possible_value().unwrap().matches(s, false) {
                 return Ok(*variant);
             }
         }

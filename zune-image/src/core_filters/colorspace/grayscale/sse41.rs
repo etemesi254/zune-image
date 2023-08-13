@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #![cfg(feature = "sse41")]
 
@@ -14,8 +22,9 @@ use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap
 )]
-pub(crate) unsafe fn convert_rgb_to_grayscale_u8_sse41(r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8])
-{
+pub(crate) unsafe fn convert_rgb_to_grayscale_u8_sse41(
+    r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8]
+) {
     // Code is from https://stackoverflow.com/questions/57832444/efficient-c-code-no-libs-for-image-transformation-into-custom-rgb-pixel-grey
     const CHUNK_SIZE: usize = 8;
     // Each coefficient is expanded by 2^15, and rounded to int16 (add 0.5 for rounding).
@@ -62,8 +71,7 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_u8_sse41(r: &[u8], g: &[u8], b: &[
     }
 
     // remainders
-    if r.len() % CHUNK_SIZE != 0
-    {
+    if r.len() % CHUNK_SIZE != 0 {
         // assume r ,g and b are equal lengths.
         let rem = r.len() % CHUNK_SIZE;
         let start = r.len() - rem;

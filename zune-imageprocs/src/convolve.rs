@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use log::error;
 
 use crate::pad::{pad, PadMethod};
@@ -124,8 +132,7 @@ pub fn convolve<T>(
     T: NumOps<T> + Copy + Default,
     f32: std::convert::From<T>
 {
-    if weights.len() == 9
-    {
+    if weights.len() == 9 {
         convolve_3x3::<T>(
             in_channel,
             out_channel,
@@ -133,9 +140,7 @@ pub fn convolve<T>(
             height,
             weights.try_into().unwrap()
         );
-    }
-    else if weights.len() == 25
-    {
+    } else if weights.len() == 25 {
         convolve_5x5::<T>(
             in_channel,
             out_channel,
@@ -143,9 +148,7 @@ pub fn convolve<T>(
             height,
             weights.try_into().unwrap()
         );
-    }
-    else if weights.len() == 49
-    {
+    } else if weights.len() == 49 {
         convolve_7x7::<T>(
             in_channel,
             out_channel,
@@ -153,9 +156,7 @@ pub fn convolve<T>(
             height,
             weights.try_into().unwrap()
         );
-    }
-    else
-    {
+    } else {
         debug_assert!(
             false,
             "Invalid array, expected 3x3,5x5 or 7x7 array for convolving"
@@ -186,17 +187,14 @@ fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
 
     let mut local_storage = [T::default(); OUT_SIZE];
 
-    for y in radius_loop..height - radius_loop
-    {
-        for x in radius_loop..width - radius_loop
-        {
+    for y in radius_loop..height - radius_loop {
+        for x in radius_loop..width - radius_loop {
             let iy = y - radius_loop;
             let ix = x - radius_loop;
 
             let mut i = 0;
 
-            for ky in 0..radius_size
-            {
+            for ky in 0..radius_size {
                 let iy_i = iy + ky;
 
                 let in_slice = &in_channel[(iy_i * width) + ix..(iy_i * width) + ix + radius_size];
@@ -215,16 +213,14 @@ fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
 }
 
 #[cfg(test)]
-mod tests
-{
+mod tests {
     use nanorand::Rng;
 
     use crate::convolve::{convolve_3x3, convolve_5x5, convolve_7x7};
 
     // test that 3x3 convolution works
     #[test]
-    fn convolve_3x3_test()
-    {
+    fn convolve_3x3_test() {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
@@ -234,8 +230,7 @@ mod tests
     }
 
     #[test]
-    fn convolve_5x5_test()
-    {
+    fn convolve_5x5_test() {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
@@ -245,8 +240,7 @@ mod tests
     }
 
     #[test]
-    fn convolve_7x7_test()
-    {
+    fn convolve_7x7_test() {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];

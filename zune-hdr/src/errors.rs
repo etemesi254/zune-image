@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use alloc::string::String;
 use core::convert::From;
 use core::fmt::{Debug, Formatter};
@@ -6,8 +14,7 @@ use core::num::ParseIntError;
 use zune_core::colorspace::ColorSpace;
 
 /// HDR decoding errors
-pub enum HdrDecodeErrors
-{
+pub enum HdrDecodeErrors {
     /// Magic bytes do not start with `?#RADIANCE` or `?#RGBE`
     InvalidMagicBytes,
     /// The decoder could not convert string to int
@@ -23,72 +30,55 @@ pub enum HdrDecodeErrors
     TooSmallOutputArray(usize, usize)
 }
 
-impl Debug for HdrDecodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            HdrDecodeErrors::InvalidMagicBytes =>
-            {
+impl Debug for HdrDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HdrDecodeErrors::InvalidMagicBytes => {
                 writeln!(
                     f,
                     "Invalid magic bytes, file does not start with #?RADIANCE or #?RGBE"
                 )
             }
-            HdrDecodeErrors::ParseError(err) =>
-            {
+            HdrDecodeErrors::ParseError(err) => {
                 writeln!(f, "Could not parse integer {:?}", err)
             }
-            HdrDecodeErrors::UnsupportedOrientation(x, y) =>
-            {
+            HdrDecodeErrors::UnsupportedOrientation(x, y) => {
                 writeln!(f, "Unsupported image orientation of {x} {y}")
             }
-            HdrDecodeErrors::TooLargeDimensions(dimension, expected, found) =>
-            {
+            HdrDecodeErrors::TooLargeDimensions(dimension, expected, found) => {
                 writeln!(
                     f,
                     "Too large dimensions for {dimension} , {found} exceeds {expected}"
                 )
             }
-            HdrDecodeErrors::Generic(error) =>
-            {
+            HdrDecodeErrors::Generic(error) => {
                 writeln!(f, "{error}")
             }
-            HdrDecodeErrors::TooSmallOutputArray(expected, found) =>
-            {
+            HdrDecodeErrors::TooSmallOutputArray(expected, found) => {
                 writeln!(f, "Too small of an output array, expected array of at least length {} but found {}", expected, found)
             }
         }
     }
 }
 
-impl From<ParseIntError> for HdrDecodeErrors
-{
-    fn from(value: ParseIntError) -> Self
-    {
+impl From<ParseIntError> for HdrDecodeErrors {
+    fn from(value: ParseIntError) -> Self {
         HdrDecodeErrors::ParseError(value)
     }
 }
 
-pub enum HdrEncodeErrors
-{
+pub enum HdrEncodeErrors {
     UnsupportedColorspace(ColorSpace),
     WrongInputSize(usize, usize)
 }
 
-impl Debug for HdrEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            HdrEncodeErrors::UnsupportedColorspace(color) =>
-            {
+impl Debug for HdrEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HdrEncodeErrors::UnsupportedColorspace(color) => {
                 writeln!(f, "Unsupported colorspace {color:?} for Radiance, Radiance only works with RGB f32 data")
             }
-            HdrEncodeErrors::WrongInputSize(expected, found) =>
-            {
+            HdrEncodeErrors::WrongInputSize(expected, found) => {
                 writeln!(f, "Input array length {found} doesn't match {expected}")
             }
         }

@@ -16,10 +16,8 @@ use crate::transpose;
 
 pub fn box_blur_u16(
     in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, radius: usize
-)
-{
-    if width == 0 || radius <= 1
-    {
+) {
+    if width == 0 || radius <= 1 {
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
@@ -31,10 +29,8 @@ pub fn box_blur_u16(
 
 pub fn box_blur_u8(
     in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, radius: usize
-)
-{
-    if width == 0 || radius <= 1
-    {
+) {
+    if width == 0 || radius <= 1 {
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
@@ -46,10 +42,8 @@ pub fn box_blur_u8(
 
 pub fn box_blur_f32(
     in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, radius: usize
-)
-{
-    if width == 0 || radius <= 1
-    {
+) {
+    if width == 0 || radius <= 1 {
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
@@ -91,8 +85,7 @@ where
     // where a is sum of chunk[0..r], (first of the array), we can keep updating a during the loop
     // and we have a window sum!
 
-    if width <= 1 || radius <= 1
-    {
+    if width <= 1 || radius <= 1 {
         // repeated here for the optimizer
         return;
     }
@@ -157,11 +150,9 @@ where
 #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
 pub(crate) fn box_blur_f32_inner(
     in_image: &[f32], out_image: &mut [f32], width: usize, radius: usize
-)
-{
+) {
     let radius = radius;
-    if width <= 1 || radius <= 1
-    {
+    if width <= 1 || radius <= 1 {
         // repeated here for the optimizer
         return;
     }
@@ -225,15 +216,13 @@ pub(crate) fn box_blur_f32_inner(
 
 #[cfg(all(feature = "benchmarks"))]
 #[cfg(test)]
-mod benchmarks
-{
+mod benchmarks {
     extern crate test;
 
     use crate::box_blur::{box_blur_u16, box_blur_u8};
 
     #[bench]
-    fn bench_box_blur_u16(b: &mut test::Bencher)
-    {
+    fn bench_box_blur_u16(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let radius = 10;
@@ -247,8 +236,7 @@ mod benchmarks
     }
 
     #[bench]
-    fn bench_box_blur_u8(b: &mut test::Bencher)
-    {
+    fn bench_box_blur_u8(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let radius = 10;
@@ -263,8 +251,7 @@ mod benchmarks
 }
 
 #[test]
-fn test_blur()
-{
+fn test_blur() {
     let width = 800;
     let height = 800;
     let radius = 10;

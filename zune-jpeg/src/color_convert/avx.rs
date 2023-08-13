@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! AVX color conversion routines
 //!
 //! Okay these codes are cool
@@ -36,8 +44,7 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-pub union YmmRegister
-{
+pub union YmmRegister {
     // both are 32 when using std::mem::size_of
     mm256: __m256i,
     // for avx color conversion
@@ -67,8 +74,7 @@ pub union YmmRegister
 #[inline(always)]
 pub fn ycbcr_to_rgb_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
-)
-{
+) {
     // call this in another function to tell RUST to vectorize this
     // storing
     unsafe {
@@ -81,8 +87,7 @@ pub fn ycbcr_to_rgb_avx2(
 #[target_feature(enable = "avx")]
 unsafe fn ycbcr_to_rgb_avx2_1(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
-)
-{
+) {
     // Load output buffer
     let tmp: &mut [u8; 48] = out
         .get_mut(*offset..*offset + 48)
@@ -94,8 +99,7 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 
     let mut j = 0;
     let mut i = 0;
-    while i < 48
-    {
+    while i < 48 {
         tmp[i] = r.array[j] as u8;
 
         tmp[i + 1] = g.array[j] as u8;
@@ -123,8 +127,7 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 #[target_feature(enable = "avx")]
 unsafe fn ycbcr_to_rgb_baseline(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16]
-) -> (YmmRegister, YmmRegister, YmmRegister)
-{
+) -> (YmmRegister, YmmRegister, YmmRegister) {
     // Load values into a register
     //
     // dst[127:0] := MEM[loaddr+127:loaddr]
@@ -201,8 +204,7 @@ unsafe fn ycbcr_to_rgb_baseline(
 /// routines
 unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16]
-) -> (__m256i, __m256i, __m256i)
-{
+) -> (__m256i, __m256i, __m256i) {
     // Load values into a register
     //
     let y_c = _mm256_loadu_si256(y.as_ptr().cast());
@@ -265,8 +267,7 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 #[inline(always)]
 pub fn ycbcr_to_rgba_avx2(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
-)
-{
+) {
     unsafe {
         ycbcr_to_rgba_unsafe(y, cb, cr, out, offset);
     }
@@ -331,8 +332,7 @@ unsafe fn ycbcr_to_rgba_unsafe(
 #[inline]
 #[target_feature(enable = "avx2")]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn clamp_avx(reg: __m256i) -> __m256i
-{
+unsafe fn clamp_avx(reg: __m256i) -> __m256i {
     // the lowest value
     let min_s = _mm256_set1_epi16(0);
 
@@ -345,7 +345,6 @@ unsafe fn clamp_avx(reg: __m256i) -> __m256i
 }
 
 #[inline]
-const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32
-{
+const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     (z << 6) | (y << 4) | (x << 2) | w
 }

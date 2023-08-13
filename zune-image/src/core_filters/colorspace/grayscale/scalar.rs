@@ -1,16 +1,22 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn convert_rgb_to_grayscale_scalar(
     r: &[u8], g: &[u8], b: &[u8], gr: &mut [u8], max_value: u8
-)
-{
+) {
     let max_value = u32::from(max_value);
 
     let r_coef = (0.2989 * 32768.0 + 0.5) as u32;
     let g_coef = (0.5870 * 32768.0 + 0.5) as u32;
     let b_coef = (0.1140 * 32768.0 + 0.5) as u32;
 
-    for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut())
-    {
+    for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut()) {
         // Multiply input elements by 64 for improved accuracy.
         let r = u32::from(*r_v) * 64;
         let g = u32::from(*g_v) * 64;
@@ -37,16 +43,14 @@ pub(crate) fn convert_rgb_to_grayscale_scalar(
 )]
 pub(crate) fn convert_rgb_to_grayscale_scalar_u16(
     r: &[u16], g: &[u16], b: &[u16], gr: &mut [u16], max_value: u16
-)
-{
+) {
     let max_value = u64::from(max_value);
 
     let r_coef = (0.2989 * 2147483648.0 + 0.5) as u64;
     let g_coef = (0.5870 * 2147483648.0 + 0.5) as u64;
     let b_coef = (0.1140 * 2147483648.0 + 0.5) as u64;
 
-    for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut())
-    {
+    for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut()) {
         // Multiply input elements by 64 for improved accuracy.
         let r = u64::from(*r_v) * 64;
         let g = u64::from(*g_v) * 64;

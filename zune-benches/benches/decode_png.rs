@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::fs::read;
 use std::time::Duration;
 
@@ -5,8 +13,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughpu
 use spng::DecodeFlags;
 use zune_benches::sample_path;
 
-fn decode_ref(data: &[u8]) -> Vec<u8>
-{
+fn decode_ref(data: &[u8]) -> Vec<u8> {
     let mut decoder = png::Decoder::new(data);
     decoder.set_transformations(png::Transformations::EXPAND);
 
@@ -20,13 +27,11 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
     buf
 }
 
-fn decode_zune(data: &[u8]) -> Vec<u8>
-{
+fn decode_zune(data: &[u8]) -> Vec<u8> {
     zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
 
-fn decode_spng(data: &[u8]) -> Vec<u8>
-{
+fn decode_spng(data: &[u8]) -> Vec<u8> {
     let cursor = std::io::Cursor::new(data);
     let mut decoder = spng::Decoder::new(cursor);
     decoder.set_decode_flags(DecodeFlags::TRANSPARENCY);
@@ -38,13 +43,11 @@ fn decode_spng(data: &[u8]) -> Vec<u8>
     out
 }
 
-fn decode_lodepng(data: &[u8]) -> lodepng::Image
-{
+fn decode_lodepng(data: &[u8]) -> lodepng::Image {
     lodepng::Decoder::new().decode(data).unwrap()
 }
 
-fn decode_test(c: &mut Criterion)
-{
+fn decode_test(c: &mut Criterion) {
     let path = sample_path().join("test-images/png/benchmarks/speed_bench.png");
     let data = read(path).unwrap();
 
@@ -68,8 +71,7 @@ fn decode_test(c: &mut Criterion)
     });
 }
 
-fn decode_test_interlaced(c: &mut Criterion)
-{
+fn decode_test_interlaced(c: &mut Criterion) {
     let path = sample_path().join("test-images/png/benchmarks/speed_bench_interlaced.png");
 
     let data = read(path).unwrap();
@@ -94,8 +96,7 @@ fn decode_test_interlaced(c: &mut Criterion)
     });
 }
 
-fn decode_test_16_bit(c: &mut Criterion)
-{
+fn decode_test_16_bit(c: &mut Criterion) {
     let path = sample_path().join("test-images/png/benchmarks/speed_bench_16.png");
     let data = read(path).unwrap();
 
@@ -119,8 +120,7 @@ fn decode_test_16_bit(c: &mut Criterion)
     });
 }
 
-fn decode_test_trns_chunk(c: &mut Criterion)
-{
+fn decode_test_trns_chunk(c: &mut Criterion) {
     let path = sample_path().join("test-images/png/benchmarks/speed_bench_palette.png");
     let data = read(path).unwrap();
 

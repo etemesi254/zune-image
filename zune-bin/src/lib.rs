@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 use std::process::exit;
 
 use log::error;
@@ -13,8 +21,7 @@ mod serde;
 mod show_gui;
 mod workflow;
 
-pub fn main()
-{
+pub fn main() {
     let cmd = cmd_args::create_cmd_args();
     let options = cmd.get_matches();
 
@@ -24,8 +31,7 @@ pub fn main()
 
     let result = create_and_exec_workflow_from_cmd(&options, &parsed_opts);
 
-    if result.is_err()
-    {
+    if result.is_err() {
         println!();
         error!(
             " Could not complete workflow, reason {:?}",

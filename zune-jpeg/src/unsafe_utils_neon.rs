@@ -17,31 +17,26 @@ use std::ops::{Add, AddAssign, BitOr, BitOrAssign, Mul, MulAssign, Sub};
 
 pub type VecType = int32x4x2_t;
 
-pub unsafe fn loadu(src: *const i32) -> VecType
-{
+pub unsafe fn loadu(src: *const i32) -> VecType {
     vld1q_s32_x2(src as *const _)
 }
 
 /// An abstraction of an AVX ymm register that
 ///allows some things to not look ugly
 #[derive(Clone, Copy)]
-pub struct YmmRegister
-{
+pub struct YmmRegister {
     /// An AVX register
     pub(crate) mm256: VecType
 }
 
-impl YmmRegister
-{
+impl YmmRegister {
     #[inline]
-    pub unsafe fn load(src: *const i32) -> Self
-    {
+    pub unsafe fn load(src: *const i32) -> Self {
         loadu(src).into()
     }
 
     #[inline]
-    pub fn map2(self, other: Self, f: impl Fn(int32x4_t, int32x4_t) -> int32x4_t) -> Self
-    {
+    pub fn map2(self, other: Self, f: impl Fn(int32x4_t, int32x4_t) -> int32x4_t) -> Self {
         let m0 = f(self.mm256.0, other.mm256.0);
         let m1 = f(self.mm256.1, other.mm256.1);
 
@@ -51,8 +46,7 @@ impl YmmRegister
     }
 
     #[inline]
-    pub fn all_zero(self) -> bool
-    {
+    pub fn all_zero(self) -> bool {
         unsafe {
             let both = vorrq_s32(self.mm256.0, self.mm256.1);
             let both_unsigned = vreinterpretq_u32_s32(both);
@@ -61,8 +55,7 @@ impl YmmRegister
     }
 
     #[inline]
-    pub fn const_shl<const N: i32>(self) -> Self
-    {
+    pub fn const_shl<const N: i32>(self) -> Self {
         // Ensure that we logically shift left
         unsafe {
             let m0 = vreinterpretq_s32_u32(vshlq_n_u32::<N>(vreinterpretq_u32_s32(self.mm256.0)));
@@ -75,8 +68,7 @@ impl YmmRegister
     }
 
     #[inline]
-    pub fn const_shra<const N: i32>(self) -> Self
-    {
+    pub fn const_shra<const N: i32>(self) -> Self {
         unsafe {
             let i0 = vshrq_n_s32::<N>(self.mm256.0);
             let i1 = vshrq_n_s32::<N>(self.mm256.1);
@@ -95,8 +87,7 @@ where
     type Output = YmmRegister;
 
     #[inline]
-    fn add(self, rhs: T) -> Self::Output
-    {
+    fn add(self, rhs: T) -> Self::Output {
         let rhs = rhs.into();
         unsafe { self.map2(rhs, |a, b| vaddq_s32(a, b)) }
     }
@@ -109,8 +100,7 @@ where
     type Output = YmmRegister;
 
     #[inline]
-    fn sub(self, rhs: T) -> Self::Output
-    {
+    fn sub(self, rhs: T) -> Self::Output {
         let rhs = rhs.into();
         unsafe { self.map2(rhs, |a, b| vsubq_s32(a, b)) }
     }
@@ -121,8 +111,7 @@ where
     T: Into<Self>
 {
     #[inline]
-    fn add_assign(&mut self, rhs: T)
-    {
+    fn add_assign(&mut self, rhs: T) {
         let rhs: Self = rhs.into();
         *self = *self + rhs;
     }
@@ -135,8 +124,7 @@ where
     type Output = YmmRegister;
 
     #[inline]
-    fn mul(self, rhs: T) -> Self::Output
-    {
+    fn mul(self, rhs: T) -> Self::Output {
         let rhs = rhs.into();
         unsafe { self.map2(rhs, |a, b| vmulq_s32(a, b)) }
     }
@@ -147,8 +135,7 @@ where
     T: Into<Self>
 {
     #[inline]
-    fn mul_assign(&mut self, rhs: T)
-    {
+    fn mul_assign(&mut self, rhs: T) {
         let rhs: Self = rhs.into();
         *self = *self * rhs;
     }
@@ -161,8 +148,7 @@ where
     type Output = YmmRegister;
 
     #[inline]
-    fn bitor(self, rhs: T) -> Self::Output
-    {
+    fn bitor(self, rhs: T) -> Self::Output {
         let rhs = rhs.into();
         unsafe { self.map2(rhs, |a, b| vorrq_s32(a, b)) }
     }
@@ -173,18 +159,15 @@ where
     T: Into<Self>
 {
     #[inline]
-    fn bitor_assign(&mut self, rhs: T)
-    {
+    fn bitor_assign(&mut self, rhs: T) {
         let rhs: Self = rhs.into();
         *self = *self | rhs;
     }
 }
 
-impl From<i32> for YmmRegister
-{
+impl From<i32> for YmmRegister {
     #[inline]
-    fn from(val: i32) -> Self
-    {
+    fn from(val: i32) -> Self {
         unsafe {
             let dup = vdupq_n_s32(val);
 
@@ -195,19 +178,18 @@ impl From<i32> for YmmRegister
     }
 }
 
-impl From<VecType> for YmmRegister
-{
+impl From<VecType> for YmmRegister {
     #[inline]
-    fn from(mm256: VecType) -> Self
-    {
+    fn from(mm256: VecType) -> Self {
         YmmRegister { mm256 }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 #[inline]
-unsafe fn transpose4(v0: &mut int32x4_t, v1: &mut int32x4_t, v2: &mut int32x4_t, v3: &mut int32x4_t)
-{
+unsafe fn transpose4(
+    v0: &mut int32x4_t, v1: &mut int32x4_t, v2: &mut int32x4_t, v3: &mut int32x4_t
+) {
     let w0 = vtrnq_s32(
         vreinterpretq_s32_s64(vtrn1q_s64(
             vreinterpretq_s64_s32(*v0),
@@ -245,8 +227,7 @@ unsafe fn transpose4(v0: &mut int32x4_t, v1: &mut int32x4_t, v2: &mut int32x4_t,
 pub unsafe fn transpose(
     v0: &mut YmmRegister, v1: &mut YmmRegister, v2: &mut YmmRegister, v3: &mut YmmRegister,
     v4: &mut YmmRegister, v5: &mut YmmRegister, v6: &mut YmmRegister, v7: &mut YmmRegister
-)
-{
+) {
     use std::mem::swap;
 
     let ul0 = &mut v0.mm256.0;
@@ -284,24 +265,19 @@ pub unsafe fn transpose(
 }
 
 #[cfg(test)]
-mod tests
-{
+mod tests {
     use super::*;
 
     #[test]
-    fn test_transpose()
-    {
-        fn get_val(i: usize, j: usize) -> i32
-        {
+    fn test_transpose() {
+        fn get_val(i: usize, j: usize) -> i32 {
             ((i * 8) / (j + 1)) as i32
         }
         unsafe {
             let mut vals: [i32; 8 * 8] = [0; 8 * 8];
 
-            for i in 0..8
-            {
-                for j in 0..8
-                {
+            for i in 0..8 {
+                for j in 0..8 {
                     // some order-dependent value of i and j
                     let value = get_val(i, j);
                     vals[i * 8 + j] = value;
@@ -334,20 +310,16 @@ mod tests
 
             let vals_from_reg: [i32; 8 * 8] = std::mem::transmute(regs);
 
-            for i in 0..8
-            {
-                for j in 0..i
-                {
+            for i in 0..8 {
+                for j in 0..i {
                     let orig = vals[i * 8 + j];
                     vals[i * 8 + j] = vals[j * 8 + i];
                     vals[j * 8 + i] = orig;
                 }
             }
 
-            for i in 0..8
-            {
-                for j in 0..8
-                {
+            for i in 0..8 {
+                for j in 0..8 {
                     assert_eq!(vals[j * 8 + i], get_val(i, j));
                     assert_eq!(vals_from_reg[j * 8 + i], get_val(i, j));
                 }

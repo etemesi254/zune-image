@@ -1,24 +1,29 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Bit I/O functionalities
 
 /// Construct a new bit writer
 /// This bit writer owns it's output and you need to call
 /// `allocate` before using it
 #[derive(Clone, Debug)]
-pub struct BitWriter
-{
+pub struct BitWriter {
     pub bits_in_buffer: u8,
     pub buffer:         u64,
     pub position:       usize,
     pub dest:           Vec<u8>
 }
 
-impl BitWriter
-{
+impl BitWriter {
     /// Write pending bits into the output buffer
     ///
     /// This may leave between 0-7 bits remaining in the bit buffer
-    pub(crate) fn flush(&mut self)
-    {
+    pub(crate) fn flush(&mut self) {
         let buf = self.buffer.to_le_bytes();
         // write 8 bytes
         self.dest[self.position..self.position + 8].copy_from_slice(&buf);
@@ -34,8 +39,7 @@ impl BitWriter
     }
 
     /// Construct a new bit-writer
-    pub fn new() -> BitWriter
-    {
+    pub fn new() -> BitWriter {
         BitWriter {
             bits_in_buffer: 0,
             buffer:         0,
@@ -52,8 +56,7 @@ impl BitWriter
     /// # Arguments
     /// - maximum_bit_size: Maximum expected bits which will
     /// be stored in this decoder
-    pub fn allocate(&mut self, maximum_bit_size: usize)
-    {
+    pub fn allocate(&mut self, maximum_bit_size: usize) {
         assert!(self.dest.is_empty());
         self.dest.resize(maximum_bit_size / 8 + 64, 0);
     }
@@ -63,12 +66,10 @@ impl BitWriter
     /// # Arguments
     /// - nbits: Number of bits to store in the buffer
     /// - bit: The bits in the buffer
-    pub fn put_bits(&mut self, nbits: u8, bit: u64)
-    {
+    pub fn put_bits(&mut self, nbits: u8, bit: u64) {
         debug_assert!(nbits < 56);
 
-        if self.bits_in_buffer + nbits > 56
-        {
+        if self.bits_in_buffer + nbits > 56 {
             self.flush();
         }
         // still check, because I don't trust myself
@@ -82,13 +83,11 @@ impl BitWriter
     }
 
     /// Pad bytes to  be zero aligned
-    pub fn zero_pad(&mut self)
-    {
+    pub fn zero_pad(&mut self) {
         // flush output first
         self.flush();
 
-        if self.bits_in_buffer != 0
-        {
+        if self.bits_in_buffer != 0 {
             self.put_bits(8 - self.bits_in_buffer, 0);
         }
     }
@@ -97,19 +96,16 @@ impl BitWriter
 /// A bit writer that uses an already given output
 /// array to write bits into
 #[derive(Debug)]
-pub struct BorrowingBitWriter<'a>
-{
+pub struct BorrowingBitWriter<'a> {
     pub bits_in_buffer: u8,
     pub buffer:         u64,
     pub position:       usize,
     pub dest:           &'a mut [u8]
 }
 
-impl<'a> BorrowingBitWriter<'a>
-{
+impl<'a> BorrowingBitWriter<'a> {
     /// Write pending bits to the buffer
-    pub(crate) fn flush(&mut self)
-    {
+    pub(crate) fn flush(&mut self) {
         let buf = self.buffer.to_le_bytes();
         // write 8 bytes
         self.dest[self.position..self.position + 8].copy_from_slice(&buf);
@@ -125,8 +121,7 @@ impl<'a> BorrowingBitWriter<'a>
     }
 
     /// Construct a new bit-writer
-    pub fn new(data: &'a mut [u8]) -> BorrowingBitWriter<'a>
-    {
+    pub fn new(data: &'a mut [u8]) -> BorrowingBitWriter<'a> {
         BorrowingBitWriter {
             bits_in_buffer: 0,
             buffer:         0,
@@ -137,12 +132,10 @@ impl<'a> BorrowingBitWriter<'a>
 
     /// Put some bits to the buffer
     /// And periodically flush to output when necessary
-    pub fn put_bits(&mut self, nbits: u8, bit: u64)
-    {
+    pub fn put_bits(&mut self, nbits: u8, bit: u64) {
         debug_assert!(nbits <= 56);
 
-        if self.bits_in_buffer + nbits > 56
-        {
+        if self.bits_in_buffer + nbits > 56 {
             self.flush();
         }
         // still check, because I don't trust myself
@@ -156,8 +149,7 @@ impl<'a> BorrowingBitWriter<'a>
     }
     /// Put some bits to the buffer
     /// Without flushing
-    pub fn put_bits_no_flush(&mut self, nbits: u8, bit: u64)
-    {
+    pub fn put_bits_no_flush(&mut self, nbits: u8, bit: u64) {
         debug_assert!(nbits <= 56);
 
         // still check, because I don't trust myself
@@ -170,12 +162,10 @@ impl<'a> BorrowingBitWriter<'a>
         self.bits_in_buffer += nbits;
     }
 
-    pub fn put_bytes(&mut self, bytes: &[u8])
-    {
+    pub fn put_bytes(&mut self, bytes: &[u8]) {
         //check if we can simply copy from input to output
         // when we have aligned bits, that becomes possible
-        if (self.bits_in_buffer & 7) == 0
-        {
+        if (self.bits_in_buffer & 7) == 0 {
             // flush any pending bits
             self.flush();
             // ensure no bits are present
@@ -184,9 +174,7 @@ impl<'a> BorrowingBitWriter<'a>
             self.dest[self.position..self.position + bytes.len()].copy_from_slice(bytes);
             // update position
             self.position += bytes.len();
-        }
-        else
-        {
+        } else {
             // unaligned bytes
             // we want to write as many bytes as possible
             // so we chunk input into 48 bits/6 bytes
@@ -200,8 +188,7 @@ impl<'a> BorrowingBitWriter<'a>
             const SINGLE_CHUNK: usize = 7;
             // now chunk
             // fast loop that handles exact byte chunks
-            for chunks in bytes.chunks_exact(SINGLE_CHUNK)
-            {
+            for chunks in bytes.chunks_exact(SINGLE_CHUNK) {
                 // we need them in LE format
                 // msb at the bottom
                 buffer[..SINGLE_CHUNK].copy_from_slice(chunks);
@@ -218,8 +205,7 @@ impl<'a> BorrowingBitWriter<'a>
             // more book-keeping above
             let remainder = bytes.chunks_exact(SINGLE_CHUNK).remainder();
 
-            if !remainder.is_empty()
-            {
+            if !remainder.is_empty() {
                 // handle remainder bytes
                 buffer.fill(0);
 

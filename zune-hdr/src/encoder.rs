@@ -16,29 +16,25 @@ use zune_core::options::EncoderOptions;
 use crate::errors::HdrEncodeErrors;
 
 /// A simple HDR encoder
-pub struct HdrEncoder<'a>
-{
+pub struct HdrEncoder<'a> {
     data:    &'a [f32],
     options: EncoderOptions
 }
 
-impl<'a> HdrEncoder<'a>
-{
+impl<'a> HdrEncoder<'a> {
     /// Create a new HDR encoder context that can encode
     /// the provided data
     ///
     /// # Arguments
     ///  - `data`: Data to encode
     ///  - `options`: Contains metadata for data, including width and height
-    pub fn new(data: &'a [f32], options: EncoderOptions) -> HdrEncoder<'a>
-    {
+    pub fn new(data: &'a [f32], options: EncoderOptions) -> HdrEncoder<'a> {
         Self { data, options }
     }
 
     /// Calculate buffer with padding size needed for
     /// encoding this into a vec
-    fn expected_buffer_size(&self) -> usize
-    {
+    fn expected_buffer_size(&self) -> usize {
         self.options
             .get_width()
             .checked_mul(self.options.get_height())
@@ -57,8 +53,7 @@ impl<'a> HdrEncoder<'a>
     ///
     /// The floating point data is expected to be normalized between 0.0 and 1.0, it will be clipped
     /// if not in this range
-    pub fn encode(&self) -> Result<Vec<u8>, HdrEncodeErrors>
-    {
+    pub fn encode(&self) -> Result<Vec<u8>, HdrEncodeErrors> {
         let expected = self
             .options
             .get_width()
@@ -68,12 +63,10 @@ impl<'a> HdrEncoder<'a>
             .unwrap();
         let found = self.data.len();
 
-        if expected != found
-        {
+        if expected != found {
             return Err(HdrEncodeErrors::WrongInputSize(expected, found));
         }
-        if self.options.get_colorspace() != ColorSpace::RGB
-        {
+        if self.options.get_colorspace() != ColorSpace::RGB {
             return Err(HdrEncodeErrors::UnsupportedColorspace(
                 self.options.get_colorspace()
             ));
@@ -104,10 +97,8 @@ impl<'a> HdrEncoder<'a>
 
         let mut in_scanline = vec![0_u8; width * 4]; // RGBE
 
-        for scanline in self.data.chunks_exact(scanline_stride)
-        {
-            if !(8..=0x7fff).contains(&width)
-            {
+        for scanline in self.data.chunks_exact(scanline_stride) {
+            if !(8..=0x7fff).contains(&width) {
                 for (pixels, out) in scanline
                     .chunks_exact(3)
                     .zip(in_scanline.chunks_exact_mut(4))
@@ -115,9 +106,7 @@ impl<'a> HdrEncoder<'a>
                     float_to_rgbe(pixels.try_into().unwrap(), out.try_into().unwrap());
                 }
                 writer.write_all(&in_scanline).unwrap();
-            }
-            else
-            {
+            } else {
                 writer.write_u8(2);
                 writer.write_u8(2);
                 writer.write_u8((width >> 8) as u8);
@@ -129,8 +118,7 @@ impl<'a> HdrEncoder<'a>
                 {
                     float_to_rgbe(pixels.try_into().unwrap(), out.try_into().unwrap());
                 }
-                for i in 0..4
-                {
+                for i in 0..4 {
                     rle(&in_scanline[i..], &mut writer, width)
                 }
             }
@@ -142,20 +130,17 @@ impl<'a> HdrEncoder<'a>
     }
 }
 
-fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize)
-{
+fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) {
     const MIN_RLE: usize = 4;
     let mut cur = 0;
 
-    while cur < width
-    {
+    while cur < width {
         let mut run_count = 0;
         let mut old_run_count = 0;
         let mut beg_run = cur;
         let mut buf: [u8; 2] = [0; 2];
 
-        while run_count < MIN_RLE && beg_run < width
-        {
+        while run_count < MIN_RLE && beg_run < width {
             beg_run += run_count;
             old_run_count = run_count;
             run_count = 1;
@@ -168,29 +153,25 @@ fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize)
             }
         }
 
-        if (old_run_count > 1) && (old_run_count == beg_run - cur)
-        {
+        if (old_run_count > 1) && (old_run_count == beg_run - cur) {
             buf[0] = (128 + old_run_count) as u8;
             buf[1] = data[cur * 4];
             writer.write_all(&buf).unwrap();
             cur = beg_run;
         }
 
-        while cur < beg_run
-        {
+        while cur < beg_run {
             let nonrun_count = 128.min(beg_run - cur);
             buf[0] = nonrun_count as u8;
             writer.write_u8(buf[0]);
-            for i in 0..nonrun_count
-            {
+            for i in 0..nonrun_count {
                 writer.write_u8(data[(cur + i) * 4])
             }
 
             cur += nonrun_count;
         }
 
-        if run_count >= MIN_RLE
-        {
+        if run_count >= MIN_RLE {
             buf[0] = (128 + run_count) as u8;
             buf[1] = data[beg_run * 4];
             writer.write_all(&buf).unwrap();
@@ -199,12 +180,10 @@ fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize)
     }
 }
 
-fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4])
-{
+fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4]) {
     let v = rgb.iter().fold(f32::MIN, |x, y| x.max(*y));
 
-    if v > 1e-32
-    {
+    if v > 1e-32 {
         let old_v = v;
         let (mut v, e) = frexp(v);
         v = v * 256. / old_v;
@@ -213,9 +192,7 @@ fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4])
         rgbe[2] = (rgb[2] * v).clamp(0.0, 255.0) as u8;
 
         rgbe[3] = (e.wrapping_add(128)) as u8;
-    }
-    else
-    {
+    } else {
         rgbe.fill(0);
     }
 }
@@ -236,22 +213,17 @@ pub fn signum(num: f32) -> f32
     } else if num > 0.0 { 1.0 } else { -1.0 }
 }
 
-fn floor(num: f32) -> f32
-{
-    if num.is_nan() || num.is_infinite()
-    {
+fn floor(num: f32) -> f32 {
+    if num.is_nan() || num.is_infinite() {
         /* handle infinities and nan */
         return num;
     }
     let n = num as u64;
     let d = n as f32;
 
-    if d == num || num >= 0.0
-    {
+    if d == num || num >= 0.0 {
         d
-    }
-    else
-    {
+    } else {
         d - 1.0
     }
 }
@@ -259,8 +231,7 @@ fn floor(num: f32) -> f32
 /// Fast log2 approximation
 /// (we really don't need that accurate)
 #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
-fn fast_log2(x: f32) -> f32
-{
+fn fast_log2(x: f32) -> f32 {
     /*
      * Fast log approximation from
      * https://github.com/romeric/fastapprox
@@ -279,15 +250,11 @@ fn fast_log2(x: f32) -> f32
 }
 
 /// non standard frexp implementation
-fn frexp(s: f32) -> (f32, i32)
-{
+fn frexp(s: f32) -> (f32, i32) {
     // from https://stackoverflow.com/a/55696477
-    if 0.0 == s
-    {
+    if 0.0 == s {
         (s, 0)
-    }
-    else
-    {
+    } else {
         let lg = fast_log2(abs(s));
         let lg_floor = floor(lg);
         let x = (lg - lg_floor - 1.0).exp2();

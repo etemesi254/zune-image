@@ -29,8 +29,7 @@ use crate::encoder::PrefixCode;
 ///
 /// Each supported bit depth initializes this with varied
 /// values which are later used generically in the encoder
-pub(crate) trait JxlBitEncoder
-{
+pub(crate) trait JxlBitEncoder {
     /// Number of input core::mem::size_of(depth_type);
     /// E.g 1 for u8,2 for u16's
     const K_INPUT_BYTES: usize;
@@ -127,8 +126,7 @@ pub(crate) trait JxlBitEncoder
 
 pub(crate) struct UpTo8Bits();
 
-impl JxlBitEncoder for UpTo8Bits
-{
+impl JxlBitEncoder for UpTo8Bits {
     // Here we can fit up to 9 extra bits + 7 Huffman bits in a u16; for all other
     // symbols, we could actually go up to 8 Huffman bits as we have at most 8
     // extra bits; however, the SIMD bit merging logic for AVX2 assumes that no
@@ -146,38 +144,29 @@ impl JxlBitEncoder for UpTo8Bits
     type Upixel = u16;
 
     #[inline(always)]
-    fn upixel_default() -> Self::Upixel
-    {
+    fn upixel_default() -> Self::Upixel {
         u16::default()
     }
-    fn pixel_zero() -> Self::Pixel
-    {
+    fn pixel_zero() -> Self::Pixel {
         0
     }
 
-    fn upixel_zero() -> Self::Upixel
-    {
+    fn upixel_zero() -> Self::Upixel {
         0
     }
 
-    fn from_u32(value: u32) -> Self::Upixel
-    {
+    fn from_u32(value: u32) -> Self::Upixel {
         value as Self::Upixel
     }
 
-    fn max_encoded_bits_per_sample(&self) -> usize
-    {
+    fn max_encoded_bits_per_sample(&self) -> usize {
         16
     }
 
-    fn num_symbols(&self, doing_ycocg: bool) -> usize
-    {
-        if doing_ycocg
-        {
+    fn num_symbols(&self, doing_ycocg: bool) -> usize {
+        if doing_ycocg {
             8 + 3
-        }
-        else
-        {
+        } else {
             8 + 2
         }
     }
@@ -185,8 +174,7 @@ impl JxlBitEncoder for UpTo8Bits
 
 pub struct MoreThan14Bits();
 
-impl JxlBitEncoder for MoreThan14Bits
-{
+impl JxlBitEncoder for MoreThan14Bits {
     const K_INPUT_BYTES: usize = 2;
     // Force LZ77 symbols to have at least 8 bits, and raw symbols 13 to 18 to
     // have exactly 8, and no other symbol to have 8 or more. This ensures that
@@ -199,32 +187,26 @@ impl JxlBitEncoder for MoreThan14Bits
     type Pixel = i32;
     type Upixel = u32;
 
-    fn upixel_default() -> Self::Upixel
-    {
+    fn upixel_default() -> Self::Upixel {
         u32::default()
     }
 
-    fn pixel_zero() -> Self::Pixel
-    {
+    fn pixel_zero() -> Self::Pixel {
         0
     }
 
-    fn upixel_zero() -> Self::Upixel
-    {
+    fn upixel_zero() -> Self::Upixel {
         0
     }
 
-    fn from_u32(value: u32) -> Self::Upixel
-    {
+    fn from_u32(value: u32) -> Self::Upixel {
         value
     }
 
-    fn max_encoded_bits_per_sample(&self) -> usize
-    {
+    fn max_encoded_bits_per_sample(&self) -> usize {
         24
     }
-    fn num_symbols(&self, _: bool) -> usize
-    {
+    fn num_symbols(&self, _: bool) -> usize {
         19
     }
 }

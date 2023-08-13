@@ -11,8 +11,7 @@ use crate::crc::calc_crc;
 use crate::decoder::PngChunk;
 use crate::encoder::PngEncoder;
 
-pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter)
-{
+pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter) {
     // write width and height
     output.write_u32_be(ctx.options.get_width() as u32);
     output.write_u32_be(ctx.options.get_height() as u32);
@@ -21,8 +20,7 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter)
     // write color
     let color = ctx.options.get_colorspace();
 
-    let color_int = match color
-    {
+    let color_int = match color {
         ColorSpace::Luma => 0,
         ColorSpace::RGB => 2,
         ColorSpace::LumaA => 4,
@@ -39,18 +37,14 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter)
     output.write_u8(0);
 }
 
-pub fn write_exif(ctx: &PngEncoder, writer: &mut ZByteWriter)
-{
-    if let Some(exif) = ctx.exif
-    {
+pub fn write_exif(ctx: &PngEncoder, writer: &mut ZByteWriter) {
+    if let Some(exif) = ctx.exif {
         writer.write_all(exif).unwrap();
     }
 }
 
-pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZByteWriter)
-{
-    if let Some(gamma) = ctx.gamma
-    {
+pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZByteWriter) {
+    if let Some(gamma) = ctx.gamma {
         // scale by 100000.0
         let gamma_value = (gamma * 100000.0) as u32;
         writer.write_u32_be(gamma_value);
@@ -69,8 +63,7 @@ pub fn write_iend(_: &PngEncoder, _: &mut ZByteWriter) {}
 ///
 pub fn write_header_fn<F: Fn(&PngEncoder, &mut ZByteWriter)>(
     v: &PngEncoder, writer: &mut ZByteWriter, name: &[u8; 4], func: F
-)
-{
+) {
     // format
     // length - chunk type - [data] -  crc chunk
     // add space for length
@@ -103,8 +96,7 @@ pub fn write_header_fn<F: Fn(&PngEncoder, &mut ZByteWriter)>(
     writer.write_u32_be(crc32);
 }
 
-pub(crate) fn write_chunk(chunk: PngChunk, data: &[u8], writer: &mut ZByteWriter)
-{
+pub(crate) fn write_chunk(chunk: PngChunk, data: &[u8], writer: &mut ZByteWriter) {
     // write length
     writer.write_u32_be(chunk.length as u32);
     // points to chunk type+data

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! This module implements a gaussian blur functions for images
 //!
 //! The implementation does not give the true gaussian coefficients of the
@@ -15,19 +23,16 @@ use crate::transpose;
     clippy::needless_range_loop,
     clippy::cast_precision_loss
 )]
-fn create_box_gauss(sigma: f32) -> [usize; 3]
-{
+fn create_box_gauss(sigma: f32) -> [usize; 3] {
     let mut radii = [1_usize; 3];
-    if sigma > 0.0
-    {
+    if sigma > 0.0 {
         let n_float = 3.0;
 
         // Ideal averaging filter width
         let w_ideal = (12.0 * sigma * sigma / n_float).sqrt() + 1.0;
         let mut wl: i32 = w_ideal.floor() as i32;
 
-        if wl % 2 == 0
-        {
+        if wl % 2 == 0 {
             wl -= 1;
         };
 
@@ -43,14 +48,10 @@ fn create_box_gauss(sigma: f32) -> [usize; 3]
 
         let m: usize = m_ideal.round() as usize;
 
-        for i in 0..3
-        {
-            if i < m
-            {
+        for i in 0..3 {
+            if i < m {
                 radii[i] = wl as usize;
-            }
-            else
-            {
+            } else {
                 radii[i] = wu;
             }
         }
@@ -70,18 +71,15 @@ fn create_box_gauss(sigma: f32) -> [usize; 3]
 ///  - sigma: A measure of how much to blur the image by.
 pub fn gaussian_blur_u16(
     in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32
-)
-{
+) {
     // use the box blur implementation
     let blur_radii = create_box_gauss(sigma);
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
         // for the first iteration, samples are written to scratch space,
         // so the next iteration, samples should be read from scratch space, as that is our input
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
             _ => unreachable!()
@@ -92,11 +90,9 @@ pub fn gaussian_blur_u16(
     // scratch_space, so wr transpose writing to in_out_image which is used below
     transpose::transpose_u16(scratch_space, in_out_image, width, height);
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
             _ => unreachable!()
@@ -108,18 +104,15 @@ pub fn gaussian_blur_u16(
 
 pub fn gaussian_blur_f32(
     in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, sigma: f32
-)
-{
+) {
     // use the box blur implementation
     let blur_radii = create_box_gauss(sigma);
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
         // for the first iteration, samples are written to scratch space,
         // so the next iteration, samples should be read from scratch space, as that is our input
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_f32_inner(
                 in_out_image,
                 scratch_space,
@@ -140,11 +133,9 @@ pub fn gaussian_blur_f32(
     // scratch_space, so wr transpose writing to in_out_image which is used below
     transpose::transpose_generic(scratch_space, in_out_image, width, height);
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_f32_inner(
                 in_out_image,
                 scratch_space,
@@ -175,8 +166,7 @@ pub fn gaussian_blur_f32(
 ///  - sigma: A measure of how much to blur the image by.
 pub fn gaussian_blur_u8(
     in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32
-)
-{
+) {
     // use the box blur implementation
     let blur_radii = create_box_gauss(sigma);
 
@@ -205,13 +195,11 @@ pub fn gaussian_blur_u8(
     // of doing blur->transpose->blur->transpose->blur->transpose...
     // we do, blur->blur->blur...->transpose->blur->blur->blur..->transpose
     //
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
         // for the first iteration, samples are written to scratch space,
         // so the next iteration, samples should be read from scratch space, as that is our input
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
             _ => unreachable!()
@@ -222,11 +210,9 @@ pub fn gaussian_blur_u8(
     // scratch_space, so wr transpose writing to in_out_image which is used below
     transpose::transpose_u8(scratch_space, in_out_image, width, height);
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate()
-    {
+    for (pos, blur_radius) in blur_radii.iter().enumerate() {
         // carry out horizontal box blur
-        match pos % 2
-        {
+        match pos % 2 {
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
             _ => unreachable!()

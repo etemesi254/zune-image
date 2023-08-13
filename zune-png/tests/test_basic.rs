@@ -9,13 +9,11 @@
 use std::fs::read;
 use std::path::Path;
 
-fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8>
-{
+fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
 }
 
-fn decode_ref(data: &[u8]) -> Vec<u8>
-{
+fn decode_ref(data: &[u8]) -> Vec<u8> {
     let transformations = png::Transformations::EXPAND;
 
     let mut decoder = png::Decoder::new(data);
@@ -30,13 +28,11 @@ fn decode_ref(data: &[u8]) -> Vec<u8>
     buf
 }
 
-fn decode_zune(data: &[u8]) -> Vec<u8>
-{
+fn decode_zune(data: &[u8]) -> Vec<u8> {
     zune_png::PngDecoder::new(data).decode_raw().unwrap()
 }
 
-fn test_decoding<P: AsRef<Path>>(path: P)
-{
+fn test_decoding<P: AsRef<Path>>(path: P) {
     let contents = open_and_read(path);
 
     let zune_results = decode_zune(&contents);
@@ -45,8 +41,7 @@ fn test_decoding<P: AsRef<Path>>(path: P)
 }
 
 #[test]
-fn test_1bpp_basic()
-{
+fn test_1bpp_basic() {
     // let path = "/home/caleb/Downloads/1603452522445567021368131.png"; //env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g01.png";
     //
     // let contents = open_and_read(path);
@@ -62,88 +57,77 @@ fn test_1bpp_basic()
 }
 
 #[test]
-fn test_1bpp_basic_interlaced()
-{
+fn test_1bpp_basic_interlaced() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g01.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_2bpp_basic()
-{
+fn test_2bpp_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g02.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_2bpp_basic_interlaced()
-{
+fn test_2bpp_basic_interlaced() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g02.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_4bpp_basic()
-{
+fn test_4bpp_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g04.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_4bpp_basic_interlaced()
-{
+fn test_4bpp_basic_interlaced() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi0g04.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_8bpp_basic()
-{
+fn test_8bpp_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g08.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_16bpp_basic()
-{
+fn test_16bpp_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn0g16.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_8bpp_luma_basic()
-{
+fn test_8bpp_luma_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn2c08.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_16bpp_luma_basic()
-{
+fn test_16bpp_luma_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn2c16.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_16bpp_interlaced_color()
-{
+fn test_16bpp_interlaced_color() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basi2c16.png";
 
     test_decoding(path);
 }
 
 #[test]
-fn test_basn6a16()
-{
+fn test_basn6a16() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn6a16.png";
 
     test_decoding(path);

@@ -59,13 +59,11 @@ pub const DEFLATE_MAX_PRE_CODEWORD_LEN: u8 = 7;
 /// make_decode_table_entry produces the final results
 pub static PRECODE_DECODE_RESULTS: [u32; 19] = make_precode_static_table();
 
-const fn make_precode_static_table() -> [u32; 19]
-{
+const fn make_precode_static_table() -> [u32; 19] {
     let mut table: [u32; 19] = [0; 19];
     let mut i = 0;
 
-    while i < 19
-    {
+    while i < 19 {
         table[i] = (i as u32) << 16;
         i += 1;
     }
@@ -123,8 +121,7 @@ const fn construct_litlen_decode_table() -> [u32; 288]
     results
 }
 
-const fn entry(base: u32, extra: u32) -> u32
-{
+const fn entry(base: u32, extra: u32) -> u32 {
     base << 16 | extra
 }
 

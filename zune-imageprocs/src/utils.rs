@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 /// Prefetch data at offset position
 ///
 /// This uses prefetch intrinsics for a specific
@@ -14,8 +22,7 @@
 /// is not in the cache.
 #[inline(always)]
 #[allow(dead_code, unused_variables)]
-pub fn z_prefetch<T>(data: &[T], position: usize)
-{
+pub fn z_prefetch<T>(data: &[T], position: usize) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         #[cfg(target_arch = "x86")]

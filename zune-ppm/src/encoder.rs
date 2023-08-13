@@ -16,48 +16,37 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
 /// Errors occurring during encoding
-pub enum PPMEncodeErrors
-{
+pub enum PPMEncodeErrors {
     Static(&'static str),
     TooShortInput(usize, usize),
     UnsupportedColorspace(ColorSpace)
 }
 
-impl Debug for PPMEncodeErrors
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
-            PPMEncodeErrors::Static(ref errors) =>
-            {
+impl Debug for PPMEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PPMEncodeErrors::Static(ref errors) => {
                 writeln!(f, "{errors}")
             }
-            PPMEncodeErrors::TooShortInput(expected, found) =>
-            {
+            PPMEncodeErrors::TooShortInput(expected, found) => {
                 writeln!(f, "Expected input of length {expected} but found {found}")
             }
-            PPMEncodeErrors::UnsupportedColorspace(colorspace) =>
-            {
+            PPMEncodeErrors::UnsupportedColorspace(colorspace) => {
                 writeln!(f, "Unsupported colorspace {colorspace:?} for ppm")
             }
         }
     }
 }
 
-pub enum PPMVersions
-{
+pub enum PPMVersions {
     P5,
     P6,
     P7
 }
 
-impl Display for PPMVersions
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result
-    {
-        match self
-        {
+impl Display for PPMVersions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
             Self::P6 => write!(f, "P6"),
             Self::P5 => write!(f, "P5"),
             Self::P7 => write!(f, "P7")
@@ -66,14 +55,12 @@ impl Display for PPMVersions
 }
 
 /// A PPM encoder
-pub struct PPMEncoder<'a>
-{
+pub struct PPMEncoder<'a> {
     data:    &'a [u8],
     options: EncoderOptions
 }
 
-impl<'a> PPMEncoder<'a>
-{
+impl<'a> PPMEncoder<'a> {
     /// Create a new encoder which will encode the specified
     /// data whose format is contained in the options.
     ///
@@ -84,13 +71,11 @@ impl<'a> PPMEncoder<'a>
     /// One can use [`u16::to_ne_bytes`] for this if data is in a u16 slice
     ///
     /// [`u16::to_ne_bytes`]:u16::to_ne_bytes
-    pub fn new(data: &'a [u8], options: EncoderOptions) -> PPMEncoder<'a>
-    {
+    pub fn new(data: &'a [u8], options: EncoderOptions) -> PPMEncoder<'a> {
         PPMEncoder { data, options }
     }
 
-    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors>
-    {
+    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), PPMEncodeErrors> {
         let version = version_for_colorspace(self.options.get_colorspace()).ok_or(
             PPMEncodeErrors::UnsupportedColorspace(self.options.get_colorspace())
         )?;
@@ -101,14 +86,11 @@ impl<'a> PPMEncoder<'a>
         let max_val = self.options.get_depth().max_value();
         let colorspace = self.options.get_colorspace();
 
-        let header = match version
-        {
-            PPMVersions::P5 | PPMVersions::P6 =>
-            {
+        let header = match version {
+            PPMVersions::P5 | PPMVersions::P6 => {
                 format!("{version}\n{width}\n{height}\n{max_val}\n")
             }
-            PPMVersions::P7 =>
-            {
+            PPMVersions::P7 => {
                 let tuple_type = convert_tuple_type_to_pam(colorspace);
 
                 format!(
@@ -121,13 +103,11 @@ impl<'a> PPMEncoder<'a>
 
         Ok(())
     }
-    pub fn encode(&self) -> Result<Vec<u8>, PPMEncodeErrors>
-    {
+    pub fn encode(&self) -> Result<Vec<u8>, PPMEncodeErrors> {
         let expected = calc_expected_size(self.options);
         let found = self.data.len();
 
-        if expected != found
-        {
+        if expected != found {
             return Err(PPMEncodeErrors::TooShortInput(expected, found));
         }
         let out_size = calc_out_size(self.options);
@@ -138,14 +118,11 @@ impl<'a> PPMEncoder<'a>
 
         self.encode_headers(&mut stream)?;
 
-        match self.options.get_depth().bit_type()
-        {
+        match self.options.get_depth().bit_type() {
             BitType::U8 => stream.write_all(self.data).unwrap(),
-            BitType::U16 =>
-            {
+            BitType::U16 => {
                 // chunk in two and write to stream
-                for slice in self.data.chunks_exact(2)
-                {
+                for slice in self.data.chunks_exact(2) {
                     let byte = u16::from_ne_bytes(slice.try_into().unwrap());
                     stream.write_u16_be(byte)
                 }
@@ -162,10 +139,8 @@ impl<'a> PPMEncoder<'a>
     }
 }
 
-fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
-{
-    match colorspace
-    {
+fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions> {
+    match colorspace {
         ColorSpace::Luma => Some(PPMVersions::P5),
         ColorSpace::RGB => Some(PPMVersions::P6),
         ColorSpace::RGBA | ColorSpace::LumaA => Some(PPMVersions::P7),
@@ -173,10 +148,8 @@ fn version_for_colorspace(colorspace: ColorSpace) -> Option<PPMVersions>
     }
 }
 
-fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str
-{
-    match colorspace
-    {
+fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str {
+    match colorspace {
         ColorSpace::Luma => "GRAYSCALE",
         ColorSpace::RGB => "RGB",
         ColorSpace::LumaA => "GRAYSCALE_ALPHA",
@@ -188,8 +161,7 @@ fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str
 const PPM_HEADER_SIZE: usize = 100;
 
 #[inline]
-fn calc_out_size(options: EncoderOptions) -> usize
-{
+fn calc_out_size(options: EncoderOptions) -> usize {
     options
         .get_width()
         .checked_mul(options.get_depth().size_of())
@@ -202,7 +174,6 @@ fn calc_out_size(options: EncoderOptions) -> usize
         .unwrap()
 }
 
-fn calc_expected_size(options: EncoderOptions) -> usize
-{
+fn calc_expected_size(options: EncoderOptions) -> usize {
     calc_out_size(options).checked_sub(PPM_HEADER_SIZE).unwrap()
 }

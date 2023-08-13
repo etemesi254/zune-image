@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
 //! Change image from pre-multiplied alpha to
 //! un-premultiplied alpha and vice versa
 use log::warn;
@@ -16,30 +24,23 @@ use crate::traits::OperationsTrait;
 ///
 /// The type of transform is specified
 #[derive(Copy, Clone)]
-pub struct PremultiplyAlpha
-{
+pub struct PremultiplyAlpha {
     to: AlphaState
 }
 
-impl PremultiplyAlpha
-{
-    pub fn new(to: AlphaState) -> PremultiplyAlpha
-    {
+impl PremultiplyAlpha {
+    pub fn new(to: AlphaState) -> PremultiplyAlpha {
         PremultiplyAlpha { to }
     }
 }
 
-impl OperationsTrait for PremultiplyAlpha
-{
-    fn get_name(&self) -> &'static str
-    {
+impl OperationsTrait for PremultiplyAlpha {
+    fn get_name(&self) -> &'static str {
         "pre-multiply alpha"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors>
-    {
-        if !image.get_colorspace().has_alpha()
-        {
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        if !image.get_colorspace().has_alpha() {
             warn!("Image colorspace indicates no alpha channel, this operation is a no-op");
             return Ok(());
         }
@@ -47,16 +48,14 @@ impl OperationsTrait for PremultiplyAlpha
         let colorspaces = image.get_colorspace();
         let alpha_state = image.metadata.alpha;
 
-        if alpha_state == self.to
-        {
+        if alpha_state == self.to {
             warn!("Alpha is already in required mode, exiting");
             return Ok(());
         }
 
         let bit_type = image.get_depth();
 
-        for image_frame in image.get_frames_mut()
-        {
+        for image_frame in image.get_frames_mut() {
             // read colorspace
             // split between alpha and color channels
             let (color_channels, alpha) = image_frame
@@ -69,26 +68,20 @@ impl OperationsTrait for PremultiplyAlpha
             let u8_table = create_unpremul_table_u8();
             let mut u16_table = vec![];
 
-            if bit_type == BitDepth::Sixteen
-            {
+            if bit_type == BitDepth::Sixteen {
                 u16_table = create_unpremul_table_u16();
             }
-            for channel in color_channels
-            {
+            for channel in color_channels {
                 // from alpha channel, read
-                match (alpha_state, self.to)
-                {
-                    (AlphaState::NonPreMultiplied, AlphaState::PreMultiplied) => match bit_type
-                    {
-                        BitDepth::Eight =>
-                        {
+                match (alpha_state, self.to) {
+                    (AlphaState::NonPreMultiplied, AlphaState::PreMultiplied) => match bit_type {
+                        BitDepth::Eight => {
                             premultiply_u8(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?
                             );
                         }
-                        BitDepth::Sixteen =>
-                        {
+                        BitDepth::Sixteen => {
                             premultiply_u16(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?
@@ -101,18 +94,15 @@ impl OperationsTrait for PremultiplyAlpha
                         ),
                         _ => unreachable!()
                     },
-                    (AlphaState::PreMultiplied, AlphaState::NonPreMultiplied) => match bit_type
-                    {
-                        BitDepth::Eight =>
-                        {
+                    (AlphaState::PreMultiplied, AlphaState::NonPreMultiplied) => match bit_type {
+                        BitDepth::Eight => {
                             unpremultiply_u8(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?,
                                 &u8_table
                             );
                         }
-                        BitDepth::Sixteen =>
-                        {
+                        BitDepth::Sixteen => {
                             unpremultiply_u16(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?,
@@ -137,8 +127,7 @@ impl OperationsTrait for PremultiplyAlpha
         Ok(())
     }
 
-    fn supported_types(&self) -> &'static [BitType]
-    {
+    fn supported_types(&self) -> &'static [BitType] {
         &[BitType::F32, BitType::U16, BitType::U8]
     }
 }
