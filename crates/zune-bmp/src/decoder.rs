@@ -387,7 +387,7 @@ where
     }
 
     /// Decode an encoded image into a buffer or return an error
-    /// if something bad occured
+    /// if something bad occurred
     ///
     /// Also see [`decode_into`](Self::decode_into) which decodes into
     /// a pre-allocated buffer
@@ -401,6 +401,13 @@ where
         let pad = (((-(self.width as i32)) as u32) & 3) as usize;
 
         if self.comp == BmpCompression::RLE4 || self.comp == BmpCompression::RLE8 {
+            let scanline_data = self.decode_rle()?;
+
+            if self.pix_fmt == BmpPixelFormat::PAL8 {
+                self.expand_palette(&scanline_data, buf, false);
+                // do not flip for palette, orientation is good
+                self.flip_vertically = false;
+            }
         } else {
             match self.depth {
                 8 | 16 | 24 | 32 => {
@@ -424,7 +431,7 @@ where
                     if self.pix_fmt == BmpPixelFormat::PAL8 {
                         let in_bytes = self.bytes.remaining_bytes();
 
-                        self.expand_palette(in_bytes, buf);
+                        self.expand_palette(in_bytes, buf, true);
                         // do not flip for palette, orientation is good
                         self.flip_vertically = false;
                     } else {
@@ -586,7 +593,7 @@ where
                             &mut scanline_bytes
                         );
 
-                        self.expand_palette(&scanline_bytes, out_bytes);
+                        self.expand_palette(&scanline_bytes, out_bytes, true);
                     }
                     self.flip_vertically = false;
                 }
@@ -607,10 +614,20 @@ where
         Ok(())
     }
 
-    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8]) {
+    /// Expand paletted bmp images to full version
+    ///
+    ///
+    /// # Arguments
+    /// - in_bytes: Palette entry indices
+    /// - buf: Where to write the bytes to
+    /// - unpad: Whether to take padding bytes into account, this is important since
+    ///  callers like RLE bytes do not take padding into account but for non-rle data
+    /// we must take it into account
+    ///
+    fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8], unpad: bool) {
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();
 
-        let pad = (((-(self.width as i32)) as u32) & 3) as usize;
+        let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
 
         if self.is_alpha {
             // bmp rounds up each line to be a multiple of 4, padding the end if necessary
@@ -645,6 +662,167 @@ where
                 }
             }
         }
+    }
+    fn decode_rle(&mut self) -> Result<Vec<u8>, BmpDecoderErrors> {
+        // Docs are from imagine crate
+        //
+        // * If the first byte is **non-zero** it's the number of times that the second
+        //   byte appears in the output. The second byte is an index into the palette,
+        //   and you just put out that color and output it into the bitmap however many
+        //   times.
+        // * If the first byte is **zero**, it signals an "escape sequence" sort of
+        //   situation. The second byte will give us the details:
+        //   * 0: end of line
+        //   * 1: end of bitmap
+        //   * 2: "Delta", the *next* two bytes after this are unsigned offsets to the
+        //     right and up of where the output should move to (remember that this mode
+        //     always describes the BMP with a bottom-left origin).
+        //   * 3+: "Absolute", The second byte gives a count of how many bytes follow
+        //     that we'll output without repetition. The absolute output sequences
+        //     always have a padding byte on the ending if the sequence count is odd, so
+        //     we can keep pulling `[u8;2]` at a time from our data and it all works.
+        //
+        //
+        // Code is from ffmpeg
+        let mut buf = vec![0; self.width * self.height * usize::from(self.depth >> 3)];
+        //let rt = temp_scanline.len();
+        let mut line = (self.height - 1) as i32;
+        let mut pos = 0;
+        let (mut p1, mut p2) = (0, 0);
+        // loop until no more bytes are left
+        while !self.bytes.eof() {
+            p1 = self.bytes.get_u8();
+            if p1 == 0 {
+                // escape code
+                p2 = self.bytes.get_u8();
+                if p2 == 0 {
+                    // end of line
+                    line -= 1;
+                    if line < 0 {
+                        return if self.bytes.get_u16_be() == 1 {
+                            // end of picture
+                            Ok(buf)
+                        } else {
+                            let msg = format!(
+                                "Next line is beyond picture bounds ({} bytes left)",
+                                self.bytes.remaining()
+                            );
+                            Err(BmpDecoderErrors::Generic(msg))
+                        };
+                    }
+
+                    continue;
+                } else if p2 == 1 {
+                    // end of picture
+                    return Ok(buf);
+                } else if p2 == 2 {
+                    // skip
+                    p1 = self.bytes.get_u8();
+                    p2 = self.bytes.get_u8();
+
+                    line -= i32::from(p2);
+                    pos += usize::from(p1);
+
+                    if line < 0 || pos >= self.width {
+                        return Err(BmpDecoderErrors::GenericStatic(
+                            "Skip beyond picture bounds"
+                        ));
+                    }
+                    continue;
+                }
+                // copy data
+                if pos + usize::from(p2) * usize::from(self.depth >> 3) > buf.len() {
+                    self.bytes.skip(2 * usize::from(self.depth >> 3));
+                    continue;
+                } else if self.bytes.get_bytes_left()
+                    < usize::from(p2) * usize::from(self.depth >> 3)
+                {
+                    return Err(BmpDecoderErrors::GenericStatic("Bytestream overrun"));
+                }
+
+                if self.depth == 8 || self.depth == 24 {
+                    let size = usize::from(p2) * usize::from(self.depth >> 3);
+                    self.bytes.read_exact(&mut buf[pos..pos + size]).unwrap();
+                    pos += size;
+
+                    // RLE copy is padded- runs are not
+                    if self.depth == 8 && (p2 & 1) == 1 {
+                        self.bytes.skip(1);
+                    }
+                } else if self.depth == 16 {
+                    for _ in 0..p2 {
+                        buf[pos] = self.bytes.get_u8();
+                        buf[pos + 1] = self.bytes.get_u8();
+                        pos += 2;
+                    }
+                } else if self.depth == 32 {
+                    for _ in 0..p2 {
+                        buf[pos] = self.bytes.get_u8();
+                        buf[pos + 1] = self.bytes.get_u8();
+                        buf[pos + 2] = self.bytes.get_u8();
+                        buf[pos + 3] = self.bytes.get_u8();
+                        pos += 4;
+                    }
+                }
+            } else {
+                // run of pixels
+                let mut pix: [u8; 4] = [0; 4];
+
+                if !self
+                    .bytes
+                    .has(usize::from(p1) * usize::from(self.depth >> 3))
+                {
+                    continue;
+                }
+                match self.depth {
+                    8 => {
+                        pix[0] = self.bytes.get_u8();
+                        buf[pos..pos + usize::from(p1)].fill(pix[0]);
+                        pos += usize::from(p1);
+                    }
+                    16 => {
+                        let pix_16u = self.bytes.get_u8();
+                        let pix_16r = self.bytes.get_u8();
+                        for _ in 0..p1 {
+                            buf[pos] = pix_16u;
+                            buf[pos + 1] = pix_16r;
+                            pos += 2;
+                        }
+                    }
+                    24 => {
+                        pix[0] = self.bytes.get_u8();
+                        pix[1] = self.bytes.get_u8();
+                        pix[2] = self.bytes.get_u8();
+
+                        for _ in 0..p1 {
+                            buf[pos] = pix[0];
+                            buf[pos + 1] = pix[1];
+                            buf[pos + 2] = pix[2];
+                            pos += 4;
+                        }
+                    }
+                    32 => {
+                        pix[0] = self.bytes.get_u8();
+                        pix[1] = self.bytes.get_u8();
+                        pix[2] = self.bytes.get_u8();
+                        pix[3] = self.bytes.get_u8();
+
+                        for _ in 0..p1 {
+                            buf[pos] = pix[0];
+                            buf[pos + 1] = pix[1];
+                            buf[pos + 2] = pix[2];
+                            buf[pos + 3] = pix[3];
+
+                            pos += 4;
+                        }
+                    }
+                    _ => unreachable!("Uhh ohh")
+                }
+            }
+            let t = 0;
+        }
+        warn!("RLE warning, no end of picture code");
+        return Ok(buf);
     }
 }
 
