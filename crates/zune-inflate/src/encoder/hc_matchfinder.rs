@@ -190,7 +190,7 @@ impl HcMatchFinder {
         //  compute the next hash codes
         let n_hash4 = v_hash(next_window, HASH_FOUR_LOG_SIZE, self.min_length);
 
-        self.next_hash[1] = n_hash4 as usize;
+        self.next_hash[1] = n_hash4;
         let mut match_found = false;
 
         if cur_offset != 0 {
@@ -271,7 +271,7 @@ impl HcMatchFinder {
                 depth -= 1;
             }
         }
-        return match_found;
+        match_found
     }
 
     #[inline(always)]

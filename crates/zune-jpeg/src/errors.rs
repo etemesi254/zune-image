@@ -86,7 +86,7 @@ impl Debug for DecodeErrors {
             Self::ExhaustedData => write!(f, "Exhausted data in the image"),
             Self::LargeDimensions(ref dimensions) => write!(
                 f,
-                "Too large dimensions {dimensions},library supports up to {MAX_DIMENSIONS}"
+                "Too large dimensions {dimensions},library supports up to {}", crate::decoder::MAX_DIMENSIONS
             ),
             Self::TooSmallOutput(expected, found) => write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes")
         }

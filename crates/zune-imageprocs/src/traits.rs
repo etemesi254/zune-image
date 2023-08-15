@@ -211,7 +211,7 @@ impl NumOps<f32> for f32 {
     }
 
     fn to_f64(self) -> f64 {
-        self as _
+        f64::from(self)
     }
 
     fn zclamp(self, min: f32, max: f32) -> f32 {

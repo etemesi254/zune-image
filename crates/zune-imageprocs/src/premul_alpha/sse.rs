@@ -68,6 +68,6 @@ fn test_inverse_sse_scalar() {
         assert!(a.is_finite());
         assert!(b.is_finite());
 
-        assert!(diff < f32::EPSILON, "{} {}", a, b);
+        assert!(diff < f32::EPSILON, "{a} {b}");
     }
 }
