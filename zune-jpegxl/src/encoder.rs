@@ -7,10 +7,10 @@
  */
 
 //! A simple jpeg xl encoder
-use std::cmp::{max, min};
-use std::marker::PhantomData;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp::{max, min};
+use core::marker::PhantomData;
 
 use log::{log_enabled, trace, Level};
 use zune_core::bit_depth::BitDepth;
@@ -1068,14 +1068,12 @@ impl<'a> JxlSimpleEncoder<'a> {
         }
 
         if log_enabled!(Level::Trace) {
-            println!();
             trace!("JXL details");
             trace!("Width: {}", width);
             trace!("Height: {}", height);
             trace!("Colorspace: {:?}", colorspace);
             trace!("Depth: {:?}", depth);
             trace!("Configured threads: {:?}", self.options.get_num_threads());
-            println!();
         }
 
         let expected = calculate_expected_input(&self.options);
@@ -1160,115 +1158,180 @@ impl<'a> JxlSimpleEncoder<'a> {
             BitWriter::new(),
             BitWriter::new()
         ];
-        let mut group_data = vec![];
 
-        for _ in 0..num_groups {
-            group_data.push(Mutex::new(bit_writers.clone()))
-        }
-        let group_data = Arc::new(group_data);
+        // The to #cfg's share a lot of code, but that is actually needed because otherwise
+        // something will break
 
+        #[cfg(feature = "std")]
         {
-            let writer = &mut group_data[0].lock().unwrap()[0];
+            use core::sync::atomic::{AtomicUsize, Ordering};
+            use std::sync::{Arc, Mutex};
 
-            prepare_dc_global(one_group, width, height, num_components, &codes, writer);
-        }
-
-        let pixels = self.data;
-
-        // this runner may run in multiple threads, so make it work
-        // for both single threaded and multi-threaded
-        let runner = |g: usize, threads: Arc<AtomicUsize>| {
-            let xg = g % num_groups_x;
-            let yg = g / num_groups_x;
-            let group_id = if one_group { 0 } else { 2 + num_dc_groups_x * num_dc_groups_y + g };
-            let xs = min(width - xg * 256, 256);
-            let ys = min(height - yg * 256, 256);
-            let x0 = xg * 256;
-            let y0 = yg * 256;
-            // run in multiple threads, so make it thread safe
-            let writers = &mut group_data[group_id].lock().unwrap();
-
-            write_a_c_section(
-                pixels,
-                x0,
-                y0,
-                xs,
-                ys,
-                stride,
-                one_group,
-                &encoder,
-                num_components,
-                &codes,
-                writers
-            );
-            // This thread is done, kill it and tell the caller that
-            // they can spawn another thread
-            threads.fetch_sub(1, Ordering::Relaxed);
-        };
-
-        // set to true if the thread ran some runners
-        // there are places it's better to do single thread
-        // e.g for small images, so the runners are never ran
-        let mut ran_runners = false;
-
-        #[cfg(feature = "threads")]
-        {
-            if !one_group && self.options.get_num_threads() > 0 {
-                ran_runners = true;
-                let open_threads = Arc::new(AtomicUsize::new(0));
-
-                // Thread scope doesn't count number of threads
-                // so we do our own small one
-                std::thread::scope(|x| {
-                    for i in 0..num_groups_x * num_groups_y {
-                        let run_clone = runner;
-                        let num_threads = open_threads.clone();
-
-                        // spin if we opened more threads than requested,
-                        // i.e the user asked for 10 threads but frame can be divided 11 times,
-                        // we don't open 11 threads.
-                        while num_threads.load(Ordering::Relaxed)
-                            > usize::from(self.options.get_num_threads())
-                        // assumed maximum threads to open
-                        {
-                            // tell CPU to wait, don't burn stuff
-                            std::hint::spin_loop();
-                        }
-
-                        num_threads.fetch_add(1, Ordering::Relaxed);
-
-                        x.spawn(move || run_clone(i, num_threads));
-                    }
-                })
+            let mut group_data = vec![];
+            for _ in 0..num_groups {
+                group_data.push(Mutex::new(bit_writers.clone()))
             }
-        }
+            let group_data = Arc::new(group_data);
 
-        // single threaded part of the multithreaded interface
-        if !ran_runners {
-            // we really don't care if we mess up here
-            let dummy = Arc::new(AtomicUsize::new(num_groups + 10));
+            {
+                let writer = &mut group_data[0].lock().unwrap()[0];
+
+                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+            }
+            let pixels = self.data;
+
+            // this runner may run in multiple threads, so make it work
+            // for both single threaded and multi-threaded
+            let runner = |g: usize, threads: Arc<AtomicUsize>| {
+                let xg = g % num_groups_x;
+                let yg = g / num_groups_x;
+                let group_id =
+                    if one_group { 0 } else { 2 + num_dc_groups_x * num_dc_groups_y + g };
+                let xs = min(width - xg * 256, 256);
+                let ys = min(height - yg * 256, 256);
+                let x0 = xg * 256;
+                let y0 = yg * 256;
+                // run in multiple threads, so make it thread safe
+                let writers = &mut group_data[group_id].lock().unwrap();
+
+                write_a_c_section(
+                    pixels,
+                    x0,
+                    y0,
+                    xs,
+                    ys,
+                    stride,
+                    one_group,
+                    &encoder,
+                    num_components,
+                    &codes,
+                    writers
+                );
+                // This thread is done, kill it and tell the caller that
+                // they can spawn another thread
+                threads.fetch_sub(1, Ordering::Relaxed);
+            };
+
+            // set to true if the thread ran some runners
+            // there are places it's better to do single thread
+            // e.g for small images, so the runners are never ran
+            let mut ran_runners = false;
+
+            #[cfg(feature = "threads")]
+            {
+                if !one_group && self.options.get_num_threads() > 0 {
+                    ran_runners = true;
+                    let open_threads = Arc::new(AtomicUsize::new(0));
+
+                    // Thread scope doesn't count number of threads
+                    // so we do our own small one
+                    std::thread::scope(|x| {
+                        for i in 0..num_groups_x * num_groups_y {
+                            let run_clone = runner;
+                            let num_threads = open_threads.clone();
+
+                            // spin if we opened more threads than requested,
+                            // i.e the user asked for 10 threads but frame can be divided 11 times,
+                            // we don't open 11 threads.
+                            while num_threads.load(Ordering::Relaxed)
+                                > usize::from(self.options.get_num_threads())
+                            // assumed maximum threads to open
+                            {
+                                // tell CPU to wait, don't burn stuff
+                                std::hint::spin_loop();
+                            }
+
+                            num_threads.fetch_add(1, Ordering::Relaxed);
+
+                            x.spawn(move || run_clone(i, num_threads));
+                        }
+                    })
+                }
+            }
+
+            // single threaded part of the multithreaded interface
+            if !ran_runners {
+                // we really don't care if we mess up here
+                let dummy = Arc::new(AtomicUsize::new(num_groups + 10));
+
+                for i in 0..num_groups_x * num_groups_y {
+                    runner(i, dummy.clone());
+                }
+            }
+            // By this point, all threads have finished since we used
+            // scoped threads
+
+            // remove Mutex and Arc by consuming previous vector into new one
+            let group_data: Vec<[BitWriter; 4]> = Arc::try_unwrap(group_data)
+                .unwrap()
+                .into_iter()
+                .map(|x| x.into_inner().unwrap())
+                .collect();
+
+            Ok(FrameState {
+                option: self.options,
+                header: BitWriter::new(),
+                group_data,
+                current_bit_writer: 0,
+                bit_writer_byte_pos: 0
+            })
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            let mut group_data = vec![];
+            for _ in 0..num_groups {
+                group_data.push(bit_writers.clone())
+            }
+
+            {
+                let writer = &mut group_data[0][0];
+                prepare_dc_global(one_group, width, height, num_components, &codes, writer);
+            }
+            let pixels = self.data;
+
+            // this runner may run in multiple threads, so make it work
+            // for both single threaded and multi-threaded
+            let mut runner = |g: usize| {
+                let xg = g % num_groups_x;
+                let yg = g / num_groups_x;
+                let group_id =
+                    if one_group { 0 } else { 2 + num_dc_groups_x * num_dc_groups_y + g };
+                let xs = min(width - xg * 256, 256);
+                let ys = min(height - yg * 256, 256);
+                let x0 = xg * 256;
+                let y0 = yg * 256;
+                // run in multiple threads, so make it thread safe
+                let writers = &mut group_data[group_id];
+
+                write_a_c_section(
+                    pixels,
+                    x0,
+                    y0,
+                    xs,
+                    ys,
+                    stride,
+                    one_group,
+                    &encoder,
+                    num_components,
+                    &codes,
+                    writers
+                );
+                // This thread is done, kill it and tell the caller that
+                // they can spawn another thread
+            };
 
             for i in 0..num_groups_x * num_groups_y {
-                runner(i, dummy.clone());
+                runner(i);
             }
+
+            Ok(FrameState {
+                option: self.options,
+                header: BitWriter::new(),
+                group_data,
+                current_bit_writer: 0,
+                bit_writer_byte_pos: 0
+            })
         }
-        // By this point, all threads have finished since we used
-        // scoped threads
-
-        // remove Mutex and Arc by consuming previous vector into new one
-        let group_data: Vec<[BitWriter; 4]> = Arc::try_unwrap(group_data)
-            .unwrap()
-            .into_iter()
-            .map(|x| x.into_inner().unwrap())
-            .collect();
-
-        Ok(FrameState {
-            option: self.options,
-            header: BitWriter::new(),
-            group_data,
-            current_bit_writer: 0,
-            bit_writer_byte_pos: 0
-        })
     }
 }
 
