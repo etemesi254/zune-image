@@ -5,6 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+#![allow(dead_code)]
 
 /// An optimized hash chains match finder
 ///
@@ -77,12 +78,11 @@ const HASH_FOUR_SIZE: usize = 1 << HASH_FOUR_LOG_SIZE;
 #[inline(never)]
 #[allow(clippy::too_many_lines, unused_assignments)]
 pub fn compress_block(
-    src: &[u8], dest: &mut [u8], table: &mut HcMatchFinder, sequences: &mut EncodedSequences
-) -> usize {
+    src: &[u8], _dest: &mut [u8], table: &mut HcMatchFinder, sequences: &mut EncodedSequences
+) {
     let mut window_start = 0;
     let mut literals_before_match = 0;
     let skip_literals = 1;
-    let mut out_position = 0;
     let mut compressed_bytes = 0;
 
     let mut sequence = MatchSequence::default();
@@ -135,8 +135,6 @@ pub fn compress_block(
     }
     table.reset();
     assert_eq!(compressed_bytes, src.len());
-
-    return out_position;
 }
 
 pub struct HcMatchFinder {

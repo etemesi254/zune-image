@@ -3,6 +3,7 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+#![allow(dead_code)]
 
 use alloc::boxed::Box;
 use alloc::vec;
