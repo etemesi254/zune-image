@@ -197,7 +197,7 @@ where
 
         skip_spaces(&mut self.reader);
 
-        let mut byte_header = [0; 20];
+        let mut byte_header = vec![0; 20];
 
         let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
         let value = &byte_header[..value_size];
@@ -236,7 +236,7 @@ where
         let mut seen_max_val = false;
         let mut seen_tuple_type = false;
 
-        let mut byte_header = [0; 128];
+        let mut byte_header = vec![0; 128];
 
         'infinite: loop {
             if self.reader.eof() {
@@ -647,7 +647,7 @@ where
 ///
 /// # Panics
 /// If end < start
-fn get_bytes_until_whitespace<T>(z: &mut ZByteReader<T>, write_to: &mut [u8]) -> usize
+fn get_bytes_until_whitespace<T>(z: &mut ZByteReader<T>, write_to: &mut Vec<u8>) -> usize
 where
     T: ZReaderTrait
 {
@@ -662,6 +662,10 @@ where
         }
     }
     let end = z.get_position();
+    let length = end - start;
+    if write_to.len() > length {
+        write_to.resize(length + 2, 0);
+    }
     // rewind back to where we currently were
     // then take that as a reference
     z.read_exact(&mut write_to[..end - start]).unwrap();
