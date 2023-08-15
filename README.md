@@ -23,8 +23,11 @@ The set of codecs aim to have the following features in order of priority
 | qoi          | zune-qoi      | zune-qoi       | Yes              |
 | farbfeld     | zune-farbfeld | zune-farbfeld  | Yes              |
 | psd          | zune-psd      | -              | Yes              |
-| jpeg-xl      | -             | zune-jpegxl    | No               |
-| hdr          | zune-hdr      | zune-hdr       | No               |
+| jpeg-xl      | -             | zune-jpegxl    | Yes [^1]         |
+| hdr          | zune-hdr      | zune-hdr       | No [^2]          |
+
+- [^1] You lose threading capabilities.
+- [^2] Lack of existence of `floor` and `exp` in the `core` library.
 
 ## Safety
 
