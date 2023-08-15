@@ -9,7 +9,8 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use log::info;
+use log::trace;
+
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -69,8 +70,8 @@ where
         // 32 BE height
         self.height = self.stream.get_u32_be() as usize;
 
-        info!("Image width: {}", self.width);
-        info!("Image height: {}", self.height);
+        trace!("Image width: {}", self.width);
+        trace!("Image height: {}", self.height);
 
         if self.height > self.options.get_max_height() {
             return Err("Image Height is greater than max height. Bump up max_height to support such images");

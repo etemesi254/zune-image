@@ -4,7 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use log::info;
+use log::trace;
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::options::EncoderOptions;
@@ -284,7 +284,7 @@ pub trait EncoderTrait {
                 let default_colorspace = self.default_colorspace(colorspace);
                 let image_format = self.format();
 
-                info!("Image is in {colorspace:?} colorspace,converting it to {default_colorspace:?} which is the default configured colorspace of {image_format:?}");
+                trace!("Image is in {colorspace:?} colorspace,converting it to {default_colorspace:?} which is the default configured colorspace of {image_format:?}");
                 // try converting  it to a supported colorspace
                 let converter = ColorspaceConv::new(default_colorspace);
 
@@ -293,13 +293,13 @@ pub trait EncoderTrait {
             let image_depth = image.get_depth();
 
             if !self.supported_bit_depth().contains(&depth) {
-                info!(
+                trace!(
                     "Image depth is in {:?}, but {} encoder supports {:?}",
                     image.get_depth(),
                     self.get_name(),
                     self.supported_bit_depth()
                 );
-                info!(
+                trace!(
                     "Converting image to a depth of {:?}",
                     self.default_depth(image_depth)
                 );

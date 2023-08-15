@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
-use log::info;
+use log::trace;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -573,9 +573,8 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             self.decode_headers()?;
         }
 
-        info!("Input Colorspace: {:?} ", self.png_info.color);
-
-        info!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
+        trace!("Input Colorspace: {:?} ", self.png_info.color);
+        trace!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
 
         if self.frames.get(self.current_frame).is_none() {
             return Err(PngDecodeErrors::GenericStatic("No more frames"));

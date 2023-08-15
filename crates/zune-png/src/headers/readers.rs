@@ -6,7 +6,7 @@
 
 use alloc::{format, vec};
 
-use log::{info, warn};
+use log::{trace, warn};
 use zune_core::bytestream::ZReaderTrait;
 use zune_inflate::DeflateDecoder;
 
@@ -113,11 +113,11 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         // skip crc
         self.stream.skip(4);
 
-        info!("Width: {}", self.png_info.width);
-        info!("Height: {}", self.png_info.height);
-        info!("Filter type:{:?}", self.png_info.filter_method);
-        info!("Depth: {:?}", self.png_info.depth);
-        info!("Interlace :{:?}", self.png_info.interlace_method);
+        trace!("Width: {}", self.png_info.width);
+        trace!("Height: {}", self.png_info.height);
+        trace!("Filter type:{:?}", self.png_info.filter_method);
+        trace!("Depth: {:?}", self.png_info.depth);
+        trace!("Interlace :{:?}", self.png_info.interlace_method);
 
         self.seen_hdr = true;
 

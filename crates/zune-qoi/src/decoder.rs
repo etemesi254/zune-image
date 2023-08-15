@@ -9,7 +9,7 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use log::{debug, error, info};
+use log::{error, trace};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -175,9 +175,9 @@ where
         self.width = width;
         self.height = height;
 
-        info!("Image width: {:?}", self.width);
-        info!("Image height: {:?}", self.height);
-        info!("Image colorspace:{:?}", self.colorspace);
+        trace!("Image width: {:?}", self.width);
+        trace!("Image height: {:?}", self.height);
+        trace!("Image colorspace:{:?}", self.colorspace);
         self.decoded_headers = true;
 
         Ok(())
@@ -331,7 +331,7 @@ where
             ));
         }
 
-        debug!("Finished decoding image");
+        trace!("Finished decoding image");
 
         Ok(())
     }

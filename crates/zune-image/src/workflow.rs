@@ -6,8 +6,8 @@
 
 use std::time::Instant;
 
-use log::Level::Info;
-use log::{info, log_enabled, Level};
+use log::Level::Trace;
+use log::{log_enabled, trace, Level};
 
 use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
@@ -178,7 +178,7 @@ where
                     if self.decode.is_none() {
                         // we have an image, no need to decode a new one
                         if self.image.is_empty() {
-                            info!("Image already present, no need to decode");
+                            trace!("Image already present, no need to decode");
                             // move to the next state
                             self.state = state.next();
 
@@ -187,9 +187,9 @@ where
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info) {
+                    if log_enabled!(Trace) {
                         println!();
-                        info!("Current state: {:?}\n", state);
+                        trace!("Current state: {:?}\n", state);
                     }
 
                     let decode_op = self.decode.take().unwrap();
@@ -202,23 +202,23 @@ where
 
                     self.state = state.next();
 
-                    info!("Finished decoding in {} ms", (stop - start).as_millis());
+                    trace!("Finished decoding in {} ms", (stop - start).as_millis());
                 }
                 WorkFlowState::Operations => {
                     if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info) && !self.operations.is_empty() {
+                    if log_enabled!(Trace) && !self.operations.is_empty() {
                         println!();
-                        info!("Current state: {:?}\n", state);
+                        trace!("Current state: {:?}\n", state);
                     }
 
                     for image in self.image.iter_mut() {
                         for operation in &self.operations {
                             let operation_name = operation.get_name();
 
-                            info!("Running {}", operation_name);
+                            trace!("Running {}", operation_name);
 
                             let start = Instant::now();
 
@@ -226,7 +226,7 @@ where
 
                             let stop = Instant::now();
 
-                            info!(
+                            trace!(
                                 "Finished running `{operation_name}` in {} ms",
                                 (stop - start).as_millis()
                             );
@@ -239,16 +239,16 @@ where
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Info) && !self.encode.is_empty() {
+                    if log_enabled!(Trace) && !self.encode.is_empty() {
                         println!();
-                        info!("Current state: {:?}\n", state);
+                        trace!("Current state: {:?}\n", state);
                     }
 
                     for image in self.image.iter() {
                         for encoder in self.encode.iter_mut() {
                             let encoder_name = encoder.get_name();
 
-                            info!("Running {}", encoder_name);
+                            trace!("Running {}", encoder_name);
 
                             let start = Instant::now();
 
@@ -256,7 +256,7 @@ where
                             self.encode_result.push(result);
                             let stop = Instant::now();
 
-                            info!(
+                            trace!(
                                 "Finished running `{encoder_name}` in {} ms",
                                 (stop - start).as_millis()
                             );
@@ -269,7 +269,7 @@ where
                     self.state = state.next();
                 }
                 WorkFlowState::Finished => {
-                    info!("Finished operations for this workflow");
+                    trace!("Finished operations for this workflow");
 
                     self.state = state.next();
                     return Ok(());

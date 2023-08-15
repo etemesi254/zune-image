@@ -20,7 +20,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-use log::info;
+use log::trace;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -182,10 +182,10 @@ where
 
         self.decoded_header = true;
 
-        info!("Image width:{}", self.width);
-        info!("Image height:{}", self.height);
-        info!("Channels: {}", self.channel_count);
-        info!("Bit depth : {:?}", self.depth);
+        trace!("Image width:{}", self.width);
+        trace!("Image height:{}", self.height);
+        trace!("Channels: {}", self.channel_count);
+        trace!("Bit depth : {:?}", self.depth);
 
         Ok(())
     }

@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use log::{info, log_enabled, Level};
+use log::{log_enabled, trace, Level};
 use zune_core::bit_depth::BitDepth;
 use zune_core::options::EncoderOptions;
 
@@ -1067,14 +1067,14 @@ impl<'a> JxlSimpleEncoder<'a> {
             return Err(JxlEncodeErrors::ZeroDimension("height"));
         }
 
-        if log_enabled!(Level::Info) {
+        if log_enabled!(Level::Trace) {
             println!();
-            info!("JXL details");
-            info!("Width: {}", width);
-            info!("Height: {}", height);
-            info!("Colorspace: {:?}", colorspace);
-            info!("Depth: {:?}", depth);
-            info!("Configured threads: {:?}", self.options.get_num_threads());
+            trace!("JXL details");
+            trace!("Width: {}", width);
+            trace!("Height: {}", height);
+            trace!("Colorspace: {:?}", colorspace);
+            trace!("Depth: {:?}", depth);
+            trace!("Configured threads: {:?}", self.options.get_num_threads());
             println!();
         }
 

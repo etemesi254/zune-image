@@ -14,7 +14,7 @@ use core::iter::Iterator;
 use core::option::Option::{self, *};
 use core::result::Result::{self, *};
 
-use log::{info, trace};
+use log::trace;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
@@ -204,8 +204,8 @@ where
             ));
         }
 
-        info!("Width: {}", self.width);
-        info!("Height: {}", self.height);
+        trace!("Width: {}", self.width);
+        trace!("Height: {}", self.height);
 
         self.decoded_headers = true;
 
