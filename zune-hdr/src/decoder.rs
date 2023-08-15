@@ -111,8 +111,10 @@ where
         // todo: In-case this causes a valid header not to be decoded
         //       we should switch to vec, but for now it works
         //
+        // new_todo: It causes it to crash so we switched to a vec
+
         // maximum size for which we expect the buffer to be
-        let mut max_header_size = [0; 1024];
+        let mut max_header_size = vec![0; 1024];
 
         if self.decoded_headers {
             return Ok(());
@@ -446,7 +448,7 @@ where
     /// Get a whole radiance line and increment the buffer
     /// cursor past that line.
     fn get_buffer_until(
-        &mut self, needle: u8, write_to: &mut [u8]
+        &mut self, needle: u8, write_to: &mut Vec<u8>
     ) -> Result<usize, HdrDecodeErrors> {
         let start = self.buf.get_position();
 
@@ -459,6 +461,9 @@ where
         // rewind buf to start
         self.buf.set_position(start);
 
+        if diff > write_to.len() {
+            write_to.resize(diff + 2, 0);
+        }
         // read those bytes
         self.buf
             .read_exact(&mut write_to[..diff])
