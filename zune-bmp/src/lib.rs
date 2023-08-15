@@ -15,7 +15,19 @@
 //! - Fast
 //! - Minimal dependencies
 //! - Very minimal internal allocation. (most paths do not allocate any more than output buffer)
+//! # Supported formats
+//! - RLE (4 bit and 8 bit)
+//! - Paletted images(1 bit, 2 bits, 4  bits and 8 bits)
+//! - Masked images (16 bit and 32 bit formats)
 //!
+//! # Unsupported formats
+//! - Embedded PNG and JPEGs
+//!
+//!
+//! # Security
+//!
+//! The decoder is continuously fuzz tested in CI to ensure it does not crash on malicious input
+//! in case a sample causes it to crash, an issue would be welcome.
 #![no_std]
 #![macro_use]
 extern crate alloc;
