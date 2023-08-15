@@ -9,7 +9,7 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use log::{info, warn};
+use log::{trace, warn};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -182,8 +182,8 @@ where
             ));
         }
 
-        info!("Width: {}", self.width);
-        info!("Height: {}", self.height);
+        trace!("Width: {}", self.width);
+        trace!("Height: {}", self.height);
 
         // planes
         if self.bytes.get_u16_le() != 1 {
@@ -308,9 +308,9 @@ where
             self.palette_numbers = colors as usize;
         }
 
-        info!("Pixel format : {:?}", self.pix_fmt);
-        info!("Compression  : {:?}", compression);
-
+        trace!("Pixel format : {:?}", self.pix_fmt);
+        trace!("Compression  : {:?}", compression);
+        trace!("Bit depth: {:?}", depth);
         self.comp = compression;
         self.depth = depth;
         self.ihszie = ihsize;
@@ -684,11 +684,13 @@ where
         //
         //
         // Code is from ffmpeg
+
+        // Allocate space for our RLE storage
         let mut buf = vec![0; self.width * self.height * usize::from(self.depth >> 3)];
         //let rt = temp_scanline.len();
         let mut line = (self.height - 1) as i32;
         let mut pos = 0;
-        let (mut p1, mut p2) = (0, 0);
+        let (mut p1, mut p2);
         // loop until no more bytes are left
         while !self.bytes.eof() {
             p1 = self.bytes.get_u8();
@@ -819,10 +821,9 @@ where
                     _ => unreachable!("Uhh ohh")
                 }
             }
-            let t = 0;
         }
         warn!("RLE warning, no end of picture code");
-        return Ok(buf);
+        Ok(buf)
     }
 }
 

@@ -11,7 +11,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::fmt::{Debug, Formatter};
 
-use log::info;
+use log::trace;
 use zune_core::bit_depth::{BitDepth, BitType, ByteEndian};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
@@ -193,7 +193,7 @@ where
             return Err(PPMDecodeErrors::Generic(msg));
         }
 
-        info!("Width: {}, height: {}", self.width, self.height);
+        trace!("Width: {}, height: {}", self.width, self.height);
 
         skip_spaces(&mut self.reader);
 
@@ -344,10 +344,10 @@ where
 
         self.decoded_headers = true;
 
-        info!("Width: {}", self.width);
-        info!("Height: {}", self.height);
-        info!("Colorspace: {:?}", self.colorspace);
-        info!("Depth: {:?}", self.bit_depth);
+        trace!("Width: {}", self.width);
+        trace!("Height: {}", self.height);
+        trace!("Colorspace: {:?}", self.colorspace);
+        trace!("Depth: {:?}", self.bit_depth);
 
         Ok(())
     }
@@ -358,7 +358,7 @@ where
             b'6' => ColorSpace::RGB,
             _ => unreachable!()
         };
-        info!("Colorspace: {:?}", colorspace);
+        trace!("Colorspace: {:?}", colorspace);
 
         self.colorspace = colorspace;
 
@@ -389,7 +389,7 @@ where
             return Err(PPMDecodeErrors::Generic(msg));
         }
 
-        info!("Width: {}, height: {}", self.width, self.height);
+        trace!("Width: {}, height: {}", self.width, self.height);
 
         skip_spaces(&mut self.reader);
         // read max value
@@ -408,7 +408,7 @@ where
             self.bit_depth = BitDepth::Sixteen;
         }
 
-        info!("Bit Depth: {:?}", self.bit_depth);
+        trace!("Bit Depth: {:?}", self.bit_depth);
         self.decoded_headers = true;
 
         Ok(())
