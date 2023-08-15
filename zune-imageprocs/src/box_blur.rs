@@ -165,7 +165,7 @@ pub(crate) fn box_blur_f32_inner(
     {
         let half_radius = (radius + 1) / 2;
 
-        let mut accumulator: f32 = stride_in[..half_radius].iter().map(|x| f32::from(*x)).sum();
+        let mut accumulator: f32 = stride_in[..half_radius].iter().copied().sum();
 
         accumulator += (half_radius as f32) * stride_in[0];
 

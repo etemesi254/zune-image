@@ -90,7 +90,7 @@ impl<'a> PngEncoder<'a> {
             // divide each into 8192 bytes
             let mut extra_bytes = (raw_len + 8191) / 8192;
             // for each extra byte, add header, length and crc
-            extra_bytes = extra_bytes * (4 + 4 + 4);
+            extra_bytes *= 4 + 4 + 4;
 
             out_dims += extra_bytes;
         }
