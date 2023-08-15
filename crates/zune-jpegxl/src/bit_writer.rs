@@ -8,6 +8,9 @@
 
 //! Bit I/O functionalities
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 /// Construct a new bit writer
 /// This bit writer owns it's output and you need to call
 /// `allocate` before using it

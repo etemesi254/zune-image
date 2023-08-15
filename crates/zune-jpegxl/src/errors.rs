@@ -33,7 +33,7 @@ pub const SUPPORTED_COLORSPACES: [ColorSpace; 4] = [
 pub const SUPPORTED_DEPTHS: [BitDepth; 2] = [BitDepth::Eight, BitDepth::Sixteen];
 
 impl Debug for JxlEncodeErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             JxlEncodeErrors::ZeroDimension(param) => writeln!(f, "The {param} is zero"),
             JxlEncodeErrors::UnsupportedColorspace(color) => writeln!(

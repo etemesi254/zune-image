@@ -17,7 +17,7 @@
 //! For both 8 bit and 16 bit images
 //!
 //! 16 bit images are treated as `&[u8]` bytes in **native endian**
-use std::ops::{Add, Shr, Sub};
+use core::ops::{Add, Shr, Sub};
 
 fn convert_rgb_to_ycocg<T>(r: T, g: T, b: T, y: &mut T, co: &mut T, cg: &mut T)
 where

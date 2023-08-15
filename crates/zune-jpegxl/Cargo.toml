@@ -9,9 +9,11 @@ edition = "2021"
 zune-core = { version = "0.2.1", path = "../zune-core" }
 log = "0.4.17"
 
+
 [features]
 threads = []
-default = ["threads"]
+std = []
+default = ["threads", "std"]
 
 [dev-dependencies]
 zune-ppm = { path = "../zune-ppm" }
