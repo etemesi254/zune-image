@@ -200,7 +200,10 @@ fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4]) {
 #[rustfmt::skip]
 pub fn abs(num: f32) -> f32
 {
-    if num < 0.0 { -num } else { num }
+    // standard compliant
+    // handles NAN and infinity.
+    // pretty cool
+    f32::from_bits(num.to_bits() & (i32::MAX as u32))
 }
 
 /// Implementation of signum that works in no_std
