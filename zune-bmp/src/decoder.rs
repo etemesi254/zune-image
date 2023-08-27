@@ -6,6 +6,95 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+// Stolen from  mozilla nsDecoder (https://searchfox.org/mozilla-central/source/image/decoders/nsBMPDecoder.cpp#10)
+//
+// BMP is a format that has been extended multiple times. To understand the
+// decoder you need to understand this history. The summary of the history
+// below was determined from the following documents.
+//
+// - http://www.fileformat.info/format/bmp/egff.htm
+// - http://www.fileformat.info/format/os2bmp/egff.htm
+// - http://fileformats.archiveteam.org/wiki/BMP
+// - http://fileformats.archiveteam.org/wiki/OS/2_BMP
+// - https://en.wikipedia.org/wiki/BMP_file_format
+// - https://upload.wikimedia.org/wikipedia/commons/c/c4/BMPfileFormat.png
+// - https://blog.mozilla.org/nnethercote/2015/11/06/i-rewrote-firefoxs-bmp-decoder/
+//
+//
+// WINDOWS VERSIONS OF THE BMP FORMAT
+// ----------------------------------
+// WinBMPv1.
+// - This version is no longer used and can be ignored.
+//
+// WinBMPv2.
+// - First is a 14 byte file header that includes: the magic number ("BM"),
+//   file size, and offset to the pixel data (|mDataOffset|).
+// - Next is a 12 byte info header which includes: the info header size
+//   (mBIHSize), width, height, number of color planes, and bits-per-pixel
+//   (|mBpp|) which must be 1, 4, 8 or 24.
+// - Next is the semi-optional color table, which has length 2^|mBpp| and has 3
+//   bytes per value (BGR). The color table is required if |mBpp| is 1, 4, or 8.
+// - Next is an optional gap.
+// - Next is the pixel data, which is pointed to by |mDataOffset|.
+//
+// WinBMPv3. This is the most widely used version.
+// - It changed the info header to 40 bytes by taking the WinBMPv2 info
+//   header, enlargening its width and height fields, and adding more fields
+//   including: a compression type (|mCompression|) and number of colors
+//   (|mNumColors|).
+// - The semi-optional color table is now 4 bytes per value (BGR0), and its
+//   length is |mNumColors|, or 2^|mBpp| if |mNumColors| is zero.
+// - |mCompression| can be RGB (i.e. no compression), RLE4 (if |mBpp|==4) or
+//   RLE8 (if |mBpp|==8) values.
+//
+// WinBMPv3-NT. A variant of WinBMPv3.
+// - It did not change the info header layout from WinBMPv3.
+// - |mBpp| can now be 16 or 32, in which case |mCompression| can be RGB or the
+//   new BITFIELDS value; in the latter case an additional 12 bytes of color
+//   bitfields follow the info header.
+//
+// WinBMPv4.
+// - It extended the info header to 108 bytes, including the 12 bytes of color
+//   mask data from WinBMPv3-NT, plus alpha mask data, and also color-space and
+//   gamma correction fields.
+//
+// WinBMPv5.
+// - It extended the info header to 124 bytes, adding color profile data.
+// - It also added an optional color profile table after the pixel data (and
+//   another optional gap).
+//
+// WinBMPv3-ICO. This is a variant of WinBMPv3.
+// - It's the BMP format used for BMP images within ICO files.
+// - The only difference with WinBMPv3 is that if an image is 32bpp and has no
+//   compression, then instead of treating the pixel data as 0RGB it is treated
+//   as ARGB, but only if one or more of the A values are non-zero.
+//
+// Clipboard variants.
+// - It's the BMP format used for BMP images captured from the clipboard.
+// - It is missing the file header, containing the BM signature and the data
+//   offset. Instead the data begins after the header.
+// - If it uses BITFIELDS compression, then there is always an additional 12
+//   bytes of data after the header that must be read. In WinBMPv4+, the masks
+//   are supposed to be included in the header size, which are the values we use
+//   for decoding purposes, but there is additional three masks following the
+//   header which must be skipped to get to the pixel data.
+//
+// OS/2 VERSIONS OF THE BMP FORMAT
+// -------------------------------
+// OS2-BMPv1.
+// - Almost identical to WinBMPv2; the differences are basically ignorable.
+//
+// OS2-BMPv2.
+// - Similar to WinBMPv3.
+// - The info header is 64 bytes but can be reduced to as little as 16; any
+//   omitted fields are treated as zero. The first 40 bytes of these fields are
+//   nearly identical to the WinBMPv3 info header; the remaining 24 bytes are
+//   different.
+// - Also adds compression types "Huffman 1D" and "RLE24", which we don't
+//   support.
+// - We treat OS2-BMPv2 files as if they are WinBMPv3 (i.e. ignore the extra 24
+//   bytes in the info header), which in practice is good enough.
+
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
@@ -32,13 +121,22 @@ pub fn probe_bmp(bytes: &[u8]) -> bool {
             if let Some(sz) = bytes.get(14) {
                 let sz = *sz;
 
-                return sz == 12 || sz == 40 || sz == 56 || sz == 108 || sz == 124;
+                return sz == 12
+                    || sz == 16 /*os-v2*/
+                    || sz == 40
+                    || sz == 56
+                    || sz == 64 /*os-v2*/
+                    || sz == 108
+                    || sz == 124;
             }
         }
     }
     false
 }
 
+/// A single palette entry for bmp
+///
+/// For some configurations, alpha is disabled,
 #[derive(Clone, Copy, Default, Debug)]
 struct PaletteEntry {
     red:   u8,
@@ -125,15 +223,18 @@ where
             // too short input
             return Err(BmpDecoderErrors::TooSmallBuffer(14, self.bytes.remaining()));
         }
-        // discard
 
         if self.bytes.get_u8() != b'B' || self.bytes.get_u8() != b'M' {
             return Err(BmpDecoderErrors::InvalidMagicBytes);
         }
-        let fszie = (self.bytes.get_u32_le()) as usize;
 
-        if self.bytes.len() < fszie {
-            return Err(BmpDecoderErrors::TooSmallBuffer(fszie, self.bytes.len()));
+        let file_size = (self.bytes.get_u32_le()) as usize;
+
+        if self.bytes.len() < file_size {
+            return Err(BmpDecoderErrors::TooSmallBuffer(
+                file_size,
+                self.bytes.len()
+            ));
         }
         // skip 4 reserved bytes
         self.bytes.skip(4);
@@ -144,13 +245,20 @@ where
         if ihsize.saturating_add(14) > hsize {
             return Err(BmpDecoderErrors::GenericStatic("Invalid header size"));
         }
+
+        if !self.bytes.has(hsize as usize) {
+            return Err(BmpDecoderErrors::Generic(format!(
+                "Corrupt header, invalid hsize {hsize}"
+            )));
+        }
         let (width, height);
         match ihsize {
-            40 | 56 | 64 | 108 | 124 => {
+            16 | 40 | 56 | 64 | 108 | 124 => {
                 width = self.bytes.get_u32_le();
                 height = self.bytes.get_u32_le();
             }
             12 => {
+                // os-v2 images
                 width = self.bytes.get_u16_le() as u32;
                 height = self.bytes.get_u16_le() as u32;
             }
@@ -181,6 +289,16 @@ where
                 self.width
             ));
         }
+        if self.width == 0 {
+            return Err(BmpDecoderErrors::GenericStatic(
+                "Width is zero, invalid image"
+            ));
+        }
+        if self.height == 0 {
+            return Err(BmpDecoderErrors::GenericStatic(
+                "Height is zero, invalid image"
+            ));
+        }
 
         trace!("Width: {}", self.width);
         trace!("Height: {}", self.height);
@@ -191,6 +309,12 @@ where
         }
 
         let depth = self.bytes.get_u16_le();
+
+        if depth == 0 {
+            return Err(BmpDecoderErrors::GenericStatic(
+                "Depth is zero, invalid image"
+            ));
+        }
 
         let compression = if hsize >= 40 {
             match BmpCompression::from_u32(self.bytes.get_u32_le()) {
@@ -266,7 +390,10 @@ where
 
                 if t < 0 || t > (1 << depth) {
                     let msg = format!("Incorrect number of colors {} for depth {}", t, depth);
-                    return Err(BmpDecoderErrors::Generic(msg));
+                    if self.options.get_strict_mode() {
+                        return Err(BmpDecoderErrors::Generic(msg));
+                    }
+                    warn!("{}", msg);
                 } else if t != 0 {
                     colors = t as u32;
                 }
@@ -277,11 +404,15 @@ where
             self.bytes.set_position((14 + ihsize) as usize);
 
             // OS/2 bitmap, 3 bytes per palette entry
-            if hsize == 12 {
+            if ihsize == 12 {
                 if p < colors * 3 {
                     return Err(BmpDecoderErrors::GenericStatic("Invalid Palette entries"));
                 }
-
+                if !self.bytes.has((colors * 3) as usize) {
+                    return Err(BmpDecoderErrors::GenericStatic(
+                        "Too small header for palette entries"
+                    ));
+                }
                 self.palette.resize(256, PaletteEntry::default());
 
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
@@ -293,6 +424,12 @@ where
                 });
             } else {
                 self.palette.resize(256, PaletteEntry::default());
+
+                if !self.bytes.has((colors * 4) as usize) {
+                    return Err(BmpDecoderErrors::GenericStatic(
+                        "Too small header for palette entries"
+                    ));
+                }
 
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
                     let [b, g, r, _] = self.bytes.get_fixed_bytes_or_err::<4>().unwrap();
@@ -398,15 +535,13 @@ where
 
         let buf = &mut buf[0..output_size];
 
-        let pad = (((-(self.width as i32)) as u32) & 3) as usize;
-
         if self.comp == BmpCompression::RLE4 || self.comp == BmpCompression::RLE8 {
             let scanline_data = self.decode_rle()?;
 
             if self.pix_fmt == BmpPixelFormat::PAL8 {
                 self.expand_palette(&scanline_data, buf, false);
                 // do not flip for palette, orientation is good
-                self.flip_vertically = false;
+                self.flip_vertically ^= true;
             }
         } else {
             match self.depth {
@@ -433,7 +568,7 @@ where
 
                         self.expand_palette(in_bytes, buf, true);
                         // do not flip for palette, orientation is good
-                        self.flip_vertically = false;
+                        self.flip_vertically ^= true;
                     } else {
                         // copy
                         let bytes = self.bytes.remaining_bytes();
@@ -482,10 +617,7 @@ where
                                 if self.depth == 32 {
                                     // for the case where the bit-depth is 32, there are no padding bytes
                                     // hence we can iterate simply
-                                    assert_eq!(
-                                        pad, 0,
-                                        "An image with a depth of 32 should not have padding bytes"
-                                    );
+
                                     for (out, input) in buf
                                         .rchunks_exact_mut(pad_size)
                                         .zip(bytes.chunks_exact(pad_size))
@@ -553,23 +685,31 @@ where
                                 }
                             }
 
-                            self.flip_vertically = false;
+                            self.flip_vertically ^= true;
                         } else {
                             // bmp rounds up each line to be a multiple of 4, padding the end if necessary
                             // remove padding bytes
+                            let out_width = self.width * self.pix_fmt.num_components();
 
-                            let pad_size = self.width * self.pix_fmt.num_components();
+                            // includes pad bytes (multiple of 4)
+                            let in_width = ((self.width * usize::from(self.depth) + 31) / 8) & !3;
 
+                            //let t = bytes.len();
                             for (out, input) in buf
-                                .chunks_exact_mut(pad_size)
-                                .zip(bytes.chunks_exact(pad_size + pad))
+                                .rchunks_exact_mut(out_width)
+                                .zip(bytes.chunks_exact(in_width))
                             {
-                                out.copy_from_slice(&input[..pad_size]);
+                                out.copy_from_slice(&input[..out_width]);
                             }
+                            self.flip_vertically ^= true;
                         }
                     }
                 }
                 1 | 2 | 4 => {
+                    // For depths less than 8, we must have a palette present
+                    //
+                    // Then the operations become expanding bits
+                    // to bytes and then read palette entries
                     if self.pix_fmt != BmpPixelFormat::PAL8 {
                         return Err(BmpDecoderErrors::GenericStatic(
                             "Bit Depths less than 8 must have a palette"
@@ -595,19 +735,45 @@ where
 
                         self.expand_palette(&scanline_bytes, out_bytes, true);
                     }
-                    self.flip_vertically = false;
+                    self.flip_vertically ^= true;
                 }
-                d => panic!("Unhandled depth {}", d)
+                d => unreachable!("Unhandled depth {}", d)
             }
         }
-
+        // The code for flip uses xor, so that if the image was to be flipped
+        // (hence it was initially set to  true) and the code encounters a route that does
+        // the flipping internally(using rchunks where appropriate) the route will xor it with true
+        // (i.e code like self.flip_vertically ^= true), so that then looks like
+        //
+        // |self.flip_vertically| route | result |
+        // | false              | true  | true   |
+        // | true               | true  | false  |
+        //
+        // Meaning the if below is only entered if the BMP indicated it wasn't supposed to be flipped
+        // vertically to undo the implicit earlier flip vertically that may have occurred
         if self.flip_vertically {
-            let length = buf.len() / 2;
+            //
+            // if we are here it means the image was not supposed to be flipped
+            // but we eagerly flip because most bmp images are flipped, hence the code above
+            // usually assumes that
+            //
+            // This code undoes the effect of the above flips.
+            let length = self.width * self.pix_fmt.num_components();
 
-            let (in_img_top, in_img_bottom) = buf.split_at_mut(length);
+            let mut scanline = vec![0; length];
+            let mid = buf.len() / 2;
+            let (in_img_top, in_img_bottom) = buf.split_at_mut(mid);
 
-            for (in_dim, out_dim) in in_img_top.iter_mut().zip(in_img_bottom.iter_mut().rev()) {
-                core::mem::swap(in_dim, out_dim);
+            for (in_dim, out_dim) in in_img_top
+                .chunks_exact_mut(length)
+                .zip(in_img_bottom.rchunks_exact_mut(length))
+            {
+                // write in dim to scanlines
+                scanline.copy_from_slice(in_dim);
+                // write out dim t in dim
+                in_dim.copy_from_slice(out_dim);
+                // copy previous scanline to in dim
+                out_dim.copy_from_slice(&scanline);
             }
         }
 
@@ -686,144 +852,256 @@ where
         // Code is from ffmpeg
 
         // Allocate space for our RLE storage
-        let mut buf = vec![0; self.width * self.height * usize::from(self.depth >> 3)];
+
+        // for depths less than 8(4 only), allocate full space for the expanded bits
+        let depth = if self.depth < 8 { 8 } else { self.depth };
+        let mut pixels = vec![0; ((self.width * self.height * usize::from(depth)) + 7) >> 3];
+        let mut buf = &mut pixels[..];
+
         //let rt = temp_scanline.len();
         let mut line = (self.height - 1) as i32;
         let mut pos = 0;
-        let (mut p1, mut p2);
-        // loop until no more bytes are left
-        while !self.bytes.eof() {
-            p1 = self.bytes.get_u8();
-            if p1 == 0 {
-                // escape code
-                p2 = self.bytes.get_u8();
-                if p2 == 0 {
-                    // end of line
-                    line -= 1;
-                    if line < 0 {
-                        return if self.bytes.get_u16_be() == 1 {
-                            // end of picture
-                            Ok(buf)
+        //let t = buf.len();
+
+        if !(self.depth == 4 || self.depth == 8 || self.depth == 16 || self.depth == 32) {
+            return Err(BmpDecoderErrors::Generic(format!(
+                "Unknown Depth + RLE combination depth {}",
+                self.depth
+            )));
+        }
+
+        if self.depth == 4 {
+            // Handle bit depth 4
+            let mut rle_code;
+            let mut stream_byte;
+            while line >= 0 && pos <= self.width {
+                rle_code = self.bytes.get_u8();
+
+                if rle_code == 0 {
+                    /* fetch the next byte to see how to handle escape code */
+                    stream_byte = self.bytes.get_u8();
+
+                    if stream_byte == 0 {
+                        // move to the next line
+                        buf = &mut buf[pos..];
+                        line -= 1;
+                        pos = 0;
+
+                        continue;
+                    } else if stream_byte == 1 {
+                        // decode is done
+                        return Ok(pixels);
+                    } else if stream_byte == 2 {
+                        // reposition frame decode coordinates
+                        stream_byte = self.bytes.get_u8();
+                        pos += usize::from(stream_byte);
+                        stream_byte = self.bytes.get_u8();
+                        line -= i32::from(stream_byte);
+                    } else {
+                        // copy pixels from encoded stream
+                        let odd_pixel = usize::from(stream_byte & 1);
+                        rle_code = (stream_byte + 1) / 2;
+                        let extra_byte = usize::from(rle_code & 0x01);
+
+                        if !self.bytes.has(usize::from(rle_code)) {
+                            return Err(BmpDecoderErrors::GenericStatic(
+                                "Frame pointer went out of bounds"
+                            ));
+                        }
+
+                        for i in 0..rle_code {
+                            if pos >= self.width {
+                                break;
+                            }
+
+                            stream_byte = self.bytes.get_u8();
+                            buf[pos] = stream_byte >> 4;
+                            pos += 1;
+
+                            if i + 1 == rle_code && odd_pixel > 0 {
+                                break;
+                            }
+                            if pos >= self.width {
+                                break;
+                            }
+                            buf[pos] = stream_byte & 0x0F;
+                            pos += 1;
+                        }
+                        // if the RLE code is odd, skip a byte in the stream
+                        self.bytes.skip(usize::from(extra_byte > 0));
+                    }
+                } else {
+                    // decode a run of data
+                    if pos + usize::from(rle_code) > self.width + 1 {
+                        let msg = "Frame pointer went out of bounds";
+                        return Err(BmpDecoderErrors::GenericStatic(msg));
+                    }
+                    stream_byte = self.bytes.get_u8();
+
+                    for i in 0..rle_code {
+                        if pos >= self.width {
+                            break;
+                        }
+
+                        if (i & 1) == 0 {
+                            buf[pos] = stream_byte >> 4;
                         } else {
-                            let msg = format!(
-                                "Next line is beyond picture bounds ({} bytes left)",
-                                self.bytes.remaining()
-                            );
-                            Err(BmpDecoderErrors::Generic(msg))
-                        };
-                    }
-
-                    continue;
-                } else if p2 == 1 {
-                    // end of picture
-                    return Ok(buf);
-                } else if p2 == 2 {
-                    // skip
-                    p1 = self.bytes.get_u8();
-                    p2 = self.bytes.get_u8();
-
-                    line -= i32::from(p2);
-                    pos += usize::from(p1);
-
-                    if line < 0 || pos >= self.width {
-                        return Err(BmpDecoderErrors::GenericStatic(
-                            "Skip beyond picture bounds"
-                        ));
-                    }
-                    continue;
-                }
-                // copy data
-                if pos + usize::from(p2) * usize::from(self.depth >> 3) > buf.len() {
-                    self.bytes.skip(2 * usize::from(self.depth >> 3));
-                    continue;
-                } else if self.bytes.get_bytes_left()
-                    < usize::from(p2) * usize::from(self.depth >> 3)
-                {
-                    return Err(BmpDecoderErrors::GenericStatic("Bytestream overrun"));
-                }
-
-                if self.depth == 8 || self.depth == 24 {
-                    let size = usize::from(p2) * usize::from(self.depth >> 3);
-                    self.bytes.read_exact(&mut buf[pos..pos + size]).unwrap();
-                    pos += size;
-
-                    // RLE copy is padded- runs are not
-                    if self.depth == 8 && (p2 & 1) == 1 {
-                        self.bytes.skip(1);
-                    }
-                } else if self.depth == 16 {
-                    for _ in 0..p2 {
-                        buf[pos] = self.bytes.get_u8();
-                        buf[pos + 1] = self.bytes.get_u8();
-                        pos += 2;
-                    }
-                } else if self.depth == 32 {
-                    for _ in 0..p2 {
-                        buf[pos] = self.bytes.get_u8();
-                        buf[pos + 1] = self.bytes.get_u8();
-                        buf[pos + 2] = self.bytes.get_u8();
-                        buf[pos + 3] = self.bytes.get_u8();
-                        pos += 4;
-                    }
-                }
-            } else {
-                // run of pixels
-                let mut pix: [u8; 4] = [0; 4];
-
-                if !self
-                    .bytes
-                    .has(usize::from(p1) * usize::from(self.depth >> 3))
-                {
-                    continue;
-                }
-                match self.depth {
-                    8 => {
-                        pix[0] = self.bytes.get_u8();
-                        buf[pos..pos + usize::from(p1)].fill(pix[0]);
-                        pos += usize::from(p1);
-                    }
-                    16 => {
-                        let pix_16u = self.bytes.get_u8();
-                        let pix_16r = self.bytes.get_u8();
-                        for _ in 0..p1 {
-                            buf[pos] = pix_16u;
-                            buf[pos + 1] = pix_16r;
-                            pos += 2;
+                            buf[pos] = stream_byte & 0x0F;
                         }
-                    }
-                    24 => {
-                        pix[0] = self.bytes.get_u8();
-                        pix[1] = self.bytes.get_u8();
-                        pix[2] = self.bytes.get_u8();
 
-                        for _ in 0..p1 {
-                            buf[pos] = pix[0];
-                            buf[pos + 1] = pix[1];
-                            buf[pos + 2] = pix[2];
-                            pos += 4;
-                        }
+                        pos += 1;
                     }
-                    32 => {
-                        pix[0] = self.bytes.get_u8();
-                        pix[1] = self.bytes.get_u8();
-                        pix[2] = self.bytes.get_u8();
-                        pix[3] = self.bytes.get_u8();
-
-                        for _ in 0..p1 {
-                            buf[pos] = pix[0];
-                            buf[pos + 1] = pix[1];
-                            buf[pos + 2] = pix[2];
-                            buf[pos + 3] = pix[3];
-
-                            pos += 4;
-                        }
-                    }
-                    _ => unreachable!("Uhh ohh")
                 }
             }
+            Ok(pixels)
+        } else {
+            let (mut p1, mut p2);
+            // loop until no more bytes are left
+            while !self.bytes.eof() {
+                p1 = self.bytes.get_u8();
+                if p1 == 0 {
+                    // escape code
+                    p2 = self.bytes.get_u8();
+                    if p2 == 0 {
+                        // end of line
+                        line -= 1;
+                        if line < 0 {
+                            return if self.bytes.get_u16_be() == 1 {
+                                // end of picture
+                                Ok(pixels)
+                            } else {
+                                let msg = format!(
+                                    "Next line is beyond picture bounds ({} bytes left)",
+                                    self.bytes.remaining()
+                                );
+                                Err(BmpDecoderErrors::Generic(msg))
+                            };
+                        }
+                        // move to the next line
+                        buf = &mut buf[pos..];
+                        pos = 0;
+
+                        continue;
+                    } else if p2 == 1 {
+                        // end of picture
+                        return Ok(pixels);
+                    } else if p2 == 2 {
+                        // skip
+                        p1 = self.bytes.get_u8();
+                        p2 = self.bytes.get_u8();
+
+                        line -= i32::from(p2);
+                        pos += usize::from(p1);
+
+                        if line < 0 || pos >= self.width {
+                            return Err(BmpDecoderErrors::GenericStatic(
+                                "Skip beyond picture bounds"
+                            ));
+                        }
+                        continue;
+                    }
+                    // copy data
+                    if pos + usize::from(p2) * usize::from(self.depth >> 3) > buf.len() {
+                        self.bytes.skip(2 * usize::from(self.depth >> 3));
+                        continue;
+                    } else if self.bytes.get_bytes_left()
+                        < usize::from(p2) * usize::from(self.depth >> 3)
+                    {
+                        return Err(BmpDecoderErrors::GenericStatic("Bytestream overrun"));
+                    }
+
+                    if self.depth == 8 || self.depth == 24 {
+                        let size = usize::from(p2) * usize::from(self.depth >> 3);
+                        self.bytes.read_exact(&mut buf[pos..pos + size]).unwrap();
+                        pos += size;
+
+                        // RLE copy is padded- runs are not
+                        if self.depth == 8 && (p2 & 1) == 1 {
+                            self.bytes.skip(1);
+                        }
+                    } else if self.depth == 16 {
+                        for _ in 0..p2 {
+                            buf[pos] = self.bytes.get_u8();
+                            buf[pos + 1] = self.bytes.get_u8();
+                            pos += 2;
+                        }
+                    } else if self.depth == 32 {
+                        for _ in 0..p2 {
+                            buf[pos] = self.bytes.get_u8();
+                            buf[pos + 1] = self.bytes.get_u8();
+                            buf[pos + 2] = self.bytes.get_u8();
+                            buf[pos + 3] = self.bytes.get_u8();
+                            pos += 4;
+                        }
+                    }
+                } else {
+                    // run of pixels
+                    let mut pix: [u8; 4] = [0; 4];
+
+                    if !self
+                        .bytes
+                        .has(usize::from(p1) * usize::from(self.depth >> 3))
+                    {
+                        continue;
+                    }
+
+                    if pos > buf.len()
+                        || buf.len().saturating_sub(pos)
+                            <= (usize::from(p1) * usize::from(self.depth) + 31) / 8
+                    {
+                        let expected = (usize::from(p1) * usize::from(self.depth)) / 8;
+                        let remaining = buf.len().saturating_sub(expected);
+                        return Err(BmpDecoderErrors::Generic(format!("Too short of a buffer, buffer length is {remaining} while RLE needs {expected}")));
+                    }
+                    match self.depth {
+                        8 => {
+                            pix[0] = self.bytes.get_u8();
+                            buf[pos..pos + usize::from(p1)].fill(pix[0]);
+                            pos += usize::from(p1);
+                        }
+                        16 => {
+                            let pix_16u = self.bytes.get_u8();
+                            let pix_16r = self.bytes.get_u8();
+                            for _ in 0..p1 {
+                                buf[pos] = pix_16u;
+                                buf[pos + 1] = pix_16r;
+                                pos += 2;
+                            }
+                        }
+                        24 => {
+                            pix[0] = self.bytes.get_u8();
+                            pix[1] = self.bytes.get_u8();
+                            pix[2] = self.bytes.get_u8();
+
+                            for _ in 0..p1 {
+                                buf[pos] = pix[0];
+                                buf[pos + 1] = pix[1];
+                                buf[pos + 2] = pix[2];
+                                pos += 3;
+                            }
+                        }
+                        32 => {
+                            pix[0] = self.bytes.get_u8();
+                            pix[1] = self.bytes.get_u8();
+                            pix[2] = self.bytes.get_u8();
+                            pix[3] = self.bytes.get_u8();
+
+                            for _ in 0..p1 {
+                                buf[pos] = pix[0];
+                                buf[pos + 1] = pix[1];
+                                buf[pos + 2] = pix[2];
+                                buf[pos + 3] = pix[3];
+
+                                pos += 4;
+                            }
+                        }
+                        _ => unreachable!("Uhh ohh")
+                    }
+                }
+            }
+            warn!("RLE warning, no end of picture code");
+            Ok(pixels)
         }
-        warn!("RLE warning, no end of picture code");
-        Ok(buf)
     }
 }
 
