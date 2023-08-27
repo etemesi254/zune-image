@@ -273,6 +273,7 @@ impl<T: ZReaderTrait> ZByteReader<T> {
     }
     /// Return the remaining unread bytes in this byte reader
     pub fn remaining_bytes(&self) -> &[u8] {
+        debug_assert!(self.position <= self.len());
         self.stream.get_slice(self.position..self.len()).unwrap()
     }
 
