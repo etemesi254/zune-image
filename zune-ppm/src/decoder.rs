@@ -87,7 +87,7 @@ where
     /// assert!(decoder.decode().is_err());
     /// ```
     pub fn new(data: T) -> PPMDecoder<T> {
-        PPMDecoder::new_with_options(DecoderOptions::default(), data)
+        PPMDecoder::new_with_options(data, DecoderOptions::default())
     }
     /// Create a new PPM decoder with the specified options
     ///
@@ -98,11 +98,11 @@ where
     /// ```
     /// use zune_core::options::DecoderOptions;
     /// use zune_ppm::PPMDecoder;
-    /// let mut decoder = PPMDecoder::new_with_options(DecoderOptions::default(),b"NOT VALID PPM");
+    /// let mut decoder = PPMDecoder::new_with_options(b"NOT VALID PPM",DecoderOptions::default());
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
-    pub fn new_with_options(options: DecoderOptions, data: T) -> PPMDecoder<T> {
+    pub fn new_with_options(data: T, options: DecoderOptions) -> PPMDecoder<T> {
         let reader = ZByteReader::new(data);
 
         PPMDecoder {

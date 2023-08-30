@@ -10,7 +10,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use log::trace;
-
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
