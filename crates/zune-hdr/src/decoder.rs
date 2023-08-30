@@ -447,6 +447,9 @@ where
 
     /// Get a whole radiance line and increment the buffer
     /// cursor past that line.
+    ///
+    /// This will write to `write_to` appropriately
+    /// resizing the buffer in case the line spans a great length
     fn get_buffer_until(
         &mut self, needle: u8, write_to: &mut Vec<u8>
     ) -> Result<usize, HdrDecodeErrors> {
@@ -494,15 +497,14 @@ fn convert_scanline(in_scanline: &[u8], out_scanline: &mut [f32]) {
 /// exp is assumed to be integer
 #[inline]
 fn ldxep(x: f32, exp: i32) -> f32 {
+    let pow = (1_i32 << (exp.abs() & 31)) as f32;
     if exp.is_negative() {
         // if negative 2 ^ exp is the same as 1 / (1<<exp.abs()) since
         // 2^(-exp) is expressed as 1/(2^exp)
-        let pow_inv = (1_i32 << (exp.abs() & 31)) as f32;
-
-        x / pow_inv
+        x / pow
     } else {
         // 2^exp is same as 1<<exp, but latter is way faster
-        x * ((1_i32 << (exp & 31)) as f32)
+        x * pow
     }
 }
 
