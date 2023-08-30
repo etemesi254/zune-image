@@ -56,6 +56,12 @@ impl<T: ZReaderTrait> ZByteReader<T> {
             position: 0
         }
     }
+    /// Destroy this reader returning
+    /// the underlying source of the bytes
+    /// from which we were decoding
+    pub fn consume(self) -> T {
+        self.stream
+    }
     /// Skip `num` bytes ahead of the stream.
     ///
     /// This bumps up the internal cursor wit a wrapping addition
