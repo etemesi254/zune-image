@@ -124,6 +124,7 @@ pub fn probe_bmp(bytes: &[u8]) -> bool {
                 return sz == 12
                     || sz == 16 /*os-v2*/
                     || sz == 40
+                    || sz == 52
                     || sz == 56
                     || sz == 64 /*os-v2*/
                     || sz == 108
@@ -253,7 +254,7 @@ where
         }
         let (width, height);
         match ihsize {
-            16 | 40 | 56 | 64 | 108 | 124 => {
+            16 | 40 | 52 | 56 | 64 | 108 | 124 => {
                 width = self.bytes.get_u32_le();
                 height = self.bytes.get_u32_le();
             }
@@ -463,13 +464,9 @@ where
         if !self.decoded_headers {
             return None;
         }
-        Some(
-            self.width
-                .checked_mul(self.height)
-                .unwrap()
-                .checked_mul(self.pix_fmt.num_components())
-                .unwrap()
-        )
+        self.width
+            .checked_mul(self.height)?
+            .checked_mul(self.pix_fmt.num_components())
     }
 
     /// Return the BMP bit depth
@@ -516,7 +513,11 @@ where
     /// a pre-allocated buffer
     pub fn decode(&mut self) -> Result<Vec<u8>, BmpDecoderErrors> {
         self.decode_headers()?;
-        let mut output = vec![0_u8; self.output_buf_size().unwrap()];
+        let mut output = vec![
+            0_u8;
+            self.output_buf_size()
+                .ok_or(BmpDecoderErrors::OverFlowOccurred)?
+        ];
 
         self.decode_into(&mut output)?;
 
@@ -531,7 +532,9 @@ where
     pub fn decode_into(&mut self, buf: &mut [u8]) -> Result<(), BmpDecoderErrors> {
         self.decode_headers()?;
 
-        let output_size = self.output_buf_size().unwrap();
+        let output_size = self
+            .output_buf_size()
+            .ok_or(BmpDecoderErrors::OverFlowOccurred)?;
 
         let buf = &mut buf[0..output_size];
 
@@ -630,7 +633,12 @@ where
                                             a[0] = shift_signed(v & mr, rshift, rcount) as u8;
                                             a[1] = shift_signed(v & mg, gshift, gcount) as u8;
                                             a[2] = shift_signed(v & mb, bshift, bcount) as u8;
-                                            a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                            if ma == 0 {
+                                                // alpha would be zero
+                                                a[3] = 255;
+                                            } else {
+                                                a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                            }
                                         }
                                     }
                                 } else if self.depth == 16 {
@@ -694,7 +702,6 @@ where
                             // includes pad bytes (multiple of 4)
                             let in_width = ((self.width * usize::from(self.depth) + 31) / 8) & !3;
 
-                            //let t = bytes.len();
                             for (out, input) in buf
                                 .rchunks_exact_mut(out_width)
                                 .zip(bytes.chunks_exact(in_width))
@@ -770,7 +777,7 @@ where
             {
                 // write in dim to scanlines
                 scanline.copy_from_slice(in_dim);
-                // write out dim t in dim
+                // write out dim to in dim
                 in_dim.copy_from_slice(out_dim);
                 // copy previous scanline to in dim
                 out_dim.copy_from_slice(&scanline);

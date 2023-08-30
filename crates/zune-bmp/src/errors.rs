@@ -22,7 +22,9 @@ pub enum BmpDecoderErrors {
     Generic(String),
     /// Too large dimensions for a given width or
     /// height
-    TooLargeDimensions(&'static str, usize, usize)
+    TooLargeDimensions(&'static str, usize, usize),
+    /// A calculation overflowed
+    OverFlowOccurred
 }
 
 impl Debug for BmpDecoderErrors {
@@ -49,6 +51,9 @@ impl Debug for BmpDecoderErrors {
             }
             Self::Generic(message) => {
                 writeln!(f, "{}", message)
+            }
+            Self::OverFlowOccurred => {
+                writeln!(f, "Overflow occurred")
             }
         }
     }
