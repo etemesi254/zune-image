@@ -24,7 +24,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait for PngDecoder<T>
+impl<T> DecoderTrait<T> for PngDecoder<T>
 where
     T: ZReaderTrait
 {

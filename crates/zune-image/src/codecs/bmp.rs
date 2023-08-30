@@ -15,7 +15,7 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::DecoderTrait;
 
-impl<T> DecoderTrait for BmpDecoder<T>
+impl<T> DecoderTrait<T> for BmpDecoder<T>
 where
     T: ZReaderTrait
 {
