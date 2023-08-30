@@ -180,8 +180,8 @@ impl WasmImage {
 /// or none otherwise
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
-    if let Some(format) = ImageFormat::guess_format(bytes) {
-        if let Ok(mut decoder) = format.get_decoder(bytes) {
+    if let Some((format, content)) = ImageFormat::guess_format(bytes) {
+        if let Ok(mut decoder) = format.get_decoder(content) {
             let mut image = decoder.decode().unwrap();
 
             // WASM works with 8 bit images, so convert this to an 8 biy image
@@ -203,7 +203,7 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
 /// or None otherwise
 #[wasm_bindgen]
 pub fn guess_format(bytes: &[u8]) -> Option<WasmImageDecodeFormats> {
-    if let Some(format) = ImageFormat::guess_format(bytes) {
+    if let Some((format, _)) = ImageFormat::guess_format(bytes) {
         return Some(WasmImageDecodeFormats::from_formats(format));
     }
     None
