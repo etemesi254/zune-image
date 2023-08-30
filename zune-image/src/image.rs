@@ -443,11 +443,11 @@ impl Image {
     /// // create a gradient
     /// image.modify_pixels_mut(|x,y,pix|     
     /// {
-    ///  let r = (0.3 * x as f32) as u8;
-    ///  let b = (0.3 * y as f32) as u8;
-    ///  // modify channels directly
-    ///  *pix[0] = r;
-    ///  *pix[2] = b;
+    ///     let r = (0.3 * x as f32) as u8;
+    ///     let b = (0.3 * y as f32) as u8;
+    ///     // modify channels directly
+    ///     *pix[0] = r;
+    ///     *pix[2] = b;
     /// }).unwrap();
     ///
     /// ```

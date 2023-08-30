@@ -35,6 +35,7 @@
 use std::path::Path;
 
 use log::trace;
+use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::codecs;
@@ -107,17 +108,21 @@ impl ImageFormat {
     }
 
     pub fn has_decoder(self) -> bool {
-        return self.get_decoder(&[]).is_ok();
+        return self.get_decoder::<&[u8]>(&[]).is_ok();
     }
-    pub fn get_decoder<'a>(
-        &self, data: &'a [u8]
-    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors> {
+    pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait<T> + 'a>, ImageErrors>
+    where
+        T: ZReaderTrait + 'a
+    {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
 
-    pub fn get_decoder_with_options<'a>(
-        &self, data: &'a [u8], options: DecoderOptions
-    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors> {
+    pub fn get_decoder_with_options<'a, T>(
+        &self, data: T, options: DecoderOptions
+    ) -> Result<Box<dyn DecoderTrait<T> + 'a>, ImageErrors>
+    where
+        T: ZReaderTrait + 'a
+    {
         match self {
             ImageFormat::JPEG => {
                 #[cfg(feature = "jpeg")]
@@ -148,7 +153,7 @@ impl ImageFormat {
                 #[cfg(feature = "ppm")]
                 {
                     Ok(Box::new(zune_ppm::PPMDecoder::new_with_options(
-                        options, data
+                        data, options
                     )))
                 }
                 #[cfg(not(feature = "ppm"))]
@@ -304,7 +309,11 @@ impl ImageFormat {
             _ => None
         }
     }
-    pub fn guess_format(bytes: &[u8]) -> Option<ImageFormat> {
+    pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
+    where
+        T: ZReaderTrait
+    {
+        let reader = ZByteReader::new(bytes);
         // stolen from imagers
         let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
             (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
@@ -325,14 +334,23 @@ impl ImageFormat {
         ];
 
         for (magic, decoder) in magic_bytes {
-            if bytes.starts_with(magic) {
-                return Some(decoder);
+            if (reader.has(magic.len()))
+                && reader.peek_at(0, magic.len()).unwrap().starts_with(magic)
+            {
+                return Some((decoder, reader.consume()));
             }
         }
         #[cfg(feature = "bmp")]
         {
-            if zune_bmp::probe_bmp(bytes) {
-                return Some(ImageFormat::BMP);
+            // get a slice reference
+            // bmp requires 15 bytes to determine if it is a valid one.
+            // so take 16 just to be safe
+            if reader.has(16) {
+                let reference = reader.peek_at(0, 16).unwrap();
+
+                if zune_bmp::probe_bmp(reference) {
+                    return Some((ImageFormat::BMP, reader.consume()));
+                }
             }
         }
 
@@ -578,7 +596,7 @@ impl Image {
     ) -> Result<Image, ImageErrors> {
         let file = std::fs::read(file)?;
 
-        Self::open_from_mem(&file, options)
+        Self::read(&file, options)
     }
     /// Open a new file from memory with the configured options
     ///  
@@ -592,13 +610,16 @@ impl Image {
     /// use zune_core::options::DecoderOptions;
     /// use zune_image::image::Image;
     /// // create a simple ppm p5 grayscale format
-    /// let image = Image::open_from_mem(b"P5 1 1 255 1",DecoderOptions::default());
+    /// let image = Image::read(b"P5 1 1 255 1",DecoderOptions::default());
     ///```
-    pub fn open_from_mem(src: &[u8], options: DecoderOptions) -> Result<Image, ImageErrors> {
+    pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
+    where
+        T: ZReaderTrait
+    {
         let decoder = ImageFormat::guess_format(src);
 
         if let Some(format) = decoder {
-            let mut image_decoder = format.get_decoder_with_options(src, options)?;
+            let mut image_decoder = format.0.get_decoder_with_options(format.1, options)?;
 
             image_decoder.decode()
         } else {

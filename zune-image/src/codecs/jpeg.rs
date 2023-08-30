@@ -29,7 +29,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T: ZReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
+impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
 

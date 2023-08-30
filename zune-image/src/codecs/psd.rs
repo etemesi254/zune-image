@@ -19,7 +19,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
-impl<T> DecoderTrait for PSDDecoder<T>
+impl<T> DecoderTrait<T> for PSDDecoder<T>
 where
     T: ZReaderTrait
 {

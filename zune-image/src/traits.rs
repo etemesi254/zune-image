@@ -6,6 +6,7 @@
 
 use log::trace;
 use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::options::EncoderOptions;
 
@@ -21,7 +22,7 @@ use crate::workflow::EncodeResult;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait {
+pub trait DecoderTrait<T: ZReaderTrait> {
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed

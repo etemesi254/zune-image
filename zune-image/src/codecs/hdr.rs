@@ -20,7 +20,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait for HdrDecoder<T>
+impl<T> DecoderTrait<T> for HdrDecoder<T>
 where
     T: ZReaderTrait
 {

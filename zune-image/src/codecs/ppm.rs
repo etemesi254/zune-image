@@ -84,7 +84,7 @@ impl EncoderTrait for PPMEncoder {
     }
 }
 
-impl<T> DecoderTrait for PPMDecoder<T>
+impl<T> DecoderTrait<T> for PPMDecoder<T>
 where
     T: ZReaderTrait
 {

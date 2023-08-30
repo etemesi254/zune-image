@@ -20,7 +20,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait for QoiDecoder<T>
+impl<T> DecoderTrait<T> for QoiDecoder<T>
 where
     T: ZReaderTrait
 {
