@@ -26,6 +26,10 @@ mozjpeg = "0.9.2"
 jpeg-decoder = "0.3.0"
 zune-jpeg = { version = "0.3.12", path = "../zune-jpeg" }
 
+#other format
+zune-image = { path = "../zune-image", features = ["all"] }
+image = { version = "0.24.6", default-features = false, features = ["bmp", "hdr"] }
+
 [dev-dependencies.criterion]
 version = "0.4.0"
 default-features = false
@@ -46,4 +50,8 @@ harness = false
 
 [[bench]]
 name = "decode_jpeg"
+harness = false
+
+[[bench]]
+name = "decode_hdr"
 harness = false
