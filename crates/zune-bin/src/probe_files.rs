@@ -31,7 +31,7 @@ pub fn probe_input_files(args: &ArgMatches) {
 
                     let file_contents = mmap.deref();
 
-                    if let Some(format) =
+                    if let Some((format, contents)) =
                         zune_image::codecs::ImageFormat::guess_format(file_contents)
                     {
                         // set to high to remove restrictions.
@@ -40,9 +40,8 @@ pub fn probe_input_files(args: &ArgMatches) {
                             .set_max_height(usize::MAX)
                             .set_max_width(usize::MAX);
 
-                        let mut decoder = format
-                            .get_decoder_with_options(file_contents, options)
-                            .unwrap();
+                        let mut decoder =
+                            format.get_decoder_with_options(contents, options).unwrap();
 
                         if let Ok(Some(metadata)) = decoder.read_headers() {
                             let real_metadata =

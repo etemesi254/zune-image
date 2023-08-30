@@ -55,6 +55,6 @@ impl IntoImage for ZuneFile {
             }
         };
 
-        Image::open_from_mem(data, self.options)
+        Image::read(data, self.options)
     }
 }

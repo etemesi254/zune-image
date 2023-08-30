@@ -53,7 +53,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         let mmap_opt = cmd_opts.mmap;
         let use_mmap = mmap_opt == MmapOptions::Auto || mmap_opt == MmapOptions::Always;
 
-        if let Some(format) = ImageFormat::guess_format(&buf) {
+        if let Some((format, _)) = ImageFormat::guess_format(&buf) {
             if format.has_decoder() {
                 workflow.add_decoder(ZuneFile::new(
                     in_file.to_os_string(),
