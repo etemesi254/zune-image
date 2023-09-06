@@ -27,7 +27,7 @@ use crate::filters::de_filter::{
 use crate::options::default_chunk_handler;
 use crate::utils::{
     add_alpha, convert_be_to_target_endian_u16, expand_bits_to_byte, expand_palette, expand_trns,
-    is_le
+    is_le, convert_u16_to_u8_slice
 };
 
 /// A palette entry.
@@ -777,11 +777,8 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         {
             &mut out_u8
         } else {
-            let (a, b, c) = bytemuck::pod_align_to_mut::<u16, u8>(&mut out_u16);
+            let b = convert_u16_to_u8_slice(&mut out_u16);
 
-            // a and c should be empty since we do not expect slop bytes on either edge
-            assert!(a.is_empty());
-            assert!(c.is_empty());
             assert_eq!(b.len(), new_len * 2); // length should be twice that of u8
             b
         };
