@@ -22,7 +22,6 @@ default = ["sse", "std"]
 zune-core = { path = "../zune-core", version = "0.2" }
 log = "0.4.17"
 zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
-bytemuck = { version = "1.13.1", default-features = false }
 
 [dev-dependencies]
 nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
