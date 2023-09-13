@@ -87,18 +87,16 @@ where
     /// to store decoded bytes into
     ///
     /// ## Returns
-    /// -  The size expected for a buffer of `&[u8]` which can
+    /// -  Some(usize) - The size expected for a buffer of `&[u8]` which can
     ///  hold the whole decoded bytes without overflow
+    /// - None: Indicates the headers weren't decoded or width*height*8 would overflow a usize
     pub fn output_buffer_size(&self) -> Option<usize> {
         if self.decoded_headers {
             Some(
                 (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
-                    .checked_mul(self.width)
-                    .unwrap()
-                    .checked_mul(self.height)
-                    .unwrap()
-                    .checked_mul(2 /*depth*/)
-                    .unwrap()
+                    .checked_mul(self.width)?
+                    .checked_mul(self.height)?
+                    .checked_mul(2 /*depth*/)?
             )
         } else {
             None
