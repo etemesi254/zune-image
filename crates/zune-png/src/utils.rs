@@ -355,9 +355,9 @@ pub fn convert_u16_to_u8_slice(slice: &mut [u16]) -> &mut [u8] {
     // Converting a u16 slice to a u8 slice is always correct because
     // the alignment of the target is smaller.
     unsafe {
-        std::slice::from_raw_parts_mut(
+        core::slice::from_raw_parts_mut(
             slice.as_ptr() as *mut u8,
-            slice.len().checked_mul(2).unwrap(),
+            slice.len().checked_mul(2).unwrap()
         )
     }
 }
