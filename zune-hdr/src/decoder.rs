@@ -261,19 +261,12 @@ where
     ///
     /// # Returns
     ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
-    ///  - `None`: Indicates the image was not decoded.
+    ///  - `None`: Indicates the image was not decoded or
+    /// `width*height*colorspace` calculation  overflows a usize
     ///
-    /// # Panics
-    /// In case `width*height*colorspace` calculation may overflow a usize
     pub fn output_buffer_size(&self) -> Option<usize> {
         if self.decoded_headers {
-            Some(
-                self.width
-                    .checked_mul(self.height)
-                    .unwrap()
-                    .checked_mul(3)
-                    .unwrap()
-            )
+            Some(self.width.checked_mul(self.height)?.checked_mul(3)?)
         } else {
             None
         }
