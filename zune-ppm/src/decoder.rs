@@ -197,7 +197,7 @@ where
 
         skip_spaces(&mut self.reader);
 
-        let mut byte_header = vec![0; 20];
+        let mut byte_header = Vec::with_capacity(20);
 
         let value_size = get_bytes_until_whitespace(&mut self.reader, &mut byte_header);
         let value = &byte_header[..value_size];
@@ -236,7 +236,7 @@ where
         let mut seen_max_val = false;
         let mut seen_tuple_type = false;
 
-        let mut byte_header = vec![0; 128];
+        let mut byte_header = Vec::with_capacity(20);
 
         'infinite: loop {
             if self.reader.eof() {
@@ -652,41 +652,30 @@ where
     T: ZReaderTrait
 {
     let start = z.get_position();
+    let mut end = start;
+    // clear out buffer for the next iteration
+    write_to.clear();
 
     while !z.eof() {
         let byte = z.get_u8();
+        write_to.push(byte);
+
         if byte.is_ascii_whitespace() {
+            // mark where the text ends
+            end = z.get_position();
             // skip any proceeding whitespace
             skip_spaces(z);
             break;
         }
+        // push the byte read
     }
-    let end = z.get_position();
-    let length = end - start;
-    if write_to.len() > length {
-        write_to.resize(length + 2, 0);
-    }
-    // rewind back to where we currently were
-    // then take that as a reference
-    z.read_exact(&mut write_to[..end - start]).unwrap();
-    // then bump up position to indicate we read those bytes
     // z.skip(end - start);
     end - start
 }
 
-// #[test]
-// fn test_pfm()
-// {
-//     let data = std::fs::read("/home/caleb/Downloads/memorial.pfm").unwrap();
-//
-//     let decoder = PPMDecoder::new(&data).decode().unwrap();
-//
-//     match decoder
-//     {
-//         DecodingResult::F32(z) =>
-//         {
-//             println!("{:?}", &z[0..10]);
-//         }
-//         _ => ()
-//     }
-// }
+#[test]
+fn test_pfm() {
+    let data = [80, 55, 48, 32, 32, 113, 32];
+
+    let decoder = PPMDecoder::new(&data).decode().unwrap();
+}
