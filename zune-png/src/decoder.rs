@@ -26,8 +26,8 @@ use crate::filters::de_filter::{
 };
 use crate::options::default_chunk_handler;
 use crate::utils::{
-    add_alpha, convert_be_to_target_endian_u16, expand_bits_to_byte, expand_palette, expand_trns,
-    is_le, convert_u16_to_u8_slice
+    add_alpha, convert_be_to_target_endian_u16, convert_u16_to_u8_slice, expand_bits_to_byte,
+    expand_palette, expand_trns, is_le
 };
 
 /// A palette entry.
