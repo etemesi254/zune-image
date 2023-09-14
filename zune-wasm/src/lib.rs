@@ -8,7 +8,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use log::{debug, error, info};
+use zune_core::log::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use zune_core::bit_depth::BitDepth;
 // use zune_core::colorspace::ColorSpace;

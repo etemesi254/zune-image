@@ -26,7 +26,7 @@
 //! when moving from `BitDepth::Eight` to `BitDepth::F32`, the library will automatically
 //! divide all pixels by `255.0` after converting them to f32's
 //!
-use log::trace;
+use zune_core::log::trace;
 use zune_core::bit_depth::{BitDepth, BitType};
 
 use crate::channel::Channel;

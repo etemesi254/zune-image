@@ -33,6 +33,7 @@
     clippy::wildcard_imports
 )]
 
+use zune_core::log::debug;
 use zune_core::options::DecoderOptions;
 
 use crate::decoder::IDCTPtr;

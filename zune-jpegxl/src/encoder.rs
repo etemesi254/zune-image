@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use core::cmp::{max, min};
 use core::marker::PhantomData;
 
-use log::{log_enabled, trace, Level};
+use zune_core::log::{log_enabled, trace, Level};
 use zune_core::bit_depth::BitDepth;
 use zune_core::options::EncoderOptions;
 

@@ -8,7 +8,7 @@
 
 use std::f32;
 
-use log::warn;
+use zune_core::log::warn;
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;

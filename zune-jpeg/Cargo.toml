@@ -17,11 +17,10 @@ crate-type = ["cdylib", "rlib"]
 x86 = []
 neon = []
 std = ["zune-core/std"]
+log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
 
-
 [dependencies]
-log = "0.4.11" # logging facilities
 zune-core = { path = "../zune-core", version = "0.2" }
 
 

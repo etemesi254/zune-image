@@ -9,7 +9,7 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use log::{error, trace};
+use zune_core::log::{error, trace};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
