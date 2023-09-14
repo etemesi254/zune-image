@@ -103,8 +103,6 @@
 #![macro_use]
 extern crate alloc;
 extern crate core;
-#[macro_use]
-extern crate log;
 
 pub use zune_core;
 

@@ -16,11 +16,11 @@ description = "A fast, correct and safe png decoder"
 [features]
 sse = []
 std = ["zune-core/std"]
+log = ["zune-core/log"]
 default = ["sse", "std"]
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.2" }
-log = "0.4.17"
 zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
 
 [dev-dependencies]

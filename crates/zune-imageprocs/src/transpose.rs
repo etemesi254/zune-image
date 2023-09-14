@@ -8,7 +8,7 @@
 
 use std::sync::Once;
 
-use log::trace;
+use zune_core::log::trace;
 
 use crate::transpose::scalar::transpose_scalar;
 

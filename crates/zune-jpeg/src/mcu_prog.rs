@@ -24,6 +24,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
+use zune_core::log::{warn, error, debug};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 
