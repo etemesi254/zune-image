@@ -115,8 +115,10 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             // it into account for padding purposes and the post processor
             // parses two rows per mcu width.
             //
-            //TODO: Check if this test works over time
+            // set coeff to be 2 to ensure that we increment two rows
+            // for every mcu processed also
             mcu_height /= self.h_max;
+            self.coeff = 2;
         }
 
         if self.input_colorspace.num_components() > self.components.len() {
@@ -382,7 +384,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             )?;
 
             // increment pointer to number of pixels written
-            *pixels_written += width * out_colorspace_components * 8 * self.h_max;
+            // see comments on coeff
+            *pixels_written += width * out_colorspace_components * 8 * self.coeff;
         }
 
         Ok(())
