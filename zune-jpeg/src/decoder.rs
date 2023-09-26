@@ -145,7 +145,8 @@ pub struct JpegDecoder<T: ZReaderTrait> {
     pub(crate) exif_data:        Option<Vec<u8>>,
 
     pub(crate) icc_data: Vec<ICCChunk>,
-    pub(crate) is_mjpeg: bool
+    pub(crate) is_mjpeg: bool,
+    pub(crate) coeff:    usize // Solves some weird bug :)
 }
 
 impl<T> JpegDecoder<T>
@@ -188,7 +189,8 @@ where
             seen_sof:          false,
             exif_data:         None,
             icc_data:          vec![],
-            is_mjpeg:          false
+            is_mjpeg:          false,
+            coeff:             1
         }
     }
     /// Decode a buffer already in memory
