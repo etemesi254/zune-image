@@ -260,6 +260,10 @@ fn frexp(s: f32) -> (f32, i32) {
     } else {
         let lg = fast_log2(abs(s));
         let lg_floor = floor(lg);
+        // Note: This is the only reason we need the standard library
+        // I haven't found a goof exp2 function, fast_exp2 doesn't work
+        // and libm/musl exp2 introduces visible color distortions and is slow, so for
+        // now let's stick to whatever the platform provides
         let x = (lg - lg_floor - 1.0).exp2();
         let exp = lg_floor + 1.0;
         (signum(s) * x, exp as i32)
