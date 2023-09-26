@@ -7,6 +7,7 @@
  */
 
 use clap::ArgMatches;
+use zune_core::colorspace::ColorSpace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
 pub mod global_options;
@@ -19,12 +20,18 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions {
     let max_height = *options.get_one::<usize>("max-height").unwrap();
     let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
     let strict_mode = *options.get_one::<bool>("strict").unwrap();
+    let jpeg_grayscale = *options.get_one::<bool>("jpeg-grayscale").unwrap_or(&false);
 
-    DecoderOptions::new_cmd()
+    let mut options = DecoderOptions::new_cmd()
         .set_max_height(max_height)
         .set_max_width(max_width)
         .set_use_unsafe(use_unsafe)
-        .set_strict_mode(strict_mode)
+        .set_strict_mode(strict_mode);
+
+    if jpeg_grayscale {
+        options = options.jpeg_set_out_colorspace(ColorSpace::Luma);
+    }
+    options
 }
 
 pub fn get_encoder_options(options: &ArgMatches) -> EncoderOptions {

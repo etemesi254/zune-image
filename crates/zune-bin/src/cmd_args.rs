@@ -8,8 +8,8 @@
 
 use std::ffi::OsString;
 
+use clap::{Arg, ArgAction, ArgGroup, Command, value_parser, ValueEnum};
 use clap::builder::PossibleValue;
-use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{
@@ -45,6 +45,7 @@ pub fn create_cmd_args() -> Command {
     let (options_args, option_group) = add_operations();
     let (filter_args, filter_group) = add_filters();
     let (encode_args, encode_group) = add_encode_options();
+    let (image_args, image_args_group) = add_image_specific_settings();
 
     Command::new("zune")
         .after_help(AFTER_HELP)
@@ -99,6 +100,8 @@ pub fn create_cmd_args() -> Command {
         .group(filter_group)
         .args(encode_args)
         .group(encode_group)
+        .args(image_args)
+        .group(image_args_group)
 }
 
 fn add_logging_options() -> [Arg; 4] {
@@ -406,6 +409,25 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
     let arg_group = ArgGroup::new(GROUP)
         .args(args.iter().map(|x| x.get_id()))
         .multiple(true);
+
+    (args.to_vec(), arg_group)
+}
+
+fn add_image_specific_settings() -> (Vec<Arg>, ArgGroup) {
+    static GROUP: &str = "Image Format Settings";
+
+    let mut args = [Arg::new("jpeg-grayscale")
+        .long("jpeg-grayscale")
+        .help("Load jpeg images as grayscale")
+        .action(ArgAction::SetTrue)
+        .help_heading(GROUP)
+        .group(GROUP)];
+
+    let arg_group = ArgGroup::new(GROUP)
+        .args(args.iter().map(|x| x.get_id()))
+        .multiple(true);
+
+    args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
     (args.to_vec(), arg_group)
 }
