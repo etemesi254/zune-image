@@ -18,5 +18,4 @@ license = "MIT OR Apache-2.0 OR Zlib"
 std = []
 
 [dependencies]
-bitflags = "2.1.0"
 serde = { version = "1.0.52", optional = true }
