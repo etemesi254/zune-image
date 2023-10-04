@@ -53,7 +53,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
-        let mcu_height;
+        let mut mcu_height;
 
         // memory location for decoded pixels for components
         let mut block: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
@@ -76,6 +76,24 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         } else {
             mcu_width = (self.info.width as usize + 7) / 8;
             mcu_height = (self.info.height as usize + 7) / 8;
+        }
+        if self.is_interleaved
+            && self.input_colorspace.num_components() > 1
+            && self.options.jpeg_get_out_colorspace().num_components() == 1
+            && (self.sub_sample_ratio == SampleRatios::V
+                || self.sub_sample_ratio == SampleRatios::HV)
+        {
+            // For a specific set of images, e.g interleaved,
+            // when converting from YcbCr to grayscale, we need to
+            // take into account mcu height since the MCU decoding needs to take
+            // it into account for padding purposes and the post processor
+            // parses two rows per mcu width.
+            //
+            // set coeff to be 2 to ensure that we increment two rows
+            // for every mcu processed also
+            mcu_height *= self.v_max;
+            mcu_height /= self.h_max;
+            self.coeff = 2;
         }
 
         mcu_width *= 64;
