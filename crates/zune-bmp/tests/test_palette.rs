@@ -27,8 +27,3 @@ fn decode(file: &String) -> Vec<u8> {
 //     let _ = decode(&path);
 // }
 //
-#[test]
-fn decode_palette_1bpp() {
-    let path = "/home/caleb/Documents/zune-image/test-images/bmp/rgb24.bmp".to_string();
-    let _ = decode(&path);
-}
