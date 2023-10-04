@@ -9,6 +9,7 @@
 use zune_core::colorspace::ColorSpace;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum BmpCompression {
     RGB,
     RLE8,
@@ -30,6 +31,7 @@ impl BmpCompression {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum BmpPixelFormat {
     None,
     RGBA,

@@ -36,7 +36,7 @@ pub(crate) unsafe fn unpremultiply_sse_f32(input: &mut [f32], alpha: &[f32]) {
         // remove effects of div by zero
         let result = _mm_andnot_ps(mask, div_result);
         // store
-        _mm_storeu_ps(chunk.as_mut_ptr(), result)
+        _mm_storeu_ps(chunk.as_mut_ptr(), result);
     }
     // handle remainder
     unpremultiply_f32_scalar(

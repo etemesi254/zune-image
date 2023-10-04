@@ -34,8 +34,8 @@
 
 use std::path::Path;
 
-use zune_core::log::trace;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::codecs;
@@ -596,7 +596,7 @@ impl Image {
     ) -> Result<Image, ImageErrors> {
         let file = std::fs::read(file)?;
 
-        Self::read(&file, options)
+        Self::read(file, options)
     }
     /// Open a new file from memory with the configured options
     ///  
