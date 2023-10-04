@@ -108,6 +108,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         if self.is_interleaved
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
+            && (self.sub_sample_ratio == SampleRatios::V
+                || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -117,6 +119,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             //
             // set coeff to be 2 to ensure that we increment two rows
             // for every mcu processed also
+            mcu_height *= self.v_max;
             mcu_height /= self.h_max;
             self.coeff = 2;
         }
