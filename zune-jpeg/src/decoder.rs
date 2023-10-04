@@ -13,9 +13,9 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::log::{trace, warn, error};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
 
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
@@ -494,7 +494,7 @@ where
                     }
                     length -= 5;
                 }
-                self.stream.skip((length - 2) as usize);
+                self.stream.skip(length.saturating_sub(2) as usize);
 
                 //parse_app(buf, m, &mut self.info)?;
             }
