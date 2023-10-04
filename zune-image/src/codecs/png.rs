@@ -16,6 +16,7 @@ use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
+use zune_core::log::warn;
 pub use zune_png::*;
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
@@ -153,7 +154,7 @@ impl EncoderTrait for PngEncoder {
                     if result.is_ok() {
                         encoder.add_exif_segment(buf.get_ref());
                     } else {
-                        log::warn!("Writing exif failed {:?}", result);
+                        warn!("Writing exif failed {:?}", result);
                     }
                 }
             }

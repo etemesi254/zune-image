@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use log::trace;
+use zune_core::log::trace;
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::gaussian_blur::{gaussian_blur_f32, gaussian_blur_u16, gaussian_blur_u8};
 

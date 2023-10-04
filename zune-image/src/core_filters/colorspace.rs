@@ -12,7 +12,7 @@
 //! This contains simple colorspace conversion routines
 //! that convert between different colorspaces in image
 //!
-use log::warn;
+use zune_core::log::warn;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 

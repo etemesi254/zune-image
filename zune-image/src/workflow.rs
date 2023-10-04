@@ -6,8 +6,8 @@
 
 use std::time::Instant;
 
-use log::Level::Trace;
-use log::{log_enabled, trace, Level};
+use zune_core::log::Level::Trace;
+use zune_core::log::{log_enabled, trace, Level};
 
 use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;

@@ -6,7 +6,7 @@
 
 use alloc::{format, vec};
 
-use log::{trace, warn};
+use zune_core::log::{trace, warn};
 use zune_core::bytestream::ZReaderTrait;
 use zune_inflate::DeflateDecoder;
 
