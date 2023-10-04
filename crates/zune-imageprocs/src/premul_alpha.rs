@@ -188,11 +188,11 @@ pub fn premultiply_f32(input: &mut [f32], alpha: &[f32]) {
 
 fn unpremultiply_f32_scalar(input: &mut [f32], alpha: &[f32]) {
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
-        if *al != 0.0 {
+        if *al == 0.0 {
+            *color = 0.0;
+        } else {
             // avoid div by zero
             *color /= *al;
-        } else {
-            *color = 0.0;
         }
     });
 }

@@ -9,7 +9,7 @@
 pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T]) {
     let angle = angle % 360.0;
 
-    if angle == 180.0 {
+    if (angle - 180.0).abs() < f32::EPSILON {
         // copy in image to out image
         out_image.copy_from_slice(in_image);
         rotate_180(out_image, width);

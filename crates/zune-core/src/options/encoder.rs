@@ -10,24 +10,14 @@ use crate::bit_depth::BitDepth;
 use crate::colorspace::ColorSpace;
 
 /// Encoder options that are flags
-#[derive(Copy, Debug, Clone)]
+#[derive(Copy, Debug, Clone, Default)]
 struct EncoderFlags {
     /// Whether JPEG images should be encoded as progressive images
     jpeg_encode_progressive: bool,
     /// Whether JPEG images should use optimized huffman tables
-    jpeg_optimize_huffman: bool,
+    jpeg_optimize_huffman:   bool,
     /// Whether to not preserve metadata across image transformations
-    image_strip_metadata: bool,
-}
-
-impl Default for EncoderFlags {
-    fn default() -> Self {
-        EncoderFlags {
-            jpeg_encode_progressive: false,
-            jpeg_optimize_huffman: false,
-            image_strip_metadata: false,
-        }
-    }
+    image_strip_metadata:    bool
 }
 
 /// Options shared by some of the encoders in
@@ -72,7 +62,7 @@ impl EncoderOptions {
     /// returns: EncoderOptions
     ///
     pub fn new(
-        width: usize, height: usize, colorspace: ColorSpace, depth: BitDepth,
+        width: usize, height: usize, colorspace: ColorSpace, depth: BitDepth
     ) -> EncoderOptions {
         EncoderOptions {
             width,
