@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use log::error;
+use zune_core::log::error;
 
 use crate::pad::{pad, PadMethod};
 use crate::traits::NumOps;

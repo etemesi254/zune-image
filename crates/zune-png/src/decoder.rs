@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
-use log::trace;
+use zune_core::log::trace;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;

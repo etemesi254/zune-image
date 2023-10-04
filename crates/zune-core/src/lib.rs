@@ -30,6 +30,12 @@
 #![macro_use]
 extern crate alloc;
 
+#[cfg(not(feature = "log"))]
+pub mod log;
+
+#[cfg(feature = "log")]
+pub use log;
+
 pub mod bit_depth;
 pub mod bytestream;
 pub mod colorspace;

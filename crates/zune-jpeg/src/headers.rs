@@ -14,6 +14,7 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use zune_core::log::{debug, trace, warn, error};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 

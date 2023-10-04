@@ -14,6 +14,8 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
+use zune_core::log::trace;
+
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::upsampler::upsample_no_op;

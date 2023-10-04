@@ -65,6 +65,7 @@ pub fn choose_ycbcr_to_rgb_convert_func(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
+        use zune_core::log::debug;
         if options.use_avx2() {
             debug!("Using AVX optimised color conversion functions");
 
