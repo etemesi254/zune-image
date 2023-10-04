@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+// #[macro_export] is required to make macros works across crates
+// but it always put the macro in the crate root.
+// #[doc(hidden)] + "pub use" is a workaround to namespace a macro.
+pub use crate::{
+    __debug as debug, __error as error, __info as info, __log_enabled as log_enabled,
+    __trace as trace, __warn as warn
+};
+
 #[repr(usize)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Level {
@@ -5,7 +21,7 @@ pub enum Level {
     Warn,
     Info,
     Debug,
-    Trace,
+    Trace
 }
 
 #[doc(hidden)]
@@ -14,29 +30,29 @@ macro_rules! __log_enabled {
     ($lvl:expr) => {{
         let _ = $lvl;
         false
-    }}
+    }};
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __error {
-    ($($arg:tt)+) => (
+    ($($arg:tt)+) => {
         #[cfg(feature = "std")]
         {
-            panic!($($arg)+);
+            //eprintln!($($arg)+);
         }
-    )
+    };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __warn {
-    ($($arg:tt)+) => (
+    ($($arg:tt)+) => {
         #[cfg(feature = "std")]
         {
-            panic!($($arg)+);
+            //eprintln!($($arg)+);
         }
-    )
+    };
 }
 
 #[doc(hidden)]
@@ -56,13 +72,3 @@ macro_rules! __debug {
 macro_rules! __trace {
     ($($arg:tt)+) => {};
 }
-
-// #[macro_export] is required to make macros works across crates
-// but it always put the macro in the crate root.
-// #[doc(hidden)] + "pub use" is a workaround to namespace a macro.
-pub use crate::__error as error;
-pub use crate::__warn as warn;
-pub use crate::__info as info;
-pub use crate::__debug as debug;
-pub use crate::__trace as trace;
-pub use crate::__log_enabled as log_enabled;
