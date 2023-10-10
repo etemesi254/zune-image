@@ -10,6 +10,18 @@ use pyo3::pyclass;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
+use zune_image::errors::ImageErrors;
+
+#[pyclass]
+pub struct PyImageErrors {
+    pub(crate) error: zune_image::errors::ImageErrors
+}
+
+impl From<ImageErrors> for PyImageErrors {
+    fn from(value: ImageErrors) -> Self {
+        PyImageErrors { error: value }
+    }
+}
 
 #[pyclass]
 #[allow(non_camel_case_types)]
@@ -42,6 +54,16 @@ impl PyImageFormats {
             PyImageFormats::Unknown => ImageFormat::Unknown
         }
     }
+    /// Return true if an image format has an encoder
+    /// otherwise return false
+    pub fn has_encoder(&self) -> bool {
+        self.to_imageformat().has_encoder()
+    }
+    /// Return true if an image format has a decoder
+    /// otherwise return false
+    pub fn has_decoder(&self) -> bool {
+        self.to_imageformat().has_decoder()
+    }
 }
 
 impl From<ImageFormat> for PyImageFormats {
@@ -63,6 +85,7 @@ impl From<ImageFormat> for PyImageFormats {
 }
 
 #[pyclass]
+#[derive(Copy, Clone)]
 pub enum PyImageColorSpace {
     RGB,
     RGBA,
@@ -74,6 +97,23 @@ pub enum PyImageColorSpace {
     BGRA,
     CMYK,
     Unknown
+}
+
+impl PyImageColorSpace {
+    pub(crate) fn to_colorspace(self) -> ColorSpace {
+        match self {
+            PyImageColorSpace::RGB => ColorSpace::RGB,
+            PyImageColorSpace::RGBA => ColorSpace::RGBA,
+            PyImageColorSpace::Luma => ColorSpace::Luma,
+            PyImageColorSpace::LumaA => ColorSpace::LumaA,
+            PyImageColorSpace::Unexposed => ColorSpace::Unknown,
+            PyImageColorSpace::YCbCr => ColorSpace::YCbCr,
+            PyImageColorSpace::BGR => ColorSpace::BGR,
+            PyImageColorSpace::BGRA => ColorSpace::BGRA,
+            PyImageColorSpace::CMYK => ColorSpace::CMYK,
+            PyImageColorSpace::Unknown => ColorSpace::Unknown
+        }
+    }
 }
 
 impl From<ColorSpace> for PyImageColorSpace {
