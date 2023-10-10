@@ -7,11 +7,12 @@
  */
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
+use zune_image::filters::crop::Crop;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 use zune_png::zune_core::options::DecoderOptions;
 
-use crate::py_enums::PyImageErrors;
+use crate::py_enums::{PyImageColorSpace, PyImageDepth, PyImageErrors, PyImageFormats};
 
 #[pyclass]
 #[derive(Clone)]
