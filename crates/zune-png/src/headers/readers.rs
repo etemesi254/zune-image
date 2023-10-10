@@ -6,8 +6,8 @@
 
 use alloc::{format, vec};
 
-use zune_core::log::{trace, warn};
 use zune_core::bytestream::ZReaderTrait;
+use zune_core::log::{trace, warn};
 use zune_inflate::DeflateDecoder;
 
 use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};

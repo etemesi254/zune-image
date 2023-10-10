@@ -98,16 +98,15 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::log::{trace, warn};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 
 use crate::common::{BmpCompression, BmpPixelFormat};
 use crate::utils::expand_bits_to_byte;
 use crate::BmpDecoderErrors;
-use crate::BmpDecoderErrors::GenericStatic;
 
 /// Probe some bytes to see
 /// if they consist of a BMP image
@@ -146,6 +145,7 @@ struct PaletteEntry {
     alpha: u8
 }
 
+/// A BMP decoder.
 pub struct BmpDecoder<T>
 where
     T: ZReaderTrait
@@ -377,7 +377,7 @@ where
             }
         };
         if self.pix_fmt == BmpPixelFormat::None {
-            return Err(GenericStatic("Unsupported Pixel format"));
+            return Err(BmpDecoderErrors::GenericStatic("Unsupported Pixel format"));
         }
 
         let p = self.hsize.wrapping_sub(self.ihszie).wrapping_sub(14);

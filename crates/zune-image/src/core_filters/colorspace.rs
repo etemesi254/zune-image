@@ -12,9 +12,9 @@
 //! This contains simple colorspace conversion routines
 //! that convert between different colorspaces in image
 //!
-use zune_core::log::warn;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
+use zune_core::log::warn;
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{rgb_to_grayscale_u16, rgb_to_grayscale_u8};

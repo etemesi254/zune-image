@@ -8,8 +8,8 @@
 
 //! Change image from pre-multiplied alpha to
 //! un-premultiplied alpha and vice versa
-use zune_core::log::warn;
 use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::log::warn;
 use zune_imageprocs::premul_alpha::{
     create_unpremul_table_u16, create_unpremul_table_u8, premultiply_f32, premultiply_u16,
     premultiply_u8, unpremultiply_f32, unpremultiply_u16, unpremultiply_u8

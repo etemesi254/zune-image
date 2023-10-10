@@ -8,8 +8,8 @@
 
 #![cfg(feature = "metadata")]
 
-use zune_core::log::warn;
 use zune_core::bit_depth::BitType;
+use zune_core::log::warn;
 
 use crate::errors::ImageErrors;
 use crate::filters::flip::Flip;
