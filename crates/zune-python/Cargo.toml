@@ -1,0 +1,16 @@
+[package]
+name = "zune-python"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "zune_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.19.0"
+zune-png = { path = "../zune-png" }
+zune-jpeg = { path = "../zune-jpeg" }
+zune-image = { path = "../zune-image" }
+zune-core = { path = "../zune-core" }

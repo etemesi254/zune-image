@@ -36,6 +36,7 @@
       <sourceFolder url="file://$MODULE_DIR$/zune-hdr/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/zune-bmp/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/zune-bmp/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/zune-python/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/zune-jpeg/target" />
     </content>
