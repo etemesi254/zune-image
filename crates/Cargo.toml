@@ -32,7 +32,8 @@ members = [
     # Benchmarking
     "zune-benches",
     # WASM
-    "zune-wasm"
+    "zune-wasm",
+    "zune-python"
 
 ]
 
