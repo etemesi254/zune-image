@@ -1,0 +1,115 @@
+/*
+ * Copyright (c) 2023.
+ *
+ * This software is free software;
+ *
+ * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
+ */
+
+use pyo3::pyclass;
+use zune_core::bit_depth::BitDepth;
+use zune_core::colorspace::ColorSpace;
+use zune_image::codecs::ImageFormat;
+
+#[pyclass]
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone)]
+pub enum PyImageFormats {
+    PNG,
+    JPEG,
+    BMP,
+    PPM,
+    PSD,
+    FarbFeld,
+    Qoi,
+    JPEG_XL,
+    HDR,
+    Unknown
+}
+
+impl PyImageFormats {
+    pub fn to_imageformat(self) -> ImageFormat {
+        match self {
+            PyImageFormats::PNG => ImageFormat::PNG,
+            PyImageFormats::JPEG => ImageFormat::JPEG,
+            PyImageFormats::BMP => ImageFormat::BMP,
+            PyImageFormats::PPM => ImageFormat::PPM,
+            PyImageFormats::PSD => ImageFormat::PSD,
+            PyImageFormats::FarbFeld => ImageFormat::Farbfeld,
+            PyImageFormats::Qoi => ImageFormat::QOI,
+            PyImageFormats::JPEG_XL => ImageFormat::JPEG_XL,
+            PyImageFormats::HDR => ImageFormat::HDR,
+            PyImageFormats::Unknown => ImageFormat::Unknown
+        }
+    }
+}
+
+impl From<ImageFormat> for PyImageFormats {
+    fn from(value: ImageFormat) -> Self {
+        return match value {
+            ImageFormat::JPEG => PyImageFormats::JPEG,
+            ImageFormat::PNG => PyImageFormats::PNG,
+            ImageFormat::PPM => PyImageFormats::PPM,
+            ImageFormat::PSD => PyImageFormats::PSD,
+            ImageFormat::Farbfeld => PyImageFormats::FarbFeld,
+            ImageFormat::QOI => PyImageFormats::Qoi,
+            ImageFormat::JPEG_XL => PyImageFormats::JPEG_XL,
+            ImageFormat::HDR => PyImageFormats::HDR,
+            ImageFormat::BMP => PyImageFormats::BMP,
+            ImageFormat::Unknown => PyImageFormats::Unknown,
+            _ => PyImageFormats::Unknown
+        };
+    }
+}
+
+#[pyclass]
+pub enum PyImageColorSpace {
+    RGB,
+    RGBA,
+    Luma,
+    LumaA,
+    Unexposed,
+    YCbCr,
+    BGR,
+    BGRA,
+    CMYK,
+    Unknown
+}
+
+impl From<ColorSpace> for PyImageColorSpace {
+    fn from(value: ColorSpace) -> Self {
+        return match value {
+            ColorSpace::RGB => PyImageColorSpace::RGB,
+            ColorSpace::RGBA => PyImageColorSpace::RGBA,
+            ColorSpace::YCbCr => PyImageColorSpace::YCbCr,
+            ColorSpace::Luma => PyImageColorSpace::Luma,
+            ColorSpace::LumaA => PyImageColorSpace::LumaA,
+            ColorSpace::YCCK => PyImageColorSpace::Unexposed,
+            ColorSpace::CMYK => PyImageColorSpace::CMYK,
+            ColorSpace::BGR => PyImageColorSpace::BGR,
+            ColorSpace::BGRA => PyImageColorSpace::BGRA,
+            ColorSpace::Unknown => PyImageColorSpace::Unknown,
+            _ => PyImageColorSpace::Unknown
+        };
+    }
+}
+
+#[pyclass]
+pub enum PyImageDepth {
+    Eight,
+    Sixteen,
+    F32,
+    Unknown
+}
+
+impl From<BitDepth> for PyImageDepth {
+    fn from(value: BitDepth) -> Self {
+        match value {
+            BitDepth::Eight => PyImageDepth::Eight,
+            BitDepth::Sixteen => PyImageDepth::Sixteen,
+            BitDepth::Float32 => PyImageDepth::F32,
+            BitDepth::Unknown => PyImageDepth::Unknown,
+            _ => PyImageDepth::Unknown
+        }
+    }
+}
