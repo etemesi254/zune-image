@@ -313,48 +313,7 @@ impl ImageFormat {
     where
         T: ZReaderTrait
     {
-        let reader = ZByteReader::new(bytes);
-        // stolen from imagers
-        let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
-            (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
-            // Of course with jpg we need to relax our definition of what is a jpeg
-            // the best identifier would be 0xFF,0xd8 0xff but nop, some images exist
-            // which do not have that
-            (&[0xff, 0xd8], ImageFormat::JPEG),
-            (b"P5", ImageFormat::PPM),
-            (b"P6", ImageFormat::PPM),
-            (b"P7", ImageFormat::PPM),
-            (b"Pf", ImageFormat::PPM),
-            (b"PF", ImageFormat::PPM),
-            (b"8BPS", ImageFormat::PSD),
-            (b"farbfeld", ImageFormat::Farbfeld),
-            (b"qoif", ImageFormat::QOI),
-            (b"#?RADIANCE\n", ImageFormat::HDR),
-            (b"#?RGBE\n", ImageFormat::HDR),
-        ];
-
-        for (magic, decoder) in magic_bytes {
-            if (reader.has(magic.len()))
-                && reader.peek_at(0, magic.len()).unwrap().starts_with(magic)
-            {
-                return Some((decoder, reader.consume()));
-            }
-        }
-        #[cfg(feature = "bmp")]
-        {
-            // get a slice reference
-            // bmp requires 15 bytes to determine if it is a valid one.
-            // so take 16 just to be safe
-            if reader.has(16) {
-                let reference = reader.peek_at(0, 16).unwrap();
-
-                if zune_bmp::probe_bmp(reference) {
-                    return Some((ImageFormat::BMP, reader.consume()));
-                }
-            }
-        }
-
-        None
+        guess_format(bytes)
     }
 
     pub fn get_encoder_for_extension<P: AsRef<str>>(
@@ -620,12 +579,60 @@ impl Image {
 
         if let Some(format) = decoder {
             let mut image_decoder = format.0.get_decoder_with_options(format.1, options)?;
-
-            image_decoder.decode()
+            // save format
+            let mut image = image_decoder.decode()?;
+            image.metadata.format = Some(format.0);
+            Ok(image)
         } else {
             Err(ImageErrors::ImageDecoderNotImplemented(
                 ImageFormat::Unknown
             ))
         }
     }
+}
+
+pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
+where
+    T: ZReaderTrait
+{
+    let reader = ZByteReader::new(bytes);
+    // stolen from imagers
+    let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
+        (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
+        // Of course with jpg we need to relax our definition of what is a jpeg
+        // the best identifier would be 0xFF,0xd8 0xff but nop, some images exist
+        // which do not have that
+        (&[0xff, 0xd8], ImageFormat::JPEG),
+        (b"P5", ImageFormat::PPM),
+        (b"P6", ImageFormat::PPM),
+        (b"P7", ImageFormat::PPM),
+        (b"Pf", ImageFormat::PPM),
+        (b"PF", ImageFormat::PPM),
+        (b"8BPS", ImageFormat::PSD),
+        (b"farbfeld", ImageFormat::Farbfeld),
+        (b"qoif", ImageFormat::QOI),
+        (b"#?RADIANCE\n", ImageFormat::HDR),
+        (b"#?RGBE\n", ImageFormat::HDR),
+    ];
+
+    for (magic, decoder) in magic_bytes {
+        if (reader.has(magic.len())) && reader.peek_at(0, magic.len()).unwrap().starts_with(magic) {
+            return Some((decoder, reader.consume()));
+        }
+    }
+    #[cfg(feature = "bmp")]
+    {
+        // get a slice reference
+        // bmp requires 15 bytes to determine if it is a valid one.
+        // so take 16 just to be safe
+        if reader.has(16) {
+            let reference = reader.peek_at(0, 16).unwrap();
+
+            if zune_bmp::probe_bmp(reference) {
+                return Some((ImageFormat::BMP, reader.consume()));
+            }
+        }
+    }
+
+    None
 }

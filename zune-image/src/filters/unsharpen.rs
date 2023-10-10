@@ -6,8 +6,8 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use zune_core::log::trace;
 use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
 use zune_imageprocs::unsharpen::{unsharpen_u16, unsharpen_u8};
 
 use crate::errors::ImageErrors;

@@ -8,8 +8,8 @@
 
 #![allow(dead_code)]
 
-use zune_core::log::trace;
 use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
 use zune_imageprocs::convolve::convolve;
 
 use crate::channel::Channel;

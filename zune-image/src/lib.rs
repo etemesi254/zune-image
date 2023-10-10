@@ -20,6 +20,7 @@
 //!
 //!| Feature      | Decoder       | Encoder        |
 //!|--------------|---------------|----------------|
+//!| bmp          | zune-bmp      |     -          |
 //!| jpeg         | zune-jpeg     | [jpeg-encoder] |
 //!| png          | zune-png      | zune-png       |
 //!| ppm          | zune-ppm      | zune-ppm       |

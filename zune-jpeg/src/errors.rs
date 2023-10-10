@@ -76,7 +76,7 @@ impl Debug for DecodeErrors {
             Self::SofError(ref reason) => write!(f, "Error parsing SOF segment. Reason:{reason}"),
             Self::IllegalMagicBytes(bytes) =>
             {
-                write!(f, "Error parsing image. Illegal start bytes:{bytes}")
+                write!(f, "Error parsing image. Illegal start bytes:{bytes:X}")
             }
             Self::MCUError(ref reason) => write!(f, "Error in decoding MCU. Reason {reason}"),
             Self::Unsupported(ref image_type) =>

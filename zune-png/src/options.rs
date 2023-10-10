@@ -8,8 +8,8 @@
 
 use alloc::format;
 
-use zune_core::log::trace;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::log::trace;
 
 use crate::error::PngDecodeErrors;
 

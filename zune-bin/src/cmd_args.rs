@@ -8,8 +8,8 @@
 
 use std::ffi::OsString;
 
-use clap::{Arg, ArgAction, ArgGroup, Command, value_parser, ValueEnum};
 use clap::builder::PossibleValue;
+use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{

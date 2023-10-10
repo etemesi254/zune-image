@@ -14,9 +14,9 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use zune_core::log::{debug, trace, warn, error};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::{debug, error, trace, warn};
 
 use crate::components::Components;
 use crate::decoder::{ICCChunk, JpegDecoder, MAX_COMPONENTS};

@@ -9,9 +9,9 @@
 use alloc::{format, vec};
 use core::cmp::min;
 
-use zune_core::log::{warn, error, trace};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;

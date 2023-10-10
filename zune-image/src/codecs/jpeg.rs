@@ -15,10 +15,10 @@
 //! The decoder and encoder both support metadata extraction and saving.
 //!
 use jpeg_encoder::{ColorType, EncodingError};
-use zune_core::log::warn;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 pub use zune_jpeg::{ImageInfo, JpegDecoder};

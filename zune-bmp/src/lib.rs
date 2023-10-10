@@ -23,6 +23,12 @@
 //! # Unsupported formats
 //! - Embedded PNG and JPEGs
 //!
+//! # Usage
+//! ```no_run
+//! use zune_bmp::BmpDecoder;
+//!
+//! let decoder:Vec<u8> = BmpDecoder::new(b"BMP").decode().unwrap();
+//! ```
 //!
 //! # Security
 //!

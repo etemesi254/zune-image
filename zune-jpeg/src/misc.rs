@@ -13,9 +13,9 @@ use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
-use zune_core::log::trace;
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::trace;
 
 use crate::components::SampleRatios;
 use crate::errors::DecodeErrors;

@@ -152,7 +152,7 @@ impl Image {
     /// For images using anything larger than 8 bit,
     /// u8 as native endian is used
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
-    pub fn to_u8(&self) -> Vec<Vec<u8>> {
+    pub(crate) fn to_u8(&self) -> Vec<Vec<u8>> {
         let colorspace = self.get_colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
@@ -165,7 +165,16 @@ impl Image {
             todo!("Unimplemented")
         }
     }
-    pub fn to_u8_be(&self) -> Vec<Vec<u8>> {
+    pub fn flatten_to_u8(&self) -> Vec<Vec<u8>> {
+        return if self.get_depth() == BitDepth::Eight {
+            self.flatten_frames::<u8>()
+        } else {
+            let mut im_clone = self.clone();
+            Depth::new(BitDepth::Eight).execute(&mut im_clone).unwrap();
+            im_clone.flatten_frames::<u8>()
+        };
+    }
+    pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
         let colorspace = self.get_colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
@@ -199,7 +208,7 @@ impl Image {
         self.metadata.set_dimensions(width, height);
     }
 
-    pub fn set_colorspace(&mut self, colorspace: ColorSpace) {
+    pub(crate) fn set_colorspace(&mut self, colorspace: ColorSpace) {
         self.metadata.set_colorspace(colorspace);
     }
 
