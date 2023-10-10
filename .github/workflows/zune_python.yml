@@ -37,11 +37,6 @@ jobs:
           args: --release --out dist --find-interpreter
           sccache: 'true'
           manylinux: auto
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: dist
 
   windows:
     runs-on: windows-latest
@@ -60,11 +55,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: dist
+
 
   macos:
     runs-on: macos-latest
@@ -82,10 +73,4 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           sccache: 'true'
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: dist
-
 
