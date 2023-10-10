@@ -29,9 +29,15 @@ In [21]: %timeit zune_python.decode_image(data)
 
 # Steps
 
-1. Clone the repo `git clone https://github.com/etemesi254/zune-image`
-2. cd into the repo and into the zune-python repository `cd ./zune-image/zune-python`
-3. Create a virtual environment for the repo
+1. Clone the repo
+```shell
+git clone https://github.com/etemesi254/zune-image
+```
+4. cd into the repo and into the zune-python repository
+```
+shell cd ./zune-image/zune-python
+```
+6. Create a virtual environment for the repo
 
 ```shell
 python -m venv .env
@@ -47,7 +53,7 @@ pip install maturin
 5. Call `maturin develop --release` This will build the project with optimizations turned
 
 ```shell
-maturin develop
+maturin develop --release
 ```
 
 Wait until you see
