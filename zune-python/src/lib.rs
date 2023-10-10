@@ -24,10 +24,9 @@ fn zune_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyImage>()?;
     m.add_class::<PyImageDepth>()?;
 
-    m.add_function(wrap_pyfunction!(decode_jpeg, m)?)?;
     m.add_function(wrap_pyfunction!(guess_format, m)?)?;
     m.add_function(wrap_pyfunction!(decode_image, m)?)?;
-    m.add_function(wrap_pyfunction!(decode_png, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_file, m)?)?;
 
     Ok(())
 }

@@ -5,6 +5,8 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+use std::fs::read;
+
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_image::filters::crop::Crop;
@@ -199,4 +201,15 @@ impl From<PyImageErrors> for pyo3::PyErr {
     fn from(value: PyImageErrors) -> Self {
         PyErr::new::<PyException, _>(format!("{:?}", value.error))
     }
+}
+
+/// Decode a file path containing an image
+#[pyfunction]
+pub fn decode_file(file: String) -> PyResult<PyImage> {
+    return match read(file) {
+        Ok(bytes) => Ok(PyImage::new(
+            Image::read(bytes, DecoderOptions::new_fast()).map_err(|x| PyImageErrors::from(x))?
+        )),
+        Err(e) => Err(PyErr::new::<PyException, _>(format!("{}", e)))
+    };
 }
