@@ -87,29 +87,31 @@ impl PyImage {
     /// - in_place: Whether to perform the conversion in place or to create a copy and convert that
     ///
     /// # Returns
-    /// - Nothing on success, on error returns error that occurred
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
     pub fn convert_colorspace(
         &mut self, to: PyImageColorSpace, in_place: bool
     ) -> PyResult<Option<PyImage>> {
         let color = to.to_colorspace();
 
-        if in_place {
-            if let Err(e) = self.image.convert_color(color) {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = image.image.convert_color(color) {
                 return Err(PyErr::new::<PyException, _>(format!(
-                    "Error encoding: {:?}",
+                    "Error converting: {:?}",
                     e
                 )));
             }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
             Ok(None)
         } else {
             let mut im_clone = self.clone();
-            if let Err(e) = im_clone.image.convert_color(color) {
-                return Err(PyErr::new::<PyException, _>(format!(
-                    "Error encoding: {:?}",
-                    e
-                )));
-            }
+            exec(&mut im_clone)?;
+
             Ok(Some(im_clone))
         }
     }
@@ -164,16 +166,18 @@ impl PyImage {
     pub fn crop(
         &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool
     ) -> PyResult<Option<PyImage>> {
-        return if in_place {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
             Crop::new(width, height, x, y)
-                .execute(&mut self.image)
+                .execute(&mut image.image)
                 .map_err(|x| PyImageErrors::from(x))?;
+            Ok(())
+        };
+        return if in_place {
+            exec(self)?;
             Ok(None)
         } else {
             let mut im_clone = self.clone();
-            Crop::new(width, height, x, y)
-                .execute(&mut im_clone.image)
-                .map_err(|x| PyImageErrors::from(x))?;
+            exec(&mut im_clone)?;
             Ok(Some(im_clone))
         };
     }
