@@ -72,6 +72,17 @@ impl OperationsTrait for Crop {
                     );
                     *channel = new_vec;
                 }
+                BitType::F32 => {
+                    crop::<f32>(
+                        channel.reinterpret_as().unwrap(),
+                        old_width,
+                        new_vec.reinterpret_as_mut().unwrap(),
+                        self.width,
+                        self.height,
+                        self.x,
+                        self.y
+                    );
+                }
                 _ => todo!()
             }
         }
