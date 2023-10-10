@@ -82,8 +82,6 @@ pub fn crop<T: Copy>(
         return;
     }
 
-    assert!(in_width <= out_width);
-
     for (single_in_width, single_out_width) in in_image
         .chunks_exact(in_width)
         .skip(y)
