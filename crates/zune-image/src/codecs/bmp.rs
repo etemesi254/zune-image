@@ -11,8 +11,10 @@ use zune_bmp::{BmpDecoder, BmpDecoderErrors};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 
+use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<T> DecoderTrait<T> for BmpDecoder<T>
@@ -37,6 +39,24 @@ where
 
     fn get_name(&self) -> &'static str {
         "BMP Decoder"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
+        self.decode_headers()?;
+
+        let (width, height) = self.get_dimensions().unwrap();
+        let depth = self.get_depth();
+
+        let metadata = ImageMetadata {
+            format: Some(ImageFormat::BMP),
+            colorspace: self.get_colorspace().expect("Impossible"),
+            depth: depth,
+            width: width,
+            height: height,
+            ..Default::default()
+        };
+
+        Ok(Some(metadata))
     }
 }
 
