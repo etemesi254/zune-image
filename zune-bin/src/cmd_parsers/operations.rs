@@ -104,7 +104,7 @@ pub fn parse_options<T: IntoImage>(
         let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
 
         // parse first one as radius
-        let radius = str::parse::<u16>(val[0]).map_err(|x| x.to_string())?;
+        let radius = str::parse::<f32>(val[0]).map_err(|x| x.to_string())?;
         let thresh_mode = ThresholdMethod::from_string_result(val[1])?;
         let threshold = Threshold::new(radius, thresh_mode);
 
