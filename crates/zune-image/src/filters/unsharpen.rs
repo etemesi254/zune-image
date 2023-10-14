@@ -29,7 +29,7 @@ impl Unsharpen {
     /// Create a new unsharp mask
     ///
     /// # Arguments
-    /// - sigma: This value is passed to the gaussian filter,constult [it's documentation](crate::filters::gaussian_blur::GaussianBlur)
+    /// - sigma: This value is passed to the gaussian filter,consult [it's documentation](crate::filters::gaussian_blur::GaussianBlur)
     /// on how to use it
     ///
     /// - threshold: If the result of the blur and the initial image is greater than this,  add the difference, otherwise
