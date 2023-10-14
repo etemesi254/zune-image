@@ -22,6 +22,11 @@ pub struct StretchContrast {
 }
 
 impl StretchContrast {
+    /// Create a new stretch contrast filter
+    ///
+    /// # Arguments
+    /// - lower: Lower minimum value for which pixels below this are clamped to the value
+    /// - upper: Upper maximum value for which pixels above are clamped to the value
     pub fn new(lower: u16, upper: u16) -> StretchContrast {
         StretchContrast { lower, upper }
     }
@@ -38,18 +43,23 @@ impl OperationsTrait for StretchContrast {
         for channel in image.get_channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => stretch_contrast(
-                    channel.reinterpret_as_mut::<u8>().unwrap(),
+                    channel.reinterpret_as_mut::<u8>()?,
                     self.lower as u8,
                     self.upper as u8,
                     u32::from(depth.max_value())
-                ),
+                )?,
                 BitType::U16 => stretch_contrast(
-                    channel.reinterpret_as_mut::<u16>().unwrap(),
+                    channel.reinterpret_as_mut::<u16>()?,
                     self.lower,
                     self.upper,
                     u32::from(depth.max_value())
-                ),
-                _ => todo!()
+                )?,
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
         Ok(())

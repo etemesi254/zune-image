@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+/// Flop operation.
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::flop::flop;
 
@@ -13,11 +13,19 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Rearrange the pixels up side down
+/// Creates a horizontal mirror image by reflecting the pixels around the central y-axis
+///```text
+///old image     new image
+///┌─────────┐   ┌──────────┐
+///│a b c d e│   │e d b c a │
+///│f g h i j│   │j i h g f │
+///└─────────┘   └──────────┘
+///```
 #[derive(Default)]
 pub struct Flop;
 
 impl Flop {
+    /// Create a new flop implementation
     pub fn new() -> Flop {
         Self::default()
     }
@@ -35,15 +43,20 @@ impl OperationsTrait for Flop {
         for channel in image.get_channels_mut(false) {
             match depth.bit_type() {
                 BitType::U8 => {
-                    flop(channel.reinterpret_as_mut::<u8>().unwrap(), width);
+                    flop(channel.reinterpret_as_mut::<u8>()?, width);
                 }
                 BitType::U16 => {
-                    flop(channel.reinterpret_as_mut::<u16>().unwrap(), width);
+                    flop(channel.reinterpret_as_mut::<u16>()?, width);
                 }
                 BitType::F32 => {
-                    flop(channel.reinterpret_as_mut::<f32>().unwrap(), width);
+                    flop(channel.reinterpret_as_mut::<f32>()?, width);
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 

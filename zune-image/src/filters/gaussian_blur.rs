@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+/// Gaussian blur filter
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_imageprocs::gaussian_blur::{gaussian_blur_f32, gaussian_blur_u16, gaussian_blur_u8};
@@ -14,13 +14,24 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Perform a gaussian blur
+/// Perform a gaussian blur.
+///
+///
+/// This filter doesn't perform a true gaussian filter but approximates it using
+/// a series of fast box filters.
+///
+/// You can read more about this [here](https://fgiesen.wordpress.com/2012/07/30/fast-blurs-1/)
+///
 #[derive(Default)]
 pub struct GaussianBlur {
     sigma: f32
 }
 
 impl GaussianBlur {
+    /// Create a new gaussian blur filter
+    ///
+    /// # Arguments
+    /// - sigma: How much to blur by.
     pub fn new(sigma: f32) -> GaussianBlur {
         GaussianBlur { sigma }
     }
@@ -45,7 +56,7 @@ impl OperationsTrait for GaussianBlur {
 
                     for channel in image.get_channels_mut(false) {
                         gaussian_blur_u8(
-                            channel.reinterpret_as_mut::<u8>().unwrap(),
+                            channel.reinterpret_as_mut::<u8>()?,
                             &mut temp,
                             width,
                             height,
@@ -58,7 +69,7 @@ impl OperationsTrait for GaussianBlur {
 
                     for channel in image.get_channels_mut(false) {
                         gaussian_blur_u16(
-                            channel.reinterpret_as_mut::<u16>().unwrap(),
+                            channel.reinterpret_as_mut::<u16>()?,
                             &mut temp,
                             width,
                             height,
@@ -70,14 +81,19 @@ impl OperationsTrait for GaussianBlur {
                     let mut temp = vec![0.0; width * height];
 
                     gaussian_blur_f32(
-                        channel.reinterpret_as_mut().unwrap(),
+                        channel.reinterpret_as_mut()?,
                         &mut temp,
                         width,
                         height,
                         self.sigma
                     );
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 
@@ -85,46 +101,60 @@ impl OperationsTrait for GaussianBlur {
         {
             trace!("Running gaussian blur in multithreaded mode");
             std::thread::scope(|s| {
+                let mut errors = vec![];
                 // blur each channel on a separate thread
                 for channel in image.get_channels_mut(false) {
-                    s.spawn(|| match depth.bit_type() {
+                    let result = s.spawn(|| match depth.bit_type() {
                         BitType::U8 => {
                             let mut temp = vec![0; width * height];
 
                             gaussian_blur_u8(
-                                channel.reinterpret_as_mut::<u8>().unwrap(),
+                                channel.reinterpret_as_mut::<u8>()?,
                                 &mut temp,
                                 width,
                                 height,
                                 self.sigma
                             );
+                            Ok(())
                         }
                         BitType::U16 => {
                             let mut temp = vec![0; width * height];
 
                             gaussian_blur_u16(
-                                channel.reinterpret_as_mut::<u16>().unwrap(),
+                                channel.reinterpret_as_mut::<u16>()?,
                                 &mut temp,
                                 width,
                                 height,
                                 self.sigma
                             );
+                            Ok(())
                         }
                         BitType::F32 => {
                             let mut temp = vec![0.0; width * height];
 
                             gaussian_blur_f32(
-                                channel.reinterpret_as_mut().unwrap(),
+                                channel.reinterpret_as_mut()?,
                                 &mut temp,
                                 width,
                                 height,
                                 self.sigma
                             );
+                            Ok(())
                         }
-                        _ => todo!()
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d
+                            ))
+                        }
                     });
+                    errors.push(result);
                 }
-            });
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
         }
 
         Ok(())

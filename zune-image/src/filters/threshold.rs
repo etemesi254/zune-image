@@ -60,17 +60,17 @@ impl OperationsTrait for Threshold {
         for channel in image.get_channels_mut(true) {
             match depth.bit_type() {
                 BitType::U16 => threshold(
-                    channel.reinterpret_as_mut::<u16>().unwrap(),
+                    channel.reinterpret_as_mut::<u16>()?,
                     self.threshold as u16,
                     self.method
                 ),
                 BitType::U8 => threshold(
-                    channel.reinterpret_as_mut::<u8>().unwrap(),
+                    channel.reinterpret_as_mut::<u8>()?,
                     self.threshold as u8,
                     self.method
                 ),
                 BitType::F32 => threshold(
-                    channel.reinterpret_as_mut::<f32>().unwrap(),
+                    channel.reinterpret_as_mut::<f32>()?,
                     self.threshold,
                     self.method
                 ),

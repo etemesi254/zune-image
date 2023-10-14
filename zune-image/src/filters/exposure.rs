@@ -44,24 +44,29 @@ impl OperationsTrait for Exposure {
         for channel in image.get_channels_mut(true) {
             match bit_type {
                 BitType::U8 => {
-                    let raw_px = channel.reinterpret_as_mut::<u8>().unwrap();
+                    let raw_px = channel.reinterpret_as_mut::<u8>()?;
                     raw_px.iter_mut().for_each(|x| {
                         *x = ((f32::from(*x) - self.black) * self.exposure).clamp(0., 255.0) as _
                     })
                 }
                 BitType::U16 => {
-                    let raw_px = channel.reinterpret_as_mut::<u16>().unwrap();
+                    let raw_px = channel.reinterpret_as_mut::<u16>()?;
                     raw_px.iter_mut().for_each(|x| {
                         *x = ((f32::from(*x) - self.black) * self.exposure).clamp(0., 65535.0) as _
                     })
                 }
                 BitType::F32 => {
-                    let raw_px = channel.reinterpret_as_mut::<f32>().unwrap();
+                    let raw_px = channel.reinterpret_as_mut::<f32>()?;
                     raw_px
                         .iter_mut()
                         .for_each(|x| *x = (*x - self.black) * self.exposure)
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 

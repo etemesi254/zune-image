@@ -49,20 +49,25 @@ impl OperationsTrait for Median {
 
                 match depth.bit_type() {
                     BitType::U16 => median(
-                        channel.reinterpret_as::<u16>().unwrap(),
-                        new_channel.reinterpret_as_mut::<u16>().unwrap(),
+                        channel.reinterpret_as::<u16>()?,
+                        new_channel.reinterpret_as_mut::<u16>()?,
                         self.radius,
                         width,
                         height
                     ),
                     BitType::U8 => median(
                         channel.reinterpret_as::<u8>().unwrap(),
-                        new_channel.reinterpret_as_mut::<u8>().unwrap(),
+                        new_channel.reinterpret_as_mut::<u8>()?,
                         self.radius,
                         width,
                         height
                     ),
-                    _ => todo!()
+                    d => {
+                        return Err(ImageErrors::ImageOperationNotImplemented(
+                            self.get_name(),
+                            d
+                        ))
+                    }
                 }
                 *channel = new_channel;
             }
@@ -72,32 +77,44 @@ impl OperationsTrait for Median {
             trace!("Running median filter multithreaded mode");
 
             std::thread::scope(|s| {
+                let mut errors = vec![];
                 for channel in image.get_channels_mut(true) {
-                    s.spawn(|| {
+                    let result = s.spawn(|| {
                         let mut new_channel =
                             Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                         match depth.bit_type() {
                             BitType::U16 => median(
-                                channel.reinterpret_as::<u16>().unwrap(),
-                                new_channel.reinterpret_as_mut::<u16>().unwrap(),
+                                channel.reinterpret_as::<u16>()?,
+                                new_channel.reinterpret_as_mut::<u16>()?,
                                 self.radius,
                                 width,
                                 height
                             ),
                             BitType::U8 => median(
-                                channel.reinterpret_as::<u8>().unwrap(),
-                                new_channel.reinterpret_as_mut::<u8>().unwrap(),
+                                channel.reinterpret_as::<u8>()?,
+                                new_channel.reinterpret_as_mut::<u8>()?,
                                 self.radius,
                                 width,
                                 height
                             ),
-                            _ => todo!()
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.get_name(),
+                                    d
+                                ))
+                            }
                         }
                         *channel = new_channel;
+                        Ok(())
                     });
+                    errors.push(result)
                 }
-            });
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
         }
         Ok(())
     }

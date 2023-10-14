@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Brighten filter
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_imageprocs::brighten::{brighten, brighten_f32};
@@ -51,7 +51,12 @@ impl OperationsTrait for Brighten {
                     self.value,
                     max_val as f32
                 ),
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
         Ok(())

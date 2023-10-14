@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+/// Crop operaion
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::crop::crop;
 
@@ -14,6 +14,9 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
+/// Crop out a part of an image  
+///
+/// This creates a smaller image from a bigger image
 pub struct Crop {
     x:      usize,
     y:      usize,
@@ -22,6 +25,15 @@ pub struct Crop {
 }
 
 impl Crop {
+    /// Create a new crop operation
+    ///
+    /// # Arguments
+    /// - width: The width of the new cropped out image
+    /// - height: The height of the new cropped out image.
+    /// -x: How far from the x origin the image should start from
+    /// -y: How far from the y origin the image should start from
+    ///
+    /// Origin is defined as the image top left corner.
     pub fn new(width: usize, height: usize, x: usize, y: usize) -> Crop {
         Crop {
             x,
@@ -50,41 +62,45 @@ impl OperationsTrait for Crop {
             match depth {
                 BitType::U8 => {
                     crop::<u8>(
-                        channel.reinterpret_as().unwrap(),
+                        channel.reinterpret_as()?,
                         old_width,
-                        new_vec.reinterpret_as_mut().unwrap(),
+                        new_vec.reinterpret_as_mut()?,
                         self.width,
                         self.height,
                         self.x,
                         self.y
                     );
-                    *channel = new_vec;
                 }
                 BitType::U16 => {
                     crop::<u16>(
-                        channel.reinterpret_as().unwrap(),
+                        channel.reinterpret_as()?,
                         old_width,
-                        new_vec.reinterpret_as_mut().unwrap(),
+                        new_vec.reinterpret_as_mut()?,
                         self.width,
                         self.height,
                         self.x,
                         self.y
                     );
-                    *channel = new_vec;
                 }
                 BitType::F32 => {
                     crop::<f32>(
-                        channel.reinterpret_as().unwrap(),
+                        channel.reinterpret_as()?,
                         old_width,
-                        new_vec.reinterpret_as_mut().unwrap(),
+                        new_vec.reinterpret_as_mut()?,
                         self.width,
                         self.height,
                         self.x,
                         self.y
                     );
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
+            *channel = new_vec;
         }
 
         image.set_dimensions(self.width, self.height);
@@ -92,6 +108,6 @@ impl OperationsTrait for Crop {
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }

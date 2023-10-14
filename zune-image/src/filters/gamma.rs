@@ -15,12 +15,21 @@ use crate::image::Image;
 use crate::traits::OperationsTrait;
 
 /// Gamma adjust an image
+///
+/// This currently only supports 8 and 16 bit depth images since it applies an optimization
+/// that works for those depths.
+///
+/// This operation is internally multithreaded, where supported
 #[derive(Default)]
 pub struct Gamma {
     value: f32
 }
 
 impl Gamma {
+    /// Create a new gamma correction operation.
+    ///
+    /// # Arguments
+    /// value: Ranges typical range is from 0.8-2.3
     pub fn new(value: f32) -> Gamma {
         Gamma { value }
     }
@@ -41,17 +50,18 @@ impl OperationsTrait for Gamma {
 
             for channel in image.get_channels_mut(false) {
                 match depth.bit_type() {
-                    BitType::U16 => gamma(
-                        channel.reinterpret_as_mut::<u16>().unwrap(),
-                        self.value,
-                        max_value
-                    ),
-                    BitType::U8 => gamma(
-                        channel.reinterpret_as_mut::<u8>().unwrap(),
-                        self.value,
-                        max_value
-                    ),
-                    _ => todo!()
+                    BitType::U16 => {
+                        gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value)
+                    }
+                    BitType::U8 => {
+                        gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value)
+                    }
+                    d => {
+                        return Err(ImageErrors::ImageOperationNotImplemented(
+                            self.get_name(),
+                            d
+                        ))
+                    }
                 }
             }
         }
@@ -60,22 +70,33 @@ impl OperationsTrait for Gamma {
             trace!("Running gamma correction in multithreaded mode");
 
             std::thread::scope(|s| {
+                let mut errors = vec![];
                 for channel in image.get_channels_mut(false) {
-                    s.spawn(|| match depth.bit_type() {
-                        BitType::U16 => gamma(
-                            channel.reinterpret_as_mut::<u16>().unwrap(),
+                    let t = s.spawn(|| match depth.bit_type() {
+                        BitType::U16 => Ok(gamma(
+                            channel.reinterpret_as_mut::<u16>()?,
                             self.value,
                             max_value
-                        ),
-                        BitType::U8 => gamma(
-                            channel.reinterpret_as_mut::<u8>().unwrap(),
+                        )),
+                        BitType::U8 => Ok(gamma(
+                            channel.reinterpret_as_mut::<u8>()?,
                             self.value,
                             max_value
-                        ),
-                        _ => todo!()
+                        )),
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d
+                            ))
+                        }
                     });
+                    errors.push(t);
                 }
-            });
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
         }
         Ok(())
     }

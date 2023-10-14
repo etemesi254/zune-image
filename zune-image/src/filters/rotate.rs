@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+/// Rotate filter
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::rotate::rotate_180;
 
@@ -41,20 +41,25 @@ impl OperationsTrait for Rotate {
             match im_type {
                 BitType::U8 => {
                     if self.angle == 180.0 {
-                        rotate_180::<u8>(channel.reinterpret_as_mut().unwrap(), width);
+                        rotate_180::<u8>(channel.reinterpret_as_mut()?, width);
                     }
                 }
                 BitType::U16 => {
                     if self.angle == 180.0 {
-                        rotate_180::<u16>(channel.reinterpret_as_mut().unwrap(), width);
+                        rotate_180::<u16>(channel.reinterpret_as_mut()?, width);
                     }
                 }
                 BitType::F32 => {
                     if self.angle == 180.0 {
-                        rotate_180::<f32>(channel.reinterpret_as_mut().unwrap(), width);
+                        rotate_180::<f32>(channel.reinterpret_as_mut()?, width);
                     }
                 }
-                _ => todo!("Implement")
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             };
         }
 
