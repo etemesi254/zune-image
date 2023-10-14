@@ -151,7 +151,7 @@ impl WasmImage {
     }
 
     /// Binarize an image
-    pub fn threshold(&mut self, threshold: u16) {
+    pub fn threshold(&mut self, threshold: f32) {
         let ops = Threshold::new(threshold, ThresholdMethod::Binary);
         self.execute_ops(&ops);
     }
