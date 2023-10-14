@@ -10,11 +10,15 @@ use std::fs::read;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_image::filters::crop::Crop;
+use zune_image::filters::threshold::Threshold;
+use zune_image::filters::transpose::Transpose;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 use zune_png::zune_core::options::DecoderOptions;
 
-use crate::py_enums::{PyImageColorSpace, PyImageDepth, PyImageErrors, PyImageFormats};
+use crate::py_enums::{
+    PyImageColorSpace, PyImageDepth, PyImageErrors, PyImageFormats, PyImageThresholdType
+};
 
 #[pyclass]
 #[derive(Clone)]
@@ -81,8 +85,6 @@ impl PyImage {
         PyImageColorSpace::from(self.image.get_colorspace())
     }
     /// Convert from one colorspace to another
-    ///
-    /// This operation modifies the image in place
     ///
     /// # Arguments
     /// - to: The new colorspace to convert to
@@ -182,6 +184,99 @@ impl PyImage {
             exec(&mut im_clone)?;
             Ok(Some(im_clone))
         };
+    }
+    /// Transpose the image.
+    ///
+    /// This rewrites pixels into `dst(i,j)=src(j,i)`
+    ///
+    /// # Arguments
+    /// - inplace: Whether to transpose the image in place or generate a clone
+    /// and transpose the new clone
+    #[pyo3(signature = (in_place = false))]
+    pub fn transpose(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            Transpose::new()
+                .execute(&mut image.image)
+                .map_err(|x| PyImageErrors::from(x))?;
+            Ok(())
+        };
+        return if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+            Ok(Some(im_clone))
+        };
+    }
+
+    /// Convert from one depth to another
+    ///
+    /// # Arguments
+    /// - to: The new depth to convert to
+    /// - in_place: Whether to perform the conversion in place or to create a copy and convert that
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (to, in_place = false))]
+    pub fn convert_depth(&mut self, to: PyImageDepth, in_place: bool) -> PyResult<Option<PyImage>> {
+        let color = to.to_depth();
+
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = image.image.convert_depth(color) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+    /// Applies a fixed-level threshold to each array element.
+    ///
+    /// Thresholding works best for grayscale images, passing a colored image
+    /// does not implicitly convert it to grayscale, you need to do that explicitly
+    ///
+    /// # Arguments
+    ///  - value: Non-zero value assigned to the pixels for which the condition is satisfied
+    ///  - method: The thresholding method used, defaults to binary which generates a black
+    /// and white image from a grayscale image
+    ///  - in_place: Whether to perform the image in-place or to clone and return a copy
+    ///
+    #[pyo3(signature = (value, method = PyImageThresholdType::Binary, in_place = false))]
+    pub fn threshold(
+        &mut self, value: f32, method: PyImageThresholdType, in_place: bool
+    ) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Threshold::new(value, method.to_threshold()).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
     }
 }
 

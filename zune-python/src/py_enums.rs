@@ -11,6 +11,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
+use zune_image::filters::threshold::ThresholdMethod;
 
 #[pyclass]
 pub struct PyImageErrors {
@@ -135,11 +136,23 @@ impl From<ColorSpace> for PyImageColorSpace {
 }
 
 #[pyclass]
+#[derive(Copy, Clone, Debug)]
 pub enum PyImageDepth {
     Eight,
     Sixteen,
     F32,
     Unknown
+}
+
+impl PyImageDepth {
+    pub(crate) fn to_depth(self) -> BitDepth {
+        match self {
+            PyImageDepth::Eight => BitDepth::Eight,
+            PyImageDepth::Sixteen => BitDepth::Sixteen,
+            PyImageDepth::F32 => BitDepth::Float32,
+            PyImageDepth::Unknown => BitDepth::Unknown
+        }
+    }
 }
 
 impl From<BitDepth> for PyImageDepth {
@@ -150,6 +163,27 @@ impl From<BitDepth> for PyImageDepth {
             BitDepth::Float32 => PyImageDepth::F32,
             BitDepth::Unknown => PyImageDepth::Unknown,
             _ => PyImageDepth::Unknown
+        }
+    }
+}
+
+/// Different threshold arguments for the threshold parameter
+#[pyclass]
+#[derive(Copy, Clone, Debug)]
+pub enum PyImageThresholdType {
+    Binary,
+    BinaryInv,
+    ThreshTrunc,
+    ThreshToZero
+}
+
+impl PyImageThresholdType {
+    pub(crate) fn to_threshold(self) -> ThresholdMethod {
+        match self {
+            PyImageThresholdType::Binary => ThresholdMethod::Binary,
+            PyImageThresholdType::BinaryInv => ThresholdMethod::BinaryInv,
+            PyImageThresholdType::ThreshTrunc => ThresholdMethod::ThreshTrunc,
+            PyImageThresholdType::ThreshToZero => ThresholdMethod::ThreshToZero
         }
     }
 }
