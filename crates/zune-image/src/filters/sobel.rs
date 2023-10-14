@@ -14,7 +14,29 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Invert
+/// Perform a sobel image derivative.
+///
+/// This operation calculates the gradient of the image,
+/// which represents how quickly pixel values change from
+/// one point to another in both the horizontal and vertical directions.
+/// The magnitude and direction of the gradient can be used to detect edges in an image.
+///
+/// The matrix for sobel is
+///
+/// Gx matrix
+/// ```text
+///   -1, 0, 1,
+///   -2, 0, 2,
+///   -1, 0, 1
+/// ```
+/// Gy matrix
+/// ```text
+/// -1,-2,-1,
+///  0, 0, 0,
+///  1, 2, 1
+/// ```
+///
+/// The window is a 3x3 window.
 #[derive(Default, Copy, Clone)]
 pub struct Sobel;
 
@@ -38,24 +60,29 @@ impl OperationsTrait for Sobel {
                 let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
                 match depth {
                     BitType::U8 => sobel_int::<u8>(
-                        channel.reinterpret_as().unwrap(),
-                        out_channel.reinterpret_as_mut().unwrap(),
+                        channel.reinterpret_as()?,
+                        out_channel.reinterpret_as_mut()?,
                         width,
                         height
                     ),
                     BitType::U16 => sobel_int::<u16>(
-                        channel.reinterpret_as().unwrap(),
-                        out_channel.reinterpret_as_mut().unwrap(),
+                        channel.reinterpret_as()?,
+                        out_channel.reinterpret_as_mut()?,
                         width,
                         height
                     ),
                     BitType::F32 => sobel_float::<f32>(
-                        channel.reinterpret_as().unwrap(),
-                        out_channel.reinterpret_as_mut().unwrap(),
+                        channel.reinterpret_as()?,
+                        out_channel.reinterpret_as_mut()?,
                         width,
                         height
                     ),
-                    _ => todo!()
+                    d => {
+                        return Err(ImageErrors::ImageOperationNotImplemented(
+                            self.get_name(),
+                            d
+                        ))
+                    }
                 }
                 *channel = out_channel;
             }
@@ -63,34 +90,46 @@ impl OperationsTrait for Sobel {
         #[cfg(feature = "threads")]
         {
             std::thread::scope(|s| {
+                let mut t_results = vec![];
                 for channel in image.get_channels_mut(true) {
-                    s.spawn(|| {
+                    let result = s.spawn(|| {
                         let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
                         match depth {
                             BitType::U8 => sobel_int::<u8>(
-                                channel.reinterpret_as().unwrap(),
-                                out_channel.reinterpret_as_mut().unwrap(),
+                                channel.reinterpret_as()?,
+                                out_channel.reinterpret_as_mut()?,
                                 width,
                                 height
                             ),
                             BitType::U16 => sobel_int::<u16>(
-                                channel.reinterpret_as().unwrap(),
-                                out_channel.reinterpret_as_mut().unwrap(),
+                                channel.reinterpret_as()?,
+                                out_channel.reinterpret_as_mut()?,
                                 width,
                                 height
                             ),
                             BitType::F32 => sobel_float::<f32>(
-                                channel.reinterpret_as().unwrap(),
-                                out_channel.reinterpret_as_mut().unwrap(),
+                                channel.reinterpret_as()?,
+                                out_channel.reinterpret_as_mut()?,
                                 width,
                                 height
                             ),
-                            _ => todo!()
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.get_name(),
+                                    d
+                                ))
+                            }
                         }
                         *channel = out_channel;
+                        Ok(())
                     });
+                    t_results.push(result);
                 }
-            });
+                t_results
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
         }
 
         Ok(())

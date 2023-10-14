@@ -7,7 +7,7 @@
  */
 
 #![cfg(feature = "metadata")]
-
+//! Perform auto orientation of the image
 use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
 
@@ -26,6 +26,13 @@ pub enum OrientationType {
     FlipVertically = 4
 }
 
+/// Auto orient the image based on the exif metadata
+///
+/// This operation is a no-op if `metadata` feature is not specified
+/// in the crate level docs
+///
+/// This operation is also a no-op if the image does not have
+/// exif metadata
 pub struct AutoOrient;
 
 impl OperationsTrait for AutoOrient {
@@ -109,6 +116,6 @@ impl OperationsTrait for AutoOrient {
     }
 
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U16, BitType::U8]
+        &[BitType::U16, BitType::U8, BitType::F32]
     }
 }

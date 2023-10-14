@@ -14,11 +14,17 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Invert
+/// Invert an image pixel.
+///
+/// The operation is similar to `T::max_val()-pixel`, where
+/// `T::max_val()` is the maximum value for that bit-depth
+/// (255 for [`u8`],65535 for [`u16`], 1 for [`f32`])
+///
 #[derive(Default)]
 pub struct Invert;
 
 impl Invert {
+    /// Create a new invert operation
     pub fn new() -> Invert {
         Self::default()
     }
@@ -36,7 +42,12 @@ impl OperationsTrait for Invert {
                 BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
                 BitType::U16 => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
                 BitType::F32 => invert(channel.reinterpret_as_mut::<f32>().unwrap()),
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 

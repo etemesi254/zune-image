@@ -46,29 +46,34 @@ impl OperationsTrait for Transpose {
             match depth.bit_type() {
                 BitType::U8 => {
                     transpose_u8(
-                        channel.reinterpret_as::<u8>().unwrap(),
-                        out_channel.reinterpret_as_mut::<u8>().unwrap(),
+                        channel.reinterpret_as::<u8>()?,
+                        out_channel.reinterpret_as_mut::<u8>()?,
                         width,
                         height
                     );
                 }
                 BitType::U16 => {
                     transpose_u16(
-                        channel.reinterpret_as::<u16>().unwrap(),
-                        out_channel.reinterpret_as_mut::<u16>().unwrap(),
+                        channel.reinterpret_as::<u16>()?,
+                        out_channel.reinterpret_as_mut::<u16>()?,
                         width,
                         height
                     );
                 }
                 BitType::F32 => {
                     transpose_generic::<f32>(
-                        channel.reinterpret_as().unwrap(),
-                        out_channel.reinterpret_as_mut().unwrap(),
+                        channel.reinterpret_as()?,
+                        out_channel.reinterpret_as_mut()?,
                         width,
                         height
                     );
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             };
             *channel = out_channel;
         }

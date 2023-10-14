@@ -22,13 +22,22 @@ use crate::traits::OperationsTrait;
 
 /// Carry out alpha pre-multiply and un-premultiply
 ///
-/// The type of transform is specified
+/// The type of transform is specified.
+///
+/// Note that some operations are lossy,
+/// due to the nature of the operation multiplying and dividing values.
+/// Where alpha is to big to fit into target integer, or zero, there will
+/// be loss of image quality.
 #[derive(Copy, Clone)]
 pub struct PremultiplyAlpha {
     to: AlphaState
 }
 
 impl PremultiplyAlpha {
+    /// Create a new alpha pre-multiplication operation.
+    ///
+    /// It can be used to convert from pre-multiplied alpha to
+    /// normal alpha or vice-versa
     pub fn new(to: AlphaState) -> PremultiplyAlpha {
         PremultiplyAlpha { to }
     }
@@ -92,7 +101,12 @@ impl OperationsTrait for PremultiplyAlpha {
                             channel.reinterpret_as_mut()?,
                             alpha[0].reinterpret_as()?
                         ),
-                        _ => unreachable!()
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d.bit_type()
+                            ))
+                        }
                     },
                     (AlphaState::PreMultiplied, AlphaState::NonPreMultiplied) => match bit_type {
                         BitDepth::Eight => {
@@ -114,7 +128,12 @@ impl OperationsTrait for PremultiplyAlpha {
                             channel.reinterpret_as_mut()?,
                             alpha[0].reinterpret_as()?
                         ),
-                        _ => unreachable!()
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d.bit_type()
+                            ))
+                        }
                     },
                     (_, _) => return Err(ImageErrors::GenericStr("Could not pre-multiply alpha"))
                 }

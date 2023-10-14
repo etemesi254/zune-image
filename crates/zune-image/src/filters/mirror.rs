@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Mirror image filter
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::mirror::mirror;
 pub use zune_imageprocs::mirror::MirrorMode;
@@ -14,12 +14,17 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Rearrange the pixels up side down
+/// Rearrange the pixels along a certain axis.
+///
+/// To see the effect of this
+/// see the image [mirror-modes](zune_imageprocs::mirror::MirrorMode) documentation
+/// for each used mode
 pub struct Mirror {
     mode: MirrorMode
 }
 
 impl Mirror {
+    /// Create a new mirror filter
     pub fn new(mode: MirrorMode) -> Mirror {
         Self { mode }
     }
@@ -38,7 +43,7 @@ impl OperationsTrait for Mirror {
             match depth.bit_type() {
                 BitType::U8 => {
                     mirror(
-                        channel.reinterpret_as_mut::<u8>().unwrap(),
+                        channel.reinterpret_as_mut::<u8>()?,
                         width,
                         height,
                         self.mode
@@ -47,19 +52,32 @@ impl OperationsTrait for Mirror {
 
                 BitType::U16 => {
                     mirror(
-                        channel.reinterpret_as_mut::<u16>().unwrap(),
+                        channel.reinterpret_as_mut::<u16>()?,
                         width,
                         height,
                         self.mode
                     );
                 }
-                _ => todo!()
+                BitType::F32 => {
+                    mirror(
+                        channel.reinterpret_as_mut::<f32>()?,
+                        width,
+                        height,
+                        self.mode
+                    );
+                }
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }

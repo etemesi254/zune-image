@@ -16,9 +16,10 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Median returns a new image in which each pixel is the median of its neighbors.
+/// Statistic operations on images.
 ///
-/// The parameter radius corresponds to the radius of the neighbor area to be searched,
+/// The parameter radius corresponds to the radius of the neighbor area the statistic is applied,
+/// larger radius means more compute time.
 ///
 /// for example a radius of R will result in a search window length of 2R+1 for each dimension.
 pub struct StatisticsOps {
@@ -50,22 +51,27 @@ impl OperationsTrait for StatisticsOps {
 
                 match depth.bit_type() {
                     BitType::U16 => spatial_ops(
-                        channel.reinterpret_as::<u16>().unwrap(),
-                        new_channel.reinterpret_as_mut::<u16>().unwrap(),
+                        channel.reinterpret_as::<u16>()?,
+                        new_channel.reinterpret_as_mut::<u16>()?,
                         self.radius,
                         width,
                         height,
                         self.operation
                     ),
                     BitType::U8 => spatial_ops(
-                        channel.reinterpret_as::<u8>().unwrap(),
-                        new_channel.reinterpret_as_mut::<u8>().unwrap(),
+                        channel.reinterpret_as::<u8>()?,
+                        new_channel.reinterpret_as_mut::<u8>()?,
                         self.radius,
                         width,
                         height,
                         self.operation
                     ),
-                    _ => todo!()
+                    d => {
+                        return Err(ImageErrors::ImageOperationNotImplemented(
+                            self.get_name(),
+                            d
+                        ))
+                    }
                 }
                 *channel = new_channel;
             }
@@ -78,34 +84,46 @@ impl OperationsTrait for StatisticsOps {
             );
 
             std::thread::scope(|s| {
+                let mut errors = vec![];
                 for channel in image.get_channels_mut(false) {
-                    s.spawn(|| {
+                    let result = s.spawn(|| {
                         let mut new_channel =
                             Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                         match depth.bit_type() {
                             BitType::U16 => spatial_ops(
-                                channel.reinterpret_as::<u16>().unwrap(),
-                                new_channel.reinterpret_as_mut::<u16>().unwrap(),
+                                channel.reinterpret_as::<u16>()?,
+                                new_channel.reinterpret_as_mut::<u16>()?,
                                 self.radius,
                                 width,
                                 height,
                                 self.operation
                             ),
                             BitType::U8 => spatial_ops(
-                                channel.reinterpret_as::<u8>().unwrap(),
-                                new_channel.reinterpret_as_mut::<u8>().unwrap(),
+                                channel.reinterpret_as::<u8>()?,
+                                new_channel.reinterpret_as_mut::<u8>()?,
                                 self.radius,
                                 width,
                                 height,
                                 self.operation
                             ),
-                            _ => todo!()
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.get_name(),
+                                    d
+                                ))
+                            }
                         }
                         *channel = new_channel;
+                        Ok(())
                     });
+                    errors.push(result);
                 }
-            });
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
         }
         Ok(())
     }

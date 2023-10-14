@@ -9,15 +9,27 @@
 use zune_core::bit_depth::BitType;
 use zune_imageprocs::flip::{flip, vertical_flip};
 
-use crate::errors::{ImageErrors, ImageOperationsErrors};
+use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
-/// Rearrange the pixels up side down
+/// Creates a vertical mirror image by reflecting
+/// the pixels around the central x-axis.
+///
+///
+/// ```text
+///
+///old image     new image
+/// ┌─────────┐   ┌──────────┐
+/// │a b c d e│   │j i h g f │
+/// │f g h i j│   │e d c b a │
+/// └─────────┘   └──────────┘
+/// ```
 #[derive(Default)]
 pub struct Flip;
 
 impl Flip {
+    /// Create a new flip operation
     pub fn new() -> Flip {
         Self::default()
     }
@@ -42,7 +54,12 @@ impl OperationsTrait for Flip {
                 BitType::F32 => {
                     flip(inp.reinterpret_as_mut::<f32>()?);
                 }
-                _ => todo!()
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
             }
         }
 
@@ -54,10 +71,21 @@ impl OperationsTrait for Flip {
 }
 
 /// Flip the image vertically,( rotate image by 180 degrees)
+///
+/// ```text
+///
+///old image     new image
+/// ┌─────────┐   ┌──────────┐
+/// │a b c d e│   │f g h i j │
+/// │f g h i j│   │a b c d e │
+/// └─────────┘   └──────────┘
+/// ```
+///
 #[derive(Default)]
 pub struct VerticalFlip;
 
 impl VerticalFlip {
+    /// Create a new VerticalFlip operation
     pub fn new() -> VerticalFlip {
         Self::default()
     }
@@ -83,12 +111,11 @@ impl OperationsTrait for VerticalFlip {
                 BitType::F32 => {
                     vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                 }
-                _ => {
-                    return Err(ImageOperationsErrors::UnsupportedType(
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
                         self.get_name(),
-                        depth.bit_type()
-                    )
-                    .into())
+                        d
+                    ))
                 }
             }
         }
