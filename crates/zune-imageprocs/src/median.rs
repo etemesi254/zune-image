@@ -23,5 +23,6 @@ pub fn find_median<T: Copy + Ord>(array: &mut [T]) -> T {
 pub fn median<T: Copy + Ord + Default + Debug>(
     _in_channel: &[T], _out_channel: &mut [T], _radius: usize, _width: usize, _height: usize
 ) {
+    panic!();
     //spatial_mut(in_channel, out_channel, radius, width, height, find_median);
 }

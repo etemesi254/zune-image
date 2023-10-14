@@ -6,7 +6,6 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::cmp::{max, min};
 use std::fmt::Debug;
 use std::ops::{Add, Div, Sub};
 
@@ -40,17 +39,19 @@ impl StatisticOperations {
     }
 }
 
-fn find_min<T: Ord + Default + Copy + NumOps<T>>(data: &[T]) -> T {
+fn find_min<T: PartialOrd + Default + Copy + NumOps<T>>(data: &[T]) -> T {
     let mut minimum = T::max_val();
 
     for datum in data {
-        minimum = min(*datum, minimum);
+        if *datum < minimum {
+            minimum = *datum;
+        }
     }
     minimum
 }
 
 fn find_contrast<
-    T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
+    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
 >(
     data: &[T]
 ) -> T {
@@ -58,8 +59,12 @@ fn find_contrast<
     let mut maximum = T::min_val();
 
     for datum in data {
-        minimum = min(*datum, minimum);
-        maximum = max(*datum, maximum);
+        if *datum < minimum {
+            minimum = *datum;
+        }
+        if *datum > maximum {
+            maximum = *datum;
+        }
     }
     let num = maximum - minimum;
     let div = (maximum + minimum).saturating_add(T::one()); // do not allow division by zero
@@ -68,7 +73,7 @@ fn find_contrast<
 }
 
 fn find_gradient<
-    T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
+    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
 >(
     data: &[T]
 ) -> T {
@@ -76,18 +81,25 @@ fn find_gradient<
     let mut maximum = T::min_val();
 
     for datum in data {
-        minimum = min(*datum, minimum);
-        maximum = max(*datum, maximum);
+        if *datum < minimum {
+            minimum = *datum;
+        }
+        if *datum > maximum {
+            maximum = *datum;
+        }
     }
+
     maximum - minimum
 }
 
 #[inline(always)]
-fn find_max<T: Ord + Copy + NumOps<T>>(data: &[T]) -> T {
+fn find_max<T: PartialOrd + Copy + NumOps<T>>(data: &[T]) -> T {
     let mut maximum = T::min_val();
 
     for datum in data {
-        maximum = max(*datum, maximum);
+        if *datum > maximum {
+            maximum = *datum;
+        }
     }
     maximum
 }
@@ -95,7 +107,7 @@ fn find_max<T: Ord + Copy + NumOps<T>>(data: &[T]) -> T {
 #[allow(clippy::cast_possible_truncation)]
 fn find_mean<T>(data: &[T]) -> T
 where
-    T: Ord + Default + Copy + NumOps<T> + Add<Output = T> + Div<Output = T>,
+    T: Default + Copy + NumOps<T> + Add<Output = T> + Div<Output = T>,
     u32: std::convert::From<T>
 {
     //https://godbolt.org/z/6Y8ncehd5
@@ -112,7 +124,13 @@ pub fn spatial_ops<T>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
     operations: StatisticOperations
 ) where
-    T: Ord + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
+    T: PartialOrd
+        + Default
+        + Copy
+        + NumOps<T>
+        + Sub<Output = T>
+        + Add<Output = T>
+        + Div<Output = T>,
     u32: std::convert::From<T>
 {
     //pad here
@@ -151,7 +169,7 @@ pub fn spatial_ops<T>(
     spatial(&padded_input, out_channel, radius, width, height, ptr);
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;

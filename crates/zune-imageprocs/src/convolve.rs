@@ -6,8 +6,6 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use zune_core::log::error;
-
 use crate::pad::{pad, PadMethod};
 use crate::traits::NumOps;
 use crate::utils::z_prefetch;
@@ -128,7 +126,8 @@ pub fn convolve_7x7<T>(
 /// Selects a convolve matrix
 pub fn convolve<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32]
-) where
+) -> Result<(), &'static str>
+where
     T: NumOps<T> + Copy + Default,
     f32: std::convert::From<T>
 {
@@ -157,12 +156,9 @@ pub fn convolve<T>(
             weights.try_into().unwrap()
         );
     } else {
-        debug_assert!(
-            false,
-            "Invalid array, expected 3x3,5x5 or 7x7 array for convolving"
-        );
-        error!("Not implemented, only works for 3x3, 5x5 and 7x7 arrays");
+        return Err("Not implemented, only works for 3x3, 5x5 and 7x7 arrays");
     }
+    Ok(())
 }
 
 /// A special spatial function that takes advantage of const generics to

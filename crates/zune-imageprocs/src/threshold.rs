@@ -32,7 +32,7 @@ impl ThresholdMethod {
 #[rustfmt::skip]
 pub fn threshold<T>(in_channel: &mut [T], threshold: T, method: ThresholdMethod)
     where
-        T: NumOps<T> + Copy + Ord + PartialOrd
+        T: NumOps<T> + Copy + PartialOrd
 {
     let max = T::max_val();
     let min = T::min_val();
