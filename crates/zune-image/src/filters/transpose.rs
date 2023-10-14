@@ -51,7 +51,6 @@ impl OperationsTrait for Transpose {
                         width,
                         height
                     );
-                    *channel = out_channel;
                 }
                 BitType::U16 => {
                     transpose_u16(
@@ -60,16 +59,18 @@ impl OperationsTrait for Transpose {
                         width,
                         height
                     );
-                    *channel = out_channel;
                 }
-                BitType::F32 => transpose_generic::<f32>(
-                    channel.reinterpret_as().unwrap(),
-                    out_channel.reinterpret_as_mut().unwrap(),
-                    width,
-                    height
-                ),
+                BitType::F32 => {
+                    transpose_generic::<f32>(
+                        channel.reinterpret_as().unwrap(),
+                        out_channel.reinterpret_as_mut().unwrap(),
+                        width,
+                        height
+                    );
+                }
                 _ => todo!()
             };
+            *channel = out_channel;
         }
 
         image.set_dimensions(height, width);
