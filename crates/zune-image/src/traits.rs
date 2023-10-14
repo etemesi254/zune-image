@@ -179,6 +179,17 @@ pub trait OperationsTrait {
     fn alpha_state(&self) -> AlphaState {
         AlphaState::PreMultiplied
     }
+
+    /// Clone the image and execute the operation on it, returning
+    /// a new image instead of modifying the existing one
+    ///
+    /// This is provided as a convenience function for when one
+    /// doesn't want to modify the existing image
+    fn clone_and_execute(&self, image: &Image) -> Result<Image, ImageErrors> {
+        let mut c_img = image.clone();
+        self.execute(&mut c_img)?;
+        Ok(c_img)
+    }
 }
 
 /// Confirm that image invariants have been respected across image
