@@ -15,13 +15,33 @@ use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
 
+/// Apply a fixed level threshold to an image.
+///
+///
+/// # Methods
+/// The library supports threshold methods derived from opencv , see [here](https://docs.opencv.org/4.x/d7/d1b/group__imgproc__misc.html#gaa9e58d2860d4afa658ef70a9b1115576)
+/// for the definitions
+///
+///  - [Binary](ThresholdMethod::Binary) => max if src(x,y) > thresh 0 otherwise
+///  - [BinaryInv](ThresholdMethod::BinaryInv) => 0 if src(x,y) > thresh max otherwise
+///  - [ThreshTrunc](ThresholdMethod::ThreshTrunc) => thresh if src(x,y) > thresh src(x,y) otherwise
+///  - [ThreshToZero](ThresholdMethod::ThreshToZero) => src(x,y) if src(x,y) > thresh 0 otherwise
+///           
+///  See https://en.wikipedia.org/wiki/Thresholding_(image_processing)
 pub struct Threshold {
     method:    ThresholdMethod,
-    threshold: u16
+    threshold: f32
 }
 
 impl Threshold {
-    pub fn new(threshold: u16, method: ThresholdMethod) -> Threshold {
+    /// Create a new threshold filter
+    ///
+    /// # Arguments
+    /// - threshold: f32 The maximum value, this is type casted to the appropriate bit depth
+    /// for 8 bit images it saturates at u8::MAX, for 16 bit images at u16::MAX, for float images
+    /// the value is treated as is
+    /// - method: Threshold method to use, matches opencv methods
+    pub fn new(threshold: f32, method: ThresholdMethod) -> Threshold {
         Threshold { method, threshold }
     }
 }
@@ -41,7 +61,7 @@ impl OperationsTrait for Threshold {
             match depth.bit_type() {
                 BitType::U16 => threshold(
                     channel.reinterpret_as_mut::<u16>().unwrap(),
-                    self.threshold,
+                    self.threshold as u16,
                     self.method
                 ),
                 BitType::U8 => threshold(
@@ -49,7 +69,12 @@ impl OperationsTrait for Threshold {
                     self.threshold as u8,
                     self.method
                 ),
-                _ => todo!()
+                BitType::F32 => threshold(
+                    channel.reinterpret_as_mut::<f32>().unwrap(),
+                    self.threshold,
+                    self.method
+                ),
+                d => return Err(ImageErrors::ImageOperationNotImplemented("threshold", d))
             }
         }
 
