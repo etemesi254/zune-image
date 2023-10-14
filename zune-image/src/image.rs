@@ -204,7 +204,7 @@ impl Image {
             frame.write_rgba(colorspace, out).unwrap();
         }
     }
-    pub fn set_dimensions(&mut self, width: usize, height: usize) {
+    pub(crate) fn set_dimensions(&mut self, width: usize, height: usize) {
         self.metadata.set_dimensions(width, height);
     }
 
@@ -506,10 +506,16 @@ impl Image {
 impl Image {
     /// Convert an image from one colorspace to another
     ///
+    ///  # Arguments
+    /// - to: The colorspace to convert image into
     ///
     pub fn convert_color(&mut self, to: ColorSpace) -> Result<(), ImageErrors> {
         ColorspaceConv::new(to).execute(self)
     }
+    /// Convert an image from one depth to another
+    ///
+    /// # Arguments
+    /// - to: The bit-depth to convert the image into
     pub fn convert_depth(&mut self, to: BitDepth) -> Result<(), ImageErrors> {
         Depth::new(to).execute(self)
     }
