@@ -36,7 +36,8 @@ pub enum ImageErrors {
     ChannelErrors(ChannelErrors),
     ImageDecoderNotIncluded(ImageFormat),
     ImageDecoderNotImplemented(ImageFormat),
-    IoError(std::io::Error)
+    IoError(std::io::Error),
+    ImageOperationNotImplemented(&'static str, BitType)
 }
 
 /// Errors that may occur during image operations
@@ -123,6 +124,13 @@ impl Debug for ImageErrors {
             }
             ImageErrors::ChannelErrors(err) => {
                 writeln!(f, "Channel error : {:?}", err)
+            }
+            ImageErrors::ImageOperationNotImplemented(op_type, depth) => {
+                writeln!(
+                    f,
+                    "Image operation {} for depth {:?}  not implemented",
+                    op_type, depth
+                )
             }
         }
     }
