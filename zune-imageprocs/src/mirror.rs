@@ -6,11 +6,44 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+/// Supported mirror modes 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum MirrorMode {
+    ///
+    /// ```text           
+    ///  old image     new image
+    ///  ┌─────────┐   ┌──────────┐
+    ///  │a b c d e│   │a b c d e │
+    ///  │f g h i j│   │a b d d e │
+    ///  └─────────┘   └──────────┘
+    /// ```
     North,
+    ///
+    /// ```text           
+    ///  old image     new image
+    ///  ┌─────────┐   ┌──────────┐
+    ///  │a b c d e│   │f g h i j │
+    ///  │f g h i j│   │f g h i j │
+    ///  └─────────┘   └──────────┘
+    /// ```
     South,
+    ///
+    /// ```text           
+    ///  old image     new image
+    ///  ┌─────────┐   ┌──────────┐
+    ///  │a b c d e│   │a b c b a │
+    ///  │f g h i j│   │f g h g f │
+    ///  └─────────┘   └──────────┘
+    /// ```
     East,
+    ///
+    /// ```text           
+    ///  old image     new image
+    ///  ┌─────────┐   ┌──────────┐
+    ///  │a b c d e│   │e d c d e │
+    ///  │f g h i j│   │j i h i j │
+    ///  └─────────┘   └──────────┘
+    /// ```
     West
 }
 /// Mirror an image by duplicating pixels from one edge to the other half

@@ -26,12 +26,16 @@ use crate::traits::NumOps;
 ///
 /// - Modifies array in place
 ///
-pub fn stretch_contrast<T>(image: &mut [T], lower: T, upper: T, maximum: u32)
+pub fn stretch_contrast<T>(
+    image: &mut [T], lower: T, upper: T, maximum: u32
+) -> Result<(), &'static str>
 where
     T: Ord + Sub<Output = T> + NumOps<T> + Copy,
     u32: std::convert::From<T>
 {
-    assert!(upper > lower, "upper must be strictly greater than lower");
+    if upper < lower {
+        return Err("upper must be strictly greater than lower");
+    }
 
     let len = u32::from(upper.saturating_sub(lower)).saturating_add(1);
 
@@ -56,9 +60,10 @@ where
             *pixel = T::from_u32(scaled);
         }
     }
+    Ok(())
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;
@@ -73,7 +78,7 @@ mod benchmarks {
         let mut in_vec = vec![255_u16; dimensions];
 
         b.iter(|| {
-            stretch_contrast(&mut in_vec, 3, 10, 65535);
+            stretch_contrast(&mut in_vec, 3, 10, 65535).unwrap();
         });
     }
 }

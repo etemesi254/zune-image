@@ -71,7 +71,7 @@ pub fn vertical_flip<T: Copy + Default>(channel: &mut [T], width: usize) {
     }
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;
