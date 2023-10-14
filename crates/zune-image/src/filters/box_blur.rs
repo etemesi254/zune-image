@@ -44,30 +44,41 @@ impl OperationsTrait for BoxBlur {
         #[cfg(feature = "threads")]
         {
             trace!("Running box blur in multithreaded mode");
-            std::thread::scope(|s| {
+            let err_result: Result<Vec<_>, _> = std::thread::scope(|s| {
+                let mut errors = vec![];
                 // blur each channel on a separate thread
                 for channel in image.get_channels_mut(false) {
-                    s.spawn(|| match depth.bit_type() {
+                    let result = s.spawn(|| match depth.bit_type() {
                         BitType::U16 => {
                             let mut scratch_space = vec![0; width * height];
                             let data = channel.reinterpret_as_mut::<u16>().unwrap();
                             box_blur_u16(data, &mut scratch_space, width, height, self.radius);
+                            Ok(())
                         }
                         BitType::U8 => {
                             let mut scratch_space = vec![0; width * height];
                             let data = channel.reinterpret_as_mut::<u8>().unwrap();
                             box_blur_u8(data, &mut scratch_space, width, height, self.radius);
+                            Ok(())
                         }
 
                         BitType::F32 => {
                             let mut scratch_space = vec![0.0; width * height];
                             let data = channel.reinterpret_as_mut::<f32>().unwrap();
                             box_blur_f32(data, &mut scratch_space, width, height, self.radius);
+                            Ok(())
                         }
-                        _ => todo!()
+                        d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d))
                     });
+                    errors.push(result);
                 }
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
             });
+            // propagate error
+            err_result?;
         }
         #[cfg(not(feature = "threads"))]
         {
@@ -99,7 +110,7 @@ impl OperationsTrait for BoxBlur {
                         box_blur_f32(data, &mut scratch_space, width, height, self.radius);
                     }
                 }
-                _ => todo!()
+                d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d))
             }
         }
 
