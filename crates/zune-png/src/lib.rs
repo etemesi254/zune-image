@@ -22,6 +22,29 @@
 //! zune_png="0.2"
 //! ```
 //!
+//! #### Decode to 8-bit(1 byte) per pixel always
+//!
+//! PNG supports both 8-bit and 16 bit images, but people mainly expect the
+//! images to be in 8 bit, the library can implicitly convert to 8 bit images when
+//! requested in case one doesn't want to handle it  at the cost
+//! of an extra allocation
+//!
+//! The below example shows how to do that
+//!
+//!```no_run
+//! use zune_core::options::DecoderOptions;
+//! use zune_png::PngDecoder;
+//! // tell the png decoder to always strip 16 bit images to 8 bits
+//! let options = DecoderOptions::default().png_set_strip_to_8bit(true);
+//! let mut decoder = PngDecoder::new_with_options(&[],options);
+//!
+//! let pixels = decoder.decode_raw();
+//! ```
+//!
+//!  Above, we set the  [`DecoderOptions::png_set_strip_to_8bit`](zune_core::options::DecoderOptions::png_get_strip_to_8bit)
+//! to be true in order to indicate to the decoder that it should strip 16 bit images to 8 bit.
+//!
+//!
 //! #### Decode to raw bytes.
 //!
 //! This is a simple decode operation which returns raw
