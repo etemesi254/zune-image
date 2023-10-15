@@ -18,14 +18,15 @@ fn decoder_strict_mode() -> DecoderFlags {
         png_confirm_crc:              true,
         jpg_error_on_non_conformance: true,
 
-        zune_use_unsafe:       true,
-        zune_use_neon:         true,
-        zune_use_avx:          true,
-        zune_use_avx2:         true,
-        zune_use_sse2:         true,
-        zune_use_sse3:         true,
-        zune_use_sse41:        true,
-        png_add_alpha_channel: false
+        zune_use_unsafe:           true,
+        zune_use_neon:             true,
+        zune_use_avx:              true,
+        zune_use_avx2:             true,
+        zune_use_sse2:             true,
+        zune_use_sse3:             true,
+        zune_use_sse41:            true,
+        png_add_alpha_channel:     false,
+        png_strip_16_bit_to_8_bit: false
     }
 }
 
@@ -40,14 +41,16 @@ fn fast_options() -> DecoderFlags {
         png_confirm_crc:              false,
         jpg_error_on_non_conformance: false,
 
-        zune_use_unsafe:       true,
-        zune_use_neon:         true,
-        zune_use_avx:          true,
-        zune_use_avx2:         true,
-        zune_use_sse2:         true,
-        zune_use_sse3:         true,
-        zune_use_sse41:        true,
-        png_add_alpha_channel: false
+        zune_use_unsafe: true,
+        zune_use_neon:   true,
+        zune_use_avx:    true,
+        zune_use_avx2:   true,
+        zune_use_sse2:   true,
+        zune_use_sse3:   true,
+        zune_use_sse41:  true,
+
+        png_add_alpha_channel:     false,
+        png_strip_16_bit_to_8_bit: false
     }
 }
 
@@ -63,14 +66,16 @@ fn cmd_options() -> DecoderFlags {
         png_confirm_crc:              false,
         jpg_error_on_non_conformance: false,
 
-        zune_use_unsafe:       true,
-        zune_use_neon:         true,
-        zune_use_avx:          true,
-        zune_use_avx2:         true,
-        zune_use_sse2:         true,
-        zune_use_sse3:         true,
-        zune_use_sse41:        true,
-        png_add_alpha_channel: false
+        zune_use_unsafe: true,
+        zune_use_neon:   true,
+        zune_use_avx:    true,
+        zune_use_avx2:   true,
+        zune_use_sse2:   true,
+        zune_use_sse3:   true,
+        zune_use_sse41:  true,
+
+        png_add_alpha_channel:     false,
+        png_strip_16_bit_to_8_bit: false
     }
 }
 
@@ -106,7 +111,9 @@ pub struct DecoderFlags {
     /// Whether the png decoder should add alpha channel where possible.
     png_add_alpha_channel:        bool,
     /// Whether we should use neon instructions where possible.
-    zune_use_neon:                bool
+    zune_use_neon:                bool,
+    /// Whether the png decoder should strip 16 bit to 8 bit
+    png_strip_16_bit_to_8_bit:    bool
 }
 
 /// Decoder options
@@ -363,6 +370,21 @@ impl DecoderOptions {
     /// channel to images where possible
     pub const fn png_get_add_alpha_channel(&self) -> bool {
         self.flags.png_add_alpha_channel
+    }
+
+    /// Whether the png decoder should reduce 16 bit images to 8 bit
+    /// images implicitly.
+    ///
+    /// Equivalent to [png::Transformations::STRIP_16](https://docs.rs/png/latest/png/struct.Transformations.html#associatedconstant.STRIP_16)
+    pub fn png_set_strip_to_8bit(mut self, yes: bool) -> Self {
+        self.flags.png_strip_16_bit_to_8_bit = yes;
+        self
+    }
+
+    /// Return a boolean indicating whether the png decoder should reduce
+    /// 16 bit images to 8 bit images implicitly
+    pub const fn png_get_strip_to_8bit(&self) -> bool {
+        self.flags.png_strip_16_bit_to_8_bit
     }
 }
 
