@@ -9,7 +9,17 @@ use std::fs::read;
 
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
+use zune_image::filters::box_blur::BoxBlur;
 use zune_image::filters::crop::Crop;
+use zune_image::filters::exposure::Exposure;
+use zune_image::filters::flip::Flip;
+use zune_image::filters::flop::Flop;
+use zune_image::filters::gamma::Gamma;
+use zune_image::filters::gaussian_blur::GaussianBlur;
+use zune_image::filters::invert::Invert;
+use zune_image::filters::orientation::AutoOrient;
+use zune_image::filters::sobel::Sobel;
+use zune_image::filters::stretch_contrast::StretchContrast;
 use zune_image::filters::threshold::Threshold;
 use zune_image::filters::transpose::Transpose;
 use zune_image::image::Image;
@@ -252,14 +262,404 @@ impl PyImage {
     ///  - value: Non-zero value assigned to the pixels for which the condition is satisfied
     ///  - method: The thresholding method used, defaults to binary which generates a black
     /// and white image from a grayscale image
-    ///  - in_place: Whether to perform the image in-place or to clone and return a copy
+    ///  - in_place: Whether to perform the operation in-place or to clone and return a copy
     ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+
     #[pyo3(signature = (value, method = PyImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
         &mut self, value: f32, method: PyImageThresholdType, in_place: bool
     ) -> PyResult<Option<PyImage>> {
         let exec = |image: &mut PyImage| -> PyResult<()> {
             if let Err(e) = Threshold::new(value, method.to_threshold()).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+    /// Invert (negate) an image
+    ///
+    /// # Arguments
+    ///  - in_place: Whether to perform the operation in-place or to clone and return a copy
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (in_place = false))]
+    pub fn invert(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Invert::new().execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Blur the image using a box blur operation
+    ///
+    /// # Arguments
+    ///  - in_place: Whether to perform the operation in-place or to clone and return a copy
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (radius, in_place = false))]
+    pub fn box_blur(&mut self, radius: usize, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = BoxBlur::new(radius).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Adjust exposure of image filter
+    ///
+    ///#  Arguments
+    /// - exposure: Set the exposure correction, allowed range is from -3.0 to 3.0. Default should be zero
+    /// - black: Set black level correction: Allowed range from -1.0 to 1.0. Default is zero.
+    ///
+    /// For 8 bit and 16 bit images, values are clamped to their limits,
+    /// for floating point, no clamping occurs
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (exposure, black_point = 0.0, in_place = false))]
+    pub fn exposure(
+        &mut self, exposure: f32, black_point: f32, in_place: bool
+    ) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Exposure::new(exposure, black_point).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Creates a vertical mirror image by reflecting
+    /// the pixels around the central x-axis.
+    ///
+    ///
+    /// ```text
+    ///
+    ///old image     new image
+    /// ┌─────────┐   ┌──────────┐
+    /// │a b c d e│   │j i h g f │
+    /// │f g h i j│   │e d c b a │
+    /// └─────────┘   └──────────┘
+    /// ```
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (in_place = false))]
+    pub fn flip(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Flip.execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Creates a horizontal mirror image by
+    /// reflecting the pixels around the central y-axis
+    ///
+    ///```text
+    ///old image     new image
+    ///┌─────────┐   ┌──────────┐
+    ///│a b c d e│   │e d b c a │
+    ///│f g h i j│   │j i h g f │
+    ///└─────────┘   └──────────┘
+    ///```
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (in_place = false))]
+    pub fn flop(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Flop.execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+    /// Gamma adjust an image
+    ///
+    /// This currently only supports 8 and 16 bit depth images since it applies an optimization
+    /// that works for those depths.
+    ///
+    /// # Arguments
+    /// - gamma: Ranges typical range is from 0.8-2.3
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (gamma, in_place = false))]
+    pub fn gamma(&mut self, gamma: f32, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Gamma::new(gamma).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Blur the image using a gaussian blur filter
+    ///
+    /// # Arguments
+    ///   - sigma: Strength of blur
+    ///  - in_place: Whether to perform the operation in-place or to clone and return a copy
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (sigma, in_place = false))]
+    pub fn gaussian_blur(&mut self, sigma: f32, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = GaussianBlur::new(sigma).execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Auto orient the image based on the exif metadata
+    ///
+    ///
+    /// This operation is also a no-op if the image does not have
+    /// exif metadata
+    #[pyo3(signature = (in_place = false))]
+    pub fn auto_orient(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = AutoOrient.execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Calculate the sobel derivative of an image
+    ///
+    /// This uses the standard 3x3 [Gx and Gy matrix](https://en.wikipedia.org/wiki/Sobel_operator)
+    ///
+    /// Gx matrix
+    /// ```text
+    ///   -1, 0, 1,
+    ///   -2, 0, 2,
+    ///   -1, 0, 1
+    /// ```
+    /// Gy matrix
+    /// ```text
+    /// -1,-2,-1,
+    ///  0, 0, 0,
+    ///  1, 2, 1
+    /// ```
+    ///
+    ///  # Arguments
+    /// - in-place: Whether to carry the operation in place or clone and operate on the copy
+    #[pyo3(signature = (in_place = false))]
+    pub fn sobel(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Sobel.execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+    /// Calculate the scharr derivative of an image
+    ///
+    /// The image is convolved with the following 3x3 matrix
+    ///
+    ///
+    /// Gx matrix
+    /// ```text
+    ///   -3, 0,  3,
+    ///  -10, 0, 10,
+    ///   -3, 0,  3
+    /// ```
+    /// Gy matrix
+    /// ```text
+    /// -3,-10,-3,
+    ///  0,  0, 0,
+    ///  3, 10, 3
+    /// ```
+    ///
+    ///  # Arguments
+    /// - in-place: Whether to carry the operation in place or clone and operate on the copy
+    #[pyo3(signature = (in_place = false))]
+    pub fn scharr(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = Sobel.execute(&mut image.image) {
+                return Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting: {:?}",
+                    e
+                )));
+            }
+            Ok(())
+        };
+
+        if in_place {
+            exec(self)?;
+            Ok(None)
+        } else {
+            let mut im_clone = self.clone();
+            exec(&mut im_clone)?;
+
+            Ok(Some(im_clone))
+        }
+    }
+
+    /// Linearly stretches the contrast in an image in place,
+    /// sending lower to image minimum and upper to image maximum.
+    ///
+    /// # Arguments
+    /// - lower: Lower minimum value for which pixels below this are clamped to the value
+    /// - upper: Upper maximum value for which pixels above are clamped to the value
+    ///
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (lower, upper, in_place = false))]
+    pub fn stretch_contrast(
+        &mut self, lower: u16, upper: u16, in_place: bool
+    ) -> PyResult<Option<PyImage>> {
+        let exec = |image: &mut PyImage| -> PyResult<()> {
+            if let Err(e) = StretchContrast::new(lower, upper).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
                     e
