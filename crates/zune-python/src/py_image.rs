@@ -5,8 +5,11 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+mod numpy_bindings;
+
 use std::fs::read;
 
+use numpy::PyArray3;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_image::filters::box_blur::BoxBlur;
@@ -221,6 +224,13 @@ impl PyImage {
     }
 
     /// Convert from one depth to another
+    ///
+    /// The following are the depth conversion details
+    ///  
+    /// - INT->Float : Convert to float and divide by max value for the previous integer type(255 for u8,65535 for u16).
+    /// - Float->Int : Multiply by max value of the new depth (255->Eight,65535->16)
+    /// - smallInt->Int :  Multiply by (MAX_LARGE_INT/MAX_SMALL_INT)
+    /// - LargeInt->SmallInt: Divide by (MAX_LARGE_INT/MAX_SMALL_INT)  
     ///
     /// # Arguments
     /// - to: The new depth to convert to
@@ -677,6 +687,15 @@ impl PyImage {
 
             Ok(Some(im_clone))
         }
+    }
+    pub fn to_numpy_u8<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<u8>> {
+        self.to_numpy_generic(py, PyImageDepth::Eight)
+    }
+    pub fn to_numpy_u16<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<u16>> {
+        self.to_numpy_generic(py, PyImageDepth::Sixteen)
+    }
+    pub fn to_numpy_f32<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<f32>> {
+        self.to_numpy_generic(py, PyImageDepth::F32)
     }
 }
 

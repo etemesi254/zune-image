@@ -18,7 +18,8 @@ mod py_image;
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn zune_python(_py: Python, m: &PyModule) -> PyResult<()> {
+#[pyo3(name = "zune_image")]
+fn zune_image(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyImageFormats>()?;
     m.add_class::<PyImageColorSpace>()?;
     m.add_class::<PyImage>()?;
