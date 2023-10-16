@@ -81,6 +81,6 @@ impl OperationsTrait for Threshold {
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
