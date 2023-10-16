@@ -412,7 +412,7 @@ impl Channel {
     ///
     /// The length of the new slice is defined
     /// as size of T over the length of the stored items in the pointer
-    pub fn reinterpret_as<T: Default + 'static + Pod>(&self) -> Result<&[T], ChannelErrors> {
+    pub fn reinterpret_as<T: Default + 'static>(&self) -> Result<&[T], ChannelErrors> {
         // check if the alignment is correct
         // plus we can evenly divide this
         self.confirm_suspicions::<T>()?;
@@ -434,7 +434,7 @@ impl Channel {
     ///
     /// # Returns
     /// - `Some(&[T])`: THe re-interpreted bits
-    unsafe fn reinterpret_as_unchecked<T: Default + 'static + Pod>(&self) -> &[T] {
+    unsafe fn reinterpret_as_unchecked<T: Default + 'static>(&self) -> &[T] {
         // Safety:
         //  validity: We own the data
         //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
@@ -442,7 +442,7 @@ impl Channel {
         //
         let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
-        let (a, b, c) = bytemuck::pod_align_to(new_slice);
+        let (a, b, c) = new_slice.align_to();
 
         assert!(a.is_empty(), "extra sloppy bytes");
         assert!(c.is_empty(), "extra sloppy bytes");
