@@ -518,12 +518,24 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             .checked_mul(out_n)?
             .checked_mul(bytes)
     }
+    /// Return the number of bytes required to hold a decoded image frame
+    /// decoded without regard to the given input transformations
+    ///
+    /// # Returns
+    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
+    ///  - `None`: Indicates the image headers was not decoded.
+    ///
+    /// # Panics
+    /// In case `width*height*colorspace` calculation may overflow a usize
+
     fn inner_buffer_size(&self) -> Option<usize> {
         if !self.seen_hdr {
             return None;
         }
 
         let info = &self.png_info;
+        // only difference with output is here we don't care about
+        // stripping 16 bit to 8 bit
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
         let out_n = self.get_colorspace()?.num_components();
@@ -689,15 +701,25 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         let mut out: Vec<u8> = vec![0; t];
         //decode
         self.decode_into(&mut out)?;
-        // then convert to 8 bit in place
-        let mut i = 0;
-        let mut j = 0;
-        while j < out.len() {
-            out[i] = out[j];
-            i += 1;
-            j += 2;
+        if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
+            // in case we are to convert from 16 bit to 8 bit, we can do it here
+            // we optimize it by using the same buffer the 16 bit data is stored in
+            // and implicitly converting it to 8 bit.
+            //
+            // Do note that to convert it, we only take the top 8 bits of a 16 bit.
+            // so to run [a,a,b,b,c,b,d,b] => [a,b,c,d], the write never catches on the read
+            // hence no override. which works for us
+            //
+            // then convert to 8 bit in place
+            let mut i = 0;
+            let mut j = 0;
+            while j < out.len() {
+                out[i] = out[j];
+                i += 1;
+                j += 2;
+            }
+            out.truncate(new_len);
         }
-        out.truncate(new_len);
 
         Ok(out)
     }
