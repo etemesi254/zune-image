@@ -65,3 +65,25 @@ pub(crate) fn convert_rgb_to_grayscale_scalar_u16(
         *g_out = g.min(max_value) as u16;
     }
 }
+
+pub(crate) fn convert_rgb_to_grayscale_scalar_f32(
+    r: &[f32], g: &[f32], b: &[f32], gr: &mut [f32], _max_value: f32
+) {
+    /*
+     * The algorithm assigns different weights to colors
+     * i.e it just doesn't average them
+     */
+    let r_coef = 0.2989;
+    let g_coef = 0.5870;
+    let b_coef = 0.1140;
+
+    for (((r_v, g_v), b_v), g_out) in r.iter().zip(g.iter()).zip(b.iter()).zip(gr.iter_mut()) {
+        let r = r_coef * (*r_v);
+        let g = g_coef * (*g_v);
+        let b = b_coef * (*b_v);
+
+        let gray = r + g + b;
+
+        *g_out = gray;
+    }
+}
