@@ -7,7 +7,8 @@
  */
 
 use crate::core_filters::colorspace::grayscale::scalar::{
-    convert_rgb_to_grayscale_scalar, convert_rgb_to_grayscale_scalar_u16
+    convert_rgb_to_grayscale_scalar, convert_rgb_to_grayscale_scalar_f32,
+    convert_rgb_to_grayscale_scalar_u16
 };
 
 mod avx2;
@@ -44,6 +45,10 @@ pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_val
         }
     }
     convert_rgb_to_grayscale_scalar(r, g, b, out, max_value);
+}
+
+pub fn rgb_to_grayscale_f32(r: &[f32], g: &[f32], b: &[f32], out: &mut [f32], max_value: f32) {
+    convert_rgb_to_grayscale_scalar_f32(r, g, b, out, max_value);
 }
 
 #[cfg(all(feature = "benchmarks"))]

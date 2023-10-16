@@ -17,7 +17,9 @@ use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::log::warn;
 
 use crate::channel::Channel;
-use crate::core_filters::colorspace::grayscale::{rgb_to_grayscale_u16, rgb_to_grayscale_u8};
+use crate::core_filters::colorspace::grayscale::{
+    rgb_to_grayscale_f32, rgb_to_grayscale_u16, rgb_to_grayscale_u8
+};
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
@@ -76,7 +78,9 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
     Ok(())
 }
 
-fn rgb_to_grayscale(image: &mut Image, preserve_alpha: bool) -> Result<(), ImageErrors> {
+fn rgb_to_grayscale(
+    image: &mut Image, to: ColorSpace, preserve_alpha: bool
+) -> Result<(), ImageErrors> {
     let im_colorspace = image.get_colorspace();
 
     if im_colorspace == ColorSpace::Luma || im_colorspace == ColorSpace::LumaA {
@@ -115,8 +119,16 @@ fn rgb_to_grayscale(image: &mut Image, preserve_alpha: bool) -> Result<(), Image
                     frame.set_channels(vec![out, channel[3].clone()]);
                     out_colorspace = ColorSpace::LumaA;
                 } else {
-                    frame.set_channels(vec![out]);
-                    out_colorspace = ColorSpace::Luma;
+                    if to.has_alpha() {
+                        // add alpha channel
+                        let mut alpha_out = Channel::new_with_length::<u8>(size);
+                        alpha_out.reinterpret_as_mut::<u8>().unwrap().fill(u8::MAX);
+                        frame.set_channels(vec![out, alpha_out]);
+                        out_colorspace = ColorSpace::Luma;
+                    } else {
+                        frame.set_channels(vec![out]);
+                        out_colorspace = ColorSpace::Luma;
+                    }
                 }
             }
             BitType::U16 => {
@@ -131,11 +143,52 @@ fn rgb_to_grayscale(image: &mut Image, preserve_alpha: bool) -> Result<(), Image
                     frame.set_channels(vec![out, channel[3].clone()]);
                     out_colorspace = ColorSpace::LumaA;
                 } else {
-                    frame.set_channels(vec![out]);
-                    out_colorspace = ColorSpace::Luma;
+                    if to.has_alpha() {
+                        // add alpha channel
+                        let mut alpha_out = Channel::new_with_length::<u16>(size);
+                        alpha_out
+                            .reinterpret_as_mut::<u16>()
+                            .unwrap()
+                            .fill(u16::MAX);
+                        frame.set_channels(vec![out, alpha_out]);
+                        out_colorspace = ColorSpace::Luma;
+                    } else {
+                        frame.set_channels(vec![out]);
+                        out_colorspace = ColorSpace::Luma;
+                    }
                 }
             }
-            _ => todo!()
+            BitType::F32 => {
+                let r = channel[0].reinterpret_as::<f32>().unwrap();
+                let g = channel[1].reinterpret_as::<f32>().unwrap();
+                let b = channel[2].reinterpret_as::<f32>().unwrap();
+                let mut out = Channel::new_with_length::<f32>(size);
+
+                rgb_to_grayscale_f32(
+                    r,
+                    g,
+                    b,
+                    out.reinterpret_as_mut::<f32>().unwrap(),
+                    max_value as f32
+                );
+
+                if preserve_alpha && colorspace.has_alpha() {
+                    frame.set_channels(vec![out, channel[3].clone()]);
+                    out_colorspace = ColorSpace::LumaA;
+                } else {
+                    if to.has_alpha() {
+                        // add alpha channel
+                        let mut alpha_out = Channel::new_with_length::<f32>(size);
+                        alpha_out.reinterpret_as_mut::<f32>().unwrap().fill(1.0);
+                        frame.set_channels(vec![out, alpha_out]);
+                        out_colorspace = ColorSpace::Luma;
+                    } else {
+                        frame.set_channels(vec![out]);
+                        out_colorspace = ColorSpace::Luma;
+                    }
+                }
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d))
         }
     }
 
@@ -189,7 +242,7 @@ impl OperationsTrait for ColorspaceConv {
 
             (ColorSpace::RGB | ColorSpace::RGBA, ColorSpace::Luma | ColorSpace::LumaA) => {
                 // use the rgb to grayscale converter
-                rgb_to_grayscale(image, self.to.has_alpha())?;
+                rgb_to_grayscale(image, self.to, self.to.has_alpha())?;
             }
             (ColorSpace::Luma | ColorSpace::LumaA, ColorSpace::RGB | ColorSpace::RGBA) => {
                 convert_luma_to_rgb(image, self.to)?;
@@ -220,12 +273,12 @@ impl OperationsTrait for ColorspaceConv {
         Ok(())
     }
 
-    fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U16, BitType::U8, BitType::F32]
-    }
-
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &ALL_COLORSPACES
+    }
+
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U16, BitType::U8, BitType::F32]
     }
 }
 
