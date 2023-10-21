@@ -186,11 +186,11 @@ impl EncoderTrait for JpegEncoder {
 
             Ok(encoded_data)
         } else {
-            return Err(ImgEncodeErrors::UnsupportedColorspace(
+            Err(ImgEncodeErrors::UnsupportedColorspace(
                 image.get_colorspace(),
                 self.supported_colorspaces()
             )
-            .into());
+            .into())
         }
     }
 

@@ -8,15 +8,17 @@
 
 use clap::ArgMatches;
 use log::debug;
-use zune_image::filters::box_blur::BoxBlur;
-use zune_image::filters::convolve::Convolve;
-use zune_image::filters::gaussian_blur::GaussianBlur;
-use zune_image::filters::scharr::Scharr;
-use zune_image::filters::sobel::Sobel;
-use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::filters::unsharpen::Unsharpen;
 use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
+use zune_imageprocs::box_blur::BoxBlur;
+use zune_imageprocs::convolve::Convolve;
+use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::scharr::Scharr;
+use zune_imageprocs::sobel::Sobel;
+use zune_imageprocs::spatial::StatisticsOps;
+use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::unsharpen::Unsharpen;
+use zune_opencl::ocl_sobel::OclSobel;
 
 pub fn parse_options<T: IntoImage>(
     workflow: &mut WorkFlow<T>, argument: &str, args: &ArgMatches
@@ -77,7 +79,12 @@ pub fn parse_options<T: IntoImage>(
             .map(|x| **x)
             .collect();
 
-        workflow.add_operation(Box::new(Convolve::new(values)))
+        workflow.add_operation(Box::new(Convolve::new(values, 1.0)))
+    } else if argument == "ocl-sobel" {
+        let ocl = OclSobel::try_new().map_err(|x| format!("{:?}", x))?;
+        debug!("Added ocl-sobel argument");
+
+        workflow.add_operation(Box::new(ocl));
     }
 
     Ok(())

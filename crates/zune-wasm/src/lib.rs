@@ -14,15 +14,16 @@ use zune_core::log::{debug, error, info};
 // use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
 use zune_image::core_filters::depth::Depth;
-use zune_image::filters::brighten::Brighten;
-use zune_image::filters::contrast::Contrast;
-use zune_image::filters::gamma::Gamma;
-use zune_image::filters::invert::Invert;
-use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::filters::stretch_contrast::StretchContrast;
-use zune_image::filters::threshold::{Threshold, ThresholdMethod};
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+use zune_imageprocs::brighten::Brighten;
+use zune_imageprocs::contrast::Contrast;
+use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::invert::Invert;
+use zune_imageprocs::spatial::StatisticsOps;
+use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 
 use crate::enums::{WasmColorspace, WasmImageDecodeFormats};
 use crate::utils::set_panic_hook;
@@ -110,7 +111,7 @@ impl WasmImage {
     }
 
     /// Apply a contrast operation to the image
-    pub fn stretch_contrast(&mut self, lower: u16, upper: u16) {
+    pub fn stretch_contrast(&mut self, lower: f32, upper: f32) {
         let ops = StretchContrast::new(lower, upper);
         self.execute_ops(&ops);
     }

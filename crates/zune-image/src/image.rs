@@ -91,8 +91,12 @@ impl Image {
         self.metadata.set_depth(depth)
     }
 
-    pub const fn get_metadata(&self) -> &ImageMetadata {
+    pub const fn metadata(&self) -> &ImageMetadata {
         &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut ImageMetadata {
+        &mut self.metadata
     }
 
     /// Return an immutable reference to all image frames
@@ -166,13 +170,13 @@ impl Image {
         }
     }
     pub fn flatten_to_u8(&self) -> Vec<Vec<u8>> {
-        return if self.get_depth() == BitDepth::Eight {
+        if self.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else {
             let mut im_clone = self.clone();
             Depth::new(BitDepth::Eight).execute(&mut im_clone).unwrap();
             im_clone.flatten_frames::<u8>()
-        };
+        }
     }
     pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
         let colorspace = self.get_colorspace();
@@ -204,7 +208,19 @@ impl Image {
             frame.write_rgba(colorspace, out).unwrap();
         }
     }
-    pub(crate) fn set_dimensions(&mut self, width: usize, height: usize) {
+    /// Set new image dimensions
+    ///
+    /// # Warning
+    ///
+    /// This is potentially dangerous and should be used only when
+    /// the underlying channels have been modified.
+    ///
+    /// # Arguments:
+    /// - width: The new image width
+    /// - height: The new imag height.
+    ///
+    /// Modifies the image in place
+    pub fn set_dimensions(&mut self, width: usize, height: usize) {
         self.metadata.set_dimensions(width, height);
     }
 
@@ -384,7 +400,6 @@ impl Image {
     /// # Panics
     /// - If calculating image dimensions will overflow [`usize`]
     ///
-    /// - If image `depth.size_of()` is not 2
     ///
     /// - If pixels length is not equal to expected length
     pub fn from_u16(pixels: &[u16], width: usize, height: usize, colorspace: ColorSpace) -> Image {
@@ -402,6 +417,22 @@ impl Image {
         Image::new(pixels, BitDepth::Sixteen, width, height, colorspace)
     }
 
+    /// Create an image from raw f32 pixels
+    ///
+    /// Pixels are expected to be interleaved according to number of components in the colorspace
+    ///
+    /// e.g if image is RGBA, pixels should be in the form of `[R,G,B,A,R,G,B,A]`
+    ///
+    ///The bit depth will be treated as [BitDepth::Float32](zune_core::bit_depth::BitDepth::Float32)
+    ///
+    /// # Returns
+    /// An [`Image`](crate::image::Image) struct
+    ///
+    ///
+    /// # Panics
+    /// - If calculating image dimensions will overflow [`usize`]
+    ///
+    /// - If pixels length is not equal to expected length
     pub fn from_f32(pixels: &[f32], width: usize, height: usize, colorspace: ColorSpace) -> Image {
         let expected_len = checked_mul(width, height, 1, colorspace.num_components());
         assert_eq!(

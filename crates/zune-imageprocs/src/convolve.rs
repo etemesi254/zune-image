@@ -6,17 +6,166 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
+use zune_image::channel::Channel;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
+
 use crate::pad::{pad, PadMethod};
 use crate::traits::NumOps;
 use crate::utils::z_prefetch;
 
-fn convolve_3x3_inner<T>(in_array: &[T; 9], weights: &[f32; 9]) -> T
+/// Convolve an image
+#[derive(Default)]
+pub struct Convolve {
+    weights: Vec<f32>,
+    scale:   f32
+}
+
+impl Convolve {
+    /// Create a new convolve matrix, this supports 3x3,5x5 and 7x7 matrices
+    ///
+    /// The operation will return an error if the weights length isn't 9(3x3),25(5x5) or 49(7x7)
+    #[must_use]
+    pub fn new(weights: Vec<f32>, scale: f32) -> Convolve {
+        Convolve { weights, scale }
+    }
+}
+
+impl OperationsTrait for Convolve {
+    fn get_name(&self) -> &'static str {
+        "2D convolution"
+    }
+    #[allow(clippy::too_many_lines)]
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let (width, height) = image.get_dimensions();
+        let depth = image.get_depth();
+
+        #[cfg(feature = "threads")]
+        {
+            trace!("Running convolve in multithreaded mode");
+
+            std::thread::scope(|s| {
+                let mut errors = vec![];
+                for channel in image.get_channels_mut(true) {
+                    let scope = s.spawn(|| {
+                        // Hello
+                        let mut out_channel = Channel::new_with_bit_type(
+                            width * height * depth.size_of(),
+                            depth.bit_type()
+                        );
+
+                        match depth.bit_type() {
+                            BitType::U8 => {
+                                convolve(
+                                    channel.reinterpret_as::<u8>()?,
+                                    out_channel.reinterpret_as_mut::<u8>()?,
+                                    width,
+                                    height,
+                                    &self.weights,
+                                    self.scale
+                                )?;
+                            }
+                            BitType::U16 => {
+                                convolve(
+                                    channel.reinterpret_as::<u16>()?,
+                                    out_channel.reinterpret_as_mut::<u16>()?,
+                                    width,
+                                    height,
+                                    &self.weights,
+                                    self.scale
+                                )?;
+                            }
+                            BitType::F32 => {
+                                convolve(
+                                    channel.reinterpret_as::<f32>()?,
+                                    out_channel.reinterpret_as_mut::<f32>()?,
+                                    width,
+                                    height,
+                                    &self.weights,
+                                    self.scale
+                                )?;
+                            }
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.get_name(),
+                                    d
+                                ))
+                            }
+                        }
+
+                        *channel = out_channel;
+                        Ok(())
+                    });
+                    errors.push(scope);
+                }
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
+        }
+        #[cfg(not(feature = "threads"))]
+        {
+            for channel in image.get_channels_mut(true) {
+                let mut out_channel =
+                    Channel::new_with_bit_type(width * height * depth.size_of(), depth.bit_type());
+
+                match depth.bit_type() {
+                    BitType::U8 => {
+                        convolve(
+                            channel.reinterpret_as::<u8>()?,
+                            out_channel.reinterpret_as_mut::<u8>()?,
+                            width,
+                            height,
+                            &self.weights,
+                            self.scale
+                        )?;
+                    }
+                    BitType::U16 => {
+                        convolve(
+                            channel.reinterpret_as::<u16>()?,
+                            out_channel.reinterpret_as_mut::<u16>()?,
+                            width,
+                            height,
+                            &self.weights,
+                            self.scale
+                        )?;
+                    }
+                    BitType::F32 => {
+                        convolve(
+                            channel.reinterpret_as::<f32>()?,
+                            out_channel.reinterpret_as_mut::<f32>()?,
+                            width,
+                            height,
+                            &self.weights,
+                            self.scale
+                        )?;
+                    }
+                    d => {
+                        return Err(ImageErrors::ImageOperationNotImplemented(
+                            self.get_name(),
+                            d
+                        ))
+                    }
+                }
+                *channel = out_channel;
+            }
+        }
+        Ok(())
+    }
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8, BitType::U16, BitType::F32]
+    }
+}
+
+fn convolve_3x3_inner<T>(in_array: &[T; 9], weights: &[f32; 9], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
 {
-    let scale = 1.0; // 9.0;
-
     T::from_f32(
         in_array
             .iter()
@@ -28,12 +177,11 @@ where
     .zclamp(T::min_val(), T::max_val())
 }
 
-fn convolve_5x5_inner<T>(in_array: &[T; 25], weights: &[f32; 25]) -> T
+fn convolve_5x5_inner<T>(in_array: &[T; 25], weights: &[f32; 25], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
 {
-    let scale = 1.0; // / 25.0;
     T::from_f32(
         in_array
             .iter()
@@ -45,12 +193,11 @@ where
     .zclamp(T::min_val(), T::max_val())
 }
 
-fn convolve_7x7_inner<T>(in_array: &[T; 49], weights: &[f32; 49]) -> T
+fn convolve_7x7_inner<T>(in_array: &[T; 49], weights: &[f32; 49], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
 {
-    let scale = 1.0 / 49.0;
     T::from_f32(
         in_array
             .iter()
@@ -64,7 +211,8 @@ where
 
 /// Convolve a matrix
 pub fn convolve_3x3<T>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 9]
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 9],
+    scale: f32
 ) where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
@@ -79,12 +227,14 @@ pub fn convolve_3x3<T>(
         width,
         height,
         convolve_3x3_inner,
-        weights
+        weights,
+        scale
     );
 }
 
 pub fn convolve_5x5<T>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 25]
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 25],
+    scale: f32
 ) where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
@@ -99,12 +249,14 @@ pub fn convolve_5x5<T>(
         width,
         height,
         convolve_5x5_inner,
-        weights
+        weights,
+        scale
     );
 }
 
 pub fn convolve_7x7<T>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 49]
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 49],
+    scale: f32
 ) where
     T: NumOps<T> + Copy + Default,
     f32: From<T>
@@ -119,13 +271,15 @@ pub fn convolve_7x7<T>(
         width,
         height,
         convolve_7x7_inner,
-        weights
+        weights,
+        scale
     );
 }
 
 /// Selects a convolve matrix
 pub fn convolve<T>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32]
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32],
+    scale: f32
 ) -> Result<(), &'static str>
 where
     T: NumOps<T> + Copy + Default,
@@ -137,7 +291,8 @@ where
             out_channel,
             width,
             height,
-            weights.try_into().unwrap()
+            weights.try_into().unwrap(),
+            scale
         );
     } else if weights.len() == 25 {
         convolve_5x5::<T>(
@@ -145,7 +300,8 @@ where
             out_channel,
             width,
             height,
-            weights.try_into().unwrap()
+            weights.try_into().unwrap(),
+            scale
         );
     } else if weights.len() == 49 {
         convolve_7x7::<T>(
@@ -153,7 +309,8 @@ where
             out_channel,
             width,
             height,
-            weights.try_into().unwrap()
+            weights.try_into().unwrap(),
+            scale
         );
     } else {
         return Err("Not implemented, only works for 3x3, 5x5 and 7x7 arrays");
@@ -166,10 +323,10 @@ where
 #[allow(non_snake_case)]
 fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, function: F,
-    values: &[f32; OUT_SIZE]
+    values: &[f32; OUT_SIZE], scale: f32
 ) where
     T: Default + Copy,
-    F: Fn(&[T; OUT_SIZE], &[f32; OUT_SIZE]) -> T
+    F: Fn(&[T; OUT_SIZE], &[f32; OUT_SIZE], f32) -> T
 {
     let old_width = width;
     let height = (RADIUS * 2) + height;
@@ -201,7 +358,7 @@ fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
                 i += radius_size;
             }
 
-            let result = function(&local_storage, values);
+            let result = function(&local_storage, values, scale);
 
             out_channel[iy * old_width + ix] = result;
         }
@@ -221,7 +378,7 @@ mod tests {
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
         nanorand::WyRand::new().fill(&mut data);
-        convolve_3x3(&data, &mut out, width, height, &[0.0; 9]);
+        convolve_3x3(&data, &mut out, width, height, &[0.0; 9], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
 
@@ -231,7 +388,7 @@ mod tests {
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
         nanorand::WyRand::new().fill(&mut data);
-        convolve_5x5(&data, &mut out, width, height, &[0.0; 25]);
+        convolve_5x5(&data, &mut out, width, height, &[0.0; 25], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
 
@@ -241,7 +398,7 @@ mod tests {
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
         nanorand::WyRand::new().fill(&mut data);
-        convolve_7x7(&data, &mut out, width, height, &[0.0; 49]);
+        convolve_7x7(&data, &mut out, width, height, &[0.0; 49], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
 }

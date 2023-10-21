@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.4" }
-
+zune-image = { path = "../zune-image",version = "0.4" }
 
 [features]
 avx2 = []
@@ -15,10 +15,11 @@ sse2 = []
 sse3 = []
 sse41 = []
 ## Needs nightly, disabled by default
-benchmarks=[]
+benchmarks = []
 log = ["zune-core/log"]
-default = ["avx2", "sse2", "sse3", "sse41"]
+threads=[]
+default = ["avx2", "sse2", "sse3", "sse41","threads"]
 
 
 [dev-dependencies]
-nanorand={version="0.7.0",default-features=false,features=["wyrand"]} # testing purposes.
+nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.

@@ -9,44 +9,44 @@ mod numpy_bindings;
 
 use std::fs::read;
 
-use numpy::PyArray3;
+use numpy::{PyUntypedArray};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use zune_image::filters::box_blur::BoxBlur;
-use zune_image::filters::crop::Crop;
-use zune_image::filters::exposure::Exposure;
-use zune_image::filters::flip::Flip;
-use zune_image::filters::flop::Flop;
-use zune_image::filters::gamma::Gamma;
-use zune_image::filters::gaussian_blur::GaussianBlur;
-use zune_image::filters::invert::Invert;
-use zune_image::filters::orientation::AutoOrient;
-use zune_image::filters::sobel::Sobel;
-use zune_image::filters::stretch_contrast::StretchContrast;
-use zune_image::filters::threshold::Threshold;
-use zune_image::filters::transpose::Transpose;
+use zune_core::bit_depth::BitType;
+use zune_imageprocs::box_blur::BoxBlur;
+use zune_imageprocs::crop::Crop;
+use zune_imageprocs::exposure::Exposure;
+use zune_imageprocs::flip::Flip;
+use zune_imageprocs::flop::Flop;
+use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::invert::Invert;
+use zune_imageprocs::sobel::Sobel;
+use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::threshold::Threshold;
+use zune_imageprocs::transpose::Transpose;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 use zune_png::zune_core::options::DecoderOptions;
 
 use crate::py_enums::{
-    PyImageColorSpace, PyImageDepth, PyImageErrors, PyImageFormats, PyImageThresholdType
+    ZImageColorSpace, ZImageDepth, ZImageErrors, ZImageFormats, ZImageThresholdType,
 };
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyImage {
-    image: Image
+pub struct ZImage {
+    image: Image,
 }
 
-impl PyImage {
-    pub(crate) fn new(image: Image) -> PyImage {
-        return PyImage { image };
+impl ZImage {
+    pub(crate) fn new(image: Image) -> ZImage {
+        return ZImage { image };
     }
 }
 
 #[pymethods]
-impl PyImage {
+impl ZImage {
     /// Get the image or the first frame of an image
     /// as a Python list.
     ///
@@ -60,10 +60,10 @@ impl PyImage {
     pub fn to_u8_2d(&self) -> Vec<Vec<u8>> {
         return self.image.flatten_to_u8();
     }
-    pub fn format(&self) -> PyImageFormats {
-        match self.image.get_metadata().get_image_format() {
-            Some(format) => PyImageFormats::from(format),
-            None => PyImageFormats::Unknown
+    pub fn format(&self) -> ZImageFormats {
+        match self.image.metadata().get_image_format() {
+            Some(format) => ZImageFormats::from(format),
+            None => ZImageFormats::Unknown
         }
     }
     /// Get the image dimensions as a tuple of width and height
@@ -93,9 +93,9 @@ impl PyImage {
     /// - The current image colorspace
     ///
     /// # See
-    /// - [convert_colorspace](PyImage::convert_colorspace) : Convert from one colorspace to another
-    pub fn colorspace(&self) -> PyImageColorSpace {
-        PyImageColorSpace::from(self.image.get_colorspace())
+    /// - [convert_colorspace](ZImage::convert_colorspace) : Convert from one colorspace to another
+    pub fn colorspace(&self) -> ZImageColorSpace {
+        ZImageColorSpace::from(self.image.get_colorspace())
     }
     /// Convert from one colorspace to another
     ///
@@ -108,11 +108,11 @@ impl PyImage {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
     pub fn convert_colorspace(
-        &mut self, to: PyImageColorSpace, in_place: bool
-    ) -> PyResult<Option<PyImage>> {
+        &mut self, to: ZImageColorSpace, in_place: bool,
+    ) -> PyResult<Option<ZImage>> {
         let color = to.to_colorspace();
 
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = image.image.convert_color(color) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -142,8 +142,8 @@ impl PyImage {
     ///  - Sixteen: u16 (2 bytes per pixel)
     ///  - F32: Float f32 (4 bytes per pixel, float type)
     ///  
-    pub fn depth(&self) -> PyImageDepth {
-        PyImageDepth::from(self.image.get_depth())
+    pub fn depth(&self) -> ZImageDepth {
+        ZImageDepth::from(self.image.get_depth())
     }
     /// Save an image to a format
     ///
@@ -157,7 +157,7 @@ impl PyImage {
     ///
     /// # Returns
     ///  - Nothing on success, or Exception  on error
-    pub fn save(&self, file: String, format: PyImageFormats) -> PyResult<()> {
+    pub fn save(&self, file: String, format: ZImageFormats) -> PyResult<()> {
         if let Err(e) = self.image.save_to(file, format.to_imageformat()) {
             return Err(PyErr::new::<PyException, _>(format!(
                 "Error encoding: {:?}",
@@ -181,12 +181,12 @@ impl PyImage {
     ///
     #[pyo3(signature = (width, height, x, y, in_place = false))]
     pub fn crop(
-        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool
-    ) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool,
+    ) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             Crop::new(width, height, x, y)
                 .execute(&mut image.image)
-                .map_err(|x| PyImageErrors::from(x))?;
+                .map_err(|x| ZImageErrors::from(x))?;
             Ok(())
         };
         return if in_place {
@@ -206,11 +206,11 @@ impl PyImage {
     /// - inplace: Whether to transpose the image in place or generate a clone
     /// and transpose the new clone
     #[pyo3(signature = (in_place = false))]
-    pub fn transpose(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn transpose(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             Transpose::new()
                 .execute(&mut image.image)
-                .map_err(|x| PyImageErrors::from(x))?;
+                .map_err(|x| ZImageErrors::from(x))?;
             Ok(())
         };
         return if in_place {
@@ -240,10 +240,10 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
-    pub fn convert_depth(&mut self, to: PyImageDepth, in_place: bool) -> PyResult<Option<PyImage>> {
+    pub fn convert_depth(&mut self, to: ZImageDepth, in_place: bool) -> PyResult<Option<ZImage>> {
         let color = to.to_depth();
 
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = image.image.convert_depth(color) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -277,12 +277,11 @@ impl PyImage {
     /// # Returns
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
-
-    #[pyo3(signature = (value, method = PyImageThresholdType::Binary, in_place = false))]
+    #[pyo3(signature = (value, method = ZImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
-        &mut self, value: f32, method: PyImageThresholdType, in_place: bool
-    ) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        &mut self, value: f32, method: ZImageThresholdType, in_place: bool,
+    ) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Threshold::new(value, method.to_threshold()).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -311,8 +310,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
-    pub fn invert(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn invert(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Invert::new().execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -342,8 +341,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (radius, in_place = false))]
-    pub fn box_blur(&mut self, radius: usize, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn box_blur(&mut self, radius: usize, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = BoxBlur::new(radius).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -378,9 +377,9 @@ impl PyImage {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (exposure, black_point = 0.0, in_place = false))]
     pub fn exposure(
-        &mut self, exposure: f32, black_point: f32, in_place: bool
-    ) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        &mut self, exposure: f32, black_point: f32, in_place: bool,
+    ) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Exposure::new(exposure, black_point).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -417,8 +416,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
-    pub fn flip(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn flip(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Flip.execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -454,8 +453,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
-    pub fn flop(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn flop(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Flop.execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -487,8 +486,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (gamma, in_place = false))]
-    pub fn gamma(&mut self, gamma: f32, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn gamma(&mut self, gamma: f32, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Gamma::new(gamma).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -519,8 +518,8 @@ impl PyImage {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (sigma, in_place = false))]
-    pub fn gaussian_blur(&mut self, sigma: f32, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn gaussian_blur(&mut self, sigma: f32, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = GaussianBlur::new(sigma).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -541,33 +540,33 @@ impl PyImage {
         }
     }
 
-    /// Auto orient the image based on the exif metadata
-    ///
-    ///
-    /// This operation is also a no-op if the image does not have
-    /// exif metadata
-    #[pyo3(signature = (in_place = false))]
-    pub fn auto_orient(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
-            if let Err(e) = AutoOrient.execute(&mut image.image) {
-                return Err(PyErr::new::<PyException, _>(format!(
-                    "Error converting: {:?}",
-                    e
-                )));
-            }
-            Ok(())
-        };
-
-        if in_place {
-            exec(self)?;
-            Ok(None)
-        } else {
-            let mut im_clone = self.clone();
-            exec(&mut im_clone)?;
-
-            Ok(Some(im_clone))
-        }
-    }
+    // /// Auto orient the image based on the exif metadata
+    // ///
+    // ///
+    // /// This operation is also a no-op if the image does not have
+    // /// exif metadata
+    // #[pyo3(signature = (in_place = false))]
+    // pub fn auto_orient(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+    //     let exec = |image: &mut ZImage| -> PyResult<()> {
+    //         if let Err(e) = AutoOrient.execute(&mut image.image) {
+    //             return Err(PyErr::new::<PyException, _>(format!(
+    //                 "Error converting: {:?}",
+    //                 e
+    //             )));
+    //         }
+    //         Ok(())
+    //     };
+    //
+    //     if in_place {
+    //         exec(self)?;
+    //         Ok(None)
+    //     } else {
+    //         let mut im_clone = self.clone();
+    //         exec(&mut im_clone)?;
+    //
+    //         Ok(Some(im_clone))
+    //     }
+    // }
 
     /// Calculate the sobel derivative of an image
     ///
@@ -589,8 +588,8 @@ impl PyImage {
     ///  # Arguments
     /// - in-place: Whether to carry the operation in place or clone and operate on the copy
     #[pyo3(signature = (in_place = false))]
-    pub fn sobel(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn sobel(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Sobel.execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -631,8 +630,8 @@ impl PyImage {
     ///  # Arguments
     /// - in-place: Whether to carry the operation in place or clone and operate on the copy
     #[pyo3(signature = (in_place = false))]
-    pub fn scharr(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+    pub fn scharr(&mut self, in_place: bool) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = Sobel.execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -656,19 +655,21 @@ impl PyImage {
     /// Linearly stretches the contrast in an image in place,
     /// sending lower to image minimum and upper to image maximum.
     ///
-    /// # Arguments
+    /// Arguments:
+    ///
     /// - lower: Lower minimum value for which pixels below this are clamped to the value
     /// - upper: Upper maximum value for which pixels above are clamped to the value
     ///
     ///
-    /// # Returns
+    /// Returns:
+    ///
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (lower, upper, in_place = false))]
     pub fn stretch_contrast(
-        &mut self, lower: u16, upper: u16, in_place: bool
-    ) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
+        &mut self, lower: f32, upper: f32, in_place: bool,
+    ) -> PyResult<Option<ZImage>> {
+        let exec = |image: &mut ZImage| -> PyResult<()> {
             if let Err(e) = StretchContrast::new(lower, upper).execute(&mut image.image) {
                 return Err(PyErr::new::<PyException, _>(format!(
                     "Error converting: {:?}",
@@ -688,22 +689,59 @@ impl PyImage {
             Ok(Some(im_clone))
         }
     }
-    pub fn to_numpy_u8<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<u8>> {
-        self.to_numpy_generic(py, PyImageDepth::Eight)
-    }
-    pub fn to_numpy_u16<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<u16>> {
-        self.to_numpy_generic(py, PyImageDepth::Sixteen)
-    }
-    pub fn to_numpy_f32<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<f32>> {
-        self.to_numpy_generic(py, PyImageDepth::F32)
+    /// Convert the image bytes to a numpy array
+    ///
+    /// The array will always be a 3-D numpy array of
+    /// `[width,height,colorspace_components]` dimensions/
+    /// This means that e.g for a 256x256 rgb image the result will be `[256,256,3]` dimensions
+    ///
+    /// Colorspace is important in determining output.
+    ///
+    /// RGB colorspace is arranged as `R`,`G`,`B` , BGR is arranged as `B`,`G`,`R`
+    ///
+    ///
+    /// Array type:
+    ///
+    /// The array type is determined by the  image depths/ image bit-type
+    ///
+    /// The following mappings are considered.
+    ///
+    /// - ZImageDepth::Eight -> dtype=uint8
+    /// - ZImageDepth::Sixteen -> dtype=uint16
+    /// - ZimageDepth::F32  -> dtype=float32
+    ///
+    ///
+    /// Returns:
+    ///
+    ///  A numpy representation of the image if okay.
+    ///
+    /// An error in case something went wrong
+    pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyUntypedArray> {
+        match self.image.get_depth().bit_type() {
+            BitType::U8 => {
+                Ok(self.to_numpy_generic::<u8>(py, ZImageDepth::U8)?.as_untyped())
+            }
+            BitType::U16 => {
+                Ok(self.to_numpy_generic::<u16>(py, ZImageDepth::U16)?.as_untyped())
+            }
+            BitType::F32 => {
+                Ok(self.to_numpy_generic::<f32>(py, ZImageDepth::F32)?.as_untyped())
+            }
+            d => {
+                Err(PyErr::new::<PyException, _>(format!(
+                    "Error converting to depth {:?}",
+                    d
+                )))
+            }
+        }
     }
 }
 
 #[pyfunction]
-pub fn decode_image(bytes: &[u8]) -> PyResult<PyImage> {
+pub fn decode_image(bytes: &[u8]) -> PyResult<ZImage> {
     let im_result = Image::read(bytes, DecoderOptions::new_fast());
     return match im_result {
-        Ok(result) => Ok(PyImage::new(result)),
+        Ok(result) => Ok(ZImage::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(
             "Error decoding: {:?}",
             err
@@ -711,18 +749,18 @@ pub fn decode_image(bytes: &[u8]) -> PyResult<PyImage> {
     };
 }
 
-impl From<PyImageErrors> for pyo3::PyErr {
-    fn from(value: PyImageErrors) -> Self {
+impl From<ZImageErrors> for pyo3::PyErr {
+    fn from(value: ZImageErrors) -> Self {
         PyErr::new::<PyException, _>(format!("{:?}", value.error))
     }
 }
 
 /// Decode a file path containing an image
 #[pyfunction]
-pub fn decode_file(file: String) -> PyResult<PyImage> {
+pub fn decode_file(file: String) -> PyResult<ZImage> {
     return match read(file) {
-        Ok(bytes) => Ok(PyImage::new(
-            Image::read(bytes, DecoderOptions::new_fast()).map_err(|x| PyImageErrors::from(x))?
+        Ok(bytes) => Ok(ZImage::new(
+            Image::read(bytes, DecoderOptions::new_fast()).map_err(|x| ZImageErrors::from(x))?
         )),
         Err(e) => Err(PyErr::new::<PyException, _>(format!("{}", e)))
     };

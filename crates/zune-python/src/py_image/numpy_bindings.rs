@@ -10,12 +10,12 @@ use numpy::PyArray3;
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, PyResult, Python};
 
-use crate::py_enums::PyImageDepth;
-use crate::py_image::PyImage;
+use crate::py_enums::ZImageDepth;
+use crate::py_image::ZImage;
 
-impl PyImage {
+impl ZImage {
     pub(crate) fn to_numpy_generic<'py, T>(
-        &self, py: Python<'py>, expected: PyImageDepth
+        &self, py: Python<'py>, expected: ZImageDepth
     ) -> PyResult<&'py PyArray3<T>>
     where
         T: Copy + Default + 'static + numpy::Element + Send

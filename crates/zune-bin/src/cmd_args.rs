@@ -401,9 +401,15 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform a 2D NxN convolution. N can be either of 3,5 or 7")
             .group(GROUP)
             .help_heading(GROUP)
-            .num_args(..=9)
+            .num_args(..=49)
             .action(ArgAction::Append)
-            .value_parser(value_parser!(f32))
+            .value_parser(value_parser!(f32)),
+        Arg::new("ocl-sobel")
+            .long("ocl-sobel")
+            .help("Perform a 3x3 sobel convolution operation using opencl filters")
+            .action(ArgAction::SetTrue)
+            .help_heading(GROUP)
+            .group(GROUP)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     let arg_group = ArgGroup::new(GROUP)

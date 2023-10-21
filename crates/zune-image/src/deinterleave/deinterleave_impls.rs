@@ -146,7 +146,7 @@ pub fn de_interleave_four_channels_f32(
     scalar::de_interleave_four_channels_scalar(source, c1, c2, c3, c4);
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;

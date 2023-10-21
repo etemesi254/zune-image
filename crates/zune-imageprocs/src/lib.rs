@@ -28,6 +28,7 @@
     clippy::wildcard_imports
 )]
 
+mod auto_orient;
 pub mod box_blur;
 pub mod brighten;
 pub mod contrast;
@@ -56,3 +57,5 @@ pub mod traits;
 pub mod transpose;
 pub mod unsharpen;
 mod utils;
+
+pub mod exposure;

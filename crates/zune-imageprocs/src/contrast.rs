@@ -27,6 +27,61 @@
 //! R' = F(R-128)+128
 //! ```
 
+use zune_core::bit_depth::BitType;
+use zune_core::colorspace::ColorSpace;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
+
+/// Adjust the contrast of an image
+///
+///
+#[derive(Default)]
+pub struct Contrast {
+    contrast: f32
+}
+
+impl Contrast {
+    #[must_use]
+    pub fn new(contrast: f32) -> Contrast {
+        Contrast { contrast }
+    }
+}
+
+impl OperationsTrait for Contrast {
+    fn get_name(&self) -> &'static str {
+        "contrast"
+    }
+
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let depth = image.get_depth();
+
+        for channel in image.get_channels_mut(true) {
+            match depth.bit_type() {
+                BitType::U8 => contrast_u8(channel.reinterpret_as_mut::<u8>()?, self.contrast),
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
+            }
+        }
+        Ok(())
+    }
+    fn supported_colorspaces(&self) -> &'static [ColorSpace] {
+        &[
+            ColorSpace::RGBA,
+            ColorSpace::RGB,
+            ColorSpace::LumaA,
+            ColorSpace::Luma
+        ]
+    }
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8]
+    }
+}
+
 /// Calculate the contrast of an image
 ///
 /// # Arguments

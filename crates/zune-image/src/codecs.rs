@@ -104,7 +104,7 @@ impl ImageFormat {
     /// Return true if an image format has an encoder that can convert the image
     /// into that format
     pub fn has_encoder(self) -> bool {
-        return self.get_encoder().is_some();
+        self.get_encoder().is_some()
     }
 
     pub fn has_decoder(self) -> bool {

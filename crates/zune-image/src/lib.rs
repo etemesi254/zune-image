@@ -63,7 +63,6 @@ pub mod codecs;
 pub mod core_filters;
 pub mod deinterleave;
 pub mod errors;
-pub mod filters;
 pub mod frame;
 pub mod image;
 pub mod metadata;

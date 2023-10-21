@@ -41,12 +41,151 @@
 //! - Iterate over source channel and alpha,
 //! - Lookup special constant (`c` ) for the alpha value
 //! - Multiply that constant `c` with channel value and take top bits
-//! [`fastdiv_u32`](crate::mathops::fastdiv_u32)
+//! [`fastdiv_u32`](fastdiv_u32)
 //! -
+
+use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::log::warn;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::metadata::AlphaState;
+use zune_image::traits::OperationsTrait;
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 
 mod sse;
+
+/// Carry out alpha pre-multiply and un-premultiply
+///
+/// The type of transform is specified.
+///
+/// Note that some operations are lossy,
+/// due to the nature of the operation multiplying and dividing values.
+/// Where alpha is to big to fit into target integer, or zero, there will
+/// be loss of image quality.
+#[derive(Copy, Clone)]
+pub struct PremultiplyAlpha {
+    to: AlphaState
+}
+
+impl PremultiplyAlpha {
+    /// Create a new alpha pre-multiplication operation.
+    ///
+    /// It can be used to convert from pre-multiplied alpha to
+    /// normal alpha or vice-versa
+    #[must_use]
+    pub fn new(to: AlphaState) -> PremultiplyAlpha {
+        PremultiplyAlpha { to }
+    }
+}
+
+impl OperationsTrait for PremultiplyAlpha {
+    fn get_name(&self) -> &'static str {
+        "pre-multiply alpha"
+    }
+
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        if !image.get_colorspace().has_alpha() {
+            warn!("Image colorspace indicates no alpha channel, this operation is a no-op");
+            return Ok(());
+        }
+
+        let colorspaces = image.get_colorspace();
+        let alpha_state = image.metadata().alpha();
+
+        if alpha_state == self.to {
+            warn!("Alpha is already in required mode, exiting");
+            return Ok(());
+        }
+
+        let bit_type = image.get_depth();
+
+        for image_frame in image.get_frames_mut() {
+            // read colorspace
+            // split between alpha and color channels
+            let (color_channels, alpha) = image_frame
+                .get_channels_mut(colorspaces, false)
+                .split_at_mut(colorspaces.num_components() - 1);
+
+            assert_eq!(alpha.len(), 1);
+
+            // create static tables
+            let u8_table = create_unpremul_table_u8();
+            let mut u16_table = vec![];
+
+            if bit_type == BitDepth::Sixteen {
+                u16_table = create_unpremul_table_u16();
+            }
+            for channel in color_channels {
+                // from alpha channel, read
+                match (alpha_state, self.to) {
+                    (AlphaState::NonPreMultiplied, AlphaState::PreMultiplied) => match bit_type {
+                        BitDepth::Eight => {
+                            premultiply_u8(
+                                channel.reinterpret_as_mut()?,
+                                alpha[0].reinterpret_as()?
+                            );
+                        }
+                        BitDepth::Sixteen => {
+                            premultiply_u16(
+                                channel.reinterpret_as_mut()?,
+                                alpha[0].reinterpret_as()?
+                            );
+                        }
+
+                        BitDepth::Float32 => premultiply_f32(
+                            channel.reinterpret_as_mut()?,
+                            alpha[0].reinterpret_as()?
+                        ),
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d.bit_type()
+                            ))
+                        }
+                    },
+                    (AlphaState::PreMultiplied, AlphaState::NonPreMultiplied) => match bit_type {
+                        BitDepth::Eight => {
+                            unpremultiply_u8(
+                                channel.reinterpret_as_mut()?,
+                                alpha[0].reinterpret_as()?,
+                                &u8_table
+                            );
+                        }
+                        BitDepth::Sixteen => {
+                            unpremultiply_u16(
+                                channel.reinterpret_as_mut()?,
+                                alpha[0].reinterpret_as()?,
+                                &u16_table
+                            );
+                        }
+
+                        BitDepth::Float32 => unpremultiply_f32(
+                            channel.reinterpret_as_mut()?,
+                            alpha[0].reinterpret_as()?
+                        ),
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d.bit_type()
+                            ))
+                        }
+                    },
+                    (_, _) => return Err(ImageErrors::GenericStr("Could not pre-multiply alpha"))
+                }
+            }
+        }
+
+        // update metadata
+        image.metadata_mut().set_alpha(self.to);
+
+        Ok(())
+    }
+
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::F32, BitType::U16, BitType::U8]
+    }
+}
 
 /// Create the fastdiv table for u8 division
 ///
@@ -129,10 +268,11 @@ pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 25
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         let associated_alpha = premul_table[usize::from(*al)];
-        *color = fastdiv_u32(
+        *color = u8::try_from(fastdiv_u32(
             u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
             associated_alpha
-        ) as u8;
+        ))
+        .unwrap_or(u8::MAX);
     });
 }
 
@@ -164,10 +304,11 @@ pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128]
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         let associated_alpha = premul_table[usize::from(*al)];
 
-        *color = fastdiv_u32(
+        *color = u16::try_from(fastdiv_u32(
             u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
             associated_alpha
-        ) as u16;
+        ))
+        .unwrap_or(u16::MAX);
     });
 }
 

@@ -14,8 +14,158 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
+use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
+
 use crate::transpose;
 
+#[derive(Default)]
+pub struct GaussianBlur {
+    sigma: f32
+}
+
+impl GaussianBlur {
+    /// Create a new gaussian blur filter
+    ///
+    /// # Arguments
+    /// - sigma: How much to blur by.
+    #[must_use]
+    pub fn new(sigma: f32) -> GaussianBlur {
+        GaussianBlur { sigma }
+    }
+}
+
+impl OperationsTrait for GaussianBlur {
+    fn get_name(&self) -> &'static str {
+        "Gaussian blur"
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let (width, height) = image.get_dimensions();
+        let depth = image.get_depth();
+
+        #[cfg(not(feature = "threads"))]
+        {
+            trace!("Running gaussian blur in single threaded mode");
+
+            match depth.bit_type() {
+                BitType::U8 => {
+                    let mut temp = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false) {
+                        gaussian_blur_u8(
+                            channel.reinterpret_as_mut::<u8>()?,
+                            &mut temp,
+                            width,
+                            height,
+                            self.sigma
+                        );
+                    }
+                }
+                BitType::U16 => {
+                    let mut temp = vec![0; width * height];
+
+                    for channel in image.get_channels_mut(false) {
+                        gaussian_blur_u16(
+                            channel.reinterpret_as_mut::<u16>()?,
+                            &mut temp,
+                            width,
+                            height,
+                            self.sigma
+                        );
+                    }
+                }
+                BitType::F32 => {
+                    let mut temp = vec![0.0; width * height];
+                    for channel in image.get_channels_mut(false) {
+                        gaussian_blur_f32(
+                            channel.reinterpret_as_mut()?,
+                            &mut temp,
+                            width,
+                            height,
+                            self.sigma
+                        );
+                    }
+                }
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
+            }
+        }
+
+        #[cfg(feature = "threads")]
+        {
+            trace!("Running gaussian blur in multithreaded mode");
+            std::thread::scope(|s| {
+                let mut errors = vec![];
+                // blur each channel on a separate thread
+                for channel in image.get_channels_mut(false) {
+                    let result = s.spawn(|| match depth.bit_type() {
+                        BitType::U8 => {
+                            let mut temp = vec![0; width * height];
+
+                            gaussian_blur_u8(
+                                channel.reinterpret_as_mut::<u8>()?,
+                                &mut temp,
+                                width,
+                                height,
+                                self.sigma
+                            );
+                            Ok(())
+                        }
+                        BitType::U16 => {
+                            let mut temp = vec![0; width * height];
+
+                            gaussian_blur_u16(
+                                channel.reinterpret_as_mut::<u16>()?,
+                                &mut temp,
+                                width,
+                                height,
+                                self.sigma
+                            );
+                            Ok(())
+                        }
+                        BitType::F32 => {
+                            let mut temp = vec![0.0; width * height];
+
+                            gaussian_blur_f32(
+                                channel.reinterpret_as_mut()?,
+                                &mut temp,
+                                width,
+                                height,
+                                self.sigma
+                            );
+                            Ok(())
+                        }
+                        d => {
+                            return Err(ImageErrors::ImageOperationNotImplemented(
+                                self.get_name(),
+                                d
+                            ))
+                        }
+                    });
+                    errors.push(result);
+                }
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
+        }
+
+        Ok(())
+    }
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8, BitType::U16]
+    }
+}
 /// Create different box radius for each gaussian kernel function.
 #[allow(
     clippy::cast_possible_truncation,
