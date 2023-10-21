@@ -6,19 +6,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2" }
-
+zune-core = { path = "../zune-core" }
+zune-image = { default-features = false, path = "../zune-image" }
 
 [features]
 avx2 = []
 sse2 = []
 sse3 = []
 sse41 = []
+threads = []
 ## Needs nightly, disabled by default
-benchmarks=[]
+benchmarks = []
 log = ["zune-core/log"]
-default = ["avx2", "sse2", "sse3", "sse41"]
+default = ["avx2", "sse2", "sse3", "sse41", "threads"]
 
 
 [dev-dependencies]
-nanorand={version="0.7.0",default-features=false,features=["wyrand"]} # testing purposes.
+nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.

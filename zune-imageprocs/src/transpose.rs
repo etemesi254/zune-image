@@ -8,7 +8,12 @@
 
 use std::sync::Once;
 
+use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
+use zune_image::channel::Channel;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
 
 use crate::transpose::scalar::transpose_scalar;
 
@@ -18,6 +23,79 @@ mod tests;
 
 static START: Once = Once::new();
 
+/// Transpose an image
+///
+/// This mirrors the image along the image top left to bottom-right
+/// diagonal
+///
+/// Done by swapping X and Y indices of the array representation
+#[derive(Default)]
+pub struct Transpose;
+
+impl Transpose {
+    #[must_use]
+    pub fn new() -> Transpose {
+        Transpose
+    }
+}
+
+impl OperationsTrait for Transpose {
+    fn get_name(&self) -> &'static str {
+        "Transpose"
+    }
+
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let (width, height) = image.get_dimensions();
+        let out_dim = width * height * image.get_depth().size_of();
+
+        let depth = image.get_depth();
+
+        for channel in image.get_channels_mut(false) {
+            let mut out_channel = Channel::new_with_bit_type(out_dim, depth.bit_type());
+
+            match depth.bit_type() {
+                BitType::U8 => {
+                    transpose_u8(
+                        channel.reinterpret_as::<u8>()?,
+                        out_channel.reinterpret_as_mut::<u8>()?,
+                        width,
+                        height
+                    );
+                }
+                BitType::U16 => {
+                    transpose_u16(
+                        channel.reinterpret_as::<u16>()?,
+                        out_channel.reinterpret_as_mut::<u16>()?,
+                        width,
+                        height
+                    );
+                }
+                BitType::F32 => {
+                    transpose_generic::<f32>(
+                        channel.reinterpret_as()?,
+                        out_channel.reinterpret_as_mut()?,
+                        width,
+                        height
+                    );
+                }
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
+            };
+            *channel = out_channel;
+        }
+
+        image.set_dimensions(height, width);
+
+        Ok(())
+    }
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8, BitType::U16, BitType::F32]
+    }
+}
 pub fn transpose_u16(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {

@@ -10,7 +10,6 @@ The set of codecs aim to have the following features in order of priority
 - Safety: No `unsafe` code, with the sole exception of SIMD intrinsics which currently require `unsafe`.
 - Robustness: All decoders should be fuzz tested and found bugs fixed promptly.
 - Ease of use: Consistent API across decoders and encoders.
-  Anyone, even your grandma should be able to decode supported formats
 - Fast compile times: No dependencies on huge crates. Minimal and relatively well commented code.
 
 ## Formats
@@ -25,6 +24,7 @@ The set of codecs aim to have the following features in order of priority
 | psd          | zune-psd      | -              | Yes              |
 | jpeg-xl      | -             | zune-jpegxl    | Yes [^1]         |
 | hdr          | zune-hdr      | zune-hdr       | No [^2]          |
+| bmp          | zune-bmp      | -              | Yes              |
 
 - [^1] You lose threading capabilities.
 - [^2] Lack of existence of `floor` and `exp` in the `core` library.

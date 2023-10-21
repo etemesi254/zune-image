@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 pyo3 = "0.20.0"
 zune-png = { path = "../zune-png" }
 zune-jpeg = { path = "../zune-jpeg" }
-zune-image = { path = "../zune-image" }
+zune-image = { path = "../zune-image", features = ["all"] }
+zune-imageprocs = { path = "../zune-imageprocs" }
 zune-core = { path = "../zune-core" }
 numpy = "0.20.0"

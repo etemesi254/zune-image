@@ -150,4 +150,12 @@ impl ImageMetadata {
     pub const fn get_image_format(&self) -> Option<ImageFormat> {
         self.format
     }
+
+    pub const fn alpha(&self) -> AlphaState {
+        self.alpha
+    }
+
+    pub fn set_alpha(&mut self, alpha_state: AlphaState) {
+        self.alpha = alpha_state;
+    }
 }

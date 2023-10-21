@@ -5,13 +5,13 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![allow(clippy::upper_case_acronyms)]
 use pyo3::pyclass;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
-use zune_image::filters::threshold::ThresholdMethod;
+use zune_imageprocs::threshold::ThresholdMethod;
 
 #[pyclass]
 pub struct PyImageErrors {
@@ -25,7 +25,7 @@ impl From<ImageErrors> for PyImageErrors {
 }
 
 #[pyclass]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
 pub enum PyImageFormats {
     PNG,
@@ -69,7 +69,7 @@ impl PyImageFormats {
 
 impl From<ImageFormat> for PyImageFormats {
     fn from(value: ImageFormat) -> Self {
-        return match value {
+        match value {
             ImageFormat::JPEG => PyImageFormats::JPEG,
             ImageFormat::PNG => PyImageFormats::PNG,
             ImageFormat::PPM => PyImageFormats::PPM,
@@ -81,7 +81,7 @@ impl From<ImageFormat> for PyImageFormats {
             ImageFormat::BMP => PyImageFormats::BMP,
             ImageFormat::Unknown => PyImageFormats::Unknown,
             _ => PyImageFormats::Unknown
-        };
+        }
     }
 }
 
@@ -119,7 +119,7 @@ impl PyImageColorSpace {
 
 impl From<ColorSpace> for PyImageColorSpace {
     fn from(value: ColorSpace) -> Self {
-        return match value {
+        match value {
             ColorSpace::RGB => PyImageColorSpace::RGB,
             ColorSpace::RGBA => PyImageColorSpace::RGBA,
             ColorSpace::YCbCr => PyImageColorSpace::YCbCr,
@@ -131,7 +131,7 @@ impl From<ColorSpace> for PyImageColorSpace {
             ColorSpace::BGRA => PyImageColorSpace::BGRA,
             ColorSpace::Unknown => PyImageColorSpace::Unknown,
             _ => PyImageColorSpace::Unknown
-        };
+        }
     }
 }
 

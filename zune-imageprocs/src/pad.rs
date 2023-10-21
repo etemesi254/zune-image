@@ -119,6 +119,15 @@ fn replicate<T: Copy + Default>(
     // ▼ │                                     │
     //   └─────────────────────────────────────┘
     //
+
+    // fill top row
+    let first_row = &pixels[0..width];
+    for out in out_pixels.chunks_exact_mut(padded_w).take(pad_y) {
+        out[0..start].fill(first_row[0]);
+        out[start..end].copy_from_slice(first_row);
+        out[end..].fill(*first_row.last().unwrap_or(&T::default()));
+    }
+    // fill middle  rows
     for (out, in_pix) in out_pixels
         .chunks_exact_mut(padded_w)
         .skip(pad_y)
@@ -129,10 +138,18 @@ fn replicate<T: Copy + Default>(
         out[start..end].copy_from_slice(in_pix);
         out[end..].fill(*in_pix.last().unwrap_or(&T::default()));
     }
+
+    // fill bottom row
+    let last_row = pixels.rchunks_exact(width).next().unwrap();
+    for out in out_pixels.rchunks_exact_mut(padded_w).take(pad_y) {
+        out[0..start].fill(last_row[0]);
+        out[start..end].copy_from_slice(last_row);
+        out[end..].fill(*last_row.last().unwrap_or(&T::default()));
+    }
     out_pixels
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;

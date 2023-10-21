@@ -12,21 +12,20 @@ use std::fs::read;
 use numpy::PyArray3;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
-use zune_image::filters::box_blur::BoxBlur;
-use zune_image::filters::crop::Crop;
-use zune_image::filters::exposure::Exposure;
-use zune_image::filters::flip::Flip;
-use zune_image::filters::flop::Flop;
-use zune_image::filters::gamma::Gamma;
-use zune_image::filters::gaussian_blur::GaussianBlur;
-use zune_image::filters::invert::Invert;
-use zune_image::filters::orientation::AutoOrient;
-use zune_image::filters::sobel::Sobel;
-use zune_image::filters::stretch_contrast::StretchContrast;
-use zune_image::filters::threshold::Threshold;
-use zune_image::filters::transpose::Transpose;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+use zune_imageprocs::box_blur::BoxBlur;
+use zune_imageprocs::crop::Crop;
+use zune_imageprocs::exposure::Exposure;
+use zune_imageprocs::flip::Flip;
+use zune_imageprocs::flop::Flop;
+use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::invert::Invert;
+use zune_imageprocs::sobel::Sobel;
+use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::threshold::Threshold;
+use zune_imageprocs::transpose::Transpose;
 use zune_png::zune_core::options::DecoderOptions;
 
 use crate::py_enums::{
@@ -41,7 +40,7 @@ pub struct PyImage {
 
 impl PyImage {
     pub(crate) fn new(image: Image) -> PyImage {
-        return PyImage { image };
+        PyImage { image }
     }
 }
 
@@ -54,14 +53,14 @@ impl PyImage {
     /// An array of size `width * height *colorspace` containing
     pub fn to_u8(&self) -> Vec<u8> {
         let mut c = self.image.flatten_to_u8();
-        let first_byte = core::mem::take(&mut c[0]);
-        return first_byte;
+
+        core::mem::take(&mut c[0])
     }
     pub fn to_u8_2d(&self) -> Vec<Vec<u8>> {
-        return self.image.flatten_to_u8();
+        self.image.flatten_to_u8()
     }
     pub fn format(&self) -> PyImageFormats {
-        match self.image.get_metadata().get_image_format() {
+        match self.image.metadata().get_image_format() {
             Some(format) => PyImageFormats::from(format),
             None => PyImageFormats::Unknown
         }
@@ -186,17 +185,17 @@ impl PyImage {
         let exec = |image: &mut PyImage| -> PyResult<()> {
             Crop::new(width, height, x, y)
                 .execute(&mut image.image)
-                .map_err(|x| PyImageErrors::from(x))?;
+                .map_err(PyImageErrors::from)?;
             Ok(())
         };
-        return if in_place {
+        if in_place {
             exec(self)?;
             Ok(None)
         } else {
             let mut im_clone = self.clone();
             exec(&mut im_clone)?;
             Ok(Some(im_clone))
-        };
+        }
     }
     /// Transpose the image.
     ///
@@ -210,17 +209,17 @@ impl PyImage {
         let exec = |image: &mut PyImage| -> PyResult<()> {
             Transpose::new()
                 .execute(&mut image.image)
-                .map_err(|x| PyImageErrors::from(x))?;
+                .map_err(PyImageErrors::from)?;
             Ok(())
         };
-        return if in_place {
+        if in_place {
             exec(self)?;
             Ok(None)
         } else {
             let mut im_clone = self.clone();
             exec(&mut im_clone)?;
             Ok(Some(im_clone))
-        };
+        }
     }
 
     /// Convert from one depth to another
@@ -548,13 +547,13 @@ impl PyImage {
     /// exif metadata
     #[pyo3(signature = (in_place = false))]
     pub fn auto_orient(&mut self, in_place: bool) -> PyResult<Option<PyImage>> {
-        let exec = |image: &mut PyImage| -> PyResult<()> {
-            if let Err(e) = AutoOrient.execute(&mut image.image) {
-                return Err(PyErr::new::<PyException, _>(format!(
-                    "Error converting: {:?}",
-                    e
-                )));
-            }
+        let exec = |_image: &mut PyImage| -> PyResult<()> {
+            // if let Err(e) = AutoOrient.execute(&mut image.image) {
+            //     return Err(PyErr::new::<PyException, _>(format!(
+            //         "Error converting: {:?}",
+            //         e
+            //     )));
+            // }
             Ok(())
         };
 
@@ -666,7 +665,7 @@ impl PyImage {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (lower, upper, in_place = false))]
     pub fn stretch_contrast(
-        &mut self, lower: u16, upper: u16, in_place: bool
+        &mut self, lower: f32, upper: f32, in_place: bool
     ) -> PyResult<Option<PyImage>> {
         let exec = |image: &mut PyImage| -> PyResult<()> {
             if let Err(e) = StretchContrast::new(lower, upper).execute(&mut image.image) {
@@ -688,6 +687,7 @@ impl PyImage {
             Ok(Some(im_clone))
         }
     }
+    /// Convert from
     pub fn to_numpy_u8<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray3<u8>> {
         self.to_numpy_generic(py, PyImageDepth::Eight)
     }
@@ -702,13 +702,13 @@ impl PyImage {
 #[pyfunction]
 pub fn decode_image(bytes: &[u8]) -> PyResult<PyImage> {
     let im_result = Image::read(bytes, DecoderOptions::new_fast());
-    return match im_result {
+    match im_result {
         Ok(result) => Ok(PyImage::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(
             "Error decoding: {:?}",
             err
         )))
-    };
+    }
 }
 
 impl From<PyImageErrors> for pyo3::PyErr {
@@ -720,10 +720,10 @@ impl From<PyImageErrors> for pyo3::PyErr {
 /// Decode a file path containing an image
 #[pyfunction]
 pub fn decode_file(file: String) -> PyResult<PyImage> {
-    return match read(file) {
+    match read(file) {
         Ok(bytes) => Ok(PyImage::new(
-            Image::read(bytes, DecoderOptions::new_fast()).map_err(|x| PyImageErrors::from(x))?
+            Image::read(bytes, DecoderOptions::new_fast()).map_err(PyImageErrors::from)?
         )),
         Err(e) => Err(PyErr::new::<PyException, _>(format!("{}", e)))
-    };
+    }
 }

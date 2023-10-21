@@ -118,17 +118,15 @@ fn rgb_to_grayscale(
                 if preserve_alpha && colorspace.has_alpha() {
                     frame.set_channels(vec![out, channel[3].clone()]);
                     out_colorspace = ColorSpace::LumaA;
+                } else if to.has_alpha() {
+                    // add alpha channel
+                    let mut alpha_out = Channel::new_with_length::<u8>(size);
+                    alpha_out.reinterpret_as_mut::<u8>().unwrap().fill(u8::MAX);
+                    frame.set_channels(vec![out, alpha_out]);
+                    out_colorspace = ColorSpace::Luma;
                 } else {
-                    if to.has_alpha() {
-                        // add alpha channel
-                        let mut alpha_out = Channel::new_with_length::<u8>(size);
-                        alpha_out.reinterpret_as_mut::<u8>().unwrap().fill(u8::MAX);
-                        frame.set_channels(vec![out, alpha_out]);
-                        out_colorspace = ColorSpace::Luma;
-                    } else {
-                        frame.set_channels(vec![out]);
-                        out_colorspace = ColorSpace::Luma;
-                    }
+                    frame.set_channels(vec![out]);
+                    out_colorspace = ColorSpace::Luma;
                 }
             }
             BitType::U16 => {
@@ -142,20 +140,18 @@ fn rgb_to_grayscale(
                 if preserve_alpha && colorspace.has_alpha() {
                     frame.set_channels(vec![out, channel[3].clone()]);
                     out_colorspace = ColorSpace::LumaA;
+                } else if to.has_alpha() {
+                    // add alpha channel
+                    let mut alpha_out = Channel::new_with_length::<u16>(size);
+                    alpha_out
+                        .reinterpret_as_mut::<u16>()
+                        .unwrap()
+                        .fill(u16::MAX);
+                    frame.set_channels(vec![out, alpha_out]);
+                    out_colorspace = ColorSpace::Luma;
                 } else {
-                    if to.has_alpha() {
-                        // add alpha channel
-                        let mut alpha_out = Channel::new_with_length::<u16>(size);
-                        alpha_out
-                            .reinterpret_as_mut::<u16>()
-                            .unwrap()
-                            .fill(u16::MAX);
-                        frame.set_channels(vec![out, alpha_out]);
-                        out_colorspace = ColorSpace::Luma;
-                    } else {
-                        frame.set_channels(vec![out]);
-                        out_colorspace = ColorSpace::Luma;
-                    }
+                    frame.set_channels(vec![out]);
+                    out_colorspace = ColorSpace::Luma;
                 }
             }
             BitType::F32 => {
@@ -175,17 +171,15 @@ fn rgb_to_grayscale(
                 if preserve_alpha && colorspace.has_alpha() {
                     frame.set_channels(vec![out, channel[3].clone()]);
                     out_colorspace = ColorSpace::LumaA;
+                } else if to.has_alpha() {
+                    // add alpha channel
+                    let mut alpha_out = Channel::new_with_length::<f32>(size);
+                    alpha_out.reinterpret_as_mut::<f32>().unwrap().fill(1.0);
+                    frame.set_channels(vec![out, alpha_out]);
+                    out_colorspace = ColorSpace::Luma;
                 } else {
-                    if to.has_alpha() {
-                        // add alpha channel
-                        let mut alpha_out = Channel::new_with_length::<f32>(size);
-                        alpha_out.reinterpret_as_mut::<f32>().unwrap().fill(1.0);
-                        frame.set_channels(vec![out, alpha_out]);
-                        out_colorspace = ColorSpace::Luma;
-                    } else {
-                        frame.set_channels(vec![out]);
-                        out_colorspace = ColorSpace::Luma;
-                    }
+                    frame.set_channels(vec![out]);
+                    out_colorspace = ColorSpace::Luma;
                 }
             }
             d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d))

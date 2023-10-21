@@ -63,6 +63,16 @@ pub enum BitType {
     F32
 }
 
+impl BitType {
+    pub fn to_depth(self) -> BitDepth {
+        match self {
+            BitType::U8 => BitDepth::Eight,
+            BitType::U16 => BitDepth::Sixteen,
+            BitType::F32 => BitDepth::Float32
+        }
+    }
+}
+
 impl Default for BitDepth {
     fn default() -> Self {
         Self::Unknown

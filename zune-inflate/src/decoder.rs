@@ -534,7 +534,7 @@ impl<'a> DeflateDecoder<'a> {
         self.start_deflate_block()
     }
     /// Main inner loop for decompressing deflate data
-    #[allow(unused_assignments)]
+    #[allow(unused_assignments, clippy::never_loop)]
     fn start_deflate_block(&mut self) -> Result<Vec<u8>, InflateDecodeErrors> {
         // start deflate decode
         // re-read the stream so that we can remove code read by zlib

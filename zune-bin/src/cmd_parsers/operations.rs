@@ -12,24 +12,24 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
-use zune_image::filters::brighten::Brighten;
-use zune_image::filters::contrast::Contrast;
-use zune_image::filters::crop::Crop;
-use zune_image::filters::exposure::Exposure;
-use zune_image::filters::flip::{Flip, VerticalFlip};
-use zune_image::filters::flop::Flop;
-use zune_image::filters::gamma::Gamma;
-use zune_image::filters::invert::Invert;
-use zune_image::filters::median::Median;
-use zune_image::filters::mirror::{Mirror, MirrorMode};
-use zune_image::filters::orientation::AutoOrient;
-use zune_image::filters::resize::{Resize, ResizeMethod};
-use zune_image::filters::statistics::{StatisticOperations, StatisticsOps};
-use zune_image::filters::stretch_contrast::StretchContrast;
-use zune_image::filters::threshold::{Threshold, ThresholdMethod};
-use zune_image::filters::transpose::Transpose;
 use zune_image::traits::IntoImage;
 use zune_image::workflow::WorkFlow;
+use zune_imageprocs::brighten::Brighten;
+use zune_imageprocs::contrast::Contrast;
+use zune_imageprocs::crop::Crop;
+use zune_imageprocs::exposure::Exposure;
+use zune_imageprocs::flip::{Flip, VerticalFlip};
+use zune_imageprocs::flop::Flop;
+use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::invert::Invert;
+use zune_imageprocs::median::Median;
+use zune_imageprocs::mirror::{Mirror, MirrorMode};
+use zune_imageprocs::resize::{Resize, ResizeMethod};
+use zune_imageprocs::spatial::StatisticsOps;
+use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
+use zune_imageprocs::transpose::Transpose;
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 
@@ -116,9 +116,9 @@ pub fn parse_options<T: IntoImage>(
         )
     } else if argument == "stretch_contrast" {
         let values = args
-            .get_many::<u16>(argument)
+            .get_many::<f32>(argument)
             .unwrap()
-            .collect::<Vec<&u16>>();
+            .collect::<Vec<&f32>>();
 
         let lower = *values[0];
 
@@ -180,7 +180,7 @@ pub fn parse_options<T: IntoImage>(
         workflow.add_operation(Box::new(ColorspaceConv::new(colorspace)))
     } else if argument == "auto-orient" {
         debug!("Add auto orient operation");
-        workflow.add_operation(Box::new(AutoOrient))
+        //workflow.add_operation(Box::new(AutoOrient))
     } else if argument == "exposure" {
         let exposure = *args.get_one::<f32>(argument).unwrap();
 

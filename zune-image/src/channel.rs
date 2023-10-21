@@ -244,7 +244,7 @@ impl Channel {
     ///  - length: The new lenghth of the array
     ///  - type_id: The type id of the type this is supposed to store
     ///
-    pub(crate) fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel {
+    pub fn new_with_length_and_type(length: usize, type_id: TypeId) -> Channel {
         let mut channel = Channel::new_with_capacity_and_type(length, type_id);
         channel.length = length;
 
@@ -567,6 +567,24 @@ impl Channel {
         }
 
         Ok(())
+    }
+
+    /// Return the raw memory layout of the channel as `&[u8]`
+    ///
+    /// # Safety
+    /// This is unsafe just as a remainder that the memory is just
+    /// a bag of bytes and may not be just `&[u8]`.
+    pub unsafe fn alias(&self) -> &[u8] {
+        std::slice::from_raw_parts(self.ptr, self.length)
+    }
+
+    /// Return the raw memory layout of the channel as `mut &[u8]`
+    ///
+    /// # Safety
+    /// This is unsafe just as a remainder that the memory is just
+    /// a bag of bytes and may not be just `mut &[u8]`.
+    pub unsafe fn alias_mut(&mut self) -> &mut [u8] {
+        std::slice::from_raw_parts_mut(self.ptr, self.length)
     }
 }
 

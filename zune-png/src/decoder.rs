@@ -621,7 +621,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             }
             return Ok(());
         }
-        return self.decode_into_inner(out);
+        self.decode_into_inner(out)
     }
     fn decode_into_inner(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         // decode headers

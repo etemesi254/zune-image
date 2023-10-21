@@ -206,6 +206,7 @@ impl NumOps<f32> for f32 {
         1.0
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn to_usize(self) -> usize {
         self as _
     }

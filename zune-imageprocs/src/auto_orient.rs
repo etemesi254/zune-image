@@ -6,25 +6,11 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-#![cfg(feature = "metadata")]
 //! Perform auto orientation of the image
 use zune_core::bit_depth::BitType;
-use zune_core::log::warn;
-
-use crate::errors::ImageErrors;
-use crate::filters::flip::Flip;
-use crate::filters::flop::Flop;
-use crate::filters::rotate::Rotate;
-use crate::filters::transpose::Transpose;
-use crate::image::Image;
-use crate::traits::OperationsTrait;
-
-pub enum OrientationType {
-    DoNothing = 1,
-    FlipHorizontally = 2,
-    Rotate180 = 3,
-    FlipVertically = 4
-}
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
 
 /// Auto orient the image based on the exif metadata
 ///
@@ -40,7 +26,7 @@ impl OperationsTrait for AutoOrient {
         "Auto orient"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
         // check if we have exif orientation metadata and transform it
         // to be this orientation
         #[cfg(feature = "metadata")]

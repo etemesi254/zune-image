@@ -51,7 +51,7 @@ pub fn rgb_to_grayscale_f32(r: &[f32], g: &[f32], b: &[f32], out: &mut [f32], ma
     convert_rgb_to_grayscale_scalar_f32(r, g, b, out, max_value);
 }
 
-#[cfg(all(feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;

@@ -186,6 +186,6 @@ impl PyImage {
 
             arr
         };
-        return Ok(arr);
+        Ok(arr)
     }
 }

@@ -6,6 +6,66 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use zune_core::bit_depth::BitType;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::traits::OperationsTrait;
+
+pub struct Rotate {
+    angle: f32
+}
+
+impl Rotate {
+    #[must_use]
+    pub fn new(angle: f32) -> Rotate {
+        Rotate { angle }
+    }
+}
+
+impl OperationsTrait for Rotate {
+    fn get_name(&self) -> &'static str {
+        "Rotate"
+    }
+
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let im_type = image.get_depth().bit_type();
+
+        let (width, _) = image.get_dimensions();
+
+        for channel in image.get_channels_mut(false) {
+            match im_type {
+                BitType::U8 => {
+                    if (self.angle - 180.0).abs() < f32::EPSILON {
+                        rotate_180::<u8>(channel.reinterpret_as_mut()?, width);
+                    }
+                }
+                BitType::U16 => {
+                    if (self.angle - 180.0).abs() < f32::EPSILON {
+                        rotate_180::<u16>(channel.reinterpret_as_mut()?, width);
+                    }
+                }
+                BitType::F32 => {
+                    if (self.angle - 180.0).abs() < f32::EPSILON {
+                        rotate_180::<f32>(channel.reinterpret_as_mut()?, width);
+                    }
+                }
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.get_name(),
+                        d
+                    ))
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8, BitType::U16, BitType::F32]
+    }
+}
+
 pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T]) {
     let angle = angle % 360.0;
 

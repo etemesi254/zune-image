@@ -86,7 +86,7 @@ impl<'a, T: JxlBitEncoder> ChunkSampleCollector<'a, T> {
         ChunkSampleCollector {
             raw_counts,
             lz77_counts,
-            enc: PhantomData::<T>::default()
+            enc: PhantomData::<T>
         }
     }
     pub fn encode_rle(&mut self, mut count: usize) {
@@ -610,7 +610,7 @@ where
         ChannelRowProcessor {
             run: 0,
             x:   processor,
-            u:   PhantomData::<U>::default()
+            u:   PhantomData::<U>
         }
     }
 
