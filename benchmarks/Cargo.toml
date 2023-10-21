@@ -7,13 +7,13 @@ edition = "2021"
 
 [dev-dependencies]
 # QOI benchmarks
-zune-qoi = { version = "0.1.0", path = "../crates/zune-qoi" }
+zune-qoi = { path = "../crates/zune-qoi" }
 rapid-qoi = "0.6.1"
 
 # deflate benchmarks
 flate2 = { version = "1.0.25", default-features = false, features = ["zlib-ng-compat"] }
 libdeflater = "1.19.0"
-zune-inflate = { version = "0.2.51", path = "../crates/zune-inflate" }
+zune-inflate = { path = "../crates/zune-inflate" }
 
 # png benchmarks
 png = { version = "0.17.8-rc" }
@@ -24,7 +24,7 @@ zune-png = { path = "../crates/zune-png" }
 # JPEG benchmarks
 mozjpeg = "0.10.5"
 jpeg-decoder = "0.3.0"
-zune-jpeg = { version = "0.3.12", path = "../crates/zune-jpeg" }
+zune-jpeg = {  path = "../crates/zune-jpeg" }
 
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }

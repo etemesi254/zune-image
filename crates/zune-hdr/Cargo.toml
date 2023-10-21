@@ -9,4 +9,4 @@ edition = "2021"
 log = ["zune-core/log"]
 
 [dependencies]
-zune-core = { version = "0.2.13", path = "../zune-core", default-features = false }
+zune-core = { version = "0.4.0", path = "../zune-core", default-features = false }

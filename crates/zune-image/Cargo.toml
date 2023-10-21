@@ -36,7 +36,7 @@ all = ["image_formats", "serde-support", "metadata", "threads", "filters", "simd
 [dependencies]
 zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
-zune-core = { path = "../zune-core", version = "0.2" }
+zune-core = { path = "../zune-core", version = "0.4" }
 # Images
 zune-png = { path = "../zune-png", optional = true }
 zune-jpeg = { path = "../zune-jpeg", optional = true }

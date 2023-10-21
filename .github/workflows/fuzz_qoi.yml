@@ -32,4 +32,4 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: QOI Fuzz testing.
-        run: cargo +nightly fuzz run --fuzz-dir zune-qoi/fuzz decode_buffer test-images/qoi/ -j2 -- -timeout=10s -max_total_time=60
+        run: cargo +nightly fuzz run --fuzz-dir crates/zune-qoi/fuzz decode_buffer test-images/qoi/ -j2 -- -timeout=10s -max_total_time=60

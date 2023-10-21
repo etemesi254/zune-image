@@ -579,9 +579,9 @@ checksum = "f665ee40bc4a3c5590afb1e9677db74a508659dfd71e126420da8274909a0167"
 
 [[package]]
 name = "memmap2"
-version = "0.5.10"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
+checksum = "deaba38d7abf1d4cca21cc89e932e542ba2b9258664d2a9ef0e61512039c9375"
 dependencies = [
  "libc",
 ]
@@ -1442,14 +1442,14 @@ dependencies = [
 
 [[package]]
 name = "zune-bmp"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
 ]
 
 [[package]]
 name = "zune-core"
-version = "0.2.14"
+version = "0.4.0"
 dependencies = [
  "log",
  "serde",
@@ -1457,21 +1457,21 @@ dependencies = [
 
 [[package]]
 name = "zune-farbfeld"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
 ]
 
 [[package]]
 name = "zune-hdr"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
 ]
 
 [[package]]
 name = "zune-image"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "bytemuck",
  "jpeg-encoder",
@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "zune-imageprocs"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "nanorand",
  "zune-core",
@@ -1501,14 +1501,14 @@ dependencies = [
 
 [[package]]
 name = "zune-inflate"
-version = "0.2.54"
+version = "0.2.0"
 dependencies = [
  "simd-adler32",
 ]
 
 [[package]]
 name = "zune-jpeg"
-version = "0.3.17"
+version = "0.4.0"
 dependencies = [
  "zune-core",
  "zune-ppm",
@@ -1516,7 +1516,7 @@ dependencies = [
 
 [[package]]
 name = "zune-jpegxl"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
  "zune-ppm",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "zune-png"
-version = "0.2.1"
+version = "0.4.0"
 dependencies = [
  "nanorand",
  "png",
@@ -1535,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "zune-ppm"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "log",
  "zune-core",
@@ -1543,14 +1543,14 @@ dependencies = [
 
 [[package]]
 name = "zune-psd"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
 ]
 
 [[package]]
 name = "zune-python"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "numpy",
  "pyo3",
@@ -1562,7 +1562,7 @@ dependencies = [
 
 [[package]]
 name = "zune-qoi"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "zune-core",
 ]
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "zune-wasm"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "console_error_panic_hook",
  "wasm-bindgen",

@@ -32,5 +32,5 @@ jobs:
         run: cargo install cargo-fuzz
 
       - name: Normal Fuzz testing.
-        run: cargo +nightly fuzz run --fuzz-dir zune-hdr/fuzz decode_buffer -j2 -- -timeout=10s   test-images/hdr -max_total_time=120
+        run: cargo +nightly fuzz run --fuzz-dir crates/zune-hdr/fuzz decode_buffer -j2 -- -timeout=10s   test-images/hdr -max_total_time=120
 

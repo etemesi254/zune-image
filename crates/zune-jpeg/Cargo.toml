@@ -21,7 +21,7 @@ log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2" }
+zune-core = { path = "../zune-core", version = "0.4" }
 
 
 [dev-dependencies]

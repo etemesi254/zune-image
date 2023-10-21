@@ -20,7 +20,7 @@ log = ["zune-core/log"]
 default = ["sse", "std"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.2" }
+zune-core = { path = "../zune-core", version = "0.4" }
 zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
 
 [dev-dependencies]
