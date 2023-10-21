@@ -1,0 +1,17 @@
+[package]
+name = "zune-tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+xxhash-rust = { version = "0.8.6", default-features = false, features = ["xxh3"] }
+serde = { version = "1.0.147", features = ["derive"] }
+serde_json = "1.0.94"
+zune-core = { version = "0.2.1", path = "../crates/zune-core" }
+zune-jpeg = { version = "0.3.12", path = "../crates/zune-jpeg" }
+zune-psd = { version = "0.1.0", path = "../crates/zune-psd" }
+zune-png = { version = "0.2.0", path = "../crates/zune-png" }
+zune-inflate = { version = "0.2.51", path = "../crates/zune-inflate" }
+zune-bmp = { version = "0.1.0", path = "../crates/zune-bmp" }
