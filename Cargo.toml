@@ -33,7 +33,9 @@ members = [
     "zune-benches",
     # WASM
     "zune-wasm",
-    "zune-python"
+    "zune-python",
+    # OPENCL
+    "zune-opencl"
 
 ]
 
