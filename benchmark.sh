@@ -49,7 +49,10 @@ function png_jpeg() {
 
 function jpeg_jxl_lossless(){
   echo "Baseline JPEG to JXL lossless"
-  IN_FILE="./test-images/jpeg/benchmarks/speed_bench.jpg"
+  # vips takes too long on this
+  #IN_FILE="./test-images/jpeg/benchmarks/speed_bench.jpg"
+  IN_FILE="./test-images/png/benchmarks/speed_bench.png"
+
   output="$(mktemp --tmpdir result_XXXXXXXXXXXXX.jxl)"
   echo ${IN_FILE};
 
