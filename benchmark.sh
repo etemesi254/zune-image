@@ -5,12 +5,14 @@
 #
 
 #/bin/bash
-echo "compiling"
+echo "compiling zune-image"
 cargo build --release --quiet
 if ! command -v vips &> /dev/null
 then
     echo "VIPS command could not be found, ensure you have installed vips in the command line"
     exit
+else
+  echo "VIPS present"
 fi
 
 if ! command -v convert &> /dev/null
@@ -18,9 +20,14 @@ then
     echo "Imagemagick convert command could not be found, ensure you have installed imagemagick in the command line"
     exit
 else
-  echo "Imagemagick version"
-  echo "$(convert -version)"
-  echo "\n\n"
+  echo "Imagemagick present"
+
+fi
+if !command -v hyperfine &> /dev/null
+then
+  echo "Hyperfine command not found see https://github.com/sharkdp/hyperfine for installation method"
+else
+  echo "hyperfine command present"
 fi
 
 function jpeg_hdr() {
@@ -29,7 +36,7 @@ function jpeg_hdr() {
     output="$(mktemp --tmpdir result_XXXXXXXXXXXXX.hdr)"
     echo ${IN_FILE};
 
-    hyperfine --export-markdown ./jpeg_hdr_bench.md  --warmup=5 "vips copy $IN_FILE  $output" "./target/release/zune -i  $IN_FILE -o $output" "convert $IN_FILE $output"
+    hyperfine  --warmup=5 "vips copy $IN_FILE  $output" "./target/release/zune -i  $IN_FILE -o $output" "convert $IN_FILE $output"
 
 }
 function png_jpeg() {
@@ -37,8 +44,20 @@ function png_jpeg() {
   IN_FILE="./test-images/png/benchmarks/speed_bench.png"
   output="$(mktemp --tmpdir result_XXXXXXXXXXXXX.jpg)"
   echo ${IN_FILE};
-  hyperfine --export-markdown ./png_jpeg_bench.md  --warmup=5 "vips copy $IN_FILE  $output" "./target/release/zune -i  $IN_FILE -o $output" "convert $IN_FILE $output"
+  hyperfine --warmup=5 "vips copy $IN_FILE  $output" "./target/release/zune -i  $IN_FILE -o $output" "convert $IN_FILE $output"
+}
+
+function jpeg_jxl_lossless(){
+  echo "Baseline JPEG to JXL lossless"
+  IN_FILE="./test-images/jpeg/benchmarks/speed_bench.jpg"
+  output="$(mktemp --tmpdir result_XXXXXXXXXXXXX.jxl)"
+  echo ${IN_FILE};
+
+  hyperfine  --warmup=5 "vips jxlsave $IN_FILE  $output --lossless=true" "./target/release/zune -i  $IN_FILE -o $output" "convert $IN_FILE $output"
+
+
 }
 
 jpeg_hdr
 png_jpeg
+jpeg_jxl_lossless
