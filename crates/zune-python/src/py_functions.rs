@@ -21,5 +21,3 @@ pub fn guess_format(bytes: &[u8]) -> PyResult<ZImageFormats> {
         None => Ok(ZImageFormats::Unknown)
     }
 }
-
-
