@@ -18,7 +18,7 @@ use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::StatisticsOps;
 use zune_imageprocs::spatial_ops::StatisticOperations;
 use zune_imageprocs::unsharpen::Unsharpen;
-use zune_opencl::ocl_sobel::OclSobel;
+//use zune_opencl::ocl_sobel::OclSobel;
 
 pub fn parse_options<T: IntoImage>(
     workflow: &mut WorkFlow<T>, argument: &str, args: &ArgMatches
@@ -81,10 +81,10 @@ pub fn parse_options<T: IntoImage>(
 
         workflow.add_operation(Box::new(Convolve::new(values, 1.0)))
     } else if argument == "ocl-sobel" {
-        let ocl = OclSobel::try_new().map_err(|x| format!("{:?}", x))?;
-        debug!("Added ocl-sobel argument");
-
-        workflow.add_operation(Box::new(ocl));
+        // let ocl = OclSobel::try_new().map_err(|x| format!("{:?}", x))?;
+        // debug!("Added ocl-sobel argument");
+        //
+        // workflow.add_operation(Box::new(ocl));
     }
 
     Ok(())
