@@ -10,7 +10,7 @@ use py_functions::*;
 use py_image::*;
 use pyo3::prelude::*;
 
-use crate::py_enums::{ZImageColorSpace, ZImageDepth, ZImageFormats, ZImageThresholdType};
+use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType};
 
 mod py_enums;
 mod py_functions;
@@ -19,23 +19,25 @@ mod py_image;
 
 #[pyfunction]
 #[allow(unused_results)]
-pub fn init_logger(){
-   let _= pyo3_log::try_init();
+pub fn init_logger() {
+    let _ = pyo3_log::try_init();
 }
+
 /// A Python module implemented in Rust.
 #[pymodule]
 #[pyo3(name = "zil")]
 fn zune_image(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ZImageFormats>()?;
-    m.add_class::<ZImageColorSpace>()?;
-    m.add_class::<ZImage>()?;
-    m.add_class::<ZImageDepth>()?;
-    m.add_class::<ZImageThresholdType>()?;
+    m.add_class::<ImageFormat>()?;
+    m.add_class::<ColorSpace>()?;
+    m.add_class::<Image>()?;
+    m.add_class::<ImageDepth>()?;
+    m.add_class::<ImageThresholdType>()?;
     m.add_function(wrap_pyfunction!(init_logger, m)?)?;
 
     m.add_function(wrap_pyfunction!(guess_format, m)?)?;
-    m.add_function(wrap_pyfunction!(decode_image, m)?)?;
-    m.add_function(wrap_pyfunction!(decode_file, m)?)?;
+    // m.add_function(wrap_pyfunction!(decode_image, m)?)?;
+    // m.add_function(wrap_pyfunction!(decode_file, m)?)?;
+    // m.add_function(wrap_pyfunction!(from_numpy,m)?)?;
 
     Ok(())
 }

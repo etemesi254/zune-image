@@ -10,16 +10,17 @@ use numpy::PyArray3;
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, PyResult, Python};
 
-use crate::py_enums::ZImageDepth;
-use crate::py_image::ZImage;
+use crate::py_enums::ImageDepth;
+use crate::py_image::Image;
 
-impl ZImage {
+impl Image {
     pub(crate) fn to_numpy_generic<'py, T>(
-        &self, py: Python<'py>, expected: ZImageDepth
+        &self, py: Python<'py>, expected: ImageDepth
     ) -> PyResult<&'py PyArray3<T>>
     where
         T: Copy + Default + 'static + numpy::Element + Send
     {
+
         let arr = unsafe {
             let colorspace = self.image.get_colorspace();
             //PyArray3::uget_raw()

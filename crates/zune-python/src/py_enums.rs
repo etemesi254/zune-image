@@ -8,8 +8,8 @@
 
 use pyo3::pyclass;
 use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::ColorSpace;
-use zune_image::codecs::ImageFormat;
+use zune_core::colorspace::ColorSpace as ZColorSpace;
+use zune_image::codecs::ImageFormat as ZImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_imageprocs::threshold::ThresholdMethod;
 
@@ -27,7 +27,7 @@ impl From<ImageErrors> for ZImageErrors {
 #[pyclass]
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
-pub enum ZImageFormats {
+pub enum ImageFormat {
     PNG,
     JPEG,
     BMP,
@@ -40,19 +40,19 @@ pub enum ZImageFormats {
     Unknown
 }
 
-impl ZImageFormats {
-    pub fn to_imageformat(self) -> ImageFormat {
+impl ImageFormat {
+    pub fn to_imageformat(self) -> ZImageFormat {
         match self {
-            ZImageFormats::PNG => ImageFormat::PNG,
-            ZImageFormats::JPEG => ImageFormat::JPEG,
-            ZImageFormats::BMP => ImageFormat::BMP,
-            ZImageFormats::PPM => ImageFormat::PPM,
-            ZImageFormats::PSD => ImageFormat::PSD,
-            ZImageFormats::FarbFeld => ImageFormat::Farbfeld,
-            ZImageFormats::Qoi => ImageFormat::QOI,
-            ZImageFormats::JPEG_XL => ImageFormat::JPEG_XL,
-            ZImageFormats::HDR => ImageFormat::HDR,
-            ZImageFormats::Unknown => ImageFormat::Unknown
+            ImageFormat::PNG => ZImageFormat::PNG,
+            ImageFormat::JPEG => ZImageFormat::JPEG,
+            ImageFormat::BMP => ZImageFormat::BMP,
+            ImageFormat::PPM => ZImageFormat::PPM,
+            ImageFormat::PSD => ZImageFormat::PSD,
+            ImageFormat::FarbFeld => ZImageFormat::Farbfeld,
+            ImageFormat::Qoi => ZImageFormat::QOI,
+            ImageFormat::JPEG_XL => ZImageFormat::JPEG_XL,
+            ImageFormat::HDR => ZImageFormat::HDR,
+            ImageFormat::Unknown => ZImageFormat::Unknown
         }
     }
     /// Return true if an image format has an encoder
@@ -67,27 +67,27 @@ impl ZImageFormats {
     }
 }
 
-impl From<ImageFormat> for ZImageFormats {
-    fn from(value: ImageFormat) -> Self {
+impl From<ZImageFormat> for ImageFormat {
+    fn from(value: ZImageFormat) -> Self {
         return match value {
-            ImageFormat::JPEG => ZImageFormats::JPEG,
-            ImageFormat::PNG => ZImageFormats::PNG,
-            ImageFormat::PPM => ZImageFormats::PPM,
-            ImageFormat::PSD => ZImageFormats::PSD,
-            ImageFormat::Farbfeld => ZImageFormats::FarbFeld,
-            ImageFormat::QOI => ZImageFormats::Qoi,
-            ImageFormat::JPEG_XL => ZImageFormats::JPEG_XL,
-            ImageFormat::HDR => ZImageFormats::HDR,
-            ImageFormat::BMP => ZImageFormats::BMP,
-            ImageFormat::Unknown => ZImageFormats::Unknown,
-            _ => ZImageFormats::Unknown
+            ZImageFormat::JPEG => ImageFormat::JPEG,
+            ZImageFormat::PNG => ImageFormat::PNG,
+            ZImageFormat::PPM => ImageFormat::PPM,
+            ZImageFormat::PSD => ImageFormat::PSD,
+            ZImageFormat::Farbfeld => ImageFormat::FarbFeld,
+            ZImageFormat::QOI => ImageFormat::Qoi,
+            ZImageFormat::JPEG_XL => ImageFormat::JPEG_XL,
+            ZImageFormat::HDR => ImageFormat::HDR,
+            ZImageFormat::BMP => ImageFormat::BMP,
+            ZImageFormat::Unknown => ImageFormat::Unknown,
+            _ => ImageFormat::Unknown
         };
     }
 }
 
 #[pyclass]
 #[derive(Copy, Clone)]
-pub enum ZImageColorSpace {
+pub enum ColorSpace {
     RGB,
     RGBA,
     Luma,
@@ -100,69 +100,69 @@ pub enum ZImageColorSpace {
     Unknown
 }
 
-impl ZImageColorSpace {
-    pub(crate) fn to_colorspace(self) -> ColorSpace {
+impl ColorSpace {
+    pub(crate) fn to_colorspace(self) -> ZColorSpace {
         match self {
-            ZImageColorSpace::RGB => ColorSpace::RGB,
-            ZImageColorSpace::RGBA => ColorSpace::RGBA,
-            ZImageColorSpace::Luma => ColorSpace::Luma,
-            ZImageColorSpace::LumaA => ColorSpace::LumaA,
-            ZImageColorSpace::Unexposed => ColorSpace::Unknown,
-            ZImageColorSpace::YCbCr => ColorSpace::YCbCr,
-            ZImageColorSpace::BGR => ColorSpace::BGR,
-            ZImageColorSpace::BGRA => ColorSpace::BGRA,
-            ZImageColorSpace::CMYK => ColorSpace::CMYK,
-            ZImageColorSpace::Unknown => ColorSpace::Unknown
+            ColorSpace::RGB => ZColorSpace::RGB,
+            ColorSpace::RGBA => ZColorSpace::RGBA,
+            ColorSpace::Luma => ZColorSpace::Luma,
+            ColorSpace::LumaA => ZColorSpace::LumaA,
+            ColorSpace::Unexposed => ZColorSpace::Unknown,
+            ColorSpace::YCbCr => ZColorSpace::YCbCr,
+            ColorSpace::BGR => ZColorSpace::BGR,
+            ColorSpace::BGRA => ZColorSpace::BGRA,
+            ColorSpace::CMYK => ZColorSpace::CMYK,
+            ColorSpace::Unknown => ZColorSpace::Unknown
         }
     }
 }
 
-impl From<ColorSpace> for ZImageColorSpace {
-    fn from(value: ColorSpace) -> Self {
+impl From<ZColorSpace> for ColorSpace {
+    fn from(value: ZColorSpace) -> Self {
         return match value {
-            ColorSpace::RGB => ZImageColorSpace::RGB,
-            ColorSpace::RGBA => ZImageColorSpace::RGBA,
-            ColorSpace::YCbCr => ZImageColorSpace::YCbCr,
-            ColorSpace::Luma => ZImageColorSpace::Luma,
-            ColorSpace::LumaA => ZImageColorSpace::LumaA,
-            ColorSpace::YCCK => ZImageColorSpace::Unexposed,
-            ColorSpace::CMYK => ZImageColorSpace::CMYK,
-            ColorSpace::BGR => ZImageColorSpace::BGR,
-            ColorSpace::BGRA => ZImageColorSpace::BGRA,
-            ColorSpace::Unknown => ZImageColorSpace::Unknown,
-            _ => ZImageColorSpace::Unknown
+            ZColorSpace::RGB => ColorSpace::RGB,
+            ZColorSpace::RGBA => ColorSpace::RGBA,
+            ZColorSpace::YCbCr => ColorSpace::YCbCr,
+            ZColorSpace::Luma => ColorSpace::Luma,
+            ZColorSpace::LumaA => ColorSpace::LumaA,
+            ZColorSpace::YCCK => ColorSpace::Unexposed,
+            ZColorSpace::CMYK => ColorSpace::CMYK,
+            ZColorSpace::BGR => ColorSpace::BGR,
+            ZColorSpace::BGRA => ColorSpace::BGRA,
+            ZColorSpace::Unknown => ColorSpace::Unknown,
+            _ => ColorSpace::Unknown
         };
     }
 }
 
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
-pub enum ZImageDepth {
+pub enum ImageDepth {
     U8,
     U16,
     F32,
     Unknown
 }
 
-impl ZImageDepth {
+impl ImageDepth {
     pub(crate) fn to_depth(self) -> BitDepth {
         match self {
-            ZImageDepth::U8 => BitDepth::Eight,
-            ZImageDepth::U16 => BitDepth::Sixteen,
-            ZImageDepth::F32 => BitDepth::Float32,
-            ZImageDepth::Unknown => BitDepth::Unknown
+            ImageDepth::U8 => BitDepth::Eight,
+            ImageDepth::U16 => BitDepth::Sixteen,
+            ImageDepth::F32 => BitDepth::Float32,
+            ImageDepth::Unknown => BitDepth::Unknown
         }
     }
 }
 
-impl From<BitDepth> for ZImageDepth {
+impl From<BitDepth> for ImageDepth {
     fn from(value: BitDepth) -> Self {
         match value {
-            BitDepth::Eight => ZImageDepth::U8,
-            BitDepth::Sixteen => ZImageDepth::U16,
-            BitDepth::Float32 => ZImageDepth::F32,
-            BitDepth::Unknown => ZImageDepth::Unknown,
-            _ => ZImageDepth::Unknown
+            BitDepth::Eight => ImageDepth::U8,
+            BitDepth::Sixteen => ImageDepth::U16,
+            BitDepth::Float32 => ImageDepth::F32,
+            BitDepth::Unknown => ImageDepth::Unknown,
+            _ => ImageDepth::Unknown
         }
     }
 }
@@ -170,20 +170,20 @@ impl From<BitDepth> for ZImageDepth {
 /// Different threshold arguments for the threshold parameter
 #[pyclass]
 #[derive(Copy, Clone, Debug)]
-pub enum ZImageThresholdType {
+pub enum ImageThresholdType {
     Binary,
     BinaryInv,
     ThreshTrunc,
     ThreshToZero
 }
 
-impl ZImageThresholdType {
+impl ImageThresholdType {
     pub(crate) fn to_threshold(self) -> ThresholdMethod {
         match self {
-            ZImageThresholdType::Binary => ThresholdMethod::Binary,
-            ZImageThresholdType::BinaryInv => ThresholdMethod::BinaryInv,
-            ZImageThresholdType::ThreshTrunc => ThresholdMethod::ThreshTrunc,
-            ZImageThresholdType::ThreshToZero => ThresholdMethod::ThreshToZero
+            ImageThresholdType::Binary => ThresholdMethod::Binary,
+            ImageThresholdType::BinaryInv => ThresholdMethod::BinaryInv,
+            ImageThresholdType::ThreshTrunc => ThresholdMethod::ThreshTrunc,
+            ImageThresholdType::ThreshToZero => ThresholdMethod::ThreshToZero
         }
     }
 }

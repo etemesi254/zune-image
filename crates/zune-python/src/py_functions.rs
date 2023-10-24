@@ -7,17 +7,17 @@
  */
 
 use pyo3::prelude::*;
+use crate::py_enums::ImageFormat;
 
-use crate::py_enums::ZImageFormats;
 
 /// Guess an image format from bytes
 ///
 /// # Arguments
 /// bytes: An array of bytes consisting of an encoded image
 #[pyfunction]
-pub fn guess_format(bytes: &[u8]) -> PyResult<ZImageFormats> {
+pub fn guess_format(bytes: &[u8]) -> PyResult<ImageFormat> {
     match zune_image::codecs::guess_format(bytes) {
-        Some((format, _)) => Ok(ZImageFormats::from(format)),
-        None => Ok(ZImageFormats::Unknown)
+        Some((format, _)) => Ok(ImageFormat::from(format)),
+        None => Ok(ImageFormat::Unknown)
     }
 }
