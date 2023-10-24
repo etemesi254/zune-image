@@ -229,7 +229,7 @@ impl Image {
     /// # Returns
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
-    #[pyo3(signature = (value, method = ZImageThresholdType::Binary, in_place = false))]
+    #[pyo3(signature = (value, method = ImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
         &mut self, value: f32, method: ImageThresholdType, in_place: bool,
     ) -> PyResult<Option<Image>> {
@@ -509,20 +509,20 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
         let downcasted: &PyArray2<u8> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u8(bytes, dims[0], dims[1], ZColorSpace::Luma));
+        return Ok(ZImage::from_u8(bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
         let downcasted: &PyArray2<u16> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u16(bytes, dims[0], dims[1], ZColorSpace::Luma));
+        return Ok(ZImage::from_u16(bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
         let downcasted: &PyArray2<f32> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_f32(bytes, dims[0], dims[1], ZColorSpace::Luma));
+        return Ok(ZImage::from_f32(bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
         warn!("The library doesn't natively support f64, the data will be converted to f32");
@@ -530,7 +530,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[0], dims[1], ZColorSpace::Luma));
+        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
         warn!("The library doesn't natively support u32, the data will be converted to f32");
@@ -538,7 +538,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[0], dims[1], ZColorSpace::Luma));
+        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     Err(PyErr::new::<PyException, _>(format!(
         "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 and u32 are converted to f32)",
@@ -562,7 +562,7 @@ pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspac
         if c.num_components() != dims[2] {
             return Err(PyErr::new::<PyException, _>(format!(
                 "The specified colorspace {:?} does not match the elements in the third dimension, expected a shape of ({},{},{}) for {:?} but found ({},{},{})", c,
-                dims[0], dims[1], c.num_components(), c, dims[0], dims[1], dims[2]
+                dims[1], dims[0], c.num_components(), c, dims[0], dims[1], dims[2]
             )));
         }
         expected_colorspace = c;
@@ -572,20 +572,20 @@ pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspac
         let downcasted: &PyArray3<u8> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u8(bytes, dims[0], dims[1], expected_colorspace));
+        return Ok(ZImage::from_u8(bytes, dims[1], dims[0], expected_colorspace));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
         let downcasted: &PyArray3<u16> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u16(bytes, dims[0], dims[1], expected_colorspace));
+        return Ok(ZImage::from_u16(bytes, dims[1], dims[0], expected_colorspace));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
         let downcasted: &PyArray3<f32> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_f32(bytes, dims[0], dims[1], expected_colorspace));
+        return Ok(ZImage::from_f32(bytes, dims[1], dims[0], expected_colorspace));
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
         warn!("The library doesn't natively support f64, the data will be converted to f32");
@@ -593,7 +593,7 @@ pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspac
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[0], dims[1], expected_colorspace));
+        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], expected_colorspace));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
         warn!("The library doesn't natively support u32, the data will be converted to f32");
@@ -601,7 +601,7 @@ pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspac
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[0], dims[1], expected_colorspace));
+        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], expected_colorspace));
     }
 
     Err(PyErr::new::<PyException, _>(format!(
