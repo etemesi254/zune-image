@@ -59,18 +59,18 @@ fn prewitt_inner_i32<T>(c: &[T; 9]) -> T
     //   -3, 0,  3
     //
     let mut sum_a = 0;
-    sum_a += (i32::from(c[0]) * -03) + (i32::from(c[2]) * 03);
-    sum_a += (i32::from(c[3]) * -10) + (i32::from(c[5]) * 10);
-    sum_a += (i32::from(c[6]) * -03) + (i32::from(c[7]) * 03);
+    sum_a += (i32::from(c[0]) * 1) + (i32::from(c[2]) * -1);
+    sum_a += (i32::from(c[3]) * 1) + (i32::from(c[5]) * -1);
+    sum_a += (i32::from(c[6]) * 1) + (i32::from(c[7]) * -1);
 
-    // Gy matrix
-    // -3,-10,-3,
-    //  0,  0, 0,
-    //  3, 10, 3
+    // matrix
+    //  1,  1,  1,
+    //  0,  0,  0,
+    // -1, -1, -1
     let mut sum_b = 0;
-    sum_b += (i32::from(c[0]) * -03) + (i32::from(c[1]) * -10);
-    sum_b += (i32::from(c[2]) * -03) + (i32::from(c[6]) * 03);
-    sum_b += (i32::from(c[7]) * 10) + (i32::from(c[8]) * 03);
+    sum_b += (i32::from(c[0]) * 1) + (i32::from(c[1]) * 1);
+    sum_b += (i32::from(c[2]) * 1) + (i32::from(c[6]) * -1);
+    sum_b += (i32::from(c[7]) * -1) + (i32::from(c[8]) * -1);
 
     T::from_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
 }

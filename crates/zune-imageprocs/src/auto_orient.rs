@@ -7,10 +7,17 @@
  */
 
 //! Perform auto orientation of the image
+#![allow(unused_variables, unused_imports)]
 use zune_core::bit_depth::BitType;
+use zune_core::log::warn;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+
+use crate::flip::Flip;
+use crate::flop::Flop;
+use crate::rotate::Rotate;
+use crate::transpose::Transpose;
 
 /// Auto orient the image based on the exif metadata
 ///
@@ -26,15 +33,16 @@ impl OperationsTrait for AutoOrient {
         "Auto orient"
     }
 
-    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
+    #[allow(unused_variables)]
+    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // check if we have exif orientation metadata and transform it
         // to be this orientation
-        #[cfg(feature = "metadata")]
+        #[cfg(feature = "exif")]
         {
             use exif::{Tag, Value};
 
-            if let Some(data) = image.metadata.exif.clone() {
-                for field in data {
+            if let Some(data) = image.metadata().clone().exif() {
+                for field in data.iter() {
                     // look for the orientation tag
                     if field.tag == Tag::Orientation {
                         match &field.value {
@@ -89,7 +97,7 @@ impl OperationsTrait for AutoOrient {
                 }
             }
             // update exif
-            if let Some(data) = &mut image.metadata.exif {
+            if let Some(data) = image.metadata_mut().exif_mut() {
                 for field in data {
                     // set orientation to do nothing
                     if field.tag == Tag::Orientation {

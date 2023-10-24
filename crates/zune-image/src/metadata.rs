@@ -17,6 +17,7 @@ use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use crate::codecs::ImageFormat;
 
 mod exif;
+
 /// Contains information about whether the image
 /// is pre multiplied with it's alpha
 /// or it's not
@@ -25,6 +26,7 @@ pub enum AlphaState {
     PreMultiplied,
     NonPreMultiplied
 }
+
 /// Image metadata
 ///
 /// Each image type has this information present
@@ -64,6 +66,37 @@ impl Default for ImageMetadata {
 }
 
 impl ImageMetadata {
+    /// Return the exif metadata of an image or none if it
+    /// doesn't exist
+    ///
+    /// This requires the metadata feature otherwise
+    /// it will always return `None`
+    pub const fn exif(&self) -> Option<&Vec<::exif::Field>> {
+        #[cfg(feature = "metadata")]
+        {
+            return self.exif.as_ref();
+        }
+        #[cfg(not(feature = "metadata"))]
+        {
+            return None;
+        }
+    }
+
+    /// Return a mutable reference to the exif metadata of an image or none if it
+    /// doesn't exist
+    ///
+    /// This requires the metadata feature otherwise
+    /// it will always return `None`
+    pub fn exif_mut(&mut self) -> Option<&mut Vec<::exif::Field>> {
+        #[cfg(feature = "metadata")]
+        {
+            return self.exif.as_mut();
+        }
+        #[cfg(not(feature = "metadata"))]
+        {
+            return None;
+        }
+    }
     /// Get image dimensions as a tuple of width and height
     ///  
     /// # Example

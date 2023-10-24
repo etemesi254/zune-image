@@ -9,14 +9,14 @@
 pub fn transpose_scalar<T: Copy + Default>(
     in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
 ) {
-    // A slightly more optimized scalar transpose_u16,
+    // A slightly more optimized scalar transpose,
     // 2x faster than the naive one
     //
     // The only difference with the naive is that you
-    // do tiling transpose_u16, this allows us to use the cache better
+    // do tiling transpose, this allows us to use the cache better
     // at the compromise that is is complicated.
     //
-    // The gist of it is that we do scalar a single 8 by 8 transpose_u16 and write to an immediate
+    // The gist of it is that we do scalar a single 8 by 8 transpose and write to an immediate
     // buffer and then write that buffer to our destination
     let dimensions = width * height;
     assert_eq!(

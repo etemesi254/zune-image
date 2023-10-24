@@ -82,7 +82,7 @@ impl OperationsTrait for Transpose {
                     return Err(ImageErrors::ImageOperationNotImplemented(
                         self.get_name(),
                         d
-                    ))
+                    ));
                 }
             };
             *channel = out_channel;
@@ -96,6 +96,7 @@ impl OperationsTrait for Transpose {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
+
 pub fn transpose_u16(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -107,7 +108,9 @@ pub fn transpose_u16(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, he
                 START.call_once(|| {
                     trace!("Using SSE4.1 transpose_u16 algorithm");
                 });
-                unsafe { return transpose_sse41_u16(in_matrix, out_matrix, width, height) }
+                unsafe {
+                    return transpose_sse41_u16(in_matrix, out_matrix, width, height);
+                }
             }
         }
     }
@@ -128,7 +131,9 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
                 START.call_once(|| {
                     trace!("Using SSE4.1 transpose u8 algorithm");
                 });
-                unsafe { return transpose_sse41_u8(in_matrix, out_matrix, width, height) }
+                unsafe {
+                    return transpose_sse41_u8(in_matrix, out_matrix, width, height);
+                }
             }
         }
     }
@@ -137,6 +142,7 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
+
 pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -148,7 +154,9 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
                 START.call_once(|| {
                     trace!("Using SSE4.1 transpose u8 algorithm");
                 });
-                unsafe { return transpose_sse_float(in_matrix, out_matrix, width, height) }
+                unsafe {
+                    return transpose_sse_float(in_matrix, out_matrix, width, height);
+                }
             }
         }
     }
@@ -169,6 +177,9 @@ pub fn transpose_generic<T: Default + Copy>(
 mod benchmarks {
     extern crate test;
 
+    use crate::transpose::sse41::transpose_sse_float;
+    use crate::transpose::transpose_generic;
+
     #[bench]
     fn transpose_sse_u16(b: &mut test::Bencher) {
         use crate::transpose::sse41::transpose_sse41_u16;
@@ -183,6 +194,7 @@ mod benchmarks {
             };
         });
     }
+
     #[bench]
     fn transpose_scalar(b: &mut test::Bencher) {
         use crate::transpose::scalar::transpose_scalar;
@@ -206,6 +218,30 @@ mod benchmarks {
         let mut out_vec = vec![0_u8; dimensions];
         b.iter(|| unsafe {
             transpose_sse41_u8(&in_vec, &mut out_vec, width, height);
+        });
+    }
+
+    #[bench]
+    fn transpose_scalar_f32(b: &mut test::Bencher) {
+        use crate::transpose::sse41::transpose_sse41_u8;
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+        let in_vec = vec![255_f32; dimensions];
+        let mut out_vec = vec![0_f32; dimensions];
+        b.iter(|| transpose_generic(&in_vec, &mut out_vec, width, height));
+    }
+
+    #[bench]
+    fn transpose_sse_f32(b: &mut test::Bencher) {
+        use crate::transpose::sse41::transpose_sse41_u8;
+        let width = 800;
+        let height = 800;
+        let dimensions = width * height;
+        let in_vec = vec![255.; dimensions];
+        let mut out_vec = vec![0.; dimensions];
+        b.iter(|| unsafe {
+            transpose_sse_float(&in_vec, &mut out_vec, width, height);
         });
     }
 }

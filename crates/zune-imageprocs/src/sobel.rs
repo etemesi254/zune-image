@@ -249,3 +249,39 @@ where
 
     spatial_NxN::<_, _, 1, 9>(&padded_input, out_channel, width, height, sobel_inner_i32);
 }
+
+#[cfg(feature = "benchmarks")]
+#[cfg(test)]
+mod benchmarks {
+    extern crate test;
+
+    use nanorand::Rng;
+
+    use crate::sobel::{sobel_float, sobel_int};
+
+    #[bench]
+    fn bench_sobel_integer_u8(b: &mut test::Bencher) {
+        let width = 800;
+        let height = 800;
+
+        let mut pixels = vec![0_u8; width * height];
+        let mut out_pixels = vec![0; width * height];
+
+        nanorand::WyRand::new().fill(&mut pixels);
+
+        b.iter(|| sobel_int(&pixels, &mut out_pixels, width, height));
+    }
+
+    #[bench]
+    fn bench_sobel_float(b: &mut test::Bencher) {
+        let width = 800;
+        let height = 800;
+
+        let mut pixels = vec![0.; width * height];
+        let mut out_pixels = vec![0.; width * height];
+
+        nanorand::WyRand::new().fill(&mut pixels);
+
+        b.iter(|| sobel_float(&pixels, &mut out_pixels, width, height));
+    }
+}

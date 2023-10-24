@@ -57,11 +57,24 @@ impl OperationsTrait for Gamma {
                     BitType::U8 => {
                         gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value)
                     }
+                    BitType::F32 => {
+                        // for floats, we can't use LUT tables, the scope is too big
+                        let value_inv = 1.0 / max_value as f32;
+
+                        channel
+                            .reinterpret_as_mut::<f32>()?
+                            .iter_mut()
+                            .for_each(|x| {
+                                *x = value_inv * x.powf(self.value);
+                            });
+                        Ok(())
+                    }
+
                     d => {
                         return Err(ImageErrors::ImageOperationNotImplemented(
                             self.get_name(),
                             d
-                        ))
+                        ));
                     }
                 }
             }
@@ -82,11 +95,23 @@ impl OperationsTrait for Gamma {
                             gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value);
                             Ok(())
                         }
+                        BitType::F32 => {
+                            // for floats, we can't use LUT tables, the scope is too big
+                            let value_inv = 1.0 / max_value as f32;
+
+                            channel
+                                .reinterpret_as_mut::<f32>()?
+                                .iter_mut()
+                                .for_each(|x| {
+                                    *x = value_inv * x.powf(self.value);
+                                });
+                            Ok(())
+                        }
                         d => {
                             return Err(ImageErrors::ImageOperationNotImplemented(
                                 self.get_name(),
                                 d
-                            ))
+                            ));
                         }
                     });
                     errors.push(t);
@@ -100,7 +125,7 @@ impl OperationsTrait for Gamma {
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 

@@ -34,7 +34,6 @@ fn test_transpose_sse_scalar_identical() {
     }
 }
 
-
 #[test]
 fn test_transpose_sse_float_scalar_identical() {
     use nanorand::Rng;

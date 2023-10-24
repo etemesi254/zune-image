@@ -60,17 +60,17 @@ impl OperationsTrait for Brighten {
         for channel in image.get_channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => brighten(
-                    channel.reinterpret_as_mut::<u8>().unwrap(),
+                    channel.reinterpret_as_mut::<u8>()?,
                     self.value.clamp(0., 255.) as u8,
                     u8::try_from(max_val.clamp(0, 255)).unwrap()
                 ),
                 BitType::U16 => brighten(
-                    channel.reinterpret_as_mut::<u16>().unwrap(),
+                    channel.reinterpret_as_mut::<u16>()?,
                     self.value as u16,
                     max_val
                 ),
                 BitType::F32 => brighten_f32(
-                    channel.reinterpret_as_mut::<f32>().unwrap(),
+                    channel.reinterpret_as_mut::<f32>()?,
                     self.value,
                     f32::from(max_val)
                 ),
@@ -115,6 +115,17 @@ pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
         .iter_mut()
         .for_each(|x| *x = (*x).saturating_add(value));
 }
+
+/// Brighten operation
+///
+/// # Arguments
+///
+/// * `channel`: Input channel pixel, operates in place
+/// * `value`: Value to increase the channel values with
+/// * `_max_value`:  Currently unused
+///
+/// returns: ()
+///
 
 pub fn brighten_f32(channel: &mut [f32], value: f32, max_value: f32) {
     channel

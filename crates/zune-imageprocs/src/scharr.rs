@@ -172,7 +172,7 @@ fn scharr_inner_f32<T>(c: &[T; 9]) -> T
     let mut sum_b = 0.0;
     sum_b += (f32::from(c[0]) * -03.) + (f32::from(c[1]) * -10.);
     sum_b += (f32::from(c[2]) * -03.) + (f32::from(c[6]) * 03.);
-    sum_b += (f32::from(c[7]) * 10.) + (f32::from(c[8]) * 03.);
+    sum_b += (f32::from(c[7])  * 10.) + (f32::from(c[8]) * 03.);
 
     T::from_f32(((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
 }
@@ -206,7 +206,7 @@ fn scharr_inner_i32<T>(c: &[T; 9]) -> T
     let mut sum_b = 0;
     sum_b += (i32::from(c[0]) * -03) + (i32::from(c[1]) * -10);
     sum_b += (i32::from(c[2]) * -03) + (i32::from(c[6]) * 03);
-    sum_b += (i32::from(c[7]) * 10) + (i32::from(c[8]) * 03);
+    sum_b += (i32::from(c[7])  * 10) + (i32::from(c[8]) * 03);
 
     T::from_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
 }

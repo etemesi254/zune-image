@@ -376,7 +376,9 @@ pub unsafe fn transpose_sse41_u8(
     }
 }
 
-unsafe fn transpose_sse_float_4x4_inner(in_matrix: &[f32], out: &mut [f32], in_stride: usize, out_stride: usize){
+unsafe fn transpose_sse_float_4x4_inner(
+    in_matrix: &[f32], out: &mut [f32], in_stride: usize, out_stride: usize
+) {
     assert!((3 * out_stride) <= out.len());
 
     assert!((3 * in_stride) <= in_matrix.len());
@@ -386,16 +388,25 @@ unsafe fn transpose_sse_float_4x4_inner(in_matrix: &[f32], out: &mut [f32], in_s
     let mut row2 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 2..).as_ptr().cast());
     let mut row3 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 3..).as_ptr().cast());
 
-    _MM_TRANSPOSE4_PS(&mut row0,&mut row1,&mut row2,&mut row3);
+    _MM_TRANSPOSE4_PS(&mut row0, &mut row1, &mut row2, &mut row3);
 
-
-    _mm_storeu_ps(out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(), row0);
-    _mm_storeu_ps(out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(), row1);
-    _mm_storeu_ps(out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(), row2);
-    _mm_storeu_ps(out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(), row3);
-
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(),
+        row0
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(),
+        row1
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(),
+        row2
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(),
+        row3
+    );
 }
-
 
 pub unsafe fn transpose_sse_float(
     in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize

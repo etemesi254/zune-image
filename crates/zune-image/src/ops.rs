@@ -52,9 +52,9 @@ impl Add for Image {
     fn add(self, rhs: Image) -> Self::Output {
         check_full_compatibility(&self, &rhs);
 
-        let mut new_img = self.clone();
+        let mut new_img = self;
 
-        match self.get_depth().bit_type() {
+        match new_img.get_depth().bit_type() {
             BitType::U8 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
@@ -85,7 +85,22 @@ impl Add for Image {
                         .for_each(|(x, y)| *x = x.saturating_add(*y));
                 }
             }
-            _ => todo!()
+            BitType::F32 => {
+                for (prev, rhs_c) in new_img
+                    .get_channels_mut(true)
+                    .iter_mut()
+                    .zip(rhs.get_channels_ref(true))
+                {
+                    let channel_px = prev.reinterpret_as_mut::<f32>().unwrap();
+                    let channel_rhs = rhs_c.reinterpret_as::<f32>().unwrap();
+
+                    channel_px
+                        .iter_mut()
+                        .zip(channel_rhs.iter())
+                        .for_each(|(x, y)| *x = *x + *y);
+                }
+            }
+            d => unimplemented!("Unimplemented for {:?}", d)
         }
         new_img
     }
@@ -97,9 +112,9 @@ impl Sub for Image {
     fn sub(self, rhs: Image) -> Self::Output {
         check_full_compatibility(&self, &rhs);
 
-        let mut new_img = self.clone();
+        let mut new_img = self;
 
-        match self.get_depth().bit_type() {
+        match new_img.get_depth().bit_type() {
             BitType::U8 => {
                 for (prev, rhs_c) in new_img
                     .get_channels_mut(true)
@@ -130,8 +145,32 @@ impl Sub for Image {
                         .for_each(|(x, y)| *x = x.saturating_sub(*y));
                 }
             }
-            _ => todo!()
+            BitType::F32 => {
+                for (prev, rhs_c) in new_img
+                    .get_channels_mut(true)
+                    .iter_mut()
+                    .zip(rhs.get_channels_ref(true))
+                {
+                    let channel_px = prev.reinterpret_as_mut::<f32>().unwrap();
+                    let channel_rhs = rhs_c.reinterpret_as::<f32>().unwrap();
+
+                    channel_px
+                        .iter_mut()
+                        .zip(channel_rhs.iter())
+                        .for_each(|(x, y)| *x = *x - *y);
+                }
+            }
+            d => unimplemented!("Unimplemented for {:?}", d)
         }
         new_img
     }
+}
+
+
+
+#[test]
+fn add() {
+    let im = Image::fill(0_u8, ColorSpace::RGBA, 100, 100).unwrap();
+    let c = im.clone() + im;
+
 }

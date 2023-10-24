@@ -46,7 +46,7 @@ zune-jpegxl = { path = "../zune-jpegxl", optional = true }
 zune-hdr = { path = "../zune-hdr", optional = true }
 zune-bmp = { path = "../zune-bmp", optional = true }
 # Channel conversions in a safe way
-bytemuck = { version = "1.13.1", default-features = false }
+bytemuck = { version = "1.13", default-features = false }
 # Serializing info
 serde = { version = "1.0.152", optional = true }
 # External image APIs
