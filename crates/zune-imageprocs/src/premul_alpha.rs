@@ -80,17 +80,17 @@ impl PremultiplyAlpha {
 }
 
 impl OperationsTrait for PremultiplyAlpha {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "pre-multiply alpha"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        if !image.get_colorspace().has_alpha() {
+        if !image.colorspace().has_alpha() {
             warn!("Image colorspace indicates no alpha channel, this operation is a no-op");
             return Ok(());
         }
 
-        let colorspaces = image.get_colorspace();
+        let colorspaces = image.colorspace();
         let alpha_state = image.metadata().alpha();
 
         if alpha_state == self.to {
@@ -98,13 +98,13 @@ impl OperationsTrait for PremultiplyAlpha {
             return Ok(());
         }
 
-        let bit_type = image.get_depth();
+        let bit_type = image.depth();
 
-        for image_frame in image.get_frames_mut() {
+        for image_frame in image.frames_mut() {
             // read colorspace
             // split between alpha and color channels
             let (color_channels, alpha) = image_frame
-                .get_channels_mut(colorspaces, false)
+                .channels_mut(colorspaces, false)
                 .split_at_mut(colorspaces.num_components() - 1);
 
             assert_eq!(alpha.len(), 1);
@@ -139,7 +139,7 @@ impl OperationsTrait for PremultiplyAlpha {
                         ),
                         d => {
                             return Err(ImageErrors::ImageOperationNotImplemented(
-                                self.get_name(),
+                                self.name(),
                                 d.bit_type()
                             ))
                         }
@@ -166,7 +166,7 @@ impl OperationsTrait for PremultiplyAlpha {
                         ),
                         d => {
                             return Err(ImageErrors::ImageOperationNotImplemented(
-                                self.get_name(),
+                                self.name(),
                                 d.bit_type()
                             ))
                         }

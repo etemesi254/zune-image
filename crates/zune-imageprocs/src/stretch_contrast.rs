@@ -27,7 +27,7 @@ impl StretchContrast {
 }
 
 impl OperationsTrait for StretchContrast {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Stretch Contrast"
     }
 
@@ -37,9 +37,9 @@ impl OperationsTrait for StretchContrast {
         clippy::cast_sign_loss
     )]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth();
+        let depth = image.depth();
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => stretch_contrast(
                     channel.reinterpret_as_mut::<u8>()?,
@@ -58,12 +58,7 @@ impl OperationsTrait for StretchContrast {
                     self.lower as _,
                     self.upper as _
                 )?,
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
         Ok(())

@@ -55,14 +55,14 @@ pub trait DecoderTrait<T: ZReaderTrait> {
     /// - Some(width,height)
     /// - None -> If image hasn't been decoded and we can't extract
     ///  the width and height.
-    fn get_dimensions(&self) -> Option<(usize, usize)>;
+    fn dimensions(&self) -> Option<(usize, usize)>;
 
     /// Get the colorspace that the decoded pixels
     /// are stored in.
-    fn get_out_colorspace(&self) -> ColorSpace;
+    fn out_colorspace(&self) -> ColorSpace;
 
     /// Get the name of the decoder
-    fn get_name(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
     /// Return true whether or not this codec is fully supported
     /// and well tested to handle various formats.
@@ -85,7 +85,7 @@ pub trait DecoderTrait<T: ZReaderTrait> {
 /// need to encapsulate this struct.
 pub trait OperationsTrait {
     /// Get the name of this operation
-    fn get_name(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
     /// Execute a simple operation on the image
     /// manipulating the image struct
@@ -133,7 +133,7 @@ pub trait OperationsTrait {
     /// [`execute_impl`]: Self::execute_impl
     fn execute(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // Confirm colorspace
-        let colorspace = image.get_colorspace();
+        let colorspace = image.colorspace();
 
         let supported = self
             .supported_colorspaces()
@@ -143,7 +143,7 @@ pub trait OperationsTrait {
         if !supported {
             return Err(ImageErrors::UnsupportedColorspace(
                 colorspace,
-                self.get_name(),
+                self.name(),
                 self.supported_colorspaces()
             ));
         }
@@ -158,7 +158,7 @@ pub trait OperationsTrait {
 
         if !supported {
             return Err(ImageErrors::OperationsError(
-                ImageOperationsErrors::UnsupportedType(self.get_name(), bit_type)
+                ImageOperationsErrors::UnsupportedType(self.name(), bit_type)
             ));
         }
 
@@ -197,22 +197,22 @@ pub trait OperationsTrait {
 fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
     // Ensure dimensions are correct
 
-    let components = image.get_channels_ref(false).len();
+    let components = image.channels_ref(false).len();
 
-    if components != image.get_colorspace().num_components() {
+    if components != image.colorspace().num_components() {
         return Err(ImageErrors::GenericString(format!(
             "Components mismatch, expected {} channels since image format is {:?}, but found {}",
-            image.get_colorspace().num_components(),
-            image.get_colorspace(),
+            image.colorspace().num_components(),
+            image.colorspace(),
             components
         )));
     }
-    let (width, height) = image.get_dimensions();
+    let (width, height) = image.dimensions();
     // check the number of channels match the length
 
-    let expected_length = image.get_depth().size_of() * width * height;
+    let expected_length = image.depth().size_of() * width * height;
 
-    for channel in image.get_channels_ref(true) {
+    for channel in image.channels_ref(true) {
         if channel.len() != expected_length {
             return Err(ImageErrors::DimensionsMisMatch(
                 expected_length,
@@ -226,7 +226,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
 
 pub trait EncoderTrait {
     /// Get the name of the encoder
-    fn get_name(&self) -> &'static str;
+    fn name(&self) -> &'static str;
 
     /// Encode and write to a file
     ///
@@ -277,11 +277,11 @@ pub trait EncoderTrait {
         confirm_invariants(image)?;
 
         // check colorspace is correct.
-        let colorspace = image.get_colorspace();
+        let colorspace = image.colorspace();
         let supported_colorspaces = self.supported_colorspaces();
 
         // deal convert bit depths
-        let depth = image.get_depth();
+        let depth = image.depth();
 
         // convert to premultiplied alpha
 
@@ -302,13 +302,13 @@ pub trait EncoderTrait {
 
                 converter.execute(&mut image_clone)?
             }
-            let image_depth = image.get_depth();
+            let image_depth = image.depth();
 
             if !self.supported_bit_depth().contains(&depth) {
                 trace!(
                     "Image depth is in {:?}, but {} encoder supports {:?}",
-                    image.get_depth(),
-                    self.get_name(),
+                    image.depth(),
+                    self.name(),
                     self.supported_bit_depth()
                 );
                 trace!(

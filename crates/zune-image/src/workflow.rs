@@ -216,7 +216,7 @@ where
 
                     for image in self.image.iter_mut() {
                         for operation in &self.operations {
-                            let operation_name = operation.get_name();
+                            let operation_name = operation.name();
 
                             trace!("Running {}", operation_name);
 
@@ -246,7 +246,7 @@ where
 
                     for image in self.image.iter() {
                         for encoder in self.encode.iter_mut() {
-                            let encoder_name = encoder.get_name();
+                            let encoder_name = encoder.name();
 
                             trace!("Running {}", encoder_name);
 

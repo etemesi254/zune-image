@@ -36,9 +36,7 @@ use zune_imageprocs::threshold::Threshold;
 use zune_imageprocs::transpose::Transpose;
 use zune_png::zune_core::options::DecoderOptions;
 
-use crate::py_enums::{
-    ColorSpace, ImageDepth, ZImageErrors, ImageFormat, ImageThresholdType,
-};
+use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, ZImageErrors};
 
 /// Execute a single filter on an image
 ///
@@ -46,7 +44,7 @@ use crate::py_enums::{
 /// operation returned an error or okay if operation was successful
 
 fn exec_filter<T: OperationsTrait>(
-    img: &mut Image, filter: T, in_place: bool,
+    img: &mut Image, filter: T, in_place: bool
 ) -> PyResult<Option<Image>> {
     let exec = |image: &mut Image| -> PyResult<()> {
         if let Err(e) = filter.execute(&mut image.image) {
@@ -72,7 +70,7 @@ fn exec_filter<T: OperationsTrait>(
 #[pyclass]
 #[derive(Clone)]
 pub struct Image {
-    image: ZImage,
+    image: ZImage
 }
 
 impl Image {
@@ -88,21 +86,21 @@ impl Image {
     /// # Returns
     /// -  A tuple in the format `(width,height)`
     pub fn dimensions(&self) -> (usize, usize) {
-        self.image.get_dimensions()
+        self.image.dimensions()
     }
     /// Get the image width
     ///
     /// # Returns
     /// Image width
     pub fn width(&self) -> usize {
-        self.image.get_dimensions().0
+        self.image.dimensions().0
     }
     /// Get the image height
     ///
     /// # Returns
     /// Image height
     pub fn height(&self) -> usize {
-        self.image.get_dimensions().1
+        self.image.dimensions().1
     }
     /// Get the image colorspace
     ///
@@ -112,7 +110,7 @@ impl Image {
     /// # See
     /// - [convert_colorspace](Image::convert_colorspace) : Convert from one colorspace to another
     pub fn colorspace(&self) -> ColorSpace {
-        ColorSpace::from(self.image.get_colorspace())
+        ColorSpace::from(self.image.colorspace())
     }
     /// Convert from one colorspace to another
     ///
@@ -125,7 +123,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
     pub fn convert_colorspace(
-        &mut self, to: ColorSpace, in_place: bool,
+        &mut self, to: ColorSpace, in_place: bool
     ) -> PyResult<Option<Image>> {
         let color = to.to_colorspace();
         exec_filter(self, ColorspaceConv::new(color), in_place)
@@ -141,7 +139,7 @@ impl Image {
     ///  - F32: Float f32 (4 bytes per pixel, float type)
     ///  
     pub fn depth(&self) -> ImageDepth {
-        ImageDepth::from(self.image.get_depth())
+        ImageDepth::from(self.image.depth())
     }
     /// Save an image to a format
     ///
@@ -179,7 +177,7 @@ impl Image {
     ///
     #[pyo3(signature = (width, height, x, y, in_place = false))]
     pub fn crop(
-        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool,
+        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Crop::new(width, height, x, y), in_place)
     }
@@ -231,7 +229,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (value, method = ImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
-        &mut self, value: f32, method: ImageThresholdType, in_place: bool,
+        &mut self, value: f32, method: ImageThresholdType, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Threshold::new(value, method.to_threshold()), in_place)
     }
@@ -275,7 +273,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (exposure, black_point = 0.0, in_place = false))]
     pub fn exposure(
-        &mut self, exposure: f32, black_point: f32, in_place: bool,
+        &mut self, exposure: f32, black_point: f32, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Exposure::new(exposure, black_point), in_place)
     }
@@ -421,7 +419,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (lower, upper, in_place = false))]
     pub fn stretch_contrast(
-        &mut self, lower: f32, upper: f32, in_place: bool,
+        &mut self, lower: f32, upper: f32, in_place: bool
     ) -> PyResult<Option<Image>> {
         let stretch_contrast = StretchContrast::new(lower, upper);
 
@@ -455,7 +453,7 @@ impl Image {
     ///
     /// An error in case something went wrong
     pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyUntypedArray> {
-        match self.image.get_depth().bit_type() {
+        match self.image.depth().bit_type() {
             BitType::U8 => Ok(self
                 .to_numpy_generic::<u8>(py, ImageDepth::U8)?
                 .as_untyped()),
@@ -478,11 +476,11 @@ impl Image {
     ///
     /// file: A string pointing to the file path
     #[staticmethod]
-    fn open(file:String) -> PyResult<Image> {
+    fn open(file: String) -> PyResult<Image> {
         decode_file(file)
     }
     #[staticmethod]
-    fn from_bytes(bytes:&[u8]) -> PyResult<Image> {
+    fn from_bytes(bytes: &[u8]) -> PyResult<Image> {
         decode_image(bytes)
     }
 
@@ -498,10 +496,9 @@ impl Image {
     /// The array is expected to be contiguous and the array should not be mutably borrowed from the size
     #[staticmethod]
     fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyResult<Image> {
-        from_numpy(array,colorspace)
+        from_numpy(array, colorspace)
     }
 }
-
 
 fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
     let dims = numpy.shape();
@@ -529,16 +526,34 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
         let downcasted: &PyArray2<f64> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
-        let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], ZColorSpace::Luma));
+        let bytes = dc
+            .as_slice()?
+            .iter()
+            .map(|x| *x as f32)
+            .collect::<Vec<f32>>();
+        return Ok(ZImage::from_f32(
+            &bytes,
+            dims[1],
+            dims[0],
+            ZColorSpace::Luma
+        ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
         warn!("The library doesn't natively support u32, the data will be converted to f32");
         let downcasted: &PyArray2<u32> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
-        let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], ZColorSpace::Luma));
+        let bytes = dc
+            .as_slice()?
+            .iter()
+            .map(|x| *x as f32)
+            .collect::<Vec<f32>>();
+        return Ok(ZImage::from_f32(
+            &bytes,
+            dims[1],
+            dims[0],
+            ZColorSpace::Luma
+        ));
     }
     Err(PyErr::new::<PyException, _>(format!(
         "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 and u32 are converted to f32)",
@@ -546,19 +561,24 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
     )))
 }
 
-pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>) -> PyResult<ZImage> {
+pub fn convert_3d<T: Element + 'static>(
+    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>
+) -> PyResult<ZImage> {
     let dims = numpy.shape();
-    let mut expected_colorspace:ZColorSpace = match dims[2] {
-        1 => { ZColorSpace::Luma }
-        2 => { ZColorSpace::LumaA }
-        3 => { ZColorSpace::RGB }
-        4 => { ZColorSpace::RGBA }
-        _ => return Err(PyErr::new::<PyException, _>(format!(
-            "The dimension {:?} is not supported",
-            numpy.dtype()))),
+    let mut expected_colorspace: ZColorSpace = match dims[2] {
+        1 => ZColorSpace::Luma,
+        2 => ZColorSpace::LumaA,
+        3 => ZColorSpace::RGB,
+        4 => ZColorSpace::RGBA,
+        _ => {
+            return Err(PyErr::new::<PyException, _>(format!(
+                "The dimension {:?} is not supported",
+                numpy.dtype()
+            )))
+        }
     };
     if let Some(x) = suggested_colorspace {
-        let c:ZColorSpace = x.to_colorspace();
+        let c: ZColorSpace = x.to_colorspace();
         if c.num_components() != dims[2] {
             return Err(PyErr::new::<PyException, _>(format!(
                 "The specified colorspace {:?} does not match the elements in the third dimension, expected a shape of ({},{},{}) for {:?} but found ({},{},{})", c,
@@ -572,36 +592,69 @@ pub fn convert_3d<T: Element + 'static>(numpy: &PyArray3<T>, suggested_colorspac
         let downcasted: &PyArray3<u8> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u8(bytes, dims[1], dims[0], expected_colorspace));
+        return Ok(ZImage::from_u8(
+            bytes,
+            dims[1],
+            dims[0],
+            expected_colorspace
+        ));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
         let downcasted: &PyArray3<u16> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_u16(bytes, dims[1], dims[0], expected_colorspace));
+        return Ok(ZImage::from_u16(
+            bytes,
+            dims[1],
+            dims[0],
+            expected_colorspace
+        ));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
         let downcasted: &PyArray3<f32> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
-        return Ok(ZImage::from_f32(bytes, dims[1], dims[0], expected_colorspace));
+        return Ok(ZImage::from_f32(
+            bytes,
+            dims[1],
+            dims[0],
+            expected_colorspace
+        ));
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
         warn!("The library doesn't natively support f64, the data will be converted to f32");
         let downcasted: &PyArray3<f64> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
-        let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], expected_colorspace));
+        let bytes = dc
+            .as_slice()?
+            .iter()
+            .map(|x| *x as f32)
+            .collect::<Vec<f32>>();
+        return Ok(ZImage::from_f32(
+            &bytes,
+            dims[1],
+            dims[0],
+            expected_colorspace
+        ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
         warn!("The library doesn't natively support u32, the data will be converted to f32");
         let downcasted: &PyArray3<u32> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
-        let bytes = dc.as_slice()?.iter().map(|x| *x as f32).collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(&bytes, dims[1], dims[0], expected_colorspace));
+        let bytes = dc
+            .as_slice()?
+            .iter()
+            .map(|x| *x as f32)
+            .collect::<Vec<f32>>();
+        return Ok(ZImage::from_f32(
+            &bytes,
+            dims[1],
+            dims[0],
+            expected_colorspace
+        ));
     }
 
     Err(PyErr::new::<PyException, _>(format!(
@@ -628,27 +681,37 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
             if d_type.is_equiv_to(dtype::<u8>(py)) {
                 let c: &PyArray2<u8> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_2d(c)? });
+                return Ok(Image {
+                    image: convert_2d(c)?
+                });
             }
             if d_type.is_equiv_to(dtype::<u16>(py)) {
                 let c: &PyArray2<u16> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_2d(c)? });
+                return Ok(Image {
+                    image: convert_2d(c)?
+                });
             }
             if d_type.is_equiv_to(dtype::<f32>(py)) {
                 let c: &PyArray2<f32> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_2d(c)? });
+                return Ok(Image {
+                    image: convert_2d(c)?
+                });
             }
             if d_type.is_equiv_to(dtype::<f64>(py)) {
                 let c: &PyArray2<f64> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_2d(c)? });
+                return Ok(Image {
+                    image: convert_2d(c)?
+                });
             }
             if d_type.is_equiv_to(dtype::<u32>(py)) {
                 let c: &PyArray2<u32> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_2d(c)? });
+                return Ok(Image {
+                    image: convert_2d(c)?
+                });
             }
         }
 
@@ -656,27 +719,37 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
             if d_type.is_equiv_to(dtype::<u8>(py)) {
                 let c: &PyArray3<u8> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_3d(c, colorspace)? });
+                return Ok(Image {
+                    image: convert_3d(c, colorspace)?
+                });
             }
             if d_type.is_equiv_to(dtype::<u16>(py)) {
                 let c: &PyArray3<u16> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_3d(c, colorspace)? });
+                return Ok(Image {
+                    image: convert_3d(c, colorspace)?
+                });
             }
             if d_type.is_equiv_to(dtype::<f32>(py)) {
                 let c: &PyArray3<f32> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_3d(c, colorspace)? });
+                return Ok(Image {
+                    image: convert_3d(c, colorspace)?
+                });
             }
             if d_type.is_equiv_to(dtype::<f64>(py)) {
                 let c: &PyArray3<f64> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_3d(c, colorspace)? });
+                return Ok(Image {
+                    image: convert_3d(c, colorspace)?
+                });
             }
             if d_type.is_equiv_to(dtype::<u32>(py)) {
                 let c: &PyArray3<u32> = array.downcast()?;
                 // single dimension
-                return Ok(Image { image: convert_3d(c, colorspace)? });
+                return Ok(Image {
+                    image: convert_3d(c, colorspace)?
+                });
             }
         }
         Err(PyErr::new::<PyException, _>(format!(
@@ -685,9 +758,8 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
     });
 }
 
-
 pub fn decode_image(bytes: &[u8]) -> PyResult<Image> {
-    let im_result =ZImage::read(bytes, DecoderOptions::new_fast());
+    let im_result = ZImage::read(bytes, DecoderOptions::new_fast());
     return match im_result {
         Ok(result) => Ok(Image::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(

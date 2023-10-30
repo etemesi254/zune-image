@@ -49,22 +49,17 @@ impl Contrast {
 }
 
 impl OperationsTrait for Contrast {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "contrast"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth();
+        let depth = image.depth();
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => contrast_u8(channel.reinterpret_as_mut::<u8>()?, self.contrast),
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
         Ok(())

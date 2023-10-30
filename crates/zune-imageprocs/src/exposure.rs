@@ -32,7 +32,7 @@ impl Exposure {
 }
 
 impl OperationsTrait for Exposure {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Exposure"
     }
 
@@ -42,9 +42,9 @@ impl OperationsTrait for Exposure {
         clippy::cast_possible_truncation
     )]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let bit_type = image.get_depth().bit_type();
+        let bit_type = image.depth().bit_type();
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             match bit_type {
                 BitType::U8 => {
                     let raw_px = channel.reinterpret_as_mut::<u8>()?;
@@ -64,12 +64,7 @@ impl OperationsTrait for Exposure {
                         .iter_mut()
                         .for_each(|x| *x = (*x - self.black) * self.exposure);
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

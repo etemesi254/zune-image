@@ -29,7 +29,7 @@ use crate::transpose::Transpose;
 pub struct AutoOrient;
 
 impl OperationsTrait for AutoOrient {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Auto orient"
     }
 

@@ -29,11 +29,15 @@
 )]
 
 pub mod auto_orient;
+pub mod bilateral_filter;
+pub mod blend;
 pub mod box_blur;
 pub mod brighten;
+pub mod composite;
 pub mod contrast;
 pub mod convolve;
 pub mod crop;
+pub mod exposure;
 pub mod flip;
 pub mod flop;
 pub mod gamma;
@@ -57,5 +61,3 @@ pub mod traits;
 pub mod transpose;
 pub mod unsharpen;
 mod utils;
-
-pub mod exposure;

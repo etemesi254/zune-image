@@ -51,12 +51,12 @@ impl Sobel {
 }
 
 impl OperationsTrait for Sobel {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Sobel"
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth().bit_type();
-        let (width, height) = image.get_dimensions();
+        let depth = image.depth().bit_type();
+        let (width, height) = image.dimensions();
 
         #[cfg(not(feature = "threads"))]
         {
@@ -95,7 +95,7 @@ impl OperationsTrait for Sobel {
         {
             std::thread::scope(|s| {
                 let mut t_results = vec![];
-                for channel in image.get_channels_mut(true) {
+                for channel in image.channels_mut(true) {
                     let result = s.spawn(|| {
                         let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
                         match depth {
@@ -119,7 +119,7 @@ impl OperationsTrait for Sobel {
                             ),
                             d => {
                                 return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.get_name(),
+                                    self.name(),
                                     d
                                 ))
                             }

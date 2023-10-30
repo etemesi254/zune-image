@@ -17,6 +17,7 @@ use crate::error::PngDecodeErrors;
 // `num_plays` indicates the number of times that this animation should play;
 // if it is 0, the animation should play indefinitely.
 // If nonzero, the animation should come to rest on the final frame at the end of the last play.
+#[derive(Copy, Clone)]
 pub struct ActlChunk {
     pub num_frames: u32,
     pub num_plays:  u32

@@ -40,17 +40,17 @@ impl Transpose {
 }
 
 impl OperationsTrait for Transpose {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Transpose"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
-        let out_dim = width * height * image.get_depth().size_of();
+        let (width, height) = image.dimensions();
+        let out_dim = width * height * image.depth().size_of();
 
-        let depth = image.get_depth();
+        let depth = image.depth();
 
-        for channel in image.get_channels_mut(false) {
+        for channel in image.channels_mut(false) {
             let mut out_channel = Channel::new_with_bit_type(out_dim, depth.bit_type());
 
             match depth.bit_type() {
@@ -79,10 +79,7 @@ impl OperationsTrait for Transpose {
                     );
                 }
                 d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ));
+                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                 }
             };
             *channel = out_channel;
@@ -156,6 +153,29 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
                 });
                 unsafe {
                     return transpose_sse_float(in_matrix, out_matrix, width, height);
+                }
+            }
+        }
+    }
+    START.call_once(|| {
+        trace!("Using scalar transpose u8 algorithm");
+    });
+    transpose_scalar(in_matrix, out_matrix, width, height);
+}
+
+pub fn transpose_u32(in_matrix: &[u32], out_matrix: &mut [u32], width: usize, height: usize) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(feature = "sse41")]
+        {
+            use crate::transpose::sse41::transpose_sse_u32;
+
+            if is_x86_feature_detected!("sse") {
+                START.call_once(|| {
+                    trace!("Using SSE4.1 transpose u8 algorithm");
+                });
+                unsafe {
+                    return transpose_sse_u32(in_matrix, out_matrix, width, height);
                 }
             }
         }

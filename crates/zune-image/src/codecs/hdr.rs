@@ -32,15 +32,15 @@ where
         Ok(Image::from_f32(&bytes, width, height, colorspace))
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "HDR decoder"
     }
 
@@ -84,14 +84,14 @@ impl HdrEncoder {
 }
 
 impl EncoderTrait for HdrEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Hdr"
     }
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
-        assert_eq!(image.get_depth(), BitDepth::Float32);
+        assert_eq!(image.depth(), BitDepth::Float32);
 
         let data = &image.flatten_frames()[0];
 
@@ -103,7 +103,6 @@ impl EncoderTrait for HdrEncoder {
 
         Ok(data)
     }
-
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[ColorSpace::RGB]
     }
@@ -122,6 +121,10 @@ impl EncoderTrait for HdrEncoder {
 
     fn default_colorspace(&self, _: ColorSpace) -> ColorSpace {
         ColorSpace::RGB
+    }
+
+    fn set_options(&mut self, opts: EncoderOptions) {
+        self.options = Some(opts)
     }
 }
 

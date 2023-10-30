@@ -47,7 +47,7 @@ impl JxlEncoder {
 }
 
 impl EncoderTrait for JxlEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "jxl-encoder"
     }
 

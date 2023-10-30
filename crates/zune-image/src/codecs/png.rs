@@ -60,15 +60,15 @@ where
             Ok(image)
         }
     }
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "PNG Decoder"
     }
 
@@ -126,7 +126,7 @@ impl PngEncoder {
 }
 
 impl EncoderTrait for PngEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "PNG encoder"
     }
 
@@ -184,5 +184,8 @@ impl EncoderTrait for PngEncoder {
             BitDepth::Sixteen | BitDepth::Float32 => BitDepth::Sixteen,
             _ => BitDepth::Eight
         }
+    }
+    fn set_options(&mut self, opts: EncoderOptions) {
+        self.options = Some(opts)
     }
 }

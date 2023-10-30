@@ -34,23 +34,18 @@ impl Invert {
 }
 
 impl OperationsTrait for Invert {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Invert"
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth().bit_type();
+        let depth = image.depth().bit_type();
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             match depth {
                 BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
                 BitType::U16 => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
                 BitType::F32 => invert(channel.reinterpret_as_mut::<f32>().unwrap()),
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

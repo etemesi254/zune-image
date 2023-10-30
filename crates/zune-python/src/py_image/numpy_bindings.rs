@@ -20,9 +20,8 @@ impl Image {
     where
         T: Copy + Default + 'static + numpy::Element + Send
     {
-
         let arr = unsafe {
-            let colorspace = self.image.get_colorspace();
+            let colorspace = self.image.colorspace();
             //PyArray3::uget_raw()
             let arr = PyArray3::<T>::new(
                 py,
@@ -31,11 +30,11 @@ impl Image {
             );
 
             //obtain first channel
-            let channels = self.image.get_frames_ref()[0].get_channels_ref(colorspace, false);
+            let channels = self.image.frames_ref()[0].channels_ref(colorspace, false);
             for chan in channels {
                 if chan.reinterpret_as::<T>().is_err() {
                     return Err(PyErr::new::<PyException, _>(format!(
-                        "The image depth {:?} is not u8 use image.convert_depth({:?}) to convert to 8 bit \nWe do not implicitly convert to desired depth", self.image.get_depth(), expected
+                        "The image depth {:?} is not u8 use image.convert_depth({:?}) to convert to 8 bit \nWe do not implicitly convert to desired depth", self.image.depth(), expected
                     )));
                 }
             }

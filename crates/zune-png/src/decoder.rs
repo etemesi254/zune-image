@@ -311,12 +311,12 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// There are functions provided that allow you to further process
     /// such chunks to get the animated frames
     pub fn is_animated(&self) -> bool {
-        self.actl_info.is_some() && self.frames.len() > 1
+        self.actl_info.is_some() && self.actl_info.unwrap().num_frames > 1
     }
 
     /// Return true if image has more frames available
     pub fn more_frames(&self) -> bool {
-        self.frames.len() > self.current_frame
+        self.actl_info.is_some() && self.actl_info.unwrap().num_frames > self.current_frame as u32
     }
 
     pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors> {
@@ -418,6 +418,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         loop {
             let header = self.read_chunk_header()?;
 
+            println!("{:?}", header.chunk_type);
             self.parse_header(header)?;
 
             if header.chunk_type == PngChunkType::IEND {
@@ -597,9 +598,8 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         // decode headers
-        if !self.seen_headers || !self.seen_iend {
-            self.decode_headers()?;
-        }
+        self.decode_headers()?;
+
         // in case we are to decode from 16 bit to 8 bit, allocate separate and decode
         if self.called_from_decode_into
             && self.png_info.depth == 16
@@ -625,9 +625,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     }
     fn decode_into_inner(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         // decode headers
-        if !self.seen_headers || !self.seen_iend {
-            self.decode_headers()?;
-        }
+        self.decode_headers()?;
 
         trace!("Input Colorspace: {:?} ", self.png_info.color);
         trace!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
@@ -689,10 +687,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// returns: `Result<Vec<u8, Global>, PngErrors>`
     ///
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
-        if !self.seen_headers {
-            self.decode_headers()?;
-        }
-
+        self.decode_headers()?;
         self.called_from_decode_into = false;
 
         // allocate
@@ -849,7 +844,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         // in case we are to strip 16 bit to 8 bit, use decode_raw which does that for us
         if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
             let bytes = self.decode_raw()?;
-            return Ok(DecodingResult::U8(bytes))
+            return Ok(DecodingResult::U8(bytes));
         }
         // configure that the decoder converts samples to native endian
         if is_le()

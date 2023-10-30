@@ -28,7 +28,6 @@ fn test_psd() {
     let paths: Vec<TestEntry> = serde_json::from_slice(&json_file).unwrap();
 
     let default_path = psd_path();
-    println!("{:?}",&default_path);
     let mut error = false;
     let mut files = Vec::new();
     for path in &paths {

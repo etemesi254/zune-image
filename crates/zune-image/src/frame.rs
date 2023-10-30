@@ -129,9 +129,9 @@ impl Frame {
     ///
     /// returns: `&[Channel]`: References to the channels
     ///
-    /// Also see [get_channels_mut](Self::get_channels_mut) which returns a
+    /// Also see [get_channels_mut](Self::channels_mut) which returns a
     /// mutable reference to the channels
-    pub fn get_channels_ref(&self, colorspace: ColorSpace, ignore_alpha: bool) -> &[Channel] {
+    pub fn channels_ref(&self, colorspace: ColorSpace, ignore_alpha: bool) -> &[Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
             // do not take the last one,
@@ -144,9 +144,7 @@ impl Frame {
         }
     }
     /// Return a reference to the underlying channels
-    pub fn get_channels_mut(
-        &mut self, colorspace: ColorSpace, ignore_alpha: bool
-    ) -> &mut [Channel] {
+    pub fn channels_mut(&mut self, colorspace: ColorSpace, ignore_alpha: bool) -> &mut [Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
             // do not take the last one,

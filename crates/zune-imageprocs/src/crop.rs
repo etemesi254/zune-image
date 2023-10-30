@@ -88,16 +88,16 @@ impl Crop {
 }
 
 impl OperationsTrait for Crop {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Crop"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let new_dims = self.width * self.height * image.get_depth().size_of();
-        let (old_width, _) = image.get_dimensions();
-        let depth = image.get_depth().bit_type();
+        let new_dims = self.width * self.height * image.depth().size_of();
+        let (old_width, _) = image.dimensions();
+        let depth = image.depth().bit_type();
 
-        for channel in image.get_channels_mut(false) {
+        for channel in image.channels_mut(false) {
             let mut new_vec = Channel::new_with_length_and_type(new_dims, channel.get_type_id());
 
             // since crop is just bytewise copies, we can use the lowest common denominator for it
@@ -136,12 +136,7 @@ impl OperationsTrait for Crop {
                         self.y
                     );
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
             *channel = new_vec;
         }

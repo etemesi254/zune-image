@@ -44,7 +44,7 @@ impl Brighten {
 }
 
 impl OperationsTrait for Brighten {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Brighten"
     }
 
@@ -54,10 +54,10 @@ impl OperationsTrait for Brighten {
         clippy::cast_possible_truncation
     )]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let max_val = image.get_depth().max_value();
-        let depth = image.get_depth();
+        let max_val = image.depth().max_value();
+        let depth = image.depth();
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => brighten(
                     channel.reinterpret_as_mut::<u8>()?,
@@ -74,12 +74,7 @@ impl OperationsTrait for Brighten {
                     self.value,
                     f32::from(max_val)
                 ),
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
         Ok(())

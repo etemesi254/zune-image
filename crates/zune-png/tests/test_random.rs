@@ -10,6 +10,7 @@ use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
+use zune_png::PngDecoder;
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
@@ -47,4 +48,17 @@ fn test_trns_transparency() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/xc.png";
 
     test_decoding(path);
+}
+
+#[test]
+fn test_animation() {
+    let path = "/home/caleb/Animated_PNG_example_bouncing_beach_ball.png";
+    let data = open_and_read(path);
+    let mut decoder = PngDecoder::new(&data);
+    decoder.decode_headers().unwrap();
+    let c = decoder.is_animated();
+    while decoder.more_frames() {
+        let pix = decoder.decode_raw().unwrap();
+        println!("Hello {:?}", &pix[0..10]);
+    }
 }

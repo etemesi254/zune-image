@@ -39,14 +39,14 @@ impl GaussianBlur {
 }
 
 impl OperationsTrait for GaussianBlur {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Gaussian blur"
     }
 
     #[allow(clippy::too_many_lines)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
-        let depth = image.get_depth();
+        let (width, height) = image.dimensions();
+        let depth = image.depth();
 
         #[cfg(not(feature = "threads"))]
         {
@@ -106,7 +106,7 @@ impl OperationsTrait for GaussianBlur {
             std::thread::scope(|s| {
                 let mut errors = vec![];
                 // blur each channel on a separate thread
-                for channel in image.get_channels_mut(false) {
+                for channel in image.channels_mut(false) {
                     let result = s.spawn(|| match depth.bit_type() {
                         BitType::U8 => {
                             let mut temp = vec![0; width * height];
@@ -144,12 +144,7 @@ impl OperationsTrait for GaussianBlur {
                             );
                             Ok(())
                         }
-                        d => {
-                            return Err(ImageErrors::ImageOperationNotImplemented(
-                                self.get_name(),
-                                d
-                            ))
-                        }
+                        d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                     });
                     errors.push(result);
                 }

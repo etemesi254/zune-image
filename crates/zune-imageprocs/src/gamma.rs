@@ -37,14 +37,14 @@ impl Gamma {
 }
 
 impl OperationsTrait for Gamma {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Gamma Correction"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let max_value = image.get_depth().max_value();
+        let max_value = image.depth().max_value();
 
-        let depth = image.get_depth();
+        let depth = image.depth();
         #[cfg(not(feature = "threads"))]
         {
             trace!("Running gamma correction in single threaded mode");
@@ -85,7 +85,7 @@ impl OperationsTrait for Gamma {
 
             std::thread::scope(|s| {
                 let mut errors = vec![];
-                for channel in image.get_channels_mut(false) {
+                for channel in image.channels_mut(false) {
                     let t = s.spawn(|| match depth.bit_type() {
                         BitType::U16 => {
                             gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value);
@@ -108,10 +108,7 @@ impl OperationsTrait for Gamma {
                             Ok(())
                         }
                         d => {
-                            return Err(ImageErrors::ImageOperationNotImplemented(
-                                self.get_name(),
-                                d
-                            ));
+                            return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                         }
                     });
                     errors.push(t);

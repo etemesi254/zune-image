@@ -68,7 +68,7 @@ impl Threshold {
 }
 
 impl OperationsTrait for Threshold {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Threshold"
     }
 
@@ -78,12 +78,12 @@ impl OperationsTrait for Threshold {
         clippy::cast_possible_truncation
     )]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        if !image.get_colorspace().is_grayscale() {
+        if !image.colorspace().is_grayscale() {
             warn!("Threshold works well with grayscale images, results may be something you don't expect");
         }
 
-        let depth = image.get_depth();
-        for channel in image.get_channels_mut(true) {
+        let depth = image.depth();
+        for channel in image.channels_mut(true) {
             match depth.bit_type() {
                 BitType::U16 => threshold(
                     channel.reinterpret_as_mut::<u16>()?,

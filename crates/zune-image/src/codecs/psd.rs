@@ -41,15 +41,15 @@ where
         Ok(image)
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "PSD Decoder"
     }
 

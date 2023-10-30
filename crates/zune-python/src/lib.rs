@@ -16,7 +16,6 @@ mod py_enums;
 mod py_functions;
 mod py_image;
 
-
 #[pyfunction]
 #[allow(unused_results)]
 pub fn init_logger() {

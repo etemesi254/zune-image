@@ -38,7 +38,7 @@ impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
         let colorspace = self.get_output_colorspace().unwrap();
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
         image.metadata = metadata;
@@ -46,16 +46,16 @@ impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
         Ok(image)
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.dimensions()
             .map(|dims| (usize::from(dims.0), usize::from(dims.1)))
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_output_colorspace().unwrap()
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "JPEG decoder"
     }
 
@@ -63,7 +63,7 @@ impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
         self.decode_headers()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
 
         let mut metadata = ImageMetadata {
             format: Some(ImageFormat::JPEG),
@@ -116,23 +116,23 @@ impl JpegEncoder {
 }
 
 impl EncoderTrait for JpegEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "jpeg-encoder(vstroebel)"
     }
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         assert_eq!(
-            image.get_depth(),
+            image.depth(),
             BitDepth::Eight,
             "Unsupported bit depth{:?}",
-            image.get_depth()
+            image.depth()
         );
         let pixels = &image.flatten_frames::<u8>()[0];
 
-        if let Some(colorspace) = match_colorspace_to_colortype(image.get_colorspace()) {
+        if let Some(colorspace) = match_colorspace_to_colortype(image.colorspace()) {
             let max_dims = usize::from(u16::MAX);
 
-            let (width, height) = image.get_dimensions();
+            let (width, height) = image.dimensions();
 
             // check dimensions
             if (width > max_dims) || (height > max_dims) {
@@ -144,7 +144,7 @@ impl EncoderTrait for JpegEncoder {
             }
             // create space for our encoder
             let mut encoded_data =
-                Vec::with_capacity(width * height * image.get_colorspace().num_components());
+                Vec::with_capacity(width * height * image.colorspace().num_components());
 
             let options = create_options_for_encoder(self.options, image);
 
@@ -187,7 +187,7 @@ impl EncoderTrait for JpegEncoder {
             Ok(encoded_data)
         } else {
             Err(ImgEncodeErrors::UnsupportedColorspace(
-                image.get_colorspace(),
+                image.colorspace(),
                 self.supported_colorspaces()
             )
             .into())

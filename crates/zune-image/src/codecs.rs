@@ -63,13 +63,13 @@ pub(crate) fn create_options_for_encoder(
     } else {
         EncoderOptions::default()
     };
-    let (width, height) = image.get_dimensions();
+    let (width, height) = image.dimensions();
     // then set image configuration
     start_options
         .set_width(width)
         .set_height(height)
-        .set_depth(image.get_depth())
-        .set_colorspace(image.get_colorspace())
+        .set_depth(image.depth())
+        .set_colorspace(image.colorspace())
 }
 /// All supported image formats
 ///

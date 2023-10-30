@@ -70,15 +70,15 @@ impl Mirror {
 }
 
 impl OperationsTrait for Mirror {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Mirror"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
-        let depth = image.get_depth();
+        let (width, height) = image.dimensions();
+        let depth = image.depth();
 
-        for channel in image.get_channels_mut(false) {
+        for channel in image.channels_mut(false) {
             match depth.bit_type() {
                 BitType::U8 => {
                     mirror(
@@ -105,12 +105,7 @@ impl OperationsTrait for Mirror {
                         self.mode
                     );
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

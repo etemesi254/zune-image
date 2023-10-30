@@ -35,14 +35,14 @@ impl Flip {
 }
 
 impl OperationsTrait for Flip {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Flip"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth();
+        let depth = image.depth();
 
-        for inp in image.get_channels_mut(false) {
+        for inp in image.channels_mut(false) {
             match depth.bit_type() {
                 BitType::U8 => {
                     flip(inp.reinterpret_as_mut::<u8>()?);
@@ -53,12 +53,7 @@ impl OperationsTrait for Flip {
                 BitType::F32 => {
                     flip(inp.reinterpret_as_mut::<f32>()?);
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 
@@ -92,15 +87,15 @@ impl VerticalFlip {
 }
 
 impl OperationsTrait for VerticalFlip {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Vertical Flip"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth();
-        let width = image.get_dimensions().0;
+        let depth = image.depth();
+        let width = image.dimensions().0;
 
-        for inp in image.get_channels_mut(false) {
+        for inp in image.channels_mut(false) {
             match depth.bit_type() {
                 BitType::U8 => {
                     vertical_flip(inp.reinterpret_as_mut::<u8>()?, width);
@@ -111,12 +106,7 @@ impl OperationsTrait for VerticalFlip {
                 BitType::F32 => {
                     vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

@@ -41,19 +41,19 @@ impl Resize {
 }
 
 impl OperationsTrait for Resize {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Resize"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (old_w, old_h) = image.get_dimensions();
-        let depth = image.get_depth().bit_type();
+        let (old_w, old_h) = image.dimensions();
+        let depth = image.depth().bit_type();
 
-        let new_length = self.new_width * self.new_height * image.get_depth().size_of();
+        let new_length = self.new_width * self.new_height * image.depth().size_of();
 
         match depth {
             BitType::U8 => {
-                for old_channel in image.get_channels_mut(false) {
+                for old_channel in image.channels_mut(false) {
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
                     resize::<u8>(
@@ -69,7 +69,7 @@ impl OperationsTrait for Resize {
                 }
             }
             BitType::U16 => {
-                for old_channel in image.get_channels_mut(true) {
+                for old_channel in image.channels_mut(true) {
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
                     resize::<u16>(
@@ -85,7 +85,7 @@ impl OperationsTrait for Resize {
                 }
             }
             BitType::F32 => {
-                for old_channel in image.get_channels_mut(true) {
+                for old_channel in image.channels_mut(true) {
                     let mut new_channel = Channel::new_with_bit_type(new_length, depth);
 
                     resize::<f32>(
@@ -100,12 +100,7 @@ impl OperationsTrait for Resize {
                     *old_channel = new_channel;
                 }
             }
-            d => {
-                return Err(ImageErrors::ImageOperationNotImplemented(
-                    self.get_name(),
-                    d
-                ))
-            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
         }
 
         image.set_dimensions(self.new_width, self.new_height);

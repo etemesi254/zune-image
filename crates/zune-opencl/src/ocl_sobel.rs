@@ -113,14 +113,14 @@ impl OclSobel {
 }
 
 impl zune_image::traits::OperationsTrait for OclSobel {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "OCL Sobel"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.get_depth();
-        let dims = image.get_dimensions();
-        let b_type = image.get_depth();
+        let depth = image.depth();
+        let dims = image.dimensions();
+        let b_type = image.depth();
 
         let mut ocl_pq = self.pq.lock().map_err(|x| {
             let message = format!("Could not unlock mutex:\n{}", x);
@@ -129,7 +129,7 @@ impl zune_image::traits::OperationsTrait for OclSobel {
 
         ocl_pq.set_dims(dims);
 
-        for channel in image.get_channels_mut(true) {
+        for channel in image.channels_mut(true) {
             let mut mut_channel = Channel::new_with_bit_type(channel.len(), b_type.bit_type());
             unsafe {
                 match depth.bit_type() {
@@ -161,12 +161,7 @@ impl zune_image::traits::OperationsTrait for OclSobel {
                         )?;
                     }
 
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ))
-                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
             }
             *channel = mut_channel;

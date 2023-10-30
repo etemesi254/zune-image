@@ -39,15 +39,15 @@ where
         Ok(image)
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_colorspace()
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Farbfeld Decoder"
     }
 
@@ -97,14 +97,14 @@ impl FarbFeldEncoder {
 }
 
 impl EncoderTrait for FarbFeldEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "farbfeld"
     }
 
     fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
-        assert_eq!(image.get_depth(), BitDepth::Sixteen);
+        assert_eq!(image.depth(), BitDepth::Sixteen);
 
         let data = &image.to_u8()[0];
 
@@ -135,6 +135,9 @@ impl EncoderTrait for FarbFeldEncoder {
 
     fn default_colorspace(&self, _: ColorSpace) -> ColorSpace {
         ColorSpace::RGBA
+    }
+    fn set_options(&mut self, opts: EncoderOptions) {
+        self.options = Some(opts)
     }
 }
 

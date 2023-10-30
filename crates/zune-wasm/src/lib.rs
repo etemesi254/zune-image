@@ -92,12 +92,12 @@ impl DerefMut for WasmImage {
 #[wasm_bindgen]
 impl WasmImage {
     pub fn width(&self) -> usize {
-        let (width, _) = self.image.get_dimensions();
+        let (width, _) = self.image.dimensions();
         width
     }
 
     pub fn height(&self) -> usize {
-        let (_, height) = self.image.get_dimensions();
+        let (_, height) = self.image.dimensions();
         height
     }
 
@@ -119,10 +119,10 @@ impl WasmImage {
     fn execute_ops(&mut self, ops: &dyn OperationsTrait) {
         match ops.execute(&mut self.image) {
             Ok(()) => {
-                info!("Successfully executed {}", ops.get_name());
+                info!("Successfully executed {}", ops.name());
             }
             Err(e) => {
-                error!("Executing {} failed because of {:?}", ops.get_name(), e);
+                error!("Executing {} failed because of {:?}", ops.name(), e);
             }
         }
     }
@@ -173,7 +173,7 @@ impl WasmImage {
 
     /// Return the image's colorspace
     pub fn colorspace(&mut self) -> WasmColorspace {
-        WasmColorspace::from_colorspace(self.image.get_colorspace())
+        WasmColorspace::from_colorspace(self.image.colorspace())
     }
 }
 

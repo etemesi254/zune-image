@@ -38,7 +38,7 @@ impl PPMEncoder {
 }
 
 impl EncoderTrait for PPMEncoder {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "PPM Encoder"
     }
 
@@ -82,6 +82,9 @@ impl EncoderTrait for PPMEncoder {
             _ => BitDepth::Eight
         }
     }
+    fn set_options(&mut self, opts: EncoderOptions) {
+        self.options = Some(opts)
+    }
 }
 
 impl<T> DecoderTrait<T> for PPMDecoder<T>
@@ -108,15 +111,15 @@ where
         Ok(image)
     }
 
-    fn get_dimensions(&self) -> Option<(usize, usize)> {
+    fn dimensions(&self) -> Option<(usize, usize)> {
         self.get_dimensions()
     }
 
-    fn get_out_colorspace(&self) -> ColorSpace {
+    fn out_colorspace(&self) -> ColorSpace {
         self.get_colorspace().unwrap_or(ColorSpace::Unknown)
     }
 
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "PPM Decoder"
     }
 

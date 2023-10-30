@@ -817,9 +817,9 @@ where
     /// - `Some(width,height)`: Image dimensions
     /// -  None : The image headers haven't been decoded
     #[must_use]
-    pub const fn dimensions(&self) -> Option<(u16, u16)> {
+    pub const fn dimensions(&self) -> Option<(usize, usize)> {
         return if self.headers_decoded {
-            Some((self.info.width, self.info.height))
+            Some((self.info.width as usize, self.info.height as usize))
         } else {
             None
         };

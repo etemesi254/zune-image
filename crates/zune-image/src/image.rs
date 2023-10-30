@@ -78,12 +78,12 @@ impl Image {
         self.frames.len() > 1
     }
     /// Get image dimensions as a tuple of (width,height)
-    pub const fn get_dimensions(&self) -> (usize, usize) {
+    pub const fn dimensions(&self) -> (usize, usize) {
         self.metadata.get_dimensions()
     }
 
     /// Get the image depth of this image
-    pub const fn get_depth(&self) -> BitDepth {
+    pub const fn depth(&self) -> BitDepth {
         self.metadata.get_depth()
     }
     /// Set image depth
@@ -105,20 +105,20 @@ impl Image {
     /// All frames in the image
     ///
     ///
-    pub fn get_frames_ref(&self) -> &[Frame] {
+    pub fn frames_ref(&self) -> &[Frame] {
         &self.frames
     }
 
-    pub fn get_frames_mut(&mut self) -> &mut [Frame] {
+    pub fn frames_mut(&mut self) -> &mut [Frame] {
         &mut self.frames
     }
     /// Return a reference to the underlying channels
-    pub fn get_channels_ref(&self, ignore_alpha: bool) -> Vec<&Channel> {
-        let colorspace = self.get_colorspace();
+    pub fn channels_ref(&self, ignore_alpha: bool) -> Vec<&Channel> {
+        let colorspace = self.colorspace();
 
-        self.frames
+        self.frames_ref()
             .iter()
-            .flat_map(|x| x.get_channels_ref(colorspace, ignore_alpha))
+            .flat_map(|x| x.channels_ref(colorspace, ignore_alpha))
             .collect()
     }
 
@@ -126,17 +126,17 @@ impl Image {
     ///
     /// This gives mutable access to the chanel data allowing
     /// single or multithreaded manipulation of images
-    pub fn get_channels_mut(&mut self, ignore_alpha: bool) -> Vec<&mut Channel> {
-        let colorspace = self.get_colorspace();
+    pub fn channels_mut(&mut self, ignore_alpha: bool) -> Vec<&mut Channel> {
+        let colorspace = self.colorspace();
 
-        self.frames
+        self.frames_mut()
             .iter_mut()
-            .flat_map(|x| x.get_channels_mut(colorspace, ignore_alpha))
+            .flat_map(|x| x.channels_mut(colorspace, ignore_alpha))
             .collect()
     }
     /// Get the colorspace this image is stored
     /// in
-    pub const fn get_colorspace(&self) -> ColorSpace {
+    pub const fn colorspace(&self) -> ColorSpace {
         self.metadata.colorspace
     }
     /// Flatten channels in this image.
@@ -145,9 +145,9 @@ impl Image {
     pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>> {
         //
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
-        let colorspace = self.get_colorspace();
+        let colorspace = self.colorspace();
 
-        self.frames.iter().map(|x| x.flatten(colorspace)).collect()
+        self.frames_ref().iter().map(|x| x.flatten(colorspace)).collect()
     }
     /// Convert image to a byte representation interleaving
     /// image pixels where necessary
@@ -157,11 +157,11 @@ impl Image {
     /// u8 as native endian is used
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
     pub(crate) fn to_u8(&self) -> Vec<Vec<u8>> {
-        let colorspace = self.get_colorspace();
+        let colorspace = self.colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else if self.metadata.get_depth() == BitDepth::Sixteen {
-            self.frames
+            self.frames_ref()
                 .iter()
                 .map(|z| z.u16_to_native_endian(colorspace))
                 .collect()
@@ -170,7 +170,7 @@ impl Image {
         }
     }
     pub fn flatten_to_u8(&self) -> Vec<Vec<u8>> {
-        if self.get_depth() == BitDepth::Eight {
+        if self.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else {
             let mut im_clone = self.clone();
@@ -179,11 +179,11 @@ impl Image {
         }
     }
     pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
-        let colorspace = self.get_colorspace();
+        let colorspace = self.colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else if self.metadata.get_depth() == BitDepth::Sixteen {
-            self.frames
+            self.frames_ref()
                 .iter()
                 .map(|z| z.u16_to_big_endian(colorspace))
                 .collect()
@@ -202,9 +202,9 @@ impl Image {
 
             operation.execute(self).unwrap();
         }
-        let colorspace = self.get_colorspace();
+        let colorspace = self.colorspace();
 
-        for (frame, out) in self.frames.iter_mut().zip(out_pixel) {
+        for (frame, out) in self.frames_mut().iter_mut().zip(out_pixel) {
             frame.write_rgba(colorspace, out).unwrap();
         }
     }
@@ -496,15 +496,15 @@ impl Image {
         T: ZuneInts<T> + Default + Copy + 'static + Pod,
         F: Fn(usize, usize, [&mut T; MAX_CHANNELS])
     {
-        let colorspace = self.get_colorspace();
+        let colorspace = self.colorspace();
 
-        let (width, height) = self.get_dimensions();
+        let (width, height) = self.dimensions();
 
         for frame in self.frames.iter_mut() {
             let mut pixel_muts: Vec<&mut [T]> = vec![];
 
             // convert all channels to type T
-            for channel in frame.get_channels_mut(colorspace, false) {
+            for channel in frame.channels_mut(colorspace, false) {
                 pixel_muts.push(channel.reinterpret_as_mut()?)
             }
             for y in 0..height {

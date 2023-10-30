@@ -35,13 +35,13 @@ impl Convolve {
 }
 
 impl OperationsTrait for Convolve {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "2D convolution"
     }
     #[allow(clippy::too_many_lines)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
-        let depth = image.get_depth();
+        let (width, height) = image.dimensions();
+        let depth = image.depth();
 
         #[cfg(feature = "threads")]
         {
@@ -49,7 +49,7 @@ impl OperationsTrait for Convolve {
 
             std::thread::scope(|s| {
                 let mut errors = vec![];
-                for channel in image.get_channels_mut(true) {
+                for channel in image.channels_mut(true) {
                     let scope = s.spawn(|| {
                         // Hello
                         let mut out_channel = Channel::new_with_bit_type(
@@ -90,7 +90,7 @@ impl OperationsTrait for Convolve {
                             }
                             d => {
                                 return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.get_name(),
+                                    self.name(),
                                     d
                                 ))
                             }

@@ -35,14 +35,14 @@ impl Median {
 }
 
 impl OperationsTrait for Median {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Median Filter"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
+        let (width, height) = image.dimensions();
 
-        let depth = image.get_depth();
+        let depth = image.depth();
         #[cfg(not(feature = "threads"))]
         {
             trace!("Running median filter single threaded mode");
@@ -81,7 +81,7 @@ impl OperationsTrait for Median {
 
             std::thread::scope(|s| {
                 let mut errors = vec![];
-                for channel in image.get_channels_mut(true) {
+                for channel in image.channels_mut(true) {
                     let result = s.spawn(|| {
                         let mut new_channel =
                             Channel::new_with_bit_type(channel.len(), depth.bit_type());
@@ -103,7 +103,7 @@ impl OperationsTrait for Median {
                             ),
                             d => {
                                 return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.get_name(),
+                                    self.name(),
                                     d
                                 ))
                             }

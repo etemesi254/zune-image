@@ -475,3 +475,103 @@ pub unsafe fn transpose_sse_float(
         }
     }
 }
+
+pub unsafe fn transpose_sse_u32_inner(
+    in_matrix: &[u32], out: &mut [u32], in_stride: usize, out_stride: usize
+) {
+    assert!((3 * out_stride) <= out.len());
+
+    assert!((3 * in_stride) <= in_matrix.len());
+
+    let mut row0 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 0..).as_ptr().cast());
+    let mut row1 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 1..).as_ptr().cast());
+    let mut row2 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 2..).as_ptr().cast());
+    let mut row3 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 3..).as_ptr().cast());
+
+    _MM_TRANSPOSE4_PS(&mut row0, &mut row1, &mut row2, &mut row3);
+
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(),
+        row0
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(),
+        row1
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(),
+        row2
+    );
+    _mm_storeu_ps(
+        out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(),
+        row3
+    );
+}
+
+pub unsafe fn transpose_sse_u32(
+    in_matrix: &[u32], out_matrix: &mut [u32], width: usize, height: usize
+) {
+    const SMALL_WIDTH_THRESHOLD: usize = 4;
+
+    let dimensions = width * height;
+
+    assert_eq!(
+        in_matrix.len(),
+        dimensions,
+        "In matrix dimensions do not match width and height"
+    );
+
+    assert_eq!(
+        out_matrix.len(),
+        dimensions,
+        "Out matrix dimensions do not match width and height"
+    );
+
+    if width < SMALL_WIDTH_THRESHOLD {
+        return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
+    }
+
+    // We want to figure out how many times we can divide the width into
+    // 4 since inner loop transposes by 4
+    let width_iterations = width / 4;
+    let sin_height = 4 * width;
+
+    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
+        for j in 0..width_iterations {
+            let out_height_stride = &mut out_matrix[(j * height * 4) + (i * 4)..];
+
+            transpose_sse_u32_inner(
+                &in_width_stride[(j * 4)..],
+                out_height_stride,
+                width,
+                height
+            );
+        }
+    }
+    // Deal with the part that hasn't been copied
+    //
+    //
+    //┌──────────┬─────┐
+    //│          │     │
+    //│          │     │
+    //│  Done    │ B   │
+    //│          │     │
+    //│          │     │
+    //├──────────┘-----│
+    //│      C         │
+    //└────────────────┘
+    // Everything in region b and C isn't done
+    let rem_w = width - (width & 3);
+    let rem_h = height - (height & 3);
+
+    for i in rem_h..height {
+        for j in 0..width {
+            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
+        }
+    }
+    for i in rem_w..width {
+        for j in 0..height {
+            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
+        }
+    }
+}

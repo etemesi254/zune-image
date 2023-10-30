@@ -187,6 +187,9 @@ impl ImageMetadata {
     pub const fn alpha(&self) -> AlphaState {
         self.alpha
     }
+    pub fn is_premultiplied_alpha(&self) -> bool {
+        self.alpha.eq(&AlphaState::PreMultiplied)
+    }
 
     pub fn set_alpha(&mut self, alpha_state: AlphaState) {
         self.alpha = alpha_state;

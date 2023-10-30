@@ -102,19 +102,19 @@ impl Depth {
 }
 
 impl OperationsTrait for Depth {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Depth"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let image_depth = image.get_depth();
+        let image_depth = image.depth();
 
         if image_depth == self.depth {
             trace!("Image depth already matches requested, no-op");
             return Ok(());
         }
 
-        for channel in image.get_channels_mut(false) {
+        for channel in image.channels_mut(false) {
             match (image_depth, self.depth) {
                 (BitDepth::Eight, BitDepth::Sixteen) => {
                     let old_data = channel.reinterpret_as().unwrap();

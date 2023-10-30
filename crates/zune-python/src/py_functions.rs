@@ -7,8 +7,8 @@
  */
 
 use pyo3::prelude::*;
-use crate::py_enums::ImageFormat;
 
+use crate::py_enums::ImageFormat;
 
 /// Guess an image format from bytes
 ///

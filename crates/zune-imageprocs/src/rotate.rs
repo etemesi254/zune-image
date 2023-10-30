@@ -23,16 +23,16 @@ impl Rotate {
 }
 
 impl OperationsTrait for Rotate {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Rotate"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let im_type = image.get_depth().bit_type();
+        let im_type = image.depth().bit_type();
 
-        let (width, _) = image.get_dimensions();
+        let (width, _) = image.dimensions();
 
-        for channel in image.get_channels_mut(false) {
+        for channel in image.channels_mut(false) {
             match im_type {
                 BitType::U8 => {
                     if (self.angle - 180.0).abs() < f32::EPSILON {
@@ -49,12 +49,7 @@ impl OperationsTrait for Rotate {
                         rotate_180::<f32>(channel.reinterpret_as_mut()?, width);
                     }
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             };
         }
 

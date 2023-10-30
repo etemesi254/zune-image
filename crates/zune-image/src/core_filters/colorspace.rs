@@ -38,9 +38,9 @@ impl ColorspaceConv {
 }
 
 fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
-    let old_len = image.get_channels_ref(true)[0].len();
+    let old_len = image.channels_ref(true)[0].len();
 
-    let bit_type = image.get_depth().bit_type();
+    let bit_type = image.depth().bit_type();
 
     let new_channel = match bit_type {
         BitType::U8 => {
@@ -67,12 +67,12 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
     if image.is_animated() {
         // multiple images, loop cloning channel
         image
-            .get_frames_mut()
+            .frames_mut()
             .iter_mut()
             .for_each(|x| x.add(new_channel.clone()))
     } else {
         // single image, just use the clone we have
-        image.get_frames_mut()[0].add(new_channel);
+        image.frames_mut()[0].add(new_channel);
     }
 
     Ok(())
@@ -81,24 +81,24 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
 fn rgb_to_grayscale(
     image: &mut Image, to: ColorSpace, preserve_alpha: bool
 ) -> Result<(), ImageErrors> {
-    let im_colorspace = image.get_colorspace();
+    let im_colorspace = image.colorspace();
 
     if im_colorspace == ColorSpace::Luma || im_colorspace == ColorSpace::LumaA {
         warn!("Image already in grayscale skipping this operation");
         return Ok(());
     }
 
-    let (width, height) = image.get_dimensions();
-    let size = width * height * image.get_depth().size_of();
+    let (width, height) = image.dimensions();
+    let size = width * height * image.depth().size_of();
 
-    let colorspace = image.get_colorspace();
-    let depth = image.get_depth();
-    let max_value = image.get_depth().max_value();
+    let colorspace = image.colorspace();
+    let depth = image.depth();
+    let max_value = image.depth().max_value();
 
     let mut out_colorspace = ColorSpace::Unknown;
 
-    for frame in image.get_frames_mut() {
-        let channel = frame.get_channels_ref(colorspace, preserve_alpha);
+    for frame in image.frames_mut() {
+        let channel = frame.channels_ref(colorspace, preserve_alpha);
 
         match depth.bit_type() {
             BitType::U8 => {
@@ -192,7 +192,7 @@ fn rgb_to_grayscale(
 }
 
 fn convert_rgb_bgr(from: ColorSpace, to: ColorSpace, image: &mut Image) -> Result<(), ImageErrors> {
-    for frame in image.get_frames_mut() {
+    for frame in image.frames_mut() {
         // swap B with R
         frame.channels.swap(0, 2);
 
@@ -211,12 +211,12 @@ fn convert_rgb_bgr(from: ColorSpace, to: ColorSpace, image: &mut Image) -> Resul
 }
 
 impl OperationsTrait for ColorspaceConv {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Colorspace conversion"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let from = image.get_colorspace();
+        let from = image.colorspace();
 
         // colorspace matches
         if from == self.to {
@@ -244,14 +244,14 @@ impl OperationsTrait for ColorspaceConv {
             (ColorSpace::LumaA, ColorSpace::Luma) => {
                 // pop last item in the vec which should
                 // contain the alpha channel
-                for frame in image.get_frames_mut() {
+                for frame in image.frames_mut() {
                     frame.channels_vec().pop().unwrap();
                 }
             }
             (ColorSpace::RGBA, ColorSpace::RGB) => {
                 // pop last item in the vec which should
                 // contain the alpha channel
-                for frame in image.get_frames_mut() {
+                for frame in image.frames_mut() {
                     frame.channels_vec().pop().unwrap();
                 }
             }
@@ -277,9 +277,9 @@ impl OperationsTrait for ColorspaceConv {
 }
 
 fn convert_luma_to_rgb(image: &mut Image, out_colorspace: ColorSpace) -> Result<(), ImageErrors> {
-    let color = image.get_colorspace();
-    for frame in image.get_frames_mut() {
-        let luma_channel = frame.get_channels_ref(ColorSpace::Luma, true)[0].to_owned();
+    let color = image.colorspace();
+    for frame in image.frames_mut() {
+        let luma_channel = frame.channels_ref(ColorSpace::Luma, true)[0].to_owned();
 
         if color == ColorSpace::Luma {
             // add two more luma channels

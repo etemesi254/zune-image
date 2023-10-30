@@ -47,14 +47,14 @@ impl Unsharpen {
 }
 
 impl OperationsTrait for Unsharpen {
-    fn get_name(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         "Unsharpen"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.get_dimensions();
+        let (width, height) = image.dimensions();
 
-        let depth = image.get_depth();
+        let depth = image.depth();
 
         #[cfg(not(feature = "threads"))]
         {
@@ -110,7 +110,7 @@ impl OperationsTrait for Unsharpen {
             std::thread::scope(|s| {
                 let mut errors = vec![];
                 // blur each channel on a separate thread
-                for channel in image.get_channels_mut(true) {
+                for channel in image.channels_mut(true) {
                     let result = s.spawn(|| match depth.bit_type() {
                         BitType::U16 => {
                             let mut blur_buffer = vec![0; width * height];
@@ -145,12 +145,7 @@ impl OperationsTrait for Unsharpen {
                             );
                             Ok(())
                         }
-                        d => {
-                            return Err(ImageErrors::ImageOperationNotImplemented(
-                                self.get_name(),
-                                d
-                            ))
-                        }
+                        d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                     });
                     errors.push(result);
                 }

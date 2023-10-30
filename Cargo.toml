@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0 OR Zlib"
 resolver = "2"
 members = [
   "crates/*",
-  "tests/",
+  "tests",
   "benchmarks"
   
 ]
