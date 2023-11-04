@@ -7,7 +7,7 @@
  */
 #![cfg(feature = "bmp")]
 
-use zune_bmp::{BmpDecoder, BmpDecoderErrors};
+pub use zune_bmp::*;
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 
@@ -18,8 +18,8 @@ use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<T> DecoderTrait<T> for BmpDecoder<T>
-where
-    T: ZReaderTrait
+    where
+        T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
