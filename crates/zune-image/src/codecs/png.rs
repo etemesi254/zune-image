@@ -28,8 +28,8 @@ use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait<T> for PngDecoder<T>
-    where
-        T: ZReaderTrait
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
@@ -147,7 +147,7 @@ impl From<zune_png::error::PngDecodeErrors> for ImageErrors {
 
 #[derive(Default)]
 pub struct PngEncoder {
-    options: Option<EncoderOptions>,
+    options: Option<EncoderOptions>
 }
 
 impl PngEncoder {

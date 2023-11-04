@@ -18,8 +18,8 @@ use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
 impl<T> DecoderTrait<T> for BmpDecoder<T>
-    where
-        T: ZReaderTrait
+where
+    T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
