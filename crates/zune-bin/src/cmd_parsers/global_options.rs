@@ -78,7 +78,7 @@ pub fn setup_logger(options: &ArgMatches) {
     } else if *options.get_one::<bool>("info").unwrap() {
         log_level = Level::Info;
     } else {
-        log_level = Level::Error;
+        log_level = Level::Warn;
     }
 
     simple_logger::init_with_level(log_level).unwrap();
