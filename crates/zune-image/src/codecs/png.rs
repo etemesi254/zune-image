@@ -21,13 +21,15 @@ pub use zune_png::*;
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
+use crate::errors::ImageErrors::ImageDecodeErrors;
+use crate::frame::Frame;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait<T> for PngDecoder<T>
-where
-    T: ZReaderTrait
+    where
+        T: ZReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
@@ -39,11 +41,45 @@ where
         if self.is_animated() {
             // decode apng frames
             //let mut previous_frame
+            let info = self.get_info().unwrap().clone();
+            // the output, since we know that no frame will be bigger than the width and height, we can
+            // set this up outside of the loop.
+            let mut output = vec![0; info.width * info.height * colorspace.num_components()];
+            let mut output_frames = Vec::new();
             while self.more_frames() {
-                println!("{:?}", self.get_depth());
-                self.decode().unwrap();
+                self.decode_headers().unwrap();
+
+                let mut frame = self.frame_info().unwrap();
+                if frame.dispose_op == DisposeOp::Previous {
+                    // we don't clear our buffer, so output always contains the previous frame
+                    //
+                    // this means that there is no need to store the previous frame and copy it
+                    frame.dispose_op = DisposeOp::None;
+                }
+                let pix = self.decode().unwrap();
+                match pix {
+                    DecodingResult::U8(pix) => {
+                        post_process_image(
+                            &info,
+                            colorspace,
+                            &frame,
+                            &pix,
+                            None,
+                            &mut output,
+                            None,
+                        )?;
+                        let duration = f64::from(frame.delay_num) / f64::from(frame.delay_denom);
+                        // then build a frame from that
+                        let im_frame = Frame::from_u8(&output, colorspace, duration);
+                        output_frames.push(im_frame);
+                    }
+                    _ => return Err(ImageDecodeErrors("The current image is an  Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
+                }
             }
-            todo!();
+            let mut image = Image::new_frames(output_frames, depth, width, height, colorspace);
+            image.metadata = metadata;
+
+            Ok(image)
         } else {
             let pixels = self
                 .decode()
@@ -111,7 +147,7 @@ impl From<zune_png::error::PngDecodeErrors> for ImageErrors {
 
 #[derive(Default)]
 pub struct PngEncoder {
-    options: Option<EncoderOptions>
+    options: Option<EncoderOptions>,
 }
 
 impl PngEncoder {
