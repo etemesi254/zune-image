@@ -879,10 +879,10 @@ where
 
         if self.depth == 4 {
             // Handle bit depth 4
-            let mut rle_code;
+            let mut rle_code:u16;
             let mut stream_byte;
             while line >= 0 && pos <= self.width {
-                rle_code = self.bytes.get_u8();
+                rle_code = u16::from(self.bytes.get_u8());
 
                 if rle_code == 0 {
                     /* fetch the next byte to see how to handle escape code */
@@ -907,7 +907,7 @@ where
                     } else {
                         // copy pixels from encoded stream
                         let odd_pixel = usize::from(stream_byte & 1);
-                        rle_code = (stream_byte + 1) / 2;
+                        rle_code = (u16::from(stream_byte) + 1) / 2;
                         let extra_byte = usize::from(rle_code & 0x01);
 
                         if !self.bytes.has(usize::from(rle_code)) {
