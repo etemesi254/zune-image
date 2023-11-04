@@ -7,7 +7,7 @@
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
-use zune_core::log::trace;
+use zune_core::log::{trace, warn};
 use zune_core::options::EncoderOptions;
 
 use crate::codecs::ImageFormat;
@@ -197,16 +197,19 @@ pub trait OperationsTrait {
 fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
     // Ensure dimensions are correct
 
-    let components = image.channels_ref(false).len();
-
-    if components != image.colorspace().num_components() {
-        return Err(ImageErrors::GenericString(format!(
-            "Components mismatch, expected {} channels since image format is {:?}, but found {}",
-            image.colorspace().num_components(),
-            image.colorspace(),
-            components
-        )));
+    for frame in image.frames_ref() {
+        if frame.channels.len() != image.colorspace().num_components() {
+            {
+                return Err(ImageErrors::GenericString(format!(
+                    "Components mismatch, expected {} channels since image format is {:?}, but found {}",
+                    image.colorspace().num_components(),
+                    image.colorspace(),
+                    frame.channels.len()
+                )));
+            }
+        }
     }
+
     let (width, height) = image.dimensions();
     // check the number of channels match the length
 
@@ -283,8 +286,9 @@ pub trait EncoderTrait {
         // deal convert bit depths
         let depth = image.depth();
 
-        // convert to premultiplied alpha
-
+        if image.is_animated() && !self.supports_animated_images() {
+            warn!("The current image is animated but the encoder ({:?}) doesn't support animated images, this will only encode the first frame",self.name());
+        }
         if !supported_colorspaces.contains(&colorspace)
             || !self.supported_bit_depth().contains(&depth)
             || image.metadata.alpha != NonPreMultiplied
@@ -382,8 +386,21 @@ pub trait EncoderTrait {
     }
 
     /// Set encoder options for this encoder
+    ///
+    /// This allows one to configure specific settings for an encoder where supported
     fn set_options(&mut self, _: EncoderOptions) {}
+
+    /// Return true if the encoder can encode multiple image frames as one animated Image.
+    ///
+    /// This returns true if the format and encoder can encode animated images, false otherwise
+    ///
+    /// If false, the encoder will only encode one frame from the image otherwise it will
+    /// encode all frames as a single animated image
+    fn supports_animated_images(&self) -> bool {
+        false
+    }
 }
+
 /// Trait that encapsulates supported
 /// integers which work with the image crates
 pub trait ZuneInts<T> {
