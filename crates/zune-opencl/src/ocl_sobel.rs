@@ -176,6 +176,7 @@ impl zune_image::traits::OperationsTrait for OclSobel {
 }
 
 #[test]
+#[cfg(feature = "tests")]
 fn test_ocr_sobel() {
     use zune_core::colorspace::ColorSpace;
     use zune_image::traits::OperationsTrait;
