@@ -65,6 +65,22 @@ impl Image {
             metadata: meta
         }
     }
+    /// Create an image from multiple frames.
+    pub fn new_frames(
+        frames: Vec<Frame>, depth: BitDepth, width: usize, height: usize, colorspace: ColorSpace
+    ) -> Image {
+        // setup metadata information
+        let mut meta = ImageMetadata::default();
+
+        meta.set_dimensions(width, height);
+        meta.set_depth(depth);
+        meta.set_colorspace(colorspace);
+
+        Image {
+            frames,
+            metadata: meta
+        }
+    }
 
     /// Return true if the current image contains more than
     /// one frame indicating it is animated
@@ -147,7 +163,10 @@ impl Image {
         assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
         let colorspace = self.colorspace();
 
-        self.frames_ref().iter().map(|x| x.flatten(colorspace)).collect()
+        self.frames_ref()
+            .iter()
+            .map(|x| x.flatten(colorspace))
+            .collect()
     }
     /// Convert image to a byte representation interleaving
     /// image pixels where necessary
