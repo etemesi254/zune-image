@@ -13,7 +13,7 @@
 - The image library is performant with some processes taking advantage of multiple threads (e.g sobel uses multiple threads per channel)
 - The routines are written in a safe and perfomant manner with care being given to ensure optimal assembly is generated for performance sensitive functions
 - The library contains various benchmarks to compare it with other libraries (opencv, vips, image-rs), and internal benchmarks to keep track of operations.
-- Where necessary (rarely), we use `unsafe` carefully to get the necessary speed
+
 
 ### Safety
 - 

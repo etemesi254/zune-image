@@ -25,6 +25,7 @@
 
 ### zune-jpeg
 - merge Arm changes, arm decode got a bit faster
+- Support for MJPG images 
 
 ### zune-jpegxl
 - Make it compile in `no-std` environments, this looses the threading capabilities (threads require std)
