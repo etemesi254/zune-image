@@ -4,11 +4,11 @@ on:
   push:
     branches: [ "main","dev" ]
     paths:
-      - 'zune-inflate/**'
+      - 'crates/zune-inflate/**'
   pull_request:
     branches: [ "main" ,"dev" ]
     paths:
-      - 'zune-inflate/**'
+      - 'crates/zune-inflate/**'
   schedule:
     - cron: '0 0 * * *'
 

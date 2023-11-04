@@ -4,13 +4,13 @@ on:
   push:
     branches: [ "main","dev" ]
     paths:
-      - 'zune-qoi/**'
+      - 'crates/zune-qoi/**'
   schedule:
     - cron: '0 0 * * *'
   pull_request:
     branches: [ "main" ,"dev" ]
     paths:
-      - 'zune-qoi/**'
+      - 'crates/zune-qoi/**'
 
 
 env:

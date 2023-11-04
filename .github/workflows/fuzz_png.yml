@@ -4,11 +4,11 @@ on:
   push:
     branches: [ "main","dev" ]
     paths:
-      - 'zune-png/**'
+      - 'crates/zune-png/**'
   pull_request:
     branches: [ "main" ,"dev" ]
     paths:
-      - 'zune-png/**'
+      - 'crates/zune-png/**'
 
   schedule:
     - cron: '0 0 * * *'

@@ -4,13 +4,13 @@ on:
   push:
     branches: [ "main","dev" ]
     paths:
-      - 'zune-ppm/**'
+      - 'crates/zune-ppm/**'
   schedule:
     - cron: '0 0 * * *'
   pull_request:
     branches: [ "main" ,"dev" ]
     paths:
-      - 'zune-ppm/**'
+      - 'crates/zune-ppm/**'
 
 
 env:
