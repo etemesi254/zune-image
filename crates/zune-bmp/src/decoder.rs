@@ -516,7 +516,7 @@ impl<T> BmpDecoder<T>
         let mut output = vec![
             0_u8;
             self.output_buf_size()
-                .ok_or(BmpDecoderErrors::OverFlowOccurred)?,
+                .ok_or(BmpDecoderErrors::OverFlowOccurred)?
         ];
 
         self.decode_into(&mut output)?;
