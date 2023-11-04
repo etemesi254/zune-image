@@ -1744,8 +1744,6 @@ dependencies = [
  "zune-core",
  "zune-image",
  "zune-imageprocs",
- "zune-jpeg",
- "zune-png",
 ]
 
 [[package]]
