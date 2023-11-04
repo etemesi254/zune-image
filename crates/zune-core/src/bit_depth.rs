@@ -41,7 +41,7 @@ pub enum BitDepth {
     /// Uses f32 to store data
     Float32,
     /// Bit depth information is unknown
-    Unknown
+    Unknown,
 }
 
 /// The underlying bit representation of the image
@@ -60,7 +60,18 @@ pub enum BitType {
     U16,
     /// Images represented using a [`f32`] as their
     /// underlying pixel storage
-    F32
+    F32,
+}
+
+impl BitType {
+    /// Return the equivalent of the image bit type's depth
+    pub fn to_depth(self) -> BitDepth {
+        match self {
+            BitType::U8 => { BitDepth::Eight }
+            BitType::U16 => { BitDepth::Sixteen }
+            BitType::F32 => { BitDepth::Float32 }
+        }
+    }
 }
 
 impl Default for BitDepth {
@@ -143,6 +154,7 @@ impl BitDepth {
         self.size_of() * 8
     }
 }
+
 /// Byte endianness of returned samples
 /// this is useful when the decoder returns samples which span more
 /// than one byte yet the type returned is `&[u8]`
@@ -154,5 +166,5 @@ pub enum ByteEndian {
     /// Little Endian byte-order
     LE,
     /// Big Endian byte-order
-    BE
+    BE,
 }
