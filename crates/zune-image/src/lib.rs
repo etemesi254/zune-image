@@ -65,6 +65,7 @@ pub mod deinterleave;
 pub mod errors;
 pub mod frame;
 pub mod image;
+mod mempool;
 pub mod metadata;
 mod ops;
 mod serde;
