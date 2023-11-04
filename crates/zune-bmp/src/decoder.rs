@@ -879,7 +879,7 @@ where
 
         if self.depth == 4 {
             // Handle bit depth 4
-            let mut rle_code:u16;
+            let mut rle_code: u16;
             let mut stream_byte;
             while line >= 0 && pos <= self.width {
                 rle_code = u16::from(self.bytes.get_u8());
