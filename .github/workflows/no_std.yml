@@ -32,5 +32,7 @@ jobs:
       - run: cargo build -p zune-qoi      --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-farbfeld --target x86_64-unknown-uefi --no-default-features
       - run: cargo build -p zune-psd      --target x86_64-unknown-uefi --no-default-features
+      - run: cargo build -p zune-bmp      --target x86_64-unknown-uefi --no-default-features
+
 
 
