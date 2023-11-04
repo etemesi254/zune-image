@@ -14,6 +14,7 @@
 //! - Fast inflate decoder
 //! - Platform specific intrinsics for accelerated decoding on x86
 //! - Endian aware decoding support.
+//! - Support for animated PNG and post processing of the same
 //!
 //! # Usage
 //! Add the library to `Cargo.toml`
@@ -129,13 +130,24 @@
 //! Some data is usually borrowed from the underlying reader, so the lifetime of the [`PngInfo`] struct is tied
 //! to the lifetime of the [`PngDecoder`] struct from which it was derived
 //!
+//!
+//! # Animated images decoding support.
+//!
+//! The library supports animated images decoding, up to post processing for 8-bit images.
+//!
+//! To understand more see [post_process_image](crate::post_process_image)
+//!
 //! # Alternatives
 //! - [png](https://crates.io/crates/png) crate
+//!
+//!
 //!
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::op_ref, clippy::identity_op)]
 extern crate alloc;
+extern crate core;
 
+pub use apng::{post_process_image, BlendOp, DisposeOp};
 pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
 pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;

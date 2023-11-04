@@ -29,7 +29,6 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter) {
     };
     output.write_u8(color_int);
     //compression method
-
     output.write_u8(0);
     // filter method for first row
     output.write_u8(ctx.row_filter.to_int());

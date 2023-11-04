@@ -8,7 +8,7 @@
 
 //! Errors possible during png operations
 use alloc::string::String;
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 
 /// Errors possible during decoding
 pub enum PngDecodeErrors {
@@ -29,6 +29,15 @@ pub enum PngDecodeErrors {
     /// Too small output slice
     TooSmallOutput(usize, usize)
 }
+
+impl Display for PngDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for PngDecodeErrors {}
 
 impl Debug for PngDecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {

@@ -78,7 +78,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                 return Err(PngDecodeErrors::Generic(format!(
                     "Unknown bit depth {}",
                     self.png_info.depth
-                )))
+                )));
             }
         }
 
@@ -122,15 +122,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         self.seen_hdr = true;
 
         let frame_info = FrameInfo {
-            seq_number:  0,
-            width:       self.png_info.width,
-            height:      self.png_info.height,
-            x_offset:    0,
-            y_offset:    0,
-            delay_num:   0,
-            delay_denom: 0,
-            dispose_op:  DisposeOp::None,
-            blend_op:    BlendOp::Source
+            seq_number:     -1,
+            width:          self.png_info.width,
+            height:         self.png_info.height,
+            x_offset:       0,
+            y_offset:       0,
+            delay_num:      0,
+            delay_denom:    0,
+            dispose_op:     DisposeOp::None,
+            blend_op:       BlendOp::Source,
+            is_part_of_seq: false
         };
 
         self.frames.push(SingleFrame::new(vec![], Some(frame_info)));
@@ -513,16 +514,15 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                 }
                 // get frame data
                 // skip four  bytes since it's usually sequence number
-                //
                 let stream = &self.stream.peek_at(0, next_header.length)?[4..];
                 self.frames.last_mut().unwrap().push_chunk(stream);
                 // skip crc
                 self.stream.skip(next_header.length + 4);
             } else {
-                // this can recurse
-                // this is the function that called us
-                // we are calling it again :)
-                self.parse_header(next_header)?;
+                return Err(PngDecodeErrors::Generic(format!(
+                    "Found marker {:?} in between fctl, when it shouldn't be there",
+                    next_header.chunk_type
+                )));
             }
             should_add_fctl = false;
         }
@@ -536,7 +536,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         if chunk.length != 26 {
             return Err(PngDecodeErrors::GenericStatic("Invalid fcTL length"));
         }
-        let seq_number = self.stream.get_u32_be();
+        let seq_number = self.stream.get_u32_be() as i32;
         let width = self.stream.get_u32_be() as usize;
         let height = self.stream.get_u32_be() as usize;
         let x_offset = self.stream.get_u32_be() as usize;
@@ -555,7 +555,8 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             delay_num,
             delay_denom,
             dispose_op,
-            blend_op
+            blend_op,
+            is_part_of_seq: true
         };
         // skip crc
         self.stream.skip(4);

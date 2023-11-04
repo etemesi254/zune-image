@@ -226,11 +226,15 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
     /// Get image dimensions or none if they aren't decoded
     ///
+    /// In case image is animated, this doesn't return the current frame's dimension
+    /// rather the image dimension, for that use `frame_info()` and access the correct
+    /// struct value to get the dimensions
+    ///
     /// # Returns
     /// - `Some((width,height))`
     /// - `None`: The image headers haven't been decoded
     ///   or there was an error decoding them
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
         if !self.seen_hdr {
             return None;
         }
@@ -311,12 +315,12 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// There are functions provided that allow you to further process
     /// such chunks to get the animated frames
     pub fn is_animated(&self) -> bool {
-        self.actl_info.is_some() && self.actl_info.unwrap().num_frames > 1
+        self.actl_info.is_some() && self.frames.len() > self.current_frame
     }
 
     /// Return true if image has more frames available
     pub fn more_frames(&self) -> bool {
-        self.actl_info.is_some() && self.actl_info.unwrap().num_frames > self.current_frame as u32
+        self.actl_info.is_some() && self.frames.len() > self.current_frame
     }
 
     pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors> {
@@ -418,7 +422,6 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         loop {
             let header = self.read_chunk_header()?;
 
-            println!("{:?}", header.chunk_type);
             self.parse_header(header)?;
 
             if header.chunk_type == PngChunkType::IEND {
@@ -513,9 +516,10 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         let bytes = if info.depth == 16 && !self.options.png_get_strip_to_8bit() { 2 } else { 1 };
 
         let out_n = self.get_colorspace()?.num_components();
+        let dims = self.get_dimensions().unwrap();
 
-        info.width
-            .checked_mul(info.height)?
+        dims.0
+            .checked_mul(dims.1)?
             .checked_mul(out_n)?
             .checked_mul(bytes)
     }
@@ -528,7 +532,6 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///
     /// # Panics
     /// In case `width*height*colorspace` calculation may overflow a usize
-
     fn inner_buffer_size(&self) -> Option<usize> {
         if !self.seen_hdr {
             return None;
@@ -541,8 +544,10 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
         let out_n = self.get_colorspace()?.num_components();
 
-        info.width
-            .checked_mul(info.height)?
+        let dims = self.get_dimensions().unwrap();
+
+        dims.0
+            .checked_mul(dims.1)?
             .checked_mul(out_n)?
             .checked_mul(bytes)
     }
@@ -658,8 +663,9 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
         if png_info.interlace_method == InterlaceMethod::Standard {
             // allocate out to be enough to hold raw decoded bytes
+            let dims = self.get_dimensions().unwrap();
 
-            self.create_png_image_raw(&deflate_data, info.width, info.height, out, &png_info)?;
+            self.create_png_image_raw(&deflate_data, dims.0, dims.1, out, &png_info)?;
         } else if png_info.interlace_method == InterlaceMethod::Adam7 {
             self.decode_interlaced(&deflate_data, out, &png_info, &info)?;
         }
@@ -717,6 +723,41 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         }
 
         Ok(out)
+    }
+
+    /// Return the yet to be decoded frame's frame information
+    ///
+    /// This contains information about the yet do be decoded frame after
+    /// reading the headers
+    ///
+    /// Once any function that decodes raw pixels is called (`decode`,`decode_raw`,`decode_into`)
+    /// this will point to the next frame to be decoded.
+    /// # Example
+    ///
+    /// This example gets frame information of an animated image
+    /// ```no_run
+    /// use zune_png::PngDecoder;
+    /// let mut decoder = PngDecoder::new(&[]);
+    ///
+    /// // decode the headers to get the information
+    /// decoder.decode_headers()?;
+    ///
+    ///if decoder.is_animated(){
+    ///     while decoder.more_frames(){
+    ///         // multiple calls is okay, the library will handle it correctly
+    ///         decoder.decode_headers()?;
+    ///         // get informatio, MUST BE before calling (decode,decode_headers,decode_raw)
+    ///         let info = decoder.frame_info().unwrap();
+    ///         // decode the frame
+    ///         let data = decoder.decode()?;
+    ///     }
+    /// }
+    /// ```
+    pub fn frame_info(&self) -> Option<FrameInfo> {
+        if let Some(frame) = self.frames.get(self.current_frame) {
+            return frame.fctl_info;
+        }
+        None
     }
 
     fn decode_interlaced(
@@ -978,7 +1019,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
             current = &mut current[0..out_chunk_size];
 
-            // get the previous row.
+            // get the previlet (w,h)ous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
             let mut prev_row: &[u8] = &[0_u8];
