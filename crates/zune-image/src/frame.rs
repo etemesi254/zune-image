@@ -25,7 +25,7 @@ use crate::traits::ZuneInts;
 #[derive(Clone)]
 pub struct Frame {
     pub(crate) channels: Vec<Channel>,
-    pub(crate) duration: u64
+    pub(crate) duration: f64
 }
 
 impl Frame {
@@ -52,19 +52,19 @@ impl Frame {
     pub fn new(channels: Vec<Channel>) -> Frame {
         Frame {
             channels,
-            duration: 0
+            duration: 0.0
         }
     }
-    pub fn from_f32(pixels: &[f32], colorspace: ColorSpace, duration: u64) -> Frame {
+    pub fn from_f32(pixels: &[f32], colorspace: ColorSpace, duration: f64) -> Frame {
         let channels = deinterleave_f32(pixels, colorspace).unwrap();
         Frame { channels, duration }
     }
-    pub fn from_u16(pixels: &[u16], colorspace: ColorSpace, duration: u64) -> Frame {
+    pub fn from_u16(pixels: &[u16], colorspace: ColorSpace, duration: f64) -> Frame {
         let channels = deinterleave_u16(pixels, colorspace).unwrap();
         Frame { channels, duration }
     }
 
-    pub fn from_u8(pixels: &[u8], colorspace: ColorSpace, duration: u64) -> Frame {
+    pub fn from_u8(pixels: &[u8], colorspace: ColorSpace, duration: f64) -> Frame {
         let channels = deinterleave_u8(pixels, colorspace).unwrap();
         Frame { channels, duration }
     }
@@ -109,10 +109,10 @@ impl Frame {
     /// use zune_image::frame::Frame;
     /// let channels = vec![Channel::new::<u8>();3];
     /// // create a new frame
-    /// let frame = Frame::new_with_duration(channels,60);
+    /// let frame = Frame::new_with_duration(channels,60.0);
     ///
     /// ```
-    pub fn new_with_duration(channels: Vec<Channel>, duration: u64) -> Frame {
+    pub fn new_with_duration(channels: Vec<Channel>, duration: f64) -> Frame {
         Frame { channels, duration }
     }
 
