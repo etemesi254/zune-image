@@ -34,8 +34,7 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]> {
 
         let pixels: Vec<[u8; 3]> = image.read_scanlines().unwrap();
 
-        assert!(image.finish_decompress());
-
+        image.finish().unwrap();
         pixels
     })
     .unwrap();
@@ -151,7 +150,7 @@ fn decode_jpeg_mozjpeg_grayscale(buf: &[u8]) -> Vec<[u8; 1]> {
 
         let pixels: Vec<[u8; 1]> = image.read_scanlines().unwrap();
 
-        assert!(image.finish_decompress());
+        image.finish().unwrap();
 
         pixels
     })
