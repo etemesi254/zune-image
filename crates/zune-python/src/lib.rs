@@ -16,6 +16,7 @@ mod py_enums;
 mod py_functions;
 mod py_image;
 
+mod utils;
 #[pyfunction]
 #[allow(unused_results)]
 pub fn init_logger() {
@@ -34,9 +35,7 @@ fn zune_image(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init_logger, m)?)?;
 
     m.add_function(wrap_pyfunction!(guess_format, m)?)?;
-    // m.add_function(wrap_pyfunction!(decode_image, m)?)?;
-    // m.add_function(wrap_pyfunction!(decode_file, m)?)?;
-    // m.add_function(wrap_pyfunction!(from_numpy,m)?)?;
+    m.add_function(wrap_pyfunction!(imread, m)?)?;
 
     Ok(())
 }

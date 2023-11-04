@@ -1,23 +1,22 @@
 ## Zune-Python: Python Bindings to zune-image
 
-## Warnings
+### Features
+- Decoding from multiple image formats antagonistically while preserving image information (no implicit conversions)
+- Support for some basic image processing functionalities (transformations, sobel, e.t.c)
+- Support for conversion between image modes (RGB->Grayscale)
+- Support for image filters (gaussian blur, sharpening)
+- Support for image transparency
+- Multiple depths and bit types(`f32`,`u16`, `u8`)
+- Support for `numpy` arrays (outputting image to numpy,creating an image from numpy array)
 
-- There is an expensive cost to convert Rust's `Vec<u8>` to a python `List`, this impacts
-  decoding speed by a significant portion when using `decode_{format}`(eg `decode_jpeg`,`decode_png`)
-  E.g decoding a 7680 by 4320 jpeg image:
+### Performance
+- The image library is performant with some processes taking advantage of multiple threads (e.g sobel uses multiple threads per channel)
+- The routines are written in a safe and perfomant manner with care being given to ensure optimal assembly is generated for performance sensitive functions
+- The library contains various benchmarks to compare it with other libraries (opencv, vips, image-rs), and internal benchmarks to keep track of operations.
+- Where necessary (rarely), we use `unsafe` carefully to get the necessary speed
 
-```text
-In [20]: %timeit zune_python.decode_jpeg(data)
-    705 ms ± 5.89 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-    
-In [21]: %timeit zune_python.decode_image(data)
-    129 ms ± 2.84 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-      
-```
-
-- The former converts to Python's list while the latter creates a Rust struct that can be called from Python (hence no
-  conversions)
-
+### Safety
+- 
 ### Building
 
 - To build the library, you need the following
@@ -30,13 +29,17 @@ In [21]: %timeit zune_python.decode_image(data)
 # Steps
 
 1. Clone the repo
+
 ```shell
 git clone https://github.com/etemesi254/zune-image
 ```
+
 4. cd into the repo and into the zune-python repository
+
 ```
 shell cd ./zune-image/zune-python
 ```
+
 6. Create a virtual environment for the repo
 
 ```shell
@@ -50,24 +53,37 @@ source .env/bin/activate
 pip install maturin
 ```
 
-5. Call `maturin develop --release` This will build the project with optimizations turned
+5. Call `maturin build --release` This will build the project with optimizations turned
 
 ```shell
-maturin develop --release
+maturin build --release
 ```
 
 Wait until you see
 
 ```text
-🛠 Installed zune-python-0.1.0
+📦 Built wheel for CPython 3.11 to ./target/wheels/zune_image-0.4.0-cp311-cp311-manylinux_2_34_x86_64.whl
 ```
 
-6. call `python` or `ipython` to get an interactive shell.
-7. Import `zune_python` from there and decode an image
+6. Navigate to `{CRATE_DIR}/target/wheels/`
+7. Call pip install with the local built package
+
+```shell
+ pip install --force-reinstall ./zune_image-0.4.0-cp311-cp311-manylinux_2_34_x86_64.whl
+
+```
+
+8. call `python` or `ipython` to get an interactive shell.
+   9Import `zil` from there and decode an image
 
 ```python
-from zune_python import decode_image
-data = open("a_file.jpg",mode="rb").read()
-image = decode_image(data)
-print(image.dimensions())
+# Import the package
+import zil
+IMAGE_FILE = "image.png"
+# Returns the image pixels as numpy
+numpy_pix = zil.imread(IMAGE_FILE);
+# or manipulate the image in Rust
+im_rust = Image.open(IMAGE_FILE);
+# eg carry out sobel
+im_rust.sobel()
 ```

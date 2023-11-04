@@ -16,6 +16,7 @@ use pyo3::prelude::*;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace as ZColorSpace;
 use zune_core::log::warn;
+use zune_core::options::DecoderOptions;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
 use zune_image::image::Image as ZImage;
@@ -34,7 +35,6 @@ use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::Threshold;
 use zune_imageprocs::transpose::Transpose;
-use zune_png::zune_core::options::DecoderOptions;
 
 use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, ZImageErrors};
 

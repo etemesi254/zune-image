@@ -12,22 +12,25 @@ use pyo3::{PyErr, PyResult, Python};
 
 use crate::py_enums::ImageDepth;
 use crate::py_image::Image;
+use crate::utils::channels_to_linear;
 
 impl Image {
     pub(crate) fn to_numpy_generic<'py, T>(
-        &self, py: Python<'py>, expected: ImageDepth
+        &self, py: Python<'py>, expected: ImageDepth,
     ) -> PyResult<&'py PyArray3<T>>
-    where
-        T: Copy + Default + 'static + numpy::Element + Send
+        where
+            T: Copy + Default + 'static + numpy::Element + Send
     {
-        let arr = unsafe {
+        let arr = {
             let colorspace = self.image.colorspace();
             //PyArray3::uget_raw()
-            let arr = PyArray3::<T>::new(
-                py,
-                [self.height(), self.width(), colorspace.num_components()],
-                false
-            );
+            let arr = unsafe {
+                PyArray3::<T>::new(
+                    py,
+                    [self.height(), self.width(), colorspace.num_components()],
+                    false,
+                )
+            };
 
             //obtain first channel
             let channels = self.image.frames_ref()[0].channels_ref(colorspace, false);
@@ -38,10 +41,6 @@ impl Image {
                     )));
                 }
             }
-            let reinterprets: Vec<&[T]> = channels
-                .iter()
-                .map(|z| z.reinterpret_as::<T>().unwrap())
-                .collect();
 
             let width = self.width();
             let height = self.height();
@@ -54,135 +53,16 @@ impl Image {
                     width, height
                 )));
             }
-            let dims = dims.unwrap();
-            // check that all reinterprets' length never passes dims
-            // SAFETY CHECK: DO NOT REMOVE
-            for chan in &reinterprets {
-                if dims != chan.len() {
-                    return Err(PyErr::new::<PyException, _>(format!(
-                        "[INTERNAL-ERROR]: length of one channel doesn't match the expected len={},expected={}",
-                        chan.len(), dims
-                    )));
-                }
-            }
-            // check that arr dims == length
-            match arr.dims()[2] {
-                1 => {
-                    assert_eq!(reinterprets.len(), arr.dims()[2]);
-                    // convert into u8
-                    // get each pixel from each channel, so we iterate per row
-                    for i in 0..arr.dims()[0] {
-                        for j in 0..arr.dims()[1] {
-                            let idx = (i * width) + j;
-                            {
-                                arr.uget_raw([i, j, 0])
-                                    .write(*reinterprets.get_unchecked(0).get_unchecked(idx));
-                            }
-                        }
-                    }
-                }
-                2 => {
-                    // convert into T
-                    // get each pixel from each channel, so we iterate per row
-                    // optimized to use unsafe.
-                    //
-                    // # SAFETY
-                    //  - Unchecked memory access
-                    // - We have two memory accesses we care about,
-                    //    1: uget_raw, that should never matter, since, we are iterating
-                    //       over arr.dims[0] and arr.dims[1],
-                    //       and we know arr_dims[2] is 2, (in this particular match)
-                    //   2. reinterprets.get_unchecked(0), we assert below that the length is three
-                    //   3. reinterprets.get_unchecked(0).get_unchecked(idx), we assert above(just above the match)
-                    //      that the overflow doesn't happen
+            let mut arr_v = arr
+                .try_readwrite()
+                .expect("This should be safe as we own the array and haven't exposed it");
+            let pix_values = arr_v.as_slice_mut().unwrap();
 
-                    // safety check, do not remove...
-                    assert_eq!(reinterprets.len(), 2);
-                    for i in 0..arr.dims()[0] {
-                        for j in 0..arr.dims()[1] {
-                            let idx = (i * width) + j;
-                            arr.uget_raw([i, j, 0])
-                                .write(*reinterprets.get_unchecked(0).get_unchecked(idx));
-                            arr.uget_raw([i, j, 1])
-                                .write(*reinterprets.get_unchecked(1).get_unchecked(idx));
-                        }
-                    }
-                }
-                3 => {
-                    // convert into T
-                    // get each pixel from each channel, so we iterate per row
-                    // optimized to use unsafe.
-                    //
-                    // # SAFETY
-                    //  - Unchecked memory access
-                    // - We have two memory accesses we care about,
-                    //    1: uget_raw, that should never matter, since, we are iterating
-                    //       over arr.dims[0] and arr.dims[1],
-                    //       and we know arr_dims[2] is 3, (in this particular match)
-                    //   2. reinterprets.get_unchecked(0), we assert below that the length is three
-                    //   3. reinterprets.get_unchecked(0).get_unchecked(idx), we assert above(just above the match)
-                    //      that the overflow doesn't happen
-
-                    // safety check, do not remove...
-                    assert_eq!(reinterprets.len(), 3);
-                    for i in 0..arr.dims()[0] {
-                        for j in 0..arr.dims()[1] {
-                            let idx = (i * width) + j;
-                            arr.uget_raw([i, j, 0])
-                                .write(*reinterprets.get_unchecked(0).get_unchecked(idx));
-                            arr.uget_raw([i, j, 1])
-                                .write(*reinterprets.get_unchecked(1).get_unchecked(idx));
-                            arr.uget_raw([i, j, 2])
-                                .write(*reinterprets.get_unchecked(2).get_unchecked(idx));
-                        }
-                    }
-                }
-                4 => {
-                    // convert into T
-                    // get each pixel from each channel, so we iterate per row
-                    // optimized to use unsafe.
-                    //
-                    // # SAFETY
-                    //  - Unchecked memory access
-                    // - We have two memory accesses we care about,
-                    //    1: uget_raw, that should never matter, since, we are iterating
-                    //       over arr.dims[0] and arr.dims[1],
-                    //       and we know arr_dims[2] is 4, (in this particular match)
-                    //   2. reinterprets.get_unchecked(0), we assert below that the length is three
-                    //   3. reinterprets.get_unchecked(0).get_unchecked(idx), we assert above(just above the match)
-                    //      that the overflow doesn't happen
-
-                    // safety check, do not remove...
-                    assert_eq!(reinterprets.len(), 4);
-                    for i in 0..arr.dims()[0] {
-                        for j in 0..arr.dims()[1] {
-                            let idx = (i * width) + j;
-                            arr.uget_raw([i, j, 0])
-                                .write(*reinterprets.get_unchecked(0).get_unchecked(idx));
-                            arr.uget_raw([i, j, 1])
-                                .write(*reinterprets.get_unchecked(1).get_unchecked(idx));
-                            arr.uget_raw([i, j, 2])
-                                .write(*reinterprets.get_unchecked(2).get_unchecked(idx));
-                            arr.uget_raw([i, j, 3])
-                                .write(*reinterprets.get_unchecked(3).get_unchecked(idx));
-                        }
-                    }
-                }
-                _ => {
-                    assert_eq!(reinterprets.len(), arr.dims()[2]);
-                    // convert into u8
-                    // get each pixel from each channel, so we iterate per row
-                    for i in 0..arr.dims()[0] {
-                        for j in 0..arr.dims()[1] {
-                            let idx = (i * width) + j;
-                            for k in 0..arr.dims()[2] {
-                                arr.uget_raw([i, j, k])
-                                    .write(*reinterprets.get_unchecked(k).get_unchecked(idx));
-                            }
-                        }
-                    }
-                }
-            }
+            channels_to_linear(channels, pix_values).map_err(|x| {
+                PyErr::new::<PyException, _>(format!(
+                    "{:?}", x
+                ))
+            })?;
 
             arr
         };
