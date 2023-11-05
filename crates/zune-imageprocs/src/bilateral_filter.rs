@@ -1,4 +1,3 @@
-use nanorand::Rng;
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
@@ -230,6 +229,7 @@ pub fn bilateral_filter_int<T>(
 /// Tests to see that the filter can run on supported bit depths
 #[test]
 fn test_bilateral_simple() {
+    use nanorand::Rng;
     use zune_core::colorspace::ColorSpace;
 
     let w = 100;
