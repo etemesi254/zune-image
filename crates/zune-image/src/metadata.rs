@@ -71,6 +71,7 @@ impl ImageMetadata {
     ///
     /// This requires the metadata feature otherwise
     /// it will always return `None`
+    #[cfg(feature = "metadata")]
     pub const fn exif(&self) -> Option<&Vec<::exif::Field>> {
         #[cfg(feature = "metadata")]
         {
@@ -87,6 +88,8 @@ impl ImageMetadata {
     ///
     /// This requires the metadata feature otherwise
     /// it will always return `None`
+    #[cfg(feature = "metadata")]
+
     pub fn exif_mut(&mut self) -> Option<&mut Vec<::exif::Field>> {
         #[cfg(feature = "metadata")]
         {
