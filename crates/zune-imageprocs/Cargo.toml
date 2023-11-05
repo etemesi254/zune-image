@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.4" }
-zune-image = { path = "../zune-image", version = "0.4" }
+zune-image = { path = "../zune-image", version = "0.4", default-features = false }
 kamadak-exif = { version = "0.5.5", optional = true }
 
 [features]
@@ -18,7 +18,7 @@ sse41 = []
 ## Needs nightly, disabled by default
 benchmarks = []
 log = ["zune-core/log"]
-exif = ["zune-image/metadata","kamadak-exif"]
+exif = ["zune-image/metadata", "kamadak-exif"]
 threads = []
 default = ["avx2", "sse2", "sse3", "sse41", "threads"]
 
