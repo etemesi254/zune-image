@@ -23,7 +23,7 @@ use crate::PngInfo;
 #[derive(Copy, Clone)]
 pub struct ActlChunk {
     pub num_frames: u32,
-    pub num_plays:  u32
+    pub num_plays: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,7 +35,7 @@ pub enum DisposeOp {
     Background,
     /// The frame's region of the output buffer is
     /// to be reverted to the previous contents before rendering the next frame.
-    Previous
+    Previous,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,7 +46,7 @@ pub enum BlendOp {
     /// Frame should be composited onto the output buffer
     /// based on its alpha, using a simple OVER operation as described
     /// in the "Alpha Channel Processing" section of the PNG specification [PNG-1.2]
-    Over
+    Over,
 }
 
 impl BlendOp {
@@ -75,41 +75,41 @@ impl DisposeOp {
 pub struct FrameInfo {
     /// Sequence number of frame. If image isn't an APNG, it is usually
     /// set to zero
-    pub seq_number:     i32,
+    pub seq_number: i32,
     /// Width of the frame, If image isn't an APNG, it matches the width of
     /// the image
-    pub width:          usize,
+    pub width: usize,
     /// Height of frame. If image isn't an APNG, it matches the height of the image
-    pub height:         usize,
+    pub height: usize,
     /// X position at which to render the following frame, if image isn't APNG, set to zero
-    pub x_offset:       usize,
+    pub x_offset: usize,
     /// Y position at which to render the following frame, if image isn't APNG, set to zero
-    pub y_offset:       usize,
+    pub y_offset: usize,
     /// Frame delay fraction numerator
-    pub delay_num:      u16,
+    pub delay_num: u16,
     /// Frame delay fraction denominator
-    pub delay_denom:    u16,
+    pub delay_denom: u16,
     /// Type of frame area disposal to be done after rendering this frame
-    pub dispose_op:     DisposeOp,
+    pub dispose_op: DisposeOp,
     /// Type of frame area rendering for this frame
-    pub blend_op:       BlendOp,
+    pub blend_op: BlendOp,
     /// Whether the frame is supposed to be part of the
     /// animation sequence.
     ///
     /// If an image contains standard IDAT chunks, this is what is to be
     /// displayed in case the decoder doesn't support apng but here
     /// it is usually the first frame
-    pub is_part_of_seq: bool
+    pub is_part_of_seq: bool,
 }
 
 /// Represents a single frame
 pub struct SingleFrame {
     // can either be idat or fdat, depending
     // on frame number
-    pub fdat:      Vec<u8>,
+    pub fdat: Vec<u8>,
     /// If none, indicates data is IDAT, hence
     /// should be decoded as such
-    pub fctl_info: Option<FrameInfo>
+    pub fctl_info: Option<FrameInfo>,
 }
 
 impl SingleFrame {
@@ -117,7 +117,7 @@ impl SingleFrame {
     pub fn new(chunks: Vec<u8>, fctl_info: Option<FrameInfo>) -> SingleFrame {
         SingleFrame {
             fdat: chunks,
-            fctl_info
+            fctl_info,
         }
     }
     /// Push a chunk onto this frame
@@ -225,7 +225,7 @@ impl SingleFrame {
 #[cfg(feature = "std")]
 pub fn post_process_image(
     info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo, current_frame: &[u8],
-    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>
+    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>,
 ) -> Result<(), PngDecodeErrors> {
     let nc = colorspace.num_components();
     //
@@ -295,18 +295,27 @@ pub fn post_process_image(
                 if !colorspace.has_alpha() {
                     return Err(PngDecodeErrors::GenericStatic("Image doesn't have alpha but requests blending using over which requires alpha"));
                 }
+                // pre-calculate the gamma samples
+                let mut gamma_values = [0.0; 256];
+                let max_sample = 255.0;
+
+                for i in 0..256 {
+                    let gam = (i as f32) / max_sample;
+                    let linfg = f32::powf(gam, gamma_inv);
+                    gamma_values[i] = linfg;
+                }
+
                 for (src_comp, dst_comp) in src_width.chunks_exact(nc).zip(h.chunks_exact_mut(nc)) {
                     let foreground_alpha = f32::from(*src_comp.last().unwrap()) / 255.0;
                     let dst_alpha = f32::from(1.0 - foreground_alpha);
 
                     let max_sample = 255.0;
 
+
                     for (a, b) in src_comp.iter().zip(dst_comp).take(nc - 1) {
                         // convert to floating point, undo gamma encoding
-                        let gamfg = f32::from(*a) / max_sample;
-                        let linfg = f32::powf(gamfg, gamma_inv);
-                        let gambg = f32::from(*b) / max_sample;
-                        let linbg = f32::powf(gambg, gamma_inv);
+                        let linfg = gamma_values[usize::from(*a)];
+                        let linbg = gamma_values[usize::from(*b)];
                         // composite
                         let commpix = linfg * foreground_alpha + linbg * dst_alpha;
                         // scale up and output to b
