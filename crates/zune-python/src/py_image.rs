@@ -22,6 +22,7 @@ use zune_image::core_filters::depth::Depth;
 use zune_image::image::Image as ZImage;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
+use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
@@ -44,7 +45,7 @@ use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, Z
 /// operation returned an error or okay if operation was successful
 
 fn exec_filter<T: OperationsTrait>(
-    img: &mut Image, filter: T, in_place: bool
+    img: &mut Image, filter: T, in_place: bool,
 ) -> PyResult<Option<Image>> {
     let exec = |image: &mut Image| -> PyResult<()> {
         if let Err(e) = filter.execute(&mut image.image) {
@@ -70,7 +71,7 @@ fn exec_filter<T: OperationsTrait>(
 #[pyclass]
 #[derive(Clone)]
 pub struct Image {
-    image: ZImage
+    image: ZImage,
 }
 
 impl Image {
@@ -81,6 +82,34 @@ impl Image {
 
 #[pymethods]
 impl Image {
+    /// Applies a bilateral filter to an image.
+    ///
+    /// it applies the bilateral filtering as described in https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html
+    ///
+    /// The filter can reduce unwanted noise while keeping edges fairly sharp.
+    ///
+    /// Sigma values: For simplicity, you can set the 2 sigma values to be the same. If they are small (< 10), the filter will not have much effect, whereas if they are large (> 150), they will have a very strong effect, making the image look "cartoonish".
+    ///
+    /// # Arguments
+    /// - d	Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
+    ///
+    /// - sigma_color	Filter sigma in the color space.
+    ///  A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
+    ///  will be mixed together, resulting in larger areas of semi-equal color.
+    ///-  sigma_space	Filter sigma in the coordinate space.
+    ///  A larger value of the parameter means that farther pixels will influence each other as
+    ///   long as their colors are close enough (see sigmaColor ).
+    ///   When d>0, it specifies the neighborhood size regardless of sigmaSpace. Otherwise, d is proportional to sigmaSpace.
+    /// - in_place: Whether to perform the conversion in place or to create a copy and convert that
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (d, sigma_color, sigma_space, in_place = false))]
+    pub fn bilateral(&mut self, d: i32, sigma_color: f32, sigma_space: f32, in_place: bool) -> PyResult<Option<Image>> {
+        let filter = BilateralFilter::new(d, sigma_color, sigma_space);
+        exec_filter(self,filter,in_place)
+    }
     /// Get the image dimensions as a tuple of width and height
     ///
     /// # Returns
@@ -123,7 +152,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
     pub fn convert_colorspace(
-        &mut self, to: ColorSpace, in_place: bool
+        &mut self, to: ColorSpace, in_place: bool,
     ) -> PyResult<Option<Image>> {
         let color = to.to_colorspace();
         exec_filter(self, ColorspaceConv::new(color), in_place)
@@ -177,7 +206,7 @@ impl Image {
     ///
     #[pyo3(signature = (width, height, x, y, in_place = false))]
     pub fn crop(
-        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool
+        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool,
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Crop::new(width, height, x, y), in_place)
     }
@@ -229,7 +258,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (value, method = ImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
-        &mut self, value: f32, method: ImageThresholdType, in_place: bool
+        &mut self, value: f32, method: ImageThresholdType, in_place: bool,
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Threshold::new(value, method.to_threshold()), in_place)
     }
@@ -273,7 +302,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (exposure, black_point = 0.0, in_place = false))]
     pub fn exposure(
-        &mut self, exposure: f32, black_point: f32, in_place: bool
+        &mut self, exposure: f32, black_point: f32, in_place: bool,
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Exposure::new(exposure, black_point), in_place)
     }
@@ -419,7 +448,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (lower, upper, in_place = false))]
     pub fn stretch_contrast(
-        &mut self, lower: f32, upper: f32, in_place: bool
+        &mut self, lower: f32, upper: f32, in_place: bool,
     ) -> PyResult<Option<Image>> {
         let stretch_contrast = StretchContrast::new(lower, upper);
 
@@ -535,7 +564,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
             &bytes,
             dims[1],
             dims[0],
-            ZColorSpace::Luma
+            ZColorSpace::Luma,
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
@@ -552,7 +581,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
             &bytes,
             dims[1],
             dims[0],
-            ZColorSpace::Luma
+            ZColorSpace::Luma,
         ));
     }
     Err(PyErr::new::<PyException, _>(format!(
@@ -562,7 +591,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
 }
 
 pub fn convert_3d<T: Element + 'static>(
-    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>
+    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>,
 ) -> PyResult<ZImage> {
     let dims = numpy.shape();
     let mut expected_colorspace: ZColorSpace = match dims[2] {
@@ -574,7 +603,7 @@ pub fn convert_3d<T: Element + 'static>(
             return Err(PyErr::new::<PyException, _>(format!(
                 "The dimension {:?} is not supported",
                 numpy.dtype()
-            )))
+            )));
         }
     };
     if let Some(x) = suggested_colorspace {
@@ -596,7 +625,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace
+            expected_colorspace,
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
@@ -607,7 +636,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace
+            expected_colorspace,
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -619,7 +648,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace
+            expected_colorspace,
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
@@ -636,7 +665,7 @@ pub fn convert_3d<T: Element + 'static>(
             &bytes,
             dims[1],
             dims[0],
-            expected_colorspace
+            expected_colorspace,
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
@@ -653,7 +682,7 @@ pub fn convert_3d<T: Element + 'static>(
             &bytes,
             dims[1],
             dims[0],
-            expected_colorspace
+            expected_colorspace,
         ));
     }
 
@@ -753,7 +782,7 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
             }
         }
         Err(PyErr::new::<PyException, _>(format!(
-            "Unsupported dimension/dtype  dtype=>{},dimensions=>{} consult documentation for supported types",d_type,dims
+            "Unsupported dimension/dtype  dtype=>{},dimensions=>{} consult documentation for supported types", d_type, dims
         )))
     });
 }

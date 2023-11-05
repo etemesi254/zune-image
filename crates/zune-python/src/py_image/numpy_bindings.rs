@@ -16,10 +16,10 @@ use crate::utils::channels_to_linear;
 
 impl Image {
     pub(crate) fn to_numpy_generic<'py, T>(
-        &self, py: Python<'py>, expected: ImageDepth,
+        &self, py: Python<'py>, expected: ImageDepth
     ) -> PyResult<&'py PyArray3<T>>
-        where
-            T: Copy + Default + 'static + numpy::Element + Send
+    where
+        T: Copy + Default + 'static + numpy::Element + Send
     {
         let arr = {
             let colorspace = self.image.colorspace();
@@ -28,7 +28,7 @@ impl Image {
                 PyArray3::<T>::new(
                     py,
                     [self.height(), self.width(), colorspace.num_components()],
-                    false,
+                    false
                 )
             };
 
@@ -58,11 +58,8 @@ impl Image {
                 .expect("This should be safe as we own the array and haven't exposed it");
             let pix_values = arr_v.as_slice_mut().unwrap();
 
-            channels_to_linear(channels, pix_values).map_err(|x| {
-                PyErr::new::<PyException, _>(format!(
-                    "{:?}", x
-                ))
-            })?;
+            channels_to_linear(channels, pix_values)
+                .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
 
             arr
         };

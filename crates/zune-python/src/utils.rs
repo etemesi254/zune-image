@@ -1,7 +1,6 @@
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 
-
 /// Swizzle three channels optionally using simd intrinsics where possible
 fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -21,7 +20,6 @@ unsafe fn swizzle_three_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T])
     swizzle_three_channels_fallback(r, y) // the function below is inlined here
 }
 
-
 #[inline(always)]
 pub fn swizzle_three_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     // now swizzle
@@ -39,7 +37,6 @@ pub fn swizzle_three_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T
     }
 }
 
-
 fn swizzle_four_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -55,7 +52,7 @@ fn swizzle_four_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn swizzle_four_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
-    swizzle_three_channels_fallback(r, y) // the function below is inlined here
+    swizzle_four_channels_fallback(r, y) // the function below is inlined here
 }
 
 #[inline(always)]
@@ -64,7 +61,7 @@ pub fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]
     assert_eq!(r.len(), 4);
 
     for ((((output, a), b), c), d) in y
-        .chunks_exact_mut(3)
+        .chunks_exact_mut(4)
         .zip(r[0].iter())
         .zip(r[1].iter())
         .zip(r[2].iter())
@@ -81,7 +78,7 @@ pub fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]
 ///
 /// Useful when you need to combine separate bands to be a single interleaved output
 pub fn channels_to_linear<T: Copy + Default + 'static>(
-    channels: &[Channel], output: &mut [T],
+    channels: &[Channel], output: &mut [T]
 ) -> Result<(), ImageErrors> {
     return match channels.len() {
         // copy
