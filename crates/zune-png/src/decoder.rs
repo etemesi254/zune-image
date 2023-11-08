@@ -739,16 +739,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// let mut decoder = PngDecoder::new(&[]);
     ///
     /// // decode the headers to get the information
-    /// decoder.decode_headers()?;
+    /// decoder.decode_headers().unwrap();
     ///
     ///if decoder.is_animated(){
     ///     while decoder.more_frames(){
     ///         // multiple calls is okay, the library will handle it correctly
-    ///         decoder.decode_headers()?;
-    ///         // get informatio, MUST BE before calling (decode,decode_headers,decode_raw)
+    ///         decoder.decode_headers().unwrap();
+    ///         // get information, MUST BE before calling (decode,decode_headers,decode_raw)
     ///         let info = decoder.frame_info().unwrap();
     ///         // decode the frame
-    ///         let data = decoder.decode()?;
+    ///         let data = decoder.decode().unwrap();
     ///     }
     /// }
     /// ```

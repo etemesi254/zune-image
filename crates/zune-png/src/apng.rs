@@ -163,14 +163,12 @@ impl SingleFrame {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use zune_core::options::EncoderOptions;
 /// use zune_png::{PngDecoder, post_process_image};
 /// // read the file
-/// let path = "animated.png";
-/// let data = std::fs::read(path);
 /// // set up decoder
-/// let mut decoder = PngDecoder::new(&data);
+/// let mut decoder = PngDecoder::new(&[]);
 /// // decode headers
 /// decoder.decode_headers().unwrap();
 /// // get useful information about the image
@@ -212,7 +210,7 @@ impl SingleFrame {
 ///
 ///    let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
 ///
-///     std::fs::write(format!("./{i}.png"), bytes).unwrap();
+///     //std::fs::write(format!("./{i}.png"), bytes).unwrap();
 ///     // this is expensive, but we need a copy of the previous fully rendered frame
 ///     // we can alleviate this since we are using the same output, so DisposeOP::None will always be the
 ///     // same as DisposeOp::Previous, but only works for this example.
@@ -220,7 +218,6 @@ impl SingleFrame {
 ///     // always have your background as None
 ///     background = Some(output.clone());
 ///    i += 1;
-/// }
 /// }
 /// ```
 #[cfg(feature = "std")]
