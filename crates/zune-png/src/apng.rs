@@ -130,7 +130,6 @@ impl SingleFrame {
     }
 }
 
-/// Requires the `#[std]` feature as we need powf function from the standard library
 ///
 /// Convert a single png frame into a full separate image.
 ///
@@ -145,20 +144,22 @@ impl SingleFrame {
 /// specified by the spec at [Alpha Channel Processing](https://www.w3.org/TR/2003/REC-PNG-20031110/#13Alpha-channel-processing)
 ///
 ///
+///  # Requires
+/// Requires the `#[std]` feature as we need `powf` function from the standard library
 /// # Arguments
 ///
 /// * `info`: Png information, this should contain width and height of the main image
 /// * `colorspace`: The image colorspace, this can be obtained from a decoder `get_colorspace()`
-/// * `frame_info`: The current frame information on
+/// * `frame_info`: The current frame information , for the current frame, it is obtained by [.frame_info()](crate::PngDecoder::frame_info)
 /// * `current_frame`: This is the current frame which we are processing
 /// * `prev_frame`: An optional previous frame. In case the frame information says we use
 ///  the previous frame as background this frame will be copied to the output before blending the image
-///   This is the fully processed previous frame,
-/// * `output`: The output of the processed frame
+///   This is the fully processed previous frame, hence the width and height should match that of the image (indicated by `info.width`,`info.height`)
+/// * `output`: The output of the processed frame. The dimensions of this should be (`info.width * info.height*decoder.colorspace().num_components()`)
 /// * `gamma`: An optional gamma value. It is best this is retrieved from [the image's gamma](crate::PngInfo.gamma),
-/// if `None`, we will default to use 2.2.
+/// if `None`, we will default to use 2.2 (default gamma value)
 ///
-/// returns: () Output is written to `output` variable
+/// returns: Ok(()) Output is written to `output` variable
 ///
 /// # Examples
 ///
@@ -240,6 +241,18 @@ pub fn post_process_image(
             "Frame y offset + frame height larger than image height"
         ));
     }
+    // current frame matches the image frame
+    let frame_dims = frame_info.height * frame_info.width * nc;
+
+    // ensure we can have at least enough space to write output
+    if current_frame.len() < frame_dims {
+        let msg = format!(
+            "Current frame dimensions ({}) less than  expected dimensions ({})",
+            current_frame.len(),
+            frame_dims
+        );
+        return Err(PngDecodeErrors::Generic(msg));
+    }
 
     match frame_info.dispose_op {
         DisposeOp::None => {} // do nothing
@@ -273,7 +286,7 @@ pub fn post_process_image(
     let gamma_value = gamma.unwrap_or(2.2);
     let gamma_inv = 1.0 / gamma_value;
 
-    // iterate by number of bytes we have in height
+    // iterate by a width stride
     for (src_width, h) in current_frame.chunks_exact(frame_info.width * nc).zip(
         start
             .chunks_exact_mut(info.width * nc)

@@ -537,17 +537,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             return None;
         }
 
-        let info = &self.png_info;
+        let info = self.frame_info()?;
+        let p_info = &self.png_info;
         // only difference with output is here we don't care about
         // stripping 16 bit to 8 bit
-        let bytes = if info.depth == 16 { 2 } else { 1 };
+        let bytes = if p_info.depth == 16 { 2 } else { 1 };
 
         let out_n = self.get_colorspace()?.num_components();
 
-        let dims = self.get_dimensions().unwrap();
-
-        dims.0
-            .checked_mul(dims.1)?
+        info.width
+            .checked_mul(info.height)?
             .checked_mul(out_n)?
             .checked_mul(bytes)
     }
