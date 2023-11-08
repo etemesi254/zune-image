@@ -8,11 +8,11 @@ license = "MIT OR Apache-2.0 OR Zlib"
 [workspace]
 resolver = "2"
 members = [
-  "crates/*",
-  "tests",
-  "benchmarks"
-  
+    "crates/*",
+    "tests",
+    "benchmarks"
 ]
+exclude = ["crates/zune-opencl"]
 
 [dependencies]
 zune-bin = { path = "./crates/zune-bin" }
