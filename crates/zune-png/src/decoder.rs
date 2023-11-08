@@ -663,9 +663,9 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
         if png_info.interlace_method == InterlaceMethod::Standard {
             // allocate out to be enough to hold raw decoded bytes
-            let dims = self.get_dimensions().unwrap();
+            let dims = self.frame_info().unwrap();
 
-            self.create_png_image_raw(&deflate_data, dims.0, dims.1, out, &png_info)?;
+            self.create_png_image_raw(&deflate_data, dims.width, dims.height, out, &png_info)?;
         } else if png_info.interlace_method == InterlaceMethod::Adam7 {
             self.decode_interlaced(&deflate_data, out, &png_info, &info)?;
         }
@@ -725,7 +725,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         Ok(out)
     }
 
-    /// Return the yet to be decoded frame's frame information
+    /// Return the **yet to be decoded** frame's frame information
     ///
     /// This contains information about the yet do be decoded frame after
     /// reading the headers
