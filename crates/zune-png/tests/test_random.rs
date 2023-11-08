@@ -33,7 +33,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
-    zune_png::PngDecoder::new(data).decode_raw().unwrap()
+    PngDecoder::new(data).decode_raw().unwrap()
 }
 
 fn test_decoding<P: AsRef<Path>>(path: P) {
@@ -97,7 +97,6 @@ fn test_animation_2() {
     let data = open_and_read(path);
     let mut decoder = PngDecoder::new(&data);
     decoder.decode_headers().unwrap();
-    let c = decoder.is_animated();
     let colorspace = decoder.get_colorspace().unwrap();
     let depth = decoder.get_depth().unwrap();
     let mut i = 0;
