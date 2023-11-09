@@ -139,37 +139,37 @@ pub fn probe_bmp(bytes: &[u8]) -> bool {
 /// For some configurations, alpha is disabled,
 #[derive(Clone, Copy, Default, Debug)]
 struct PaletteEntry {
-    red: u8,
+    red:   u8,
     green: u8,
-    blue: u8,
-    alpha: u8,
+    blue:  u8,
+    alpha: u8
 }
 
 /// A BMP decoder.
 pub struct BmpDecoder<T>
-    where
-        T: ZReaderTrait
+where
+    T: ZReaderTrait
 {
-    bytes: ZByteReader<T>,
-    options: DecoderOptions,
-    width: usize,
-    height: usize,
+    bytes:           ZByteReader<T>,
+    options:         DecoderOptions,
+    width:           usize,
+    height:          usize,
     flip_vertically: bool,
-    rgb_bitfields: [u32; 4],
+    rgb_bitfields:   [u32; 4],
     decoded_headers: bool,
-    pix_fmt: BmpPixelFormat,
-    comp: BmpCompression,
-    ihszie: u32,
-    hsize: u32,
-    palette: Vec<PaletteEntry>,
-    depth: u16,
-    is_alpha: bool,
-    palette_numbers: usize,
+    pix_fmt:         BmpPixelFormat,
+    comp:            BmpCompression,
+    ihszie:          u32,
+    hsize:           u32,
+    palette:         Vec<PaletteEntry>,
+    depth:           u16,
+    is_alpha:        bool,
+    palette_numbers: usize
 }
 
 impl<T> BmpDecoder<T>
-    where
-        T: ZReaderTrait
+where
+    T: ZReaderTrait
 {
     /// Create a new bmp decoder that reads data from
     /// `data
@@ -207,7 +207,7 @@ impl<T> BmpDecoder<T>
             depth: 0,
             palette: vec![],
             is_alpha: false,
-            palette_numbers: 0,
+            palette_numbers: 0
         }
     }
 
@@ -234,7 +234,7 @@ impl<T> BmpDecoder<T>
         if self.bytes.len() < file_size {
             return Err(BmpDecoderErrors::TooSmallBuffer(
                 file_size,
-                self.bytes.len(),
+                self.bytes.len()
             ));
         }
         // skip 4 reserved bytes
@@ -279,7 +279,7 @@ impl<T> BmpDecoder<T>
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "height",
                 self.options.get_max_height(),
-                self.height,
+                self.height
             ));
         }
 
@@ -287,7 +287,7 @@ impl<T> BmpDecoder<T>
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "width",
                 self.options.get_max_width(),
-                self.width,
+                self.width
             ));
         }
         if self.width == 0 {
@@ -626,7 +626,7 @@ impl<T> BmpDecoder<T>
                                         .zip(bytes.chunks_exact(pad_size))
                                     {
                                         for (a, b) in
-                                        out.chunks_exact_mut(4).zip(input.chunks_exact(4))
+                                            out.chunks_exact_mut(4).zip(input.chunks_exact(4))
                                         {
                                             let v = u32::from_le_bytes(b.try_into().unwrap());
 
@@ -737,7 +737,7 @@ impl<T> BmpDecoder<T>
                             self.depth as usize,
                             true,
                             in_bytes,
-                            &mut scanline_bytes,
+                            &mut scanline_bytes
                         );
 
                         self.expand_palette(&scanline_bytes, out_bytes, true);
@@ -985,7 +985,9 @@ impl<T> BmpDecoder<T>
                             };
                         }
                         if pos >= buf.len() {
-                            return Err(BmpDecoderErrors::GenericStatic("Invalid image, out of bounds read in pos"));
+                            return Err(BmpDecoderErrors::GenericStatic(
+                                "Invalid image, out of bounds read in pos"
+                            ));
                         }
                         // move to the next line
                         buf = &mut buf[pos..];
@@ -1055,14 +1057,6 @@ impl<T> BmpDecoder<T>
                         continue;
                     }
 
-                    if pos > buf.len()
-                        || buf.len().saturating_sub(pos)
-                        <= (usize::from(p1) * usize::from(self.depth) + 31) / 8
-                    {
-                        let expected = (usize::from(p1) * usize::from(self.depth)) / 8;
-                        let remaining = buf.len().saturating_sub(expected);
-                        return Err(BmpDecoderErrors::Generic(format!("Too short of a buffer, buffer length is {remaining} while RLE needs {expected}")));
-                    }
                     match self.depth {
                         8 => {
                             pix[0] = self.bytes.get_u8();
@@ -1117,7 +1111,7 @@ impl<T> BmpDecoder<T>
 
 fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32 {
     const MUL_TABLE: [u32; 9] = [
-        0, /*Hello world*/
+        0,    /*Hello world*/
         0xff, /*0b11111111*/
         0x55, /*0b01010101*/
         0x49, /*0b01001001*/
