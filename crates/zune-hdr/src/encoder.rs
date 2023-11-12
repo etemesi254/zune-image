@@ -8,6 +8,7 @@
 
 use alloc::vec::Vec;
 use alloc::{format, vec};
+use std::collections::HashMap;
 
 use zune_core::bytestream::ZByteWriter;
 use zune_core::colorspace::ColorSpace;
@@ -18,6 +19,7 @@ use crate::errors::HdrEncodeErrors;
 /// A simple HDR encoder
 pub struct HdrEncoder<'a> {
     data:    &'a [f32],
+    headers: Option<&'a HashMap<String, String>>,
     options: EncoderOptions
 }
 
@@ -29,20 +31,37 @@ impl<'a> HdrEncoder<'a> {
     ///  - `data`: Data to encode
     ///  - `options`: Contains metadata for data, including width and height
     pub fn new(data: &'a [f32], options: EncoderOptions) -> HdrEncoder<'a> {
-        Self { data, options }
+        Self {
+            data,
+            headers: None,
+            options
+        }
+    }
+    /// Add extra headers to be encoded  with the image
+    ///
+    /// This must be called before you call [`encode`](crate::encoder::HdrEncoder::encode)
+    /// otherwise it will have no effect.
+    ///
+    /// # Arguments:
+    /// - headers: A hashmap containing keys and values, the values will be encoded as key=value
+    /// in the hdr header before encoding
+    pub fn add_headers(&mut self, headers: &'a HashMap<String, String>) {
+        self.headers = Some(headers)
     }
 
     /// Calculate buffer with padding size needed for
     /// encoding this into a vec
-    fn expected_buffer_size(&self) -> usize {
+    ///
+    /// This is a given upper limit and doesn't specifically mean that
+    /// your buffer should exactly be that size.
+    ///
+    /// The size of the output will depend on the nature of your data
+    pub fn expected_buffer_size(&self) -> Option<usize> {
         self.options
             .get_width()
-            .checked_mul(self.options.get_height())
-            .unwrap()
-            .checked_mul(4)
-            .unwrap()
+            .checked_mul(self.options.get_height())?
+            .checked_mul(4)?
             .checked_add(1024)
-            .unwrap()
     }
 
     /// Encode data in HDR format
@@ -51,8 +70,16 @@ impl<'a> HdrEncoder<'a> {
     ///
     /// otherwise it's an error to try and encode
     ///
-    /// The floating point data is expected to be normalized between 0.0 and 1.0, it will be clipped
+    /// The floating point data is expected to be normalized between 0.0 and 1.0, it will not be clipped
     /// if not in this range
+    ///
+    /// # Returns
+    ///
+    /// The encoded data in case of no errors in case of errors returns error
+    ///
+    /// # See also
+    ///
+    /// - [encode_into](crate::encoder::HdrEncoder::encode_into): Encodes into a pre-allocated buffer
     pub fn encode(&self) -> Result<Vec<u8>, HdrEncodeErrors> {
         let expected = self
             .options
@@ -71,16 +98,65 @@ impl<'a> HdrEncoder<'a> {
                 self.options.get_colorspace()
             ));
         }
+        let size = self
+            .expected_buffer_size()
+            .ok_or_else(|| HdrEncodeErrors::Static("overflow detected"))?;
 
-        let mut out = vec![0_u8; self.expected_buffer_size()];
+        let mut out = vec![0_u8; size];
 
-        let mut writer = ZByteWriter::new(&mut out);
+        let pos = self.encode_into(&mut out)?;
+        out.truncate(pos);
+
+        Ok(out)
+    }
+
+    /// Encode into a pre-allocated buffer
+    ///
+    /// The size of output cannot be determined up until compression is over hence
+    /// we cannot be sure if the output buffer will be enough.
+    ///
+    /// The library provides [expected_buffer_size](crate::HdrEncoder::expected_buffer_size) which
+    /// guarantees that if your buffer is that big, encoding will always succeed
+    ///
+    /// # Arguments:
+    /// - out: The output buffer to write bytes into
+    ///
+    /// # Returns
+    /// - Ok(usize):  The number of bytes written into out
+    /// - Err(HdrEncodeErrors): An error if something occurred
+    ///
+    /// # Examples
+    /// Encode a black image of 10x10
+    ///```
+    /// use zune_core::bit_depth::BitDepth;
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_core::options::EncoderOptions;
+    /// use zune_hdr::HdrEncoder;
+    /// let w = 10;
+    /// let h = 10;
+    /// let comp = 3;
+    /// let data = vec![0.0_f32;w*h*comp];
+    /// let opts = EncoderOptions::new(w,h,ColorSpace::RGB,BitDepth::Float32);
+    /// let encoder = HdrEncoder::new(&data,opts);
+    /// // create output buffer , this is the upper limit on it
+    /// let mut output = vec![0;encoder.expected_buffer_size().unwrap()];
+    /// let size = encoder.encode_into(&mut output).unwrap();
+    /// // trim it so that the buffer only contains encoded hdr
+    /// output.truncate(size);
+    ///```  
+    pub fn encode_into(&self, out: &mut [u8]) -> Result<usize, HdrEncodeErrors> {
+        let mut writer = ZByteWriter::new(out);
 
         // write headers
         {
-            writer.write_all(b"#?RADIANCE\n").unwrap();
-            writer.write_all(b"SOFTWARE=zune-hdr\n").unwrap();
-            writer.write_all(b"FORMAT=32-bit_rle_rgbe\n\n").unwrap();
+            writer.write_all(b"#?RADIANCE\n")?;
+            writer.write_all(b"SOFTWARE=zune-hdr\n")?;
+            if let Some(headers) = self.headers {
+                for (k, v) in headers {
+                    writer.write_all(format!("{}={}\n", k, v).as_bytes())?;
+                }
+            }
+            writer.write_all(b"FORMAT=32-bit_rle_rgbe\n\n")?;
 
             // write lengths
             let length_format = format!(
@@ -89,7 +165,7 @@ impl<'a> HdrEncoder<'a> {
                 self.options.get_width()
             );
 
-            writer.write_all(length_format.as_bytes()).unwrap();
+            writer.write_all(length_format.as_bytes())?;
         }
         let width = self.options.get_width();
 
@@ -105,12 +181,12 @@ impl<'a> HdrEncoder<'a> {
                 {
                     float_to_rgbe(pixels.try_into().unwrap(), out.try_into().unwrap());
                 }
-                writer.write_all(&in_scanline).unwrap();
+                writer.write_all(&in_scanline)?;
             } else {
-                writer.write_u8(2);
-                writer.write_u8(2);
-                writer.write_u8((width >> 8) as u8);
-                writer.write_u8((width & 255) as u8);
+                writer.write_u8_err(2)?;
+                writer.write_u8_err(2)?;
+                writer.write_u8_err((width >> 8) as u8)?;
+                writer.write_u8_err((width & 255) as u8)?;
 
                 for (pixels, out) in scanline
                     .chunks_exact(3)
@@ -119,18 +195,17 @@ impl<'a> HdrEncoder<'a> {
                     float_to_rgbe(pixels.try_into().unwrap(), out.try_into().unwrap());
                 }
                 for i in 0..4 {
-                    rle(&in_scanline[i..], &mut writer, width)
+                    rle(&in_scanline[i..], &mut writer, width)?;
                 }
             }
         }
         // truncate position to where we reached
         let position = writer.position();
-        out.truncate(position);
-        Ok(out)
+        Ok(position)
     }
 }
 
-fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) {
+fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) -> Result<(), &'static str> {
     const MIN_RLE: usize = 4;
     let mut cur = 0;
 
@@ -156,7 +231,7 @@ fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) {
         if (old_run_count > 1) && (old_run_count == beg_run - cur) {
             buf[0] = (128 + old_run_count) as u8;
             buf[1] = data[cur * 4];
-            writer.write_all(&buf).unwrap();
+            writer.write_all(&buf)?;
             cur = beg_run;
         }
 
@@ -165,7 +240,7 @@ fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) {
             buf[0] = nonrun_count as u8;
             writer.write_u8(buf[0]);
             for i in 0..nonrun_count {
-                writer.write_u8(data[(cur + i) * 4])
+                writer.write_u8_err(data[(cur + i) * 4])?;
             }
 
             cur += nonrun_count;
@@ -174,10 +249,11 @@ fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) {
         if run_count >= MIN_RLE {
             buf[0] = (128 + run_count) as u8;
             buf[1] = data[beg_run * 4];
-            writer.write_all(&buf).unwrap();
+            writer.write_all(&buf)?;
             cur += run_count;
         }
     }
+    Ok(())
 }
 
 fn float_to_rgbe(rgb: &[f32; 3], rgbe: &mut [u8; 4]) {

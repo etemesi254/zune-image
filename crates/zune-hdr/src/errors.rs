@@ -8,7 +8,7 @@
 
 use alloc::string::String;
 use core::convert::From;
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 use core::num::ParseIntError;
 
 use zune_core::colorspace::ColorSpace;
@@ -67,9 +67,29 @@ impl From<ParseIntError> for HdrDecodeErrors {
     }
 }
 
+impl Display for HdrDecodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+impl std::error::Error for HdrDecodeErrors {}
+
+impl Display for HdrEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for HdrEncodeErrors {}
+
+/// HDR encoding errrors
 pub enum HdrEncodeErrors {
+    /// The colorspace provided by user is not supported by HDR
     UnsupportedColorspace(ColorSpace),
-    WrongInputSize(usize, usize)
+    /// The input size was expected to be of a certain size but isn't
+    WrongInputSize(usize, usize),
+    /// Generic message
+    Static(&'static str)
 }
 
 impl Debug for HdrEncodeErrors {
@@ -81,6 +101,13 @@ impl Debug for HdrEncodeErrors {
             HdrEncodeErrors::WrongInputSize(expected, found) => {
                 writeln!(f, "Input array length {found} doesn't match {expected}")
             }
+            HdrEncodeErrors::Static(err) => writeln!(f, "{}", err)
         }
+    }
+}
+
+impl From<&'static str> for HdrEncodeErrors {
+    fn from(value: &'static str) -> Self {
+        HdrEncodeErrors::Static(value)
     }
 }

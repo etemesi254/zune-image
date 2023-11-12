@@ -10,9 +10,11 @@
 //! # Features
 //! - Minimal interface, few dependencies
 //! - Fast.
+//! - No unsafe
+//! - Fuzz tested decoder
 //!
 //! # Usage notes
-//! The decoders returns data in `&[f32]` types with the exponent already added to the numbers
+//! The decoder returns data in `&[f32]` types with the exponent already added to the numbers
 //! it does not return raw data nor does it expose the ability to do so.
 //!
 //!
@@ -29,8 +31,10 @@
 // CAE: No std doesn't work because we haven't implemented
 // floor and exp2 for floats, which do not exist in no std land
 // #![no_std]
+#![forbid(unsafe_code)]
 #![macro_use]
 extern crate alloc;
+extern crate core;
 
 pub use decoder::HdrDecoder;
 pub use encoder::HdrEncoder;

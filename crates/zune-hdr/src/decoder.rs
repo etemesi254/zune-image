@@ -29,7 +29,7 @@ use crate::errors::HdrDecodeErrors;
 /// we save the metadata in a hashmap and provide a way to inspect that metadata by exposing
 /// the map as an API access method.
 ///
-/// For sophisticated algorithms, they may use the metadata to further understand the data
+/// For sophisticated algorithms, they may use the metadata to further understand the data.
 pub struct HdrDecoder<T: ZReaderTrait> {
     buf:             ZByteReader<T>,
     options:         DecoderOptions,
@@ -108,11 +108,6 @@ where
     /// The struct is modified in place and data can be
     /// extracted from appropriate getters.
     pub fn decode_headers(&mut self) -> Result<(), HdrDecodeErrors> {
-        // todo: In-case this causes a valid header not to be decoded
-        //       we should switch to vec, but for now it works
-        //
-        // new_todo: It causes it to crash so we switched to a vec
-
         // maximum size for which we expect the buffer to be
         let mut max_header_size = vec![0; 1024];
 
@@ -477,36 +472,58 @@ fn convert_scanline(in_scanline: &[u8], out_scanline: &mut [f32]) {
         .chunks_exact(4)
         .zip(out_scanline.chunks_exact_mut(3))
     {
-        let epxo = i32::from(rgbe[3]) - 128;
+        if rgbe[3] == 0 {
+            out[0..3].fill(0.0);
+        } else {
+            // separate concerns to generate code that has better
+            //  ILP
+            let epxo = i32::from(rgbe[3]) - 128;
 
-        out[0] = convert(i32::from(rgbe[0]), epxo);
-        out[1] = convert(i32::from(rgbe[1]), epxo);
-        out[2] = convert(i32::from(rgbe[2]), epxo);
+            if epxo.is_positive() {
+                out[0] = convert_pos(i32::from(rgbe[0]), epxo);
+                out[1] = convert_pos(i32::from(rgbe[1]), epxo);
+                out[2] = convert_pos(i32::from(rgbe[2]), epxo);
+            } else {
+                out[0] = convert_neg(i32::from(rgbe[0]), epxo);
+                out[1] = convert_neg(i32::from(rgbe[1]), epxo);
+                out[2] = convert_neg(i32::from(rgbe[2]), epxo);
+            }
+        }
     }
 }
 
+fn ldexp_pos(x: f32, exp: u32) -> f32 {
+    let pow = 1_u32.wrapping_shl(exp) as f32;
+    x * pow
+}
+fn ldexp_neg(x: f32, exp: u32) -> f32 {
+    let pow = 1_u32.wrapping_shl(exp) as f32;
+    x / pow
+}
 /// Fast calculation of  x*(2^exp).
 ///
 /// exp is assumed to be integer
+// #[inline]
+// fn ldxep(x: f32, exp: i32) -> f32 {
+//     let pow = (1_i32 << (exp.abs() & 31)) as f32;
+//     if exp.is_negative() {
+//         // if negative 2 ^ exp is the same as 1 / (1<<exp.abs()) since
+//         // 2^(-exp) is sexpressed as 1/(2^exp)
+//         x / pow
+//     } else {
+//         // 2^exp is same as 1<<exp, but latter is way faster
+//         x * pow
+//     }
+// }
+
 #[inline]
-fn ldxep(x: f32, exp: i32) -> f32 {
-    let pow = (1_i32 << (exp.abs() & 31)) as f32;
-    if exp.is_negative() {
-        // if negative 2 ^ exp is the same as 1 / (1<<exp.abs()) since
-        // 2^(-exp) is expressed as 1/(2^exp)
-        x / pow
-    } else {
-        // 2^exp is same as 1<<exp, but latter is way faster
-        x * pow
-    }
+fn convert_pos(val: i32, exponent: i32) -> f32 {
+    let v = (val as f32) / 256.0;
+    ldexp_pos(v, exponent as u32)
 }
 
 #[inline]
-fn convert(val: i32, exponent: i32) -> f32 {
-    if exponent == -128 {
-        0.0_f32
-    } else {
-        let v = (val as f32) / 256.0;
-        ldxep(v, exponent)
-    }
+fn convert_neg(val: i32, exponent: i32) -> f32 {
+    let v = (val as f32) / 256.0;
+    ldexp_neg(v, exponent.abs() as u32)
 }
