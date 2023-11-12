@@ -14,12 +14,15 @@ use pyo3::prelude::*;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
+use zune_image::codecs::farbfeld::FarbFeldDecoder;
 use zune_image::codecs::hdr::HdrDecoder;
 use zune_image::codecs::jpeg::JpegDecoder;
 use zune_image::codecs::png::PngDecoder;
 use zune_image::codecs::ppm::PPMDecoder;
 use zune_image::codecs::psd::PSDDecoder;
 use zune_image::codecs::qoi::QoiDecoder;
+use zune_image::codecs::ImageFormat::Farbfeld;
+use zune_image::traits::DecoderTrait;
 
 use crate::py_enums::ImageFormat;
 
@@ -137,12 +140,22 @@ pub fn imread<'py>(py: Python<'py>, file: String) -> PyResult<&'py PyUntypedArra
                 }
                 ImageFormat::JPEG => {
                     let mut decoder = JpegDecoder::new(&bytes);
-                    let bytes = decoder
-                        .decode()
+
+                    decoder
+                        .decode_headers()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
-                    let colorspace = decoder.get_output_colorspace().unwrap();
+
                     let (w, h) = decoder.dimensions().unwrap();
-                    return to_numpy_from_bytes(py, &bytes, w, h, colorspace);
+                    let color = decoder.get_output_colorspace().unwrap();
+
+                    let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+                    let mut write_array = arr.try_readwrite()?;
+
+                    decoder
+                        .decode_into(write_array.as_slice_mut()?)
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    return Ok(arr.as_untyped());
                 }
                 ImageFormat::BMP => {
                     let mut decoder = BmpDecoder::new(&bytes);
@@ -174,34 +187,63 @@ pub fn imread<'py>(py: Python<'py>, file: String) -> PyResult<&'py PyUntypedArra
                     decode_result(py, bytes, w, h, colorspace)
                 }
                 ImageFormat::FarbFeld => {
-                    let mut decoder = PSDDecoder::new(&bytes);
-                    let bytes = decoder
-                        .decode()
-                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
-                    let colorspace = decoder.get_colorspace().unwrap();
-                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let mut decoder = FarbFeldDecoder::new(&bytes);
 
-                    decode_result(py, bytes, w, h, colorspace)
+                    decoder
+                        .decode_headers()
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    let (w, h) = decoder.dimensions().unwrap();
+                    let color = decoder.get_colorspace();
+
+                    let arr = PyArray3::<u16>::zeros(py, [h, w, color.num_components()], false);
+                    let mut write_array = arr.try_readwrite()?;
+
+                    decoder
+                        .decode_into(write_array.as_slice_mut()?)
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    return Ok(arr.as_untyped());
                 }
                 ImageFormat::Qoi => {
                     let mut decoder = QoiDecoder::new(&bytes);
-                    let bytes = decoder
-                        .decode()
-                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
-                    let colorspace = decoder.get_colorspace().unwrap();
-                    let (w, h) = decoder.get_dimensions().unwrap();
 
-                    return to_numpy_from_bytes(py, &bytes, w, h, colorspace);
+                    decoder
+                        .decode_headers()
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+                    let (w, h) = decoder.dimensions().unwrap();
+
+                    let color = decoder.get_colorspace().unwrap();
+
+                    let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+
+                    let mut write_array = arr.try_readwrite()?;
+
+                    decoder
+                        .decode_into(write_array.as_slice_mut()?)
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    return Ok(arr.as_untyped());
                 }
                 ImageFormat::HDR => {
                     let mut decoder = HdrDecoder::new(&bytes);
-                    let bytes = decoder
-                        .decode()
-                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
-                    let colorspace = decoder.get_colorspace().unwrap();
-                    let (w, h) = decoder.get_dimensions().unwrap();
 
-                    return to_numpy_from_bytes(py, &bytes, w, h, colorspace);
+                    decoder
+                        .decode_headers()
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+                    let (w, h) = decoder.dimensions().unwrap();
+
+                    let color = decoder.get_colorspace().unwrap();
+
+                    let arr = PyArray3::<f32>::zeros(py, [h, w, color.num_components()], false);
+
+                    let mut write_array = arr.try_readwrite()?;
+
+                    decoder
+                        .decode_into(write_array.as_slice_mut()?)
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    return Ok(arr.as_untyped());
                 }
                 d => Err(PyErr::new::<PyException, _>(format!(
                     " No decoder for format {:?}",

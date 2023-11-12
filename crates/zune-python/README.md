@@ -34,13 +34,13 @@
 git clone https://github.com/etemesi254/zune-image
 ```
 
-4. cd into the repo and into the zune-python repository
+2. cd into the repo and into the zune-python repository
 
 ```
 shell cd ./zune-image/zune-python
 ```
 
-6. Create a virtual environment for the repo
+3. Create a virtual environment for the repo
 
 ```shell
 python -m venv .env

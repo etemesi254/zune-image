@@ -23,6 +23,7 @@ use zune_image::image::Image as ZImage;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
+use zune_imageprocs::blend::Blend;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
@@ -45,7 +46,7 @@ use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, Z
 /// operation returned an error or okay if operation was successful
 
 fn exec_filter<T: OperationsTrait>(
-    img: &mut Image, filter: T, in_place: bool,
+    img: &mut Image, filter: T, in_place: bool
 ) -> PyResult<Option<Image>> {
     let exec = |image: &mut Image| -> PyResult<()> {
         if let Err(e) = filter.execute(&mut image.image) {
@@ -67,11 +68,26 @@ fn exec_filter<T: OperationsTrait>(
     }
 }
 
-/// The image class.
+/// The main image class.
+///
+///
+/// # Instantiating
+/// One can create a new image class by using one of the static methods to construct one
+/// either by using `from_` methods (from_numpy,from_bytes) or using `open` routines to
+/// decode a file in disk.
+///
+/// # Methods.
+/// To carry out operations/filters on the image, one can use the methods attached to the class.
+/// e.g to get the width after decoding an image, one can use `image.width()` function to achieve that.
+///
+/// All operations have an `in_place` argument which is usually set to `False`.
+/// `in_place` modifies as to whether operations are running in the current copy or if the library
+/// should create a copy modify the copy and return it preserving the current copy.
+///
 #[pyclass]
 #[derive(Clone)]
 pub struct Image {
-    image: ZImage,
+    image: ZImage
 }
 
 impl Image {
@@ -98,17 +114,19 @@ impl Image {
     ///  will be mixed together, resulting in larger areas of semi-equal color.
     ///-  sigma_space	Filter sigma in the coordinate space.
     ///  A larger value of the parameter means that farther pixels will influence each other as
-    ///   long as their colors are close enough (see sigmaColor ).
-    ///   When d>0, it specifies the neighborhood size regardless of sigmaSpace. Otherwise, d is proportional to sigmaSpace.
+    ///   long as their colors are close enough (see sigma_color ).
+    ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
     /// - in_place: Whether to perform the conversion in place or to create a copy and convert that
     ///
     /// # Returns
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (d, sigma_color, sigma_space, in_place = false))]
-    pub fn bilateral(&mut self, d: i32, sigma_color: f32, sigma_space: f32, in_place: bool) -> PyResult<Option<Image>> {
+    pub fn bilateral(
+        &mut self, d: i32, sigma_color: f32, sigma_space: f32, in_place: bool
+    ) -> PyResult<Option<Image>> {
         let filter = BilateralFilter::new(d, sigma_color, sigma_space);
-        exec_filter(self,filter,in_place)
+        exec_filter(self, filter, in_place)
     }
     /// Get the image dimensions as a tuple of width and height
     ///
@@ -152,7 +170,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (to, in_place = false))]
     pub fn convert_colorspace(
-        &mut self, to: ColorSpace, in_place: bool,
+        &mut self, to: ColorSpace, in_place: bool
     ) -> PyResult<Option<Image>> {
         let color = to.to_colorspace();
         exec_filter(self, ColorspaceConv::new(color), in_place)
@@ -206,7 +224,7 @@ impl Image {
     ///
     #[pyo3(signature = (width, height, x, y, in_place = false))]
     pub fn crop(
-        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool,
+        &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Crop::new(width, height, x, y), in_place)
     }
@@ -258,7 +276,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (value, method = ImageThresholdType::Binary, in_place = false))]
     pub fn threshold(
-        &mut self, value: f32, method: ImageThresholdType, in_place: bool,
+        &mut self, value: f32, method: ImageThresholdType, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Threshold::new(value, method.to_threshold()), in_place)
     }
@@ -302,7 +320,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (exposure, black_point = 0.0, in_place = false))]
     pub fn exposure(
-        &mut self, exposure: f32, black_point: f32, in_place: bool,
+        &mut self, exposure: f32, black_point: f32, in_place: bool
     ) -> PyResult<Option<Image>> {
         exec_filter(self, Exposure::new(exposure, black_point), in_place)
     }
@@ -448,7 +466,7 @@ impl Image {
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (lower, upper, in_place = false))]
     pub fn stretch_contrast(
-        &mut self, lower: f32, upper: f32, in_place: bool,
+        &mut self, lower: f32, upper: f32, in_place: bool
     ) -> PyResult<Option<Image>> {
         let stretch_contrast = StretchContrast::new(lower, upper);
 
@@ -456,16 +474,20 @@ impl Image {
     }
     /// Convert the image bytes to a numpy array
     ///
-    /// The array will always be a 3-D numpy array of
+    /// For grayscale data the array is a 2-D numpy array of
+    ///  `[width,height]`
+    ///
+    /// For other image types, the array is a
+    ///  3-D numpy array of
     /// `[width,height,colorspace_components]` dimensions/
-    /// This means that e.g for a 256x256 rgb image the result will be `[256,256,3]` dimensions
+    /// This means that e.g for a 256x256 rgb image numpy shape will return `(256,256,3)`
     ///
     /// Colorspace is important in determining output.
     ///
     /// RGB colorspace is arranged as `R`,`G`,`B` , BGR is arranged as `B`,`G`,`R`
     ///
     ///
-    /// Array type:
+    /// # Array type:
     ///
     /// The array type is determined by the  image depths/ image bit-type
     ///
@@ -475,23 +497,19 @@ impl Image {
     /// - ZImageDepth::Sixteen -> dtype=uint16
     /// - ZimageDepth::F32  -> dtype=float32
     ///
+    /// ## Dtype
+    ///  
     ///
-    /// Returns:
+    /// # Returns:
     ///
     ///  A numpy representation of the image if okay.
     ///
     /// An error in case something went wrong
     pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyUntypedArray> {
         match self.image.depth().bit_type() {
-            BitType::U8 => Ok(self
-                .to_numpy_generic::<u8>(py, ImageDepth::U8)?
-                .as_untyped()),
-            BitType::U16 => Ok(self
-                .to_numpy_generic::<u16>(py, ImageDepth::U16)?
-                .as_untyped()),
-            BitType::F32 => Ok(self
-                .to_numpy_generic::<f32>(py, ImageDepth::F32)?
-                .as_untyped()),
+            BitType::U8 => Ok(self.to_numpy_generic::<u8>(py, ImageDepth::U8)?),
+            BitType::U16 => Ok(self.to_numpy_generic::<u16>(py, ImageDepth::U16)?),
+            BitType::F32 => Ok(self.to_numpy_generic::<f32>(py, ImageDepth::F32)?),
             d => Err(PyErr::new::<PyException, _>(format!(
                 "Error converting to depth {:?}",
                 d
@@ -526,6 +544,35 @@ impl Image {
     #[staticmethod]
     fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyResult<Image> {
         from_numpy(array, colorspace)
+    }
+
+    /// Blend two images together.
+    ///
+    /// The formula for blend is
+    ///
+    /// ```text
+    /// dest =  (src_alpha * src_image) + (1 - src_alpha) * self.image
+    /// ```
+    ///
+    /// Alpha channel is ignored
+    ///
+    ///
+    /// # Arguments
+    /// - image: The image we are blending with, this is considered as the source image(src_image) in the above formula.
+    /// - src_alpha: The source alpha. A value of 1 will cause the source to completely fill the image, a value of
+    ///  0 will cause the destination image to completely fill the image.
+    ///
+    ///
+    /// Returns:
+    ///
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    #[pyo3(signature = (image,src_alpha, in_place = false))]
+    pub fn blend(
+        &mut self, image: &Image, src_alpha: f32, in_place: bool
+    ) -> PyResult<Option<Image>> {
+        let filter = Blend::new(&image.image, src_alpha);
+        exec_filter(self, filter, in_place)
     }
 }
 
@@ -564,7 +611,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
             &bytes,
             dims[1],
             dims[0],
-            ZColorSpace::Luma,
+            ZColorSpace::Luma
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
@@ -581,7 +628,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
             &bytes,
             dims[1],
             dims[0],
-            ZColorSpace::Luma,
+            ZColorSpace::Luma
         ));
     }
     Err(PyErr::new::<PyException, _>(format!(
@@ -591,7 +638,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
 }
 
 pub fn convert_3d<T: Element + 'static>(
-    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>,
+    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>
 ) -> PyResult<ZImage> {
     let dims = numpy.shape();
     let mut expected_colorspace: ZColorSpace = match dims[2] {
@@ -625,7 +672,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace,
+            expected_colorspace
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
@@ -636,7 +683,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace,
+            expected_colorspace
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
@@ -648,7 +695,7 @@ pub fn convert_3d<T: Element + 'static>(
             bytes,
             dims[1],
             dims[0],
-            expected_colorspace,
+            expected_colorspace
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
@@ -665,7 +712,7 @@ pub fn convert_3d<T: Element + 'static>(
             &bytes,
             dims[1],
             dims[0],
-            expected_colorspace,
+            expected_colorspace
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u32>() {
@@ -676,13 +723,13 @@ pub fn convert_3d<T: Element + 'static>(
         let bytes = dc
             .as_slice()?
             .iter()
-            .map(|x| *x as f32)
-            .collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(
+            .map(|x| *x as u16)
+            .collect::<Vec<u16>>();
+        return Ok(ZImage::from_u16(
             &bytes,
             dims[1],
             dims[0],
-            expected_colorspace,
+            expected_colorspace
         ));
     }
 
@@ -700,8 +747,14 @@ pub fn convert_3d<T: Element + 'static>(
 /// The numpy array can be a 2 dimensional array for which the image will be treated as grayscale/luma
 /// or a three dimensional array for which the image colorspace is determined by the dimensions of the third axis
 ///
-///
 /// The array is expected to be contiguous and the array should not be mutably borrowed from the size
+///  
+/// Floating pont data is expected to be in the range [0.0-1.0]
+///
+/// # Supported types
+/// - `float32`,`uint8`,`uint16` - Data is ingested as is
+///  - float64` - Image is converted into f32 type
+/// - `uint32`  - Image is converted into u16 type using a saturating cast
 pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyResult<Image> {
     return Python::with_gil::<_, PyResult<Image>>(|py| {
         let d_type = array.dtype();
