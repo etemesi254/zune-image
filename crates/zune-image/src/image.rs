@@ -43,6 +43,13 @@ pub struct Image {
     pub(crate) metadata: ImageMetadata
 }
 
+impl PartialEq<Self> for Image {
+    fn eq(&self, other: &Self) -> bool {
+        other.frames == self.frames
+    }
+}
+impl Eq for Image {}
+
 impl Image {
     /// Create a new image instance
     ///
@@ -464,6 +471,9 @@ impl Image {
         let pixels = deinterleave_f32(pixels, colorspace).unwrap();
 
         Image::new(pixels, BitDepth::Float32, width, height, colorspace)
+    }
+    pub fn frames_len(&self) -> usize {
+        self.frames.len()
     }
 }
 
