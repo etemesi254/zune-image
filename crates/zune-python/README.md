@@ -83,7 +83,7 @@ IMAGE_FILE = "image.png"
 # Returns the image pixels as numpy
 numpy_pix = zil.imread(IMAGE_FILE);
 # or manipulate the image in Rust
-im_rust = Image.open(IMAGE_FILE);
+im_rust = zil.Image.open(IMAGE_FILE);
 # eg carry out sobel
 im_rust.sobel()
 ```
