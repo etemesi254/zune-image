@@ -75,7 +75,15 @@ where
         }
     }
 
+    /// Decode headers from the encoded image
+    ///
+    /// This confirms whether the image is a photoshop image and extracts
+    /// relevant information from the image including width,height and extra information.
+    ///
     pub fn decode_headers(&mut self) -> Result<(), PSDDecodeErrors> {
+        if self.decoded_header {
+            return Ok(());
+        }
         // Check identifier
         let magic = self.stream.get_u32_be_err()?;
 
@@ -336,7 +344,6 @@ where
     /// and such, only extracting the PSD image, hence might not be the
     /// most useful one.
     ///
-    /// But such functionality will be added soon.
     pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors> {
         let raw = self.decode_raw()?;
 
