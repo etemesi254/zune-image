@@ -117,7 +117,7 @@ where
     ///
     /// The endianness of these is converted to native endian which means
     /// each two consecutive bytes represents the two bytes that make the u16
-    pub fn decode_into(&mut self, sink: &mut [u8]) -> Result<(), &'static str> {
+    pub fn decode_into(&mut self, sink: &mut [u16]) -> Result<(), &'static str> {
         if !self.decoded_headers {
             self.decode_headers()?;
         }
@@ -132,10 +132,10 @@ where
         // so we read data as big endian and then convert it to native endian
         // This should be a no-op in BE systems, a bswap in LE systems
         for (datum, pix) in sink
-            .chunks_exact_mut(2)
+            .iter_mut()
             .zip(self.stream.remaining_bytes().chunks_exact(2))
         {
-            datum.copy_from_slice(&(u16::from_be_bytes(pix.try_into().unwrap())).to_ne_bytes());
+            *datum = u16::from_be_bytes(pix.try_into().unwrap());
         }
 
         Ok(())
