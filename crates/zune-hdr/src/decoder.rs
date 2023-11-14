@@ -525,5 +525,5 @@ fn convert_pos(val: i32, exponent: i32) -> f32 {
 #[inline]
 fn convert_neg(val: i32, exponent: i32) -> f32 {
     let v = (val as f32) / 256.0;
-    ldexp_neg(v, exponent.abs() as u32)
+    ldexp_neg(v, exponent.unsigned_abs())
 }

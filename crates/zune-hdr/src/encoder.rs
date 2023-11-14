@@ -100,7 +100,7 @@ impl<'a> HdrEncoder<'a> {
         }
         let size = self
             .expected_buffer_size()
-            .ok_or_else(|| HdrEncodeErrors::Static("overflow detected"))?;
+            .ok_or(HdrEncodeErrors::Static("overflow detected"))?;
 
         let mut out = vec![0_u8; size];
 
