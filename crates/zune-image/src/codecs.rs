@@ -32,6 +32,7 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types)]
 
+use std::io::Cursor;
 use std::path::Path;
 
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
@@ -39,6 +40,7 @@ use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
 use crate::codecs;
+use crate::codecs::ImageFormat::JPEG_XL;
 use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
@@ -108,6 +110,17 @@ impl ImageFormat {
     }
 
     pub fn has_decoder(self) -> bool {
+        #[cfg(feature = "jpeg-xl")]
+        {
+            // for jpeg-xl we  know we have a decoder when the header can be parsed
+            // but here, we aren't passing any data below, and since we are using is_ok()
+            // to determine if we have okay, the jxl one will always fail.
+            //
+            // So we lift the check out of the decoder and do it here
+            if self == JPEG_XL {
+                return true;
+            }
+        }
         return self.get_decoder::<&[u8]>(&[]).is_ok();
     }
     pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait<T> + 'a>, ImageErrors>
@@ -223,7 +236,23 @@ impl ImageFormat {
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
-            ImageFormat::JPEG_XL => Err(ImageErrors::ImageDecoderNotImplemented(*self)),
+            ImageFormat::JPEG_XL => {
+                #[cfg(feature = "jpeg-xl")]
+                {
+                    let len = data.get_len();
+                    // note we have to use .to_vec() to allow us to borrow it mutably, otherwise Rust will
+                    // complain
+                    let data = data.get_slice(0..len).unwrap().to_vec();
+                    // an unintended copy
+                    let cursor = Cursor::new(data);
+
+                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(cursor)?))
+                }
+                #[cfg(not(feature = "jpeg-xl"))]
+                {
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
+            }
             ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
         }
     }
@@ -613,6 +642,13 @@ where
         (b"qoif", ImageFormat::QOI),
         (b"#?RADIANCE\n", ImageFormat::HDR),
         (b"#?RGBE\n", ImageFormat::HDR),
+        (
+            &[
+                0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A
+            ],
+            ImageFormat::JPEG_XL
+        ),
+        (&[0xFF, 0x0A], ImageFormat::JPEG_XL),
     ];
 
     for (magic, decoder) in magic_bytes {

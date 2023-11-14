@@ -13,15 +13,25 @@
 //! (modular, no var-dct) with support for 8 bit and
 //! 16 bit images with no palette support
 //!
-use zune_core::bit_depth::BitDepth;
+use std::io::Read;
+use std::mem::size_of;
+use std::thread::sleep;
+use std::time::Duration;
+
+use jxl_oxide::{PixelFormat, RenderResult};
+use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
+use zune_core::log::trace;
 use zune_core::options::EncoderOptions;
 pub use zune_jpegxl::*;
 
+use crate::channel::Channel;
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
+use crate::frame::Frame;
 use crate::image::Image;
-use crate::traits::EncoderTrait;
+use crate::traits::{DecoderTrait, EncoderTrait};
 
 /// A simple JXL encoder that ties the bridge between
 /// Image struct and the [zune_jpegxl::SimpleJxlEncoder](zune_jpegxl::JxlSimpleEncoder)
@@ -97,5 +107,107 @@ impl EncoderTrait for JxlEncoder {
 impl From<JxlEncodeErrors> for ImgEncodeErrors {
     fn from(value: JxlEncodeErrors) -> Self {
         ImgEncodeErrors::ImageEncodeErrors(format!("{:?}", value))
+    }
+}
+
+pub struct JxlDecoder<R: Read> {
+    inner: jxl_oxide::JxlImage<R>
+}
+
+impl<R: Read> JxlDecoder<R> {
+    pub fn try_new(source: R) -> Result<JxlDecoder<R>, ImageErrors> {
+        let parser = jxl_oxide::JxlImage::from_reader(source)
+            .map_err(|x| ImageErrors::ImageDecodeErrors(format!("{:?}", x)))?;
+
+        let decoder = JxlDecoder { inner: parser };
+        Ok(decoder)
+    }
+}
+
+impl<R, T> DecoderTrait<T> for JxlDecoder<R>
+where
+    R: Read,
+    T: ZReaderTrait
+{
+    fn decode(&mut self) -> Result<Image, ImageErrors> {
+        // by now headers have been decoded, so we can fetch these
+        let (w, h) = <JxlDecoder<R> as DecoderTrait<T>>::dimensions(self).unwrap();
+        let color = <JxlDecoder<R> as DecoderTrait<T>>::out_colorspace(self);
+
+        let mut total_frames = vec![];
+
+        if color == ColorSpace::Unknown {
+            return Err(ImageErrors::ImageDecodeErrors(format!(
+                "Encountered unknown/unsupported colorspace {:?}",
+                self.inner.pixel_format()
+            )));
+        }
+        trace!("Image colorspace: {:?}", color);
+        trace!("Image dimensions: ({},{})", w, h);
+
+        loop {
+            let result = self
+                .inner
+                .render_next_frame()
+                .map_err(|x| ImageErrors::ImageDecodeErrors(format!("{}", x)))?;
+
+            match result {
+                RenderResult::Done(render) => {
+                    // get the images
+                    let duration = render.duration();
+
+                    let im_plannar = render.image_planar();
+                    let mut frame_v = vec![];
+
+                    for channel in im_plannar {
+                        let mut chan = Channel::new_with_bit_type(
+                            channel.width() * channel.height() * size_of::<f32>(),
+                            BitType::F32
+                        );
+                        // copy the channel as plannar
+                        let c = chan.reinterpret_as_mut()?;
+                        c.copy_from_slice(channel.buf());
+                        // then store it in frame_v
+                        frame_v.push(chan);
+                    }
+                    let frame = Frame::new(frame_v);
+                    total_frames.push(frame);
+                }
+                RenderResult::NeedMoreData => {
+                    sleep(Duration::new(1, 0));
+                    // return to the loop
+                }
+                RenderResult::NoMoreFrames => break
+            }
+        }
+        // then create a new image
+        Ok(Image::new_frames(
+            total_frames,
+            BitDepth::Float32,
+            w,
+            h,
+            color
+        ))
+    }
+
+    fn dimensions(&self) -> Option<(usize, usize)> {
+        let (w, h) = (self.inner.width(), self.inner.height());
+        Some((w as usize, h as usize))
+    }
+
+    fn out_colorspace(&self) -> ColorSpace {
+        let format = self.inner.pixel_format();
+        match format {
+            PixelFormat::Gray => ColorSpace::Luma,
+            PixelFormat::Graya => ColorSpace::LumaA,
+            PixelFormat::Rgb => ColorSpace::RGB,
+            PixelFormat::Rgba => ColorSpace::RGBA,
+            PixelFormat::Cmyk => ColorSpace::CMYK,
+            PixelFormat::Cmyka => ColorSpace::Unknown
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        "jxl-decoder (tirr-c)"
     }
 }

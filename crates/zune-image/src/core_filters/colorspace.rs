@@ -15,8 +15,6 @@
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::log::warn;
-use zune_core::options::DecoderOptions;
-use zune_jpeg::JpegDecoder;
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{
@@ -24,7 +22,7 @@ use crate::core_filters::colorspace::grayscale::{
 };
 use crate::errors::ImageErrors;
 use crate::image::Image;
-use crate::traits::{DecoderTrait, OperationsTrait};
+use crate::traits::OperationsTrait;
 
 mod grayscale;
 //mod rgb_to_hsl;
@@ -382,6 +380,11 @@ fn test_rgb_to_cmyk() {
 
 #[test]
 fn test_real_time_rgb_to_cmyk() {
+    use zune_core::options::DecoderOptions;
+    use zune_jpeg::JpegDecoder;
+
+    use crate::traits::DecoderTrait;
+
     // checks if conversion for cmyk to rgb holds for jpeg and this routine
     let mut file = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // remove /zune-image

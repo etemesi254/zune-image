@@ -23,7 +23,7 @@ The set of codecs aim to have the following features in order of priority
 | qoi          | zune-qoi      | zune-qoi       | Yes              |
 | farbfeld     | zune-farbfeld | zune-farbfeld  | Yes              |
 | psd          | zune-psd      | -              | Yes              |
-| jpeg-xl      | -             | zune-jpegxl    | Yes [^1]         |
+| jpeg-xl      | [jxl-oxide]   | zune-jpegxl    | Yes [^1]         |
 | hdr          | zune-hdr      | zune-hdr       | No [^2]          |
 
 - [^1] You lose threading capabilities.
@@ -80,3 +80,4 @@ Critical decoders are fuzz tested in CI once every day to catch any potential is
 
 
 [jpeg-encoder]: https://github.com/vstroebel/jpeg-encoder
+[jxl-oxide]: https://github.com/tirr-c/jxl-oxide
