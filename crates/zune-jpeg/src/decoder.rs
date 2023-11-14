@@ -451,7 +451,7 @@ where
     #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
         match m {
-            Marker::SOF(0 | 1 | 2) => {
+            Marker::SOF(0..=2) => {
                 let marker = {
                     // choose marker
                     if m == Marker::SOF(0) || m == Marker::SOF(1) {
