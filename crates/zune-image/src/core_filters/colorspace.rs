@@ -12,9 +12,11 @@
 //! This contains simple colorspace conversion routines
 //! that convert between different colorspaces in image
 //!
-use zune_core::bit_depth::BitType;
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::log::warn;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::JpegDecoder;
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{
@@ -22,11 +24,13 @@ use crate::core_filters::colorspace::grayscale::{
 };
 use crate::errors::ImageErrors;
 use crate::image::Image;
-use crate::traits::OperationsTrait;
+use crate::traits::{DecoderTrait, OperationsTrait};
 
 mod grayscale;
+mod rgb_to_hsl;
 mod rgb_to_xyb;
 
+mod rgb_to_cmyk;
 pub struct ColorspaceConv {
     to: ColorSpace
 }
@@ -223,6 +227,7 @@ impl OperationsTrait for ColorspaceConv {
             return Ok(());
         }
 
+        let depth = image.depth();
         match (from, self.to) {
             (ColorSpace::RGB, ColorSpace::RGBA) => {
                 convert_rgb_to_rgba(image)?;
@@ -253,6 +258,58 @@ impl OperationsTrait for ColorspaceConv {
                 // contain the alpha channel
                 for frame in image.frames_mut() {
                     frame.channels_vec().pop().unwrap();
+                }
+            }
+            (ColorSpace::CMYK, ColorSpace::RGB) => {
+                if depth != BitDepth::Eight {
+                    return Err(ImageErrors::GenericStr(
+                        "Can only convert 8 bit CYMK images to RGB"
+                    ));
+                }
+                for frame in image.frames_mut() {
+                    let channels = frame.channels_vec();
+
+                    assert_eq!(channels.len(), 4);
+
+                    let (c, rest) = channels.split_at_mut(1);
+                    let (m, rest) = rest.split_at_mut(1);
+                    let (y, k) = rest.split_at_mut(1);
+
+                    rgb_to_cmyk::cmyk_to_rgb(
+                        c[0].reinterpret_as_mut()?,
+                        m[0].reinterpret_as_mut()?,
+                        y[0].reinterpret_as_mut()?,
+                        k[0].reinterpret_as_mut()?
+                    );
+                    // remove K from cymk since the others become RGB
+                    channels.pop();
+                }
+            }
+
+            (ColorSpace::RGB, ColorSpace::CMYK) => {
+                if depth != BitDepth::Eight {
+                    return Err(ImageErrors::GenericStr(
+                        "Can only convert 8 bit CYMK images to RGB"
+                    ));
+                }
+                for frame in image.frames_mut() {
+                    let channels = frame.channels_vec();
+
+                    assert_eq!(channels.len(), 3);
+
+                    let mut k = Channel::new_with_length::<u8>(channels[0].len());
+
+                    let (r, rest) = channels.split_at_mut(1);
+                    let (g, b) = rest.split_at_mut(1);
+
+                    rgb_to_cmyk::rgb_to_cmyk(
+                        r[0].reinterpret_as_mut()?,
+                        g[0].reinterpret_as_mut()?,
+                        b[0].reinterpret_as_mut()?,
+                        k.reinterpret_as_mut()?
+                    );
+                    // remove K from cymk since the others become RGB
+                    channels.pop();
                 }
             }
 
@@ -307,4 +364,44 @@ fn convert_luma_to_rgb(image: &mut Image, out_colorspace: ColorSpace) -> Result<
         }
     }
     Ok(())
+}
+
+#[test]
+fn test_cmyk_to_rgb() {
+    let mut image = Image::fill(231_u8, ColorSpace::CMYK, 100, 100).unwrap();
+    // just confirm it works and hits the right path
+    image.convert_color(ColorSpace::RGB).unwrap();
+}
+
+#[test]
+fn test_rgb_to_cmyk() {
+    let mut image = Image::fill(231_u8, ColorSpace::RGB, 100, 100).unwrap();
+    // just confirm it works and hits the right path
+    image.convert_color(ColorSpace::CMYK).unwrap();
+}
+
+#[test]
+fn test_real_time_rgb_to_cmyk() {
+    // checks if conversion for cmyk to rgb holds for jpeg and this routine
+    let mut file = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // remove /zune-image
+    file.pop();
+    // remove /crates
+    file.pop();
+    let actual_file = file.join("test-images/jpeg/cymk.jpg");
+    let data = std::fs::read(&actual_file).unwrap();
+    // tell jpeg to output to cmyk
+    let opts = DecoderOptions::new_fast().jpeg_set_out_colorspace(ColorSpace::CMYK);
+    // set it up
+    let decoder = JpegDecoder::new_with_options(&data, opts);
+    let mut c: Box<dyn DecoderTrait<&Vec<u8>>> = Box::new(decoder);
+    let mut im = c.decode().unwrap();
+    // just confirm that this is good
+    assert_eq!(im.colorspace(), ColorSpace::CMYK);
+    // then convert it to rgb
+    im.convert_color(ColorSpace::RGB).unwrap();
+    // read the same image as rgb
+    let new_img = Image::open(&actual_file).unwrap();
+
+    assert!(new_img == im, "RGB to CYMK failed or diverged");
 }
