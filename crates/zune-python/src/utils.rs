@@ -11,13 +11,13 @@ fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
             return unsafe { swizzle_three_channels_avx(r, y) };
         }
     }
-    return swizzle_three_channels_fallback(r, y);
+    swizzle_three_channels_fallback(r, y);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn swizzle_three_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
-    swizzle_three_channels_fallback(r, y) // the function below is inlined here
+    swizzle_three_channels_fallback(r, y); // the function below is inlined here
 }
 
 #[inline(always)]
@@ -46,13 +46,13 @@ fn swizzle_four_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
             return unsafe { swizzle_four_channels_avx(r, y) };
         }
     }
-    return swizzle_four_channels_fallback(r, y);
+    swizzle_four_channels_fallback(r, y);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn swizzle_four_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
-    swizzle_four_channels_fallback(r, y) // the function below is inlined here
+    swizzle_four_channels_fallback(r, y); // the function below is inlined here
 }
 
 #[inline(always)]
@@ -80,10 +80,10 @@ pub fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]
 pub fn channels_to_linear<T: Copy + Default + 'static>(
     channels: &[Channel], output: &mut [T]
 ) -> Result<(), ImageErrors> {
-    return match channels.len() {
+    match channels.len() {
         // copy
         1 => {
-            output.copy_from_slice(&channels[0].reinterpret_as()?);
+            output.copy_from_slice(channels[0].reinterpret_as()?);
             Ok(())
         }
         2 => {
@@ -108,7 +108,7 @@ pub fn channels_to_linear<T: Copy + Default + 'static>(
             // After:
             //  4.5 ms
             let mut r = vec![];
-            for c in channels.iter() {
+            for c in channels {
                 r.push(c.reinterpret_as()?);
             }
             swizzle_three_channels(&r, output);
@@ -121,14 +121,14 @@ pub fn channels_to_linear<T: Copy + Default + 'static>(
             // TODO: We should add ARM too for this.
 
             let mut r = vec![];
-            for c in channels.iter() {
+            for c in channels {
                 r.push(c.reinterpret_as()?);
             }
             swizzle_four_channels(&r, output);
             Ok(())
         }
-        _ => {
-            return Err(ImageErrors::GenericStr("Image channels not in supported count, the library supports images from 1-4 channels"));
-        }
-    };
+        _ => Err(ImageErrors::GenericStr(
+            "Image channels not in supported count, the library supports images from 1-4 channels"
+        ))
+    }
 }

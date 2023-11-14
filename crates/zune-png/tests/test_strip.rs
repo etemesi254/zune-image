@@ -70,7 +70,7 @@ fn decode_into_zune(data: &[u8]) -> Vec<u8> {
     let size = decoder.output_buffer_size().unwrap();
     let mut buffer = vec![0; size];
     decoder.decode_into(&mut buffer).unwrap();
-    return buffer;
+    buffer
 }
 
 fn test_decoding<P: AsRef<Path>>(path: P) {

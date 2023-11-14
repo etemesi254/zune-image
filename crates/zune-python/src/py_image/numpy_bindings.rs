@@ -50,7 +50,7 @@ impl Image {
                 .zip(self.image.frames_ref())
             {
                 channels_to_linear(frame.channels_ref(colorspace, false), im_chunk)
-                    .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+                    .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
             }
 
             Ok(arr.as_untyped())
@@ -67,7 +67,7 @@ impl Image {
                 pix_values.copy_from_slice(
                     channels[0]
                         .reinterpret_as()
-                        .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?
                 );
 
                 return Ok(arr.as_untyped());
@@ -99,8 +99,7 @@ impl Image {
                 // check for overflow
                 if dims.is_none() {
                     return Err(PyErr::new::<PyException, _>(format!(
-                        "width * height overflowed to big of dimensions ({},{})",
-                        width, height
+                        "width * height overflowed to big of dimensions ({width},{height})"
                     )));
                 }
                 let mut arr_v = arr
@@ -109,7 +108,7 @@ impl Image {
                 let pix_values = arr_v.as_slice_mut().unwrap();
 
                 channels_to_linear(channels, pix_values)
-                    .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+                    .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                 arr
             };

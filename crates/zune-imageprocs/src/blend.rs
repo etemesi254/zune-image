@@ -23,6 +23,7 @@ impl<'src> Blend<'src> {
     /// # Arguments
     /// - src_alpha:  If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified
     /// -
+    #[must_use]
     pub fn new(image: &'src Image, src_alpha: f32) -> Blend<'src> {
         Blend {
             image,
@@ -38,7 +39,7 @@ impl<'src> OperationsTrait for Blend<'src> {
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // confirm invariants
-        if !self.alpha.is_normal() {
+        if self.alpha != 0.0 && !self.alpha.is_normal() {
             return Err(ImageErrors::GenericStr("Alpha is not normal"));
         }
         if image.dimensions() != self.image.dimensions() {
@@ -59,6 +60,7 @@ impl<'src> OperationsTrait for Blend<'src> {
         }
 
         let b_type = image.depth().bit_type();
+
         for (src_chan, d_chan) in self
             .image
             .channels_ref(true)
@@ -108,7 +110,7 @@ where
         dest.copy_from_slice(src);
     }
 
-    let dest_alpha = f32::from(T::max_val()) - src_alpha;
+    let dest_alpha = 1.0 - src_alpha;
 
     for (src, dest) in src.iter().zip(dest.iter_mut()) {
         // formula is (src_alpha) * src  + (dest_alpha) * dest

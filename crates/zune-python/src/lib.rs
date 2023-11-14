@@ -5,7 +5,25 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![warn(
+    clippy::correctness,
+    clippy::perf,
+    clippy::pedantic,
+    clippy::inline_always,
+    clippy::missing_errors_doc,
+    clippy::panic
+)]
+#![allow(
+    clippy::needless_return,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::similar_names,
+    clippy::doc_markdown,
+    clippy::module_name_repetitions,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::wildcard_imports
+)]
 use py_functions::*;
 use py_image::*;
 use pyo3::prelude::*;

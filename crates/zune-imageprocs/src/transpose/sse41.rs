@@ -383,19 +383,16 @@ unsafe fn transpose_sse_float_4x4_inner(
 
     assert!((3 * in_stride) <= in_matrix.len());
 
-    let mut row0 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 0..).as_ptr().cast());
-    let mut row1 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 1..).as_ptr().cast());
+    let mut row0 = _mm_loadu_ps(in_matrix.as_ptr().cast());
+    let mut row1 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride..).as_ptr().cast());
     let mut row2 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 2..).as_ptr().cast());
     let mut row3 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 3..).as_ptr().cast());
 
     _MM_TRANSPOSE4_PS(&mut row0, &mut row1, &mut row2, &mut row3);
 
+    _mm_storeu_ps(out.as_mut_ptr().cast(), row0);
     _mm_storeu_ps(
-        out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(),
-        row0
-    );
-    _mm_storeu_ps(
-        out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(),
+        out.get_unchecked_mut(out_stride..).as_mut_ptr().cast(),
         row1
     );
     _mm_storeu_ps(
@@ -483,19 +480,16 @@ pub unsafe fn transpose_sse_u32_inner(
 
     assert!((3 * in_stride) <= in_matrix.len());
 
-    let mut row0 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 0..).as_ptr().cast());
-    let mut row1 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 1..).as_ptr().cast());
+    let mut row0 = _mm_loadu_ps(in_matrix.as_ptr().cast());
+    let mut row1 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride..).as_ptr().cast());
     let mut row2 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 2..).as_ptr().cast());
     let mut row3 = _mm_loadu_ps(in_matrix.get_unchecked(in_stride * 3..).as_ptr().cast());
 
     _MM_TRANSPOSE4_PS(&mut row0, &mut row1, &mut row2, &mut row3);
 
+    _mm_storeu_ps(out.as_mut_ptr().cast(), row0);
     _mm_storeu_ps(
-        out.get_unchecked_mut(out_stride * 0..).as_mut_ptr().cast(),
-        row0
-    );
-    _mm_storeu_ps(
-        out.get_unchecked_mut(out_stride * 1..).as_mut_ptr().cast(),
+        out.get_unchecked_mut(out_stride..).as_mut_ptr().cast(),
         row1
     );
     _mm_storeu_ps(

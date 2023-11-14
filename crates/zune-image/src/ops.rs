@@ -97,7 +97,7 @@ impl Add for Image {
                     channel_px
                         .iter_mut()
                         .zip(channel_rhs.iter())
-                        .for_each(|(x, y)| *x = *x + *y);
+                        .for_each(|(x, y)| *x += *y);
                 }
             }
             d => unimplemented!("Unimplemented for {:?}", d)
@@ -157,7 +157,7 @@ impl Sub for Image {
                     channel_px
                         .iter_mut()
                         .zip(channel_rhs.iter())
-                        .for_each(|(x, y)| *x = *x - *y);
+                        .for_each(|(x, y)| *x -= *y);
                 }
             }
             d => unimplemented!("Unimplemented for {:?}", d)

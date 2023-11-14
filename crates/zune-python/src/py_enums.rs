@@ -26,6 +26,7 @@ impl From<ImageErrors> for ZImageErrors {
 
 #[pyclass]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
 pub enum ImageFormat {
     PNG,
@@ -57,19 +58,19 @@ impl ImageFormat {
     }
     /// Return true if an image format has an encoder
     /// otherwise return false
-    pub fn has_encoder(&self) -> bool {
+    pub fn has_encoder(self) -> bool {
         self.to_imageformat().has_encoder()
     }
     /// Return true if an image format has a decoder
     /// otherwise return false
-    pub fn has_decoder(&self) -> bool {
+    pub fn has_decoder(self) -> bool {
         self.to_imageformat().has_decoder()
     }
 }
 
 impl From<ZImageFormat> for ImageFormat {
     fn from(value: ZImageFormat) -> Self {
-        return match value {
+        match value {
             ZImageFormat::JPEG => ImageFormat::JPEG,
             ZImageFormat::PNG => ImageFormat::PNG,
             ZImageFormat::PPM => ImageFormat::PPM,
@@ -79,13 +80,13 @@ impl From<ZImageFormat> for ImageFormat {
             ZImageFormat::JPEG_XL => ImageFormat::JPEG_XL,
             ZImageFormat::HDR => ImageFormat::HDR,
             ZImageFormat::BMP => ImageFormat::BMP,
-            ZImageFormat::Unknown => ImageFormat::Unknown,
             _ => ImageFormat::Unknown
-        };
+        }
     }
 }
 
 #[pyclass]
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
 pub enum ColorSpace {
     RGB,
@@ -107,19 +108,18 @@ impl ColorSpace {
             ColorSpace::RGBA => ZColorSpace::RGBA,
             ColorSpace::Luma => ZColorSpace::Luma,
             ColorSpace::LumaA => ZColorSpace::LumaA,
-            ColorSpace::Unexposed => ZColorSpace::Unknown,
             ColorSpace::YCbCr => ZColorSpace::YCbCr,
             ColorSpace::BGR => ZColorSpace::BGR,
             ColorSpace::BGRA => ZColorSpace::BGRA,
             ColorSpace::CMYK => ZColorSpace::CMYK,
-            ColorSpace::Unknown => ZColorSpace::Unknown
+            _ => ZColorSpace::Unknown
         }
     }
 }
 
 impl From<ZColorSpace> for ColorSpace {
     fn from(value: ZColorSpace) -> Self {
-        return match value {
+        match value {
             ZColorSpace::RGB => ColorSpace::RGB,
             ZColorSpace::RGBA => ColorSpace::RGBA,
             ZColorSpace::YCbCr => ColorSpace::YCbCr,
@@ -131,7 +131,7 @@ impl From<ZColorSpace> for ColorSpace {
             ZColorSpace::BGRA => ColorSpace::BGRA,
             ZColorSpace::Unknown => ColorSpace::Unknown,
             _ => ColorSpace::Unknown
-        };
+        }
     }
 }
 

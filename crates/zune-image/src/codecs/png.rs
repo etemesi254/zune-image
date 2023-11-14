@@ -70,7 +70,7 @@ where
                         )?;
                         let duration = f64::from(frame.delay_num) / f64::from(frame.delay_denom);
                         // then build a frame from that
-                        let im_frame = Frame::from_u8(&output, colorspace, duration);
+                        let im_frame = Frame::from_u8(&output, colorspace, usize::from(frame.delay_num),usize::from(frame.delay_denom));
                         output_frames.push(im_frame);
                     }
                     _ => return Err(ImageDecodeErrors("The current image is an  Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
@@ -224,4 +224,9 @@ impl EncoderTrait for PngEncoder {
     fn set_options(&mut self, opts: EncoderOptions) {
         self.options = Some(opts)
     }
+}
+
+#[test]
+fn hello() {
+    let im = Image::open("/home/caleb/Animated_PNG_example_bouncing_beach_ball.png").unwrap();
 }

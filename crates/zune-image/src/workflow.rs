@@ -133,19 +133,19 @@ where
     /// 1. It de-interleaves the image channels, separating them into
     /// separate RGB channels
     /// 2. Convert RGB data to grayscale
-    /// 3. Transpose the image channels   
+    /// 3. Change the depth to be float32 (f32 in range 0..2)
     /// ```no_run
     /// #
-    /// use zune_image::filters::box_blur::BoxBlur;
+    /// use zune_image::core_filters::colorspace::ColorspaceConv;
     /// use zune_image::image::Image;
     ///
-    /// use zune_image::filters::transpose::Transpose;
+    /// use zune_image::core_filters::depth::Depth;
     /// use zune_image::workflow::WorkFlow;
     ///
     ///
     /// let image = WorkFlow::<Image>::new()
-    ///     .chain_operations(Box::new(Transpose::new()))
-    ///     .chain_operations(Box::new(BoxBlur::new(10)))   
+    ///     .chain_operations(Box::new(ColorspaceConv::new(zune_core::colorspace::ColorSpace::Luma)))
+    ///     .chain_operations(Box::new(Depth::new(zune_core::bit_depth::BitDepth::Float32)))   
     ///     .advance_to_end();
     /// ```
     pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T> {

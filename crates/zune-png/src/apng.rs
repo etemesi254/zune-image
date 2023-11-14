@@ -266,12 +266,10 @@ pub fn post_process_image(
                     ));
                 }
                 output.copy_from_slice(data);
-            } else {
-                if frame_info.seq_number > 1 {
-                    return Err(PngDecodeErrors::GenericStatic(
-                        "A frame whose DisposeOp is Previous did not get a previous frame"
-                    ));
-                }
+            } else if frame_info.seq_number > 1 {
+                return Err(PngDecodeErrors::GenericStatic(
+                    "A frame whose DisposeOp is Previous did not get a previous frame"
+                ));
             }
         } // blend
     }
@@ -309,15 +307,15 @@ pub fn post_process_image(
                 let mut gamma_values = [0.0; 256];
                 let max_sample = 255.0;
 
-                for i in 0..256 {
+                for (i, item) in gamma_values.iter_mut().enumerate() {
                     let gam = (i as f32) / max_sample;
                     let linfg = f32::powf(gam, gamma_inv);
-                    gamma_values[i] = linfg;
+                    *item = linfg;
                 }
 
                 for (src_comp, dst_comp) in src_width.chunks_exact(nc).zip(h.chunks_exact_mut(nc)) {
                     let foreground_alpha = f32::from(*src_comp.last().unwrap()) / 255.0;
-                    let dst_alpha = f32::from(1.0 - foreground_alpha);
+                    let dst_alpha = 1.0 - foreground_alpha;
 
                     let max_sample = 255.0;
 

@@ -97,7 +97,7 @@ impl OperationsTrait for Gamma {
                         }
                         BitType::F32 => {
                             // for floats, we can't use LUT tables, the scope is too big
-                            let value_inv = 1.0 / max_value as f32;
+                            let value_inv = 1.0 / f32::from(max_value);
 
                             channel
                                 .reinterpret_as_mut::<f32>()?

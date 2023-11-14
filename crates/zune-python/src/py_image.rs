@@ -45,14 +45,14 @@ use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, Z
 /// This executes anything that implements OperationsTrait, returning an error if the
 /// operation returned an error or okay if operation was successful
 
+#[allow(clippy::needless_pass_by_value)]
 fn exec_filter<T: OperationsTrait>(
     img: &mut Image, filter: T, in_place: bool
 ) -> PyResult<Option<Image>> {
     let exec = |image: &mut Image| -> PyResult<()> {
         if let Err(e) = filter.execute(&mut image.image) {
             return Err(PyErr::new::<PyException, _>(format!(
-                "Error converting: {:?}",
-                e
+                "Error converting: {e:?}"
             )));
         }
         Ok(())
@@ -92,7 +92,7 @@ pub struct Image {
 
 impl Image {
     pub(crate) fn new(image: ZImage) -> Image {
-        return Image { image };
+        Image { image }
     }
 }
 
@@ -203,8 +203,7 @@ impl Image {
     pub fn save(&self, file: String, format: ImageFormat) -> PyResult<()> {
         if let Err(e) = self.image.save_to(file, format.to_imageformat()) {
             return Err(PyErr::new::<PyException, _>(format!(
-                "Error encoding: {:?}",
-                e
+                "Error encoding: {e:?}"
             )));
         }
         Ok(())
@@ -511,8 +510,7 @@ impl Image {
             BitType::U16 => Ok(self.to_numpy_generic::<u16>(py, ImageDepth::U16)?),
             BitType::F32 => Ok(self.to_numpy_generic::<f32>(py, ImageDepth::F32)?),
             d => Err(PyErr::new::<PyException, _>(format!(
-                "Error converting to depth {:?}",
-                d
+                "Error converting to depth {d:?}"
             )))
         }
     }
@@ -835,20 +833,19 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
             }
         }
         Err(PyErr::new::<PyException, _>(format!(
-            "Unsupported dimension/dtype  dtype=>{},dimensions=>{} consult documentation for supported types", d_type, dims
+            "Unsupported dimension/dtype  dtype=>{d_type},dimensions=>{dims} consult documentation for supported types"
         )))
     });
 }
 
 pub fn decode_image(bytes: &[u8]) -> PyResult<Image> {
     let im_result = ZImage::read(bytes, DecoderOptions::new_fast());
-    return match im_result {
+    match im_result {
         Ok(result) => Ok(Image::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(
-            "Error decoding: {:?}",
-            err
+            "Error decoding: {err:?}"
         )))
-    };
+    }
 }
 
 impl From<ZImageErrors> for pyo3::PyErr {
@@ -859,10 +856,10 @@ impl From<ZImageErrors> for pyo3::PyErr {
 
 /// Decode a file path containing an image
 pub fn decode_file(file: String) -> PyResult<Image> {
-    return match read(file) {
+    match read(file) {
         Ok(bytes) => Ok(Image::new(
-            ZImage::read(bytes, DecoderOptions::new_fast()).map_err(|x| ZImageErrors::from(x))?
+            ZImage::read(bytes, DecoderOptions::new_fast()).map_err(ZImageErrors::from)?
         )),
-        Err(e) => Err(PyErr::new::<PyException, _>(format!("{}", e)))
-    };
+        Err(e) => Err(PyErr::new::<PyException, _>(format!("{e}")))
+    }
 }

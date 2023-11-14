@@ -77,7 +77,7 @@ fn test_animation() {
             colorspace,
             &frame,
             &pix,
-            background.as_ref().map(|x| x.as_slice()),
+            background.as_deref(),
             &mut output,
             None
         )
@@ -116,7 +116,7 @@ fn test_animation_2() {
             colorspace,
             &frame,
             &pix,
-            background.as_ref().map(|x| x.as_slice()),
+            background.as_deref(),
             &mut output,
             None
         )

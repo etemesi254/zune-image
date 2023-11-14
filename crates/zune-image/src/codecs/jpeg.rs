@@ -47,8 +47,7 @@ impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.dimensions()
-            .map(|dims| (usize::from(dims.0), usize::from(dims.1)))
+        self.dimensions().map(|dims| (dims.0, dims.1))
     }
 
     fn out_colorspace(&self) -> ColorSpace {

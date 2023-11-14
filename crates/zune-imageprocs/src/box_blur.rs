@@ -328,7 +328,7 @@ pub(crate) fn box_blur_inner_first<T>(
             accumulator = accumulator.wrapping_sub(u32::from(*data_in));
             accumulator = accumulator.wrapping_add(last_item);
 
-            *data_out = accumulator
+            *data_out = accumulator;
         }
     }
 }

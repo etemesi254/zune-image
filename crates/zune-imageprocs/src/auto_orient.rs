@@ -42,7 +42,7 @@ impl OperationsTrait for AutoOrient {
             use exif::{Tag, Value};
 
             if let Some(data) = image.metadata().clone().exif() {
-                for field in data.iter() {
+                for field in data {
                     // look for the orientation tag
                     if field.tag == Tag::Orientation {
                         match &field.value {
@@ -51,7 +51,8 @@ impl OperationsTrait for AutoOrient {
                                     warn!("The exif value is empty, cannot orient");
                                     return Ok(());
                                 }
-                                match bytes[0] {
+                                let byte = bytes[0];
+                                match byte {
                                     1 => (), // orientation is okay
                                     2 => {
                                         Flop::new().execute_impl(image)?;

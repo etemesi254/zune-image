@@ -146,21 +146,3 @@ impl From<FarbFeldEncoderErrors> for ImgEncodeErrors {
         ImgEncodeErrors::ImageEncodeErrors(format!("{:?}", value))
     }
 }
-
-impl<T> DecodeInto for FarbFeldDecoder<T>
-where
-    T: ZReaderTrait
-{
-    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
-        self.decode_into(buffer)?;
-
-        Ok(())
-    }
-
-    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
-        self.decode_headers()?;
-
-        // unwrap is okay because we successfully decoded image headers
-        Ok(self.output_buffer_size().unwrap())
-    }
-}
