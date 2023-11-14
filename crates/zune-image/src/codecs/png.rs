@@ -225,8 +225,3 @@ impl EncoderTrait for PngEncoder {
         self.options = Some(opts)
     }
 }
-
-#[test]
-fn hello() {
-    let im = Image::open("/home/caleb/Animated_PNG_example_bouncing_beach_ball.png").unwrap();
-}

@@ -7,7 +7,7 @@ Farbfeld decoding and encoding support
 Add `zune-farbfeld` to your `Cargo.toml`
 
 ```toml
-zune-farbfeld = "0.2"
+zune-farbfeld = "[LATEST]"
 ```
 
 You can then use `FarbfeldDecoder` to decode images

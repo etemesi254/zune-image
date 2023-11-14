@@ -309,7 +309,7 @@ impl OperationsTrait for ColorspaceConv {
                         k.reinterpret_as_mut()?
                     );
                     // remove K from cymk since the others become RGB
-                    channels.pop();
+                    channels.push(k);
                 }
             }
 
