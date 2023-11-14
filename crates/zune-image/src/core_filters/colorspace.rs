@@ -27,7 +27,7 @@ use crate::image::Image;
 use crate::traits::{DecoderTrait, OperationsTrait};
 
 mod grayscale;
-mod rgb_to_hsl;
+//mod rgb_to_hsl;
 mod rgb_to_xyb;
 
 mod rgb_to_cmyk;
