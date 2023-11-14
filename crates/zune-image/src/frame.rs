@@ -22,10 +22,11 @@ use crate::traits::ZuneInts;
 /// This represents a simple image frame which contains a group
 /// of channels whose metadata is contained by the
 /// parent image struct.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Frame {
-    pub(crate) channels: Vec<Channel>,
-    pub(crate) duration: f64
+    pub(crate) channels:    Vec<Channel>,
+    pub(crate) numerator:   usize,
+    pub(crate) denominator: usize
 }
 
 impl Frame {
@@ -52,21 +53,41 @@ impl Frame {
     pub fn new(channels: Vec<Channel>) -> Frame {
         Frame {
             channels,
-            duration: 0.0
+            numerator: 1,
+            denominator: 1
         }
     }
-    pub fn from_f32(pixels: &[f32], colorspace: ColorSpace, duration: f64) -> Frame {
+    pub fn from_f32(
+        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize
+    ) -> Frame {
         let channels = deinterleave_f32(pixels, colorspace).unwrap();
-        Frame { channels, duration }
+
+        Frame {
+            channels,
+            numerator,
+            denominator
+        }
     }
-    pub fn from_u16(pixels: &[u16], colorspace: ColorSpace, duration: f64) -> Frame {
+    pub fn from_u16(
+        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
+    ) -> Frame {
         let channels = deinterleave_u16(pixels, colorspace).unwrap();
-        Frame { channels, duration }
+        Frame {
+            channels,
+            numerator,
+            denominator
+        }
     }
 
-    pub fn from_u8(pixels: &[u8], colorspace: ColorSpace, duration: f64) -> Frame {
+    pub fn from_u8(
+        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
+    ) -> Frame {
         let channels = deinterleave_u8(pixels, colorspace).unwrap();
-        Frame { channels, duration }
+        Frame {
+            channels,
+            numerator,
+            denominator
+        }
     }
 
     /// Return a mutable reference to the vector of
@@ -109,11 +130,17 @@ impl Frame {
     /// use zune_image::frame::Frame;
     /// let channels = vec![Channel::new::<u8>();3];
     /// // create a new frame
-    /// let frame = Frame::new_with_duration(channels,60.0);
+    /// let frame = Frame::new_with_duration(channels,60,1);
     ///
     /// ```
-    pub fn new_with_duration(channels: Vec<Channel>, duration: f64) -> Frame {
-        Frame { channels, duration }
+    pub fn new_with_duration(
+        channels: Vec<Channel>, numerator: usize, denominator: usize
+    ) -> Frame {
+        Frame {
+            channels,
+            numerator,
+            denominator
+        }
     }
 
     /// Returns a reference to the channels in this frame

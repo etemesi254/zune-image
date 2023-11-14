@@ -80,6 +80,7 @@ impl Debug for ChannelErrors {
 ///
 /// Most of the operations in the channel work by calling
 /// `reinterpret` methods, both as reference and as mutable.
+#[derive(Eq)]
 pub struct Channel {
     ptr:      *mut u8,
     length:   usize,
