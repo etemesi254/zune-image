@@ -7,17 +7,20 @@
  */
 
 use std::fs::read;
+use std::io::Cursor;
 
 use numpy::{PyArray2, PyArray3, PyUntypedArray};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
+use zune_core::bytestream::ZByteReader;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
 use zune_image::codecs::hdr::HdrDecoder;
 use zune_image::codecs::jpeg::JpegDecoder;
+use zune_image::codecs::jpeg_xl::jxl_oxide::RenderResult;
 use zune_image::codecs::png::PngDecoder;
 use zune_image::codecs::ppm::PPMDecoder;
 use zune_image::codecs::psd::PSDDecoder;
@@ -115,6 +118,7 @@ fn decode_result(
 /// - FarbFeld: Always supported
 /// - Qoi: Always supported
 /// - HDR: Always supported
+/// - JXL: Always supported,output is in f32 between, Library for decoding is  https://github.com/tirr-c/jxl-oxide
 ///
 /// # Additional notes
 ///
@@ -320,6 +324,43 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     return Ok(arr.as_untyped());
+                }
+                ImageFormat::JPEG_XL => {
+                    let c = ZByteReader::new(&bytes);
+                    let mut decoder =
+                        zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
+                            .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+
+                    let (w, h) = (decoder.width() as usize, decoder.height() as usize);
+                    let color = decoder.pixel_format();
+
+                    let result = decoder
+                        .render_next_frame()
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{}", x)))?;
+
+                    match result {
+                        RenderResult::Done(render) => {
+                            // get the images
+                            let im_plannar = render.image();
+
+                            if color.channels() == 1 {
+                                let arr = PyArray2::zeros(py, [h, w], false);
+                                arr.try_readwrite()?
+                                    .as_slice_mut()?
+                                    .copy_from_slice(im_plannar.buf());
+
+                                Ok(arr.as_untyped())
+                            } else {
+                                let arr = PyArray3::zeros(py, [h, w, color.channels()], false);
+                                arr.try_readwrite()?
+                                    .as_slice_mut()?
+                                    .copy_from_slice(im_plannar.buf());
+
+                                Ok(arr.as_untyped())
+                            }
+                        }
+                        _ => return Err(PyErr::new::<PyException, _>("Cannot process jxl frame"))
+                    }
                 }
                 d => Err(PyErr::new::<PyException, _>(format!(
                     " No decoder for format {:?}",
