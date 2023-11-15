@@ -78,9 +78,9 @@ fn rgb_to_cmyk_inner_f32(r: f32, g: f32, b: f32) -> [f32; 4] {
     // from https://github.com/mozilla/mozjpeg/blob/master/cmyk.h
     let mut out = [0.; 4];
 
-    let mut ctmp = 1.0 - r.clamp(0., 1.);
-    let mut mtmp = 1.0 - g.clamp(0., 1.);
-    let mut ytmp = 1.0 - b.clamp(0., 1.);
+    let ctmp = 1.0 - r.clamp(0., 1.);
+    let mtmp = 1.0 - g.clamp(0., 1.);
+    let ytmp = 1.0 - b.clamp(0., 1.);
 
     let ktmp = ctmp.min(mtmp).min(ytmp);
     let kmtp_inv = 1.0 / (1.0 - ktmp);
