@@ -39,6 +39,12 @@ enum Mode {
     // Little Endian
     LE
 }
+#[cfg(feature = "std")]
+impl<T: ZReaderTrait> std::io::Read for ZByteReader<T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        Ok(self.read(buf).unwrap())
+    }
+}
 
 impl<T: ZReaderTrait> ZByteReader<T> {
     /// Create a new instance of the byte stream
