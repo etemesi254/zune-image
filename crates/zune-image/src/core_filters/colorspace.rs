@@ -259,9 +259,9 @@ impl OperationsTrait for ColorspaceConv {
                 }
             }
             (ColorSpace::CMYK, ColorSpace::RGB) => {
-                if depth != BitDepth::Eight {
+                if depth != BitDepth::Eight || depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit CYMK images to RGB"
+                        "Can only convert 8 bit and floats from CMYK to RGB"
                     ));
                 }
                 for frame in image.frames_mut() {
@@ -273,21 +273,33 @@ impl OperationsTrait for ColorspaceConv {
                     let (m, rest) = rest.split_at_mut(1);
                     let (y, k) = rest.split_at_mut(1);
 
-                    rgb_to_cmyk::cmyk_to_rgb(
-                        c[0].reinterpret_as_mut()?,
-                        m[0].reinterpret_as_mut()?,
-                        y[0].reinterpret_as_mut()?,
-                        k[0].reinterpret_as_mut()?
-                    );
+                    match depth {
+                        BitDepth::Eight => {
+                            rgb_to_cmyk::cmyk_to_rgb_u8(
+                                c[0].reinterpret_as_mut()?,
+                                m[0].reinterpret_as_mut()?,
+                                y[0].reinterpret_as_mut()?,
+                                k[0].reinterpret_as_mut()?
+                            );
+                        }
+                        BitDepth::Float32 => rgb_to_cmyk::cmyk_to_rgb_f32(
+                            c[0].reinterpret_as_mut()?,
+                            m[0].reinterpret_as_mut()?,
+                            y[0].reinterpret_as_mut()?,
+                            k[0].reinterpret_as_mut()?
+                        ),
+                        _ => unreachable!()
+                    }
+
                     // remove K from cymk since the others become RGB
                     channels.pop();
                 }
             }
 
             (ColorSpace::RGB, ColorSpace::CMYK) => {
-                if depth != BitDepth::Eight {
+                if depth != BitDepth::Eight || depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit CYMK images to RGB"
+                        "Can only convert 8 bit and float from CYMK  to RGB"
                     ));
                 }
                 for frame in image.frames_mut() {
@@ -295,19 +307,40 @@ impl OperationsTrait for ColorspaceConv {
 
                     assert_eq!(channels.len(), 3);
 
-                    let mut k = Channel::new_with_length::<u8>(channels[0].len());
+                    match depth {
+                        BitDepth::Eight => {
+                            let mut k = Channel::new_with_length::<u8>(channels[0].len());
 
-                    let (r, rest) = channels.split_at_mut(1);
-                    let (g, b) = rest.split_at_mut(1);
+                            let (r, rest) = channels.split_at_mut(1);
+                            let (g, b) = rest.split_at_mut(1);
 
-                    rgb_to_cmyk::rgb_to_cmyk(
-                        r[0].reinterpret_as_mut()?,
-                        g[0].reinterpret_as_mut()?,
-                        b[0].reinterpret_as_mut()?,
-                        k.reinterpret_as_mut()?
-                    );
-                    // remove K from cymk since the others become RGB
-                    channels.push(k);
+                            rgb_to_cmyk::rgb_to_cmyk_u8(
+                                r[0].reinterpret_as_mut()?,
+                                g[0].reinterpret_as_mut()?,
+                                b[0].reinterpret_as_mut()?,
+                                k.reinterpret_as_mut()?
+                            );
+                            // remove K from cymk since the others become RGB
+                            channels.push(k);
+                        }
+
+                        BitDepth::Float32 => {
+                            let mut k = Channel::new_with_length::<f32>(channels[0].len());
+
+                            let (r, rest) = channels.split_at_mut(1);
+                            let (g, b) = rest.split_at_mut(1);
+
+                            rgb_to_cmyk::rgb_to_cmyk_f32(
+                                r[0].reinterpret_as_mut()?,
+                                g[0].reinterpret_as_mut()?,
+                                b[0].reinterpret_as_mut()?,
+                                k.reinterpret_as_mut()?
+                            );
+                            // remove K from cymk since the others become RGB
+                            channels.push(k);
+                        }
+                        _ => unreachable!()
+                    }
                 }
             }
 
