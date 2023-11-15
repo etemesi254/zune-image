@@ -259,7 +259,7 @@ impl OperationsTrait for ColorspaceConv {
                 }
             }
             (ColorSpace::CMYK, ColorSpace::RGB) => {
-                if depth != BitDepth::Eight || depth != BitDepth::Float32 {
+                if depth != BitDepth::Eight && depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
                         "Can only convert 8 bit and floats from CMYK to RGB"
                     ));
@@ -297,7 +297,7 @@ impl OperationsTrait for ColorspaceConv {
             }
 
             (ColorSpace::RGB, ColorSpace::CMYK) => {
-                if depth != BitDepth::Eight || depth != BitDepth::Float32 {
+                if depth != BitDepth::Eight && depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
                         "Can only convert 8 bit and float from CYMK  to RGB"
                     ));
