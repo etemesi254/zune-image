@@ -18,6 +18,7 @@ use std::mem::size_of;
 use std::thread::sleep;
 use std::time::Duration;
 
+pub use jxl_oxide;
 use jxl_oxide::{PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZReaderTrait;
