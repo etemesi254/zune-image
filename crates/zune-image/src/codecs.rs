@@ -239,14 +239,11 @@ impl ImageFormat {
             ImageFormat::JPEG_XL => {
                 #[cfg(feature = "jpeg-xl")]
                 {
-                    let len = data.get_len();
-                    // note we have to use .to_vec() to allow us to borrow it mutably, otherwise Rust will
-                    // complain
-                    let data = data.get_slice(0..len).unwrap().to_vec();
-                    // an unintended copy
-                    let cursor = Cursor::new(data);
+                    // use a ZByteReader which implements read, this prevents unnecessary
+                    // copy
+                    let reader = ZByteReader::new(data);
 
-                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(cursor)?))
+                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(reader)?))
                 }
                 #[cfg(not(feature = "jpeg-xl"))]
                 {
