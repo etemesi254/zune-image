@@ -49,6 +49,26 @@ pub(crate) struct FrameState {
 
 /// A simple jxl encoder
 ///
+///  # Encoding 16 bit data
+/// - To encode a 16-bit image, each element needs to be re-interpreted as 2 `u8`'s in native endian
+/// the library will do the appropriate clamping
+///
+/// # Multithreading support
+/// Via the `thread` feature, the library can use multiple threads to speed up compression, one can
+/// configure how many threads to open or whether the library should use threads at compile time by
+/// enabling or disabling the `thread` feature and at runtime via `EncodeOptions`
+///
+/// ## Example option two threads
+/// ```
+/// use zune_core::bit_depth::BitDepth;
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_core::options::EncoderOptions;
+/// // set threads to be 2 for encoding
+/// let options = EncoderOptions::new(100,100,ColorSpace::RGB,BitDepth::Eight).set_num_threads(2);
+/// ```
+///
+/// Setting `set_num_threads` to `1` forces single threaded execution
+///
 ///  # Example
 /// - Encode grayscale image
 ///
@@ -56,17 +76,22 @@ pub(crate) struct FrameState {
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_core::options::EncoderOptions;
 /// use zune_jpegxl::JxlSimpleEncoder;
+/// use zune_jpegxl::JxlEncodeErrors;
 ///
-/// // set up options for encoder
-/// let options = EncoderOptions::default()
-///     .set_height(10)
-///     .set_width(10)
-///     .set_colorspace(ColorSpace::Luma);
-/// let image:[u8;100] = std::array::from_fn(|x| x as u8);
+/// fn main()->Result<(),JxlEncodeErrors>{
+///     // set up options for encoder
+///     let options = EncoderOptions::default()
+///         .set_height(10)
+///         .set_width(10)
+///         .set_colorspace(ColorSpace::Luma);
+///     let image:[u8;100] = std::array::from_fn(|x| x as u8);
 ///
-/// let encoder = JxlSimpleEncoder::new(&image,options);
-/// // encode the image
-/// encoder.encode().unwrap();
+///     let encoder = JxlSimpleEncoder::new(&image,options);
+///     // encode the image
+///     encoder.encode()?;
+///     
+///     Ok(())
+/// }
 /// ```
 pub struct JxlSimpleEncoder<'a> {
     data:    &'a [u8],
@@ -1021,13 +1046,37 @@ fn prepare_dc_global(
 
 impl<'a> JxlSimpleEncoder<'a> {
     /// Create a new jpeg xl encoder
+    ///
+    /// # Arguments
+    /// - data: Raw pixel data
+    /// - options: Encoder options for the raw pixels, this include the width, height colorspace, depth etc
     pub fn new(data: &'a [u8], options: EncoderOptions) -> JxlSimpleEncoder<'a> {
         JxlSimpleEncoder { data, options }
     }
 
-    /// Encode a jxl image producing the raw encoded
-    /// bytes or an error if there was any
-    pub fn encode(&self) -> Result<Vec<u8>, JxlEncodeErrors> {
+    /// Encode a jxl image into a user provided buffer
+    ///
+
+    ///
+    /// # Arguments
+    /// - buf: The buffer to write bytes into
+    /// It is difficult to estimate the size of output buffer as many factors influence
+    /// the size of the final image. A good metric is that the buffer size can be equal to
+    /// the raw pixel size.
+    ///
+    ///   If the buffer is not big enough the library will bail and return an error
+    ///
+    /// # Returns
+    ///
+    /// - Ok(size) Number of bytes written into `buf` for the encoded image
+    /// - Err() An error in case it occurred during encoding
+    pub fn encode_into(&mut self, buf: &mut [u8]) -> Result<usize, JxlEncodeErrors> {
+        if self.options.get_width() <= 1 {
+            return Err(JxlEncodeErrors::ZeroDimension("width"));
+        }
+        if self.options.get_height() <= 1 {
+            return Err(JxlEncodeErrors::ZeroDimension("height"));
+        }
         let depth = self.options.get_depth();
 
         let mut frame_state = match depth {
@@ -1036,10 +1085,39 @@ impl<'a> JxlSimpleEncoder<'a> {
             _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth))
         };
         prepare_header(&mut frame_state, true, true);
+
+        let written = fast_lossless_write_output(&mut frame_state, buf)?;
+
+        Ok(written)
+    }
+    /// Encode a jxl image producing the raw encoded
+    /// bytes or an error if there was any that occurred during encoding
+    ///
+    /// # Returns
+    /// Ok(vec): The result of encoding the image
+    ///
+    /// Err(e): The error incase one is encountered
+    ///
+    pub fn encode(&self) -> Result<Vec<u8>, JxlEncodeErrors> {
+        if self.options.get_width() <= 1 {
+            return Err(JxlEncodeErrors::ZeroDimension("width"));
+        }
+        if self.options.get_height() <= 1 {
+            return Err(JxlEncodeErrors::ZeroDimension("height"));
+        }
+        let depth = self.options.get_depth();
+
+        let mut frame_state = match depth {
+            BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
+            BitDepth::Sixteen => self.encode_inner(MoreThan14Bits())?,
+            _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth))
+        };
+        prepare_header(&mut frame_state, true, true);
+        // TODO: Make this an encode_inner function
         let size = fast_lossless_max_required_output(&frame_state);
 
         let mut output = vec![0; size];
-        let written = fast_lossless_write_output(&mut frame_state, &mut output);
+        let written = fast_lossless_write_output(&mut frame_state, &mut output)?;
 
         output.truncate(written);
 
@@ -1098,7 +1176,7 @@ impl<'a> JxlSimpleEncoder<'a> {
             let yg = g / num_groups_x;
             let y_offset = yg * 256;
             let y_max = min(height - yg * 256, 256);
-            let y_begin = y_offset + max(0, y_max - 2 * effort) / 2;
+            let y_begin = y_offset + max(0, y_max.saturating_sub(2 * effort)) / 2;
             let y_count = min(2 * effort * y_max / 256, y_offset + y_max - y_begin - 1);
             let x_max = min(width - xg * 256, 256) / K_CHUNK_SIZE * K_CHUNK_SIZE;
 
@@ -1337,11 +1415,13 @@ impl<'a> JxlSimpleEncoder<'a> {
 
 /// Write output from the frame to `output`
 #[allow(clippy::never_loop)]
-fn fast_lossless_write_output(frame: &mut FrameState, output: &mut [u8]) -> usize {
+fn fast_lossless_write_output(
+    frame: &mut FrameState, output: &mut [u8]
+) -> Result<usize, JxlEncodeErrors> {
     let components = frame.option.get_colorspace().num_components();
 
     if output.len() < 8 {
-        return output.len();
+        return Err(JxlEncodeErrors::Generic("Output is too short"));
     }
     let mut out_writer = BorrowingBitWriter::new(output);
 
@@ -1352,9 +1432,11 @@ fn fast_lossless_write_output(frame: &mut FrameState, output: &mut [u8]) -> usiz
         let bw_pos = &mut frame.bit_writer_byte_pos;
 
         if *curr >= max_iters {
-            out_writer.flush();
+            out_writer
+                .flush()
+                .map_err(|x| JxlEncodeErrors::Generic(x))?;
             assert_eq!(out_writer.bits_in_buffer, 0);
-            return out_writer.position;
+            return Ok(out_writer.position);
         }
 
         let nbc = frame.option.get_colorspace().num_components();
@@ -1371,7 +1453,9 @@ fn fast_lossless_write_output(frame: &mut FrameState, output: &mut [u8]) -> usiz
 
         let full_byte_count = writer.position - *bw_pos;
 
-        out_writer.put_bytes(&writer.dest[*bw_pos..*bw_pos + full_byte_count]);
+        out_writer
+            .put_bytes(&writer.dest[*bw_pos..*bw_pos + full_byte_count])
+            .map_err(|x| JxlEncodeErrors::Generic(x))?;
 
         *bw_pos += full_byte_count;
 
@@ -1379,15 +1463,21 @@ fn fast_lossless_write_output(frame: &mut FrameState, output: &mut [u8]) -> usiz
             // check for any spare bytes
             if writer.bits_in_buffer != 0 {
                 // transfer those bits to our general writer
-                out_writer.put_bits(writer.bits_in_buffer, writer.buffer);
+                out_writer
+                    .put_bits(writer.bits_in_buffer, writer.buffer)
+                    .map_err(|x| JxlEncodeErrors::Generic(x))?;
             }
             *bw_pos = 0;
             *curr += 1;
 
-            out_writer.flush();
+            out_writer
+                .flush()
+                .map_err(|x| JxlEncodeErrors::Generic(x))?;
 
             if (*curr - 1) % nbc == 0 && out_writer.bits_in_buffer != 0 {
-                out_writer.put_bits(8 - out_writer.bits_in_buffer, 0);
+                out_writer
+                    .put_bits(8 - out_writer.bits_in_buffer, 0)
+                    .map_err(|x| JxlEncodeErrors::Generic(x))?;
             }
         }
     }

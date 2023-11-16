@@ -17,11 +17,19 @@ const MAX_DIMENSIONS: usize = 1 << 30;
 
 /// Errors that may arise during encoding
 pub enum JxlEncodeErrors {
+    /// One of the dimensions is less than 2
     ZeroDimension(&'static str),
+    /// The colorspace of the image isn't supported by
+    /// the library
     UnsupportedColorspace(ColorSpace),
+    /// Image depth isn't supported by the library
     UnsupportedDepth(BitDepth),
+    /// A given width or height is too big to be encoded
     TooLargeDimensions(usize),
-    LengthMismatch(usize, usize)
+    /// Mismatch in length expected vs what was found
+    LengthMismatch(usize, usize),
+    /// Generic error
+    Generic(&'static str)
 }
 
 pub const SUPPORTED_COLORSPACES: [ColorSpace; 4] = [
@@ -35,7 +43,7 @@ pub const SUPPORTED_DEPTHS: [BitDepth; 2] = [BitDepth::Eight, BitDepth::Sixteen]
 impl Debug for JxlEncodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            JxlEncodeErrors::ZeroDimension(param) => writeln!(f, "The {param} is zero"),
+            JxlEncodeErrors::ZeroDimension(param) => writeln!(f, "The {param} is less than 2"),
             JxlEncodeErrors::UnsupportedColorspace(color) => writeln!(
                 f,
                 "JXL encoder cannot encode images in colorspace {color:?}, supported ones are {:?}",
@@ -56,6 +64,9 @@ impl Debug for JxlEncodeErrors {
             }
             JxlEncodeErrors::LengthMismatch(expected, found) => {
                 writeln!(f, "Expected array of length {expected} but found {found}")
+            }
+            JxlEncodeErrors::Generic(msg) => {
+                writeln!(f, "{}", msg)
             }
         }
     }

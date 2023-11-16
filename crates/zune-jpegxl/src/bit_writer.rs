@@ -108,7 +108,10 @@ pub struct BorrowingBitWriter<'a> {
 
 impl<'a> BorrowingBitWriter<'a> {
     /// Write pending bits to the buffer
-    pub(crate) fn flush(&mut self) {
+    pub(crate) fn flush(&mut self) -> Result<(), &'static str> {
+        if self.dest.len().saturating_sub(self.position) < 8 {
+            return Err("Bytes will overrun");
+        }
         let buf = self.buffer.to_le_bytes();
         // write 8 bytes
         self.dest[self.position..self.position + 8].copy_from_slice(&buf);
@@ -121,6 +124,7 @@ impl<'a> BorrowingBitWriter<'a> {
         self.position += (bytes_written >> 3) as usize;
 
         self.bits_in_buffer &= 7;
+        Ok(())
     }
 
     /// Construct a new bit-writer
@@ -135,11 +139,11 @@ impl<'a> BorrowingBitWriter<'a> {
 
     /// Put some bits to the buffer
     /// And periodically flush to output when necessary
-    pub fn put_bits(&mut self, nbits: u8, bit: u64) {
+    pub fn put_bits(&mut self, nbits: u8, bit: u64) -> Result<(), &'static str> {
         debug_assert!(nbits <= 56);
 
         if self.bits_in_buffer + nbits > 56 {
-            self.flush();
+            self.flush()?;
         }
         // still check, because I don't trust myself
         debug_assert!(nbits + self.bits_in_buffer < 64);
@@ -149,6 +153,7 @@ impl<'a> BorrowingBitWriter<'a> {
         // add to the top of the bit buffer
         self.buffer |= (mask & bit) << self.bits_in_buffer;
         self.bits_in_buffer += nbits;
+        Ok(())
     }
     /// Put some bits to the buffer
     /// Without flushing
@@ -165,12 +170,12 @@ impl<'a> BorrowingBitWriter<'a> {
         self.bits_in_buffer += nbits;
     }
 
-    pub fn put_bytes(&mut self, bytes: &[u8]) {
+    pub fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
         //check if we can simply copy from input to output
         // when we have aligned bits, that becomes possible
         if (self.bits_in_buffer & 7) == 0 {
             // flush any pending bits
-            self.flush();
+            self.flush()?;
             // ensure no bits are present
             assert_eq!(self.bits_in_buffer, 0);
             // copy
@@ -184,7 +189,7 @@ impl<'a> BorrowingBitWriter<'a> {
             // copy them per invocation
 
             // To create space, flush bits first
-            self.flush();
+            self.flush()?;
 
             let mut buffer = [0; 8];
 
@@ -197,7 +202,7 @@ impl<'a> BorrowingBitWriter<'a> {
                 buffer[..SINGLE_CHUNK].copy_from_slice(chunks);
                 // now add bits
                 self.put_bits_no_flush(SINGLE_CHUNK as u8 * 8, u64::from_le_bytes(buffer));
-                self.flush();
+                self.flush()?;
             }
 
             // in case of a remainder, means the byte length
@@ -213,10 +218,11 @@ impl<'a> BorrowingBitWriter<'a> {
                 buffer.fill(0);
 
                 buffer[..remainder.len()].copy_from_slice(remainder);
-                self.put_bits((remainder.len() * 8) as u8, u64::from_le_bytes(buffer));
+                self.put_bits((remainder.len() * 8) as u8, u64::from_le_bytes(buffer))?;
             }
-            self.flush();
+            self.flush()?;
         }
+        Ok(())
     }
 }
 
