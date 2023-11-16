@@ -57,10 +57,20 @@ impl<T> PSDDecoder<T>
 where
     T: ZReaderTrait
 {
+    /// Create a new decoder that reads a photoshop encoded file
+    /// from `T` and returns pixels
+    ///
+    /// # Arguments
+    /// - data: Data source, it has to implement the `ZReaderTrait
     pub fn new(data: T) -> PSDDecoder<T> {
         Self::new_with_options(data, DecoderOptions::default())
     }
 
+    /// Creates a new decoder with options that influence decoding routines
+    ///
+    /// # Arguments
+    /// - data: Data source
+    /// - options: Custom options for the decoder
     pub fn new_with_options(data: T, options: DecoderOptions) -> PSDDecoder<T> {
         PSDDecoder {
             width: 0,
@@ -198,6 +208,11 @@ where
         Ok(())
     }
 
+    /// Decode an image to bytes without regard to depth or endianness
+    ///
+    /// # Returns
+    /// Ok(bytes):  Raw bytes of the image
+    /// Err(E): An error if it occurred during decoding
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors> {
         if !self.decoded_header {
             self.decode_headers()?;
@@ -425,7 +440,7 @@ where
         Ok(())
     }
 
-    /// Get image bit depth
+    /// Get image bit depth or None if the headers haven't been decoded
     pub const fn get_bit_depth(&self) -> Option<BitDepth> {
         if self.decoded_header {
             return Some(self.depth);
@@ -433,14 +448,16 @@ where
         None
     }
 
-    /// Get image width and height respectively
+    /// Get image width and height respectively or None if the
+    /// headers haven't been decoded
     pub fn get_dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_header {
             return Some((self.width, self.height));
         }
         None
     }
-    /// Get image bit colorspace
+    /// Get image colorspace or None if the
+    /// image header hasn't been decoded
     pub fn get_colorspace(&self) -> Option<ColorSpace> {
         if let Some(color) = self.color_type {
             if color == ColorModes::RGB {
