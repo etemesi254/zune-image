@@ -18,7 +18,30 @@ use crate::constants::{
 use crate::QoiEncodeErrors;
 
 const SUPPORTED_COLORSPACES: [ColorSpace; 2] = [ColorSpace::RGB, ColorSpace::RGBA];
-
+/// Quite Ok Image Encoder
+///
+///
+/// # Example
+/// - Encode a 100 by 100 RGB image
+///
+/// ```
+/// use zune_core::bit_depth::BitDepth;
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_core::options::EncoderOptions;
+/// use zune_qoi::QoiEncoder;
+/// use zune_qoi::QoiEncodeErrors;
+///
+/// const W:usize=100;
+/// const H:usize=100;
+///
+/// fn main()->Result<(), QoiEncodeErrors>{
+///     let pixels = std::array::from_fn::<u8,{W * H * 3},_>(|i| (i%256) as u8);
+///     let mut encoder = QoiEncoder::new(&pixels,EncoderOptions::new(W,H,ColorSpace::RGB,BitDepth::Eight));
+///     let pix = encoder.encode()?;
+///     // write pixels, or do something
+///     Ok(())
+///}
+/// ```
 pub struct QoiEncoder<'a> {
     // raw pixels, in RGB or RBGA
     pixel_data:            &'a [u8],
@@ -28,6 +51,10 @@ pub struct QoiEncoder<'a> {
 
 impl<'a> QoiEncoder<'a> {
     /// Create a new encoder which will encode the pixels
+    ///
+    /// # Arguments
+    /// - data: Pixel data, size must be equal to `width*height*colorspace channels`
+    /// - options: Encoder details for data, this contains eidth, height and number of color components
     #[allow(clippy::redundant_field_names)]
     pub const fn new(data: &'a [u8], options: EncoderOptions) -> QoiEncoder<'a> {
         QoiEncoder {
@@ -42,7 +69,7 @@ impl<'a> QoiEncoder<'a> {
 
     /// Return the maximum size for which the encoder can safely
     /// encode the image without fearing for an out of space error
-    fn max_size(&self) -> usize {
+    pub fn max_size(&self) -> usize {
         self.options.get_width()
             * self.options.get_height()
             * (self.options.get_colorspace().num_components() + 1)
@@ -50,6 +77,16 @@ impl<'a> QoiEncoder<'a> {
             + QOI_PADDING
     }
     fn encode_headers(&self, writer: &mut ZByteWriter) -> Result<(), QoiEncodeErrors> {
+        let expected_len = self.options.get_width()
+            * self.options.get_height()
+            * self.options.get_colorspace().num_components();
+
+        if self.pixel_data.len() != expected_len {
+            return Err(QoiEncodeErrors::Generic(
+                "Expected length doesn't match pixels length"
+            ));
+        }
+
         if writer.has(QOI_HEADER_SIZE) {
             // qoif
             writer.write_all(&QOI_MAGIC.to_be_bytes()).unwrap();
@@ -87,16 +124,23 @@ impl<'a> QoiEncoder<'a> {
             let xtic = u8::from(self.color_characteristics == ColorCharacteristics::Linear);
             writer.write_u8(xtic);
         } else {
-            unreachable!("Cannot allocate internal space for headers");
+            return Err(QoiEncodeErrors::Generic(
+                "Cannot allocate internal space for headers"
+            ));
         }
         Ok(())
     }
-    #[allow(clippy::manual_range_contains)]
-    pub fn encode(&mut self) -> Result<Vec<u8>, QoiEncodeErrors> {
-        // set encoded data to be an array of zeroes
-        let mut encoded_data = vec![0; self.max_size()];
-
-        let mut stream = ZByteWriter::new(&mut encoded_data);
+    /// Encode into a pre-allocated buffer and error out if
+    /// the buffer provided is too small
+    ///
+    /// # Arguments.
+    /// - buf: The buffer to write encoded content to
+    ///
+    /// # Returns
+    /// - Ok(size): Actual bytes used for encoding
+    /// - Err: The error encountered during encoding
+    pub fn encode_into(&mut self, buf: &mut [u8]) -> Result<usize, QoiEncodeErrors> {
+        let mut stream = ZByteWriter::new(buf);
 
         self.encode_headers(&mut stream)?;
 
@@ -111,6 +155,11 @@ impl<'a> QoiEncoder<'a> {
 
         for pix_chunk in self.pixel_data.chunks_exact(channel_count) {
             px[0..channel_count].copy_from_slice(pix_chunk);
+
+            if !stream.has(5) {
+                // worst case is RGBA+ chunk type
+                return Err(QoiEncodeErrors::Generic("Not enough space"));
+            }
 
             if px == px_prev {
                 run += 1;
@@ -180,9 +229,55 @@ impl<'a> QoiEncoder<'a> {
         stream.write_u64_be(0x01);
         // done
         let len = stream.position();
+
+        return Ok(len);
+    }
+    /// Encode an image and return a vector containing encoded content
+    /// or error out in case of anything
+    ///
+    /// # Returns
+    /// Ok(vec): A vector containing the bytes as encoded output
+    /// Err: An error encountered during encoding
+    ///
+    #[allow(clippy::manual_range_contains)]
+    pub fn encode(&mut self) -> Result<Vec<u8>, QoiEncodeErrors> {
+        // set encoded data to be an array of zeroes
+        let mut encoded_data = vec![0; self.max_size()];
+        let size = self.encode_into(&mut encoded_data)?;
+        // done
         // reduce the length to be the expected value
-        encoded_data.truncate(len);
+        encoded_data.truncate(size);
 
         Ok(encoded_data)
     }
+}
+
+#[test]
+fn test_qoi_encode_rgb() {
+    use zune_core::bit_depth::BitDepth;
+    const W: usize = 100;
+    const H: usize = 100;
+
+    let pixels = std::array::from_fn::<u8, { W * H * 3 }, _>(|i| (i % 256) as u8);
+    let mut encoder = QoiEncoder::new(
+        &pixels,
+        EncoderOptions::new(W, H, ColorSpace::RGB, BitDepth::Eight)
+    );
+    encoder.encode().unwrap();
+    // write pixels, do something
+}
+
+#[test]
+fn test_qoi_encode_rgba() {
+    use zune_core::bit_depth::BitDepth;
+    const W: usize = 100;
+    const H: usize = 100;
+
+    let pixels = std::array::from_fn::<u8, { W * H * 4 }, _>(|i| (i % 256) as u8);
+    let mut encoder = QoiEncoder::new(
+        &pixels,
+        EncoderOptions::new(W, H, ColorSpace::RGBA, BitDepth::Eight)
+    );
+    encoder.encode().unwrap();
+    // write pixels, do something
 }

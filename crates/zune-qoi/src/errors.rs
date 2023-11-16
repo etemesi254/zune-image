@@ -6,7 +6,7 @@
 
 use alloc::string::String;
 /// Errors possible during decoding.
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 
 use zune_core::colorspace::ColorSpace;
 
@@ -86,6 +86,7 @@ impl From<&'static str> for QoiErrors {
     }
 }
 
+/// Errors encountered during encoding
 pub enum QoiEncodeErrors {
     /// Unsupported colorspace
     ///
@@ -95,7 +96,9 @@ pub enum QoiEncodeErrors {
 
     /// Too large dimensions
     /// The dimensions cannot be correctly encoded to a width
-    TooLargeDimensions(usize)
+    TooLargeDimensions(usize),
+
+    Generic(&'static str)
 }
 
 impl Debug for QoiEncodeErrors {
@@ -111,6 +114,26 @@ impl Debug for QoiEncodeErrors {
                     u32::MAX
                 )
             }
+            QoiEncodeErrors::Generic(val) => {
+                writeln!(f, "{}", val)
+            }
         }
     }
 }
+
+impl Display for QoiEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+impl Display for QoiErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for QoiEncodeErrors {}
+
+#[cfg(feature = "std")]
+impl std::error::Error for QoiErrors {}
