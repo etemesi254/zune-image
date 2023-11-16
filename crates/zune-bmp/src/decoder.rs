@@ -172,7 +172,7 @@ where
     T: ZReaderTrait
 {
     /// Create a new bmp decoder that reads data from
-    /// `data
+    /// `data`
     ///
     /// # Arguments
     /// - `data`: The buffer from which we will read bytes from
@@ -189,7 +189,7 @@ where
     /// * `data`: The buffer from which we will read data from
     /// * `options`:  Specialized options for this decoder
     ///
-    /// returns: BmpDecoder<T>
+    /// returns: A BMP Decoder instance
     ///
     pub fn new_with_options(data: T, options: DecoderOptions) -> BmpDecoder<T> {
         BmpDecoder {
@@ -216,6 +216,10 @@ where
     ///
     /// After calling this, most information fields will be filled
     /// except the actual decoding bytes
+    ///
+    /// # Returns
+    /// - Ok(()) Indicates everything was okay during header parsing
+    /// - Err: Error that occurred when decoding headers
     pub fn decode_headers(&mut self) -> Result<(), BmpDecoderErrors> {
         if self.decoded_headers {
             return Ok(());
@@ -460,6 +464,10 @@ where
         Ok(())
     }
 
+    /// Return the expected size of the output buffer for which
+    /// a contiguous slice of `&[u8]` can store it without needing reallocation
+    ///
+    /// Returns `None` if headers haven't been decoded or if calculation overflows
     pub fn output_buf_size(&self) -> Option<usize> {
         if !self.decoded_headers {
             return None;
@@ -527,8 +535,7 @@ where
     /// Decode an encoded image into a buffer or return an error
     /// if something bad occurred
     ///
-    /// Also see [`decode_into`](Self::decode_into) which decodes into
-    /// a pre-allocated buffer
+    /// Also see [`decode`](Self::decode) which allocates and decodes into buffer
     pub fn decode_into(&mut self, buf: &mut [u8]) -> Result<(), BmpDecoderErrors> {
         self.decode_headers()?;
 
