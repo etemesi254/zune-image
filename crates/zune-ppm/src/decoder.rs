@@ -34,6 +34,7 @@ where
     options:         DecoderOptions
 }
 
+/// Decoding errors that may occur
 pub enum PPMDecodeErrors {
     Generic(String),
     GenericStatic(&'static str),
@@ -127,7 +128,7 @@ where
     /// will more information about what went wrong
     ///
     /// [`get_dimensions`]:Self::get_dimensions
-    pub fn read_headers(&mut self) -> Result<(), PPMDecodeErrors> {
+    pub fn decode_headers(&mut self) -> Result<(), PPMDecodeErrors> {
         if self.reader.has(3) {
             let p = self.reader.get_u8();
             let version = self.reader.get_u8();
@@ -477,7 +478,7 @@ where
     /// let data = b"P6 34 32 255";
     /// let mut decoder = PPMDecoder::new(data);
     ///
-    /// decoder.read_headers().unwrap();
+    /// decoder.decode_headers().unwrap();
     ///
     /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Eight));
     /// assert_eq!(decoder.get_dimensions(),Some((34,32)))
@@ -497,6 +498,7 @@ where
     /// # Returns
     /// - `Ok(DecodingResult)`: This is a simple enum that can hold either
     /// eight or 16 bits ([`u8`] or [`u16`]) singe ppm images can either be 8 bit or 16 bit.
+    ///    It can also return `DecodingResult::F32` in case of decoding PFM  images
     ///
     ///  -  Err(PPMDecodeErrors)`: There was a problem
     /// # Example
@@ -508,7 +510,7 @@ where
     ///
     /// let mut decoder = PPMDecoder::new(data);
     ///
-    /// decoder.read_headers().unwrap();
+    /// decoder.decode_headers().unwrap();
     ///
     /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Sixteen));
     /// assert_eq!(decoder.get_dimensions(),Some((1,1)));
@@ -520,7 +522,7 @@ where
     pub fn decode(&mut self) -> Result<DecodingResult, PPMDecodeErrors> {
         // decode headers only if no previous call was made.
         if !self.decoded_headers {
-            self.read_headers()?;
+            self.decode_headers()?;
         }
 
         if self.width == 0 || self.height == 0 {
@@ -672,10 +674,3 @@ where
     // z.skip(end - start);
     end - start
 }
-
-// #[test]
-// fn test_pfm() {
-//     let data = [80, 55, 48, 32, 32, 113, 32];
-//
-//     let decoder = PPMDecoder::new(&data).decode();
-// }

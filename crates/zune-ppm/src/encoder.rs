@@ -38,7 +38,7 @@ impl Debug for PPMEncodeErrors {
     }
 }
 
-pub enum PPMVersions {
+enum PPMVersions {
     P5,
     P6,
     P7
@@ -55,6 +55,31 @@ impl Display for PPMVersions {
 }
 
 /// A PPM encoder
+///
+///
+///# Encoding 16 bit data
+/// To encode a 16-bit image, each element needs to be
+/// re-interpreted as 2 u8’s in native endian, the library will do the
+/// appropriate conversions when needed
+///
+/// # Example
+/// - Encoding 8 bit grayscale data
+///```
+/// use zune_core::bit_depth::BitDepth;
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_core::options::EncoderOptions;
+/// use zune_ppm::PPMEncoder;
+/// use zune_ppm::PPMEncodeErrors;
+///
+/// fn main()-> Result<(),PPMEncodeErrors> {
+///    const W:usize = 100;
+///    const H:usize = 100;
+///    let data:[u8;{W * H}] = std::array::from_fn(|x| (x % 256) as u8);
+///    let encoder = PPMEncoder::new(&data,EncoderOptions::new(W,H,ColorSpace::Luma,BitDepth::Eight));
+///    encoder.encode()?;
+///    Ok(())
+/// }
+/// ```
 pub struct PPMEncoder<'a> {
     data:    &'a [u8],
     options: EncoderOptions
@@ -103,24 +128,35 @@ impl<'a> PPMEncoder<'a> {
 
         Ok(())
     }
-    pub fn encode(&self) -> Result<Vec<u8>, PPMEncodeErrors> {
+    /// Encode into a user provided buffer
+    ///
+    /// # Arguments
+    /// - out: The output buffer to write bytes into
+    ///     It is recommended that the buffer be at least [`max_out_size`](crate::encoder::max_out_size) in order
+    ///     to encode successfully. In case size is not big enough , the library will bail and return an error
+    ///
+    /// # Returns
+    /// - Ok(size): The actual number of bytes written
+    /// - Err: An error in case something bad happened, contents of `out` are to be treated as invalid
+    pub fn encode_into(&self, out: &mut [u8]) -> Result<usize, PPMEncodeErrors> {
         let expected = calc_expected_size(self.options);
         let found = self.data.len();
 
         if expected != found {
             return Err(PPMEncodeErrors::TooShortInput(expected, found));
         }
-        let out_size = calc_out_size(self.options);
-
-        let mut out = vec![0; out_size];
-
-        let mut stream = ZByteWriter::new(&mut out);
+        let mut stream = ZByteWriter::new(out);
 
         self.encode_headers(&mut stream)?;
 
         match self.options.get_depth().bit_type() {
-            BitType::U8 => stream.write_all(self.data).unwrap(),
+            BitType::U8 => stream
+                .write_all(self.data)
+                .map_err(|x| PPMEncodeErrors::Static(x))?,
             BitType::U16 => {
+                if !stream.has(self.data.len()) {
+                    return Err(PPMEncodeErrors::Static("The data will not fit into buffer"));
+                }
                 // chunk in two and write to stream
                 for slice in self.data.chunks_exact(2) {
                     let byte = u16::from_ne_bytes(slice.try_into().unwrap());
@@ -131,7 +167,20 @@ impl<'a> PPMEncoder<'a> {
         }
         assert!(!stream.eof());
         let position = stream.position();
+        Ok(position)
+    }
+    /// Encode an image returning the pixels as a `Vec<u8>` or an error
+    /// in case something happened
+    ///
+    /// # Returns
+    /// - Ok(vec): The actual number of bytes written
+    /// - Err : An error that occurred during encoding in case it happens
+    pub fn encode(&self) -> Result<Vec<u8>, PPMEncodeErrors> {
+        let out_size = max_out_size(&self.options);
 
+        let mut out = vec![0; out_size];
+
+        let position = self.encode_into(&mut out)?;
         // truncate to how many bytes we wrote
         out.truncate(position);
 
@@ -160,8 +209,13 @@ fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str {
 
 const PPM_HEADER_SIZE: usize = 100;
 
+/// Gives expected minimum size for which the encoder wil guarrantee
+/// that the given raw bytes will fit
+///
+/// This can be used with [`encode_into`](crate::encoder::PPMEncoder::encode_into) to
+/// properly allocate an input buffer to be used for encoding
 #[inline]
-fn calc_out_size(options: EncoderOptions) -> usize {
+pub fn max_out_size(options: &EncoderOptions) -> usize {
     options
         .get_width()
         .checked_mul(options.get_depth().size_of())
@@ -175,5 +229,5 @@ fn calc_out_size(options: EncoderOptions) -> usize {
 }
 
 fn calc_expected_size(options: EncoderOptions) -> usize {
-    calc_out_size(options).checked_sub(PPM_HEADER_SIZE).unwrap()
+    max_out_size(&options).checked_sub(PPM_HEADER_SIZE).unwrap()
 }
