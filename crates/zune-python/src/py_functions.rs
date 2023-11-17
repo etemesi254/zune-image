@@ -7,7 +7,6 @@
  */
 
 use std::fs::read;
-use std::io::Cursor;
 
 use numpy::{PyArray2, PyArray3, PyUntypedArray};
 use pyo3::exceptions::PyException;

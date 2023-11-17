@@ -34,7 +34,6 @@ mod py_enums;
 mod py_functions;
 mod py_image;
 
-mod utils;
 /// Initialize the logger.
 ///
 /// This allows the library to print information about operations
