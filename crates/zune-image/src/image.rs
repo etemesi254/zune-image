@@ -175,6 +175,7 @@ impl Image {
     /// For images using anything larger than 8 bit,
     /// u8 as native endian is used
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
+    #[allow(dead_code)]
     pub(crate) fn to_u8(&self) -> Vec<Vec<u8>> {
         let colorspace = self.colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {
@@ -197,6 +198,7 @@ impl Image {
             im_clone.flatten_frames::<u8>()
         }
     }
+    #[allow(dead_code)]
     pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
         let colorspace = self.colorspace();
         if self.metadata.get_depth() == BitDepth::Eight {

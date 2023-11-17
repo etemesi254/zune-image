@@ -29,7 +29,7 @@
 //!  **This may cause huge memory usage as cloning is expensive**
 //!
 //!
-#![allow(unused_imports, unused_variables, non_camel_case_types)]
+#![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
 use std::io::Cursor;
 use std::path::Path;

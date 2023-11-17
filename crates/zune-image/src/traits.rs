@@ -13,6 +13,7 @@
 //! - image processing `OperationsTrait`: Implementing this means one can modify the image or extract information from it
 //! - encoding: `EncoderTrait`: Implementing this means the image can be saved to a certain format
 //!
+#![allow(unused_variables)]
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};

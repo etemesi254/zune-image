@@ -5,6 +5,7 @@
  */
 //! Pipelines, Batch image processing support
 //!
+#![allow(unused_variables)]
 use std::time::Instant;
 
 use zune_core::log::Level::Trace;

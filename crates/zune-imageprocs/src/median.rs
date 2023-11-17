@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![allow(dead_code)]
 use std::fmt::Debug;
 
 use zune_core::bit_depth::BitType;
