@@ -120,6 +120,13 @@ fn decode_result(
 /// - HDR: Always supported
 /// - JXL: Always supported,output is in f32 between, Library for decoding is  https://github.com/tirr-c/jxl-oxide
 ///
+/// # Animated images
+/// - Animated PNG (APNG): The decoder will only decode the first frame
+/// - Animated JXL : The decoder will only decoded the first frame
+///
+/// To fully decode animated images,  `Image.open()` + `image.to_numpy()` which will return a 4D array of
+///    `[frames,height,width,image_channels]`
+///
 /// # Additional notes
 ///
 /// - The function determines the type of an image by content and not file extension
@@ -327,6 +334,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                 }
                 ImageFormat::JPEG_XL => {
                     let c = ZByteReader::new(&bytes);
+
                     let mut decoder =
                         zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
                             .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;

@@ -1,3 +1,15 @@
+//! A bilateral filter
+//!
+//! A bilateral filter is a non-linear, edge-preserving,
+//! and noise-reducing smoothing filter for images.
+//!
+//! It is a type of non-linear filter that reduces noise while preserving edges.
+//! The filter works by averaging the pixels in a neighborhood around a given pixel,
+//! but the weights of the pixels are determined not only by their spatial distance from the given pixel,
+//! but also by their intensity difference from the given pixel
+//!
+//!  A description can be found [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
+//!
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
@@ -8,6 +20,24 @@ use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
 use crate::traits::NumOps;
 
+/// The bilateral filter struct
+///
+/// # Alpha channel
+/// - Alpha  channel is ignored
+///
+/// # Example
+///
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::bilateral_filter::BilateralFilter;
+/// // random values
+/// let filter= BilateralFilter::new(10,25.0,25.0);
+///
+/// let mut image =Image::fill(10_u8,ColorSpace::RGB,10,10).unwrap();
+/// filter.execute(&mut image).unwrap();
+/// ```
 pub struct BilateralFilter {
     d:           i32,
     sigma_color: f32,
@@ -15,6 +45,18 @@ pub struct BilateralFilter {
 }
 
 impl BilateralFilter {
+    /// Create a new bilateral filter
+    ///
+    /// # Arguments
+    /// - `d`:	Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
+    ///
+    /// - `sigma_color`:	Filter sigma in the color space.
+    ///  A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
+    ///  will be mixed together, resulting in larger areas of semi-equal color.
+    ///- `sigma_space`: 	Filter sigma in the coordinate space.
+    ///  A larger value of the parameter means that farther pixels will influence each other as
+    ///   long as their colors are close enough (see sigma_color ).
+    ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
     #[must_use]
     pub fn new(d: i32, sigma_color: f32, sigma_space: f32) -> BilateralFilter {
         BilateralFilter {
@@ -127,7 +169,7 @@ impl OperationsTrait for BilateralFilter {
     }
 }
 
-pub struct BilateralCoeffs {
+struct BilateralCoeffs {
     color_weight: Vec<f64>,
     space_weight: Vec<f64>,
     radius:       usize,
@@ -179,7 +221,7 @@ fn init_bilateral(
     };
 }
 
-pub fn bilateral_filter_int<T>(
+fn bilateral_filter_int<T>(
     src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs
 ) where
     T: Copy + NumOps<T> + Default,

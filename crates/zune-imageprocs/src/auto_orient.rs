@@ -7,6 +7,10 @@
  */
 
 //! Perform auto orientation of the image
+//!
+//! This uses the exif orientation tag of an image if it has
+//! it requires the `metadata` feature in order to read exif tags, otherwise
+//! this is a no-op.
 #![allow(unused_variables, unused_imports)]
 use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
@@ -26,6 +30,9 @@ use crate::transpose::Transpose;
 ///
 /// This operation is also a no-op if the image does not have
 /// exif metadata
+///
+/// If orientation is applied, it will also modify the exif tag to indicate
+/// the image was oriented
 pub struct AutoOrient;
 
 impl OperationsTrait for AutoOrient {

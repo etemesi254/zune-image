@@ -6,12 +6,52 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+//! Exposure filter
+//!
+//!
+//! # Formula
+//!
+//! The formula used to calculate exposure is
+//! ```text
+//! pix = clamp((pix - black) * exposure)
+//! ```
+//!
+//! # Gotchas
+//! - `black`  argument is depth sensitive ,
+//!    -u8: range should be 0..255
+//!    - u16: range should be 0..65535
+//!    - f32: range should be between 0.0..1.0
+//! -`f32` depth doesn't do any clamping, hence values may get out of range
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 /// Adjust exposure of image
+///
+/// Read [module-docs](crate::exposure) for algorithm details and gotchas
+///
+/// # Alpha channel
+/// - Alpha channel is ignored
+///
+/// # Example
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::errors::ImageErrors;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::exposure::Exposure;
+///
+/// // create a 100x100 grayscale image
+/// let mut img = Image::from_fn::<u16,_>(100,100,ColorSpace::Luma,|x,y,pix|{
+///    pix[0]=((x + y) % 65536) as u16;
+/// });
+/// // increase each pixels strength by 2
+/// Exposure::new(2.0,0.0).execute(&mut img)?;
+///
+///# Ok::<(),ImageErrors>(())
+/// ```
+///
 pub struct Exposure {
     exposure: f32,
     black:    f32
@@ -22,9 +62,12 @@ impl Exposure {
     ///
     /// # Arguments
     ///  - exposure: Set the exposure correction,
-    ///     allowed range is from -3.0 to 3.0. Default should be zero
+    ///     Common range is from -3.0 to 3.0. Default should be zero
     ///
-    /// - black: Set black level correction: Allowed range from -1.0 to 1.0. Default is zero
+    /// - black: Set black level correction,argument is depth sensitive ,
+    ///    - `u8`: range should be 0..255
+    ///    - `u16`: range should be 0..65535
+    ///    - `f32`: range should be between 0.0..1.0
     #[must_use]
     pub fn new(exposure: f32, black: f32) -> Exposure {
         Exposure { exposure, black }

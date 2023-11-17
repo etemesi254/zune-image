@@ -31,6 +31,24 @@ use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
 
+/// Brighten struct
+///
+///
+/// # Alpha channel
+/// - Alpha  channel is ignored
+///
+/// # Example
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::brighten::Brighten;
+/// // create gray image
+/// let mut img = Image::fill(128_u8,ColorSpace::RGB,100,100);
+/// // make every pixel to be fully white
+/// Brighten::new(127.0).execute(&mut img)?;
+/// # Ok::<(),ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct Brighten {
     value: f32
@@ -66,7 +84,7 @@ impl OperationsTrait for Brighten {
                 ),
                 BitType::U16 => brighten(
                     channel.reinterpret_as_mut::<u16>()?,
-                    self.value as u16,
+                    self.value.clamp(0., 65535.) as u16,
                     max_val
                 ),
                 BitType::F32 => brighten_f32(

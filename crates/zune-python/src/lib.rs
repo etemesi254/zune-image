@@ -35,13 +35,16 @@ mod py_functions;
 mod py_image;
 
 mod utils;
+/// Initialize the logger.
+///
+/// This allows the library to print information about operations
+/// status in the library
 #[pyfunction]
 #[allow(unused_results)]
 pub fn init_logger() {
     let _ = pyo3_log::try_init();
 }
 
-/// A Python module implemented in Rust.
 #[pymodule]
 #[pyo3(name = "zil")]
 fn zune_image(_py: Python, m: &PyModule) -> PyResult<()> {

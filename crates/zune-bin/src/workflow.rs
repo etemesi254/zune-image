@@ -16,8 +16,8 @@ use clap::ArgMatches;
 use log::{debug, error, info, warn};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
+use zune_image::pipelines::Pipeline;
 use zune_image::traits::IntoImage;
-use zune_image::workflow::WorkFlow;
 
 use crate::cmd_parsers::global_options::CmdOptions;
 use crate::cmd_parsers::{get_decoder_options, get_encoder_options};
@@ -44,7 +44,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     let mut buf = [0; 30];
 
     for in_file in args.get_raw("in").unwrap() {
-        let mut workflow: WorkFlow<ZuneFile> = WorkFlow::new();
+        let mut workflow: Pipeline<ZuneFile> = Pipeline::new();
 
         File::open(in_file)?.read(&mut buf)?;
 
@@ -106,15 +106,15 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                             ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
                         {
                             if encode_type.has_encoder()
-                                && results[curr_result_position].get_format() == encode_type
+                                && results[curr_result_position].format() == encode_type
                             {
                                 info!(
                                     "Writing data as {:?} format to file {:?}",
-                                    results[curr_result_position].get_format(),
+                                    results[curr_result_position].format(),
                                     out_file
                                 );
 
-                                std::fs::write(out_file, results[curr_result_position].get_data())
+                                std::fs::write(out_file, results[curr_result_position].data())
                                     .unwrap();
 
                                 curr_result_position += 1;
@@ -131,7 +131,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(view) = args.value_source("view") {
             if view == CommandLine {
-                for image in workflow.get_images() {
+                for image in workflow.images() {
                     open_in_default_app(image);
                 }
             }
@@ -142,7 +142,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 }
 
 pub fn add_operations<T: IntoImage>(
-    args: &ArgMatches, workflow: &mut WorkFlow<T>
+    args: &ArgMatches, workflow: &mut Pipeline<T>
 ) -> Result<(), String> {
     for (_pos, id) in args.ids().enumerate() {
         if args.try_get_many::<clap::Id>(id.as_str()).is_ok() {

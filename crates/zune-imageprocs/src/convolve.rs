@@ -6,6 +6,14 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+//! 2D convolution on images
+//!
+//! This filter adds support for common image convolving
+//! for 3x3, 5x5 and 7x7 convolutions.
+//!
+//! The intermediate calculations are carried in `f32`
+//!
+
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::channel::Channel;
@@ -18,6 +26,37 @@ use crate::traits::NumOps;
 use crate::utils::z_prefetch;
 
 /// Convolve an image
+///
+///
+///  # Alpha channel
+/// - Alpha channel is ignored
+///
+/// # Example
+/// - Convolve with a 3x3 filter matrix
+///
+/// ```
+/// // Create a 3x3 matrix
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::errors::ImageErrors;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::convolve::Convolve;
+/// let matrix = vec![1.0, -1.0,  1.0,
+///                  -1.0,  1.0, -1.0,
+///                   1.0, -1.0,  1.0];
+/// // scale is  multiplied by the result of the convolution, let's use
+/// // it's reciprocal
+/// let scale = 1.0/matrix.iter().sum::<f32>();
+///
+/// let inv_scale = 1.0 / (100*100) as f32;
+/// // create a luma image that starts from black and ends as white
+/// let mut  image = Image::from_fn::<f32,_>(100,100,ColorSpace::Luma,|x,y,pix|{
+///     pix[0] = ((x+y) as f32) * inv_scale ;
+/// });
+/// // convolve finally
+/// let new_image = Convolve::new(matrix,scale).execute(&mut image)?;
+/// # Ok::<(),ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct Convolve {
     weights: Vec<f32>,

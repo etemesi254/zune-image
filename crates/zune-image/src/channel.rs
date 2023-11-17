@@ -17,7 +17,7 @@
 //! The channel is able to store multiple bit depths but has no internal
 //! representation of what upper type it represents,i.e it doesn't distinguish between u8 and u16
 //! as separate bit depths.
-//! All are seen as u8 to it.
+//! All are seen as u8 to it with the only difference being the latter is twice as big as the former.
 //!
 use std::alloc::{alloc_zeroed, dealloc, realloc, Layout};
 use std::any::TypeId;
@@ -174,13 +174,18 @@ impl Channel {
     /// Meaning if the pointer stored 10 u32's, the length would be 40
     /// since that is `10*4`, the 4 is because `core::mem::size_of::<u32>()` == 4.
     ///
-    /// # Example
-    ///
     pub const fn len(&self) -> usize {
         self.length
     }
 
-    /// Return true whether this length is zero
+    /// Return true whether this channel length is zero
+    ///
+    /// # Example
+    /// ```
+    /// use zune_image::channel::Channel;
+    /// let c = Channel::new::<u8>();
+    ///assert!(c.is_empty());
+    /// ```
     pub const fn is_empty(&self) -> bool {
         self.length == 0
     }

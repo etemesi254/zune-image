@@ -84,6 +84,10 @@ fn exec_filter<T: OperationsTrait>(
 /// `in_place` modifies as to whether operations are running in the current copy or if the library
 /// should create a copy modify the copy and return it preserving the current copy.
 ///
+/// # Animated images.
+/// The library supports animated images from the following formats
+/// - png: Animated PNG: The images will be decoded and any blending done,
+/// - jpeg-xl: Animated JXL: Decoding is offloaded to the jxl crate, images are rendered to be individual frames
 #[pyclass]
 #[derive(Clone)]
 pub struct Image {
@@ -100,7 +104,7 @@ impl Image {
 impl Image {
     /// Applies a bilateral filter to an image.
     ///
-    /// it applies the bilateral filtering as described in https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html
+    /// it applies the bilateral filtering as described in [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
     ///
     /// The filter can reduce unwanted noise while keeping edges fairly sharp.
     ///

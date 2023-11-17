@@ -3,7 +3,16 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Various encapsulations of common image operations
+//!
+//! This contains traits that allow homogenous implementation of various items in different stages
+//! of the image processing timeline and the use of this via encapsulation without worrying of implementation
+//!
+//! The main traits are divided into the following
+//! - decoding: `DecoderTrait`: Implementing this for a format means the library can decode such formats
+//! - image processing `OperationsTrait`: Implementing this means one can modify the image or extract information from it
+//! - encoding: `EncoderTrait`: Implementing this means the image can be saved to a certain format
+//!
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
@@ -17,7 +26,7 @@ use crate::errors::{ImageErrors, ImageOperationsErrors};
 use crate::image::Image;
 use crate::metadata::AlphaState::NonPreMultiplied;
 use crate::metadata::{AlphaState, ImageMetadata};
-use crate::workflow::EncodeResult;
+use crate::pipelines::EncodeResult;
 
 /// Encapsulates an image decoder.
 ///
@@ -227,6 +236,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
     Ok(())
 }
 
+/// The trait dealing with image encoding and saving
 pub trait EncoderTrait {
     /// Get the name of the encoder
     fn name(&self) -> &'static str;
@@ -241,7 +251,7 @@ pub trait EncoderTrait {
     ///
     /// # Returns
     /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
-    /// in the format [ImageFormat](crate::codecs::ImageFormat)
+    /// in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
     ///
@@ -266,7 +276,7 @@ pub trait EncoderTrait {
     ///
     /// # Returns
     /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
-    /// in the format [ImageFormat](crate::codecs::ImageFormat)
+    /// in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
     ///
@@ -438,7 +448,7 @@ impl ZuneInts<u16> for u16 {
 impl ZuneInts<f32> for f32 {
     #[inline(always)]
     fn depth() -> BitDepth {
-        BitDepth::Sixteen
+        BitDepth::Float32
     }
     #[inline(always)]
     fn max_value() -> f32 {
@@ -464,7 +474,7 @@ pub trait DecodeInto {
     /// expected output size.
     fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
 }
-
+/// Convert something into an image by consuming it
 pub trait IntoImage {
     /// Consumes this and returns an image
     fn into_image(self) -> Result<Image, ImageErrors>;

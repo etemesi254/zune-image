@@ -4,18 +4,11 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! This module represents a single image
-//!
-//!
-//! An image is represented as
-//!
-//! - separated channels
-//!     - of a certain bit depth
-//!         - representing a colorspace
-//!             -    with the same width and height
+//! This module represents a single image, an image can consists of one or more
 //!
 //! And that's how we represent images.
-//! Fully supported bit depths are 8 and 16, see channels for how that happens
+//! Fully supported bit depths are 8 and 16 and float 32 which are expected to be in the range between 0.0 and 1.0,
+//! see [channel](crate::channel) documentation for how that happens
 //!
 use std::fmt::Debug;
 use std::mem::size_of;
@@ -255,9 +248,7 @@ impl Image {
     }
 
     /// Create an image with a static color in it
-    pub fn fill<T>(
-        pixel: T, colorspace: ColorSpace, width: usize, height: usize
-    ) -> Result<Image, ImageErrors>
+    pub fn fill<T>(pixel: T, colorspace: ColorSpace, width: usize, height: usize) -> Image
     where
         T: Copy + Clone + 'static + ZuneInts<T> + Zeroable + Pod
     {
@@ -267,7 +258,7 @@ impl Image {
 
         let img = Image::new(channels, T::depth(), width, height, colorspace);
 
-        Ok(img)
+        img
     }
     /// Create an image from a function
     ///

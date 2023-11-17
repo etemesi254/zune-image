@@ -5,6 +5,9 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+//! JPEG-XL decoding and encoding support
+//! This uses the delegate library [`zune-jpeg-xl`](zune_jpegxl)
+//! for encoding and  [`jxl-oxide`](jxl_oxide) for decoding images
 
 #![cfg(feature = "jpeg-xl")]
 //! A simple jxl lossless encoder
@@ -24,7 +27,7 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
-use zune_core::options::EncoderOptions;
+use zune_core::options::{DecoderOptions, EncoderOptions};
 pub use zune_jpegxl::*;
 
 use crate::channel::Channel;
@@ -112,15 +115,19 @@ impl From<JxlEncodeErrors> for ImgEncodeErrors {
 }
 
 pub struct JxlDecoder<R: Read> {
-    inner: jxl_oxide::JxlImage<R>
+    inner:   jxl_oxide::JxlImage<R>,
+    options: DecoderOptions
 }
 
 impl<R: Read> JxlDecoder<R> {
-    pub fn try_new(source: R) -> Result<JxlDecoder<R>, ImageErrors> {
+    pub fn try_new(source: R, options: DecoderOptions) -> Result<JxlDecoder<R>, ImageErrors> {
         let parser = jxl_oxide::JxlImage::from_reader(source)
             .map_err(|x| ImageErrors::ImageDecodeErrors(format!("{:?}", x)))?;
 
-        let decoder = JxlDecoder { inner: parser };
+        let decoder = JxlDecoder {
+            inner: parser,
+            options
+        };
         Ok(decoder)
     }
 }
@@ -145,6 +152,23 @@ where
         }
         trace!("Image colorspace: {:?}", color);
         trace!("Image dimensions: ({},{})", w, h);
+        // check dimensions if bigger than supported
+        if w > self.options.get_max_width() {
+            let msg = format!(
+                "Image width {}, greater than max set width {}",
+                w,
+                self.options.get_max_width()
+            );
+            return Err(ImageErrors::ImageDecodeErrors(msg));
+        }
+        if h > self.options.get_max_height() {
+            let msg = format!(
+                "Image height {}, greater than max set height {}",
+                h,
+                self.options.get_max_height()
+            );
+            return Err(ImageErrors::ImageDecodeErrors(msg));
+        }
 
         loop {
             let result = self
@@ -179,6 +203,10 @@ where
                     // return to the loop
                 }
                 RenderResult::NoMoreFrames => break
+            }
+            if !self.options.jxl_decode_animated() {
+                // we won't be decoding animated, so don't decode the next frame
+                break;
             }
         }
         // then create a new image

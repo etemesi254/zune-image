@@ -35,7 +35,24 @@ use zune_image::traits::OperationsTrait;
 
 /// Adjust the contrast of an image
 ///
+/// Note contrast is only currently implemented for 8 bit images.
 ///
+/// # Example
+///
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::contrast::Contrast;
+/// use zune_image::errors::ImageErrors;
+///
+/// fn main() -> Result<(),ImageErrors>{
+///     let mut im = Image::fill(100_u8,ColorSpace::RGB,100,100);
+///     let contrast = Contrast::new(10.0);
+///     contrast.execute(&mut im)
+/// }
+///
+/// ```
 #[derive(Default)]
 pub struct Contrast {
     contrast: f32

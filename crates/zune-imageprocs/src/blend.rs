@@ -1,5 +1,16 @@
-#![allow(dead_code, unused_variables)]
-
+//! Blend filter
+//!
+//! This can be used to combine two or more images based on an alpha value
+//! which is used to determine the `opacity` of pixels during blending
+//!
+//!
+//! The formula for blending is
+//!
+//! ```text
+//! dest =(src_alpha) * src  + (1-src_alpha) * dest
+//! ```
+//! `src_alpha` is expected to be between 0.0 and 1.0
+//!
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -11,7 +22,33 @@ use crate::traits::NumOps;
 /// can blend two images based on a configurable alpha
 ///
 /// Alpha must be between 0.0 and 1.0 for the images
-/// and it's clamped to that range
+/// and it's clamped to that range.
+///
+///
+/// # Alpha channel
+/// - Alpha  channel is ignored
+///
+/// # Examples
+///  
+/// Blend two images with an alpha of 0.5 which divides the soruce and destination pixel by half and adds them
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::blend::Blend;
+///
+/// // create a gradient from luma using addition
+/// let im1 =Image::from_fn::<u8,_>(100,100,ColorSpace::Luma,|x,y,pix|{
+///     pix[0] = ((x + y) % 256) as u8;
+/// });
+/// // create a reverse gradient
+/// let mut im2 =  Image::from_fn::<u8,_>(100,100,ColorSpace::Luma,|x,y,pix|{
+///   pix[0] = (x.wrapping_sub(y) % 256) as u8;
+/// });
+/// // blend them with 0.5, which picks equal from forward and reverse gradient
+/// let im3 = Blend::new(&im1,0.5).clone_and_execute(&im2).unwrap();
+/// ```
+///
 pub struct Blend<'src> {
     image: &'src Image,
     alpha: f32
@@ -21,8 +58,9 @@ impl<'src> Blend<'src> {
     /// Create a new blend filter
     ///
     /// # Arguments
-    /// - src_alpha:  If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified
-    /// -
+    /// - src_alpha: Range is 0-1 If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified
+    /// - image: Source image, this is the image to be overlaid on top of the other image
+    /// It must match in dimensions, number of frames,depth and color.
     #[must_use]
     pub fn new(image: &'src Image, src_alpha: f32) -> Blend<'src> {
         Blend {

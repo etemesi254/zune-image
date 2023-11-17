@@ -8,7 +8,7 @@
 
 //! Errors possible during image processing
 use std::any::TypeId;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::io::Error;
 
 use zune_core::bit_depth::BitType;
@@ -220,3 +220,11 @@ impl Debug for ImgEncodeErrors {
         }
     }
 }
+
+impl Display for ImageErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for ImageErrors {}

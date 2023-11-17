@@ -47,7 +47,7 @@ impl ThresholdMethod {
 ///  - [ThreshTrunc](ThresholdMethod::ThreshTrunc) => thresh if src(x,y) > thresh src(x,y) otherwise
 ///  - [ThreshToZero](ThresholdMethod::ThreshToZero) => src(x,y) if src(x,y) > thresh 0 otherwise
 ///           
-///  See https://en.wikipedia.org/wiki/Thresholding_(image_processing)
+///  See [Wikipedia Article on Thresholding](https://en.wikipedia.org/wiki/Thresholding_(image_processing))
 pub struct Threshold {
     method:    ThresholdMethod,
     threshold: f32

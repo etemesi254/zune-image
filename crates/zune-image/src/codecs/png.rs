@@ -38,7 +38,7 @@ where
         let (width, height) = self.get_dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
-        if self.is_animated() {
+        if self.is_animated() && self.get_options().png_decode_animated() {
             // decode apng frames
             //let mut previous_frame
             let info = self.get_info().unwrap().clone();

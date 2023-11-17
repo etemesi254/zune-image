@@ -71,10 +71,10 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
         image
             .frames_mut()
             .iter_mut()
-            .for_each(|x| x.add(new_channel.clone()))
+            .for_each(|x| x.push(new_channel.clone()))
     } else {
         // single image, just use the clone we have
-        image.frames_mut()[0].add(new_channel);
+        image.frames_mut()[0].push(new_channel);
     }
 
     Ok(())
@@ -371,8 +371,8 @@ fn convert_luma_to_rgb(image: &mut Image, out_colorspace: ColorSpace) -> Result<
 
         if color == ColorSpace::Luma {
             // add two more luma channels
-            frame.add(luma_channel.clone());
-            frame.add(luma_channel);
+            frame.push(luma_channel.clone());
+            frame.push(luma_channel);
         } else if color == ColorSpace::LumaA {
             // we need to insert since layout is
             // Luma, Alpha
@@ -399,14 +399,14 @@ fn convert_luma_to_rgb(image: &mut Image, out_colorspace: ColorSpace) -> Result<
 
 #[test]
 fn test_cmyk_to_rgb() {
-    let mut image = Image::fill(231_u8, ColorSpace::CMYK, 100, 100).unwrap();
+    let mut image = Image::fill(231_u8, ColorSpace::CMYK, 100, 100);
     // just confirm it works and hits the right path
     image.convert_color(ColorSpace::RGB).unwrap();
 }
 
 #[test]
 fn test_rgb_to_cmyk() {
-    let mut image = Image::fill(231_u8, ColorSpace::RGB, 100, 100).unwrap();
+    let mut image = Image::fill(231_u8, ColorSpace::RGB, 100, 100);
     // just confirm it works and hits the right path
     image.convert_color(ColorSpace::CMYK).unwrap();
 }

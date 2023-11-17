@@ -33,7 +33,6 @@ pub mod bilateral_filter;
 pub mod blend;
 pub mod box_blur;
 pub mod brighten;
-pub mod composite;
 pub mod contrast;
 pub mod convolve;
 pub mod crop;

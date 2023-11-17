@@ -124,7 +124,7 @@ where
     }
 
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
-        self.read_headers()
+        self.decode_headers()
             .map_err(<PPMDecodeErrors as Into<ImageErrors>>::into)?;
 
         let (width, height) = self.get_dimensions().unwrap();

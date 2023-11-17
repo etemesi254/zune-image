@@ -130,7 +130,7 @@ impl ImageMetadata {
     }
     /// Get an image's colorspace
     ///
-    /// The default colorspace is usually [`ColorSpace::Unknown`](zune_core::colorspace::ColorSpace::Unknown)
+    /// The default colorspace is usually [`ColorSpace::Unknown`]
     /// which represents an uninitialized image
     pub const fn get_colorspace(&self) -> ColorSpace {
         self.colorspace
@@ -153,7 +153,7 @@ impl ImageMetadata {
     }
     /// Get the image bit depth
     ///
-    /// Default value is [`BitDepth::Unknown`](zune_core::bit_depth::BitDepth::Unknown)
+    /// Default value is [`BitDepth::Unknown`]
     /// which indicates that the bit-depth is currently unknown for a
     /// particular image
     pub const fn get_depth(&self) -> BitDepth {

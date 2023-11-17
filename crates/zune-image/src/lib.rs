@@ -27,7 +27,7 @@
 //!| qoi          | zune-qoi      | zune-qoi       |
 //!| farbfeld     | zune-farbfeld | zune-farbfeld  |
 //!| psd          | zune-psd      | -              |
-//!| jpeg-xl      | -             | zune-jpegxl    |
+//!| jpeg-xl      | [jxl-oxide]   | zune-jpegxl    |
 //!| hdr          | zune-hdr      | zune-hdr       |
 //!
 //!
@@ -39,36 +39,73 @@
 //!                 These are in `zune-image` crate
 //!  - extra filters: This include algorithms that do more complex pixel manipulations,
 //!     including contrast adjustment, resizing, blurring etc, the algorithms are usually
-//!     implemented in `zune-imageprocs` and the glue between algorithms and image is done in image
-//!     [filters](crate::filters)
+//!     implemented in `zune-imageprocs` by the processes implementing
+//!     [OperationsTrait](crate::traits::OperationsTrait)
 //!
-//! # Things the library is not good at.
+//!  # High level api
+//! Load images using image `open`
 //!
-//! - Per pixel access methods, while there are methods provided for
-//! such things such as [from_fn](crate::image::Image::from_fn) and
-//! [modify_pixels_mut](crate::image::Image::modify_pixels_mut) the images
-//! are represented as planar hence there will be a lot of cache misses as opposed
-//! to others that represents pixels as one single continuous buffer.
+//!```no_run
+//! use zune_image::errors::ImageErrors;
+//! use zune_image::image::Image;
+//!        
+//! let image = Image::open("file.png")?;
 //!
-//! If you plan on doing multiple per pixel manipulations, [image] crate may be a better
-//! fit for your needs
+//!#Ok::<(),ImageErrors>(())
+//! ```
+//!  Or if the image is in memory load it via [`Image.read`](crate::image::Image::read)
+//!
+//!```no_run
+//! use zune_core::options::DecoderOptions;
+//! use zune_image::image::Image;
+//! use zune_image::errors::ImageErrors;
+//! let mem_src = [0;100];
+//! let image = Image::read(&mem_src,DecoderOptions::default())?;
+//! #Ok::<(),ImageErrors>(())
+//!
+//! ```
+//! You can save files via [`Image.save`](crate::image::Image::save)
+//! which takes a file name and uses the extension to determine the file type, or
+//! [`Image.save_to`](crate::image::Image::save_to) which takes an additional format field
+//! or [`Image.write_to_vec`](crate::image::Image::write_to_vec) which writes image contents to memory
+//! locations
+//!
+//!
+//!  ### Image and frames
+//! An image may consist of one or more frames, an image with more than one frame is considered
+//! animated, each frame of an animated image should have the same color channels and length.
+//!
+//! You can iterate the frames via the `frames_` method ([`frames_ref`](image::Image::frames_ref)
+//! and [`frames_mut`](image::Image::frames_mut)
+//!
+//! ### Image and channels
+//!
+//! The channels api ([`channels_ref`](image::Image::channels_ref) and [`channels_mut`](image::Image::channels_mut) provide
+//! convenient methods to access image channels. This returns all image channels,traversing frames and concatenating it together
+//!
 //!
 //![image]:https://crates.io/crates/image
 //! [jpeg-encoder]: https://crates.io/crates/jpeg-encoder
-#![allow(clippy::redundant_field_names, clippy::uninlined_format_args)]
+//! [jxl-oxide]: https://crates.io/crates/jxl-oxide
+#![allow(
+    clippy::redundant_field_names,
+    clippy::uninlined_format_args,
+    rustdoc::redundant_explicit_links
+)]
 extern crate core;
 
 pub mod channel;
 pub mod codecs;
 pub mod core_filters;
-pub mod deinterleave;
+mod deinterleave;
 pub mod errors;
 pub mod frame;
 pub mod image;
 mod mempool;
 pub mod metadata;
 mod ops;
+pub mod pipelines;
 mod serde;
 mod tests;
 pub mod traits;
-pub mod workflow;
+pub mod utils;

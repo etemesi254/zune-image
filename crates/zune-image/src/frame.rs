@@ -5,6 +5,9 @@
  */
 
 //! A single image frame
+//!
+//! One or more multiple frames make an image
+//! an image with multiple frames is considered an animated image
 
 #![allow(dead_code)]
 
@@ -22,6 +25,11 @@ use crate::traits::ZuneInts;
 /// This represents a simple image frame which contains a group
 /// of channels whose metadata is contained by the
 /// parent image struct.
+///
+/// Each channel should have the same size
+///
+/// Each frame also contains a duration or delay, for animated images,
+/// this is how long this particular frame should be shown
 #[derive(Clone, Eq, PartialEq)]
 pub struct Frame {
     pub(crate) channels:    Vec<Channel>,
@@ -35,8 +43,6 @@ impl Frame {
     /// # Arguments
     ///
     /// * `channels`:  Image channels for this frame
-    ///
-    /// returns: Frame
     ///
     /// # Examples
     ///
@@ -57,6 +63,18 @@ impl Frame {
             denominator: 1
         }
     }
+    /// Create a new frame from a slice of f32 pixels
+    ///
+    /// # Arguments
+    /// - Colorspace: The colorspace of the pixels
+    /// - numerator: Delay numerator
+    /// - denominator: Delay denominator
+    ///
+    /// # Returns
+    ///  A new frame
+    ///
+    /// # Panics
+    /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_f32(
         pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
@@ -68,6 +86,19 @@ impl Frame {
             denominator
         }
     }
+    /// Create a new frame from a slice of u16 pixels
+    ///
+    /// # Arguments
+    /// - Colorspace: The colorspace of the pixels
+    /// - numerator: Delay numerator
+    /// - denominator: Delay denominator
+    ///
+    /// # Returns
+    ///  A new frame
+    ///
+    /// # Panics
+    /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
+
     pub fn from_u16(
         pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
@@ -78,6 +109,19 @@ impl Frame {
             denominator
         }
     }
+
+    /// Create a new frame from a slice of u8 pixels
+    ///
+    /// # Arguments
+    /// - Colorspace: The colorspace of the pixels
+    /// - numerator: Delay numerator
+    /// - denominator: Delay denominator
+    ///
+    /// # Returns
+    ///  A new frame
+    ///
+    /// # Panics
+    /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
 
     pub fn from_u8(
         pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
@@ -170,7 +214,18 @@ impl Frame {
             &self.channels[0..colorspace.num_components()]
         }
     }
-    /// Return a reference to the underlying channels
+    /// Return a  mutable reference to the underlying channels
+    /// # Arguments
+    ///
+    /// * `colorspace`:  The colorspace of the  frame, this is gotten from the image metadata
+    /// that contains this frame
+    ///
+    /// * `ignore_alpha`: Whether to ignore the alpha channel.
+    ///    If the colorspace has an alpha component, the last channel
+    ///     will be ignored as it is assumed to be the alpha channel
+    ///
+    /// returns: `&[Channel]`: References to the channels
+    ///
     pub fn channels_mut(&mut self, colorspace: ColorSpace, ignore_alpha: bool) -> &mut [Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
@@ -183,7 +238,12 @@ impl Frame {
             &mut self.channels[0..colorspace.num_components()]
         }
     }
-    pub fn add(&mut self, channel: Channel) {
+    /// Push a new channel to the end of the channels
+    ///
+    /// # Arguments
+    /// - channel: The channel to be pushed. The length should be equal to other channels length
+    ///
+    pub fn push(&mut self, channel: Channel) {
         self.channels.push(channel)
     }
 
@@ -337,7 +397,16 @@ impl Frame {
         out_pixels
     }
 
-    /// convert type to native endian
+    /// convert `u16` channels  to native endian
+    ///
+    ///  # Arguments
+    /// - Colorspace of the image
+    ///
+    /// # Returns
+    ///  - A vector with each two bytes representing a u16 value but
+    ///
+    /// # Panics
+    /// If channel isn't storing the u16 as it's internal  type
     pub fn u16_to_native_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
@@ -411,7 +480,17 @@ impl Frame {
         out_pixel
     }
 
-    /// convert type to native endian
+    /// convert `u16` channels  to big endian
+    ///
+    ///  # Arguments
+    /// - Colorspace of the image
+    ///
+    /// # Returns
+    ///  - A vector with each two bytes representing a u16 value but
+    ///
+    /// # Panics
+    /// If channel isn't storing the u16 as it's internal  type
+
     pub fn u16_to_big_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
@@ -484,6 +563,11 @@ impl Frame {
         }
         out_pixel
     }
+    /// Overwrite the current image channels with new channels
+    ///
+    /// # Argument
+    /// - channels: Image channels that will overwrite the current ones
+    ///
     pub fn set_channels(&mut self, channels: Vec<Channel>) {
         self.channels = channels;
     }

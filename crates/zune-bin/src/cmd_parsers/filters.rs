@@ -8,8 +8,8 @@
 
 use clap::ArgMatches;
 use log::debug;
+use zune_image::pipelines::Pipeline;
 use zune_image::traits::IntoImage;
-use zune_image::workflow::WorkFlow;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
@@ -21,7 +21,7 @@ use zune_imageprocs::unsharpen::Unsharpen;
 //use zune_opencl::ocl_sobel::OclSobel;
 
 pub fn parse_options<T: IntoImage>(
-    workflow: &mut WorkFlow<T>, argument: &str, args: &ArgMatches
+    workflow: &mut Pipeline<T>, argument: &str, args: &ArgMatches
 ) -> Result<(), String> {
     if argument == "box-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();

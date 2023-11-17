@@ -1,5 +1,6 @@
-use zune_image::channel::Channel;
-use zune_image::errors::ImageErrors;
+//! A set of miscellaneous functions that are good to have
+use crate::channel::Channel;
+use crate::errors::ImageErrors;
 
 /// Swizzle three channels optionally using simd intrinsics where possible
 fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
@@ -21,7 +22,7 @@ unsafe fn swizzle_three_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T])
 }
 
 #[inline(always)]
-pub fn swizzle_three_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
+fn swizzle_three_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     // now swizzle
     assert_eq!(r.len(), 3);
 
@@ -56,7 +57,7 @@ unsafe fn swizzle_four_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T]) 
 }
 
 #[inline(always)]
-pub fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
+fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     // now swizzle
     assert_eq!(r.len(), 4);
 
@@ -74,10 +75,40 @@ pub fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]
     }
 }
 
-/// Convert channel output to a linear representation.
+/// Combine separate channels into one contiguous array
 ///
-/// Useful when you need to combine separate bands to be a single interleaved output
-pub fn channels_to_linear<T: Copy + Default + 'static>(
+/// This interleaves each individual channels pixels into one contiguous array
+///
+/// it supports up to 4 channels (library default).
+///
+/// # Arguments:
+///  - channels: A Slice of channels , the count must be less than 4 anf greater than 1.
+/// -  output: Output array of type `T`, the length should be greater or equal to
+///   `channels[0].len()/size_of::<T> * channels.len()`, but the library doesn't check this is held
+///    In case it's smaller, the function will ignore
+///
+/// # Examples
+/// - create a RGB image and convert it to interleaved
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::utils::swizzle_channels;
+/// use zune_image::errors::ImageErrors;
+///
+/// fn main()->Result<(),ImageErrors>{
+///     let mut image = Image::fill(128,ColorSpace::RGB,100,100);
+///     // output must be w*h*color_channels
+///     // so create that length
+///     let mut storage= vec![0;100*image.colorspace().num_components()];
+///     
+///     for frame in image.frames_mut(){
+///         let channels = frame.channels_vec();
+///         swizzle_channels(&channels,&mut storage)?;
+///     }
+///     Ok(())
+/// }
+/// ```
+pub fn swizzle_channels<T: Copy + Default + 'static>(
     channels: &[Channel], output: &mut [T]
 ) -> Result<(), ImageErrors> {
     match channels.len() {

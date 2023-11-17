@@ -17,8 +17,7 @@
 //! - The library automatically tries to convert the image with highest compatibility
 //!  this means that it will automatically convert the image to a supported bit depth
 //! and supported colorspace in case the image is not in the supported colorspace
-//!
-//! E.g if you open a HDR or EXR image whose format is `f32``[0.0-1.0]` and convert it to JPEG,
+//!   E.g if you open a HDR or EXR image whose format is `f32` `[0.0-1.0]` and convert it to JPEG,
 //! which understands 8 bit images`[0-255]`, the library will internally convert it to 8 bit images
 //!
 //! - For image depth, we convert it to the most appropriate depth, e.g trying to store F32 images in png
@@ -47,7 +46,7 @@ use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 pub mod bmp;
-pub mod exr;
+mod exr;
 pub mod farbfeld;
 pub mod hdr;
 pub mod jpeg;
@@ -243,7 +242,9 @@ impl ImageFormat {
                     // copy
                     let reader = ZByteReader::new(data);
 
-                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(reader)?))
+                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(
+                        reader, options
+                    )?))
                 }
                 #[cfg(not(feature = "jpeg-xl"))]
                 {
@@ -497,7 +498,7 @@ impl Image {
     /// image.save_to("black.jpg",ImageFormat::JPEG).unwrap();
     /// ```
     pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
-        let contents = self.save_to_vec(format)?;
+        let contents = self.write_to_vec(format)?;
         std::fs::write(file, contents)?;
         Ok(())
     }
@@ -528,9 +529,9 @@ impl Image {
     ///         px[2] = b;
     /// });
     /// // write to qoi now
-    /// let contents = image.save_to_vec(ImageFormat::QOI).unwrap();
+    /// let contents = image.write_to_vec(ImageFormat::QOI).unwrap();
     /// ```
-    pub fn save_to_vec(&self, format: ImageFormat) -> Result<Vec<u8>, ImageErrors> {
+    pub fn write_to_vec(&self, format: ImageFormat) -> Result<Vec<u8>, ImageErrors> {
         if let Some(mut encoder) = format.get_encoder() {
             // encode
             encoder.encode(self)
@@ -555,7 +556,7 @@ impl Image {
     /// - file: The file path from which to read the file from, the file must be a supported format
     /// otherwise it's an error to try and decode
     ///
-    /// See also [open_from_mem](Self::open_from_mem) for reading from memory
+    /// See also [open_from_mem](Self::read) for reading from memory
     pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors> {
         Self::open_with_options(file, DecoderOptions::default())
     }
@@ -616,7 +617,14 @@ impl Image {
         }
     }
 }
-
+/// Guess the format of an image based on it's magic bytes
+///
+/// # Arguments
+/// - bytes: The data source containing the image pixels
+///
+/// # Returns
+/// - Some(format,T): The image format and the data source.
+/// - None: Indicates the format isn't known/understood by the library
 pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
 where
     T: ZReaderTrait

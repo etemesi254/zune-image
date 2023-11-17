@@ -3,7 +3,8 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Pipelines, Batch image processing support
+//!
 use std::time::Instant;
 
 use zune_core::log::Level::Trace;
@@ -15,48 +16,63 @@ use crate::image::Image;
 use crate::traits::{EncoderTrait, IntoImage, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
-enum WorkFlowState {
+enum PipelineState {
+    /// Initial state, the struct has been defined
     Initialized,
+    /// The pipeline is ready to carry out image decoding of various supported formats
     Decode,
+    /// The pipeline is ready to carry out image processing routines
     Operations,
+    /// The pipeline is ready to carry out image encoding
     Encode,
+    /// The pipeline is done.
     Finished
 }
 
-impl WorkFlowState {
+impl PipelineState {
     pub fn next(self) -> Option<Self> {
         match self {
-            WorkFlowState::Initialized => Some(WorkFlowState::Decode),
-            WorkFlowState::Decode => Some(WorkFlowState::Operations),
-            WorkFlowState::Operations => Some(WorkFlowState::Encode),
-            WorkFlowState::Encode => Some(WorkFlowState::Finished),
-            WorkFlowState::Finished => None
+            PipelineState::Initialized => Some(PipelineState::Decode),
+            PipelineState::Decode => Some(PipelineState::Operations),
+            PipelineState::Operations => Some(PipelineState::Encode),
+            PipelineState::Encode => Some(PipelineState::Finished),
+            PipelineState::Finished => None
         }
     }
 }
 
+/// A struct holding the result of an encode operation
+///
+/// It contains the image format the data is in
 pub struct EncodeResult {
     pub(crate) format: ImageFormat,
     pub(crate) data:   Vec<u8>
 }
 
 impl EncodeResult {
-    pub fn get_data(&self) -> &[u8] {
+    /// Return the raw data of the encoded format
+    pub fn data(&self) -> &[u8] {
         &self.data
     }
-    pub fn get_format(&self) -> ImageFormat {
+    /// Return the format for which the data
+    /// of this encode result is stored in
+    pub fn format(&self) -> ImageFormat {
         self.format
     }
 }
 
-/// Workflow, batch image processing
+/// Pipeline, batch image processing
 ///
-/// A workflow provides an idiomatic way to do batch image processing
-/// it can load multiple images (by queing decoders) and batch apply an operation
-/// to all the images and then encode images to a specified format.
+/// A pipeline provides an idiomatic way to do batch image processing
+/// it can load multiple images (by queueing decoders) and batch apply an operation
+/// to all the images and then encode images to multiple specified format.
 ///
-pub struct WorkFlow<T: IntoImage> {
-    state:         Option<WorkFlowState>,
+/// A pipeline accepts anything that implements [IntoImage](crate::traits::IntoImage) and
+/// it has to own the image for the duration of it's lifetime, but can return references to it
+/// via  [`images`](crate::pipelines::Pipeline::images) and
+///  [`images_mut`](crate::pipelines::Pipeline::images_mut)
+pub struct Pipeline<T: IntoImage> {
+    state:         Option<PipelineState>,
     decode:        Option<T>,
     image:         Vec<Image>,
     operations:    Vec<Box<dyn OperationsTrait>>,
@@ -64,16 +80,16 @@ pub struct WorkFlow<T: IntoImage> {
     encode_result: Vec<EncodeResult>
 }
 
-impl<T> WorkFlow<T>
+impl<T> Pipeline<T>
 where
     T: IntoImage
 {
-    /// Create a new workflow that encapsulates a
+    /// Create a new pipeline that can be used for default
     #[allow(clippy::new_without_default)]
-    pub fn new() -> WorkFlow<T> {
-        WorkFlow {
+    pub fn new() -> Pipeline<T> {
+        Pipeline {
             image:         vec![],
-            state:         Some(WorkFlowState::Initialized),
+            state:         Some(PipelineState::Initialized),
             decode:        None,
             operations:    vec![],
             encode:        vec![],
@@ -92,10 +108,10 @@ where
     /// use std::io::BufWriter;
     /// use zune_image::codecs::ppm::PPMEncoder;
     /// use zune_image::image::Image;
-    /// use zune_image::workflow::WorkFlow;
+    /// use zune_image::pipelines::Pipeline;
     /// let mut buf = BufWriter::new(File::open(".").unwrap());
     /// let encoder = PPMEncoder::new();    
-    /// let x= WorkFlow::<Image>::new().add_encoder(Box::new(encoder));
+    /// let x= Pipeline::<Image>::new().add_encoder(Box::new(encoder));
     ///
     /// ```
     pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>) {
@@ -114,11 +130,16 @@ where
         self.image.push(image);
     }
 
-    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut WorkFlow<T> {
+    /// Add an encoder to this chain
+    ///
+    ///  You can add multiple encoders to the same pipeline.
+    /// This will have the effect of encoding the same image multiple
+    /// times and storing the result in
+    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut Pipeline<T> {
         self.encode.push(encoder);
         self
     }
-    pub fn chain_decoder(&mut self, decoder: T) -> &mut WorkFlow<T> {
+    pub fn chain_decoder(&mut self, decoder: T) -> &mut Pipeline<T> {
         self.decode = Some(decoder);
         self
     }
@@ -140,23 +161,23 @@ where
     /// use zune_image::image::Image;
     ///
     /// use zune_image::core_filters::depth::Depth;
-    /// use zune_image::workflow::WorkFlow;
+    /// use zune_image::pipelines::Pipeline;
     ///
     ///
-    /// let image = WorkFlow::<Image>::new()
+    /// let image = Pipeline::<Image>::new()
     ///     .chain_operations(Box::new(ColorspaceConv::new(zune_core::colorspace::ColorSpace::Luma)))
     ///     .chain_operations(Box::new(Depth::new(zune_core::bit_depth::BitDepth::Float32)))   
     ///     .advance_to_end();
     /// ```
-    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut WorkFlow<T> {
+    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut Pipeline<T> {
         self.operations.push(operations);
         self
     }
-    pub fn get_images(&self) -> &[Image] {
+    pub fn images(&self) -> &[Image] {
         self.image.as_ref()
     }
     /// Return all images in the workflow as mutable references
-    pub fn get_image_mut(&mut self) -> &mut [Image] {
+    pub fn images_mut(&mut self) -> &mut [Image] {
         self.image.as_mut()
     }
     /// Advance the workflow one state forward
@@ -172,7 +193,7 @@ where
     pub fn advance(&mut self) -> Result<(), ImageErrors> {
         if let Some(state) = self.state {
             match state {
-                WorkFlowState::Decode => {
+                PipelineState::Decode => {
                     let start = Instant::now();
                     // do the actual decode
                     if self.decode.is_none() {
@@ -204,7 +225,7 @@ where
 
                     trace!("Finished decoding in {} ms", (stop - start).as_millis());
                 }
-                WorkFlowState::Operations => {
+                PipelineState::Operations => {
                     if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
@@ -234,7 +255,7 @@ where
                         self.state = state.next();
                     }
                 }
-                WorkFlowState::Encode => {
+                PipelineState::Encode => {
                     if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
@@ -268,7 +289,7 @@ where
 
                     self.state = state.next();
                 }
-                WorkFlowState::Finished => {
+                PipelineState::Finished => {
                     trace!("Finished operations for this workflow");
 
                     self.state = state.next();

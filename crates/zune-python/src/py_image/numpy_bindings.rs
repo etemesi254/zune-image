@@ -9,10 +9,10 @@
 use numpy::{PyArray2, PyArray3, PyArray4, PyUntypedArray};
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, PyResult, Python};
+use zune_image::utils::swizzle_channels;
 
 use crate::py_enums::ImageDepth;
 use crate::py_image::Image;
-use crate::utils::channels_to_linear;
 
 impl Image {
     pub(crate) fn to_numpy_generic<'py, T>(
@@ -49,7 +49,7 @@ impl Image {
                 .chunks_exact_mut(single_im_frame_dims)
                 .zip(self.image.frames_ref())
             {
-                channels_to_linear(frame.channels_ref(colorspace, false), im_chunk)
+                swizzle_channels(frame.channels_ref(colorspace, false), im_chunk)
                     .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
             }
 
@@ -107,7 +107,7 @@ impl Image {
                     .expect("This should be safe as we own the array and haven't exposed it");
                 let pix_values = arr_v.as_slice_mut().unwrap();
 
-                channels_to_linear(channels, pix_values)
+                swizzle_channels(channels, pix_values)
                     .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                 arr

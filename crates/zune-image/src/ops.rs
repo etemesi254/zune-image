@@ -168,6 +168,6 @@ impl Sub for Image {
 
 #[test]
 fn add() {
-    let im = Image::fill(0_u8, zune_core::colorspace::ColorSpace::RGBA, 100, 100).unwrap();
+    let im = Image::fill(0_u8, zune_core::colorspace::ColorSpace::RGBA, 100, 100);
     let _ = im.clone() + im;
 }

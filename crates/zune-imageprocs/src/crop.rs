@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! Crop a single channel
+//! Crop an image
 //!
 //!
 //!  # Algorithm
@@ -59,6 +59,36 @@ use zune_image::traits::OperationsTrait;
 /// Crop out a part of an image  
 ///
 /// This creates a smaller image from a bigger image
+///
+/// # Example
+/// Create a smaller 100x100 from a larger 1000x1000 image based on the left edge
+/// ```
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::errors::ImageErrors;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::crop::Crop;
+///
+/// // create a white image
+/// fn main()->Result<Image,ImageErrors>{
+///     // create a 1000 by 1000 grayscale image
+///     let mut image = Image::fill(255_u8,ColorSpace::Luma,1000,1000);
+///
+///     let (w,h) = image.dimensions();
+///     let crop_w = 100;
+///     let crop_h = 100;
+///
+///     // we want to crop the center part, so we move to the center
+///     // and offset the start half our crop width from the center
+///     let start_x = (w/2) - (crop_w/2);
+///     let start_y = (h/2) - (crop_h/2);
+///
+///     // now crop- in place
+///      Crop::new(crop_w,crop_h,start_x,start_y).execute(&mut image)?;
+///      
+///      Ok(image)
+/// }
+/// ```
 pub struct Crop {
     x:      usize,
     y:      usize,

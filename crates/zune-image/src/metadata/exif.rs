@@ -33,8 +33,3 @@ impl ImageMetadata {
         };
     }
 }
-
-impl Image {
-    /// Change the orientation
-    pub fn auto_orient(&mut self) {}
-}
