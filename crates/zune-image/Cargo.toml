@@ -43,7 +43,7 @@ zune-core = { path = "../zune-core", version = "0.4" }
 # Images
 zune-png = { path = "../zune-png",version = "0.4", optional = true }
 zune-jpeg = { path = "../zune-jpeg",version = "0.4", optional = true }
-zune-ppm = { path = "../zune-ppm", optional = true }
+zune-ppm = { path = "../zune-ppm",version = "0.4", optional = true }
 zune-psd = { path = "../zune-psd",version = "0.4", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld",version = "0.4", optional = true }
 zune-qoi = { path = "../zune-qoi",version = "0.4", optional = true }
