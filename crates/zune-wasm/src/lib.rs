@@ -20,8 +20,8 @@ use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::invert::Invert;
-use zune_imageprocs::spatial::StatisticsOps;
-use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::spatial::SpatialOps;
+use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 
@@ -167,7 +167,7 @@ impl WasmImage {
     ///
     /// Execution speed depends on array radius and image size
     pub fn mean_filter(&mut self, radius: usize) {
-        let ops = StatisticsOps::new(radius, StatisticOperations::Mean);
+        let ops = SpatialOps::new(radius, SpatialOperations::Mean);
         self.execute_ops(&ops);
     }
 

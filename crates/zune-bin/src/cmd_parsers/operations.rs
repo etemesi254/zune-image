@@ -22,11 +22,10 @@ use zune_imageprocs::flip::{Flip, VerticalFlip};
 use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::invert::Invert;
-use zune_imageprocs::median::Median;
 use zune_imageprocs::mirror::{Mirror, MirrorMode};
 use zune_imageprocs::resize::{Resize, ResizeMethod};
-use zune_imageprocs::spatial::StatisticsOps;
-use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::spatial::SpatialOps;
+use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 use zune_imageprocs::transpose::Transpose;
@@ -50,16 +49,16 @@ pub fn parse_options<T: IntoImage>(
         workflow.add_operation(Box::new(Flop::new()))
     } else if argument == "median" {
         let radius = *args.get_one::<usize>("median").unwrap();
-        workflow.add_operation(Box::new(Median::new(radius)));
+        // workflow.add_operation(Box::new(Median::new(radius)));
         debug!("Added Median operation");
     } else if argument == "statistic" {
         let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
 
         // parse first one as radius
         let radius = str::parse::<usize>(val[0]).map_err(|x| x.to_string())?;
-        let stats_mode = StatisticOperations::from_string_result(val[1])?;
+        let stats_mode = SpatialOperations::from_string_result(val[1])?;
 
-        workflow.add_operation(Box::new(StatisticsOps::new(radius, stats_mode)));
+        workflow.add_operation(Box::new(SpatialOps::new(radius, stats_mode)));
         debug!("Added StatisticsOps operation");
     } else if argument == "mirror" {
         let value = args.get_one::<String>("mirror").unwrap().trim();

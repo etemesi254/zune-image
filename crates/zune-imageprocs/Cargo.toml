@@ -2,6 +2,12 @@
 name = "zune-imageprocs"
 version = "0.4.0"
 edition = "2021"
+repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-imageprocs"
+license = "MIT OR Apache-2.0 OR Zlib"
+keywords = ["image","image-processing"]
+categories = ["multimedia::images"]
+description = "Common image processing routines for zune-image"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -15,8 +15,8 @@ use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
-use zune_imageprocs::spatial::StatisticsOps;
-use zune_imageprocs::spatial_ops::StatisticOperations;
+use zune_imageprocs::spatial::SpatialOps;
+use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::unsharpen::Unsharpen;
 //use zune_opencl::ocl_sobel::OclSobel;
 
@@ -60,7 +60,7 @@ pub fn parse_options<T: IntoImage>(
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added mean blur filter with radius {}", radius);
 
-        let mean_blur = StatisticsOps::new(radius, StatisticOperations::Mean);
+        let mean_blur = SpatialOps::new(radius, SpatialOperations::Mean);
         workflow.add_operation(Box::new(mean_blur));
     } else if argument == "sobel" {
         debug!("Added sobel filter");
