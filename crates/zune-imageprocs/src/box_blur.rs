@@ -5,6 +5,9 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+//! (BROKEN): An implementation of a box-blur.
+//!
+//! Do not use it, not ready for production
 #![allow(dead_code, unused_variables)]
 use std::f32;
 

@@ -6,6 +6,8 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+//!  Interchange row and columns in an image
+//!
 use std::sync::Once;
 
 use zune_core::bit_depth::BitType;

@@ -5,7 +5,10 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! (BROKEN): An implementation of a gaussian-blur.
+//!
+//! Do not use it, not ready for production
+//!
 //! This module implements a gaussian blur functions for images
 //!
 //! The implementation does not give the true gaussian coefficients of the

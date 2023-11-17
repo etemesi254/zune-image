@@ -5,7 +5,8 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Flip filter: Flip an image by reflecting pixels around the x-azis.
+//!
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;

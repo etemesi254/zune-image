@@ -6,6 +6,25 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+//! Image processing routines for `zune-image`
+//!
+//! This implements some common image processing routines to be used with `zune-image`
+//!
+//! It implements the `OperationsTrait` defined by zune-image.
+//!
+//! # Example
+//! - Increase exposure of image by 2.0
+//! ```
+//! use zune_core::colorspace::ColorSpace;
+//! use zune_image::image::Image;
+//! use zune_image::traits::OperationsTrait;
+//! use zune_imageprocs::exposure::Exposure;
+//! let mut image = Image::fill(233,ColorSpace::RGB,100,100);
+//! let exposure = Exposure::new(2.0,0.0);
+//! // execute the filter
+//! exposure.execute(&mut image).unwrap();
+//! ```
+
 // Benchmark support needs sse
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![warn(
@@ -43,11 +62,11 @@ pub mod gamma;
 pub mod gaussian_blur;
 pub mod invert;
 pub mod mathops;
-pub mod median;
+mod median;
 pub mod mirror;
 pub mod pad;
 pub mod premul_alpha;
-pub mod prewitt;
+mod prewitt;
 pub mod resize;
 pub mod rotate;
 pub mod scharr;

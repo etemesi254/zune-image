@@ -5,6 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+//! Rearrange the pixels along a certain axis.
 
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
@@ -55,7 +56,7 @@ pub enum MirrorMode {
 /// Rearrange the pixels along a certain axis.
 ///
 /// To see the effect of this
-/// see the image [mirror-modes](zune_imageprocs::mirror::MirrorMode) documentation
+/// see the image [mirror-modes](crate::mirror::MirrorMode) documentation
 /// for each used mode
 pub struct Mirror {
     mode: MirrorMode

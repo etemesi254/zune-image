@@ -5,7 +5,13 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Rotate an image
+//!
+//! # WARNING
+//! - This only works  for rotating 180 degrees.
+//!
+//! It doesn't work for other rotate angles, this will be fixed later
+//!
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;

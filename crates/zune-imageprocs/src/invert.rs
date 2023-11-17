@@ -5,7 +5,15 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Invert image pixels
+//!
+//! # Algorithm details
+//!
+//! ```text
+//! max_value -> maximum value of an image depth
+//!
+//! pixel = max_value-pixel
+//! ```
 use std::ops::Sub;
 
 use zune_core::bit_depth::BitType;

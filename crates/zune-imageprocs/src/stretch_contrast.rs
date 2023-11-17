@@ -5,6 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+//! Strech contrast filter, Linearly stretches the contrast in an image
 
 /// Linearly stretches the contrast in an image in place,
 /// sending lower to image minimum and upper to image maximum.

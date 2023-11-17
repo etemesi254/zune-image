@@ -5,7 +5,24 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Apply gamma correction onto an image
+//!
+//! This filter applies gamma correction on image pixels.
+//!
+//!
+//!  # Algorithm details
+//! The formula used is
+//! ```text
+//! max_value = maximum byte value
+//! max_value_inv = 1.0/max_value
+//! gamma_value =  passed gamma value
+//! pixel = max_value_inv * pixel.powf(gamma_value);
+//! ```
+//!
+//! # Implementation details
+//! - For `u8` and `u16` , we use lookup tables to improve speed
+//! - For `f32` naive execution is used
+//!
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
@@ -16,8 +33,6 @@ use crate::traits::NumOps;
 
 /// Gamma adjust an image
 ///
-/// This currently only supports 8 and 16 bit depth images since it applies an optimization
-/// that works for those depths.
 ///
 /// This operation is internally multithreaded, where supported
 #[derive(Default)]

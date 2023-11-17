@@ -5,25 +5,36 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-/// Statistic operations on images.
+//! Spatial operations on images
+//!
+//! spatial goes through each pixel on an image collecting its neighbors and picking one
+//! based on the function provided.
+//!
+//! The resulting image is then returned.
+//! The parameter radius corresponds to the radius of the neighbor area to be searched,
+//! for example a radius of R will result in a search window length of 2R+1 for each dimension.
+//!
+//!
+
+/// Spatial operations on images.
 ///
 /// The parameter radius corresponds to the radius of the neighbor area the statistic is applied,
 /// larger radius means more compute time.
 ///
 /// for example a radius of R will result in a search window length of 2R+1 for each dimension.
-pub struct StatisticsOps {
+pub struct SpatialOps {
     radius:    usize,
-    operation: StatisticOperations
+    operation: SpatialOperations
 }
 
-impl StatisticsOps {
+impl SpatialOps {
     #[must_use]
-    pub fn new(radius: usize, operation: StatisticOperations) -> StatisticsOps {
-        StatisticsOps { radius, operation }
+    pub fn new(radius: usize, operation: SpatialOperations) -> SpatialOps {
+        SpatialOps { radius, operation }
     }
 }
 
-impl OperationsTrait for StatisticsOps {
+impl OperationsTrait for SpatialOps {
     fn name(&self) -> &'static str {
         "StatisticsOps Filter"
     }
@@ -129,16 +140,10 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-use crate::spatial_ops::{spatial_ops, StatisticOperations};
+use crate::spatial_ops::{spatial_ops, SpatialOperations};
 use crate::utils::z_prefetch;
 
-/// spatial goes through each pixel on an image collecting its neighbors and picking one
-/// based on the function provided.
-///
-/// The resulting image is then returned.
-/// The parameter radius corresponds to the radius of the neighbor area to be searched,
-/// for example a radius of R will result in a search window length of 2R+1 for each dimension.
-///
+/// Go through image neighbord, execute a function on it and return the result
 /// The parameter `function` is the function that receives the list of neighbors and returns the selected
 /// neighbor to be used for the resulting image.
 ///

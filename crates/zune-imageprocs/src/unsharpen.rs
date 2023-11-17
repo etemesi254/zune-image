@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! (BROKEN): Do not use
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
@@ -29,7 +29,7 @@ impl Unsharpen {
     /// Create a new unsharp mask
     ///
     /// # Arguments
-    /// - sigma: This value is passed to the gaussian filter,consult [it's documentation](crate::filters::gaussian_blur::GaussianBlur)
+    /// - sigma: This value is passed to the gaussian filter,consult [it's documentation](crate::gaussian_blur::GaussianBlur)
     /// on how to use it
     ///
     /// - threshold: If the result of the blur and the initial image is greater than this,  add the difference, otherwise

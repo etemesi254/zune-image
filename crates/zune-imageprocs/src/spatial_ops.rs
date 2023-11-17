@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! Simple spatial operations implemented for images
 use std::fmt::Debug;
 use std::ops::{Add, Div, Sub};
 
@@ -13,16 +13,22 @@ use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
 use crate::traits::NumOps;
 
+/// Spatial operations implemented for images
 #[derive(Copy, Clone, Debug, PartialOrd, PartialEq)]
-pub enum StatisticOperations {
+pub enum SpatialOperations {
+    /// (max-min)/(max+min)
     Contrast,
+    /// max
     Maximum,
+    /// max-min
     Gradient,
+    /// min
     Minimum,
+    /// sum(pix)/len
     Mean
 }
 
-impl StatisticOperations {
+impl SpatialOperations {
     pub fn from_string_result(input: &str) -> Result<Self, String> {
         match input
         {
@@ -120,9 +126,21 @@ where
     T::from_u32(maximum / len)
 }
 
+/// Run spatial operations on a pixel
+///
+/// # Arguments
+///
+/// * `in_channel`:  Input channel.
+/// * `out_channel`: Output channels
+/// * `radius`:  Radius for the spatial function
+/// * `width`:  Image width
+/// * `height`:  Image height
+/// * `operations`:  Enum operation to run
+///
+///
 pub fn spatial_ops<T>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
-    operations: StatisticOperations
+    operations: SpatialOperations
 ) where
     T: PartialOrd
         + Default
@@ -159,11 +177,11 @@ pub fn spatial_ops<T>(
     //
     // Fn pointers have it 2x faster , yea tell me that we understand computers.
     let ptr = match operations {
-        StatisticOperations::Contrast => find_contrast::<T>,
-        StatisticOperations::Maximum => find_max::<T>,
-        StatisticOperations::Gradient => find_gradient::<T>,
-        StatisticOperations::Minimum => find_min::<T>,
-        StatisticOperations::Mean => find_mean::<T>
+        SpatialOperations::Contrast => find_contrast::<T>,
+        SpatialOperations::Maximum => find_max::<T>,
+        SpatialOperations::Gradient => find_gradient::<T>,
+        SpatialOperations::Minimum => find_min::<T>,
+        SpatialOperations::Mean => find_mean::<T>
     };
 
     spatial(&padded_input, out_channel, radius, width, height, ptr);
@@ -174,7 +192,7 @@ pub fn spatial_ops<T>(
 mod benchmarks {
     extern crate test;
 
-    use crate::spatial_ops::{spatial_ops, StatisticOperations};
+    use crate::spatial_ops::{spatial_ops, SpatialOperations};
 
     #[bench]
     fn bench_spatial_mean(b: &mut test::Bencher) {
@@ -194,7 +212,7 @@ mod benchmarks {
                 radius,
                 width,
                 height,
-                StatisticOperations::Mean
+                SpatialOperations::Mean
             );
         });
     }
@@ -217,7 +235,7 @@ mod benchmarks {
                 radius,
                 width,
                 height,
-                StatisticOperations::Minimum
+                SpatialOperations::Minimum
             );
         });
     }

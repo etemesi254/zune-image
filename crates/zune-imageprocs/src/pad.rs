@@ -6,10 +6,31 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-/// Methods used for duplicating pixels
+//! Methods used for duplicating pixels around the border
+//!
+//! This contains functions that make borders with specific types, such as constant values
+//! or replicating values across the border
+//!
+
+/// Padding method to use
 #[derive(Copy, Clone)]
 pub enum PadMethod {
+    /// Create a border with a constant value
     Constant,
+    /// Create a border that duplicates the current pixel
+    /// at the original image border to the new border
+    ///
+    /// ```text
+    ///  a,b,c
+    ///  d,e,f
+    /// ```
+    /// Becomes
+    /// ```text
+    ///   a,b,c
+    /// a a,b,c c
+    /// d d,e,f f
+    ///   d,e,f
+    /// ```
     Replicate
 }
 
