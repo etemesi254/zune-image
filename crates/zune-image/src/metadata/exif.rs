@@ -10,7 +10,6 @@
 
 use zune_core::log::{error, trace};
 
-use crate::image::Image;
 use crate::metadata::ImageMetadata;
 
 impl ImageMetadata {
