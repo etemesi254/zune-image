@@ -26,7 +26,9 @@ fn decoder_strict_mode() -> DecoderFlags {
         zune_use_sse3:             true,
         zune_use_sse41:            true,
         png_add_alpha_channel:     false,
-        png_strip_16_bit_to_8_bit: false
+        png_strip_16_bit_to_8_bit: false,
+        png_decode_animated:       true,
+        jxl_decode_animated:       true
     }
 }
 
@@ -50,7 +52,9 @@ fn fast_options() -> DecoderFlags {
         zune_use_sse41:  true,
 
         png_add_alpha_channel:     false,
-        png_strip_16_bit_to_8_bit: false
+        png_strip_16_bit_to_8_bit: false,
+        png_decode_animated:       true,
+        jxl_decode_animated:       true
     }
 }
 
@@ -75,7 +79,10 @@ fn cmd_options() -> DecoderFlags {
         zune_use_sse41:  true,
 
         png_add_alpha_channel:     false,
-        png_strip_16_bit_to_8_bit: false
+        png_strip_16_bit_to_8_bit: false,
+
+        png_decode_animated: true,
+        jxl_decode_animated: true
     }
 }
 
@@ -113,7 +120,10 @@ pub struct DecoderFlags {
     /// Whether we should use neon instructions where possible.
     zune_use_neon:                bool,
     /// Whether the png decoder should strip 16 bit to 8 bit
-    png_strip_16_bit_to_8_bit:    bool
+    png_strip_16_bit_to_8_bit:    bool,
+    /// Decode all frames for an animated images
+    png_decode_animated:          bool,
+    jxl_decode_animated:          bool
 }
 
 /// Decoder options
@@ -386,6 +396,18 @@ impl DecoderOptions {
     pub const fn png_get_strip_to_8bit(&self) -> bool {
         self.flags.png_strip_16_bit_to_8_bit
     }
+
+    /// Return whether `zune-image` should decode animated images or
+    /// whether we should just decode the first frame only
+    pub const fn png_decode_animated(&self) -> bool {
+        self.flags.png_decode_animated
+    }
+    /// Set  whether `zune-image` should decode animated images or
+    /// whether we should just decode the first frame only
+    pub const fn png_set_decode_animated(mut self, yes: bool) -> Self {
+        self.flags.png_decode_animated = yes;
+        self
+    }
 }
 
 /// JPEG specific options
@@ -606,6 +628,20 @@ impl DecoderOptions {
     }
 }
 
+/// JPEG_XL specific options
+impl DecoderOptions {
+    /// Return whether `zune-image` should decode animated images or
+    /// whether we should just decode the first frame only
+    pub const fn jxl_decode_animated(&self) -> bool {
+        self.flags.jxl_decode_animated
+    }
+    /// Set  whether `zune-image` should decode animated images or
+    /// whether we should just decode the first frame only
+    pub const fn jxl_set_decode_animated(mut self, yes: bool) -> Self {
+        self.flags.jxl_decode_animated = yes;
+        self
+    }
+}
 impl Default for DecoderOptions {
     fn default() -> Self {
         Self {

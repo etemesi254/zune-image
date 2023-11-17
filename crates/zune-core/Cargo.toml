@@ -1,6 +1,6 @@
 [package]
 name = "zune-core"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Core utilities for image processing in the zune family of crates"
 exclude = ["tests/"]
