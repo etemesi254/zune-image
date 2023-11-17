@@ -1,6 +1,6 @@
 [package]
 name = "zune-imageprocs"
-version = "0.4.01"
+version = "0.4.11"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-imageprocs"
 license = "MIT OR Apache-2.0 OR Zlib"
