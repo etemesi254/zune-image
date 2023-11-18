@@ -35,7 +35,7 @@ use crate::traits::NumOps;
 /// // random values
 /// let filter= BilateralFilter::new(10,25.0,25.0);
 ///
-/// let mut image =Image::fill(10_u8,ColorSpace::RGB,10,10).unwrap();
+/// let mut image =Image::fill(10_u8,ColorSpace::RGB,10,10);
 /// filter.execute(&mut image).unwrap();
 /// ```
 pub struct BilateralFilter {

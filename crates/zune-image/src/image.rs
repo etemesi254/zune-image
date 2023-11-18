@@ -499,7 +499,7 @@ impl Image {
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::image::Image;
     /// // fill image with black pixel
-    /// let mut image = Image::fill(0_u8,ColorSpace::RGB,800,800).unwrap();
+    /// let mut image = Image::fill(0_u8,ColorSpace::RGB,800,800);
     ///
     /// // then modify the pixels
     /// // create a gradient

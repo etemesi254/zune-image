@@ -43,8 +43,9 @@ use crate::traits::NumOps;
 /// use zune_image::image::Image;
 /// use zune_image::traits::OperationsTrait;
 /// use zune_imageprocs::brighten::Brighten;
+///  use zune_image::errors::ImageErrors;
 /// // create gray image
-/// let mut img = Image::fill(128_u8,ColorSpace::RGB,100,100);
+/// let mut img = Image::fill::<u8>(128_u8,ColorSpace::RGB,100,100);
 /// // make every pixel to be fully white
 /// Brighten::new(127.0).execute(&mut img)?;
 /// # Ok::<(),ImageErrors>(())

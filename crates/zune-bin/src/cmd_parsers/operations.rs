@@ -48,7 +48,7 @@ pub fn parse_options<T: IntoImage>(
         debug!("Added flop operation");
         workflow.add_operation(Box::new(Flop::new()))
     } else if argument == "median" {
-        let radius = *args.get_one::<usize>("median").unwrap();
+        //let radius = *args.get_one::<usize>("median").unwrap();
         // workflow.add_operation(Box::new(Median::new(radius)));
         debug!("Added Median operation");
     } else if argument == "statistic" {

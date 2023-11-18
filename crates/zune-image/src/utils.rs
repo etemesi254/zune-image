@@ -96,10 +96,10 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// use zune_image::errors::ImageErrors;
 ///
 /// fn main()->Result<(),ImageErrors>{
-///     let mut image = Image::fill(128,ColorSpace::RGB,100,100);
+///     let mut image = Image::fill::<u8>(128,ColorSpace::RGB,100,100);
 ///     // output must be w*h*color_channels
 ///     // so create that length
-///     let mut storage= vec![0;100*image.colorspace().num_components()];
+///     let mut storage= vec![0_u8;100*image.colorspace().num_components()];
 ///     
 ///     for frame in image.frames_mut(){
 ///         let channels = frame.channels_vec();

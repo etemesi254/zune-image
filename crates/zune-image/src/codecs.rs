@@ -449,7 +449,7 @@ impl Image {
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::image::Image;
     /// // create a luma image
-    /// let image = Image::fill::<u8>(128,ColorSpace::Luma,100,100).unwrap();
+    /// let image = Image::fill::<u8>(128,ColorSpace::Luma,100,100);
     /// // save to jpeg
     /// image.save("hello.jpg").unwrap();
     /// ```
@@ -491,11 +491,14 @@ impl Image {
     /// ```no_run
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::codecs::ImageFormat;
+    /// use zune_image::errors::ImageErrors;
     /// use zune_image::image::Image;
     /// // create a simple 200x200 grayscale image consisting of pure black
-    /// let image = Image::fill::<u8>(0,ColorSpace::Luma,200,200).unwrap();
+    /// let image = Image::fill::<u8>(0,ColorSpace::Luma,200,200);
     /// // save that to jpeg
-    /// image.save_to("black.jpg",ImageFormat::JPEG).unwrap();
+    /// image.save_to("black.jpg",ImageFormat::JPEG)?;
+    ///
+    /// Ok::<(),ImageErrors>(())
     /// ```
     pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
         let contents = self.write_to_vec(format)?;

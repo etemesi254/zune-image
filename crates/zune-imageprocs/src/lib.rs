@@ -19,7 +19,7 @@
 //! use zune_image::image::Image;
 //! use zune_image::traits::OperationsTrait;
 //! use zune_imageprocs::exposure::Exposure;
-//! let mut image = Image::fill(233,ColorSpace::RGB,100,100);
+//! let mut image = Image::fill::<u8>(233,ColorSpace::RGB,100,100);
 //! let exposure = Exposure::new(2.0,0.0);
 //! // execute the filter
 //! exposure.execute(&mut image).unwrap();

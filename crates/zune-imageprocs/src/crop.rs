@@ -70,7 +70,7 @@ use zune_image::traits::OperationsTrait;
 /// use zune_imageprocs::crop::Crop;
 ///
 /// // create a white image
-/// fn main()->Result<Image,ImageErrors>{
+/// fn main()->Result<(),ImageErrors>{
 ///     // create a 1000 by 1000 grayscale image
 ///     let mut image = Image::fill(255_u8,ColorSpace::Luma,1000,1000);
 ///
@@ -86,7 +86,7 @@ use zune_image::traits::OperationsTrait;
 ///     // now crop- in place
 ///      Crop::new(crop_w,crop_h,start_x,start_y).execute(&mut image)?;
 ///      
-///      Ok(image)
+///      Ok(())
 /// }
 /// ```
 pub struct Crop {

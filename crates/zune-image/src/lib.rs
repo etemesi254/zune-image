@@ -51,7 +51,7 @@
 //!        
 //! let image = Image::open("file.png")?;
 //!
-//!#Ok::<(),ImageErrors>(())
+//!# Ok::<(),ImageErrors>(())
 //! ```
 //!  Or if the image is in memory load it via [`Image.read`](crate::image::Image::read)
 //!
@@ -61,7 +61,7 @@
 //! use zune_image::errors::ImageErrors;
 //! let mem_src = [0;100];
 //! let image = Image::read(&mem_src,DecoderOptions::default())?;
-//! #Ok::<(),ImageErrors>(())
+//! # Ok::<(),ImageErrors>(())
 //!
 //! ```
 //! You can save files via [`Image.save`](crate::image::Image::save)
