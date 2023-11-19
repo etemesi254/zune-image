@@ -29,6 +29,7 @@ use crate::traits::NumOps;
 ///
 /// ```
 /// use zune_core::colorspace::ColorSpace;
+/// use zune_image::errors::ImageErrors;
 /// use zune_image::image::Image;
 /// use zune_image::traits::OperationsTrait;
 /// use zune_imageprocs::bilateral_filter::BilateralFilter;
@@ -36,7 +37,8 @@ use crate::traits::NumOps;
 /// let filter= BilateralFilter::new(10,25.0,25.0);
 ///
 /// let mut image =Image::fill(10_u8,ColorSpace::RGB,10,10);
-/// filter.execute(&mut image).unwrap();
+/// filter.execute(&mut image)?;
+/// # Ok::<(),ImageErrors>(())
 /// ```
 pub struct BilateralFilter {
     d:           i32,
