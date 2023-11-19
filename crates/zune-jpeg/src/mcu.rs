@@ -339,11 +339,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
-        let has_vert_upsampling = self
-            .components
-            .iter()
-            .any(|c| c.sample_ratio != SampleRatios::HV || c.sample_ratio != SampleRatios::V);
-
+        let has_vert_upsampling = self.v_max == 1;
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
             for comp in &mut self.components {
                 upsample_single(comp, width, i, upsampler_scratch_space);
