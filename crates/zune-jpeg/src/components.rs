@@ -70,7 +70,8 @@ pub(crate) struct Components {
     pub idct_pos: usize,
     pub x: usize,
     pub w2: usize,
-    pub y: usize
+    pub y: usize,
+    pub sample_ratio: SampleRatios
 }
 
 impl Components {
@@ -149,7 +150,8 @@ impl Components {
             idct_pos: 0,
             x: 0,
             y: 0,
-            w2: 0
+            w2: 0,
+            sample_ratio: SampleRatios::None
         })
     }
     /// Setup space for upsampling
@@ -162,10 +164,10 @@ impl Components {
     ///
     /// # Requirements
     ///  - width stride of this element is set for the component.
-    pub fn setup_upsample_scanline(&mut self, h_max: usize, v_max: usize) {
+    pub fn setup_upsample_scanline(&mut self) {
         self.current_row = vec![0; self.width_stride * self.vertical_sample];
         self.prev_row = vec![0; self.width_stride * self.vertical_sample];
-        self.upsample_dest = vec![128; self.width_stride * h_max * v_max];
+        self.upsample_dest = vec![128; self.width_stride * self.sample_ratio.sample() * 8];
     }
 }
 
@@ -188,4 +190,15 @@ pub enum SampleRatios {
     V,
     H,
     None
+}
+
+impl SampleRatios {
+    pub fn sample(self) -> usize {
+        match self {
+            SampleRatios::HV => 4,
+            SampleRatios::V => 2,
+            SampleRatios::H => 2,
+            SampleRatios::None => 1
+        }
+    }
 }

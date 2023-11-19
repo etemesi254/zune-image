@@ -29,7 +29,8 @@ use crate::idct::choose_idct_func;
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
-    choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function
+    choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
+    upsample_no_op
 };
 
 /// Maximum components
@@ -748,48 +749,55 @@ where
         if self.h_max == self.v_max && self.h_max == 1 {
             return Ok(());
         }
-
-        // match for other ratios
         match (self.h_max, self.v_max) {
-            (2, 1) => {
-                self.sub_sample_ratio = SampleRatios::H;
-                // horizontal sub-sampling
-                trace!("Horizontal sub-sampling (2,1)");
-
-                let up_sampler = choose_horizontal_samp_function(self.options.get_use_unsafe());
-
-                self.components[1..].iter_mut().for_each(|x| {
-                    x.up_sampler = up_sampler;
-                    x.setup_upsample_scanline(self.h_max, self.v_max);
-                });
+            (1, 1) => {
+                self.sub_sample_ratio = SampleRatios::None;
             }
             (1, 2) => {
                 self.sub_sample_ratio = SampleRatios::V;
-                // Vertical sub-sampling
-                trace!("Vertical sub-sampling (1,2)");
-
-                self.components[..].iter_mut().for_each(|x| {
-                    x.up_sampler = choose_v_samp_function(self.options.get_use_unsafe());
-                    x.setup_upsample_scanline(self.h_max, self.v_max);
-                });
+            }
+            (2, 1) => {
+                self.sub_sample_ratio = SampleRatios::H;
             }
             (2, 2) => {
                 self.sub_sample_ratio = SampleRatios::HV;
-                // vertical and horizontal sub sampling
-                trace!("Vertical and horizontal sub-sampling(2,2)");
-
-                self.components[..].iter_mut().for_each(|x| {
-                    x.up_sampler = choose_hv_samp_function(self.options.get_use_unsafe());
-                    x.setup_upsample_scanline(self.h_max, self.v_max);
-                });
             }
-            (_, _) => {
-                // no op. Do nothing
-                // Jokes , panic...
+            _ => {
                 return Err(DecodeErrors::Format(
                     "Unknown down-sampling method, cannot continue".to_string()
-                ));
+                ))
             }
+        }
+
+        for comp in self.components.iter_mut() {
+            let hs = self.h_max / comp.horizontal_sample;
+            let vs = self.v_max / comp.vertical_sample;
+
+            let samp_factor = match (hs, vs) {
+                (1, 1) => {
+                    comp.sample_ratio = SampleRatios::None;
+                    upsample_no_op
+                }
+                (2, 1) => {
+                    comp.sample_ratio = SampleRatios::H;
+                    choose_horizontal_samp_function(self.options.get_use_unsafe())
+                }
+                (1, 2) => {
+                    comp.sample_ratio = SampleRatios::V;
+                    choose_v_samp_function(self.options.get_use_unsafe())
+                }
+                (2, 2) => {
+                    comp.sample_ratio = SampleRatios::HV;
+                    choose_hv_samp_function(self.options.get_use_unsafe())
+                }
+                _ => {
+                    return Err(DecodeErrors::Format(
+                        "Unknown down-sampling method, cannot continue".to_string()
+                    ))
+                }
+            };
+            comp.setup_upsample_scanline();
+            comp.up_sampler = samp_factor;
         }
 
         return Ok(());

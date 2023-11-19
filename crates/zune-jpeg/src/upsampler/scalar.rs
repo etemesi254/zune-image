@@ -56,6 +56,10 @@ pub fn upsample_horizontal(
 pub fn upsample_vertical(
     input: &[i16], in_near: &[i16], in_far: &[i16], _scratch_space: &mut [i16], output: &mut [i16]
 ) {
+    assert_eq!(input.len() * 2, output.len());
+    assert_eq!(in_near.len(), input.len());
+    assert_eq!(in_far.len(), input.len());
+
     let middle = output.len() / 2;
 
     let (out_top, out_bottom) = output.split_at_mut(middle);
@@ -73,6 +77,8 @@ pub fn upsample_vertical(
 pub fn upsample_hv(
     input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
 ) {
+    assert_eq!(input.len() * 4, output.len());
+
     let mut t = [0];
     upsample_vertical(input, in_near, in_far, &mut t, scratch_space);
     // horizontal upsampling must be done separate for every line
