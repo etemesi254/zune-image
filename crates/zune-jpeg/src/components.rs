@@ -67,6 +67,7 @@ pub(crate) struct Components {
     pub prev_row: Vec<i16>,
     /// current row, used to handle MCU boundaries again
     pub current_row: Vec<i16>,
+    pub first_row_upsample_dest: Vec<i16>,
     pub idct_pos: usize,
     pub x: usize,
     pub w2: usize,
@@ -133,6 +134,7 @@ impl Components {
             vertical_sample,
             horizontal_sample,
             quantization_table_number,
+            first_row_upsample_dest: vec![],
             // These two will be set with sof marker
             dc_huff_table: 0,
             ac_huff_table: 0,
@@ -167,6 +169,8 @@ impl Components {
     pub fn setup_upsample_scanline(&mut self) {
         self.current_row = vec![0; self.width_stride * self.vertical_sample];
         self.prev_row = vec![0; self.width_stride * self.vertical_sample];
+        self.first_row_upsample_dest =
+            vec![128; self.vertical_sample * self.width_stride * self.sample_ratio.sample()];
         self.upsample_dest = vec![128; self.width_stride * self.sample_ratio.sample() * 8];
     }
 }

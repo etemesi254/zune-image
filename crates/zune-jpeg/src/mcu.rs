@@ -9,21 +9,17 @@
 use alloc::{format, vec};
 use core::cmp::min;
 
-use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
-use zune_core::options::EncoderOptions;
 
 use crate::bitstream::BitStream;
-use crate::components::SampleRatios;
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
-use crate::worker::{
-    color_convert, upsample_and_color_convert_h, upsample_and_color_convert_v, upsample_single
-};
+use crate::worker::{color_convert, upsample_single};
 use crate::JpegDecoder;
 
 /// The size of a DC block for a MCU.
@@ -209,6 +205,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 &mut upsampler_scratch_space
             )?;
         }
+        // assert_eq!(pixels_written, pixels.len());
 
         trace!("Finished decoding image");
 
@@ -339,14 +336,85 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
-        let has_vert_upsampling = self.v_max == 1;
+        let mut px = *pixels_written;
+        // indicates whether image is vertically up-sampled
+        let no_vert_upsampling = self.v_max == 1;
+
+        let comp_len = self.components.len();
+
+        let comps = &mut self.components[..];
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
-            for comp in &mut self.components {
+            for comp in comps.iter_mut() {
                 upsample_single(comp, width, i, upsampler_scratch_space);
             }
 
+            // write the last line, it wasn't  upsampled as we didn't have row_down
+            // yet
+            if i > 0 && !no_vert_upsampling {
+                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                // we have vertical upsampling, fix some stuff
+                {
+                    for (samp, component) in samples.iter_mut().zip(comps.iter()) {
+                        // if component.component_id != ComponentID::Y {
+                        //     component.first_row_upsample_dest.fill(0);
+                        // }
+                        *samp = &component.first_row_upsample_dest;
+                    }
+                }
+                // ensure length matches for all samples
+                let first_len = samples[0].len();
+                for samp in samples.iter().take(comp_len) {
+                    assert_eq!(first_len, samp.len());
+                }
+                let num_iters = self.coeff * self.v_max;
+
+                for (pos, output) in pixels[px..]
+                    .chunks_exact_mut(width * out_colorspace_components)
+                    .take(num_iters)
+                    .enumerate()
+                {
+                    let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                    // iterate over each line, since color-convert needs only
+                    // one line
+                    for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
+                    }
+                    color_convert(
+                        &raw_samples,
+                        self.color_convert_16,
+                        self.input_colorspace,
+                        self.options.jpeg_get_out_colorspace(),
+                        output,
+                        width,
+                        padded_width
+                    )?;
+                    px += width * out_colorspace_components;
+                }
+            }
+            if !no_vert_upsampling {
+                // After upsampling the last row, save  any row that can be used for
+                //
+                for component in comps.iter_mut() {
+                    if component.sample_ratio != SampleRatios::None {
+                        continue;
+                    }
+                    // copy last row to be used for the  next color conversion
+                    let size = component.vertical_sample
+                        * component.width_stride
+                        * component.sample_ratio.sample();
+
+                    let last_bytes = component.raw_coeff.rchunks_exact_mut(size).next().unwrap();
+
+                    component
+                        .first_row_upsample_dest
+                        .copy_from_slice(last_bytes);
+                }
+            }
             let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-            for (samp, component) in samples.iter_mut().zip(&self.components) {
+
+            for (samp, component) in samples.iter_mut().zip(comps.iter()) {
                 *samp = if component.sample_ratio == SampleRatios::None {
                     &component.raw_coeff
                 } else {
@@ -356,28 +424,23 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
 
             // ensure length matches for all samples
             let first_len = samples[0].len();
-            for samp in samples.iter().take(self.components.len()) {
+            for samp in samples.iter().take(comp_len) {
                 assert_eq!(first_len, samp.len());
             }
-            let size = width * self.h_max * self.v_max * 8;
-            let num_takeouts = 8 * self.coeff * self.v_max;
-            let taken = padded_width;
 
-            for (pos, output) in pixels[*pixels_written..]
+            let num_iters = (8 - usize::from(!no_vert_upsampling)) * self.coeff * self.v_max;
+
+            for (pos, output) in pixels[px..]
                 .chunks_exact_mut(width * out_colorspace_components)
-                .take(num_takeouts)
+                .take(num_iters)
                 .enumerate()
             {
                 let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
 
                 // iterate over each line, since color-convert needs only
                 // one line
-                for (j, samp) in raw_samples
-                    .iter_mut()
-                    .enumerate()
-                    .take(self.components.len())
-                {
-                    *samp = &samples[j][pos * taken..(pos + 1) * taken]
+                for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                    *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
                 }
                 color_convert(
                     &raw_samples,
@@ -388,79 +451,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     width,
                     padded_width
                 )?;
-            }
-
-            if i == 0 && !has_vert_upsampling {
-                // HV and V sampling
-                //
-                // we only sampled 7 of the 8 rows
-                // since we don't sample last row as we don't have row_down
-                *pixels_written += width * out_colorspace_components * 7 * self.coeff * self.v_max;
-            } else {
-                // other invocations sample 8 of the 8 rows, they sample
-                // the previous mcu, and 7 of it's mcu's
-                *pixels_written += width * out_colorspace_components * 8 * self.coeff * self.v_max;
-            }
-
-            if has_vert_upsampling && i == mcu_height {
-                // handle last row
-                let mut dest_start = 0;
-
-                // last row
-                for component in &mut self.components {
-                    let stride_bytes_written =
-                        component.width_stride * component.sample_ratio.sample();
-
-                    // Handle the last row of the image
-                    // there is now row_down row_down becomes row_current
-                    // This wasn't up-sampled as we didn't have the row_down
-                    // so we do it now
-
-                    let stride = component.width_stride;
-
-                    let dest =
-                        &mut component.upsample_dest[dest_start..dest_start + stride_bytes_written];
-                    dest_start += stride_bytes_written;
-
-                    // get current row
-                    let row = &component.current_row.rchunks_exact(stride).next().unwrap();
-                    let row_up = &component.prev_row[..];
-                    let row_down = &row;
-                    (component.up_sampler)(row, row_up, row_down, upsampler_scratch_space, dest);
-                }
-
-                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-                for (samp, component) in samples.iter_mut().zip(&self.components) {
-                    *samp = if component.sample_ratio == SampleRatios::None {
-                        &component.raw_coeff
-                    } else {
-                        &component.upsample_dest
-                    };
-                }
-                let taken = samples[0].len() / (8 * self.coeff * self.v_max);
-
-                let end = width * out_colorspace_components * self.v_max;
-                let last_row = &mut pixels[*pixels_written..*pixels_written + end];
-
-                let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-                for (j, samp) in raw_samples
-                    .iter_mut()
-                    .enumerate()
-                    .take(self.components.len())
-                {
-                    *samp = &samples[j][0..taken]
-                }
-
-                color_convert(
-                    &raw_samples,
-                    self.color_convert_16,
-                    self.input_colorspace,
-                    self.options.jpeg_get_out_colorspace(),
-                    last_row,
-                    width,
-                    padded_width
-                )?;
+                px += width * out_colorspace_components;
             }
         } else {
             let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
@@ -475,22 +466,25 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 self.color_convert_16,
                 self.input_colorspace,
                 self.options.jpeg_get_out_colorspace(),
-                &mut pixels[*pixels_written..],
+                &mut pixels[px..],
                 width,
                 padded_width
             )?;
 
             // increment pointer to number of pixels written
             // see comments on coeff
-            *pixels_written += width * out_colorspace_components * 8 * self.coeff;
+            px += width * out_colorspace_components * 8 * self.coeff;
         }
 
+        *pixels_written = px;
         Ok(())
     }
 }
 
 #[test]
 fn test_random_crash() {
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::options::EncoderOptions;
     use zune_ppm::PPMEncoder;
     let file =
         std::fs::read("/home/caleb/Documents/rust/zune-image/test-images/jpeg/2029.jpg").unwrap();
