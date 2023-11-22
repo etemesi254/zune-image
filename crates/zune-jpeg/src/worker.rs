@@ -285,11 +285,34 @@ fn color_convert_ycbcr(
         rem.copy_from_slice(&temp[0..rem.len()]);
     }
 }
-pub(crate) fn upsample_single(
+pub(crate) fn upsample(
     component: &mut Components, mcu_height: usize, i: usize, upsampler_scratch_space: &mut [i16]
 ) {
     match component.sample_ratio {
         SampleRatios::V | SampleRatios::HV => {
+            /*
+            When upsampling vertically sampled images, we have a certain problem
+            which is that we do not have all MCU's decoded, this usually sucks at boundaries
+            e.g we can't upsample the last mcu row, since the row_down currently doesn't exist
+
+            To solve this we need to do two things
+
+            1. Carry over coefficients when we lack enough data to upsample
+            2. Upsample when we have enough data
+
+            To achieve (1), we store a previous row, and the current row in components themselves
+            which will later be used to make (2)
+
+            To achieve (2), we take the stored previous row(second last MCU row),
+            current row(last mcu row) and row down(first row of newly decoded MCU)
+
+            and upsample that and store it in first_row_upsample_dest, this contains
+            up-sampled coefficients for the last for the previous decoded mcu row.
+
+            The caller is then expected to process first_row_upsample_dest before processing data
+            in component.upsample_dest which stores the up-sampled components excluding the last row
+            */
+
             let mut dest_start = 0;
             let stride_bytes_written = component.width_stride * component.sample_ratio.sample();
 
@@ -382,14 +405,7 @@ pub(crate) fn upsample_single(
                         dest
                     );
                 }
-                // if pos == stop_offset - 1 {
-                //     // copy current last MCU row to be used in the next mcu row
-                //     component.prev_row.copy_from_slice(curr_row);
-                // }
             }
-
-            // get current row
-            //let row = &component.raw_coeff[pos * stride..(pos + 1) * stride];
         }
         SampleRatios::H => {
             assert_eq!(component.raw_coeff.len() * 2, component.upsample_dest.len());

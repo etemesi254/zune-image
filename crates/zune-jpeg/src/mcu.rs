@@ -19,7 +19,7 @@ use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
-use crate::worker::{color_convert, upsample_single};
+use crate::worker::{color_convert, upsample};
 use crate::JpegDecoder;
 
 /// The size of a DC block for a MCU.
@@ -373,7 +373,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         let comps = &mut self.components[..];
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
             for comp in comps.iter_mut() {
-                upsample_single(comp, width, i, upsampler_scratch_space);
+                upsample(comp, width, i, upsampler_scratch_space);
             }
 
             if is_vertically_sampled {
