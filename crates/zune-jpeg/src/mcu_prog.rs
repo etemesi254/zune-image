@@ -551,7 +551,6 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             self.post_process(
                 pixels,
                 i,
-                mcu_height,
                 width,
                 padded_width,
                 &mut pixels_written,

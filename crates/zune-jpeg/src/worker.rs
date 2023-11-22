@@ -303,8 +303,8 @@ pub(crate) fn upsample_single(
                 let dest = &mut component.first_row_upsample_dest[0..stride_bytes_written];
 
                 // get current row
-                let row = &component.current_row[..];
-                let row_up = &component.prev_row[..];
+                let row = &component.row[..];
+                let row_up = &component.row_up[..];
                 let row_down = &component.raw_coeff[0..stride];
                 (component.up_sampler)(row, row_up, row_down, upsampler_scratch_space, dest);
             }
@@ -337,7 +337,7 @@ pub(crate) fn upsample_single(
                     row_down = &component.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
                 } else if i > 0 && pos == 0 {
                     // first row of a new mcu, previous row was copied so use that
-                    row_up = &component.prev_row;
+                    row_up = &component.row[..];
                     row_down = &component.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
                 } else if pos > 0 && pos < stop_offset - 1 {
                     // other rows, get row up and row down relative to our current row
@@ -355,13 +355,13 @@ pub(crate) fn upsample_single(
                     //
                     // we need a row at the next MCU but we haven't decoded that MCU yet
                     // so we should save this and when we have the next MCU,
-                    // do the due diligence
+                    // do the upsampling
 
                     // store the current row and previous row in a buffer
                     let prev_row = &component.raw_coeff[(pos - 1) * stride..pos * stride];
 
-                    component.prev_row.copy_from_slice(prev_row);
-                    component.current_row.copy_from_slice(curr_row);
+                    component.row_up.copy_from_slice(prev_row);
+                    component.row.copy_from_slice(curr_row);
                     upsample = false;
                 } else {
                     unreachable!("Uh oh!");
@@ -382,10 +382,10 @@ pub(crate) fn upsample_single(
                         dest
                     );
                 }
-                if pos == stop_offset - 1 {
-                    // copy current last MCU row to be used in the next mcu row
-                    component.prev_row.copy_from_slice(curr_row);
-                }
+                // if pos == stop_offset - 1 {
+                //     // copy current last MCU row to be used in the next mcu row
+                //     component.prev_row.copy_from_slice(curr_row);
+                // }
             }
 
             // get current row

@@ -14,7 +14,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
-use crate::components::{ComponentID, Components, SampleRatios};
+use crate::components::SampleRatios;
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
@@ -198,7 +198,6 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             self.post_process(
                 pixels,
                 i,
-                mcu_height,
                 width,
                 padded_width,
                 &mut pixels_written,
@@ -331,44 +330,19 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     }
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(crate) fn post_process(
-        &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
-        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+        &mut self, pixels: &mut [u8], i: usize, width: usize, padded_width: usize,
+        pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
         let mut px = *pixels_written;
         // indicates whether image is vertically up-sampled
-        let no_vert_upsampling = self.v_max == 1;
+        let is_vertically_sampled = self.v_max > 1;
 
         let comp_len = self.components.len();
 
-        let comps = &mut self.components[..];
-        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
-            for comp in comps.iter_mut() {
-                upsample_single(comp, width, i, upsampler_scratch_space);
-            }
-
-            // write the last line, it wasn't  upsampled as we didn't have row_down
-            // yet
-            if i > 0 && !no_vert_upsampling {
-                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-                // we have vertical upsampling, fix some stuff
-                {
-                    for (samp, component) in samples.iter_mut().zip(comps.iter()) {
-                        // if component.component_id != ComponentID::Y {
-                        //     component.first_row_upsample_dest.fill(0);
-                        // }
-                        *samp = &component.first_row_upsample_dest;
-                    }
-                }
-                // ensure length matches for all samples
-                let first_len = samples[0].len();
-                for samp in samples.iter().take(comp_len) {
-                    assert_eq!(first_len, samp.len());
-                }
-                let num_iters = self.coeff * self.v_max;
-
+        let mut color_conv_function =
+            |num_iters: usize, samples: [&[i16]; 4]| -> Result<(), DecodeErrors> {
                 for (pos, output) in pixels[px..]
                     .chunks_exact_mut(width * out_colorspace_components)
                     .take(num_iters)
@@ -392,10 +366,40 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     )?;
                     px += width * out_colorspace_components;
                 }
+                Ok(())
+            };
+
+        let comps = &mut self.components[..];
+        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
+            for comp in comps.iter_mut() {
+                upsample_single(comp, width, i, upsampler_scratch_space);
             }
-            if !no_vert_upsampling {
+
+            if is_vertically_sampled {
+                if i > 0 {
+                    // write the last line, it wasn't  up-sampled as we didn't have row_down
+                    // yet
+                    let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                    for (samp, component) in samples.iter_mut().zip(comps.iter()) {
+                        *samp = &component.first_row_upsample_dest;
+                    }
+
+                    // ensure length matches for all samples
+                    let first_len = samples[0].len();
+                    for samp in samples.iter().take(comp_len) {
+                        assert_eq!(first_len, samp.len());
+                    }
+                    let num_iters = self.coeff * self.v_max;
+
+                    color_conv_function(num_iters, samples)?;
+                }
+
                 // After upsampling the last row, save  any row that can be used for
+                // a later upsampling,
                 //
+                // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
+                // the previous mcu, since we don't have the down row, so save it
                 for component in comps.iter_mut() {
                     if component.sample_ratio != SampleRatios::None {
                         continue;
@@ -412,6 +416,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                         .copy_from_slice(last_bytes);
                 }
             }
+
             let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
 
             for (samp, component) in samples.iter_mut().zip(comps.iter()) {
@@ -428,31 +433,21 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 assert_eq!(first_len, samp.len());
             }
 
-            let num_iters = (8 - usize::from(!no_vert_upsampling)) * self.coeff * self.v_max;
+            // we either do 7 or 8 MCU's depending on the state, this only applies to
+            // vertically sampled images
+            //
+            // for rows up until the last MCU, we do not upsample the last stride of the MCU
+            // which means that the number of iterations should take that into account is one less the
+            // upsampled size
+            //
+            // For the last MCU, we upsample the last stride, meaning that if we hit the last MCU, we
+            // should sample full raw coeffs
+            let is_last_considered =
+                is_vertically_sampled && (i != self.mcu_height.saturating_sub(1));
 
-            for (pos, output) in pixels[px..]
-                .chunks_exact_mut(width * out_colorspace_components)
-                .take(num_iters)
-                .enumerate()
-            {
-                let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+            let num_iters = (8 - usize::from(is_last_considered)) * self.coeff * self.v_max;
 
-                // iterate over each line, since color-convert needs only
-                // one line
-                for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                    *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
-                }
-                color_convert(
-                    &raw_samples,
-                    self.color_convert_16,
-                    self.input_colorspace,
-                    self.options.jpeg_get_out_colorspace(),
-                    output,
-                    width,
-                    padded_width
-                )?;
-                px += width * out_colorspace_components;
-            }
+            color_conv_function(num_iters, samples)?;
         } else {
             let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
 
