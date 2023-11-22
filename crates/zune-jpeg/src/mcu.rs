@@ -198,6 +198,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             self.post_process(
                 pixels,
                 i,
+                mcu_height,
                 width,
                 padded_width,
                 &mut pixels_written,
@@ -330,8 +331,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     }
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(crate) fn post_process(
-        &mut self, pixels: &mut [u8], i: usize, width: usize, padded_width: usize,
-        pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+        &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
+        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
@@ -442,8 +443,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             //
             // For the last MCU, we upsample the last stride, meaning that if we hit the last MCU, we
             // should sample full raw coeffs
-            let is_last_considered =
-                is_vertically_sampled && (i != self.mcu_height.saturating_sub(1));
+            let is_last_considered = is_vertically_sampled && (i != mcu_height.saturating_sub(1));
 
             let num_iters = (8 - usize::from(is_last_considered)) * self.coeff * self.v_max;
 
