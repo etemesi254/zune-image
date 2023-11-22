@@ -250,6 +250,26 @@ impl Image {
     }
 
     /// Create an image with a static color in it
+    ///
+    ///  # Arguments
+    /// - pixel: Value to fill the image with
+    /// - colorspace: The image colorspace
+    /// - width: Image width
+    /// - height: Image height
+    ///
+    ///  # Supported Types
+    /// - u8: BitDepth is treated as BitDepth::Eight
+    /// - u16: BitDepth is treated as BitDepth::Sixteen
+    /// - f32: BitDepth is treated as BitDepth::Float32
+    ///
+    /// # Example
+    /// - Create a 800 by 800 RGB image of type u8
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::Image;
+    /// let image = Image::fill::<u8>(212,ColorSpace::RGB,800,800);
+    /// ```
+    ///
     pub fn fill<T>(pixel: T, colorspace: ColorSpace, width: usize, height: usize) -> Image
     where
         T: Copy + Clone + 'static + ZuneInts<T> + Zeroable + Pod
