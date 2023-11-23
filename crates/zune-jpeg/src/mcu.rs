@@ -205,7 +205,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 &mut upsampler_scratch_space
             )?;
         }
-        // assert_eq!(pixels_written, pixels.len());
+        assert_eq!(pixels_written, pixels.len());
 
         trace!("Finished decoding image");
 
@@ -371,9 +371,10 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             };
 
         let comps = &mut self.components[..];
+
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
             for comp in comps.iter_mut() {
-                upsample(comp, width, i, upsampler_scratch_space);
+                upsample(comp, mcu_height, i, upsampler_scratch_space);
             }
 
             if is_vertically_sampled {
@@ -402,9 +403,6 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
                 // the previous mcu, since we don't have the down row, so save it
                 for component in comps.iter_mut() {
-                    if component.sample_ratio != SampleRatios::None {
-                        continue;
-                    }
                     // copy last row to be used for the  next color conversion
                     let size = component.vertical_sample
                         * component.width_stride
@@ -439,7 +437,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             //
             // for rows up until the last MCU, we do not upsample the last stride of the MCU
             // which means that the number of iterations should take that into account is one less the
-            // upsampled size
+            // up-sampled size
             //
             // For the last MCU, we upsample the last stride, meaning that if we hit the last MCU, we
             // should sample full raw coeffs
@@ -456,19 +454,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 .enumerate()
                 .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
 
-            color_convert(
-                &channels_ref,
-                self.color_convert_16,
-                self.input_colorspace,
-                self.options.jpeg_get_out_colorspace(),
-                &mut pixels[px..],
-                width,
-                padded_width
-            )?;
-
-            // increment pointer to number of pixels written
-            // see comments on coeff
-            px += width * out_colorspace_components * 8 * self.coeff;
+            color_conv_function(8 * self.coeff, channels_ref)?;
         }
 
         *pixels_written = px;

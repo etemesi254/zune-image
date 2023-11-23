@@ -353,6 +353,8 @@ pub(crate) fn upsample(
                 // row below current sample
                 let mut row_down: &[i16] = &[];
 
+                // Order of ifs matters
+
                 if i == 0 && pos == 0 {
                     // first IMAGE row, row_up is the same as current row
                     // row_down is the row below.
@@ -362,17 +364,15 @@ pub(crate) fn upsample(
                     // first row of a new mcu, previous row was copied so use that
                     row_up = &component.row[..];
                     row_down = &component.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
+                } else if i == mcu_height.saturating_sub(1) && pos == stop_offset - 1 {
+                    // last IMAGE row, adjust pointer to use previous row and current row
+                    row_up = &component.raw_coeff[(pos - 1) * stride..pos * stride];
+                    row_down = &component.raw_coeff[pos * stride..(pos + 1) * stride];
                 } else if pos > 0 && pos < stop_offset - 1 {
                     // other rows, get row up and row down relative to our current row
                     // ignore last row of each mcu
                     row_up = &component.raw_coeff[(pos - 1) * stride..pos * stride];
                     row_down = &component.raw_coeff[(pos + 1) * stride..(pos + 2) * stride];
-                } else if i == mcu_height.saturating_sub(1) && pos == stop_offset - 1 {
-                    // last IMAGE row, adjust pointer to use previous row and current row
-
-                    // other rows, get row up and row down relative to our current row
-                    row_up = &component.raw_coeff[(pos - 1) * stride..pos * stride];
-                    row_down = &component.raw_coeff[pos * stride..(pos + 1) * stride];
                 } else if pos == stop_offset - 1 {
                     // last MCU in a row
                     //
