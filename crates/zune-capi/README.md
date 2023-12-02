@@ -14,8 +14,6 @@ simply copy the dlls and add `-lzil_c` to your linker to link the libraries, aft
 `*.dll` files to run
 
 
-
-
 ### API Details
 
 All api callings are prefixed by `zil_` and all structs are prefixed by `Z` so to read
@@ -55,9 +53,13 @@ that was
 
 ## Building
 
+To generate the header file, you need `cbindgen`
+
+First `cd` into the directory
+
+Then Run `cargo install cbindgen` and then run `cbindgenn . -o ./include/zil.h`
 
 ### Windows
-
 To build the library on windows, it is recommended to use `stable-x86_64-pc-windows-gnu` and not `stable-x86_64-pc-windows-msvc`
 due to linker errors that may occur when trying to link the dll
 
@@ -82,6 +84,22 @@ note: native-static-libs: -lkernel32 -ladvapi32 -lbcrypt -lkernel32 -lntdll -lus
 
 You are to add the linker options to the linker you will be using for linking the dll.
 
+### Linux
+
+We follow the same steps from windows but now change the linker arguments
+
+1. `cd ` into the directory
+2. Run `RUSTFLAGS="--print native-static-libs" cargo build --release`
+
+The current output (as of December 2023) is 
+
+```text
+note: Link against the following native artifacts when linking against this static library. The order and any duplication can be significant on some platforms.
+
+note: native-static-libs: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
+```
+
+Add those to the linker options for the library you are using
 
 ## Running 
 
