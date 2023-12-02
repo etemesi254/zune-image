@@ -1,6 +1,7 @@
 use crate::enums::ZImageFormat;
 use libc::size_t;
 use std::ffi::{c_long, c_uchar, c_void};
+use std::ptr::null_mut;
 
 /// \brief Guess the format of an image
 ///
@@ -41,5 +42,23 @@ pub unsafe extern "C" fn zil_malloc(size: size_t) -> *mut c_void {
 ///
 #[no_mangle]
 pub unsafe extern "C" fn zil_free(ptr: *mut c_void) {
-    libc::free(ptr)
+    assert!(!ptr.is_null(), "Trying to free a null ptr!!");
+    if !ptr.is_null() {
+        libc::free(ptr);
+        // set it to be null
+    }
+}
+
+/// Free a memory region that was allocated by zil_malloc or internally by the and set it to null
+///
+/// E.g. free a pointer returned by `zil_imread`
+///
+/// \param ptr: A pointer allocated by `zil_malloc`
+#[no_mangle]
+pub unsafe extern "C" fn zil_free_and_null(ptr: *mut *mut c_void) {
+    if !ptr.is_null() {
+        let deref_ptr = *ptr;
+        zil_free(deref_ptr);
+        *ptr = null_mut()
+    }
 }

@@ -21,6 +21,8 @@ simply copy the dlls and add `-lzil_c` to your linker to link the libraries, aft
 All api callings are prefixed by `zil_` and all structs are prefixed by `Z` so to read
 a file you use `zil_imread`
 
+To deal with the main image struct, those are prefixed with `zil_zimg`, 
+
 Most APIs take a `ZStatus` that is used to indicate whether an operation succeded
 
 E.g. to read image headers to extract width one can use `zil_read_headers` in the following way
@@ -33,13 +35,13 @@ int main() {
     // file containing image data
     const char* file = "/image.png"
     // create a new status struct        
-    ZStatus status = zil_status_new();
+    ZStatus* status = zil_status_new();
     // read image metadata
     ZImageMetadata metadata = zil_read_headers(file,&status);
     // check for error
-    if (!zil_status_okay(&status)){
+    if (!zil_status_okay(status)){
         // print and bail
-        printf("error: %s",zil_status_message(&status));
+        printf("error: %s",zil_status_message(status));
         return -1
     } else{
         printf("Image width: %d",metadata.width);

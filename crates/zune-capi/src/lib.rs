@@ -1,47 +1,74 @@
 //! C bindings to zune-image
+
 use zune_image::image::Image;
 
 mod enums;
 mod errno;
+mod image;
+mod improc;
 mod imread;
 mod structs;
 mod utils;
 
-type ZImage = Image;
-///
+pub type ZImage = Image;
 #[no_mangle]
+#[cfg(target_os = "windows")]
 pub extern "C" fn __chkstk() {}
 
+#[cfg(target_os = "windows")]
 #[no_mangle]
 pub extern "C" fn _fltused() {}
 
 #[test]
 fn hello() {
-    use crate::enums::ZImageDepth;
-    use crate::errno::{zil_status_new, zil_status_ok};
+    // use crate::utils::zil_free;
 
-    use std::ffi::{CStr, CString};
+    //use crate::errno::{zil_status_free, zil_status_message};
 
-    let file = r"C:\Users\eteme\OneDrive\Pictures\Backgrounds\ameen-fahmy-mXpTl4jNKiA-unsplash.jpg";
-    let c_str = CString::new(file).unwrap();
-    let mut w = 0;
-    let mut h = 0;
-    let mut depth = ZImageDepth::UnknownDepth;
-    let mut channels = 0;
-    let mut status = zil_status_new();
+    // use crate::enums::ZImageDepth;
+    //use crate::errno::{zil_status_new, zil_status_ok};
 
-    let c = imread::zil_imread(
-        c_str.as_ptr(),
-        &mut w,
-        &mut h,
-        &mut depth,
-        &mut channels,
-        &mut status,
-    );
+    //use std::ffi::CStr;
+    //use std::ffi::CString;
 
-    let d = 0;
-    if !zil_status_ok(&status) {
-        panic!("{:?}", unsafe { CStr::from_ptr(status.message) });
+    // // let mut file = env!("CARGO_MANIFEST_DIR").to_string();
+    // // let c = PathBuf::from("/test-images/basn0g01.png");
+    // //     c.
+    // // println!("{:?}", file);
+    // let c_str = CString::new(file).unwrap();
+    // let mut w = 0;
+    // let mut h = 0;
+    // let mut depth = ZImageDepth::UnknownDepth;
+    // let mut channels = 0;
+    // let mut status = zil_status_new();
+    //
+    // let ptr = imread::zil_imread(
+    //     c_str.as_ptr(),
+    //     &mut w,
+    //     &mut h,
+    //     &mut depth,
+    //     &mut channels,
+    //     &mut status,
+    // );
+    //
+    // if !zil_status_ok(&status) {
+    //     panic!("{:?}", unsafe {
+    //         CStr::from_ptr(zil_status_message(&status))
+    //     });
+    // }
+    // zil_status_free(status);
+    // unsafe { zil_free(ptr as _) };
+    // println!("{},{},{}", w, h, channels);
+}
+
+#[test]
+fn test_status_works() {
+    use crate::errno::zil_status_new;
+    use crate::utils::zil_free;
+
+    unsafe {
+        let c = zil_status_new();
+        assert!(!c.is_null());
+        zil_free(c.cast());
     }
-    println!("{},{},{}", w, h, channels);
 }

@@ -1,16 +1,19 @@
 use crate::enums::{ZImageColorspace, ZImageDepth, ZImageFormat};
 use crate::errno::{zil_status_ok, ZStatus, ZStatusType};
 use crate::structs::ZImageMetadata;
-use std::ffi::{c_char, c_int, c_uchar, c_uint, c_ulong, CStr};
+use std::ffi::{c_char, c_uchar, c_ulong, CStr};
 use std::ptr;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
 use zune_image::codecs::hdr::HdrDecoder;
 use zune_image::codecs::jpeg::JpegDecoder;
 use zune_image::codecs::jpeg_xl::jxl_oxide::RenderResult;
 use zune_image::codecs::png::PngDecoder;
+use zune_image::codecs::ppm::PPMDecoder;
+use zune_image::codecs::psd::PSDDecoder;
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 
@@ -41,8 +44,8 @@ use zune_image::errors::ImageErrors;
 ///
 #[no_mangle]
 pub extern "C" fn zil_imread(
-    file: *const c_char, width: *mut c_uint, height: *mut c_uint, depth: *mut ZImageDepth,
-    channels: *mut c_int, status: *mut ZStatus,
+    file: *const c_char, width: *mut usize, height: *mut usize, depth: *mut ZImageDepth,
+    channels: *mut usize, status: *mut ZStatus,
 ) -> *const c_char {
     // safety: The caller is supposed to uphold this
     let binding = unsafe { CStr::from_ptr(file) }.to_string_lossy();
@@ -58,7 +61,7 @@ pub extern "C" fn zil_imread(
 
                 let new_size = w * h * colorspace * im_depth;
 
-                let output = unsafe { libc::aligned_malloc(new_size, 4) };
+                let output = unsafe { libc::malloc(new_size) };
                 if output.is_null() {
                     unsafe {
                         *status = ZStatus::new(
@@ -70,9 +73,9 @@ pub extern "C" fn zil_imread(
                 }
                 zil_imdecode_into(
                     data.as_ptr(),
-                    data.len() as u32,
+                    data.len(),
                     output.cast(),
-                    new_size as u32,
+                    new_size,
                     width,
                     height,
                     depth,
@@ -121,8 +124,8 @@ pub extern "C" fn zil_imread(
 /// @param status: Image decoding status, query this before inspecting contents of buf, CANNOT be null
 #[no_mangle]
 pub extern "C" fn zil_imread_into(
-    file: *const c_char, output: *mut c_uchar, output_size: c_uint, width: *mut c_uint,
-    height: *mut c_uint, depth: *mut ZImageDepth, channels: *mut c_int, status: *mut ZStatus,
+    file: *const c_char, output: *mut u8, output_size: usize, width: *mut usize,
+    height: *mut usize, depth: *mut ZImageDepth, channels: *mut usize, status: *mut ZStatus,
 ) {
     if status.is_null() {
         return;
@@ -134,7 +137,7 @@ pub extern "C" fn zil_imread_into(
     match std::fs::read(file_cstr) {
         Ok(contents) => zil_imdecode_into(
             contents.as_ptr(),
-            contents.len() as c_uint,
+            contents.len(),
             output,
             output_size,
             width,
@@ -165,7 +168,7 @@ pub extern "C" fn zil_read_headers_from_file(
     let file_cstr = binding.as_ref();
 
     return match std::fs::read(file_cstr) {
-        Ok(bytes) => zil_decode_headers(bytes.as_ptr(), bytes.len() as u32, status),
+        Ok(bytes) => zil_read_headers_from_memory(bytes.as_ptr(), bytes.len() as u32, status),
         Err(error) => {
             unsafe {
                 (*status) = ZStatus::new(error.to_string(), ZStatusType::IoErrors);
@@ -232,8 +235,8 @@ pub extern "C" fn zil_read_headers_from_memory(
 ///
 #[no_mangle]
 pub extern "C" fn zil_imdecode(
-    input: *const c_uchar, input_size: c_uint, width: *mut c_uint, height: *mut c_uint,
-    depth: *mut ZImageDepth, channels: *mut c_int, status: *mut ZStatus,
+    input: *const u8, input_size: usize, width: *mut usize, height: *mut usize,
+    depth: *mut ZImageDepth, channels: *mut usize, status: *mut ZStatus,
 ) -> *const c_char {
     if status.is_null() {
         return ptr::null();
@@ -267,7 +270,7 @@ pub extern "C" fn zil_imdecode(
                 input,
                 input_size,
                 output.cast(),
-                size as u32,
+                size,
                 width,
                 height,
                 depth,
@@ -299,9 +302,8 @@ pub extern "C" fn zil_imdecode(
 ///
 #[no_mangle]
 pub extern "C" fn zil_imdecode_into(
-    input: *const c_uchar, input_size: c_uint, output: *mut c_uchar, output_size: c_uint,
-    width: *mut c_uint, height: *mut c_uint, depth: *mut ZImageDepth, channels: *mut c_int,
-    status: *mut ZStatus,
+    input: *const u8, input_size: usize, output: *mut u8, output_size: usize, width: *mut usize,
+    height: *mut usize, depth: *mut ZImageDepth, channels: *mut usize, status: *mut ZStatus,
 ) {
     if status.is_null() {
         return;
@@ -338,16 +340,16 @@ pub extern "C" fn zil_imdecode_into(
             }
             // write parameters
             if !width.is_null() {
-                unsafe { *width = w as u32 };
+                unsafe { *width = w };
             }
             if !height.is_null() {
-                unsafe { *height = h as u32 };
+                unsafe { *height = h };
             }
             if !depth.is_null() {
                 unsafe { *depth = ZImageDepth::from(im_depth) };
             }
             if !channels.is_null() {
-                unsafe { *channels = colorspace.num_components() as c_int };
+                unsafe { *channels = colorspace.num_components() };
             }
 
             // safety, we checked above if the status is null
@@ -410,14 +412,78 @@ where
                         _ => unreachable!(),
                     }
                 }
-                ImageFormat::PPM => {}
-                ImageFormat::PSD => {}
+                ImageFormat::PPM => {
+                    let mut decoder = PPMDecoder::new(data);
+                    decoder.decode_headers()?;
+                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let color = decoder.get_colorspace().unwrap();
+                    let depth = decoder.get_bit_depth().unwrap().size_of();
+                    let size = w * h * color.num_components() * depth;
+
+                    if output.len() < size {
+                        return Err(ImageErrors::GenericString(format!(
+                            "Too small of output buffer, expected {} but found {} ",
+                            size,
+                            output.len()
+                        )));
+                    }
+
+                    match decoder.decode()? {
+                        DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
+                        DecodingResult::U16(bytes) => {
+                            // alias u16 to u8
+                            // SAFETY: u8 can alias everything
+                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                            output[..size].copy_from_slice(&b[..size]);
+                        }
+                        DecodingResult::F32(bytes) => {
+                            // alias u16 to u8
+                            // SAFETY: u8 can alias everything
+                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                            output[..size].copy_from_slice(&b[..size]);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                ImageFormat::PSD => {
+                    let mut decoder = PSDDecoder::new(data);
+                    decoder.decode_headers()?;
+                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let color = decoder.get_colorspace().unwrap();
+                    let depth = decoder.get_bit_depth().unwrap().size_of();
+                    let size = w * h * color.num_components() * depth;
+
+                    if output.len() < size {
+                        return Err(ImageErrors::GenericString(format!(
+                            "Too small of output buffer, expected {} but found {} ",
+                            size,
+                            output.len()
+                        )));
+                    }
+
+                    match decoder.decode()? {
+                        DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
+                        DecodingResult::U16(bytes) => {
+                            // alias u16 to u8
+                            // SAFETY: u8 can alias everything
+                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                            output[..size].copy_from_slice(&b[..size]);
+                        }
+                        DecodingResult::F32(bytes) => {
+                            // alias u16 to u8
+                            // SAFETY: u8 can alias everything
+                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                            output[..size].copy_from_slice(&b[..size]);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 ImageFormat::Farbfeld => {
                     let mut decoder = FarbFeldDecoder::new(data);
 
                     let (a, output_buf, c) = unsafe { output.align_to_mut() };
 
-                    if !(a.is_empty() && c.is_empty()) {
+                    if !a.is_empty() || !c.is_empty() {
                         // misalignment
                         return Err(ImageErrors::GenericStr("Buffer misalignment"));
                     }

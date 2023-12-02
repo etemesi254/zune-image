@@ -53,12 +53,12 @@ usize_is_size_t = true
 [defines]
 # "target_os = freebsd" = "DEFINE_FREEBSD"
 # "feature = serde" = "DEFINE_SERDE"
-
+"target_os = windows" = "DEFINE_ZIL_WINDOWS"
 
 
 [export]
 include = []
-exclude = []
+#exclude = ["Image"]
 # prefix = "CAPI_"
 item_types = []
 renaming_overrides_prefixing = false

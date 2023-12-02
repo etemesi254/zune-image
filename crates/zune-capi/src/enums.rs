@@ -34,6 +34,23 @@ pub enum ZImageFormat {
     BMP,
 }
 
+impl ZImageFormat {
+    /// Convert back to rust image format
+    pub fn to_format(self) -> ImageFormat {
+        match self {
+            ZImageFormat::JPEG => ImageFormat::JPEG,
+            ZImageFormat::PNG => ImageFormat::PNG,
+            ZImageFormat::PPM => ImageFormat::PPM,
+            ZImageFormat::PSD => ImageFormat::PSD,
+            ZImageFormat::Farbfeld => ImageFormat::Farbfeld,
+            ZImageFormat::QOI => ImageFormat::QOI,
+            ZImageFormat::JPEG_XL => ImageFormat::JPEG_XL,
+            ZImageFormat::HDR => ImageFormat::HDR,
+            ZImageFormat::BMP => ImageFormat::BMP,
+            _ => ImageFormat::Unknown,
+        }
+    }
+}
 impl From<ImageFormat> for ZImageFormat {
     fn from(value: ImageFormat) -> Self {
         match value {
@@ -62,6 +79,7 @@ impl From<ImageFormat> for ZImageFormat {
 /// U16 -> 16 bit depth, image is represented as uint16_t ( unsigned short)
 /// F32  -> using float32, image is represented as float
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub enum ZImageDepth {
     /// Image depth is unknown
     UnknownDepth = 0,
@@ -71,6 +89,17 @@ pub enum ZImageDepth {
     U16 = 2,
     /// Float 32 images   
     F32 = 4,
+}
+
+impl ZImageDepth {
+    pub(crate) fn to_depth(self) -> BitDepth {
+        return match self {
+            ZImageDepth::UnknownDepth => BitDepth::Unknown,
+            ZImageDepth::U8 => BitDepth::Eight,
+            ZImageDepth::U16 => BitDepth::Sixteen,
+            ZImageDepth::F32 => BitDepth::Float32,
+        };
+    }
 }
 impl From<BitDepth> for ZImageDepth {
     fn from(value: BitDepth) -> Self {
@@ -104,10 +133,30 @@ pub enum ZImageColorspace {
     BGR,
     /// Blue, Green, Red, Alpha
     BGRA,
+    /// Alpha, Blue Green, Red
+    ARGB,
 }
 
+impl ZImageColorspace {
+    pub fn to_colorspace(self) -> ColorSpace {
+        match self {
+            Self::RGB => ColorSpace::RGB,
+            Self::RGBA => ColorSpace::RGBA,
+            Self::YCbCr => ColorSpace::YCbCr,
+            Self::Luma => ColorSpace::Luma,
+            Self::LumaA => ColorSpace::LumaA,
+            Self::YCCK => ColorSpace::YCCK,
+            Self::CMYK => ColorSpace::CMYK,
+            Self::BGR => ColorSpace::BGR,
+            Self::BGRA => ColorSpace::BGRA,
+            Self::ARGB => ColorSpace::ARGB,
+            _ => ColorSpace::Unknown,
+        }
+    }
+}
 impl From<ColorSpace> for ZImageColorspace {
     fn from(value: ColorSpace) -> Self {
+        // Remember to also do for to_colorspace
         match value {
             ColorSpace::RGB => ZImageColorspace::RGB,
             ColorSpace::RGBA => ZImageColorspace::RGBA,
@@ -118,6 +167,7 @@ impl From<ColorSpace> for ZImageColorspace {
             ColorSpace::CMYK => ZImageColorspace::CMYK,
             ColorSpace::BGR => ZImageColorspace::BGR,
             ColorSpace::BGRA => ZImageColorspace::BGRA,
+            ColorSpace::ARGB => ZImageColorspace::ARGB,
             _ => ZImageColorspace::UnknownColorspace,
         }
     }

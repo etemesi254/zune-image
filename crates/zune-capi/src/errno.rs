@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use crate::utils::{zil_free, zil_malloc};
 use std::ffi::{c_char, CString};
+use std::mem::size_of;
 use std::ptr;
 
 /// Various representations of things that may go wrong
@@ -23,6 +24,12 @@ pub enum ZStatusType {
     /// useful when we have been asked for status code but
     /// passed a null status
     NullStatus,
+    /// Image is null
+    ///
+    /// An operation expecting a non_null image got a null image
+    ImageIsNull,
+    /// Image operation failed
+    ImageOperationError,
 }
 
 /// A status indicator that tells you more about things that went wrong
@@ -36,19 +43,13 @@ pub enum ZStatusType {
 /// For quickly checking if an operation succeeded, you can use `zil_status_ok` that
 /// returns a boolean indicating whether something worked, true if operation succeeded, false otherwise
 ///
+/// To free the structure use
 ///
 #[repr(C)]
 pub struct ZStatus {
     pub status: ZStatusType,
-}
-thread_local! {
-    // we need a place to store image information that outlives the caller.
-    //
-    // we use this for that
-    //
-    // We cannot pass CString to C, since it doesn't
-    // know and understand it,and since everything is exposed in C, the struct is unknown to it
-    static CSTRING_GLOBAL_STORAGE:RefCell<CString> = RefCell::new(CString::new("OK").unwrap());
+    /// A short message indicating what went wrong
+    pub message: *mut char,
 }
 
 impl ZStatus {
@@ -56,8 +57,17 @@ impl ZStatus {
     where
         T: Into<Vec<u8>>,
     {
-        CSTRING_GLOBAL_STORAGE.with_borrow_mut(|x| *x = CString::new(message).unwrap());
-        ZStatus { status }
+        let msg = CString::new(message).unwrap();
+        let mem = unsafe { zil_malloc(msg.as_bytes_with_nul().len()) };
+        // copy to memory
+        unsafe {
+            libc::strcpy(mem.cast(), msg.as_ptr());
+        }
+
+        ZStatus {
+            status,
+            message: mem.cast(),
+        }
     }
     /// Return okay
     pub fn okay() -> ZStatus {
@@ -65,6 +75,11 @@ impl ZStatus {
     }
 }
 
+impl Drop for ZStatus {
+    fn drop(&mut self) {
+        unsafe { zil_free(self.message.cast()) };
+    }
+}
 /// \brief Check if image operation succeeded
 ///
 /// @param status: Image status
@@ -82,9 +97,27 @@ pub extern "C" fn zil_status_ok(status: *const ZStatus) -> bool {
 ///
 /// This can be passed around to functions that report progress via
 /// status
+///
+/// Remember to free it with `zil_status_free`
 #[no_mangle]
-pub extern "C" fn zil_status_new() -> ZStatus {
-    ZStatus::new("", ZStatusType::Ok)
+pub unsafe extern "C" fn zil_status_new() -> *mut ZStatus {
+    let ptr = zil_malloc(size_of::<ZStatus>());
+
+    let msg = CString::new("").unwrap();
+    let mem = unsafe { zil_malloc(msg.as_bytes_with_nul().len()) };
+    if mem.is_null() {
+        return ptr::null_mut();
+    }
+    // copy to memory
+    unsafe {
+        libc::strcpy(mem.cast(), msg.as_ptr());
+    }
+    if !ptr.is_null() {
+        (*ptr.cast::<ZStatus>()).message = mem.cast();
+        (*ptr.cast::<ZStatus>()).status = ZStatusType::Ok;
+    }
+    // make pointer
+    ptr.cast()
 }
 
 /// Return the status code contained in the ZImStatus
@@ -112,5 +145,23 @@ pub extern "C" fn zil_status_message(status: *const ZStatus) -> *const c_char {
     if status.is_null() {
         return ptr::null();
     }
-    return CSTRING_GLOBAL_STORAGE.with_borrow(|x| x.as_ptr());
+    return unsafe { (*status).message.cast() };
+}
+
+/// Destroy a status indicator.
+///
+/// This takes by value and drops the status param
+/// freeing any memory allocated and used by this status struct
+///
+/// \param status: The status to free
+#[no_mangle]
+pub extern "C" fn zil_status_free(status: *mut ZStatus) {
+    if !status.is_null() {
+        unsafe { zil_free((*status).message.cast()) }
+        // free object
+        unsafe { status.drop_in_place() }
+
+        // free memory holding it
+        unsafe { zil_free(status.cast()) }
+    }
 }
