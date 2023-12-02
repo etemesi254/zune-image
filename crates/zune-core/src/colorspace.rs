@@ -32,32 +32,57 @@ pub enum ColorSpace {
     /// Blue, Green, Red, Alpha
     BGRA,
     /// The colorspace is unknown
-    Unknown
+    Unknown,
+    /// Alpha Red Green Blue
+    ARGB,
 }
 
 impl ColorSpace {
+    /// Number of color channels present for a certain colorspace
+    ///
+    /// E.g. RGB returns 3 since it contains R,G and B colors to make up a pixel
     pub const fn num_components(&self) -> usize {
         match self {
             Self::RGB | Self::YCbCr | Self::BGR => 3,
-            Self::RGBA | Self::YCCK | Self::CMYK | Self::BGRA => 4,
+            Self::RGBA | Self::YCCK | Self::CMYK | Self::BGRA | Self::ARGB => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
-            Self::Unknown => 0
+            Self::Unknown => 0,
         }
     }
 
     pub const fn has_alpha(&self) -> bool {
-        matches!(self, Self::RGBA | Self::LumaA | Self::BGRA)
+        matches!(self, Self::RGBA | Self::LumaA | Self::BGRA | Self::ARGB)
     }
 
     pub const fn is_grayscale(&self) -> bool {
         matches!(self, Self::LumaA | Self::Luma)
     }
+
+    /// Returns the position of the alpha pixel in a pixel
+    ///
+    ///
+    /// That is for an array of color components say `[0,1,2,3]` if the image has an alpha channel
+    /// and is in RGBA format, this will return `Some(3)`, indicating alpha is found in the third index
+    /// but if the image is in `ARGB` format, it will return `Some(0)` indicating alpha is found in  
+    /// index 0
+    ///
+    /// If an image doesn't have an alpha channel returns `None`
+    ///
+    pub const fn alpha_position(&self) -> Option<usize> {
+        match self {
+            ColorSpace::RGBA => Some(3),
+            ColorSpace::LumaA => Some(1),
+            ColorSpace::BGRA => Some(3),
+            ColorSpace::ARGB => Some(0),
+            _ => None,
+        }
+    }
 }
 
 /// Encapsulates all colorspaces supported by
 /// the library
-pub static ALL_COLORSPACES: [ColorSpace; 9] = [
+pub static ALL_COLORSPACES: [ColorSpace; 10] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
     ColorSpace::LumaA,
@@ -66,7 +91,8 @@ pub static ALL_COLORSPACES: [ColorSpace; 9] = [
     ColorSpace::BGRA,
     ColorSpace::BGR,
     ColorSpace::YCCK,
-    ColorSpace::YCbCr
+    ColorSpace::YCbCr,
+    ColorSpace::ARGB,
 ];
 
 /// Color characteristics
@@ -85,5 +111,5 @@ pub enum ColorCharacteristics {
     sRGB,
     /// Linear transfer characteristics
     /// The image is in linear colorspace
-    Linear
+    Linear,
 }
