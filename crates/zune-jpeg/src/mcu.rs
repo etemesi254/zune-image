@@ -11,6 +11,7 @@ use core::cmp::min;
 
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::ColorSpace::Luma;
 use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
@@ -340,8 +341,15 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         // indicates whether image is vertically up-sampled
         let is_vertically_sampled = self.v_max > 1;
 
-        let comp_len = self.components.len();
+        let mut comp_len = self.components.len();
 
+        // If we are moving from YCbCr-> Luma, we do not allocate storage for other components, so we
+        // will panic when we are trying to read samples, so for that case,
+        // hardcode it so that we  don't panic when doing
+        //   *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
+        if out_colorspace_components < comp_len && self.options.jpeg_get_out_colorspace() == Luma {
+            comp_len = out_colorspace_components;
+        }
         let mut color_conv_function =
             |num_iters: usize, samples: [&[i16]; 4]| -> Result<(), DecodeErrors> {
                 for (pos, output) in pixels[px..]
