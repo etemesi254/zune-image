@@ -24,7 +24,7 @@ mod exif;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AlphaState {
     PreMultiplied,
-    NonPreMultiplied
+    NonPreMultiplied,
 }
 
 /// Image metadata
@@ -36,16 +36,16 @@ pub enum AlphaState {
 pub struct ImageMetadata {
     // REMEMBER: If you add a field here add it's serialization
     // to mod file
-    pub(crate) color_trc:     Option<ColorCharacteristics>,
+    pub(crate) color_trc: Option<ColorCharacteristics>,
     pub(crate) default_gamma: Option<f32>,
-    pub(crate) width:         usize,
-    pub(crate) height:        usize,
-    pub(crate) colorspace:    ColorSpace,
-    pub(crate) depth:         BitDepth,
-    pub(crate) format:        Option<ImageFormat>,
-    pub(crate) alpha:         AlphaState,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) colorspace: ColorSpace,
+    pub(crate) depth: BitDepth,
+    pub(crate) format: Option<ImageFormat>,
+    pub(crate) alpha: AlphaState,
     #[cfg(feature = "metadata")]
-    pub(crate) exif:          Option<Vec<::exif::Field>>
+    pub(crate) exif: Option<Vec<::exif::Field>>,
 }
 
 impl Default for ImageMetadata {
@@ -60,7 +60,7 @@ impl Default for ImageMetadata {
             format: None,
             alpha: AlphaState::NonPreMultiplied,
             #[cfg(feature = "metadata")]
-            exif: None
+            exif: None,
         }
     }
 }

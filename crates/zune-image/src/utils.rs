@@ -1,6 +1,9 @@
 //! A set of miscellaneous functions that are good to have
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
+use crate::metadata::ImageMetadata;
+use std::cmp::min;
+use zune_core::bytestream::ZReaderTrait;
 
 /// Swizzle three channels optionally using simd intrinsics where possible
 fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
@@ -87,6 +90,9 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 ///   `channels[0].len()/size_of::<T> * channels.len()`, but the library doesn't check this is held
 ///    In case it's smaller, the function will ignore
 ///
+/// # Returns:
+/// The bytes written
+///
 /// # Examples
 /// - create a RGB image and convert it to interleaved
 /// ```
@@ -109,13 +115,13 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// }
 /// ```
 pub fn swizzle_channels<T: Copy + Default + 'static>(
-    channels: &[Channel], output: &mut [T]
-) -> Result<(), ImageErrors> {
+    channels: &[Channel], output: &mut [T],
+) -> Result<usize, ImageErrors> {
     match channels.len() {
         // copy
         1 => {
             output.copy_from_slice(channels[0].reinterpret_as()?);
-            Ok(())
+            Ok(output.len())
         }
         2 => {
             for ((output, a), b) in output
@@ -126,7 +132,8 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
                 output[0] = *a;
                 output[1] = *b;
             }
-            Ok(())
+            let size = min(channels[0].reinterpret_as::<T>()?.len() * 2, output.len());
+            Ok(size)
         }
         3 => {
             // three components are usually quite common, so for those use one which can be
@@ -143,7 +150,9 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
                 r.push(c.reinterpret_as()?);
             }
             swizzle_three_channels(&r, output);
-            Ok(())
+
+            let size = min(channels[0].reinterpret_as::<T>()?.len() * 3, output.len());
+            Ok(size)
         }
         4 => {
             // now swizzle
@@ -156,10 +165,22 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
                 r.push(c.reinterpret_as()?);
             }
             swizzle_four_channels(&r, output);
-            Ok(())
+
+            let size = min(channels[0].reinterpret_as::<T>()?.len() * 4, output.len());
+            Ok(size)
         }
         _ => Err(ImageErrors::GenericStr(
-            "Image channels not in supported count, the library supports images from 1-4 channels"
-        ))
+            "Image channels not in supported count, the library supports images from 1-4 channels",
+        )),
     }
+}
+
+pub fn decode_info<T: ZReaderTrait>(bytes: T) -> Option<ImageMetadata> {
+    return match crate::codecs::guess_format(bytes) {
+        None => None,
+        Some((format, bytes)) => {
+            let mut decoder = format.get_decoder(bytes).ok()?;
+            decoder.read_headers().ok()?
+        }
+    };
 }

@@ -18,7 +18,7 @@ use zune_core::log::warn;
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{
-    rgb_to_grayscale_f32, rgb_to_grayscale_u16, rgb_to_grayscale_u8
+    rgb_to_grayscale_f32, rgb_to_grayscale_u16, rgb_to_grayscale_u8,
 };
 use crate::errors::ImageErrors;
 use crate::image::Image;
@@ -30,7 +30,7 @@ mod rgb_to_xyb;
 
 mod rgb_to_cmyk;
 pub struct ColorspaceConv {
-    to: ColorSpace
+    to: ColorSpace,
 }
 
 impl ColorspaceConv {
@@ -62,7 +62,7 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
         }
         _ => {
             return Err(ImageErrors::GenericStr(
-                "Unsupported bit depth for RGB->RGBA conversion"
+                "Unsupported bit depth for RGB->RGBA conversion",
             ))
         }
     };
@@ -81,7 +81,7 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
 }
 
 fn rgb_to_grayscale(
-    image: &mut Image, to: ColorSpace, preserve_alpha: bool
+    image: &mut Image, to: ColorSpace, preserve_alpha: bool,
 ) -> Result<(), ImageErrors> {
     let im_colorspace = image.colorspace();
 
@@ -114,7 +114,7 @@ fn rgb_to_grayscale(
                     g,
                     b,
                     out.reinterpret_as_mut::<u8>().unwrap(),
-                    max_value as u8
+                    max_value as u8,
                 );
 
                 if preserve_alpha && colorspace.has_alpha() {
@@ -167,7 +167,7 @@ fn rgb_to_grayscale(
                     g,
                     b,
                     out.reinterpret_as_mut::<f32>().unwrap(),
-                    max_value as f32
+                    max_value as f32,
                 );
 
                 if preserve_alpha && colorspace.has_alpha() {
@@ -184,7 +184,7 @@ fn rgb_to_grayscale(
                     out_colorspace = ColorSpace::Luma;
                 }
             }
-            d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d))
+            d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d)),
         }
     }
 
@@ -261,7 +261,7 @@ impl OperationsTrait for ColorspaceConv {
             (ColorSpace::CMYK, ColorSpace::RGB) => {
                 if depth != BitDepth::Eight && depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit and floats from CMYK to RGB"
+                        "Can only convert 8 bit and floats from CMYK to RGB",
                     ));
                 }
                 for frame in image.frames_mut() {
@@ -279,16 +279,16 @@ impl OperationsTrait for ColorspaceConv {
                                 c[0].reinterpret_as_mut()?,
                                 m[0].reinterpret_as_mut()?,
                                 y[0].reinterpret_as_mut()?,
-                                k[0].reinterpret_as_mut()?
+                                k[0].reinterpret_as_mut()?,
                             );
                         }
                         BitDepth::Float32 => rgb_to_cmyk::cmyk_to_rgb_f32(
                             c[0].reinterpret_as_mut()?,
                             m[0].reinterpret_as_mut()?,
                             y[0].reinterpret_as_mut()?,
-                            k[0].reinterpret_as_mut()?
+                            k[0].reinterpret_as_mut()?,
                         ),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
 
                     // remove K from cymk since the others become RGB
@@ -299,7 +299,7 @@ impl OperationsTrait for ColorspaceConv {
             (ColorSpace::RGB, ColorSpace::CMYK) => {
                 if depth != BitDepth::Eight && depth != BitDepth::Float32 {
                     return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit and float from CYMK  to RGB"
+                        "Can only convert 8 bit and float from CYMK  to RGB",
                     ));
                 }
                 for frame in image.frames_mut() {
@@ -318,7 +318,7 @@ impl OperationsTrait for ColorspaceConv {
                                 r[0].reinterpret_as_mut()?,
                                 g[0].reinterpret_as_mut()?,
                                 b[0].reinterpret_as_mut()?,
-                                k.reinterpret_as_mut()?
+                                k.reinterpret_as_mut()?,
                             );
                             // remove K from cymk since the others become RGB
                             channels.push(k);
@@ -334,16 +334,42 @@ impl OperationsTrait for ColorspaceConv {
                                 r[0].reinterpret_as_mut()?,
                                 g[0].reinterpret_as_mut()?,
                                 b[0].reinterpret_as_mut()?,
-                                k.reinterpret_as_mut()?
+                                k.reinterpret_as_mut()?,
                             );
                             // remove K from cymk since the others become RGB
                             channels.push(k);
                         }
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                 }
             }
 
+            (ColorSpace::ARGB, ColorSpace::RGB) => {
+                for frame in image.frames_mut() {
+                    // pop the first element
+                    // it conains the Alpha channel
+                    frame.channels_vec().remove(0);
+                }
+            }
+            (ColorSpace::RGB, ColorSpace::ARGB) => {
+                convert_rgb_to_rgba(image)?;
+                // swap
+                for frame in image.frames_mut() {
+                    // switch the channels now
+                    let a_channel = frame.channels_vec().pop().unwrap();
+                    frame.channels_vec().insert(0, a_channel);
+                }
+            }
+            (ColorSpace::Luma | ColorSpace::LumaA, ColorSpace::ARGB) => {
+                // first convert to rgba
+                convert_luma_to_rgb(image, ColorSpace::RGBA)?;
+                // then switch
+                for frame in image.frames_mut() {
+                    // switch the channels now, moving channel A into the first element
+                    let a_channel = frame.channels_vec().pop().unwrap();
+                    frame.channels_vec().insert(0, a_channel);
+                }
+            }
             (a, b) => {
                 let msg = format!("Unsupported/unknown mapping from {a:?} to {b:?}");
                 return Err(ImageErrors::GenericString(msg));

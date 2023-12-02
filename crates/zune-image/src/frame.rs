@@ -32,9 +32,9 @@ use crate::traits::ZuneInts;
 /// this is how long this particular frame should be shown
 #[derive(Clone, Eq, PartialEq)]
 pub struct Frame {
-    pub(crate) channels:    Vec<Channel>,
-    pub(crate) numerator:   usize,
-    pub(crate) denominator: usize
+    pub(crate) channels: Vec<Channel>,
+    pub(crate) numerator: usize,
+    pub(crate) denominator: usize,
 }
 
 impl Frame {
@@ -60,7 +60,7 @@ impl Frame {
         Frame {
             channels,
             numerator: 1,
-            denominator: 1
+            denominator: 1,
         }
     }
     /// Create a new frame from a slice of f32 pixels
@@ -76,14 +76,14 @@ impl Frame {
     /// # Panics
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_f32(
-        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_f32(pixels, colorspace).unwrap();
 
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
     /// Create a new frame from a slice of u16 pixels
@@ -100,13 +100,13 @@ impl Frame {
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
 
     pub fn from_u16(
-        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_u16(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -124,13 +124,13 @@ impl Frame {
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
 
     pub fn from_u8(
-        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_u8(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -178,12 +178,12 @@ impl Frame {
     ///
     /// ```
     pub fn new_with_duration(
-        channels: Vec<Channel>, numerator: usize, denominator: usize
+        channels: Vec<Channel>, numerator: usize, denominator: usize,
     ) -> Frame {
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -205,11 +205,15 @@ impl Frame {
     pub fn channels_ref(&self, colorspace: ColorSpace, ignore_alpha: bool) -> &[Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
-            // do not take the last one,
-            // we assume the last one contains the alpha channel
-            // in it.
-            // TODO: Is this a bad assumption
-            &self.channels[0..colorspace.num_components() - 1]
+            let alpha_position = colorspace.alpha_position().unwrap();
+            if alpha_position == 0 {
+                // cover ARGB
+                &self.channels[1..]
+            } else if colorspace.alpha_position().unwrap() == colorspace.num_components() - 1 {
+                &self.channels[0..colorspace.num_components() - 1]
+            } else {
+                unreachable!("Should not be here")
+            }
         } else {
             &self.channels[0..colorspace.num_components()]
         }
@@ -284,7 +288,7 @@ impl Frame {
     ///  It's an error if `T` is not the same type as the bytes stored by
     /// the channel
     pub fn write_rgba<T: Clone + Copy + ZuneInts<T> + Default + 'static + Pod>(
-        &self, colorspace: ColorSpace, out_pixel: &mut [T]
+        &self, colorspace: ColorSpace, out_pixel: &mut [T],
     ) -> Result<(), ChannelErrors> {
         match colorspace.num_components() {
             1 => {
@@ -346,12 +350,12 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         Ok(())
     }
     pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(
-        &self, colorspace: ColorSpace
+        &self, colorspace: ColorSpace,
     ) -> Vec<T> {
         let out_pixels = match colorspace.num_components() {
             1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
@@ -391,7 +395,7 @@ impl Frame {
                     .collect::<Vec<T>>()
             }
             // panics, all the way down
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         out_pixels
@@ -475,7 +479,7 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         out_pixel
     }
@@ -559,7 +563,7 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         out_pixel
     }
