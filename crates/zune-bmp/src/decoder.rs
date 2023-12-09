@@ -976,7 +976,7 @@ where
             // loop until no more bytes are left
             while !self.bytes.eof() {
                 p1 = self.bytes.get_u8();
-                println!("P1: {}", p1);
+                //println!("P1: {}", p1);
                 if p1 == 0 {
                     // escape code
                     p2 = self.bytes.get_u8();
