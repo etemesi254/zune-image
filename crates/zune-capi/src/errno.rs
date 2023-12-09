@@ -1,7 +1,8 @@
-use crate::utils::{zil_free, zil_malloc};
 use std::ffi::{c_char, CString};
 use std::mem::size_of;
 use std::ptr;
+
+use crate::utils::{zil_free, zil_malloc};
 
 /// Various representations of things that may go wrong
 #[repr(C)]
@@ -29,7 +30,9 @@ pub enum ZStatusType {
     /// An operation expecting a non_null image got a null image
     ImageIsNull,
     /// Image operation failed
-    ImageOperationError,
+    ImageOperationError
+    // Image encoding failed
+    //ImageEncodingFailed
 }
 
 /// A status indicator that tells you more about things that went wrong
@@ -47,15 +50,15 @@ pub enum ZStatusType {
 ///
 #[repr(C)]
 pub struct ZStatus {
-    pub status: ZStatusType,
+    pub status:  ZStatusType,
     /// A short message indicating what went wrong
-    pub message: *mut char,
+    pub message: *mut char
 }
 
 impl ZStatus {
     pub fn new<T>(message: T, status: ZStatusType) -> ZStatus
     where
-        T: Into<Vec<u8>>,
+        T: Into<Vec<u8>>
     {
         let msg = CString::new(message).unwrap();
         let mem = unsafe { zil_malloc(msg.as_bytes_with_nul().len()) };
@@ -66,7 +69,7 @@ impl ZStatus {
 
         ZStatus {
             status,
-            message: mem.cast(),
+            message: mem.cast()
         }
     }
     /// Return okay

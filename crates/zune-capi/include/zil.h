@@ -244,6 +244,15 @@ void _fltused(void);
 void zil_free(void *ptr);
 
 /**
+ * Free a memory region that was allocated by zil_malloc or internally by the and set it to null
+ *
+ * E.g. free a pointer returned by `zil_imread`
+ *
+ * \param ptr: A pointer allocated by `zil_malloc`
+ */
+void zil_free_and_null(void **ptr);
+
+/**
  * \brief Guess the format of an image
  *
  * This function inspects the first few bytes of an image file
@@ -257,8 +266,8 @@ void zil_free(void *ptr);
  * @returns ZImageFormat the image format of the bytes, or ZImageFormat::UnknownDepth if the image is unknown
  *
  */
-enum ZImageFormat zil_guess_format(const unsigned char *bytes,
-                                   long size);
+enum ZImageFormat zil_guess_format(const uint8_t *bytes,
+                                   size_t size);
 
 /**
  *\brief Decode an image already in memory
@@ -382,6 +391,24 @@ void zil_imgproc_blend(ZImage *image1,
                        const ZImage *image2,
                        float src_alpha,
                        struct ZStatus *status);
+
+/**
+ * Brighten an image
+ *
+ * This increases an image pixels by a specific value `value`
+ * which has a brighten effect.
+ *
+ * Formula
+ *
+ * \code
+ * pixel = pixel+value
+ * \endcode
+ *
+ * \param image: Mutable image, should not be null
+ * \param value: Value to be added to image
+ * \param status: Image status recorder
+ */
+void zil_imgproc_brightness(ZImage *image, float value, struct ZStatus *status);
 
 /**
  * Change image bit depth of the image
@@ -612,8 +639,8 @@ struct ZImageMetadata zil_read_headers_from_file(const char *file,
  * \returns: A struct containing details and sets status to be successful In case of failure in decoding or status being null, returns a zeroed struct.
  *
  */
-struct ZImageMetadata zil_read_headers_from_memory(const unsigned char *input,
-                                                   unsigned long input_size,
+struct ZImageMetadata zil_read_headers_from_memory(const uint8_t *input,
+                                                   size_t input_size,
                                                    struct ZStatus *status);
 
 /**
@@ -689,6 +716,59 @@ enum ZImageDepth zil_zimg_depth(ZImage *image, struct ZStatus *status);
  * This drops the image and associated memory buffers
  */
 void zil_zimg_free(ZImage *image);
+
+/**
+ * Create an image from f32 pixels, the depth will be a bit depth of 32 bits per pixel
+ *
+ *
+ * \param pixels: Pointer to first pixel
+ * \param length: Length of the pixel array
+ * \param width: The image width
+ * \param height: The image height
+ * \param colorspace: The image colorspace
+ *
+ */
+ZImage *zil_zimg_from_f32(const float *pixels,
+                          size_t length,
+                          size_t width,
+                          size_t height,
+                          enum ZImageColorspace colorspace);
+
+/**
+ * Create an image from u16 pixels, the depth will be a bit depth of 16 bits per pixel
+ *
+ *
+ * \param pixels: Pointer to first pixel
+ * \param length: Length of the pixel array
+ * \param width: The image width
+ * \param height: The image height
+ * \param colorspace: The image colorspace
+ *
+ */
+ZImage *zil_zimg_from_u16(const uint16_t *pixels,
+                          size_t length,
+                          size_t width,
+                          size_t height,
+                          enum ZImageColorspace colorspace);
+
+/**
+ * Create an image from u8 pixels, the depth will be a bit depth of eight bits per pixel
+ *
+ * The pixels are expected to be interleaved format, so if image is in
+ * RGB, pixels should be in R,G,B,R,G,B
+ *
+ * \param pixels: Pointer to first pixel
+ * \param length: Length of the pixel array
+ * \param width: The image width
+ * \param height: The image height
+ * \param colorspace: The image colorspace
+ *
+ */
+ZImage *zil_zimg_from_u8(const uint8_t *pixels,
+                         size_t length,
+                         size_t width,
+                         size_t height,
+                         enum ZImageColorspace colorspace);
 
 /**
  * Get output size, this returns the minimum array needed to hold a single

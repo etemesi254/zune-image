@@ -1,13 +1,12 @@
-use crate::enums::{ZImageColorspace, ZImageDepth};
-use crate::errno::{ZStatus, ZStatusType};
-use crate::ZImage;
 use std::ffi::c_float;
+
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::blend::Blend;
+use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
@@ -16,9 +15,13 @@ use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::invert::Invert;
 
+use crate::enums::{ZImageColorspace, ZImageDepth};
+use crate::errno::{ZStatus, ZStatusType};
+use crate::ZImage;
+
 fn exec_imgproc<T>(image: *mut ZImage, filter: T, status: *mut ZStatus)
 where
-    T: OperationsTrait,
+    T: OperationsTrait
 {
     if status.is_null() {
         return;
@@ -48,7 +51,7 @@ where
 ///
 #[no_mangle]
 pub extern "C" fn zil_imgproc_adjust_contrast(
-    image: *mut ZImage, contrast: c_float, status: *mut ZStatus,
+    image: *mut ZImage, contrast: c_float, status: *mut ZStatus
 ) {
     let filter = Contrast::new(contrast);
     exec_imgproc(image, filter, status);
@@ -79,12 +82,12 @@ pub extern "C" fn zil_imgproc_auto_orient(image: *mut ZImage, status: *mut ZStat
 ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
 #[no_mangle]
 pub extern "C" fn zil_imgproc_bilateral_filter(
-    image: *mut ZImage, d: i32, sigma_color: f32, sigma_space: f32, status: *mut ZStatus,
+    image: *mut ZImage, d: i32, sigma_color: f32, sigma_space: f32, status: *mut ZStatus
 ) {
     exec_imgproc(
         image,
         BilateralFilter::new(d, sigma_color, sigma_space),
-        status,
+        status
     );
 }
 
@@ -106,7 +109,7 @@ pub extern "C" fn zil_imgproc_bilateral_filter(
 /// \param status Image operation status, query this to tell you if the operation succeded
 #[no_mangle]
 pub extern "C" fn zil_imgproc_blend(
-    image1: *mut ZImage, image2: *const ZImage, src_alpha: f32, status: *mut ZStatus,
+    image1: *mut ZImage, image2: *const ZImage, src_alpha: f32, status: *mut ZStatus
 ) {
     if status.is_null() {
         return;
@@ -142,7 +145,7 @@ pub extern "C" fn zil_imgproc_blend(
 ///
 #[no_mangle]
 pub extern "C" fn zil_imgproc_exposure(
-    image: *mut ZImage, exposure: f32, black_point: f32, status: *mut ZStatus,
+    image: *mut ZImage, exposure: f32, black_point: f32, status: *mut ZStatus
 ) {
     let filter = Exposure::new(exposure, black_point);
     exec_imgproc(image, filter, status)
@@ -158,7 +161,7 @@ pub extern "C" fn zil_imgproc_exposure(
 /// was successful
 #[no_mangle]
 pub extern "C" fn zil_imgproc_change_depth(
-    image: *mut ZImage, to: ZImageDepth, status: *mut ZStatus,
+    image: *mut ZImage, to: ZImageDepth, status: *mut ZStatus
 ) {
     let depth = Depth::new(to.to_depth());
     exec_imgproc(image, depth, status);
@@ -173,7 +176,7 @@ pub extern "C" fn zil_imgproc_change_depth(
 /// \param status: Result of image operation, query this to see if operation was successful
 #[no_mangle]
 pub extern "C" fn zil_imgproc_convert_colorspace(
-    image: *mut ZImage, to: ZImageColorspace, status: *mut ZStatus,
+    image: *mut ZImage, to: ZImageColorspace, status: *mut ZStatus
 ) {
     let colorspace = ColorspaceConv::new(to.to_colorspace());
     exec_imgproc(image, colorspace, status)
@@ -195,7 +198,7 @@ pub extern "C" fn zil_imgproc_convert_colorspace(
 #[no_mangle]
 pub extern "C" fn zil_imgproc_crop(
     image: *mut ZImage, new_width: usize, new_height: usize, x: usize, y: usize,
-    status: *mut ZStatus,
+    status: *mut ZStatus
 ) {
     let filter = Crop::new(new_width, new_height, x, y);
     exec_imgproc(image, filter, status)
@@ -270,4 +273,23 @@ pub extern "C" fn zil_imgproc_gamma(image: *mut ZImage, gamma: f32, status: *mut
 #[no_mangle]
 pub extern "C" fn zil_imgproc_invert(image: *mut ZImage, status: *mut ZStatus) {
     exec_imgproc(image, Invert, status)
+}
+
+/// Brighten an image
+///
+/// This increases an image pixels by a specific value `value`
+/// which has a brighten effect.
+///
+/// Formula
+///
+/// \code
+/// pixel = pixel+value
+/// \endcode
+///
+/// \param image: Mutable image, should not be null
+/// \param value: Value to be added to image
+/// \param status: Image status recorder
+#[no_mangle]
+pub extern "C" fn zil_imgproc_brightness(image: *mut ZImage, value: f32, status: *mut ZStatus) {
+    exec_imgproc(image, Brighten::new(value), status)
 }

@@ -1,7 +1,9 @@
-use crate::enums::ZImageFormat;
-use libc::size_t;
-use std::ffi::{c_long, c_uchar, c_void};
+use std::ffi::c_void;
 use std::ptr::null_mut;
+
+use libc::size_t;
+
+use crate::enums::ZImageFormat;
 
 /// \brief Guess the format of an image
 ///
@@ -16,12 +18,12 @@ use std::ptr::null_mut;
 /// @returns ZImageFormat the image format of the bytes, or ZImageFormat::UnknownDepth if the image is unknown
 ///
 #[no_mangle]
-pub unsafe extern "C" fn zil_guess_format(bytes: *const c_uchar, size: c_long) -> ZImageFormat {
+pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZImageFormat {
     let slice = std::slice::from_raw_parts(bytes, size as usize);
 
     return match zune_image::codecs::guess_format(slice) {
         None => ZImageFormat::UnknownFormat,
-        Some((format, _)) => ZImageFormat::from(format),
+        Some((format, _)) => ZImageFormat::from(format)
     };
 }
 /// Allocate a region of memory

@@ -26,7 +26,7 @@ Most APIs take a `ZStatus` that is used to indicate whether an operation succede
 E.g. to read image headers to extract width one can use `zil_read_headers` in the following way
 
 ```c
-#include <zune-image.h>
+#include <zil.h>
 #include <stdio.h>
 
 int main() {
@@ -40,10 +40,14 @@ int main() {
     if (!zil_status_okay(status)){
         // print and bail
         printf("error: %s",zil_status_message(status));
+        // free status
+        zil_status_free(&status);
         return -1
     } else{
         printf("Image width: %d",metadata.width);
     }
+    // free status
+    zil_status_free(&status);
     return 0;
 }
 ```

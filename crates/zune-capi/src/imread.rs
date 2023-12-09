@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_uchar, c_ulong, CStr};
+use std::ffi::{c_char, CStr};
 use std::ptr;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
@@ -190,7 +190,7 @@ pub extern "C" fn zil_read_headers_from_file(
 ///
 #[no_mangle]
 pub extern "C" fn zil_read_headers_from_memory(
-    input: *const c_uchar, input_size: c_ulong, status: *mut ZStatus
+    input: *const u8, input_size: usize, status: *mut ZStatus
 ) -> ZImageMetadata {
     if status.is_null() {
         return ZImageMetadata::default();

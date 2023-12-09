@@ -1,15 +1,17 @@
+use std::ffi::CStr;
+use std::ptr;
+
+use libc::c_char;
+use zune_core::bit_depth::BitDepth;
+use zune_core::colorspace::ColorSpace;
+use zune_core::options::DecoderOptions;
+use zune_image::errors::ImageErrors;
+
 use crate::enums::{ZImageColorspace, ZImageDepth, ZImageFormat};
 use crate::errno::ZStatusType::{DecodeErrors, ImageIsNull, IoErrors};
 use crate::errno::{ZStatus, ZStatusType};
 use crate::utils::zil_free;
 use crate::ZImage;
-use libc::c_char;
-use std::ffi::CStr;
-use std::ptr;
-use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::ColorSpace;
-use zune_core::options::DecoderOptions;
-use zune_image::errors::ImageErrors;
 
 /// Get the image width from the image
 #[no_mangle]
@@ -93,7 +95,7 @@ extern "C" fn zil_zimg_get_out_buffer_size(image: *mut ZImage, status: *mut ZSta
 /// convert pointer to u8 and multiply output size by sizeof float
 #[no_mangle]
 pub extern "C" fn zil_zimg_write_to_output(
-    image: *const ZImage, output: *mut u8, output_size: usize, status: *mut ZStatus,
+    image: *const ZImage, output: *mut u8, output_size: usize, status: *mut ZStatus
 ) -> usize {
     if image.is_null() {
         if !status.is_null() {
@@ -132,7 +134,7 @@ pub extern "C" fn zil_zimg_write_to_output(
                 zune_image::utils::swizzle_channels(channels, b)
             }
         }
-        _ => Err(ImageErrors::GenericStr("Unknown depth")),
+        _ => Err(ImageErrors::GenericStr("Unknown depth"))
     };
     match result {
         Ok(bytes) => bytes * image.depth().size_of(),
@@ -215,7 +217,7 @@ pub extern "C" fn zil_zimg_open(file: *const c_char, image: *mut ZImage, status:
 /// \param status: Status information
 #[no_mangle]
 pub extern "C" fn zil_zimg_read_from_memory(
-    input: *const u8, input_size: usize, image: *mut ZImage, status: *mut ZStatus,
+    input: *const u8, input_size: usize, image: *mut ZImage, status: *mut ZStatus
 ) {
     if image.is_null() {
         if !status.is_null() {
@@ -248,7 +250,7 @@ pub extern "C" fn zil_zimg_read_from_memory(
 /// \param status: Image operation status, query this to know if the operation succeeded
 #[no_mangle]
 pub extern "C" fn zil_zimg_write_to_disk(
-    output_file: *const c_char, image: *const ZImage, status: *mut ZStatus,
+    output_file: *const c_char, image: *const ZImage, status: *mut ZStatus
 ) {
     if image.is_null() {
         if !status.is_null() {
@@ -289,7 +291,7 @@ pub extern "C" fn zil_zimg_write_to_disk(
 /// \param status: Image operation status, query this to know if the operation succeeded
 #[no_mangle]
 pub extern "C" fn zil_zimg_write_to_disk_with_format(
-    output_file: *const c_char, image: *const ZImage, format: ZImageFormat, status: *mut ZStatus,
+    output_file: *const c_char, image: *const ZImage, format: ZImageFormat, status: *mut ZStatus
 ) {
     if image.is_null() {
         if !status.is_null() {
@@ -335,4 +337,122 @@ extern "C" fn zil_zimg_clone(image: *const ZImage) -> *mut ZImage {
     }
     unsafe { *new_img = image.clone() };
     return new_img;
+}
+
+/// Create an image from u8 pixels, the depth will be a bit depth of eight bits per pixel
+///
+/// The pixels are expected to be interleaved format, so if image is in
+/// RGB, pixels should be in R,G,B,R,G,B
+///
+/// \param pixels: Pointer to first pixel
+/// \param length: Length of the pixel array
+/// \param width: The image width
+/// \param height: The image height
+/// \param colorspace: The image colorspace
+///
+#[no_mangle]
+pub extern "C" fn zil_zimg_from_u8(
+    pixels: *const u8, length: usize, width: usize, height: usize, colorspace: ZImageColorspace
+) -> *mut ZImage {
+    let pixels = unsafe { std::slice::from_raw_parts(pixels, length) };
+
+    if let Some(size) = checked_mul(
+        width,
+        height,
+        1,
+        colorspace.to_colorspace().num_components()
+    ) {
+        if size <= length {
+            let pix = &pixels[..size];
+            let img = zil_zimg_new();
+            if img.is_null() {
+                return ptr::null_mut();
+            }
+            unsafe {
+                *img = ZImage::from_u8(pix, width, height, colorspace.to_colorspace());
+            }
+            return img;
+        }
+    }
+    return ptr::null_mut();
+}
+
+/// Create an image from u16 pixels, the depth will be a bit depth of 16 bits per pixel
+///
+///
+/// \param pixels: Pointer to first pixel
+/// \param length: Length of the pixel array
+/// \param width: The image width
+/// \param height: The image height
+/// \param colorspace: The image colorspace
+///
+#[no_mangle]
+pub extern "C" fn zil_zimg_from_u16(
+    pixels: *const u16, length: usize, width: usize, height: usize, colorspace: ZImageColorspace
+) -> *mut ZImage {
+    let pixels = unsafe { std::slice::from_raw_parts(pixels, length) };
+
+    if let Some(size) = checked_mul(
+        width,
+        height,
+        2,
+        colorspace.to_colorspace().num_components()
+    ) {
+        if size <= length {
+            let pix = &pixels[..size];
+            let img = zil_zimg_new();
+            if img.is_null() {
+                return ptr::null_mut();
+            }
+            unsafe {
+                *img = ZImage::from_u16(pix, width, height, colorspace.to_colorspace());
+            }
+            return img;
+        }
+    }
+    return ptr::null_mut();
+}
+
+/// Create an image from f32 pixels, the depth will be a bit depth of 32 bits per pixel
+///
+///
+/// \param pixels: Pointer to first pixel
+/// \param length: Length of the pixel array
+/// \param width: The image width
+/// \param height: The image height
+/// \param colorspace: The image colorspace
+///
+#[no_mangle]
+pub extern "C" fn zil_zimg_from_f32(
+    pixels: *const f32, length: usize, width: usize, height: usize, colorspace: ZImageColorspace
+) -> *mut ZImage {
+    let pixels = unsafe { std::slice::from_raw_parts(pixels, length) };
+
+    if let Some(size) = checked_mul(
+        width,
+        height,
+        4,
+        colorspace.to_colorspace().num_components()
+    ) {
+        if size <= length {
+            let pix = &pixels[..size];
+            let img = zil_zimg_new();
+            if img.is_null() {
+                return ptr::null_mut();
+            }
+            unsafe {
+                *img = ZImage::from_f32(pix, width, height, colorspace.to_colorspace());
+            }
+            return img;
+        }
+    }
+    return ptr::null_mut();
+}
+fn checked_mul(
+    width: usize, height: usize, depth: usize, colorspace_components: usize
+) -> Option<usize> {
+    width
+        .checked_mul(height)?
+        .checked_mul(depth)?
+        .checked_mul(colorspace_components)
 }
