@@ -408,7 +408,7 @@ void zil_imgproc_blend(ZImage *image1,
  * \param value: Value to be added to image
  * \param status: Image status recorder
  */
-void zil_imgproc_brightness(ZImage *image, float value, struct ZStatus *status);
+void zil_imgproc_brighten(ZImage *image, float value, struct ZStatus *status);
 
 /**
  * Change image bit depth of the image
@@ -532,6 +532,14 @@ void zil_imgproc_flop(ZImage *image, struct ZStatus *status);
 void zil_imgproc_gamma(ZImage *image, float gamma, struct ZStatus *status);
 
 /**
+ * Perform a gaussian blur on an image
+ *
+ * \param sigma: How much to blur by, a greater value leads to more pronounced blurs
+ *
+ */
+void zil_imgproc_gaussian_blur(ZImage *image, float sigma, struct ZStatus *status);
+
+/**
  * Invert image pixels
  *
  * Formula
@@ -545,6 +553,76 @@ void zil_imgproc_gamma(ZImage *image, float gamma, struct ZStatus *status);
  *
  */
 void zil_imgproc_invert(ZImage *image, struct ZStatus *status);
+
+/**
+ * Carry out scharr operations
+ * The matrix for scharr is
+ *
+ * Gx matrix
+ * \code
+ *   -3, 0,  3,
+ *  -10, 0, 10,
+ *   -3, 0,  3
+ * \endcode
+ * Gy matrix
+ * \code
+ * -3,-10,-3,
+ *  0,  0, 0,
+ *  3, 10, 3
+ * \endcode
+ *
+ * The window is a 3x3 window.
+ */
+void zil_imgproc_scharr(ZImage *image, struct ZStatus *status);
+
+/**
+ * Carry out a sobel operator
+ *
+ * This operation calculates the gradient of the image,
+ * which represents how quickly pixel values change from
+ * one point to another in both the horizontal and vertical directions.
+ * The magnitude and direction of the gradient can be used to detect edges in an image.
+ *
+ * The matrix for sobel is
+ *
+ * Gx matrix
+ * \code
+ *   -1, 0, 1,
+ *   -2, 0, 2,
+ *   -1, 0, 1
+ * \endcode
+ * Gy matrix
+ * \code
+ * -1,-2,-1,
+ *  0, 0, 0,
+ *  1, 2, 1
+ * \endcode
+ *
+ * The window is a 3x3 window.
+ */
+void zil_imgproc_sobel(ZImage *image, struct ZStatus *status);
+
+/**
+ * Linearly stretch the contrast of an image  in place, sending lower
+ * values to `lower` and higher values  to `higher`
+ *
+ * \param lower: Lower value, for which any pixel less than this will be clamped
+ * to this
+ *
+ * \param higher: Higher value, for which any pixel greater than this will be clamped
+ * to this
+ */
+void zil_imgproc_stretch_contrast(ZImage *image, float lower, float higher, struct ZStatus *status);
+
+/**
+ * Transpose an image
+ *
+ * This mirrors the image along the image top left to bottom-right
+ * diagonal
+ *
+ * Done by swapping X and Y indices of the array representation
+ */
+void zil_imgproc_transpose(ZImage *image, struct ZStatus *status);
 
 /**
  * Read image contents of a file and return a pointer to the decoded bytes

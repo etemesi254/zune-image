@@ -13,7 +13,12 @@ use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::Flip;
 use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
+use zune_imageprocs::scharr::Scharr;
+use zune_imageprocs::sobel::Sobel;
+use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::transpose::Transpose;
 
 use crate::enums::{ZImageColorspace, ZImageDepth};
 use crate::errno::{ZStatus, ZStatusType};
@@ -290,6 +295,92 @@ pub extern "C" fn zil_imgproc_invert(image: *mut ZImage, status: *mut ZStatus) {
 /// \param value: Value to be added to image
 /// \param status: Image status recorder
 #[no_mangle]
-pub extern "C" fn zil_imgproc_brightness(image: *mut ZImage, value: f32, status: *mut ZStatus) {
+pub extern "C" fn zil_imgproc_brighten(image: *mut ZImage, value: f32, status: *mut ZStatus) {
     exec_imgproc(image, Brighten::new(value), status)
+}
+
+/// Perform a gaussian blur on an image
+///
+/// \param sigma: How much to blur by, a greater value leads to more pronounced blurs
+///
+#[no_mangle]
+pub extern "C" fn zil_imgproc_gaussian_blur(image: *mut ZImage, sigma: f32, status: *mut ZStatus) {
+    exec_imgproc(image, GaussianBlur::new(sigma), status)
+}
+
+/// Linearly stretch the contrast of an image  in place, sending lower
+/// values to `lower` and higher values  to `higher`
+///
+/// \param lower: Lower value, for which any pixel less than this will be clamped
+/// to this
+///
+/// \param higher: Higher value, for which any pixel greater than this will be clamped
+/// to this
+#[no_mangle]
+pub extern "C" fn zil_imgproc_stretch_contrast(
+    image: *mut ZImage, lower: f32, higher: f32, status: *mut ZStatus
+) {
+    exec_imgproc(image, StretchContrast::new(lower, higher), status)
+}
+
+/// Transpose an image
+///
+/// This mirrors the image along the image top left to bottom-right
+/// diagonal
+///
+/// Done by swapping X and Y indices of the array representation
+#[no_mangle]
+pub extern "C" fn zil_imgproc_transpose(image: *mut ZImage, status: *mut ZStatus) {
+    exec_imgproc(image, Transpose::new(), status)
+}
+
+/// Carry out a sobel operator
+///
+/// This operation calculates the gradient of the image,
+/// which represents how quickly pixel values change from
+/// one point to another in both the horizontal and vertical directions.
+/// The magnitude and direction of the gradient can be used to detect edges in an image.
+///
+/// The matrix for sobel is
+///
+/// Gx matrix
+/// \code
+///   -1, 0, 1,
+///   -2, 0, 2,
+///   -1, 0, 1
+/// \endcode
+/// Gy matrix
+/// \code
+/// -1,-2,-1,
+///  0, 0, 0,
+///  1, 2, 1
+/// \endcode
+///
+/// The window is a 3x3 window.
+#[no_mangle]
+pub extern "C" fn zil_imgproc_sobel(image: *mut ZImage, status: *mut ZStatus) {
+    exec_imgproc(image, Sobel::new(), status)
+}
+
+/// Carry out scharr operations
+/// The matrix for scharr is
+///
+/// Gx matrix
+/// \code
+///   -3, 0,  3,
+///  -10, 0, 10,
+///   -3, 0,  3
+/// \endcode
+/// Gy matrix
+/// \code
+/// -3,-10,-3,
+///  0,  0, 0,
+///  3, 10, 3
+/// \endcode
+///
+/// The window is a 3x3 window.
+
+#[no_mangle]
+pub extern "C" fn zil_imgproc_scharr(image: *mut ZImage, status: *mut ZStatus) {
+    exec_imgproc(image, Scharr::new(), status)
 }
