@@ -910,7 +910,10 @@ where
                         stream_byte = self.bytes.get_u8();
                         pos += usize::from(stream_byte);
                         stream_byte = self.bytes.get_u8();
-                        line -= i32::from(stream_byte);
+                        pos += usize::from(stream_byte) * self.width;
+                        buf = &mut buf[pos..];
+                        pos = 0;
+                        continue;
                     } else {
                         // copy pixels from encoded stream
                         let odd_pixel = usize::from(stream_byte & 1);
@@ -973,6 +976,7 @@ where
             // loop until no more bytes are left
             while !self.bytes.eof() {
                 p1 = self.bytes.get_u8();
+                println!("P1: {}", p1);
                 if p1 == 0 {
                     // escape code
                     p2 = self.bytes.get_u8();
@@ -1009,14 +1013,11 @@ where
                         p1 = self.bytes.get_u8();
                         p2 = self.bytes.get_u8();
 
-                        line -= i32::from(p2);
                         pos += usize::from(p1);
 
-                        if line < 0 || pos >= self.width {
-                            return Err(BmpDecoderErrors::GenericStatic(
-                                "Skip beyond picture bounds"
-                            ));
-                        }
+                        let lines = usize::from(p2) * self.width;
+                        buf = &mut buf[lines..];
+
                         continue;
                     }
                     // copy data
@@ -1039,19 +1040,25 @@ where
                             self.bytes.skip(1);
                         }
                     } else if self.depth == 16 {
-                        for _ in 0..p2 {
-                            buf[pos] = self.bytes.get_u8();
-                            buf[pos + 1] = self.bytes.get_u8();
-                            pos += 2;
-                        }
+                        buf[pos..]
+                            .chunks_exact_mut(2)
+                            .take(usize::from(p2))
+                            .for_each(|x| {
+                                x[0] = self.bytes.get_u8();
+                                x[1] = self.bytes.get_u8();
+                            });
+                        pos += 2 * usize::from(p2);
                     } else if self.depth == 32 {
-                        for _ in 0..p2 {
-                            buf[pos] = self.bytes.get_u8();
-                            buf[pos + 1] = self.bytes.get_u8();
-                            buf[pos + 2] = self.bytes.get_u8();
-                            buf[pos + 3] = self.bytes.get_u8();
-                            pos += 4;
-                        }
+                        buf[pos..]
+                            .chunks_exact_mut(4)
+                            .take(usize::from(p2))
+                            .for_each(|x| {
+                                x[0] = self.bytes.get_u8();
+                                x[1] = self.bytes.get_u8();
+                                x[2] = self.bytes.get_u8();
+                                x[3] = self.bytes.get_u8();
+                            });
+                        pos += 4 * usize::from(p2);
                     }
                 } else {
                     // run of pixels
@@ -1064,6 +1071,9 @@ where
                         continue;
                     }
 
+                    if pos + (usize::from(p1) * usize::from(self.depth) >> 3) > buf.len() {
+                        return Err(BmpDecoderErrors::GenericStatic("Position overrun"));
+                    }
                     match self.depth {
                         8 => {
                             pix[0] = self.bytes.get_u8();
@@ -1071,25 +1081,36 @@ where
                             pos += usize::from(p1);
                         }
                         16 => {
-                            let pix_16u = self.bytes.get_u8();
-                            let pix_16r = self.bytes.get_u8();
-                            for _ in 0..p1 {
-                                buf[pos] = pix_16u;
-                                buf[pos + 1] = pix_16r;
-                                pos += 2;
-                            }
+                            pix[0] = self.bytes.get_u8();
+                            pix[1] = self.bytes.get_u8();
+
+                            buf[pos..]
+                                .chunks_exact_mut(2)
+                                .take(usize::from(p1))
+                                .for_each(|x| {
+                                    x[0..2].copy_from_slice(&pix[..2]);
+                                });
+                            pos += 2 * usize::from(p1);
                         }
                         24 => {
                             pix[0] = self.bytes.get_u8();
                             pix[1] = self.bytes.get_u8();
                             pix[2] = self.bytes.get_u8();
 
-                            for _ in 0..p1 {
-                                buf[pos] = pix[0];
-                                buf[pos + 1] = pix[1];
-                                buf[pos + 2] = pix[2];
-                                pos += 3;
-                            }
+                            buf[pos..]
+                                .chunks_exact_mut(3)
+                                .take(usize::from(p1))
+                                .for_each(|x| {
+                                    x[0..3].copy_from_slice(&pix[..3]);
+                                });
+                            pos += 3 * usize::from(p1);
+
+                            // for _ in 0..p1 {
+                            //     buf[pos] = pix[0];
+                            //     buf[pos + 1] = pix[1];
+                            //     buf[pos + 2] = pix[2];
+                            //     pos += 3;
+                            // }
                         }
                         32 => {
                             pix[0] = self.bytes.get_u8();
@@ -1097,14 +1118,11 @@ where
                             pix[2] = self.bytes.get_u8();
                             pix[3] = self.bytes.get_u8();
 
-                            for _ in 0..p1 {
-                                buf[pos] = pix[0];
-                                buf[pos + 1] = pix[1];
-                                buf[pos + 2] = pix[2];
-                                buf[pos + 3] = pix[3];
-
-                                pos += 4;
-                            }
+                            buf[pos..]
+                                .chunks_exact_mut(4)
+                                .take(usize::from(p1))
+                                .for_each(|x| x[0..4].copy_from_slice(&pix[..4]));
+                            pos += 4 * usize::from(p1);
                         }
                         _ => unreachable!("Uhh ohh")
                     }
@@ -1142,3 +1160,10 @@ fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32 {
     v >>= 8 - bits;
     (v * MUL_TABLE[bits as usize]) >> SHIFT_TABLE[bits as usize]
 }
+
+// #[test]
+// fn hello() {
+//     let c = "/home/caleb/Documents/rust/zune-image/test-images/bmp/pal8rlecut.bmp";
+//     let d = std::fs::read(c).unwrap();
+//     BmpDecoder::new(d).decode().unwrap();
+// }
