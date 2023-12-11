@@ -31,6 +31,7 @@ use zune_imageprocs::flip::Flip;
 use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::histogram::ChannelHistogram;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
@@ -575,6 +576,21 @@ impl Image {
     ) -> PyResult<Option<Image>> {
         let filter = Blend::new(&image.image, src_alpha);
         exec_filter(self, filter, in_place)
+    }
+
+    /// Calculate the image histogram
+    ///
+    // The return type is a vector of vectors, with the interpretation of each vector depending on the colorspace
+    /// E.g if image is in RGBA, the vector would be of len 4, each the first innermost vector would give you
+    /// `R` channel histogram details, the last giving you "A" histogram details
+    pub fn histogram(&mut self) -> PyResult<Vec<Vec<u32>>> {
+        let histogram = ChannelHistogram::new();
+        histogram
+            .execute_impl(&mut self.image)
+            .map_err(|c| PyErr::new::<PyException, _>(format!("Erro {c}")))?;
+        // references, dangling pointers, the usual...
+        let x = histogram.histogram().unwrap().to_vec();
+        Ok(x)
     }
 }
 
