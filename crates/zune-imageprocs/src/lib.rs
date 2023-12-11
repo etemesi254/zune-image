@@ -79,3 +79,5 @@ pub mod traits;
 pub mod transpose;
 pub mod unsharpen;
 mod utils;
+
+pub mod histogram;
