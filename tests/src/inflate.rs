@@ -8,7 +8,6 @@
 
 use std::ffi::OsStr;
 use std::fs::read;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use zune_inflate::DeflateDecoder;
@@ -42,9 +41,9 @@ fn test_inflate() {
 
         let mut decoder = DeflateDecoder::new(&file_contents);
 
-        let pixels = if file_name.extension() == Some(OsStr::from_bytes(b"zlib")) {
+        let pixels = if file_name.extension() == Some(OsStr::new("zlib")) {
             decoder.decode_zlib().unwrap()
-        } else if file_name.extension() == Some(OsStr::from_bytes(b"gz")) {
+        } else if file_name.extension() == Some(OsStr::new("gz")) {
             decoder.decode_gzip().unwrap()
         } else {
             todo!("Format {:?}", file_name.extension());
