@@ -200,8 +200,7 @@ impl SampleRatios {
     pub fn sample(self) -> usize {
         match self {
             SampleRatios::HV => 4,
-            SampleRatios::V => 2,
-            SampleRatios::H => 2,
+            SampleRatios::V | SampleRatios::H => 2,
             SampleRatios::None => 1
         }
     }

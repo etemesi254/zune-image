@@ -431,6 +431,7 @@ pub(crate) fn parse_app14<T: ZReaderTrait>(
         decoder.stream.skip(5);
         // get color transform
         let transform = decoder.stream.get_u8();
+        // https://exiftool.org/TagNames/JPEG.html#Adobe
         match transform {
             0 => decoder.input_colorspace = ColorSpace::CMYK,
             1 => decoder.input_colorspace = ColorSpace::YCbCr,
