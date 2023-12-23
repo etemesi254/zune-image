@@ -550,8 +550,8 @@ where
 
             if self.pix_fmt == BmpPixelFormat::PAL8 {
                 self.expand_palette(&scanline_data, buf, false);
-                // do not flip for palette, orientation is good
-                self.flip_vertically ^= true;
+                // flip, orientation isn't good
+                self.flip_vertically = true;
             }
         } else {
             match self.depth {
@@ -870,10 +870,10 @@ where
         // for depths less than 8(4 only), allocate full space for the expanded bits
         let depth = if self.depth < 8 { 8 } else { self.depth };
         let mut pixels = vec![0; ((self.width * self.height * usize::from(depth)) + 7) >> 3];
-        let mut buf = &mut pixels[..];
 
         //let rt = temp_scanline.len();
         let mut line = (self.height - 1) as i32;
+        let mut output = &mut pixels[(line as usize) * self.width..];
         let mut pos = 0;
         //let t = buf.len();
 
@@ -885,7 +885,7 @@ where
         }
 
         if self.depth == 4 {
-            // Handle bit depth 4
+            //Handle bit depth 4
             let mut rle_code: u16;
             let mut stream_byte;
             while line >= 0 && pos <= self.width {
@@ -897,8 +897,10 @@ where
 
                     if stream_byte == 0 {
                         // move to the next line
-                        buf = &mut buf[pos..];
                         line -= 1;
+                        // move to the next line
+                        output = &mut pixels
+                            [line as usize * self.width..(line + 1) as usize * self.width];
                         pos = 0;
 
                         continue;
@@ -910,10 +912,10 @@ where
                         stream_byte = self.bytes.get_u8();
                         pos += usize::from(stream_byte);
                         stream_byte = self.bytes.get_u8();
-                        pos += usize::from(stream_byte) * self.width;
-                        buf = &mut buf[pos..];
-                        pos = 0;
-                        continue;
+                        line -= i32::from(stream_byte);
+
+                        output = &mut pixels
+                            [line as usize * self.width..(line + 1) as usize * self.width];
                     } else {
                         // copy pixels from encoded stream
                         let odd_pixel = usize::from(stream_byte & 1);
@@ -932,7 +934,7 @@ where
                             }
 
                             stream_byte = self.bytes.get_u8();
-                            buf[pos] = stream_byte >> 4;
+                            output[pos] = stream_byte >> 4;
                             pos += 1;
 
                             if i + 1 == rle_code && odd_pixel > 0 {
@@ -941,7 +943,7 @@ where
                             if pos >= self.width {
                                 break;
                             }
-                            buf[pos] = stream_byte & 0x0F;
+                            output[pos] = stream_byte & 0x0F;
                             pos += 1;
                         }
                         // if the RLE code is odd, skip a byte in the stream
@@ -961,9 +963,9 @@ where
                         }
 
                         if (i & 1) == 0 {
-                            buf[pos] = stream_byte >> 4;
+                            output[pos] = stream_byte >> 4;
                         } else {
-                            buf[pos] = stream_byte & 0x0F;
+                            output[pos] = stream_byte & 0x0F;
                         }
 
                         pos += 1;
@@ -976,7 +978,6 @@ where
             // loop until no more bytes are left
             while !self.bytes.eof() {
                 p1 = self.bytes.get_u8();
-                //println!("P1: {}", p1);
                 if p1 == 0 {
                     // escape code
                     p2 = self.bytes.get_u8();
@@ -995,13 +996,15 @@ where
                                 Err(BmpDecoderErrors::Generic(msg))
                             };
                         }
-                        if pos >= buf.len() {
-                            return Err(BmpDecoderErrors::GenericStatic(
-                                "Invalid image, out of bounds read in pos"
-                            ));
+                        if pos > output.len() {
+                            return Err(BmpDecoderErrors::Generic(format!(
+                                "Invalid image, out of bounds read in pos; pos={pos},length = {:?}",
+                                output.len()
+                            )));
                         }
                         // move to the next line
-                        buf = &mut buf[pos..];
+                        output = &mut pixels
+                            [line as usize * self.width..(line + 1) as usize * self.width];
                         pos = 0;
 
                         continue;
@@ -1015,13 +1018,15 @@ where
 
                         pos += usize::from(p1);
 
-                        let lines = usize::from(p2) * self.width;
-                        buf = &mut buf[lines..];
+                        line -= i32::from(p2);
+
+                        output = &mut pixels
+                            [line as usize * self.width..(line + 1) as usize * self.width];
 
                         continue;
                     }
                     // copy data
-                    if pos + usize::from(p2) * usize::from(self.depth >> 3) > buf.len() {
+                    if pos + usize::from(p2) * usize::from(self.depth >> 3) > output.len() {
                         self.bytes.skip(2 * usize::from(self.depth >> 3));
                         continue;
                     } else if self.bytes.get_bytes_left()
@@ -1032,7 +1037,7 @@ where
 
                     if self.depth == 8 || self.depth == 24 {
                         let size = usize::from(p2) * usize::from(self.depth >> 3);
-                        self.bytes.read_exact(&mut buf[pos..pos + size]).unwrap();
+                        self.bytes.read_exact(&mut output[pos..pos + size]).unwrap();
                         pos += size;
 
                         // RLE copy is padded- runs are not
@@ -1040,7 +1045,7 @@ where
                             self.bytes.skip(1);
                         }
                     } else if self.depth == 16 {
-                        buf[pos..]
+                        output[pos..]
                             .chunks_exact_mut(2)
                             .take(usize::from(p2))
                             .for_each(|x| {
@@ -1049,7 +1054,7 @@ where
                             });
                         pos += 2 * usize::from(p2);
                     } else if self.depth == 32 {
-                        buf[pos..]
+                        output[pos..]
                             .chunks_exact_mut(4)
                             .take(usize::from(p2))
                             .for_each(|x| {
@@ -1071,20 +1076,20 @@ where
                         continue;
                     }
 
-                    if pos + (usize::from(p1) * usize::from(self.depth) >> 3) > buf.len() {
+                    if pos + (usize::from(p1) * usize::from(self.depth) >> 3) > output.len() {
                         return Err(BmpDecoderErrors::GenericStatic("Position overrun"));
                     }
                     match self.depth {
                         8 => {
                             pix[0] = self.bytes.get_u8();
-                            buf[pos..pos + usize::from(p1)].fill(pix[0]);
+                            output[pos..pos + usize::from(p1)].fill(pix[0]);
                             pos += usize::from(p1);
                         }
                         16 => {
                             pix[0] = self.bytes.get_u8();
                             pix[1] = self.bytes.get_u8();
 
-                            buf[pos..]
+                            output[pos..]
                                 .chunks_exact_mut(2)
                                 .take(usize::from(p1))
                                 .for_each(|x| {
@@ -1097,7 +1102,7 @@ where
                             pix[1] = self.bytes.get_u8();
                             pix[2] = self.bytes.get_u8();
 
-                            buf[pos..]
+                            output[pos..]
                                 .chunks_exact_mut(3)
                                 .take(usize::from(p1))
                                 .for_each(|x| {
@@ -1118,7 +1123,7 @@ where
                             pix[2] = self.bytes.get_u8();
                             pix[3] = self.bytes.get_u8();
 
-                            buf[pos..]
+                            output[pos..]
                                 .chunks_exact_mut(4)
                                 .take(usize::from(p1))
                                 .for_each(|x| x[0..4].copy_from_slice(&pix[..4]));
@@ -1160,10 +1165,3 @@ fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32 {
     v >>= 8 - bits;
     (v * MUL_TABLE[bits as usize]) >> SHIFT_TABLE[bits as usize]
 }
-
-// #[test]
-// fn hello() {
-//     let c = "/home/caleb/Documents/rust/zune-image/test-images/bmp/pal8rlecut.bmp";
-//     let d = std::fs::read(c).unwrap();
-//     BmpDecoder::new(d).decode().unwrap();
-// }
