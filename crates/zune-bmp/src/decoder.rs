@@ -898,6 +898,11 @@ where
                     if stream_byte == 0 {
                         // move to the next line
                         line -= 1;
+                        if line < 0 {
+                            return Err(BmpDecoderErrors::Generic(format!(
+                                "Line less than 0 {line}"
+                            )));
+                        }
                         // move to the next line
                         output = &mut pixels
                             [line as usize * self.width..(line + 1) as usize * self.width];
@@ -914,6 +919,11 @@ where
                         stream_byte = self.bytes.get_u8();
                         line -= i32::from(stream_byte);
 
+                        if line < 0 {
+                            return Err(BmpDecoderErrors::Generic(format!(
+                                "Line less than 0 {line}"
+                            )));
+                        }
                         output = &mut pixels
                             [line as usize * self.width..(line + 1) as usize * self.width];
                     } else {
@@ -1019,6 +1029,11 @@ where
                         pos += usize::from(p1);
 
                         line -= i32::from(p2);
+                        if line < 0 {
+                            return Err(BmpDecoderErrors::Generic(format!(
+                                "Line less than 0 {line}"
+                            )));
+                        }
 
                         output = &mut pixels
                             [line as usize * self.width..(line + 1) as usize * self.width];
