@@ -282,8 +282,7 @@ pub extern "C" fn zil_imgproc_invert(image: *mut ZImage, status: *mut ZStatus) {
 
 /// Brighten an image
 ///
-/// This increases an image pixels by a specific value `value`
-/// which has a brighten effect.
+/// This increases or reduces an image pixels by a specific value `value`
 ///
 /// Formula
 ///
@@ -292,7 +291,7 @@ pub extern "C" fn zil_imgproc_invert(image: *mut ZImage, status: *mut ZStatus) {
 /// \endcode
 ///
 /// \param image: Mutable image, should not be null
-/// \param value: Value to be added to image
+/// \param value: Value to be added to image, should be between -1 and 1 where -1 is total darkness and 1 is total brightness
 /// \param status: Image status recorder
 #[no_mangle]
 pub extern "C" fn zil_imgproc_brighten(image: *mut ZImage, value: f32, status: *mut ZStatus) {
