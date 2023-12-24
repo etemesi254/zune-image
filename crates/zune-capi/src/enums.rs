@@ -31,7 +31,7 @@ pub enum ZImageFormat {
     /// Radiance HDR decoder
     HDR,
     /// Windows Bitmap Files
-    BMP,
+    BMP
 }
 
 impl ZImageFormat {
@@ -47,7 +47,7 @@ impl ZImageFormat {
             ZImageFormat::JPEG_XL => ImageFormat::JPEG_XL,
             ZImageFormat::HDR => ImageFormat::HDR,
             ZImageFormat::BMP => ImageFormat::BMP,
-            _ => ImageFormat::Unknown,
+            _ => ImageFormat::Unknown
         }
     }
 }
@@ -63,7 +63,7 @@ impl From<ImageFormat> for ZImageFormat {
             ImageFormat::JPEG_XL => ZImageFormat::JPEG_XL,
             ImageFormat::HDR => ZImageFormat::HDR,
             ImageFormat::BMP => ZImageFormat::BMP,
-            _ => ZImageFormat::UnknownFormat,
+            _ => ZImageFormat::UnknownFormat
         }
     }
 }
@@ -88,17 +88,17 @@ pub enum ZImageDepth {
     /// 16 bit images
     U16 = 2,
     /// Float 32 images   
-    F32 = 4,
+    F32 = 4
 }
 
 impl ZImageDepth {
     pub(crate) fn to_depth(self) -> BitDepth {
-        return match self {
+        match self {
             ZImageDepth::UnknownDepth => BitDepth::Unknown,
             ZImageDepth::U8 => BitDepth::Eight,
             ZImageDepth::U16 => BitDepth::Sixteen,
-            ZImageDepth::F32 => BitDepth::Float32,
-        };
+            ZImageDepth::F32 => BitDepth::Float32
+        }
     }
 }
 impl From<BitDepth> for ZImageDepth {
@@ -107,7 +107,7 @@ impl From<BitDepth> for ZImageDepth {
             BitDepth::Eight => ZImageDepth::U8,
             BitDepth::Sixteen => ZImageDepth::U16,
             BitDepth::Float32 => ZImageDepth::F32,
-            _ => ZImageDepth::UnknownDepth,
+            _ => ZImageDepth::UnknownDepth
         }
     }
 }
@@ -135,6 +135,10 @@ pub enum ZImageColorspace {
     BGRA,
     /// Alpha, Blue Green, Red
     ARGB,
+    /// Hue, Saturation, Lightness,
+    HSL,
+    /// Hue, Saturation,Variance
+    HSV
 }
 
 impl ZImageColorspace {
@@ -150,7 +154,9 @@ impl ZImageColorspace {
             Self::BGR => ColorSpace::BGR,
             Self::BGRA => ColorSpace::BGRA,
             Self::ARGB => ColorSpace::ARGB,
-            _ => ColorSpace::Unknown,
+            Self::HSL => ColorSpace::HSL,
+            Self::HSV => ColorSpace::HSV,
+            Self::UnknownColorspace => ColorSpace::Unknown
         }
     }
 }
@@ -168,7 +174,9 @@ impl From<ColorSpace> for ZImageColorspace {
             ColorSpace::BGR => ZImageColorspace::BGR,
             ColorSpace::BGRA => ZImageColorspace::BGRA,
             ColorSpace::ARGB => ZImageColorspace::ARGB,
-            _ => ZImageColorspace::UnknownColorspace,
+            ColorSpace::HSV => ZImageColorspace::HSV,
+            ColorSpace::HSL => ZImageColorspace::HSL,
+            _ => ZImageColorspace::UnknownColorspace
         }
     }
 }
