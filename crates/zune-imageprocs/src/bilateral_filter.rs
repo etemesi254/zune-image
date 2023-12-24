@@ -50,12 +50,12 @@ impl BilateralFilter {
     /// Create a new bilateral filter
     ///
     /// # Arguments
-    /// - `d`:	Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
+    /// - `d`:Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
     ///
-    /// - `sigma_color`:	Filter sigma in the color space.
+    /// - `sigma_color`:Filter sigma in the color space.
     ///  A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
     ///  will be mixed together, resulting in larger areas of semi-equal color.
-    ///- `sigma_space`: 	Filter sigma in the coordinate space.
+    ///- `sigma_space`: Filter sigma in the coordinate space.
     ///  A larger value of the parameter means that farther pixels will influence each other as
     ///   long as their colors are close enough (see sigma_color ).
     ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.

@@ -1,0 +1,13 @@
+[package]
+name = "zune-gif"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+[features]
+log = ["zune-core/log"]
+
+[dependencies]
+zune-core = { version = "0.4", path = "../zune-core", default-features = false }
