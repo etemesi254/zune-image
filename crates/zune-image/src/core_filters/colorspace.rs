@@ -18,8 +18,10 @@ use zune_core::log::warn;
 
 use crate::channel::Channel;
 use crate::core_filters::colorspace::grayscale::{
-    rgb_to_grayscale_f32, rgb_to_grayscale_u16, rgb_to_grayscale_u8,
+    rgb_to_grayscale_f32, rgb_to_grayscale_u16, rgb_to_grayscale_u8
 };
+use crate::core_filters::colorspace::rgb_to_hsl::{hsl_to_rgb, rgb_to_hsl};
+use crate::core_filters::colorspace::rgb_to_hsv::{hsv_to_rgb, rgb_to_hsv};
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::OperationsTrait;
@@ -29,8 +31,10 @@ mod grayscale;
 mod rgb_to_xyb;
 
 mod rgb_to_cmyk;
+mod rgb_to_hsl;
+mod rgb_to_hsv;
 pub struct ColorspaceConv {
-    to: ColorSpace,
+    to: ColorSpace
 }
 
 impl ColorspaceConv {
@@ -39,7 +43,7 @@ impl ColorspaceConv {
     }
 }
 
-fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
+fn convert_adding_opaque_alpha(image: &mut Image) -> Result<(), ImageErrors> {
     let old_len = image.channels_ref(true)[0].len();
 
     let bit_type = image.depth().bit_type();
@@ -62,7 +66,7 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
         }
         _ => {
             return Err(ImageErrors::GenericStr(
-                "Unsupported bit depth for RGB->RGBA conversion",
+                "Unsupported bit depth for RGB->RGBA conversion"
             ))
         }
     };
@@ -80,8 +84,8 @@ fn convert_rgb_to_rgba(image: &mut Image) -> Result<(), ImageErrors> {
     Ok(())
 }
 
-fn rgb_to_grayscale(
-    image: &mut Image, to: ColorSpace, preserve_alpha: bool,
+fn convert_rgb_to_grayscale(
+    image: &mut Image, to: ColorSpace, preserve_alpha: bool
 ) -> Result<(), ImageErrors> {
     let im_colorspace = image.colorspace();
 
@@ -114,7 +118,7 @@ fn rgb_to_grayscale(
                     g,
                     b,
                     out.reinterpret_as_mut::<u8>().unwrap(),
-                    max_value as u8,
+                    max_value as u8
                 );
 
                 if preserve_alpha && colorspace.has_alpha() {
@@ -167,7 +171,7 @@ fn rgb_to_grayscale(
                     g,
                     b,
                     out.reinterpret_as_mut::<f32>().unwrap(),
-                    max_value as f32,
+                    max_value as f32
                 );
 
                 if preserve_alpha && colorspace.has_alpha() {
@@ -184,7 +188,7 @@ fn rgb_to_grayscale(
                     out_colorspace = ColorSpace::Luma;
                 }
             }
-            d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d)),
+            d => return Err(ImageErrors::ImageOperationNotImplemented("colorspace", d))
         }
     }
 
@@ -207,11 +211,241 @@ fn convert_rgb_bgr(from: ColorSpace, to: ColorSpace, image: &mut Image) -> Resul
 
     // if mapping was from bgra to rgb, drop alpha
     if from == ColorSpace::BGR && to == ColorSpace::RGBA {
-        convert_rgb_to_rgba(image)?;
+        convert_adding_opaque_alpha(image)?;
     }
     Ok(())
 }
 
+fn convert_rgb_to_cmyk(image: &mut Image) -> Result<(), ImageErrors> {
+    let depth = image.depth();
+    if depth != BitDepth::Eight && depth != BitDepth::Float32 {
+        return Err(ImageErrors::GenericStr(
+            "Can only convert 8 bit and float from CYMK  to RGB"
+        ));
+    }
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+
+        assert_eq!(channels.len(), 3);
+
+        match depth {
+            BitDepth::Eight => {
+                let mut k = Channel::new_with_length::<u8>(channels[0].len());
+
+                let (r, rest) = channels.split_at_mut(1);
+                let (g, b) = rest.split_at_mut(1);
+
+                rgb_to_cmyk::rgb_to_cmyk_u8(
+                    r[0].reinterpret_as_mut()?,
+                    g[0].reinterpret_as_mut()?,
+                    b[0].reinterpret_as_mut()?,
+                    k.reinterpret_as_mut()?
+                );
+                // remove K from cymk since the others become RGB
+                channels.push(k);
+            }
+
+            BitDepth::Float32 => {
+                let mut k = Channel::new_with_length::<f32>(channels[0].len());
+
+                let (r, rest) = channels.split_at_mut(1);
+                let (g, b) = rest.split_at_mut(1);
+
+                rgb_to_cmyk::rgb_to_cmyk_f32(
+                    r[0].reinterpret_as_mut()?,
+                    g[0].reinterpret_as_mut()?,
+                    b[0].reinterpret_as_mut()?,
+                    k.reinterpret_as_mut()?
+                );
+                // remove K from cymk since the others become RGB
+                channels.push(k);
+            }
+            _ => unreachable!()
+        }
+    }
+    Ok(())
+}
+fn convert_cmyk_to_rgb(image: &mut Image, to: ColorSpace) -> Result<(), ImageErrors> {
+    let depth = image.depth();
+
+    if depth != BitDepth::Eight && depth != BitDepth::Float32 {
+        return Err(ImageErrors::GenericStr(
+            "Can only convert 8 bit and floats from CMYK to RGB"
+        ));
+    }
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+
+        assert_eq!(channels.len(), 4);
+
+        let (c, rest) = channels.split_at_mut(1);
+        let (m, rest) = rest.split_at_mut(1);
+        let (y, k) = rest.split_at_mut(1);
+
+        match depth {
+            BitDepth::Eight => {
+                rgb_to_cmyk::cmyk_to_rgb_u8(
+                    c[0].reinterpret_as_mut()?,
+                    m[0].reinterpret_as_mut()?,
+                    y[0].reinterpret_as_mut()?,
+                    k[0].reinterpret_as_mut()?
+                );
+            }
+            BitDepth::Float32 => rgb_to_cmyk::cmyk_to_rgb_f32(
+                c[0].reinterpret_as_mut()?,
+                m[0].reinterpret_as_mut()?,
+                y[0].reinterpret_as_mut()?,
+                k[0].reinterpret_as_mut()?
+            ),
+            _ => unreachable!()
+        }
+
+        // remove K from cymk since the others become RGB
+        channels.pop();
+    }
+    if to == ColorSpace::RGBA {
+        // add opaque alpha channel
+        convert_adding_opaque_alpha(image)?;
+    }
+    Ok(())
+}
+
+fn convert_rgb_to_hsl(image: &mut Image) -> Result<(), ImageErrors> {
+    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    // preserve original depth
+    let orig_depth = image.depth();
+    // convert to floating point since hsl wants floating point
+    image.convert_depth(BitDepth::Float32)?;
+
+    // convert ignoring alpha
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+        let (r, rest) = channels.split_at_mut(1);
+        let (g, b) = rest.split_at_mut(1);
+
+        rgb_to_hsl(
+            r[0].reinterpret_as_mut()?,
+            g[0].reinterpret_as_mut()?,
+            b[0].reinterpret_as_mut()?
+        )
+    }
+    // restore original bit depth
+    image.convert_depth(orig_depth)?;
+    Ok(())
+}
+
+fn convert_hsl_to_rgb(image: &mut Image) -> Result<(), ImageErrors> {
+    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    // preserve original depth
+    let orig_depth = image.depth();
+    // convert to floating point since hsl wants floating point
+    image.convert_depth(BitDepth::Float32)?;
+
+    // convert ignoring alpha
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+        let (r, rest) = channels.split_at_mut(1);
+        let (g, b) = rest.split_at_mut(1);
+
+        hsl_to_rgb(
+            r[0].reinterpret_as_mut()?,
+            g[0].reinterpret_as_mut()?,
+            b[0].reinterpret_as_mut()?
+        )
+    }
+    // restore original bit depth
+    image.convert_depth(orig_depth)?;
+    Ok(())
+}
+fn convert_rgb_to_hsv(image: &mut Image) -> Result<(), ImageErrors> {
+    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    // preserve original depth
+    let orig_depth = image.depth();
+    // convert to floating point since hsl wants floating point
+    image.convert_depth(BitDepth::Float32)?;
+
+    // convert ignoring alpha
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+        let (r, rest) = channels.split_at_mut(1);
+        let (g, b) = rest.split_at_mut(1);
+
+        rgb_to_hsv(
+            r[0].reinterpret_as_mut()?,
+            g[0].reinterpret_as_mut()?,
+            b[0].reinterpret_as_mut()?
+        )
+    }
+    // restore original bit depth
+    image.convert_depth(orig_depth)?;
+
+    Ok(())
+}
+fn convert_hsv_to_rgb(image: &mut Image) -> Result<(), ImageErrors> {
+    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    // preserve original depth
+    let orig_depth = image.depth();
+    // convert to floating point since hsl wants floating point
+    image.convert_depth(BitDepth::Float32)?;
+
+    // convert ignoring alpha
+    for frame in image.frames_mut() {
+        let channels = frame.channels_vec();
+        let (r, rest) = channels.split_at_mut(1);
+        let (g, b) = rest.split_at_mut(1);
+
+        hsv_to_rgb(
+            r[0].reinterpret_as_mut()?,
+            g[0].reinterpret_as_mut()?,
+            b[0].reinterpret_as_mut()?
+        )
+    }
+    // restore original bit depth
+    image.convert_depth(orig_depth)?;
+
+    Ok(())
+}
+fn pop_channel(image: &mut Image) {
+    // contain the alpha channel
+    for frame in image.frames_mut() {
+        frame.channels_vec().pop().unwrap();
+    }
+}
+fn convert_rgb_to_argb(image: &mut Image) -> Result<(), ImageErrors> {
+    convert_adding_opaque_alpha(image)?;
+    // swap
+    for frame in image.frames_mut() {
+        // switch the channels now
+        let a_channel = frame.channels_vec().pop().unwrap();
+        frame.channels_vec().insert(0, a_channel);
+    }
+    Ok(())
+}
+
+fn convert_rgba_to_argb_or_vice_versa(image: &mut Image) -> Result<(), ImageErrors> {
+    assert!(matches!(
+        image.colorspace(),
+        ColorSpace::RGBA | ColorSpace::ARGB
+    ));
+    // swap
+    for frame in image.frames_mut() {
+        // switch the channels now
+        let a_channel = frame.channels_vec().pop().unwrap();
+        frame.channels_vec().insert(0, a_channel);
+    }
+    Ok(())
+}
+fn convert_luma_to_argb(image: &mut Image) -> Result<(), ImageErrors> {
+    // first convert to rgba
+    convert_luma_to_rgb(image, ColorSpace::RGBA)?;
+    // then switch
+    for frame in image.frames_mut() {
+        // switch the channels now, moving channel A into the first element
+        let a_channel = frame.channels_vec().pop().unwrap();
+        frame.channels_vec().insert(0, a_channel);
+    }
+    Ok(())
+}
 impl OperationsTrait for ColorspaceConv {
     fn name(&self) -> &'static str {
         "Colorspace conversion"
@@ -225,153 +459,151 @@ impl OperationsTrait for ColorspaceConv {
             return Ok(());
         }
 
-        let depth = image.depth();
-        match (from, self.to) {
-            (ColorSpace::RGB, ColorSpace::RGBA) => {
-                convert_rgb_to_rgba(image)?;
-            }
-            (ColorSpace::BGR | ColorSpace::BGRA, ColorSpace::RGB | ColorSpace::RGBA) => {
+        match from {
+            ColorSpace::RGB => match self.to {
+                ColorSpace::RGBA => convert_adding_opaque_alpha(image)?,
+                ColorSpace::Luma => convert_rgb_to_grayscale(image, self.to, self.to.has_alpha())?,
+                ColorSpace::LumaA => convert_rgb_to_grayscale(image, self.to, self.to.has_alpha())?,
+                ColorSpace::CMYK => convert_rgb_to_cmyk(image)?,
+                ColorSpace::BGR => convert_rgb_bgr(from, self.to, image)?,
+                ColorSpace::BGRA => convert_rgb_bgr(from, self.to, image)?,
+                ColorSpace::ARGB => convert_rgb_to_argb(image)?,
+                ColorSpace::HSL => convert_rgb_to_hsl(image)?,
+                ColorSpace::HSV => convert_rgb_to_hsv(image)?,
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from RGB to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+            ColorSpace::RGBA => match self.to {
+                ColorSpace::RGB => pop_channel(image),
+                ColorSpace::BGR => convert_rgb_bgr(from, self.to, image)?,
+                ColorSpace::BGRA => convert_rgb_bgr(from, self.to, image)?,
+                ColorSpace::ARGB => convert_rgba_to_argb_or_vice_versa(image)?,
+                ColorSpace::LumaA => convert_rgb_to_grayscale(image, self.to, self.to.has_alpha())?,
+                ColorSpace::Luma => convert_rgb_to_grayscale(image, self.to, self.to.has_alpha())?,
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from RGB to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+            ColorSpace::Luma => match self.to {
+                ColorSpace::RGB => convert_luma_to_rgb(image, self.to)?,
+                ColorSpace::RGBA => convert_luma_to_rgb(image, self.to)?,
+                ColorSpace::LumaA => convert_adding_opaque_alpha(image)?,
+                ColorSpace::ARGB => convert_luma_to_argb(image)?,
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from Luma to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+
+            ColorSpace::LumaA => match self.to {
+                ColorSpace::RGB => convert_luma_to_rgb(image, self.to)?,
+                ColorSpace::RGBA => convert_luma_to_rgb(image, self.to)?,
+                ColorSpace::Luma => pop_channel(image),
+                ColorSpace::ARGB => convert_luma_to_argb(image)?,
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from LumaA to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+            ColorSpace::CMYK => match self.to {
+                ColorSpace::RGB => convert_cmyk_to_rgb(image, self.to)?,
+                ColorSpace::RGBA => convert_cmyk_to_rgb(image, self.to)?,
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from CMYK to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+            ColorSpace::BGR => {
+                // first convert to rgb
                 convert_rgb_bgr(from, self.to, image)?;
-            }
-            (ColorSpace::RGB | ColorSpace::RGBA, ColorSpace::BGR | ColorSpace::BGRA) => {
-                convert_rgb_bgr(from, self.to, image)?;
-            }
 
-            (ColorSpace::RGB | ColorSpace::RGBA, ColorSpace::Luma | ColorSpace::LumaA) => {
-                // use the rgb to grayscale converter
-                rgb_to_grayscale(image, self.to, self.to.has_alpha())?;
-            }
-            (ColorSpace::Luma | ColorSpace::LumaA, ColorSpace::RGB | ColorSpace::RGBA) => {
-                convert_luma_to_rgb(image, self.to)?;
-            }
-            (ColorSpace::LumaA, ColorSpace::Luma) => {
-                // pop last item in the vec which should
-                // contain the alpha channel
-                for frame in image.frames_mut() {
-                    frame.channels_vec().pop().unwrap();
-                }
-            }
-            (ColorSpace::RGBA, ColorSpace::RGB) => {
-                // pop last item in the vec which should
-                // contain the alpha channel
-                for frame in image.frames_mut() {
-                    frame.channels_vec().pop().unwrap();
-                }
-            }
-            (ColorSpace::CMYK, ColorSpace::RGB) => {
-                if depth != BitDepth::Eight && depth != BitDepth::Float32 {
-                    return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit and floats from CMYK to RGB",
-                    ));
-                }
-                for frame in image.frames_mut() {
-                    let channels = frame.channels_vec();
-
-                    assert_eq!(channels.len(), 4);
-
-                    let (c, rest) = channels.split_at_mut(1);
-                    let (m, rest) = rest.split_at_mut(1);
-                    let (y, k) = rest.split_at_mut(1);
-
-                    match depth {
-                        BitDepth::Eight => {
-                            rgb_to_cmyk::cmyk_to_rgb_u8(
-                                c[0].reinterpret_as_mut()?,
-                                m[0].reinterpret_as_mut()?,
-                                y[0].reinterpret_as_mut()?,
-                                k[0].reinterpret_as_mut()?,
-                            );
-                        }
-                        BitDepth::Float32 => rgb_to_cmyk::cmyk_to_rgb_f32(
-                            c[0].reinterpret_as_mut()?,
-                            m[0].reinterpret_as_mut()?,
-                            y[0].reinterpret_as_mut()?,
-                            k[0].reinterpret_as_mut()?,
-                        ),
-                        _ => unreachable!(),
+                // then from rgb convert to the other colorspaces
+                match self.to {
+                    ColorSpace::BGR | ColorSpace::BGRA => {
+                        // handled by convert rgb_bgr wo no need to duplicate
                     }
-
-                    // remove K from cymk since the others become RGB
-                    channels.pop();
+                    ColorSpace::RGBA => convert_adding_opaque_alpha(image)?,
+                    ColorSpace::Luma => convert_rgb_to_grayscale(image, self.to, false)?,
+                    ColorSpace::LumaA => convert_rgb_to_grayscale(image, self.to, true)?,
+                    ColorSpace::CMYK => convert_rgb_to_cmyk(image)?,
+                    ColorSpace::ARGB => convert_rgb_to_argb(image)?,
+                    ColorSpace::HSL => convert_rgb_to_hsl(image)?,
+                    ColorSpace::HSV => convert_rgb_to_hsv(image)?,
+                    color => {
+                        let msg = format!("Unsupported/unknown mapping from RGB to {color:?}");
+                        return Err(ImageErrors::GenericString(msg));
+                    }
                 }
             }
-
-            (ColorSpace::RGB, ColorSpace::CMYK) => {
-                if depth != BitDepth::Eight && depth != BitDepth::Float32 {
-                    return Err(ImageErrors::GenericStr(
-                        "Can only convert 8 bit and float from CYMK  to RGB",
-                    ));
-                }
-                for frame in image.frames_mut() {
-                    let channels = frame.channels_vec();
-
-                    assert_eq!(channels.len(), 3);
-
-                    match depth {
-                        BitDepth::Eight => {
-                            let mut k = Channel::new_with_length::<u8>(channels[0].len());
-
-                            let (r, rest) = channels.split_at_mut(1);
-                            let (g, b) = rest.split_at_mut(1);
-
-                            rgb_to_cmyk::rgb_to_cmyk_u8(
-                                r[0].reinterpret_as_mut()?,
-                                g[0].reinterpret_as_mut()?,
-                                b[0].reinterpret_as_mut()?,
-                                k.reinterpret_as_mut()?,
-                            );
-                            // remove K from cymk since the others become RGB
-                            channels.push(k);
-                        }
-
-                        BitDepth::Float32 => {
-                            let mut k = Channel::new_with_length::<f32>(channels[0].len());
-
-                            let (r, rest) = channels.split_at_mut(1);
-                            let (g, b) = rest.split_at_mut(1);
-
-                            rgb_to_cmyk::rgb_to_cmyk_f32(
-                                r[0].reinterpret_as_mut()?,
-                                g[0].reinterpret_as_mut()?,
-                                b[0].reinterpret_as_mut()?,
-                                k.reinterpret_as_mut()?,
-                            );
-                            // remove K from cymk since the others become RGB
-                            channels.push(k);
-                        }
-                        _ => unreachable!(),
+            ColorSpace::BGRA => {
+                // first convert to RGBA
+                convert_rgb_bgr(from, self.to, image)?;
+                image.set_colorspace(ColorSpace::RGBA);
+                // then convert to the other colorspaces
+                match self.to {
+                    ColorSpace::BGR | ColorSpace::BGRA => {
+                        // handled by convert rgb_bgr wo no need to duplicate
+                    }
+                    ColorSpace::RGB => pop_channel(image),
+                    ColorSpace::ARGB => convert_rgba_to_argb_or_vice_versa(image)?,
+                    ColorSpace::LumaA => convert_rgb_to_grayscale(image, self.to, true)?,
+                    ColorSpace::Luma => convert_rgb_to_grayscale(image, self.to, false)?,
+                    color => {
+                        let msg = format!("Unsupported/unknown mapping from RGB to {color:?}");
+                        return Err(ImageErrors::GenericString(msg));
                     }
                 }
             }
 
-            (ColorSpace::ARGB, ColorSpace::RGB) => {
-                for frame in image.frames_mut() {
-                    // pop the first element
-                    // it conains the Alpha channel
-                    frame.channels_vec().remove(0);
+            ColorSpace::ARGB => {
+                // convert to RGBA
+                convert_rgba_to_argb_or_vice_versa(image)?;
+                image.set_colorspace(ColorSpace::RGBA);
+                // then convert from there
+                let color = ColorSpace::RGBA;
+
+                match self.to {
+                    ColorSpace::RGBA => {} // no op, handled by converter above
+                    ColorSpace::RGB => pop_channel(image),
+                    ColorSpace::BGR => convert_rgb_bgr(color, self.to, image)?,
+                    ColorSpace::BGRA => convert_rgb_bgr(color, self.to, image)?,
+                    ColorSpace::ARGB => convert_rgba_to_argb_or_vice_versa(image)?,
+                    ColorSpace::LumaA => convert_rgb_to_grayscale(image, self.to, true)?,
+                    ColorSpace::Luma => convert_rgb_to_grayscale(image, self.to, false)?,
+                    color => {
+                        let msg = format!("Unsupported/unknown mapping from RGB to {color:?}");
+                        return Err(ImageErrors::GenericString(msg));
+                    }
                 }
             }
-            (ColorSpace::RGB, ColorSpace::ARGB) => {
-                convert_rgb_to_rgba(image)?;
-                // swap
-                for frame in image.frames_mut() {
-                    // switch the channels now
-                    let a_channel = frame.channels_vec().pop().unwrap();
-                    frame.channels_vec().insert(0, a_channel);
+            ColorSpace::HSL => match self.to {
+                ColorSpace::RGB => convert_hsl_to_rgb(image)?,
+                ColorSpace::RGBA => {
+                    convert_hsl_to_rgb(image)?;
+                    convert_adding_opaque_alpha(image)?
                 }
-            }
-            (ColorSpace::Luma | ColorSpace::LumaA, ColorSpace::ARGB) => {
-                // first convert to rgba
-                convert_luma_to_rgb(image, ColorSpace::RGBA)?;
-                // then switch
-                for frame in image.frames_mut() {
-                    // switch the channels now, moving channel A into the first element
-                    let a_channel = frame.channels_vec().pop().unwrap();
-                    frame.channels_vec().insert(0, a_channel);
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from HSL to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
                 }
-            }
-            (a, b) => {
-                let msg = format!("Unsupported/unknown mapping from {a:?} to {b:?}");
+            },
+            ColorSpace::HSV => match self.to {
+                ColorSpace::RGB => convert_hsv_to_rgb(image)?,
+                ColorSpace::RGBA => {
+                    convert_hsv_to_rgb(image)?;
+                    convert_adding_opaque_alpha(image)?
+                }
+                color => {
+                    let msg = format!("Unsupported/unknown mapping from HSV to {color:?}");
+                    return Err(ImageErrors::GenericString(msg));
+                }
+            },
+
+            color => {
+                let msg = format!("Unsupported colorspace  {color:?}");
                 return Err(ImageErrors::GenericString(msg));
             }
         }
