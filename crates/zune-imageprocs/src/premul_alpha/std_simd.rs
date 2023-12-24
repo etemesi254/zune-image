@@ -3,12 +3,16 @@
 use core::simd::prelude::*;
 use std::mem::size_of;
 
-/// Divides input by alpha, on encountering zero,
-/// divides alpha by zero
-fn unpremultiply_std_simd(input: &mut [f32], alpha: &[f32]) {
+use crate::premul_alpha::unpremultiply_f32_scalar;
+
+/// Divides input by alpha, on encountering zero in alpha, stores zero in output
+///
+///
+pub fn unpremultiply_std_simd(input: &mut [f32], alpha: &[f32]) {
     // Compiler explorer
     // url:  https://rust.godbolt.org/z/5Y3qs1vvr
 
+    // 8 seemes to work out nicely
     const VECTOR_SIZE: usize = size_of::<Simd<f32, 8>>() / size_of::<f32>();
 
     let in_chunk = input.chunks_exact_mut(VECTOR_SIZE);
@@ -27,10 +31,15 @@ fn unpremultiply_std_simd(input: &mut [f32], alpha: &[f32]) {
         // store
         result.copy_to_slice(chunk);
     }
+    // handle remainder
+    unpremultiply_f32_scalar(
+        input.chunks_exact_mut(VECTOR_SIZE).into_remainder(),
+        alpha.chunks_exact(VECTOR_SIZE).remainder()
+    );
 }
 
 #[test]
-fn test_unpremultiply() {
+fn test_unpremultiply_simd_scalar() {
     use nanorand::Rng;
 
     use crate::premul_alpha::unpremultiply_f32_scalar;

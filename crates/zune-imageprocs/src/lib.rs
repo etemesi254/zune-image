@@ -1,3 +1,4 @@
+#![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 /*
  * Copyright (c) 2023.
  *
