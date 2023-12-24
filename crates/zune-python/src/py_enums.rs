@@ -98,7 +98,9 @@ pub enum ColorSpace {
     BGR,
     BGRA,
     CMYK,
-    Unknown
+    Unknown,
+    HSL,
+    HSV
 }
 
 impl ColorSpace {
@@ -112,7 +114,9 @@ impl ColorSpace {
             ColorSpace::BGR => ZColorSpace::BGR,
             ColorSpace::BGRA => ZColorSpace::BGRA,
             ColorSpace::CMYK => ZColorSpace::CMYK,
-            _ => ZColorSpace::Unknown
+            ColorSpace::HSL => ZColorSpace::HSL,
+            ColorSpace::HSV => ZColorSpace::HSV,
+            ColorSpace::Unexposed | ColorSpace::Unknown => ZColorSpace::Unknown
         }
     }
 }
@@ -129,7 +133,8 @@ impl From<ZColorSpace> for ColorSpace {
             ZColorSpace::CMYK => ColorSpace::CMYK,
             ZColorSpace::BGR => ColorSpace::BGR,
             ZColorSpace::BGRA => ColorSpace::BGRA,
-            ZColorSpace::Unknown => ColorSpace::Unknown,
+            ZColorSpace::HSL => ColorSpace::HSL,
+            ZColorSpace::HSV => ColorSpace::HSV,
             _ => ColorSpace::Unknown
         }
     }
@@ -161,7 +166,6 @@ impl From<BitDepth> for ImageDepth {
             BitDepth::Eight => ImageDepth::U8,
             BitDepth::Sixteen => ImageDepth::U16,
             BitDepth::Float32 => ImageDepth::F32,
-            BitDepth::Unknown => ImageDepth::Unknown,
             _ => ImageDepth::Unknown
         }
     }
