@@ -54,7 +54,6 @@ use zune_image::traits::OperationsTrait;
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::premul_alpha::std_simd::unpremultiply_std_simd;
 
-mod sse;
 mod std_simd;
 
 /// Carry out alpha pre-multiply and un-premultiply
