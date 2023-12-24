@@ -35,6 +35,15 @@ pub enum ColorSpace {
     Unknown,
     /// Alpha Red Green Blue
     ARGB,
+    /// Hue,Saturation,Lightness
+    /// Conversion from RGB to HSL and back matches that of Python [colorsys](https://docs.python.org/3/library/colorsys.html) module
+    /// Color type is expected to be in floating point
+    HSL,
+    /// Hue, Saturation,Value
+    ///
+    /// Conversion from RGB to HSV and back matches that of Python [colorsys](https://docs.python.org/3/library/colorsys.html) module
+    /// Color type is expected to be in floating point
+    HSV
 }
 
 impl ColorSpace {
@@ -43,11 +52,11 @@ impl ColorSpace {
     /// E.g. RGB returns 3 since it contains R,G and B colors to make up a pixel
     pub const fn num_components(&self) -> usize {
         match self {
-            Self::RGB | Self::YCbCr | Self::BGR => 3,
+            Self::RGB | Self::YCbCr | Self::BGR | Self::HSV | Self::HSL => 3,
             Self::RGBA | Self::YCCK | Self::CMYK | Self::BGRA | Self::ARGB => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
-            Self::Unknown => 0,
+            Self::Unknown => 0
         }
     }
 
@@ -75,14 +84,14 @@ impl ColorSpace {
             ColorSpace::LumaA => Some(1),
             ColorSpace::BGRA => Some(3),
             ColorSpace::ARGB => Some(0),
-            _ => None,
+            _ => None
         }
     }
 }
 
 /// Encapsulates all colorspaces supported by
 /// the library
-pub static ALL_COLORSPACES: [ColorSpace; 10] = [
+pub static ALL_COLORSPACES: [ColorSpace; 12] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
     ColorSpace::LumaA,
@@ -93,6 +102,8 @@ pub static ALL_COLORSPACES: [ColorSpace; 10] = [
     ColorSpace::YCCK,
     ColorSpace::YCbCr,
     ColorSpace::ARGB,
+    ColorSpace::HSL,
+    ColorSpace::HSV
 ];
 
 /// Color characteristics
@@ -111,5 +122,5 @@ pub enum ColorCharacteristics {
     sRGB,
     /// Linear transfer characteristics
     /// The image is in linear colorspace
-    Linear,
+    Linear
 }
