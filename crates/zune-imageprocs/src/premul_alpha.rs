@@ -52,7 +52,6 @@ use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
-use crate::premul_alpha::std_simd::unpremultiply_std_simd;
 
 mod std_simd;
 
@@ -366,6 +365,7 @@ pub fn unpremultiply_f32(input: &mut [f32], alpha: &[f32]) {
     {
         #[cfg(feature = "portable-simd")]
         {
+            use crate::premul_alpha::std_simd::unpremultiply_std_simd;
             unpremultiply_std_simd(input, alpha);
         }
     }
