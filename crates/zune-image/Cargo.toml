@@ -63,3 +63,4 @@ kamadak-exif = { version = "0.5.5", optional = true }
 
 [dev-dependencies]
 num-complex = "0.4.3" # Runs generate-fractals
+nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # testing purposes.
