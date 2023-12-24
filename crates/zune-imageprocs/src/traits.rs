@@ -65,6 +65,8 @@ pub trait NumOps<T> {
     /// Returns `1` representation as type T
     fn one() -> T;
 
+    fn zclamp(self, min: T, max: T) -> T;
+
     /// Return this as number casted
     /// to usize
     fn to_usize(self) -> usize;
@@ -73,7 +75,9 @@ pub trait NumOps<T> {
     /// f64
     fn to_f64(self) -> f64;
 
-    fn zclamp(self, min: T, max: T) -> T;
+    /// Return this number casted to
+    /// f32
+    fn to_f32(self) -> f32;
 }
 
 /// A trait implemented only for floats
@@ -144,6 +148,11 @@ macro_rules! numops_for_int {
             #[inline(always)]
             fn to_f64(self) -> f64 {
                 self as f64
+            }
+
+            #[inline(always)]
+            fn to_f32(self) -> f32 {
+                self as f32
             }
             #[inline(always)]
             fn zclamp(self, min: $int, max: $int) -> $int {
@@ -217,5 +226,9 @@ impl NumOps<f32> for f32 {
 
     fn zclamp(self, min: f32, max: f32) -> f32 {
         self.clamp(min, max)
+    }
+
+    fn to_f32(self) -> f32 {
+        self
     }
 }

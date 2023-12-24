@@ -10,9 +10,9 @@ use crate::premul_alpha::unpremultiply_f32_scalar;
 ///
 pub fn unpremultiply_std_simd(input: &mut [f32], alpha: &[f32]) {
     // Compiler explorer
-    // url:  https://rust.godbolt.org/z/5Y3qs1vvr
+    // url: https://rust.godbolt.org/z/EK88W4j98
 
-    // 8 seemes to work out nicely
+    // 8 seems to work out nicely
     const VECTOR_SIZE: usize = size_of::<Simd<f32, 8>>() / size_of::<f32>();
 
     let in_chunk = input.chunks_exact_mut(VECTOR_SIZE);
