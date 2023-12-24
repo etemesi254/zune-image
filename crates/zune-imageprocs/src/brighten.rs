@@ -47,7 +47,7 @@ use crate::traits::NumOps;
 /// // create gray image
 /// let mut img = Image::fill::<u8>(128_u8,ColorSpace::RGB,100,100);
 /// // make every pixel to be fully white
-/// Brighten::new(127.0).execute(&mut img)?;
+/// Brighten::new(1.0f32).execute(&mut img)?;
 /// # Ok::<(),ImageErrors>(())
 /// ```
 #[derive(Default)]
@@ -56,6 +56,11 @@ pub struct Brighten {
 }
 
 impl Brighten {
+    /// Create a new brightness filter
+    ///
+    /// # Arguments
+    /// - value: Value to increase the channel values with, must be between -1 and 1, where 1 stands for maximum brightness
+    ///  and -1 for darkness
     #[must_use]
     pub fn new(value: f32) -> Brighten {
         Brighten { value }
@@ -80,14 +85,10 @@ impl OperationsTrait for Brighten {
             match depth.bit_type() {
                 BitType::U8 => brighten(
                     channel.reinterpret_as_mut::<u8>()?,
-                    self.value.clamp(0., 255.) as u8,
+                    self.value,
                     u8::try_from(max_val.clamp(0, 255)).unwrap()
                 ),
-                BitType::U16 => brighten(
-                    channel.reinterpret_as_mut::<u16>()?,
-                    self.value.clamp(0., 65535.) as u16,
-                    max_val
-                ),
+                BitType::U16 => brighten(channel.reinterpret_as_mut::<u16>()?, self.value, max_val),
                 BitType::F32 => brighten_f32(
                     channel.reinterpret_as_mut::<f32>()?,
                     self.value,
@@ -116,18 +117,22 @@ impl OperationsTrait for Brighten {
 /// # Arguments
 ///
 /// * `channel`: Input channel pixel, operates in place
-/// * `value`: Value to increase the channel values with
+/// * `value`: Value to increase the channel values with, must be between -1 and 1, where 1 stands for maximum brightness
+/// and -1 for darkness
 /// * `_max_value`:  Currently unused
 ///
 /// returns: ()
 ///
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
-    channel: &mut [T], value: T, _max_value: T
+    channel: &mut [T], value: f32, _max_value: T
 ) {
+    let t_min = T::min_val().to_f32();
+    let t_max = T::max_val().to_f32();
+    let scale_v = value.clamp(-1f32, 1f32) * (t_max - t_min);
     channel
         .iter_mut()
-        .for_each(|x| *x = (*x).saturating_add(value));
+        .for_each(|x| *x = T::from_f32((x.to_f32() + scale_v).zclamp(t_min, t_max)));
 }
 
 /// Brighten operation
