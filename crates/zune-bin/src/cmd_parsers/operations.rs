@@ -21,6 +21,7 @@ use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, VerticalFlip};
 use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
+use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::mirror::{Mirror, MirrorMode};
 use zune_imageprocs::resize::{Resize, ResizeMethod};
@@ -188,6 +189,18 @@ pub fn parse_options<T: IntoImage>(
     } else if argument == "v-flip" {
         debug!("Added v-flip argument");
         workflow.add_operation(Box::new(VerticalFlip::new()))
+    } else if argument == "huerotate" {
+        let value = *args.get_one::<f32>(argument).unwrap();
+        workflow.add_operation(Box::new(HsvAdjust::new(value, 1f32, 1f32)));
+        debug!("Added hue-rotate argument with value {}", value);
+    } else if argument == "saturate" {
+        let value = *args.get_one::<f32>(argument).unwrap();
+        workflow.add_operation(Box::new(HsvAdjust::new(0f32, value, 1f32)));
+        debug!("Added saturate argument with value {}", value);
+    } else if argument == "lightness" {
+        let value = *args.get_one::<f32>(argument).unwrap();
+        workflow.add_operation(Box::new(HsvAdjust::new(0f32, 1f32, value)));
+        debug!("Added lightness argument with value {}", value);
     }
 
     Ok(())

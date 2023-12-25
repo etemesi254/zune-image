@@ -285,7 +285,24 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help_heading(HELP_HEADING)
             .help("Adjust exposure of image, value is capped between -3 and 3")
             .value_parser(value_parser!(f32))
-            .group(GROUP)
+            .group(GROUP),
+        Arg::new("huerotate")
+            .long("huerotate")
+            .help_heading(HELP_HEADING)
+            .help("Hue rotate the image by certain degrees, (between 0 and 360)")
+            .value_parser(value_parser!(f32)),
+        Arg::new("saturate")
+            .long("saturate")
+            .help_heading(HELP_HEADING)
+            .help("Adjust image saturation")
+            .allow_negative_numbers(true)
+            .value_parser(value_parser!(f32)),
+        Arg::new("lightness")
+            .long("lightness")
+            .help_heading(HELP_HEADING)
+            .allow_negative_numbers(true)
+            .help("Adjust image brightness")
+            .value_parser(value_parser!(f32))
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
