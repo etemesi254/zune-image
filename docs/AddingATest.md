@@ -13,7 +13,7 @@ The structure is `test-images->format->[images]` for ease of use.
 
 - Remember to add the images to VCS
 
-### 2. Add the file details to `zune-tests/tests/[{format}.json]`
+### 2. Add the file details to `tests/tests/[{format}.json]`
 
 E.g there is a `jpeg.json` which contains information about jpeg files.
 
