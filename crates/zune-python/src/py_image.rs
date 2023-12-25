@@ -32,6 +32,7 @@ use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::histogram::ChannelHistogram;
+use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
@@ -591,6 +592,24 @@ impl Image {
         // references, dangling pointers, the usual...
         let x = histogram.histogram().unwrap().to_vec();
         Ok(x)
+    }
+    /// Adjust the hue saturation and lightness of an image
+    ///
+    /// - hue: The hue rotation argument. This is usually a value between 0 and 360 degrees
+    ///
+    /// -saturation: The saturation scaling factor, a value of 0 produces a grayscale image, 1 has no effect, other values lie withing that spectrum
+    ///  > 1 produces vibrant cartoonish color
+    ///
+    /// - lightness: The lightness scaling factor, a value greater than 0, values less than or equal to zero
+    /// produce a black image, higher values increase the brightness of the image, 1.0 doesn't do anything
+    /// to image lightness
+
+    #[pyo3(signature = (hue,saturation,lightness, in_place = false))]
+    pub fn hsl_adjust(
+        &mut self, hue: f32, saturation: f32, lightness: f32, in_place: bool
+    ) -> PyResult<Option<Image>> {
+        let filter = HsvAdjust::new(hue, saturation, lightness);
+        exec_filter(self, filter, in_place)
     }
 }
 
