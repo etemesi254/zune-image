@@ -335,7 +335,7 @@ fn convert_rgb_to_hsl(image: &mut Image) -> Result<(), ImageErrors> {
 }
 
 fn convert_hsl_to_rgb(image: &mut Image) -> Result<(), ImageErrors> {
-    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    assert_eq!(image.colorspace(), ColorSpace::HSL);
     // preserve original depth
     let orig_depth = image.depth();
     // convert to floating point since hsl wants floating point
@@ -382,7 +382,7 @@ fn convert_rgb_to_hsv(image: &mut Image) -> Result<(), ImageErrors> {
     Ok(())
 }
 fn convert_hsv_to_rgb(image: &mut Image) -> Result<(), ImageErrors> {
-    assert_eq!(image.colorspace(), ColorSpace::RGB);
+    assert_eq!(image.colorspace(), ColorSpace::HSV);
     // preserve original depth
     let orig_depth = image.depth();
     // convert to floating point since hsl wants floating point
