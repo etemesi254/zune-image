@@ -32,8 +32,8 @@ pub const MAX_CHANNELS: usize = 4;
 /// Represents a single image
 #[derive(Clone)]
 pub struct Image {
-    pub(crate) frames: Vec<Frame>,
-    pub(crate) metadata: ImageMetadata,
+    pub(crate) frames:   Vec<Frame>,
+    pub(crate) metadata: ImageMetadata
 }
 
 impl PartialEq<Self> for Image {
@@ -51,7 +51,7 @@ impl Image {
     ///  
     pub fn new(
         channels: Vec<Channel>, depth: BitDepth, width: usize, height: usize,
-        colorspace: ColorSpace,
+        colorspace: ColorSpace
     ) -> Image {
         // setup metadata information
         let mut meta = ImageMetadata::default();
@@ -61,13 +61,13 @@ impl Image {
         meta.set_colorspace(colorspace);
 
         Image {
-            frames: vec![Frame::new(channels)],
-            metadata: meta,
+            frames:   vec![Frame::new(channels)],
+            metadata: meta
         }
     }
     /// Create an image from multiple frames.
     pub fn new_frames(
-        frames: Vec<Frame>, depth: BitDepth, width: usize, height: usize, colorspace: ColorSpace,
+        frames: Vec<Frame>, depth: BitDepth, width: usize, height: usize, colorspace: ColorSpace
     ) -> Image {
         // setup metadata information
         let mut meta = ImageMetadata::default();
@@ -78,7 +78,7 @@ impl Image {
 
         Image {
             frames,
-            metadata: meta,
+            metadata: meta
         }
     }
 
@@ -272,9 +272,9 @@ impl Image {
     ///
     pub fn fill<T>(pixel: T, colorspace: ColorSpace, width: usize, height: usize) -> Image
     where
-        T: Copy + Clone + 'static + ZuneInts<T> + Zeroable + Pod,
+        T: Copy + Clone + 'static + ZuneInts<T> + Zeroable + Pod
     {
-        let dims = width * height * T::depth().size_of();
+        let dims = width * height;
 
         let channels = vec![Channel::from_elm::<T>(dims, pixel); colorspace.num_components()];
 
@@ -329,14 +329,14 @@ impl Image {
     pub fn from_fn<T, F>(width: usize, height: usize, colorspace: ColorSpace, func: F) -> Image
     where
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
-        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod,
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod
     {
         match colorspace.num_components() {
             1 => Image::from_fn_inner::<_, _, 1>(width, height, func, colorspace),
             2 => Image::from_fn_inner::<_, _, 2>(width, height, func, colorspace),
             3 => Image::from_fn_inner::<_, _, 3>(width, height, func, colorspace),
             4 => Image::from_fn_inner::<_, _, 4>(width, height, func, colorspace),
-            _ => unreachable!(),
+            _ => unreachable!()
         }
     }
 
@@ -346,11 +346,11 @@ impl Image {
     /// This allows further optimizations by the compiler
     /// like removing bounds check in the inner loop
     fn from_fn_inner<F, T, const COMPONENTS: usize>(
-        width: usize, height: usize, func: F, colorspace: ColorSpace,
+        width: usize, height: usize, func: F, colorspace: ColorSpace
     ) -> Image
     where
         F: Fn(usize, usize, &mut [T; MAX_CHANNELS]),
-        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod,
+        T: ZuneInts<T> + Copy + Clone + 'static + Default + Debug + Zeroable + Pod
     {
         let size = width * height * T::depth().size_of();
 
@@ -536,7 +536,7 @@ impl Image {
     pub fn modify_pixels_mut<T, F>(&mut self, func: F) -> Result<(), ChannelErrors>
     where
         T: ZuneInts<T> + Default + Copy + 'static + Pod,
-        F: Fn(usize, usize, [&mut T; MAX_CHANNELS]),
+        F: Fn(usize, usize, [&mut T; MAX_CHANNELS])
     {
         let colorspace = self.colorspace();
 
@@ -560,7 +560,7 @@ impl Image {
                         &mut T::default(),
                         &mut T::default(),
                         &mut T::default(),
-                        &mut T::default(),
+                        &mut T::default()
                     ];
                     // push pixels from channel to temporary output
                     for (i, j) in (pixel_muts.iter_mut()).zip(output.iter_mut()) {
@@ -595,7 +595,7 @@ impl Image {
 }
 
 pub(crate) fn checked_mul(
-    width: usize, height: usize, depth: usize, colorspace_components: usize,
+    width: usize, height: usize, depth: usize, colorspace_components: usize
 ) -> usize {
     width
         .checked_mul(height)
