@@ -63,6 +63,7 @@ pub mod flop;
 pub mod gamma;
 pub mod gaussian_blur;
 pub mod histogram;
+pub mod hsv_adjust;
 pub mod invert;
 pub mod mathops;
 mod median;
