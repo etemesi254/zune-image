@@ -66,7 +66,7 @@ pub mod histogram;
 pub mod hsv_adjust;
 pub mod invert;
 pub mod mathops;
-mod median;
+pub mod median;
 pub mod mirror;
 pub mod pad;
 pub mod premul_alpha;
