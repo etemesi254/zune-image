@@ -12,7 +12,7 @@ pub struct GifDecoder<T: ZReaderTrait> {
     flags:      u8,
     bgindex:    u8,
     ratio:      u8,
-    background: u16, // current b
+    _background: u16, // current b
     pal:        [[u8; 4]; 256]
 }
 

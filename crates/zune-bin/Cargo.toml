@@ -22,6 +22,6 @@ default-features = false
 features = ["colors"]
 
 [dependencies.clap]
-version = "4.2.1"
+version = "4.4.11"
 default-features = false
 features = ["color", "suggestions", "std", "help"]

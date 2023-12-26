@@ -13,8 +13,13 @@ description = "Common image processing routines for zune-image"
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.4" }
-zune-image = { path = "../zune-image", version = "0.4", default-features = false }
 kamadak-exif = { version = "0.5.5", optional = true }
+
+[dependencies.zune-image]
+version = "0.4"
+path = "../zune-image"
+default-features = false
+#features = ["all"]
 
 [features]
 avx2 = []
@@ -28,7 +33,7 @@ portable-simd = []
 log = ["zune-core/log"]
 exif = ["zune-image/metadata", "kamadak-exif"]
 threads = []
-default = ["avx2", "sse2", "sse3", "sse41", "threads"]
+default = ["avx2", "sse2", "sse3", "sse41", "threads","portable-simd"]
 
 
 [dev-dependencies]

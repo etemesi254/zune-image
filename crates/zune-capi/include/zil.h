@@ -184,10 +184,6 @@ typedef enum ZStatusType {
   ImageOperationError,
 } ZStatusType;
 
-/**
- * Represents a single image
- */
-typedef struct Image Image;
 
 /**
  * A status indicator that tells you more about things that went wrong
