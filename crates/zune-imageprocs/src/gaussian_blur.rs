@@ -204,8 +204,8 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
             }
         }
     }
-
-    radii
+    // convert even to odd if there exists such values
+    return radii.map(|c| if (c % 2) == 0 { c + 1 } else { c });
 }
 
 /// Carry out a gaussian blur on bytes that represent a single image channel
