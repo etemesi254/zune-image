@@ -421,11 +421,12 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .num_args(..=49)
             .action(ArgAction::Append)
             .value_parser(value_parser!(f32)),
-        Arg::new("ocl-sobel")
-            .long("ocl-sobel")
-            .help("Perform a 3x3 sobel convolution operation using opencl filters")
-            .action(ArgAction::SetTrue)
+        Arg::new("median-blur")
+            .long("median-blur")
+            .help("Perform a median blur on an image, this replaces a pixel with the median of it's neighbours")
+            .value_name("radius")
             .help_heading(GROUP)
+            .value_parser(value_parser!(usize))
             .group(GROUP)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));

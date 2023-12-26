@@ -13,6 +13,7 @@ use zune_image::traits::IntoImage;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::SpatialOps;
@@ -80,11 +81,12 @@ pub fn parse_options<T: IntoImage>(
             .collect();
 
         workflow.add_operation(Box::new(Convolve::new(values, 1.0)))
-    } else if argument == "ocl-sobel" {
-        // let ocl = OclSobel::try_new().map_err(|x| format!("{:?}", x))?;
-        // debug!("Added ocl-sobel argument");
-        //
-        // workflow.add_operation(Box::new(ocl));
+    } else if argument == "median-blur" {
+        let radius = *args.get_one::<usize>(argument).unwrap();
+
+        let blur = Median::new(radius);
+        debug!("Added median blur with  radius of {radius}");
+        workflow.add_operation(Box::new(blur));
     }
 
     Ok(())
