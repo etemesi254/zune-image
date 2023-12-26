@@ -33,7 +33,7 @@ portable-simd = []
 log = ["zune-core/log"]
 exif = ["zune-image/metadata", "kamadak-exif"]
 threads = []
-default = ["avx2", "sse2", "sse3", "sse41", "threads","portable-simd"]
+default = ["avx2", "sse2", "sse3", "sse41", "threads"]
 
 
 [dev-dependencies]
