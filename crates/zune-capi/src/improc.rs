@@ -15,6 +15,7 @@ use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
+use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
@@ -382,4 +383,16 @@ pub extern "C" fn zil_imgproc_sobel(image: *mut ZImage, status: *mut ZStatus) {
 #[no_mangle]
 pub extern "C" fn zil_imgproc_scharr(image: *mut ZImage, status: *mut ZStatus) {
     exec_imgproc(image, Scharr::new(), status)
+}
+
+/// Carry out a median blur operation on the image
+///
+/// Applies a median filter of given dimensions to an image. Each output pixel is the median
+/// of the pixels in a `(2 * radius + 1) * (2 * radius + 1)` kernel of pixels in the input image.
+///
+///
+/// \param radius: The radius of the window
+#[no_mangle]
+pub extern "C" fn zil_imgproc_median_blur(image: *mut ZImage, radius: usize, status: *mut ZStatus) {
+    exec_imgproc(image, Median::new(radius), status)
 }

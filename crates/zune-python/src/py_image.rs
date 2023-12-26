@@ -34,6 +34,7 @@ use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::histogram::ChannelHistogram;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
+use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
@@ -611,6 +612,16 @@ impl Image {
         let filter = HsvAdjust::new(hue, saturation, lightness);
         exec_filter(self, filter, in_place)
     }
+
+    /// Applies a median filter of given radius to an image. Each output pixel is the median
+    /// of the pixels in a `(2 * radius + 1) * (2 * radius + 1)` kernel of pixels in the input image.
+    ///
+    /// - radius: Median filter radius
+    #[pyo3(signature=(radius,in_place=false))]
+    pub fn median_filter(&mut self, radius: usize, in_place: bool) -> PyResult<Option<Image>> {
+        let filter = Median::new(radius);
+        exec_filter(self, filter, in_place)
+    }
 }
 
 fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
@@ -752,26 +763,9 @@ pub fn convert_3d<T: Element + 'static>(
             expected_colorspace
         ));
     }
-    if TypeId::of::<T>() == TypeId::of::<u32>() {
-        warn!("The library doesn't natively support u32, the data will be converted to f32");
-        let downcasted: &PyArray3<u32> = numpy.downcast()?;
-
-        let dc = downcasted.try_readonly()?;
-        let bytes = dc
-            .as_slice()?
-            .iter()
-            .map(|x| *x as u16)
-            .collect::<Vec<u16>>();
-        return Ok(ZImage::from_u16(
-            &bytes,
-            dims[1],
-            dims[0],
-            expected_colorspace
-        ));
-    }
 
     Err(PyErr::new::<PyException, _>(format!(
-        "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 and u32 are converted to f32)",
+        "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 is converted to f32)",
         numpy.dtype()
     )))
 }
