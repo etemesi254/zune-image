@@ -73,6 +73,9 @@ impl OperationsTrait for Median {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let (width, height) = image.dimensions();
 
+        if self.radius < 2 {
+            return Ok(());
+        }
         let depth = image.depth();
         #[cfg(not(feature = "threads"))]
         {

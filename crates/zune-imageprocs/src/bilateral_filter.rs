@@ -77,6 +77,9 @@ impl OperationsTrait for BilateralFilter {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth();
         let (w, h) = image.dimensions();
+        if self.d < 1 {
+            return Ok(());
+        }
 
         // initialize bilateral coefficients outside of the main loop
         let coeffs = init_bilateral(
