@@ -3,6 +3,7 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+#![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 
 //! A png decoder
 //!

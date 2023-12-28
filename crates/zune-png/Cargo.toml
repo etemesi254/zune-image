@@ -17,7 +17,8 @@ description = "A fast, correct and safe png decoder"
 sse = []
 std = ["zune-core/std"]
 log = ["zune-core/log"]
-default = ["sse", "std"]
+portable-simd = []
+default = ["sse", "std","portable-simd"]
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.4" }
