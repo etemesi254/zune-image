@@ -37,25 +37,17 @@ pub fn parse_options<T: IntoImage>(
         let gaussian_blur = GaussianBlur::new(sigma);
         workflow.add_operation(Box::new(gaussian_blur));
     } else if argument == "unsharpen" {
-        let value = args.get_one::<String>(argument).unwrap();
-        let split_args: Vec<&str> = value.split(':').collect();
-
-        if split_args.len() != 2 {
-            return Err(format!("Unsharpen operation expected 2 arguments separated by `:` in the command line,got {}", split_args.len()));
-        }
         // parse first one as threshold
-        let sigma = split_args[0];
-        let sigma_f32 = str::parse::<f32>(sigma).map_err(|x| x.to_string())?;
-
-        let threshold = split_args[1];
-        let threshold_u16 = str::parse::<u16>(threshold).map_err(|x| x.to_string())?;
+        let values: Vec<f32> = args.get_many::<f32>(argument).unwrap().copied().collect();
+        let sigma_f32 = values[0];
+        let threshold_u16 = values[1];
 
         debug!(
             "Added unsharpen filter with sigma={} and threshold={}",
-            sigma, threshold
+            sigma_f32, threshold_u16
         );
 
-        let unsharpen = Unsharpen::new(sigma_f32, threshold_u16, 0);
+        let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, 0);
         workflow.add_operation(Box::new(unsharpen))
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
