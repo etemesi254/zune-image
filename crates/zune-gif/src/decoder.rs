@@ -5,19 +5,23 @@ use zune_core::options::DecoderOptions;
 use crate::errors::GifDecoderErrors;
 
 pub struct GifDecoder<T: ZReaderTrait> {
-    stream:     ZByteReader<T>,
-    options:    DecoderOptions,
-    width:      usize,
-    height:     usize,
-    flags:      u8,
-    bgindex:    u8,
-    ratio:      u8,
-    _background: u16, // current b
-    pal:        [[u8; 4]; 256]
+    stream:       ZByteReader<T>,
+    options:      DecoderOptions,
+    width:        usize,
+    height:       usize,
+    flags:        u8,
+    bgindex:      u8,
+    ratio:        u8,
+    read_headers: bool,
+    _background:  u16, // current b
+    pal:          [[u8; 4]; 256]
 }
 
 impl<T: ZReaderTrait> GifDecoder<T> {
     pub fn decode_headers(&mut self) -> Result<(), GifDecoderErrors> {
+        if self.read_headers {
+            return Ok(());
+        }
         if !test_gif(&mut self.stream) {
             return Err(GifDecoderErrors::NotAGif);
         }
@@ -43,12 +47,14 @@ impl<T: ZReaderTrait> GifDecoder<T> {
                 self.height
             ));
         }
+        // check if we have a global palette
         if (self.flags & 0x80) > 0 {
             self.parse_colortable(2 << (self.flags & 7), usize::MAX)?;
         }
         trace!("Image width  :{}", self.width);
         trace!("Image height :{}", self.height);
         trace!("Ratio: {}", self.ratio);
+        self.read_headers = true;
 
         Ok(())
     }

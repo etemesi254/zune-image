@@ -60,7 +60,6 @@ fn test_animation() {
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
     let depth = decoder.get_depth().unwrap();
-    let mut i = 0;
     let info = decoder.get_info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
@@ -71,7 +70,7 @@ fn test_animation() {
         let frame = decoder.frame_info().unwrap();
 
         let pix = decoder.decode_raw().unwrap();
-        let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+        //let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
         post_process_image(
             &info,
             colorspace,
@@ -86,7 +85,6 @@ fn test_animation() {
         //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
         // std::fs::write(format!("./{i}.png"), bytes).unwrap();
         background = Some(pix);
-        i += 1;
     }
 }
 
@@ -98,7 +96,7 @@ fn test_animation_2() {
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
     let depth = decoder.get_depth().unwrap();
-    let mut i = 0;
+    //let mut i = 0;
     let info = decoder.get_info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
@@ -109,7 +107,7 @@ fn test_animation_2() {
         let frame = decoder.frame_info().unwrap();
 
         let pix = decoder.decode_raw().unwrap();
-        let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+        //let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
         post_process_image(
             &info,
             colorspace,
@@ -121,10 +119,10 @@ fn test_animation_2() {
         )
         .unwrap();
 
-        let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
+        //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
 
-        std::fs::write(format!("./{i}.png"), bytes).unwrap();
+        //std::fs::write(format!("./{i}.png"), bytes).unwrap();
         background = Some(pix);
-        i += 1;
+        // i += 1;
     }
 }
