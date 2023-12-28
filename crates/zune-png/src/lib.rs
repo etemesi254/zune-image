@@ -17,11 +17,24 @@
 //! - Endian aware decoding support.
 //! - Support for animated PNG and post processing of the same
 //!
+//!
+//! ## portable-simd
+//!  The crate supports using portable-simd to accelerate decoding of images, this can be used
+//! in favour of platform specific intrinsics especially where those intrinsics haven't been written, e.g aarch64, wasm
+//!
+//! Though portable-simd is a nightly only feature, hence it is hidden under a flag `portable-simd` and can only compile
+//! on rust nightly
+//!
+//! To enable it add
+//! ``` toml
+//! zune-png = {version="0.4",feature=["portable-simd"]}
+//!```
+//! and compile on nightly
 //! # Usage
 //! Add the library to `Cargo.toml`
 //!
 //! ```toml
-//! zune_png="0.2"
+//! zune_png="0.4"
 //! ```
 //!
 //! #### Decode to 8-bit(1 byte) per pixel always

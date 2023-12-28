@@ -18,7 +18,7 @@ sse = []
 std = ["zune-core/std"]
 log = ["zune-core/log"]
 portable-simd = []
-default = ["sse", "std","portable-simd"]
+default = ["sse", "std"]
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "0.4" }
