@@ -26,9 +26,9 @@ jobs:
             os: macos-latest
             target: x86_64-apple-darwin
 
-          - name: Web
-            os: ubuntu-latest
-            target: wasm32-unknown-unknown
+         # - name: Web
+         #   os: ubuntu-latest
+         #   target: wasm32-unknown-unknown
 
     runs-on: ${{ matrix.os }}
 
