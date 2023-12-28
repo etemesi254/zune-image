@@ -4,7 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 #![allow(dead_code)]
-
+#[cfg(feature = "portable-simd")]
 use crate::filters::portable_simd;
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
