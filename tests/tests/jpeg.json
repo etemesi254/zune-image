@@ -1,7 +1,7 @@
 [
   {
     "name": "weird_components.jpg",
-    "hash": 112456425865248678156223247131152675256
+    "hash": 261174253918394387855126993634653689568
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
@@ -9,7 +9,7 @@
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 276193446258615553450600887344416839261
+    "hash": 316907878901837486178181498404689048850
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
@@ -34,7 +34,7 @@
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 323492540810346221780682098592444605928
+    "hash": 159317719656836513679680568615931027696
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
@@ -73,17 +73,13 @@
     "hash": 46029048520010428617927201003495890872
   },
   {
-    "name": "weird_components.jpg",
-    "hash": 112456425865248678156223247131152675256
-  },
-  {
     "name": "weid_sampling_factors.jpg",
-    "hash": 290923794124024565485763288568005295883,
+    "hash": 122453170552492374445054488824177073161,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 245564003473572773629988080984890939516
+    "hash": 65786204123200007517796769959944451782
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
@@ -92,12 +88,12 @@
   },
   {
     "name": "weird_sampling_2.jpeg",
-    "hash": 44023427629692410987754568486276016924,
+    "hash": 335782763830228804723214395494217878033,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   },
   {
     "name": "2029.jpg",
-    "hash": 145881769686590241353562665580548083291,
+    "hash": 254421589828379257050278164428109290622,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
