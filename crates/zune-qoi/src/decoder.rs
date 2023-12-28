@@ -282,13 +282,13 @@ where
             } else {
                 let chunk = self.stream.get_u8();
 
-                if SIZE == 3 && chunk == QOI_OP_RGB {
+                if chunk == QOI_OP_RGB {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<3>();
 
                     px[0] = packed_bytes[0];
                     px[1] = packed_bytes[1];
                     px[2] = packed_bytes[2];
-                } else if SIZE == 4 && chunk == QOI_OP_RGBA {
+                } else if chunk == QOI_OP_RGBA {
                     let packed_bytes = self.stream.get_fixed_bytes_or_zero::<4>();
 
                     px.copy_from_slice(&packed_bytes);
@@ -326,9 +326,12 @@ where
         let remaining = self.stream.remaining_bytes();
 
         if remaining != LAST_BYTES {
-            return Err(QoiErrors::GenericStatic(
-                "Last bytes do not match QOI signature"
-            ));
+            if self.options.get_strict_mode() {
+                return Err(QoiErrors::GenericStatic(
+                    "Last bytes do not match QOI signature"
+                ));
+            }
+            error!("Last bytes do not match QOI signature");
         }
 
         trace!("Finished decoding image");
