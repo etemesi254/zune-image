@@ -245,7 +245,6 @@ mod benchmarks {
 
     #[bench]
     fn transpose_scalar_f32(b: &mut test::Bencher) {
-        use crate::transpose::sse41::transpose_sse41_u8;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -256,7 +255,6 @@ mod benchmarks {
 
     #[bench]
     fn transpose_sse_f32(b: &mut test::Bencher) {
-        use crate::transpose::sse41::transpose_sse41_u8;
         let width = 800;
         let height = 800;
         let dimensions = width * height;

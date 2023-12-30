@@ -51,6 +51,7 @@ pub fn defilter_avg_generic<const SIZE: usize>(prev_row: &[u8], raw: &[u8], curr
 
 #[allow(unused_assignments)]
 pub fn defilter_paeth_generic<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
+    // https://rust.godbolt.org/z/MKnPP19Mr
     let (mut f, mut g) = ([0; 16], [0; 16]);
     let zero = i16x8::splat(0);
 
