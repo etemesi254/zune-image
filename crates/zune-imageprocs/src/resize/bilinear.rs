@@ -24,7 +24,7 @@ pub fn bilinear_impl<T>(
         for x in 0..out_width {
             let new_x = x as f32 * w_ratio;
             let new_y = y as f32 * h_ratio;
-            // floor and truncate are slow due to handling overflow and such, so avoid them here
+            
             let mut x0 = new_x.floor() as usize;
             let mut y0 = new_y.floor() as usize;
             let mut x1 = x0 + 1;
