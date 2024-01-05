@@ -12,7 +12,9 @@
 //!
 //! It doesn't work for other rotate angles, this will be fixed later
 //!
+
 use zune_core::bit_depth::BitType;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
@@ -36,27 +38,46 @@ impl OperationsTrait for Rotate {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let im_type = image.depth().bit_type();
 
-        let (width, _) = image.dimensions();
+        let (width, height) = image.dimensions();
+
+        let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
 
         for channel in image.channels_mut(false) {
+            let mut new_channel =
+                Channel::new_with_length_and_type(channel.len(), channel.get_type_id());
             match im_type {
                 BitType::U8 => {
-                    if (self.angle - 180.0).abs() < f32::EPSILON {
-                        rotate_180::<u8>(channel.reinterpret_as_mut()?, width);
-                    }
+                    rotate::<u8>(
+                        self.angle,
+                        width,
+                        height,
+                        channel.reinterpret_as()?,
+                        new_channel.reinterpret_as_mut()?
+                    );
                 }
                 BitType::U16 => {
-                    if (self.angle - 180.0).abs() < f32::EPSILON {
-                        rotate_180::<u16>(channel.reinterpret_as_mut()?, width);
-                    }
+                    rotate::<u16>(
+                        self.angle,
+                        width,
+                        height,
+                        channel.reinterpret_as()?,
+                        new_channel.reinterpret_as_mut()?
+                    );
                 }
-                BitType::F32 => {
-                    if (self.angle - 180.0).abs() < f32::EPSILON {
-                        rotate_180::<f32>(channel.reinterpret_as_mut()?, width);
-                    }
-                }
+                BitType::F32 => rotate::<f32>(
+                    self.angle,
+                    width,
+                    height,
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?
+                ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             };
+            *channel = new_channel;
+        }
+
+        if will_change_dims {
+            change_image_dims(image, self.angle);
         }
 
         Ok(())
@@ -67,7 +88,16 @@ impl OperationsTrait for Rotate {
     }
 }
 
-pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut [T]) {
+fn change_image_dims(image: &mut Image, angle: f32) {
+    let (ow, oh) = image.dimensions();
+    if (angle - 90.0).abs() < f32::EPSILON {
+        image.set_dimensions(oh, ow);
+    }
+}
+
+pub fn rotate<T: Copy>(
+    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T]
+) {
     let angle = angle % 360.0;
 
     if (angle - 180.0).abs() < f32::EPSILON {
@@ -75,16 +105,15 @@ pub fn rotate<T: Copy>(angle: f32, width: usize, in_image: &[T], out_image: &mut
         out_image.copy_from_slice(in_image);
         rotate_180(out_image, width);
     }
+    if (angle - 90.0).abs() < f32::EPSILON {
+        rotate_90(in_image, out_image, width, height);
+    }
+    if (angle - 270.0).abs() < f32::EPSILON {
+        rotate_270(in_image, out_image, width, height);
+    }
 }
 
-/// Rotate an image by 180 degrees in place.
-///
-/// This method is preferred as it does it in place as opposed
-/// to the generic rotate which does it out of place
-pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
-    // swap bottom row with top row
-
-    // divide array into two
+fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
     let half = in_out_image.len() / 2;
     let (top, bottom) = in_out_image.split_at_mut(half);
 
@@ -98,19 +127,25 @@ pub fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
     }
 }
 
-fn _rotate_90(_in_image: &[u8], _out_image: &mut [u8], _width: usize, _height: usize) {
-    // a 90 degree rotation is a bit cache unfriendly,
-    // since widths become heights, but we can still optimize it
-    //                   ┌──────┐
-    //┌─────────┐        │ ───► │
-    //│ ▲       │        │ 90   │
-    //│ │       │        │      │
-    //└─┴───────┘        │      │
-    //                   └──────┘
-    //
-    // The lower pixel becomes the top most pixel
-    //
-    // [1,2,3]    [7,4,1]
-    // [4,5,6] -> [8,5,2]
-    // [7,8,9]    [9,6,3]
+fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
+    for (y, pixels) in in_image.chunks_exact(width).enumerate() {
+        let idx = height - y - 1;
+
+        for (x, pix) in pixels.iter().enumerate() {
+            if let Some(c) = out_image.get_mut((x * width) + idx) {
+                *c = *pix;
+            }
+        }
+    }
+}
+
+fn rotate_270<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
+    for (y, pixels) in in_image.chunks_exact(width).enumerate() {
+        for (x, pix) in pixels.iter().enumerate() {
+            let y_idx = (width - x - 1) * width;
+            if let Some(c) = out_image.get_mut(y_idx + y) {
+                *c = *pix;
+            }
+        }
+    }
 }
