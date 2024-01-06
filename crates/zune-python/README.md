@@ -74,7 +74,7 @@ Wait until you see
 ```
 
 8. call `python` or `ipython` to get an interactive shell.
-   9Import `zil` from there and decode an image
+9. Import `zil` from there and decode an image
 
 ```python
 # Import the package
