@@ -14,6 +14,7 @@
 //!
 
 use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -42,38 +43,99 @@ impl OperationsTrait for Rotate {
 
         let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
 
-        for channel in image.channels_mut(false) {
-            let mut new_channel =
-                Channel::new_with_length_and_type(channel.len(), channel.get_type_id());
-            match im_type {
-                BitType::U8 => {
-                    rotate::<u8>(
+        #[cfg(feature = "threads")]
+        {
+            trace!("Running rotate in multithreaded mode");
+            std::thread::scope(|s| {
+                let mut errors = vec![];
+                // blur each channel on a separate thread
+                for channel in image.channels_mut(false) {
+                    let result = s.spawn(|| {
+                        let mut new_channel =
+                            Channel::new_with_length_and_type(channel.len(), channel.get_type_id());
+
+                        match im_type {
+                            BitType::U8 => {
+                                rotate::<u8>(
+                                    self.angle,
+                                    width,
+                                    height,
+                                    channel.reinterpret_as()?,
+                                    new_channel.reinterpret_as_mut()?
+                                );
+                            }
+                            BitType::U16 => {
+                                rotate::<u16>(
+                                    self.angle,
+                                    width,
+                                    height,
+                                    channel.reinterpret_as()?,
+                                    new_channel.reinterpret_as_mut()?
+                                );
+                            }
+                            BitType::F32 => rotate::<f32>(
+                                self.angle,
+                                width,
+                                height,
+                                channel.reinterpret_as()?,
+                                new_channel.reinterpret_as_mut()?
+                            ),
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.name(),
+                                    d
+                                ))
+                            }
+                        };
+                        *channel = new_channel;
+                        Ok(())
+                    });
+                    errors.push(result);
+                }
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
+        }
+
+        #[cfg(not(feature = "threads"))]
+        {
+            trace!("Running rotate in single-threaded mode");
+
+            for channel in image.channels_mut(false) {
+                let mut new_channel =
+                    Channel::new_with_length_and_type(channel.len(), channel.get_type_id());
+                match im_type {
+                    BitType::U8 => {
+                        rotate::<u8>(
+                            self.angle,
+                            width,
+                            height,
+                            channel.reinterpret_as()?,
+                            new_channel.reinterpret_as_mut()?
+                        );
+                    }
+                    BitType::U16 => {
+                        rotate::<u16>(
+                            self.angle,
+                            width,
+                            height,
+                            channel.reinterpret_as()?,
+                            new_channel.reinterpret_as_mut()?
+                        );
+                    }
+                    BitType::F32 => rotate::<f32>(
                         self.angle,
                         width,
                         height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?
-                    );
-                }
-                BitType::U16 => {
-                    rotate::<u16>(
-                        self.angle,
-                        width,
-                        height,
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?
-                    );
-                }
-                BitType::F32 => rotate::<f32>(
-                    self.angle,
-                    width,
-                    height,
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-            };
-            *channel = new_channel;
+                    ),
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                };
+                *channel = new_channel;
+            }
         }
 
         if will_change_dims {
@@ -91,6 +153,9 @@ impl OperationsTrait for Rotate {
 fn change_image_dims(image: &mut Image, angle: f32) {
     let (ow, oh) = image.dimensions();
     if (angle - 90.0).abs() < f32::EPSILON {
+        image.set_dimensions(oh, ow);
+    }
+    if (angle - 270.0).abs() < f32::EPSILON {
         image.set_dimensions(oh, ow);
     }
 }
@@ -132,7 +197,7 @@ fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height:
         let idx = height - y - 1;
 
         for (x, pix) in pixels.iter().enumerate() {
-            if let Some(c) = out_image.get_mut((x * width) + idx) {
+            if let Some(c) = out_image.get_mut((x * height) + idx) {
                 *c = *pix;
             }
         }
@@ -142,10 +207,29 @@ fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height:
 fn rotate_270<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
     for (y, pixels) in in_image.chunks_exact(width).enumerate() {
         for (x, pix) in pixels.iter().enumerate() {
-            let y_idx = (width - x - 1) * width;
+            let y_idx = (width - x - 1) * height;
             if let Some(c) = out_image.get_mut(y_idx + y) {
                 *c = *pix;
             }
         }
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use zune_image::image::Image;
+//     use zune_image::traits::OperationsTrait;
+//
+//     use crate::rotate::Rotate;
+//
+//     #[test]
+//     fn rotate_over() {
+//         let mut dst_image = Image::open("/home/caleb/Pictures/ANIME/418724.png").unwrap();
+//         println!("{:?}", dst_image.dimensions());
+//
+//         Rotate::new(270.0).execute(&mut dst_image).unwrap();
+//
+//         println!("{:?}", dst_image.dimensions());
+//         dst_image.save("./composite.jpg").unwrap();
+//     }
+// }
