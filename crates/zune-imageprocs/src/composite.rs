@@ -294,38 +294,38 @@ fn composite_over_alpha<T>(
         }
     }
 }
-#[cfg(test)]
-mod tests {
-    use zune_core::colorspace::ColorSpace;
-    use zune_image::image::Image;
-    use zune_image::traits::OperationsTrait;
-
-    use crate::composite::{Composite, CompositeMethod};
-    use crate::utils::Gravity;
-
-    #[test]
-    fn test_composite_over() {
-        let mut src_image = Image::open("/run/media/caleb/Home/CITAM/logo - Copy.png").unwrap();
-        let mut dst_image = Image::open(
-            "/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Canazei Granite Ridges.jpg"
-        )
-        .unwrap();
-
-        src_image.convert_color(ColorSpace::RGBA).unwrap();
-        dst_image.convert_color(ColorSpace::RGBA).unwrap();
-
-        // PremultiplyAlpha::new(AlphaState::PreMultiplied)
-        //     .execute(&mut src_image)
-        //     .unwrap();
-
-        let composite = Composite::try_new(
-            &src_image,
-            CompositeMethod::Over,
-            None,
-            Some(Gravity::BottomRight)
-        )
-        .unwrap();
-        composite.execute(&mut dst_image).unwrap();
-        dst_image.save("./composite.jpg").unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use zune_core::colorspace::ColorSpace;
+//     use zune_image::image::Image;
+//     use zune_image::traits::OperationsTrait;
+//
+//     use crate::composite::{Composite, CompositeMethod};
+//     use crate::utils::Gravity;
+//
+//     #[test]
+//     fn test_composite_over() {
+//         let mut src_image = Image::open("/run/media/caleb/Home/CITAM/logo - Copy.png").unwrap();
+//         let mut dst_image = Image::open(
+//             "/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Canazei Granite Ridges.jpg"
+//         )
+//         .unwrap();
+//
+//         src_image.convert_color(ColorSpace::RGBA).unwrap();
+//         dst_image.convert_color(ColorSpace::RGBA).unwrap();
+//
+//         // PremultiplyAlpha::new(AlphaState::PreMultiplied)
+//         //     .execute(&mut src_image)
+//         //     .unwrap();
+//
+//         let composite = Composite::try_new(
+//             &src_image,
+//             CompositeMethod::Over,
+//             None,
+//             Some(Gravity::BottomRight)
+//         )
+//         .unwrap();
+//         composite.execute(&mut dst_image).unwrap();
+//         dst_image.save("./composite.jpg").unwrap();
+//     }
+// }
