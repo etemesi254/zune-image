@@ -101,15 +101,6 @@ impl WasmImage {
         height
     }
 
-    /// Flatten an image to RGBA layout without considering the colorspace
-    ///
-    /// # Behaviour
-    /// For Luma, it duplicates channel to grayscale
-    ///
-    pub fn flatten_rgba(&mut self, out_pixel: &mut [u8]) {
-        self.image.flatten_rgba_frames_u8(vec![out_pixel])
-    }
-
     /// Apply a contrast operation to the image
     pub fn stretch_contrast(&mut self, lower: f32, upper: f32) {
         let ops = StretchContrast::new(lower, upper);

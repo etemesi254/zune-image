@@ -16,9 +16,8 @@ use std::any::TypeId;
 use bytemuck::Pod;
 use zune_core::colorspace::ColorSpace;
 
-use crate::channel::{Channel, ChannelErrors};
+use crate::channel::Channel;
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
-use crate::traits::ZuneInts;
 
 /// A single image frame
 ///
@@ -255,96 +254,6 @@ impl Frame {
         self.channels.insert(index, channel)
     }
 
-    /// Write the colorspace to be a four component colorspace
-    /// preferably RGBA format
-    ///
-    /// The following are expected.
-    ///
-    ///| Component size| Expected colorspace|
-    ///|---------------|--------------------|
-    ///| 1             | Luma               |
-    ///| 2             | LumaA              |
-    ///| 3             | RGB                |
-    ///| 4             | RGBA               |
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `colorspace`:  Colorspace the frame is in, should be set
-    /// by the parent image that owns this frame
-    /// * `out_pixel`: The output where we are going to write pixels  to
-    ///
-    /// returns: Result<(), ChannelErrors>
-    ///
-    ///  It's an error if `T` is not the same type as the bytes stored by
-    /// the channel
-    pub fn write_rgba<T: Clone + Copy + ZuneInts<T> + Default + 'static + Pod>(
-        &self, colorspace: ColorSpace, out_pixel: &mut [T]
-    ) -> Result<(), ChannelErrors> {
-        match colorspace.num_components() {
-            1 => {
-                let luma_channel = self.channels[0].reinterpret_as::<T>()?;
-
-                for (out, luma) in out_pixel.chunks_exact_mut(4).zip(luma_channel) {
-                    out[0] = *luma;
-                    out[1] = *luma;
-                    out[2] = *luma;
-                    out[3] = T::max_value();
-                }
-            }
-            2 => {
-                let luma_channel = self.channels[0].reinterpret_as::<T>()?;
-                let alpha_channel = self.channels[1].reinterpret_as::<T>()?;
-
-                for ((out, luma), alpha) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(luma_channel)
-                    .zip(alpha_channel)
-                {
-                    out[0] = *luma;
-                    out[1] = *luma;
-                    out[2] = *luma;
-                    out[3] = *alpha;
-                }
-            }
-            3 => {
-                let c1 = self.channels[0].reinterpret_as::<T>()?;
-                let c2 = self.channels[1].reinterpret_as::<T>()?;
-                let c3 = self.channels[2].reinterpret_as::<T>()?;
-
-                for (((out, first), second), third) in
-                    out_pixel.chunks_exact_mut(4).zip(c1).zip(c2).zip(c3)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                    out[3] = T::max_value();
-                }
-            }
-            4 => {
-                let c1 = self.channels[0].reinterpret_as::<T>()?;
-                let c2 = self.channels[1].reinterpret_as::<T>()?;
-                let c3 = self.channels[2].reinterpret_as::<T>()?;
-                let c4 = self.channels[3].reinterpret_as::<T>()?;
-
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(c1)
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                {
-                    out[0] = *first;
-                    out[1] = *second;
-                    out[2] = *third;
-                    out[3] = *fourth;
-                }
-            }
-            // panics, all the way down
-            _ => unreachable!()
-        }
-        Ok(())
-    }
     pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(
         &self, colorspace: ColorSpace
     ) -> Vec<T> {
@@ -591,7 +500,10 @@ impl Frame {
         if color_space.num_components() != self.channels.len() {
             return None;
         }
-        let position = color_space.alpha_position().expect("No way!!");
+        let mut position = color_space.alpha_position().expect("No way!!");
+        if position == 0 {
+            position = 1;
+        }
         let (src_c1, src_c2) = self.channels.split_at(position);
 
         let src_alpha_channel;
@@ -632,7 +544,10 @@ impl Frame {
         if color_space.num_components() != self.channels.len() {
             return None;
         }
-        let position = color_space.alpha_position().expect("No way!!");
+        let mut position = color_space.alpha_position().expect("No way!!");
+        if position == 0 {
+            position = 1;
+        }
         let (src_c1, src_c2) = self.channels.split_at_mut(position);
 
         let src_alpha_channel;
@@ -668,18 +583,5 @@ mod tests {
         let frame_data = frame.u16_to_native_endian(ColorSpace::Luma);
 
         assert_eq!(&frame_data, &[80, 195]);
-    }
-
-    #[test]
-    fn test_flatten_grayscale_to_rgba() {
-        let mut channel = Channel::new::<u8>();
-        channel.extend::<u8>(&[10, 20, 20]);
-
-        let mut out = vec![0_u8; channel.len() * 4];
-
-        let frame = Frame::new(vec![channel]);
-        frame.write_rgba(ColorSpace::Luma, &mut out).unwrap();
-        let reference = [10, 10, 10, 255, 20, 20, 20, 255, 20, 20, 20, 255];
-        assert_eq!(&out, &reference);
     }
 }

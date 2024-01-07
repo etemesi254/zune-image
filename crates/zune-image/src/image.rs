@@ -212,23 +212,6 @@ impl Image {
             todo!("Unimplemented")
         }
     }
-
-    /// Force flattening of all frames to RGBA format
-    ///
-    /// This will iterate through all
-    pub fn flatten_rgba_frames_u8(&mut self, out_pixel: Vec<&mut [u8]>) {
-        if self.metadata.depth != BitDepth::Eight {
-            // convert depth if it doesn't match
-            let operation = Depth::new(BitDepth::Eight);
-
-            operation.execute(self).unwrap();
-        }
-        let colorspace = self.colorspace();
-
-        for (frame, out) in self.frames_mut().iter_mut().zip(out_pixel) {
-            frame.write_rgba(colorspace, out).unwrap();
-        }
-    }
     /// Set new image dimensions
     ///
     /// # Warning
