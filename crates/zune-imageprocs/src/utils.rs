@@ -6,6 +6,8 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use zune_image::image::Image;
+
 /// Prefetch data at offset position
 ///
 /// This uses prefetch intrinsics for a specific
@@ -36,4 +38,47 @@ pub fn z_prefetch<T>(data: &[T], position: usize) {
             _mm_prefetch::<_MM_HINT_T0>(ptr_position);
         }
     }
+}
+
+/// The position of the source image on the destination
+#[derive(Copy, Clone, Debug)]
+pub enum Gravity {
+    /// Place the image so that it seems like it's from the
+    /// center of the canvas
+    Center,
+    /// Place the image so that it is from the top end of the canvas
+    TopLeft,
+    /// Place the src image so that it appears from the right of the canvas
+    TopRight,
+    /// Place the image so that it appears from the bottom left of the canvas
+    BottomLeft,
+    /// Place the image so that it appears from the bottom right of the canvas
+    BottomRight
+}
+
+pub fn calculate_gravity(src_image: &Image, dst_image: &Image, gravity: Gravity) -> (usize, usize) {
+    let (src_width, src_height) = src_image.dimensions();
+    let (dst_width, dst_height) = dst_image.dimensions();
+
+    return match gravity {
+        Gravity::Center => {
+            let dst_center_x = dst_width / 2;
+            let dst_center_y = dst_height / 2;
+
+            let src_center_x = src_width / 2;
+            let src_center_y = src_height / 2;
+
+            let orig_y = dst_center_y.saturating_sub(src_center_y);
+            let orig_x = dst_center_x.saturating_sub(src_center_x);
+
+            (orig_x, orig_y)
+        }
+        Gravity::TopLeft => (0, 0),
+        Gravity::TopRight => (dst_width.saturating_sub(src_width), 0),
+        Gravity::BottomLeft => (0, dst_height.saturating_sub(src_height)),
+        Gravity::BottomRight => (
+            dst_width.saturating_sub(src_width),
+            dst_height.saturating_sub(src_height)
+        )
+    };
 }
