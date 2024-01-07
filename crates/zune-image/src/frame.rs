@@ -32,9 +32,9 @@ use crate::traits::ZuneInts;
 /// this is how long this particular frame should be shown
 #[derive(Clone, Eq, PartialEq)]
 pub struct Frame {
-    pub(crate) channels: Vec<Channel>,
-    pub(crate) numerator: usize,
-    pub(crate) denominator: usize,
+    pub(crate) channels:    Vec<Channel>,
+    pub(crate) numerator:   usize,
+    pub(crate) denominator: usize
 }
 
 impl Frame {
@@ -60,7 +60,7 @@ impl Frame {
         Frame {
             channels,
             numerator: 1,
-            denominator: 1,
+            denominator: 1
         }
     }
     /// Create a new frame from a slice of f32 pixels
@@ -76,14 +76,14 @@ impl Frame {
     /// # Panics
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_f32(
-        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize,
+        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
         let channels = deinterleave_f32(pixels, colorspace).unwrap();
 
         Frame {
             channels,
             numerator,
-            denominator,
+            denominator
         }
     }
     /// Create a new frame from a slice of u16 pixels
@@ -100,13 +100,13 @@ impl Frame {
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
 
     pub fn from_u16(
-        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize,
+        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
         let channels = deinterleave_u16(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator,
+            denominator
         }
     }
 
@@ -124,13 +124,13 @@ impl Frame {
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
 
     pub fn from_u8(
-        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize,
+        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
         let channels = deinterleave_u8(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator,
+            denominator
         }
     }
 
@@ -178,12 +178,12 @@ impl Frame {
     ///
     /// ```
     pub fn new_with_duration(
-        channels: Vec<Channel>, numerator: usize, denominator: usize,
+        channels: Vec<Channel>, numerator: usize, denominator: usize
     ) -> Frame {
         Frame {
             channels,
             numerator,
-            denominator,
+            denominator
         }
     }
 
@@ -205,18 +205,13 @@ impl Frame {
     pub fn channels_ref(&self, colorspace: ColorSpace, ignore_alpha: bool) -> &[Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
-            let alpha_position = colorspace.alpha_position().unwrap();
-            if alpha_position == 0 {
-                // cover ARGB
-                &self.channels[1..]
-            } else if colorspace.alpha_position().unwrap() == colorspace.num_components() - 1 {
-                &self.channels[0..colorspace.num_components() - 1]
-            } else {
-                unreachable!("Should not be here")
-            }
+            self.separate_color_and_alpha_ref(colorspace).unwrap().0
         } else {
             &self.channels[0..colorspace.num_components()]
         }
+    }
+    pub fn channels_vec_ref(&self) -> &[Channel] {
+        &self.channels
     }
     /// Return a  mutable reference to the underlying channels
     /// # Arguments
@@ -233,11 +228,7 @@ impl Frame {
     pub fn channels_mut(&mut self, colorspace: ColorSpace, ignore_alpha: bool) -> &mut [Channel] {
         // check if alpha channel is present in colorspace
         if ignore_alpha && colorspace.has_alpha() {
-            // do not take the last one,
-            // we assume the last one contains the alpha channel
-            // in it.
-            // TODO: Is this a bad assumption
-            &mut self.channels[0..colorspace.num_components() - 1]
+            self.separate_color_and_alpha_mut(colorspace).unwrap().0
         } else {
             &mut self.channels[0..colorspace.num_components()]
         }
@@ -288,7 +279,7 @@ impl Frame {
     ///  It's an error if `T` is not the same type as the bytes stored by
     /// the channel
     pub fn write_rgba<T: Clone + Copy + ZuneInts<T> + Default + 'static + Pod>(
-        &self, colorspace: ColorSpace, out_pixel: &mut [T],
+        &self, colorspace: ColorSpace, out_pixel: &mut [T]
     ) -> Result<(), ChannelErrors> {
         match colorspace.num_components() {
             1 => {
@@ -350,12 +341,12 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!(),
+            _ => unreachable!()
         }
         Ok(())
     }
     pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(
-        &self, colorspace: ColorSpace,
+        &self, colorspace: ColorSpace
     ) -> Vec<T> {
         let out_pixels = match colorspace.num_components() {
             1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
@@ -395,7 +386,7 @@ impl Frame {
                     .collect::<Vec<T>>()
             }
             // panics, all the way down
-            _ => unreachable!(),
+            _ => unreachable!()
         };
 
         out_pixels
@@ -479,7 +470,7 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!(),
+            _ => unreachable!()
         }
         out_pixel
     }
@@ -563,7 +554,7 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!(),
+            _ => unreachable!()
         }
         out_pixel
     }
@@ -574,6 +565,88 @@ impl Frame {
     ///
     pub fn set_channels(&mut self, channels: Vec<Channel>) {
         self.channels = channels;
+    }
+
+    /// Returns color channels and alpha components separated from each other or
+    /// `None` if the information presented is invalid
+    ///
+    /// # Arguments
+    ///
+    /// * `color_space`: The frame colorspace, should be derived from the
+    /// image from which this frame is part of, otherwise bad things will happen
+    ///
+    /// # Returns
+    ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the
+    /// colorspace matches the frame channel length.
+    ///     The return type is (color channels, alpha channel_
+    /// - `None`: If the colorspace has no alpha or if the number of components for colorspace doesn't match
+    /// frames length
+    ///
+    pub fn separate_color_and_alpha_ref(
+        &self, color_space: ColorSpace
+    ) -> Option<(&[Channel], &Channel)> {
+        if !color_space.has_alpha() {
+            return None;
+        }
+        if color_space.num_components() != self.channels.len() {
+            return None;
+        }
+        let position = color_space.alpha_position().expect("No way!!");
+        let (src_c1, src_c2) = self.channels.split_at(position);
+
+        let src_alpha_channel;
+        let src_color_channels;
+        if position == 0 {
+            // argb
+            src_alpha_channel = &src_c1[0];
+            src_color_channels = src_c2;
+        } else {
+            src_alpha_channel = &src_c2[0];
+            src_color_channels = src_c1;
+        }
+
+        Some((src_color_channels, src_alpha_channel))
+    }
+
+    /// Returns a mutable reference to color channels and alpha components separated from each other or
+    /// `None` if the information presented is invalid
+    ///
+    /// # Arguments
+    ///
+    /// * `color_space`: The frame colorspace, should be derived from the
+    /// image from which this frame is part of, otherwise bad things will happen
+    ///
+    /// # Returns
+    ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the
+    /// colorspace matches the frame channel length.
+    ///     The return type is (color channels, alpha channel_
+    /// - `None`: If the colorspace has no alpha or if the number of components for colorspace doesn't match
+    /// frames length
+    ///
+    pub fn separate_color_and_alpha_mut(
+        &mut self, color_space: ColorSpace
+    ) -> Option<(&mut [Channel], &mut Channel)> {
+        if !color_space.has_alpha() {
+            return None;
+        }
+        if color_space.num_components() != self.channels.len() {
+            return None;
+        }
+        let position = color_space.alpha_position().expect("No way!!");
+        let (src_c1, src_c2) = self.channels.split_at_mut(position);
+
+        let src_alpha_channel;
+        let src_color_channels;
+        if position == 0 {
+            // argb
+            src_alpha_channel = &mut src_c1[0];
+            src_color_channels = src_c2;
+        } else {
+            src_alpha_channel = &mut src_c2[0];
+            src_color_channels = src_c1;
+        }
+
+        Some((src_color_channels, src_alpha_channel))
     }
 }
 
