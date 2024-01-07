@@ -237,8 +237,6 @@ fn bilateral_filter_int<T>(
     //pad here
     let padded_input = pad(src, width, height, radius, radius, PadMethod::Replicate);
 
-    let mid = (radius + 1) / 2;
-
     // use an inner lambda to implement the bilateral loop as it allows us to borrow
     // surrounding variables
 
@@ -249,6 +247,8 @@ fn bilateral_filter_int<T>(
     // This impl matches opencv bilateral_filter's inner loop, with less pointer chasing as
     // the spatial function sends the right thing to us
     let bilateral_func = |area: &[T]| -> T {
+        let mid = (area.len() + 1) / 2;
+
         let mut sum = 0.0;
         let mut wsum = 0.0;
         let val0 = i32::from(area[mid]);
