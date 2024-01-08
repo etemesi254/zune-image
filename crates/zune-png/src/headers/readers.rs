@@ -14,7 +14,6 @@ use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
-use crate::options::default_chunk_handler;
 use crate::PngDecoder;
 
 impl<T: ZReaderTrait> PngDecoder<T> {
