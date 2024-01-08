@@ -508,7 +508,7 @@ impl Frame {
 
         let src_alpha_channel;
         let src_color_channels;
-        if position == 0 {
+        if position == 1 {
             // argb
             src_alpha_channel = &src_c1[0];
             src_color_channels = src_c2;
@@ -552,7 +552,7 @@ impl Frame {
 
         let src_alpha_channel;
         let src_color_channels;
-        if position == 0 {
+        if position == 1 {
             // argb
             src_alpha_channel = &mut src_c1[0];
             src_color_channels = src_c2;
@@ -566,11 +566,13 @@ impl Frame {
 }
 
 #[allow(unused_imports)]
+#[cfg(test)]
 mod tests {
     use zune_core::colorspace::ColorSpace;
 
     use crate::channel::Channel;
     use crate::frame::Frame;
+    use crate::image::Image;
 
     #[test]
     fn test_conversion_to_native_endian() {
@@ -583,5 +585,29 @@ mod tests {
         let frame_data = frame.u16_to_native_endian(ColorSpace::Luma);
 
         assert_eq!(&frame_data, &[80, 195]);
+    }
+    #[test]
+    fn test_color_separation_rgba() {
+        let image = Image::fill(0f32, ColorSpace::RGBA, 10, 10);
+        let (colors, _) = image.frames[0]
+            .separate_color_and_alpha_ref(ColorSpace::RGBA)
+            .unwrap();
+        assert_eq!(colors.len(), 3);
+    }
+    #[test]
+    fn test_color_separation_argb() {
+        let image = Image::fill(0f32, ColorSpace::ARGB, 10, 10);
+        let (colors, _) = image.frames[0]
+            .separate_color_and_alpha_ref(ColorSpace::ARGB)
+            .unwrap();
+        assert_eq!(colors.len(), 3);
+    }
+    #[test]
+    fn test_color_separation_luma_a() {
+        let image = Image::fill(0f32, ColorSpace::LumaA, 10, 10);
+        let (colors, _) = image.frames[0]
+            .separate_color_and_alpha_ref(ColorSpace::LumaA)
+            .unwrap();
+        assert_eq!(colors.len(), 1);
     }
 }
