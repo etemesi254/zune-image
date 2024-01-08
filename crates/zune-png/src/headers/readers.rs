@@ -14,6 +14,7 @@ use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
+use crate::options::default_chunk_handler;
 use crate::PngDecoder;
 
 impl<T: ZReaderTrait> PngDecoder<T> {
@@ -519,10 +520,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                 // skip crc
                 self.stream.skip(next_header.length + 4);
             } else {
-                return Err(PngDecodeErrors::Generic(format!(
-                    "Found marker {:?} in between fctl, when it shouldn't be there",
+                warn!(
+                    "Found marker {:?} in between fctl when it shouldn't be there",
                     next_header.chunk_type
-                )));
+                );
+                // Will this recurse?
+                self.parse_header(next_header)?;
+                // return Err(PngDecodeErrors::Generic(format!(
+                //     "Found marker {:?} in between fctl, when it shouldn't be there",
+                //     next_header.chunk_type
+                // )));
             }
             should_add_fctl = false;
         }
