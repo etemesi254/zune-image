@@ -16,7 +16,9 @@ const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 #[allow(
     clippy::too_many_lines,
     clippy::op_ref,
-    clippy::cast_possible_truncation
+    clippy::cast_possible_truncation,
+    clippy::erasing_op,
+    clippy::identity_op,
 )]
 pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
     // Temporary variables.
@@ -67,7 +69,7 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             let t3 = p1 + p2 * 3135;
 
             let p2 = in_vector[ptr];
-            let p3 = in_vector[32 + ptr];
+            let p3 = in_vector[ptr + 32];
             let t0 = fsh(p2 + p3);
             let t1 = fsh(p2 - p3);
 
@@ -169,24 +171,17 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             t1 += p2 + p4;
             t0 += p1 + p3;
 
-            let out: &mut [i16; 8] = out_vector
-                .get_mut(pos..pos + 8)
-                .unwrap()
-                .try_into()
-                .unwrap();
-
-            out[0] = clamp((x0 + t3) >> 17);
-            out[1] = clamp((x1 + t2) >> 17);
-            out[2] = clamp((x2 + t1) >> 17);
-            out[3] = clamp((x3 + t0) >> 17);
-            out[4] = clamp((x3 - t0) >> 17);
-            out[5] = clamp((x2 - t1) >> 17);
-            out[6] = clamp((x1 - t2) >> 17);
-            out[7] = clamp((x0 - t3) >> 17);
+            out_vector[pos + (0 * stride)] = clamp((x0 + t3) >> 17);
+            out_vector[pos + (1 * stride)] = clamp((x1 + t2) >> 17);
+            out_vector[pos + (2 * stride)] = clamp((x2 + t1) >> 17);
+            out_vector[pos + (3 * stride)] = clamp((x3 + t0) >> 17);
+            out_vector[pos + (4 * stride)] = clamp((x3 - t0) >> 17);
+            out_vector[pos + (5 * stride)] = clamp((x2 - t1) >> 17);
+            out_vector[pos + (6 * stride)] = clamp((x1 - t2) >> 17);
+            out_vector[pos + (7 * stride)] = clamp((x0 - t3) >> 17);
 
             i += 8;
-
-            pos += stride;
+            pos += 1;
         }
     }
 }

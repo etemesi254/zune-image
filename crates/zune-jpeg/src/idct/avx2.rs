@@ -100,21 +100,21 @@ pub unsafe fn idct_int_avx2_inner(
     // we only care about AC terms
     let rw8 = _mm256_loadu_si256(in_vector[1..].as_ptr().cast());
 
-    let zero = _mm256_setzero_si256();
+    let or = (
+        _mm256_or_si256(rw1, rw8),
+        _mm256_or_si256(rw2, rw3),
+        _mm256_or_si256(rw4, rw5),
+        _mm256_or_si256(rw6, rw7),
+    );
 
-    let mut non_zero = 0;
+    let or = (
+        _mm256_or_si256(or.0, or.1),
+        _mm256_or_si256(or.2, or.3),
+    );
 
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw8, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw1, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw2, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw3, zero));
+    let or = _mm256_or_si256(or.0, or.1);
 
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw4, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw5, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw6, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw7, zero));
-
-    if non_zero == -8 {
+    if _mm256_testz_si256(or, or) != 0 {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
         let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).clamp(0, 255) as i16);
@@ -214,17 +214,14 @@ pub unsafe fn idct_int_avx2_inner(
         };
     }
 
-    // Process rows
+    // process columns
     dct_pass!(512, 10);
     transpose(
         &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
-    // process columns
+    // Process rows
     dct_pass!(SCALE_BITS, 17);
-    transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
-    );
 
     // Pack i32 to i16's,
     // clamp them to be between 0-255

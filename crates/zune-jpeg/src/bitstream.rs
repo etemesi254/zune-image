@@ -56,7 +56,7 @@ use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
-use crate::misc::UN_ZIGZAG;
+use crate::misc::UN_ZIGZAG_TRANSPOSED;
 
 macro_rules! decode_huff {
     ($stream:tt,$symbol:tt,$table:tt) => {
@@ -339,7 +339,7 @@ impl BitStream {
             if fast_ac != 0 {
                 //  FAST AC path
                 pos += ((fast_ac >> 4) & 15) as usize; // run
-                let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
+                let t_pos = UN_ZIGZAG_TRANSPOSED[min(pos, 63)] & 63;
 
                 block[t_pos] = i32::from(fast_ac >> 8) * (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
@@ -354,7 +354,7 @@ impl BitStream {
                     pos += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    let t_pos = UN_ZIGZAG[pos & 63] & 63;
+                    let t_pos = UN_ZIGZAG_TRANSPOSED[pos & 63] & 63;
 
                     block[t_pos] = symbol * qt_table[t_pos];
 
@@ -409,6 +409,7 @@ impl BitStream {
         *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
         return Ok(());
     }
+
     #[inline]
     pub(crate) fn decode_prog_dc_refine<T>(
         &mut self, reader: &mut ZByteReader<T>, block: &mut i16
@@ -435,6 +436,7 @@ impl BitStream {
         self.drop_bits(1);
         return k;
     }
+
     pub(crate) fn decode_mcu_ac_first<T>(
         &mut self, reader: &mut ZByteReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
@@ -458,7 +460,7 @@ impl BitStream {
             if fac != 0 {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(1 << shift); // value
+                block[UN_ZIGZAG_TRANSPOSED[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(1 << shift); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             } else {
@@ -471,7 +473,7 @@ impl BitStream {
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(1 << shift);
+                    block[UN_ZIGZAG_TRANSPOSED[k & 63] & 63] = (symbol as i16).wrapping_mul(1 << shift);
                     k += 1;
                 } else {
                     if r != 15 {
@@ -546,7 +548,7 @@ impl BitStream {
 
                 if k <= self.spec_end {
                     'advance_nonzero: loop {
-                        let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                        let coefficient = &mut block[UN_ZIGZAG_TRANSPOSED[k as usize & 63] & 63];
 
                         if *coefficient != 0 {
                             if self.get_bit() == 1 && (*coefficient & bit) == 0 {
@@ -578,7 +580,7 @@ impl BitStream {
                 }
 
                 if symbol != 0 {
-                    let pos = UN_ZIGZAG[k as usize & 63];
+                    let pos = UN_ZIGZAG_TRANSPOSED[k as usize & 63];
                     // output new non-zero coefficient.
                     block[pos & 63] = symbol as i16;
                 }
@@ -596,7 +598,7 @@ impl BitStream {
                 self.refill(reader)?;
 
                 while k <= self.spec_end {
-                    let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
+                    let coefficient = &mut block[UN_ZIGZAG_TRANSPOSED[k as usize & 63] & 63];
 
                     if *coefficient != 0 && self.get_bit() == 1 {
                         // check if we already modified it, if so do nothing, otherwise
