@@ -59,17 +59,17 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
     } else {
         // because the compiler fails to see that it can be auto_vectorised so i'll
         // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9
-        for ptr in 0..8 {
-            let p2 = in_vector[ptr + 16];
-            let p3 = in_vector[ptr + 48];
+        while i < 64 {
+            let p2 = in_vector[i + 2];
+            let p3 = in_vector[i + 6];
 
             let p1 = (p2 + p3).wrapping_mul(2217);
 
             let t2 = p1 + p3 * -7567;
             let t3 = p1 + p2 * 3135;
 
-            let p2 = in_vector[ptr];
-            let p3 = in_vector[ptr + 32];
+            let p2 = in_vector[i];
+            let p3 = in_vector[i + 4];
             let t0 = fsh(p2 + p3);
             let t1 = fsh(p2 - p3);
 
@@ -79,10 +79,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             let x2 = t1 - t2 + 512;
 
             // odd part
-            let mut t0 = in_vector[ptr + 56];
-            let mut t1 = in_vector[ptr + 40];
-            let mut t2 = in_vector[ptr + 24];
-            let mut t3 = in_vector[ptr + 8];
+            let mut t0 = in_vector[i + 7];
+            let mut t1 = in_vector[i + 5];
+            let mut t2 = in_vector[i + 3];
+            let mut t3 = in_vector[i + 1];
 
             let p3 = t0 + t2;
             let p4 = t1 + t3;
@@ -107,30 +107,32 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
 
             // constants scaled things up by 1<<12; let's bring them back
             // down, but keep 2 extra bits of precision
-            in_vector[ptr] = (x0 + t3) >> 10;
-            in_vector[ptr + 8] = (x1 + t2) >> 10;
-            in_vector[ptr + 16] = (x2 + t1) >> 10;
-            in_vector[ptr + 24] = (x3 + t0) >> 10;
-            in_vector[ptr + 32] = (x3 - t0) >> 10;
-            in_vector[ptr + 40] = (x2 - t1) >> 10;
-            in_vector[ptr + 48] = (x1 - t2) >> 10;
-            in_vector[ptr + 56] = (x0 - t3) >> 10;
+            in_vector[i] = (x0 + t3) >> 10;
+            in_vector[i + 1] = (x1 + t2) >> 10;
+            in_vector[i + 2] = (x2 + t1) >> 10;
+            in_vector[i + 3] = (x3 + t0) >> 10;
+            in_vector[i + 4] = (x3 - t0) >> 10;
+            in_vector[i + 5] = (x2 - t1) >> 10;
+            in_vector[i + 6] = (x1 - t2) >> 10;
+            in_vector[i + 7] = (x0 - t3) >> 10;
+
+            i += 8;
         }
 
         // This is vectorised in architectures supporting SSE 4.1
-        while i < 64 {
+        for ptr in 0..8 {
             // We won't try to short circuit here because it rarely works
 
             // Even part
-            let p2 = in_vector[i + 2];
-            let p3 = in_vector[i + 6];
+            let p2 = in_vector[ptr + 16];
+            let p3 = in_vector[ptr + 48];
 
             let p1 = (p2 + p3) * 2217;
             let t2 = p1 + p3 * -7567;
             let t3 = p1 + p2 * 3135;
 
-            let p2 = in_vector[i];
-            let p3 = in_vector[i + 4];
+            let p2 = in_vector[ptr];
+            let p3 = in_vector[ptr + 32];
 
             let t0 = fsh(p2 + p3);
             let t1 = fsh(p2 - p3);
@@ -145,10 +147,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             let x1 = t1 + t2 + SCALE_BITS;
             let x2 = t1 - t2 + SCALE_BITS;
             // odd part
-            let mut t0 = in_vector[i + 7];
-            let mut t1 = in_vector[i + 5];
-            let mut t2 = in_vector[i + 3];
-            let mut t3 = in_vector[i + 1];
+            let mut t0 = in_vector[ptr + 56];
+            let mut t1 = in_vector[ptr + 40];
+            let mut t2 = in_vector[ptr + 24];
+            let mut t3 = in_vector[ptr + 8];
 
             let p3 = t0 + t2;
             let p4 = t1 + t3;
@@ -171,17 +173,22 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
             t1 += p2 + p4;
             t0 += p1 + p3;
 
-            out_vector[pos + (0 * stride)] = clamp((x0 + t3) >> 17);
-            out_vector[pos + (1 * stride)] = clamp((x1 + t2) >> 17);
-            out_vector[pos + (2 * stride)] = clamp((x2 + t1) >> 17);
-            out_vector[pos + (3 * stride)] = clamp((x3 + t0) >> 17);
-            out_vector[pos + (4 * stride)] = clamp((x3 - t0) >> 17);
-            out_vector[pos + (5 * stride)] = clamp((x2 - t1) >> 17);
-            out_vector[pos + (6 * stride)] = clamp((x1 - t2) >> 17);
-            out_vector[pos + (7 * stride)] = clamp((x0 - t3) >> 17);
+            let out: &mut [i16; 8] = out_vector
+                .get_mut(pos..pos + 8)
+                .unwrap()
+                .try_into()
+                .unwrap();
 
-            i += 8;
-            pos += 1;
+            out[0] = clamp((x0 + t3) >> 17);
+            out[1] = clamp((x1 + t2) >> 17);
+            out[2] = clamp((x2 + t1) >> 17);
+            out[3] = clamp((x3 + t0) >> 17);
+            out[4] = clamp((x3 - t0) >> 17);
+            out[5] = clamp((x2 - t1) >> 17);
+            out[6] = clamp((x1 - t2) >> 17);
+            out[7] = clamp((x0 - t3) >> 17);
+
+            pos += stride;
         }
     }
 }
