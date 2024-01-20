@@ -22,7 +22,7 @@ use crate::components::Components;
 use crate::decoder::{ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
-use crate::misc::{SOFMarkers, UN_ZIGZAG};
+use crate::misc::{SOFMarkers, UN_ZIGZAG_TRANSPOSED};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
@@ -148,8 +148,8 @@ pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(),
                     DecodeErrors::Format(format!("Could not read symbols into the buffer\n{x}"))
                 })?;
                 qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
-                // carry out un zig-zag here
-                un_zig_zag(&qt_values)
+                // carry out transposed un zig-zag here
+                un_zig_zag_transposed(&qt_values)
             }
             1 => {
                 // 16 bit quantization tables
@@ -160,7 +160,7 @@ pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(),
                 }
                 qt_length -= (precision_value as u16) + 1;
 
-                un_zig_zag(&qt_values)
+                un_zig_zag_transposed(&qt_values)
             }
             _ => {
                 return Err(DecodeErrors::DqtError(format!(
@@ -530,7 +530,7 @@ pub(crate) fn parse_app2<T: ZReaderTrait>(
 
 /// Small utility function to print Un-zig-zagged quantization tables
 
-fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
+fn un_zig_zag_transposed<T>(a: &[T]) -> [i32; 64]
 where
     T: Default + Copy,
     i32: core::convert::From<T>
@@ -538,7 +538,8 @@ where
     let mut output = [i32::default(); 64];
 
     for i in 0..64 {
-        output[UN_ZIGZAG[i]] = i32::from(a[i]);
+        // Transpose everything so we can still vectorize as they'll be used on transposed data
+        output[UN_ZIGZAG_TRANSPOSED[i]] = i32::from(a[i]);
     }
 
     output
