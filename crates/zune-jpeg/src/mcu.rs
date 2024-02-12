@@ -488,22 +488,3 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         Ok(())
     }
 }
-
-#[test]
-fn test_random_crash() {
-    use zune_core::bit_depth::BitDepth;
-    use zune_core::options::EncoderOptions;
-    use zune_ppm::PPMEncoder;
-    let file =
-        std::fs::read("/home/caleb/Downloads/293810656-812435e7-c83f-4335-bfb8-1668b1208220.jpg")
-            .unwrap();
-    let mut decoder = JpegDecoder::new(file);
-    let pix = decoder.decode().unwrap();
-    let (w, h) = decoder.dimensions().unwrap();
-    let c = PPMEncoder::new(
-        &pix,
-        EncoderOptions::new(w, h, ColorSpace::RGB, BitDepth::Eight)
-    );
-    let file = c.encode().unwrap();
-    std::fs::write("./hello.ppm", &file).unwrap();
-}
