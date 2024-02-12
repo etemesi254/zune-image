@@ -10,7 +10,7 @@ use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
-use zune_core::options::EncoderOptions;
+
 use zune_png::{post_process_image, PngDecoder};
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
@@ -59,7 +59,7 @@ fn test_animation() {
     let mut decoder = PngDecoder::new(&data);
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
-    let depth = decoder.get_depth().unwrap();
+    let _depth = decoder.get_depth().unwrap();
     let info = decoder.get_info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
@@ -95,7 +95,7 @@ fn test_animation_2() {
     let mut decoder = PngDecoder::new(&data);
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
-    let depth = decoder.get_depth().unwrap();
+    let _depth = decoder.get_depth().unwrap();
     //let mut i = 0;
     let info = decoder.get_info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;

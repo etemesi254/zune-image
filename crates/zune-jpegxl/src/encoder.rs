@@ -1434,7 +1434,7 @@ fn fast_lossless_write_output(
         if *curr >= max_iters {
             out_writer
                 .flush()
-                .map_err(|x| JxlEncodeErrors::Generic(x))?;
+                .map_err(JxlEncodeErrors::Generic)?;
             assert_eq!(out_writer.bits_in_buffer, 0);
             return Ok(out_writer.position);
         }
@@ -1455,7 +1455,7 @@ fn fast_lossless_write_output(
 
         out_writer
             .put_bytes(&writer.dest[*bw_pos..*bw_pos + full_byte_count])
-            .map_err(|x| JxlEncodeErrors::Generic(x))?;
+            .map_err(JxlEncodeErrors::Generic)?;
 
         *bw_pos += full_byte_count;
 
@@ -1465,19 +1465,19 @@ fn fast_lossless_write_output(
                 // transfer those bits to our general writer
                 out_writer
                     .put_bits(writer.bits_in_buffer, writer.buffer)
-                    .map_err(|x| JxlEncodeErrors::Generic(x))?;
+                    .map_err(JxlEncodeErrors::Generic)?;
             }
             *bw_pos = 0;
             *curr += 1;
 
             out_writer
                 .flush()
-                .map_err(|x| JxlEncodeErrors::Generic(x))?;
+                .map_err(JxlEncodeErrors::Generic)?;
 
             if (*curr - 1) % nbc == 0 && out_writer.bits_in_buffer != 0 {
                 out_writer
                     .put_bits(8 - out_writer.bits_in_buffer, 0)
-                    .map_err(|x| JxlEncodeErrors::Generic(x))?;
+                    .map_err(JxlEncodeErrors::Generic)?;
             }
         }
     }

@@ -22,7 +22,7 @@ extern "C" fn zil_zimg_width(image: *mut ZImage, status: *mut ZStatus) -> usize 
         }
         return 0;
     }
-    return unsafe { (*image).dimensions().0 };
+    unsafe { (*image).dimensions().0 }
 }
 
 /// Get image height from image
@@ -34,7 +34,7 @@ extern "C" fn zil_zimg_height(image: *mut ZImage, status: *mut ZStatus) -> usize
         }
         return 0;
     }
-    return unsafe { (*image).dimensions().1 };
+    unsafe { (*image).dimensions().1 }
 }
 
 /// Get image depth from image
@@ -46,7 +46,7 @@ extern "C" fn zil_zimg_depth(image: *mut ZImage, status: *mut ZStatus) -> ZImage
         }
         return ZImageDepth::UnknownDepth;
     }
-    return unsafe { ZImageDepth::from((*image).depth()) };
+    unsafe { ZImageDepth::from((*image).depth()) }
 }
 
 /// Get image colorspace from image
@@ -58,7 +58,7 @@ extern "C" fn zil_zimg_colorspace(image: *mut ZImage, status: *mut ZStatus) -> Z
         }
         return ZImageColorspace::UnknownColorspace;
     }
-    return unsafe { ZImageColorspace::from((*image).colorspace()) };
+    unsafe { ZImageColorspace::from((*image).colorspace()) }
 }
 
 /// Get output size, this returns the minimum array needed to hold a single
@@ -82,7 +82,7 @@ extern "C" fn zil_zimg_get_out_buffer_size(image: *mut ZImage, status: *mut ZSta
     let colorspace = image.colorspace().num_components();
     let depth = image.depth().size_of();
 
-    return w * h * colorspace * depth;
+    w * h * colorspace * depth
 }
 
 /// Write image bytes to output array of output size
@@ -115,9 +115,7 @@ pub extern "C" fn zil_zimg_write_to_output(
         BitDepth::Sixteen => {
             let (a, b, c) = unsafe { output_array.align_to_mut::<u16>() };
 
-            if !a.is_empty() {
-                Err(ImageErrors::GenericStr("Unaligned output"))
-            } else if !c.is_empty() {
+            if !a.is_empty() || !c.is_empty() {
                 Err(ImageErrors::GenericStr("Unaligned output"))
             } else {
                 zune_image::utils::swizzle_channels(channels, b)
@@ -126,9 +124,7 @@ pub extern "C" fn zil_zimg_write_to_output(
         BitDepth::Float32 => {
             let (a, b, c) = unsafe { output_array.align_to_mut::<f32>() };
 
-            if !a.is_empty() {
-                Err(ImageErrors::GenericStr("Unaligned output"))
-            } else if !c.is_empty() {
+            if !a.is_empty() || !c.is_empty() {
                 Err(ImageErrors::GenericStr("Unaligned output"))
             } else {
                 zune_image::utils::swizzle_channels(channels, b)
@@ -336,7 +332,7 @@ extern "C" fn zil_zimg_clone(image: *const ZImage) -> *mut ZImage {
         return ptr::null_mut();
     }
     unsafe { *new_img = image.clone() };
-    return new_img;
+    new_img
 }
 
 /// Create an image from u8 pixels, the depth will be a bit depth of eight bits per pixel
@@ -374,7 +370,7 @@ pub extern "C" fn zil_zimg_from_u8(
             return img;
         }
     }
-    return ptr::null_mut();
+    ptr::null_mut()
 }
 
 /// Create an image from u16 pixels, the depth will be a bit depth of 16 bits per pixel
@@ -410,7 +406,7 @@ pub extern "C" fn zil_zimg_from_u16(
             return img;
         }
     }
-    return ptr::null_mut();
+    ptr::null_mut()
 }
 
 /// Create an image from f32 pixels, the depth will be a bit depth of 32 bits per pixel
@@ -446,7 +442,7 @@ pub extern "C" fn zil_zimg_from_f32(
             return img;
         }
     }
-    return ptr::null_mut();
+    ptr::null_mut()
 }
 fn checked_mul(
     width: usize, height: usize, depth: usize, colorspace_components: usize

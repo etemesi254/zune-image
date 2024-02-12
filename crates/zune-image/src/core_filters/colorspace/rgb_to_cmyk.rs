@@ -2,7 +2,7 @@
 #[inline]
 fn blinn_8x8(in_val: u8, y: u8) -> u8 {
     let t = i32::from(in_val) * i32::from(y) + 128;
-    return ((t + (t >> 8)) >> 8) as u8;
+    ((t + (t >> 8)) >> 8) as u8
 }
 /// Convert CMYK to RGB
 ///
@@ -137,7 +137,7 @@ fn cmyk_to_rgb_f32_inner(c: f32, m: f32, y: f32, k: f32) -> [f32; 3] {
     let g = m * k_inv;
     let b = y * k_inv;
 
-    return [r, g, b];
+    [r, g, b]
 }
 
 /// Convert CMYK to RGB

@@ -769,7 +769,7 @@ where
             }
         }
 
-        for comp in self.components.iter_mut() {
+        for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
             let vs = self.v_max / comp.vertical_sample;
 

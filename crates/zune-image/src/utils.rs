@@ -176,11 +176,11 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
 }
 
 pub fn decode_info<T: ZReaderTrait>(bytes: T) -> Option<ImageMetadata> {
-    return match crate::codecs::guess_format(bytes) {
+    match crate::codecs::guess_format(bytes) {
         None => None,
         Some((format, bytes)) => {
             let mut decoder = format.get_decoder(bytes).ok()?;
             decoder.read_headers().ok()?
         }
-    };
+    }
 }

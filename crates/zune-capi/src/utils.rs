@@ -19,12 +19,12 @@ use crate::enums::ZImageFormat;
 ///
 #[no_mangle]
 pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZImageFormat {
-    let slice = std::slice::from_raw_parts(bytes, size as usize);
+    let slice = std::slice::from_raw_parts(bytes, size);
 
-    return match zune_image::codecs::guess_format(slice) {
+    match zune_image::codecs::guess_format(slice) {
         None => ZImageFormat::UnknownFormat,
         Some((format, _)) => ZImageFormat::from(format)
-    };
+    }
 }
 /// Allocate a region of memory
 ///

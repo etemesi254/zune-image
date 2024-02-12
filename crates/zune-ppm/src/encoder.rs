@@ -152,7 +152,7 @@ impl<'a> PPMEncoder<'a> {
         match self.options.get_depth().bit_type() {
             BitType::U8 => stream
                 .write_all(self.data)
-                .map_err(|x| PPMEncodeErrors::Static(x))?,
+                .map_err(PPMEncodeErrors::Static)?,
             BitType::U16 => {
                 if !stream.has(self.data.len()) {
                     return Err(PPMEncodeErrors::Static("The data will not fit into buffer"));

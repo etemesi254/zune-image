@@ -364,7 +364,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     // iterate over each line, since color-convert needs only
                     // one line
                     for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
+                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width];
                     }
                     color_convert(
                         &raw_samples,

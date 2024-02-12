@@ -1091,7 +1091,7 @@ where
                         continue;
                     }
 
-                    if pos + (usize::from(p1) * usize::from(self.depth) >> 3) > output.len() {
+                    if pos + ((usize::from(p1) * usize::from(self.depth)) >> 3) > output.len() {
                         return Err(BmpDecoderErrors::GenericStatic("Position overrun"));
                     }
                     match self.depth {

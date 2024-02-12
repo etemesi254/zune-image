@@ -193,16 +193,16 @@ impl<'a> QoiEncoder<'a> {
                         let vg_r = vr.wrapping_sub(vg);
                         let vg_b = vb.wrapping_sub(vg);
 
-                        if (vr < 2 || vr > 253) && (vg < 2 || vg > 253) && (vb < 2 || vb > 253) {
+                        if !(2..=253).contains(&vr) && !(2..=253).contains(&vg) && !(2..=253).contains(&vb) {
                             stream.write_u8(
                                 QOI_OP_DIFF
                                     | vr.wrapping_add(2) << 4
                                     | vg.wrapping_add(2) << 2
                                     | vb.wrapping_add(2)
                             );
-                        } else if (vg_r > 247 || vg_r < 8)
-                            && (vg > 223 || vg < 32)
-                            && (vg_b > 247 || vg_b < 8)
+                        } else if !(8..=247).contains(&vg_r)
+                            && !(32..=223).contains(&vg)
+                            && !(8..=247).contains(&vg_b)
                         {
                             stream.write_u8(QOI_OP_LUMA | vg.wrapping_add(32));
                             stream.write_u8(vg_r.wrapping_add(8) << 4 | vg_b.wrapping_add(8));
@@ -230,7 +230,7 @@ impl<'a> QoiEncoder<'a> {
         // done
         let len = stream.position();
 
-        return Ok(len);
+        Ok(len)
     }
     /// Encode an image and return a vector containing encoded content
     /// or error out in case of anything

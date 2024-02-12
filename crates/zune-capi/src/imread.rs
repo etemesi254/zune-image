@@ -151,7 +151,6 @@ pub extern "C" fn zil_imread_into(
         ),
         Err(err) => {
             unsafe { *status = ZStatus::new(err.to_string(), ZStatusType::IoErrors) };
-            return;
         }
     }
 }
@@ -170,7 +169,7 @@ pub extern "C" fn zil_read_headers_from_file(
     let binding = unsafe { CStr::from_ptr(file) }.to_string_lossy();
     let file_cstr = binding.as_ref();
 
-    return match std::fs::read(file_cstr) {
+    match std::fs::read(file_cstr) {
         Ok(bytes) => zil_read_headers_from_memory(bytes.as_ptr(), bytes.len() as _, status),
         Err(error) => {
             unsafe {
@@ -178,7 +177,7 @@ pub extern "C" fn zil_read_headers_from_file(
             };
             ZImageMetadata::default()
         }
-    };
+    }
 }
 
 /// \brief  Decode image headers  of bytes already in memory
@@ -201,9 +200,9 @@ pub extern "C" fn zil_read_headers_from_memory(
             ZStatusType::DecodeErrors
         );
     };
-    let contents = unsafe { std::slice::from_raw_parts(input, input_size as usize) };
+    let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    return match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(contents) {
         None => ZImageMetadata::default(),
         Some(metadata) => {
             let (w, h) = metadata.get_dimensions();
@@ -220,7 +219,7 @@ pub extern "C" fn zil_read_headers_from_memory(
                 )
             }
         }
-    };
+    }
 }
 ///\brief Decode an image already in memory
 ///
@@ -244,11 +243,11 @@ pub extern "C" fn zil_imdecode(
     if status.is_null() {
         return ptr::null();
     }
-    let contents = unsafe { std::slice::from_raw_parts(input, input_size as usize) };
+    let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
     match zune_image::utils::decode_info(contents) {
         None => {
-            let msg = format!("Could not decode headers");
+            let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
             unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
             return ptr::null();
@@ -312,16 +311,15 @@ pub extern "C" fn zil_imdecode_into(
         return;
     }
 
-    let contents = unsafe { std::slice::from_raw_parts(input, input_size as usize) };
+    let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
     // Safety the caller is supposed to uphold this
-    let buf = unsafe { std::slice::from_raw_parts_mut(output, output_size as usize) };
+    let buf = unsafe { std::slice::from_raw_parts_mut(output, output_size) };
 
     match zune_image::utils::decode_info(contents) {
         None => {
-            let msg = format!("Could not decode headers");
+            let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
             unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
-            return;
         }
         Some(metadata) => {
             let (w, h) = metadata.get_dimensions();
@@ -365,191 +363,187 @@ fn imdecode_inner<T>(data: T, output: &mut [u8]) -> Result<(), ImageErrors>
 where
     T: ZReaderTrait
 {
-    match zune_image::codecs::guess_format(data) {
-        Some((im_format, data)) => {
-            match im_format {
-                ImageFormat::JPEG => {
-                    // just write into buffer
-                    let mut decoder = JpegDecoder::new(data);
+    if let Some((im_format, data)) = zune_image::codecs::guess_format(data) {
+        match im_format {
+            ImageFormat::JPEG => {
+                // just write into buffer
+                let mut decoder = JpegDecoder::new(data);
 
-                    decoder.decode_into(output)?;
-                }
-                ImageFormat::PNG => {
-                    // note: PNG has 8 bit and 16 bit images, it's a common format so we have to do some optimizations
-                    //
-                    // we don't strip 16 bit to 8 bit automatically, so we need to  handle that path
-                    // but we have `decode_into` only taking &[u8] slices, and making it generic and sucks
-                    //
-                    // so we branch on the depth, cheat a bit on 16 bit and return whatever we can
-                    // we expect the caller to have appropriately taken care of allocating enough to hold 16 bit
-                    //
-                    let mut decoder = PngDecoder::new(data);
-
-                    match decoder.get_depth().unwrap() {
-                        BitDepth::Eight => {
-                            decoder.decode_into(output)?;
-
-                            return Ok(());
-                        }
-                        BitDepth::Sixteen => {
-                            // safety:
-                            // we can alias strong types to weak types, e.g u16->u8 works, we only care
-                            // about alignment so it should be fine
-                            //
-                            // Reason:
-                            // Saves us an unnecessary image allocation which is expensive
-                            // set sample endianness to match platform
-                            #[cfg(target_endian = "little")]
-                            {
-                                let options = decoder.get_options().set_byte_endian(ByteEndian::LE);
-                                decoder.set_options(options);
-                            }
-                            #[cfg(target_endian = "big")]
-                            {
-                                let options = decoder.get_options().set_byte_endian(ByteEndian::BE);
-                                decoder.set_options(options);
-                            }
-
-                            decoder.decode_into(output)?;
-                        }
-                        _ => unreachable!()
-                    }
-                }
-                ImageFormat::PPM => {
-                    let mut decoder = PPMDecoder::new(data);
-                    decoder.decode_headers()?;
-                    let (w, h) = decoder.get_dimensions().unwrap();
-                    let color = decoder.get_colorspace().unwrap();
-                    let depth = decoder.get_bit_depth().unwrap().size_of();
-                    let size = w * h * color.num_components() * depth;
-
-                    if output.len() < size {
-                        return Err(ImageErrors::GenericString(format!(
-                            "Too small of output buffer, expected {} but found {} ",
-                            size,
-                            output.len()
-                        )));
-                    }
-
-                    match decoder.decode()? {
-                        DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
-                        DecodingResult::U16(bytes) => {
-                            // alias u16 to u8
-                            // SAFETY: u8 can alias everything
-                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
-                            output[..size].copy_from_slice(&b[..size]);
-                        }
-                        DecodingResult::F32(bytes) => {
-                            // alias u16 to u8
-                            // SAFETY: u8 can alias everything
-                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
-                            output[..size].copy_from_slice(&b[..size]);
-                        }
-                        _ => unreachable!()
-                    }
-                }
-                ImageFormat::PSD => {
-                    let mut decoder = PSDDecoder::new(data);
-                    decoder.decode_headers()?;
-                    let (w, h) = decoder.get_dimensions().unwrap();
-                    let color = decoder.get_colorspace().unwrap();
-                    let depth = decoder.get_bit_depth().unwrap().size_of();
-                    let size = w * h * color.num_components() * depth;
-
-                    if output.len() < size {
-                        return Err(ImageErrors::GenericString(format!(
-                            "Too small of output buffer, expected {} but found {} ",
-                            size,
-                            output.len()
-                        )));
-                    }
-
-                    match decoder.decode()? {
-                        DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
-                        DecodingResult::U16(bytes) => {
-                            // alias u16 to u8
-                            // SAFETY: u8 can alias everything
-                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
-                            output[..size].copy_from_slice(&b[..size]);
-                        }
-                        DecodingResult::F32(bytes) => {
-                            // alias u16 to u8
-                            // SAFETY: u8 can alias everything
-                            let (_, b, _) = unsafe { bytes.align_to::<u8>() };
-                            output[..size].copy_from_slice(&b[..size]);
-                        }
-                        _ => unreachable!()
-                    }
-                }
-                ImageFormat::Farbfeld => {
-                    let mut decoder = FarbFeldDecoder::new(data);
-
-                    let (a, output_buf, c) = unsafe { output.align_to_mut() };
-
-                    if !a.is_empty() || !c.is_empty() {
-                        // misalignment
-                        return Err(ImageErrors::GenericStr("Buffer misalignment"));
-                    }
-                    decoder.decode_into(output_buf)?;
-                }
-                ImageFormat::QOI => {
-                    // just write into buffer
-                    let mut decoder = JpegDecoder::new(data);
-
-                    decoder.decode_into(output)?;
-                }
-                ImageFormat::JPEG_XL => {
-                    let c = ZByteReader::new(data);
-                    let mut decoder =
-                        zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
-                            .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
-
-                    let result = decoder
-                        .render_next_frame()
-                        .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
-
-                    match result {
-                        RenderResult::Done(render) => {
-                            let (a, f32_buf, c) = unsafe { output.align_to_mut() };
-
-                            if !(a.is_empty() && c.is_empty()) {
-                                // misalignment
-                                return Err(ImageErrors::GenericStr("Buffer misalignment"));
-                            }
-
-                            let im_plannar = render.image();
-                            let buf_len = im_plannar.buf().len();
-
-                            if buf_len > f32_buf.len() {
-                                return Err(ImageErrors::GenericStr(
-                                    "Too small of a buffer for jxl output"
-                                ));
-                            }
-                            f32_buf[..buf_len].copy_from_slice(im_plannar.buf())
-                        }
-                        _ => return Err(ImageErrors::GenericStr("Cannot handle jxl status"))
-                    }
-                }
-                ImageFormat::HDR => {
-                    let mut decoder = HdrDecoder::new(data);
-
-                    let (a, f32_buf, c) = unsafe { output.align_to_mut() };
-
-                    if !(a.is_empty() && c.is_empty()) {
-                        // misalignment
-                        return Err(ImageErrors::GenericStr("Buffer misalignment"));
-                    }
-                    decoder.decode_into(f32_buf)?
-                }
-                ImageFormat::BMP => {
-                    let mut decoder = BmpDecoder::new(data);
-
-                    decoder.decode_into(output)?
-                }
-                _ => {}
+                decoder.decode_into(output)?;
             }
+            ImageFormat::PNG => {
+                // note: PNG has 8 bit and 16 bit images, it's a common format so we have to do some optimizations
+                //
+                // we don't strip 16 bit to 8 bit automatically, so we need to  handle that path
+                // but we have `decode_into` only taking &[u8] slices, and making it generic and sucks
+                //
+                // so we branch on the depth, cheat a bit on 16 bit and return whatever we can
+                // we expect the caller to have appropriately taken care of allocating enough to hold 16 bit
+                //
+                let mut decoder = PngDecoder::new(data);
+
+                match decoder.get_depth().unwrap() {
+                    BitDepth::Eight => {
+                        decoder.decode_into(output)?;
+
+                        return Ok(());
+                    }
+                    BitDepth::Sixteen => {
+                        // safety:
+                        // we can alias strong types to weak types, e.g u16->u8 works, we only care
+                        // about alignment so it should be fine
+                        //
+                        // Reason:
+                        // Saves us an unnecessary image allocation which is expensive
+                        // set sample endianness to match platform
+                        #[cfg(target_endian = "little")]
+                        {
+                            let options = decoder.get_options().set_byte_endian(ByteEndian::LE);
+                            decoder.set_options(options);
+                        }
+                        #[cfg(target_endian = "big")]
+                        {
+                            let options = decoder.get_options().set_byte_endian(ByteEndian::BE);
+                            decoder.set_options(options);
+                        }
+
+                        decoder.decode_into(output)?;
+                    }
+                    _ => unreachable!()
+                }
+            }
+            ImageFormat::PPM => {
+                let mut decoder = PPMDecoder::new(data);
+                decoder.decode_headers()?;
+                let (w, h) = decoder.get_dimensions().unwrap();
+                let color = decoder.get_colorspace().unwrap();
+                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let size = w * h * color.num_components() * depth;
+
+                if output.len() < size {
+                    return Err(ImageErrors::GenericString(format!(
+                        "Too small of output buffer, expected {} but found {} ",
+                        size,
+                        output.len()
+                    )));
+                }
+
+                match decoder.decode()? {
+                    DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
+                    DecodingResult::U16(bytes) => {
+                        // alias u16 to u8
+                        // SAFETY: u8 can alias everything
+                        let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                        output[..size].copy_from_slice(&b[..size]);
+                    }
+                    DecodingResult::F32(bytes) => {
+                        // alias u16 to u8
+                        // SAFETY: u8 can alias everything
+                        let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                        output[..size].copy_from_slice(&b[..size]);
+                    }
+                    _ => unreachable!()
+                }
+            }
+            ImageFormat::PSD => {
+                let mut decoder = PSDDecoder::new(data);
+                decoder.decode_headers()?;
+                let (w, h) = decoder.get_dimensions().unwrap();
+                let color = decoder.get_colorspace().unwrap();
+                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let size = w * h * color.num_components() * depth;
+
+                if output.len() < size {
+                    return Err(ImageErrors::GenericString(format!(
+                        "Too small of output buffer, expected {} but found {} ",
+                        size,
+                        output.len()
+                    )));
+                }
+
+                match decoder.decode()? {
+                    DecodingResult::U8(bytes) => output[..size].copy_from_slice(&bytes[..]),
+                    DecodingResult::U16(bytes) => {
+                        // alias u16 to u8
+                        // SAFETY: u8 can alias everything
+                        let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                        output[..size].copy_from_slice(&b[..size]);
+                    }
+                    DecodingResult::F32(bytes) => {
+                        // alias u16 to u8
+                        // SAFETY: u8 can alias everything
+                        let (_, b, _) = unsafe { bytes.align_to::<u8>() };
+                        output[..size].copy_from_slice(&b[..size]);
+                    }
+                    _ => unreachable!()
+                }
+            }
+            ImageFormat::Farbfeld => {
+                let mut decoder = FarbFeldDecoder::new(data);
+
+                let (a, output_buf, c) = unsafe { output.align_to_mut() };
+
+                if !a.is_empty() || !c.is_empty() {
+                    // misalignment
+                    return Err(ImageErrors::GenericStr("Buffer misalignment"));
+                }
+                decoder.decode_into(output_buf)?;
+            }
+            ImageFormat::QOI => {
+                // just write into buffer
+                let mut decoder = JpegDecoder::new(data);
+
+                decoder.decode_into(output)?;
+            }
+            ImageFormat::JPEG_XL => {
+                let c = ZByteReader::new(data);
+                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
+                    .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
+
+                let result = decoder
+                    .render_next_frame()
+                    .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
+
+                match result {
+                    RenderResult::Done(render) => {
+                        let (a, f32_buf, c) = unsafe { output.align_to_mut() };
+
+                        if !(a.is_empty() && c.is_empty()) {
+                            // misalignment
+                            return Err(ImageErrors::GenericStr("Buffer misalignment"));
+                        }
+
+                        let im_plannar = render.image();
+                        let buf_len = im_plannar.buf().len();
+
+                        if buf_len > f32_buf.len() {
+                            return Err(ImageErrors::GenericStr(
+                                "Too small of a buffer for jxl output"
+                            ));
+                        }
+                        f32_buf[..buf_len].copy_from_slice(im_plannar.buf())
+                    }
+                    _ => return Err(ImageErrors::GenericStr("Cannot handle jxl status"))
+                }
+            }
+            ImageFormat::HDR => {
+                let mut decoder = HdrDecoder::new(data);
+
+                let (a, f32_buf, c) = unsafe { output.align_to_mut() };
+
+                if !(a.is_empty() && c.is_empty()) {
+                    // misalignment
+                    return Err(ImageErrors::GenericStr("Buffer misalignment"));
+                }
+                decoder.decode_into(f32_buf)?
+            }
+            ImageFormat::BMP => {
+                let mut decoder = BmpDecoder::new(data);
+
+                decoder.decode_into(output)?
+            }
+            _ => {}
         }
-        None => {}
     }
     Ok(())
 }

@@ -157,13 +157,16 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .decode_headers()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    let (w, h) = decoder.dimensions().unwrap();
+                    let (width, height) = decoder.dimensions().unwrap();
                     let color = decoder.get_colorspace().unwrap();
 
                     match decoder.get_depth().unwrap() {
                         BitDepth::Eight => {
-                            let arr =
-                                PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+                            let arr = PyArray3::<u8>::zeros(
+                                py,
+                                [height, width, color.num_components()],
+                                false
+                            );
                             let mut write_array = arr.try_readwrite()?;
                             let slice = write_array.as_slice_mut()?;
 
@@ -174,8 +177,11 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                             return Ok(arr.as_untyped());
                         }
                         BitDepth::Sixteen => {
-                            let arr =
-                                PyArray3::<u16>::zeros(py, [h, w, color.num_components()], false);
+                            let arr = PyArray3::<u16>::zeros(
+                                py,
+                                [height, width, color.num_components()],
+                                false
+                            );
                             let mut write_array = arr.try_readwrite()?;
                             let slice = write_array.as_slice_mut()?;
                             // safety:
@@ -187,7 +193,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                             let (a, b, c) = unsafe { slice.align_to_mut::<u8>() };
                             assert_eq!(a.len(), 0);
                             assert_eq!(c.len(), 0);
-                            assert_eq!(b.len(), w * h * color.num_components() * 2);
+                            assert_eq!(b.len(), width * height * color.num_components() * 2);
                             // set sample endianness to match platform
                             #[cfg(target_endian = "little")]
                             {
@@ -336,14 +342,14 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
 
                     let mut decoder =
                         zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
-                            .map_err(|x| PyErr::new::<PyException, _>(format!("{:?}", x)))?;
+                            .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (w, h) = (decoder.width() as usize, decoder.height() as usize);
                     let color = decoder.pixel_format();
 
                     let result = decoder
                         .render_next_frame()
-                        .map_err(|x| PyErr::new::<PyException, _>(format!("{}", x)))?;
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{x}")))?;
 
                     match result {
                         RenderResult::Done(render) => {
@@ -369,7 +375,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         _ => return Err(PyErr::new::<PyException, _>("Cannot process jxl frame"))
                     }
                 }
-                d => Err(PyErr::new::<PyException, _>(format!(
+                d @ ImageFormat::Unknown => Err(PyErr::new::<PyException, _>(format!(
                     " No decoder for format {:?}",
                     d.to_imageformat()
                 )))

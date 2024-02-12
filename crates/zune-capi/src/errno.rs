@@ -134,7 +134,7 @@ pub extern "C" fn zil_status_code(status: *const ZStatus) -> ZStatusType {
         return ZStatusType::NullStatus;
     }
     // safety, checked above if it's null
-    return unsafe { (*status).status };
+    unsafe { (*status).status }
 }
 
 /// Returns a null terminated string that contains more details about
@@ -148,7 +148,7 @@ pub extern "C" fn zil_status_message(status: *const ZStatus) -> *const c_char {
     if status.is_null() {
         return ptr::null();
     }
-    return unsafe { (*status).message.cast() };
+    unsafe { (*status).message.cast() }
 }
 
 /// Destroy a status indicator.

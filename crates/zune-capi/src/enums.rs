@@ -11,6 +11,7 @@ use zune_image::codecs::ImageFormat;
 #[non_exhaustive]
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ZImageFormat {
     /// Any unknown format
     UnknownFormat = 0,
@@ -80,6 +81,7 @@ impl From<ImageFormat> for ZImageFormat {
 /// F32  -> using float32, image is represented as float
 #[repr(C)]
 #[derive(Copy, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ZImageDepth {
     /// Image depth is unknown
     UnknownDepth = 0,
@@ -113,6 +115,7 @@ impl From<BitDepth> for ZImageDepth {
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ZImageColorspace {
     /// Unknown image colorspace
     UnknownColorspace = 0,

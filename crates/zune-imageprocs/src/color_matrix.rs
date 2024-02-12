@@ -120,6 +120,7 @@ impl OperationsTrait for ColorMatrix {
         "Color Matrix"
     }
 
+    #[allow(clippy::many_single_char_names)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let original_color = image.colorspace();
 

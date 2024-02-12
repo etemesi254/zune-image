@@ -261,9 +261,9 @@ impl Image {
 
         let channels = vec![Channel::from_elm::<T>(dims, pixel); colorspace.num_components()];
 
-        let img = Image::new(channels, T::depth(), width, height, colorspace);
+        
 
-        img
+        Image::new(channels, T::depth(), width, height, colorspace)
     }
     /// Create an image from a function
     ///

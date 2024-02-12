@@ -32,9 +32,9 @@ enum CompositeMethodType {
 impl CompositeMethod {
     fn composite_type(self) -> CompositeMethodType {
         match self {
-            CompositeMethod::Over => CompositeMethodType::ChannelBased,
-            CompositeMethod::Src => CompositeMethodType::ChannelBased,
-            CompositeMethod::Dst => CompositeMethodType::ChannelBased,
+            CompositeMethod::Src | CompositeMethod::Dst | CompositeMethod::Over => {
+                CompositeMethodType::ChannelBased
+            }
             CompositeMethod::DstIn => CompositeMethodType::AlphaChannel
         }
     }
@@ -207,6 +207,7 @@ impl<'a> OperationsTrait for Composite<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn composite_alpha<T>(
     src: &[T], dest: &mut [T], src_alpha: &[T], start_x: usize, start_y: usize, width_src: usize,
     width_dest: usize, method: CompositeMethod
@@ -214,11 +215,12 @@ fn composite_alpha<T>(
     T: Copy + NumOps<T>,
     f32: From<T>
 {
-    match method {
-        CompositeMethod::Over => composite_over_alpha(
+    if let CompositeMethod::Over = method {
+        composite_over_alpha(
             src, dest, src_alpha, start_x, start_y, width_src, width_dest
-        ),
-        _ => panic!()
+        );
+    } else {
+        unreachable!()
     }
 }
 fn composite<T: Copy + NumOps<T>>(

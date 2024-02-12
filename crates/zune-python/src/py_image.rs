@@ -624,6 +624,7 @@ impl Image {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
     let dims = numpy.shape();
     if TypeId::of::<T>() == TypeId::of::<u8>() {
@@ -662,29 +663,13 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
             ZColorSpace::Luma
         ));
     }
-    if TypeId::of::<T>() == TypeId::of::<u32>() {
-        warn!("The library doesn't natively support u32, the data will be converted to f32");
-        let downcasted: &PyArray2<u32> = numpy.downcast()?;
-
-        let dc = downcasted.try_readonly()?;
-        let bytes = dc
-            .as_slice()?
-            .iter()
-            .map(|x| *x as f32)
-            .collect::<Vec<f32>>();
-        return Ok(ZImage::from_f32(
-            &bytes,
-            dims[1],
-            dims[0],
-            ZColorSpace::Luma
-        ));
-    }
     Err(PyErr::new::<PyException, _>(format!(
-        "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 and u32 are converted to f32)",
+        "The type {:?} is not supported supported types are u16,u8, and f32  (the types f64 is converted to f32)",
         numpy.dtype()
     )))
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn convert_3d<T: Element + 'static>(
     numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>
 ) -> PyResult<ZImage> {

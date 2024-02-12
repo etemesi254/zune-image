@@ -33,6 +33,7 @@ pub struct ChannelHistogram {
 
 impl ChannelHistogram {
     /// Create a new channel histogram
+    #[must_use]
     pub fn new() -> ChannelHistogram {
         ChannelHistogram::default()
     }
@@ -63,7 +64,7 @@ impl OperationsTrait for ChannelHistogram {
                     let pixels = channel.reinterpret_as::<u8>()?;
 
                     let histo = histogram(pixels);
-                    self.histogram.borrow_mut().push(histo.to_vec())
+                    self.histogram.borrow_mut().push(histo.to_vec());
                 }
             }
             BitType::U16 => {
@@ -71,7 +72,7 @@ impl OperationsTrait for ChannelHistogram {
                     let pixels = channel.reinterpret_as::<u16>()?;
 
                     let histo = histogram_u16(pixels);
-                    self.histogram.borrow_mut().push(histo.to_vec())
+                    self.histogram.borrow_mut().push(histo.clone());
                 }
             }
             _ => {
@@ -88,6 +89,7 @@ impl OperationsTrait for ChannelHistogram {
     }
 }
 
+#[must_use]
 pub fn histogram(data: &[u8]) -> [u32; 256] {
     // Histogram calculation
     //
@@ -119,8 +121,9 @@ pub fn histogram(data: &[u8]) -> [u32; 256] {
         start4[((tmp1 >> 32) & 255) as usize] += 1;
         start1[((tmp1 >> 24) & 255) as usize] += 1;
         start2[((tmp1 >> 16) & 255) as usize] += 1;
-        start3[((tmp1 >> 08) & 255) as usize] += 1;
-        start4[((tmp1 >> 00) & 255) as usize] += 1;
+        start3[((tmp1 >> 8) & 255) as usize] += 1;
+
+        start4[(tmp1 & 255) as usize] += 1;
     }
 
     for i in remainder {
@@ -180,7 +183,10 @@ fn test_histogram_u8() {
     histo.execute_impl(&mut image).unwrap();
     let data = histo.histogram().expect("Reference is borrowed");
     assert_eq!(data.len(), 1);
-    assert_eq!(data[0].iter().sum::<u32>(), pixels.len() as u32);
+    assert_eq!(
+        data[0].iter().sum::<u32>(),
+        u32::try_from(pixels.len()).unwrap_or(0)
+    );
 }
 
 #[test]
@@ -201,7 +207,10 @@ fn test_histogram_u16() {
     histo.execute_impl(&mut image).unwrap();
     let data = histo.histogram().expect("Reference is borrowed");
     // ensure everything was summed
-    assert_eq!(data[0].iter().sum::<u32>(), pixels.len() as u32);
+    assert_eq!(
+        data[0].iter().sum::<u32>(),
+        u32::try_from(pixels.len()).unwrap_or(0)
+    );
 }
 
 #[cfg(feature = "benchmarks")]
