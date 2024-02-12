@@ -383,6 +383,29 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         let comps = &mut self.components[..];
 
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
+            {
+                // duplicated so that we can check that samples match
+                // Fixes bug https://github.com/etemesi254/zune-image/issues/151
+                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                for (samp, component) in samples.iter_mut().zip(comps.iter()) {
+                    *samp = if component.sample_ratio == SampleRatios::None {
+                        &component.raw_coeff
+                    } else {
+                        &component.upsample_dest
+                    };
+                }
+
+                // ensure length matches for all samples
+                let first_len = samples[0].len();
+                for samp in samples.iter().take(comp_len) {
+                    if first_len != samp.len() {
+                        return Err(DecodeErrors::FormatStatic(
+                            "The current sampling factors are too complex to be decoded, note if you have a genuine image with the samples below, please open a PR"
+                        ));
+                    }
+                }
+            }
             for comp in comps.iter_mut() {
                 upsample(comp, mcu_height, i, upsampler_scratch_space);
             }
@@ -436,12 +459,6 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 };
             }
 
-            // ensure length matches for all samples
-            let first_len = samples[0].len();
-            for samp in samples.iter().take(comp_len) {
-                assert_eq!(first_len, samp.len());
-            }
-
             // we either do 7 or 8 MCU's depending on the state, this only applies to
             // vertically sampled images
             //
@@ -472,20 +489,21 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     }
 }
 
-// #[test]
-// fn test_random_crash() {
-//     use zune_core::bit_depth::BitDepth;
-//     use zune_core::options::EncoderOptions;
-//     use zune_ppm::PPMEncoder;
-//     let file =
-//         std::fs::read("/home/caleb/Documents/rust/zune-image/test-images/jpeg/2029.jpg").unwrap();
-//     let mut decoder = JpegDecoder::new(file);
-//     let pix = decoder.decode().unwrap();
-//     let (w, h) = decoder.dimensions().unwrap();
-//     let c = PPMEncoder::new(
-//         &pix,
-//         EncoderOptions::new(w, h, ColorSpace::RGB, BitDepth::Eight)
-//     );
-//     let file = c.encode().unwrap();
-//     std::fs::write("./hello.ppm", &file).unwrap();
-// }
+#[test]
+fn test_random_crash() {
+    use zune_core::bit_depth::BitDepth;
+    use zune_core::options::EncoderOptions;
+    use zune_ppm::PPMEncoder;
+    let file =
+        std::fs::read("/home/caleb/Downloads/293810656-812435e7-c83f-4335-bfb8-1668b1208220.jpg")
+            .unwrap();
+    let mut decoder = JpegDecoder::new(file);
+    let pix = decoder.decode().unwrap();
+    let (w, h) = decoder.dimensions().unwrap();
+    let c = PPMEncoder::new(
+        &pix,
+        EncoderOptions::new(w, h, ColorSpace::RGB, BitDepth::Eight)
+    );
+    let file = c.encode().unwrap();
+    std::fs::write("./hello.ppm", &file).unwrap();
+}
