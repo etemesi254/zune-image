@@ -22,7 +22,8 @@
 //! use zune_psd::PSDDecoder;
 //!
 //! fn main()->Result<(),PSDDecodeErrors>{
-//!     let mut decoder = PSDDecoder::new(&[]);
+//!     use zune_core::bytestream::ZByteBuffer;
+//! let mut decoder = PSDDecoder::new(ZByteBuffer::new(&[]));
 //!     let px = decoder.decode()?;
 //!
 //!     // we need to handle u8 and u16 since the decoder supports those depths

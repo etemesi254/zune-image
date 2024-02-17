@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -40,12 +40,12 @@ use crate::errors::PSDDecodeErrors;
 /// image pixels. But for now this is a good basis.
 pub struct PSDDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     width:          usize,
     height:         usize,
     decoded_header: bool,
-    stream:         ZByteReader<T>,
+    stream:         ZReader<T>,
     options:        DecoderOptions,
     depth:          BitDepth,
     color_type:     Option<ColorModes>,
@@ -55,7 +55,7 @@ where
 
 impl<T> PSDDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     /// Create a new decoder that reads a photoshop encoded file
     /// from `T` and returns pixels
@@ -76,7 +76,7 @@ where
             width: 0,
             height: 0,
             decoded_header: false,
-            stream: ZByteReader::new(data),
+            stream: ZReader::new(data),
             options,
             depth: BitDepth::Eight,
             color_type: None,
@@ -108,7 +108,7 @@ where
             return Err(PSDDecodeErrors::UnsupportedFileType(version));
         }
         // Skip 6 reserved bytes
-        self.stream.skip(6);
+        self.stream.skip(6)?;
         // Read the number of channels (R, G, B, A, etc).
         let channel_count = self.stream.get_u16_be_err()?;
 
@@ -173,15 +173,15 @@ where
 
         // skip mode data
         let bytes = self.stream.get_u32_be_err()? as usize;
-        self.stream.skip(bytes);
+        self.stream.skip(bytes)?;
 
         // skip image resources
         let bytes = self.stream.get_u32_be_err()? as usize;
-        self.stream.skip(bytes);
+        self.stream.skip(bytes)?;
 
         // skip reserved data
         let bytes = self.stream.get_u32_be_err()? as usize;
-        self.stream.skip(bytes);
+        self.stream.skip(bytes)?;
 
         // find out if data is compressed
         let compression = self.stream.get_u16_be_err()?;
@@ -233,7 +233,7 @@ where
                 // The RLE-compressed data is preceded by a 2-byte data count for each row
                 // in the data, which we're going to just skip.
                 let skipped = self.height * self.channel_count * 2;
-                self.stream.skip(skipped);
+                self.stream.skip(skipped)?;
 
                 let mut out_channel = vec![0; pixel_count * self.channel_count + 10];
 
@@ -256,16 +256,16 @@ where
                 let mut out_channel = vec![0; self.width * self.height * self.channel_count + 10];
                 let pixel_count = self.width * self.height;
 
-                // check we have enough data
-                if !self.stream.has(pixel_count * self.channel_count) {
-                    return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
-                }
+                // // check we have enough data
+                // if !self.stream.has(pixel_count * self.channel_count) {
+                //     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
+                // }
 
                 for channel in 0..self.channel_count {
                     let mut i = channel;
 
                     while i < pixel_count {
-                        out_channel[i] = self.stream.get_u8();
+                        out_channel[i] = self.stream.get_u8_err()?;
                         i += self.channel_count;
                     }
                 }
@@ -289,9 +289,9 @@ where
                 let pixel_count = channel_dimensions * 2;
 
                 // check we have enough data
-                if !self.stream.has(pixel_count * self.channel_count) {
-                    return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
-                }
+                // if !self.stream.has(pixel_count * self.channel_count) {
+                //     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
+                // }
 
                 // iterate per channel
                 for channel in 0..self.channel_count {
@@ -300,7 +300,7 @@ where
 
                     // iterate only taking the image dimensions
                     for out in out_chunks.take(channel_dimensions) {
-                        let value = self.stream.get_u16_be();
+                        let value = self.stream.get_u16_be_err()?;
 
                         out[..2].copy_from_slice(&value.to_ne_bytes());
                     }

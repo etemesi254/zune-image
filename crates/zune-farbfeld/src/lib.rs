@@ -32,3 +32,4 @@ pub use encoder::*;
 
 mod decoder;
 mod encoder;
+mod errors;

@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace};
 use zune_core::options::DecoderOptions;
@@ -41,20 +41,20 @@ enum QoiColorspace {
 /// [`decode`]:QoiDecoder::decode
 pub struct QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     width:             usize,
     height:            usize,
     colorspace:        ColorSpace,
     colorspace_layout: QoiColorspace,
     decoded_headers:   bool,
-    stream:            ZByteReader<T>,
+    stream:            ZReader<T>,
     options:           DecoderOptions
 }
 
 impl<T> QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     /// Create a new QOI format decoder with the default options
     ///
@@ -67,7 +67,8 @@ where
     /// # Example
     ///
     /// ```no_run
-    /// let mut decoder = zune_qoi::QoiDecoder::new(&[]);
+    /// use zune_core::bytestream::ZByteBuffer;
+    /// let mut decoder = zune_qoi::QoiDecoder::new(ZByteBuffer::new(&[]));
     /// // additional code
     /// ```
     pub fn new(data: T) -> QoiDecoder<T> {
@@ -83,13 +84,14 @@ where
     ///
     /// # Example
     /// ```
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_core::options::DecoderOptions;
     /// use zune_qoi::{QoiDecoder};
     /// // only decode images less than 10 in both width and height
     ///
     /// let  options = DecoderOptions::default().set_max_width(10).set_max_height(10);
     ///
-    /// let mut decoder=QoiDecoder::new_with_options(&[],options);
+    /// let mut decoder=QoiDecoder::new_with_options(ZByteBuffer::new([]),options);
     /// ```
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(data: T, options: DecoderOptions) -> QoiDecoder<T> {
@@ -99,7 +101,7 @@ where
             colorspace:        ColorSpace::RGB,
             colorspace_layout: QoiColorspace::Linear,
             decoded_headers:   false,
-            stream:            ZByteReader::new(data),
+            stream:            ZReader::new(data),
             options:           options
         }
     }
@@ -115,18 +117,12 @@ where
     ///
     /// [QoiErrors]:crate::errors::QoiErrors
     pub fn decode_headers(&mut self) -> Result<(), QoiErrors> {
-        let header_bytes = 4/*magic*/ + 8/*Width+height*/ + 1/*channels*/ + 1 /*colorspace*/;
+        //let header_bytes = 4/*magic*/ + 8/*Width+height*/ + 1/*channels*/ + 1 /*colorspace*/;
 
-        if !self.stream.has(header_bytes) {
-            return Err(QoiErrors::InsufficientData(
-                header_bytes,
-                self.stream.remaining()
-            ));
-        }
         // match magic bytes.
-        let magic = self.stream.get(4).unwrap();
+        let magic = self.stream.get_fixed_bytes_or_err::<4>()?;
 
-        if magic != b"qoif" {
+        if &magic != b"qoif" {
             return Err(QoiErrors::WrongMagicBytes);
         }
 
@@ -275,10 +271,6 @@ where
             if run > 0 {
                 run -= 1;
                 pix_chunk.copy_from_slice(&px[0..SIZE]);
-            } else if !self.stream.has(5) {
-                // worst case should be chunk type + RGBA
-                // too little bytes
-                return Err(QoiErrors::InsufficientData(5, self.stream.remaining()));
             } else {
                 let chunk = self.stream.get_u8();
 
@@ -323,7 +315,7 @@ where
                 index[color_hash] = px;
             }
         }
-        let remaining = self.stream.remaining_bytes();
+        let remaining = self.stream.remaining_bytes()?;
 
         if remaining != LAST_BYTES {
             if self.options.get_strict_mode() {
@@ -368,8 +360,9 @@ where
     ///
     /// ```
     /// use zune_core::bit_depth::BitDepth;
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_qoi::QoiDecoder;
-    /// let decoder = QoiDecoder::new(&[]);
+    /// let decoder = QoiDecoder::new(ZByteBuffer::new(&[]));
     /// assert_eq!(decoder.get_bit_depth(),BitDepth::Eight)
     /// ```
     ///
@@ -390,8 +383,9 @@ where
     /// # Example
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_qoi::QoiDecoder;
-    /// let mut decoder = QoiDecoder::new(&[]);
+    /// let mut decoder = QoiDecoder::new(ZByteBuffer::new(&[]));
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.

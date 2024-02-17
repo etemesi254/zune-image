@@ -11,7 +11,7 @@
 //! for decoding images
 #![cfg(feature = "psd")]
 
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 pub use zune_psd::*;
@@ -22,9 +22,9 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::DecoderTrait;
 
-impl<T> DecoderTrait<T> for PSDDecoder<T>
+impl<T> DecoderTrait for PSDDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;

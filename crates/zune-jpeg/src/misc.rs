@@ -13,7 +13,7 @@ use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 
@@ -206,7 +206,7 @@ where
 ///
 /// This modifies the components in place setting up details needed by other
 /// parts fo the decoder.
-pub(crate) fn setup_component_params<T: ZReaderTrait>(
+pub(crate) fn setup_component_params<T: ZByteIoTrait>(
     img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     let img_width = img.width();

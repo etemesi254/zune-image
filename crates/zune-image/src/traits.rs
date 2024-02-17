@@ -15,7 +15,6 @@
 //!
 #![allow(unused_variables)]
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::log::{trace, warn};
 use zune_core::options::EncoderOptions;
@@ -32,7 +31,7 @@ use crate::pipelines::EncodeResult;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait<T: ZReaderTrait> {
+pub trait DecoderTrait {
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed
@@ -46,11 +45,12 @@ pub trait DecoderTrait<T: ZReaderTrait> {
     ///
     /// # Example
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// #[cfg(feature = "jpeg")]
     /// {
     ///     use zune_image::traits::DecoderTrait;
     ///     use zune_jpeg::JpegDecoder;
-    ///     let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
+    ///     let mut decoder = JpegDecoder::new(ZByteBuffer::new([0xFF,0xD8]));
     ///
     ///     decoder.decode().unwrap();
     /// }

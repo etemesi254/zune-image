@@ -186,6 +186,7 @@ impl<'a> PngEncoder<'a> {
 #[test]
 fn test_simple_write() {
     use zune_core::bit_depth::BitDepth;
+    use zune_core::bytestream::ZByteBuffer;
     use zune_core::colorspace::ColorSpace;
 
     use crate::PngDecoder;
@@ -203,7 +204,7 @@ fn test_simple_write() {
     let mut encoder = PngEncoder::new(&data, options);
 
     let result = encoder.encode();
-    let mut hello = PngDecoder::new(&result);
+    let mut hello = PngDecoder::new(ZByteBuffer::new(&result));
     let bytes = hello.decode_raw().unwrap();
     assert_eq!(&data, &bytes);
 }

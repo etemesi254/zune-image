@@ -12,7 +12,7 @@
 //! Represents an png image decoder
 use exif::experimental::Writer;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -27,9 +27,9 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for PngDecoder<T>
+impl<T> DecoderTrait for PngDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();

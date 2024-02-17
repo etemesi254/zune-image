@@ -1,11 +1,11 @@
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
 use crate::errors::GifDecoderErrors;
 
-pub struct GifDecoder<T: ZReaderTrait> {
-    stream:       ZByteReader<T>,
+pub struct GifDecoder<T: ZByteIoTrait> {
+    stream:       ZReader<T>,
     options:      DecoderOptions,
     width:        usize,
     height:       usize,
@@ -17,7 +17,7 @@ pub struct GifDecoder<T: ZReaderTrait> {
     pal:          [[u8; 4]; 256]
 }
 
-impl<T: ZReaderTrait> GifDecoder<T> {
+impl<T: ZByteIoTrait> GifDecoder<T> {
     pub fn decode_headers(&mut self) -> Result<(), GifDecoderErrors> {
         if self.read_headers {
             return Ok(());
@@ -59,9 +59,6 @@ impl<T: ZReaderTrait> GifDecoder<T> {
         Ok(())
     }
     fn parse_colortable(&mut self, num_entries: usize, transp: usize) -> Result<(), &'static str> {
-        if !self.stream.has(num_entries * 3) {
-            return Err("Not enough bytes for palette");
-        }
         self.pal
             .iter_mut()
             .take(num_entries)
@@ -77,7 +74,7 @@ impl<T: ZReaderTrait> GifDecoder<T> {
     }
 }
 
-fn test_gif<T: ZReaderTrait>(buffer: &mut ZByteReader<T>) -> bool {
+fn test_gif<T: ZByteIoTrait>(buffer: &mut ZReader<T>) -> bool {
     if buffer.get_u8() != b'G'
         || buffer.get_u8() != b'I'
         || buffer.get_u8() != b'F'

@@ -24,10 +24,11 @@ zune-png = { path = "../crates/zune-png" }
 # JPEG benchmarks
 mozjpeg = "0.10.5"
 jpeg-decoder = "0.3.0"
-zune-jpeg = {  path = "../crates/zune-jpeg" }
+zune-jpeg = { path = "../crates/zune-jpeg" }
 
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
+zune-hdr = { path = "../crates/zune-hdr" }
 image = { version = "0.24.8", default-features = false, features = ["bmp", "hdr"] }
 
 [dev-dependencies.criterion]

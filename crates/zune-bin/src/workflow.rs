@@ -24,7 +24,6 @@ use crate::cmd_parsers::{get_decoder_options, get_encoder_options};
 use crate::file_io::ZuneFile;
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
-use crate::MmapOptions;
 
 #[allow(unused_variables)]
 #[allow(clippy::unused_io_amount)] // yes it's what I want
@@ -50,16 +49,9 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         add_operations(args, &mut workflow)?;
 
-        let mmap_opt = cmd_opts.mmap;
-        let use_mmap = mmap_opt == MmapOptions::Auto || mmap_opt == MmapOptions::Always;
-
-        if let Some((format, _)) = ImageFormat::guess_format(&buf) {
+        if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&buf)) {
             if format.has_decoder() {
-                workflow.add_decoder(ZuneFile::new(
-                    in_file.to_os_string(),
-                    use_mmap,
-                    decoder_options
-                ))
+                workflow.add_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options))
             } else {
                 return Err(ImageErrors::ImageDecoderNotImplemented(format));
             }

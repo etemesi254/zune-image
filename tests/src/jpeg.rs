@@ -9,6 +9,7 @@
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
+use zune_core::bytestream::ZByteBuffer;
 use zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
 
@@ -44,7 +45,7 @@ fn test_jpeg() {
             options = options.jpeg_set_out_colorspace(color.to_colorspace());
         }
 
-        let mut decoder = JpegDecoder::new_with_options(&file_contents, options);
+        let mut decoder = JpegDecoder::new_with_options(ZByteBuffer::new(&file_contents), options);
         let pixels = decoder.decode().unwrap();
 
         let hash = hash(&pixels);

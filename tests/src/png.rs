@@ -9,6 +9,7 @@
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
+use zune_core::bytestream::ZByteBuffer;
 use zune_core::options::DecoderOptions;
 use zune_png::PngDecoder;
 
@@ -40,7 +41,7 @@ fn test_png() {
 
         let options = DecoderOptions::default();
 
-        let mut decoder = PngDecoder::new_with_options(&file_contents, options);
+        let mut decoder = PngDecoder::new_with_options(ZByteBuffer::new(&file_contents), options);
         let pixels = decoder.decode_raw().unwrap();
 
         let hash = hash(&pixels);

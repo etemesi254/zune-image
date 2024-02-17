@@ -10,6 +10,7 @@ use std::fs::read;
 use std::path::Path;
 
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZByteBuffer;
 use zune_core::options::DecoderOptions;
 use zune_png::PngDecoder;
 
@@ -20,7 +21,7 @@ fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
 fn test_decoding<P: AsRef<Path>>(path: P) {
     let contents = open_and_read(path);
     let options = DecoderOptions::default().png_set_add_alpha_channel(true);
-    let mut decoder = PngDecoder::new_with_options(&contents, options);
+    let mut decoder = PngDecoder::new_with_options(ZByteBuffer::new(&contents), options);
     let pixels = decoder.decode_raw().unwrap();
 
     assert!(decoder.get_colorspace().unwrap().has_alpha());

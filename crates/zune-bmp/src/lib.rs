@@ -25,9 +25,10 @@
 //!
 //! # Usage
 //! ```no_run
+//! use std::io::Cursor;
 //! use zune_bmp::BmpDecoder;
 //!
-//! let decoder:Vec<u8> = BmpDecoder::new(b"BMP").decode().unwrap();
+//! let decoder:Vec<u8> = BmpDecoder::new(Cursor::new(b"BMP")).decode().unwrap();
 //! ```
 //!
 //! # Security

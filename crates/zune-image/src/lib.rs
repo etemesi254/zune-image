@@ -56,11 +56,12 @@
 //!  Or if the image is in memory load it via [`Image.read`](crate::image::Image::read)
 //!
 //!```no_run
+//! use std::io::Cursor;
 //! use zune_core::options::DecoderOptions;
 //! use zune_image::image::Image;
 //! use zune_image::errors::ImageErrors;
 //! let mem_src = [0;100];
-//! let image = Image::read(&mem_src,DecoderOptions::default())?;
+//! let image = Image::read(Cursor::new(&mem_src),DecoderOptions::default())?;
 //! # Ok::<(),ImageErrors>(())
 //!
 //! ```

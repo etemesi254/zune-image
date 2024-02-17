@@ -12,7 +12,7 @@
 //! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
 //! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
@@ -23,12 +23,14 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for FarbFeldDecoder<T>
+impl<T> DecoderTrait for FarbFeldDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
-        let pixels = self.decode()?;
+        let pixels = self
+            .decode()
+            .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
         let colorspace = self.get_colorspace();
         let (width, height) = self.get_dimensions().unwrap();
 
@@ -56,7 +58,8 @@ where
     }
 
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
-        self.decode_headers()?;
+        self.decode_headers()
+            .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
 
         let (width, height) = self.get_dimensions().unwrap();
         let depth = self.get_bit_depth();

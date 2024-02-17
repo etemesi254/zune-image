@@ -10,6 +10,7 @@ use std::fs::read;
 use std::path::{Path, PathBuf};
 
 use zune_bmp::BmpDecoder;
+use zune_core::bytestream::ZByteBuffer;
 use zune_core::options::DecoderOptions;
 
 use crate::{hash, sample_path, TestEntry};
@@ -36,11 +37,11 @@ fn test_bmp() {
         let expected_hash = path.hash;
 
         // load file
-        let file_contents = read(&file_name).unwrap();
+        let file_contents = ZByteBuffer::new(read(&file_name).unwrap());
 
         let options = DecoderOptions::default();
 
-        let mut decoder = BmpDecoder::new_with_options(&file_contents, options);
+        let mut decoder = BmpDecoder::new_with_options(file_contents, options);
         let pixels = decoder.decode().unwrap();
 
         let hash = hash(&pixels);
@@ -53,7 +54,8 @@ fn test_bmp() {
                 "Hash mismatch for file {:?}\nExpected {} but found {}\nConfig:{:#?}",
                 file_name, expected_hash, hash, path
             );
-            eprintln!("{}\n", err)
+            eprintln!("{}\n", err);
+            panic!();
         }
     }
     if error {

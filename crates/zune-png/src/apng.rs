@@ -121,8 +121,11 @@ impl SingleFrame {
         }
     }
     /// Push a chunk onto this frame
-    pub fn push_chunk(&mut self, chunk: &[u8]) {
-        self.fdat.extend_from_slice(chunk);
+    //pub fn push_chunk(&mut self, chunk: &[u8]) {
+    //    self.fdat.extend_from_slice(chunk);
+    //}
+    pub fn get_chunk(&mut self) -> &mut Vec<u8> {
+        &mut self.fdat
     }
     /// Set Frame control details for this frame
     pub fn set_fctl(&mut self, fctl: FrameInfo) {
@@ -164,11 +167,12 @@ impl SingleFrame {
 /// # Examples
 ///
 /// ```no_run
+/// use zune_core::bytestream::ZByteBuffer;
 /// use zune_core::options::EncoderOptions;
 /// use zune_png::{PngDecoder, post_process_image};
 /// // read the file
 /// // set up decoder
-/// let mut decoder = PngDecoder::new(&[]);
+/// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
 /// // decode headers
 /// decoder.decode_headers().unwrap();
 /// // get useful information about the image

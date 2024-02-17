@@ -7,12 +7,11 @@
  */
 
 use std::fs::File;
-use std::ops::Deref;
+use std::io::BufReader;
 use std::path::PathBuf;
 
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
-use memmap2::Mmap;
 use zune_core::options::DecoderOptions;
 
 use crate::serde::Metadata;
@@ -23,17 +22,12 @@ pub fn probe_input_files(args: &ArgMatches) {
         if view == CommandLine {
             for in_file in args.get_raw("in").unwrap() {
                 if PathBuf::from(in_file).exists() {
-                    let file = File::open(in_file).unwrap();
-                    let file_size = file.metadata().unwrap().len();
-                    // Unsafety: Mmap in Linux is not protected, interesting things
-                    // will occur if you mess with the file
-                    let mmap = unsafe { Mmap::map(&file).unwrap() };
-
-                    let file_contents = mmap.deref();
+                    let file = BufReader::new(File::open(in_file).unwrap());
 
                     if let Some((format, contents)) =
-                        zune_image::codecs::ImageFormat::guess_format(file_contents)
+                        zune_image::codecs::ImageFormat::guess_format(file)
                     {
+                        let size = contents.get_ref().metadata().unwrap().len();
                         // set to high to remove restrictions.
                         // We'll just be reading headers so it doesn't matter
                         let options = DecoderOptions::new_cmd()
@@ -45,7 +39,7 @@ pub fn probe_input_files(args: &ArgMatches) {
 
                         if let Ok(Some(metadata)) = decoder.read_headers() {
                             let real_metadata =
-                                Metadata::new(in_file.to_os_string(), file_size, &metadata);
+                                Metadata::new(in_file.to_os_string(), size, &metadata);
 
                             println!("{}", serde_json::to_string_pretty(&real_metadata).unwrap());
                         }

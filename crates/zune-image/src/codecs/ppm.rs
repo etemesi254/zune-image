@@ -9,7 +9,7 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -87,9 +87,9 @@ impl EncoderTrait for PPMEncoder {
     }
 }
 
-impl<T> DecoderTrait<T> for PPMDecoder<T>
+impl<T> DecoderTrait for PPMDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;

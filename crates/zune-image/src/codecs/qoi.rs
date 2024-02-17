@@ -12,7 +12,7 @@
 #![cfg(feature = "qoi")]
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
@@ -23,9 +23,9 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for QoiDecoder<T>
+impl<T> DecoderTrait for QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
@@ -163,7 +163,7 @@ impl From<zune_qoi::QoiEncodeErrors> for ImgEncodeErrors {
 
 impl<T> DecodeInto for QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
         self.decode_into(buffer)?;

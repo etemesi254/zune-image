@@ -10,7 +10,6 @@ use std::process::exit;
 
 use log::error;
 
-use crate::cmd_args::MmapOptions;
 use crate::workflow::create_and_exec_workflow_from_cmd;
 
 mod cmd_args;

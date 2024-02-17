@@ -132,15 +132,14 @@ impl<R: Read> JxlDecoder<R> {
     }
 }
 
-impl<R, T> DecoderTrait<T> for JxlDecoder<R>
+impl<R> DecoderTrait for JxlDecoder<R>
 where
-    R: Read,
-    T: ZReaderTrait
+    R: Read
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         // by now headers have been decoded, so we can fetch these
-        let (w, h) = <JxlDecoder<R> as DecoderTrait<T>>::dimensions(self).unwrap();
-        let color = <JxlDecoder<R> as DecoderTrait<T>>::out_colorspace(self);
+        let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
+        let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
 
         let mut total_frames = vec![];
 
