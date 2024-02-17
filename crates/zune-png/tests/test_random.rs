@@ -10,7 +10,7 @@ use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
-
+use zune_core::bytestream::ZByteBuffer;
 use zune_png::{post_process_image, PngDecoder};
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
@@ -33,7 +33,9 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
-    PngDecoder::new(data).decode_raw().unwrap()
+    PngDecoder::new(ZByteBuffer::new(data))
+        .decode_raw()
+        .unwrap()
 }
 
 fn test_decoding<P: AsRef<Path>>(path: P) {
@@ -56,7 +58,7 @@ fn test_trns_transparency() {
 fn test_animation() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/animated_ball.png";
     let data = open_and_read(path);
-    let mut decoder = PngDecoder::new(&data);
+    let mut decoder = PngDecoder::new(ZByteBuffer::new(&data));
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
     let _depth = decoder.get_depth().unwrap();
@@ -92,7 +94,7 @@ fn test_animation() {
 fn test_animation_2() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/030.png";
     let data = open_and_read(path);
-    let mut decoder = PngDecoder::new(&data);
+    let mut decoder = PngDecoder::new(ZByteBuffer::new(&data));
     decoder.decode_headers().unwrap();
     let colorspace = decoder.get_colorspace().unwrap();
     let _depth = decoder.get_depth().unwrap();

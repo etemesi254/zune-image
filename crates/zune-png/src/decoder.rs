@@ -9,7 +9,7 @@ use alloc::{format, vec};
 use core::cmp::min;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -159,9 +159,9 @@ pub struct PngInfo {
 /// and access the relevant fields exposed
 pub struct PngDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
-    pub(crate) stream:                  ZByteReader<T>,
+    pub(crate) stream:                  ZReader<T>,
     pub(crate) options:                 DecoderOptions,
     pub(crate) png_info:                PngInfo,
     pub(crate) palette:                 Vec<PLTEEntry>,
@@ -178,7 +178,7 @@ where
     pub(crate) called_from_decode_into: bool
 }
 
-impl<T: ZReaderTrait> PngDecoder<T> {
+impl<T: ZByteIoTrait> PngDecoder<T> {
     /// Create a new PNG decoder
     ///
     /// # Arguments
@@ -207,7 +207,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     pub fn new_with_options(data: T, options: DecoderOptions) -> PngDecoder<T> {
         PngDecoder {
             seen_hdr:                false,
-            stream:                  ZByteReader::new(data),
+            stream:                  ZReader::new(data),
             options:                 options,
             palette:                 Vec::new(),
             png_info:                PngInfo::default(),
@@ -356,25 +356,25 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             _ => PngChunkType::unkn
         };
 
-        if !self.stream.has(chunk_length + 4 /*crc stream*/) {
-            let err = format!(
-                "Not enough bytes for chunk {:?}, bytes requested are {}, but bytes present are {}",
-                chunk_type,
-                chunk_length + 4,
-                self.stream.remaining()
-            );
-
-            return Err(PngDecodeErrors::Generic(err));
-        }
+        // if !self.stream.has(chunk_length + 4 /*crc stream*/) {
+        //     let err = format!(
+        //         "Not enough bytes for chunk {:?}, bytes requested are {}, but bytes present are {}",
+        //         chunk_type,
+        //         chunk_length + 4,
+        //         self.stream.remaining()
+        //     );
+        //
+        //     return Err(PngDecodeErrors::Generic(err));
+        // }
         // Confirm the CRC here.
 
         if self.options.png_get_confirm_crc() {
             use crate::crc::crc32_slice8;
 
             // go back and point to chunk type.
-            self.stream.rewind(4);
+            self.stream.rewind(4)?;
             // read chunk type + chunk data
-            let bytes = self.stream.peek_at(0, chunk_length + 4).unwrap();
+            let bytes = self.stream.peek_at(0, chunk_length + 4)?;
 
             // calculate crc
             let calc_crc = !crc32_slice8(bytes, u32::MAX);
@@ -385,7 +385,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             // go point after the chunk type
             // The other parts expect the bit-reader to point to the
             // start of the chunk data.
-            self.stream.skip(4);
+            self.stream.skip(4)?;
         }
 
         Ok(PngChunk {
@@ -464,16 +464,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                 self.parse_exif(header)?;
             }
             PngChunkType::iCCP => {
-                self.parse_iccp(header);
+                self.parse_iccp(header)?;
             }
             PngChunkType::iTXt => {
-                self.parse_itxt(header);
+                self.parse_itxt(header)?;
             }
             PngChunkType::zTXt => {
-                self.parse_ztxt(header);
+                self.parse_ztxt(header)?;
             }
             PngChunkType::tEXt => {
-                self.parse_text(header);
+                self.parse_text(header)?;
             }
             PngChunkType::fcTL => {
                 // may read more headers internally
@@ -735,8 +735,9 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///
     /// This example gets frame information of an animated image
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(&[]);
+    /// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
     ///
     /// // decode the headers to get the information
     /// decoder.decode_headers().unwrap();
@@ -851,9 +852,10 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// # Example
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_core::result::DecodingResult;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(&[]);
+    /// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
     ///
     /// match decoder.decode().unwrap(){
     ///     DecodingResult::U16(value)=>{

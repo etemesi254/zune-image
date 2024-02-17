@@ -16,7 +16,7 @@
 //!
 use jpeg_encoder::{ColorType, EncodingError};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -29,7 +29,7 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T: ZReaderTrait> DecoderTrait<T> for zune_jpeg::JpegDecoder<T> {
+impl<T: ZByteIoTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
 
@@ -244,7 +244,7 @@ impl From<EncodingError> for ImageErrors {
 
 impl<T> DecodeInto for JpegDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
         self.decode_into(buffer)

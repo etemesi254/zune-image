@@ -9,6 +9,8 @@
 use core::cmp::min;
 
 use crate::bytestream::traits::ZReaderTrait;
+pub(crate) mod no_std_readers;
+pub(crate) mod std_readers;
 
 const ERROR_MSG: &str = "No more bytes";
 

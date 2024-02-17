@@ -30,9 +30,10 @@
 //! ## Decode a JPEG file with default arguments.
 //!```no_run
 //! use std::fs::read;
+//! use std::io::BufReader;
 //! use zune_jpeg::JpegDecoder;
-//! let file_contents = read("a_jpeg.file").unwrap();
-//! let mut decoder = JpegDecoder::new(&file_contents);
+//! let file_contents = BufReader::new(std::fs::File::open("a_jpeg.file").unwrap());
+//! let mut decoder = JpegDecoder::new(file_contents);
 //! let mut pixels = decoder.decode().unwrap();
 //! ```
 //!
@@ -41,21 +42,23 @@
 //! - Other (limited) supported formats are and  BGR, BGRA
 //!
 //!```no_run
+//! use zune_core::bytestream::ZByteBuffer;
 //! use zune_core::colorspace::ColorSpace;
 //! use zune_core::options::DecoderOptions;
 //! use zune_jpeg::JpegDecoder;
 //!
 //! let mut options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
 //!
-//! let mut decoder = JpegDecoder::new_with_options(&[],options);
+//! let mut decoder = JpegDecoder::new_with_options(ZByteBuffer::new(&[]),options);
 //! let pixels = decoder.decode().unwrap();
 //! ```
 //!
 //! ## Decode an image and get it's width and height.
 //!```no_run
+//! use zune_core::bytestream::ZByteBuffer;
 //! use zune_jpeg::JpegDecoder;
 //!
-//! let mut decoder = JpegDecoder::new(&[]);
+//! let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
 //! decoder.decode_headers().unwrap();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)

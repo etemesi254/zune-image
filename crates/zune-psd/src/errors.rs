@@ -8,6 +8,8 @@
 
 use core::fmt::{Debug, Formatter};
 
+use zune_core::bytestream::ZByteIoError;
+
 use crate::constants::{ColorModes, PSD_IDENTIFIER_BE};
 
 /// PSDDecodeErrors that can occur during PSD decoding
@@ -21,6 +23,7 @@ pub enum PSDDecodeErrors {
     ZeroDimensions,
     UnknownCompression,
     Generic(&'static str),
+    IoErrors(ZByteIoError),
     BadRLE
 }
 
@@ -78,6 +81,9 @@ impl Debug for PSDDecodeErrors {
             PSDDecodeErrors::ZeroDimensions => {
                 writeln!(f, "Zero found where not expected")
             }
+            PSDDecodeErrors::IoErrors(e) => {
+                writeln!(f, "I/O error :{:?}", e)
+            }
         }
     }
 }
@@ -85,5 +91,11 @@ impl Debug for PSDDecodeErrors {
 impl From<&'static str> for PSDDecodeErrors {
     fn from(r: &'static str) -> Self {
         Self::Generic(r)
+    }
+}
+
+impl From<ZByteIoError> for PSDDecodeErrors {
+    fn from(r: ZByteIoError) -> Self {
+        Self::IoErrors(r)
     }
 }

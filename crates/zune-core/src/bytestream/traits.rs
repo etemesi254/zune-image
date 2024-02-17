@@ -14,6 +14,8 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
+use crate::bytestream::{ZByteIoError, ZSeekFrom};
+
 /// The underlying reader trait
 ///
 /// # Considerations
@@ -157,4 +159,24 @@ impl ZReaderTrait for dyn AsRef<&[u8]> {
     fn get_len(&self) -> usize {
         self.as_ref().len()
     }
+}
+
+pub trait ZByteIoTrait {
+    fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError>;
+    fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError>;
+    /// Reads data into provided buffer but does not advance read position.
+    fn peek_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError>;
+    fn peek_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError>;
+    /// Reads single byte from the stream.
+    fn z_seek(&mut self, from: ZSeekFrom) -> Result<u64, ZByteIoError>;
+    /// Tells whether this is end of stream.
+    fn is_eof(&mut self) -> Result<bool, ZByteIoError>;
+    /// Returns stream size or -1 if it is not known.
+    fn z_size(&mut self) -> Result<i64, ZByteIoError>;
+
+    /// The name of the impl
+    fn name(&self) -> &'static str;
+    fn z_position(&mut self) -> Result<u64, ZByteIoError>;
+
+    fn read_remaining(&mut self, sink: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError>;
 }

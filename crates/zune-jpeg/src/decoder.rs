@@ -13,7 +13,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
@@ -78,7 +78,7 @@ pub(crate) struct ICCChunk {
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
-pub struct JpegDecoder<T: ZReaderTrait> {
+pub struct JpegDecoder<T: ZByteIoTrait> {
     /// Struct to hold image information from SOI
     pub(crate) info:              ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
@@ -139,7 +139,7 @@ pub struct JpegDecoder<T: ZReaderTrait> {
     // decoder options
     pub(crate) options:          DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZByteReader<T>,
+    pub(crate) stream:           ZReader<T>,
     // Indicate whether headers have been decoded
     pub(crate) headers_decoded:  bool,
     pub(crate) seen_sof:         bool,
@@ -153,7 +153,7 @@ pub struct JpegDecoder<T: ZReaderTrait> {
 
 impl<T> JpegDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {
@@ -186,7 +186,7 @@ where
             restart_interval:  0,
             todo:              0x7fff_ffff,
             options:           options,
-            stream:            ZByteReader::new(buffer),
+            stream:            ZReader::new(buffer),
             headers_decoded:   false,
             seen_sof:          false,
             exif_data:         None,
@@ -272,9 +272,10 @@ where
     ///
     /// # Example
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_jpeg::JpegDecoder;
     ///
-    /// let mut decoder = JpegDecoder::new(&[]);
+    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
     /// // get current options
     /// let mut options = decoder.get_options();
     /// // modify it
@@ -314,8 +315,9 @@ where
     /// Set maximum jpeg progressive passes to be 4
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder =JpegDecoder::new(&[]);
+    /// let mut decoder =JpegDecoder::new(ZByteBuffer::new(&[]));
     /// // this works also because DecoderOptions implements `Copy`
     /// let options = decoder.get_options().jpeg_set_max_scans(4);
     /// // set the new options
@@ -442,7 +444,7 @@ where
                     }
 
                     warn!("Skipping {} bytes", length - 2);
-                    self.stream.skip((length - 2) as usize);
+                    self.stream.skip((length - 2) as usize)?;
                 }
             }
             last_byte = m;
@@ -487,15 +489,16 @@ where
                     )));
                 }
                 // skip for now
-                if length > 5 && self.stream.has(5) {
+                if length > 5 {
                     let mut buffer = [0u8; 5];
-                    self.stream.read_exact(&mut buffer).unwrap();
+                    self.stream.read_exact_bytes(&mut buffer)?;
                     if &buffer == b"AVI1\0" {
                         self.is_mjpeg = true;
                     }
                     length -= 5;
                 }
-                self.stream.skip(length.saturating_sub(2) as usize);
+
+                self.stream.skip(length.saturating_sub(2) as usize)?;
 
                 //parse_app(buf, m, &mut self.info)?;
             }
@@ -559,7 +562,7 @@ where
                     )));
                 }
                 warn!("Skipping {} bytes", length - 2);
-                self.stream.skip((length - 2) as usize);
+                self.stream.skip((length - 2) as usize)?;
             }
         }
         Ok(())
@@ -676,8 +679,9 @@ where
     /// - Read  headers and then alloc a buffer big enough to hold the image
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder = JpegDecoder::new(&[]);
+    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
     /// // before we get output, we must decode the headers to get width
     /// // height, and input colorspace
     /// decoder.decode_headers().unwrap();
@@ -716,10 +720,11 @@ where
     ///
     /// # Examples
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_jpeg::{JpegDecoder};
     ///
     /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
-    /// let mut decoder = JpegDecoder::new(&img_data);
+    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&img_data));
     /// decoder.decode_headers().unwrap();
     ///
     /// println!("Total decoder dimensions are : {:?} pixels",decoder.dimensions());

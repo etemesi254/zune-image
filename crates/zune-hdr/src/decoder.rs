@@ -14,7 +14,7 @@ use core::iter::Iterator;
 use core::option::Option::{self, *};
 use core::result::Result::{self, *};
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -30,8 +30,8 @@ use crate::errors::HdrDecodeErrors;
 /// the map as an API access method.
 ///
 /// For sophisticated algorithms, they may use the metadata to further understand the data.
-pub struct HdrDecoder<T: ZReaderTrait> {
-    buf:             ZByteReader<T>,
+pub struct HdrDecoder<T: ZByteIoTrait> {
+    buf:             ZReader<T>,
     options:         DecoderOptions,
     metadata:        BTreeMap<String, String>,
     width:           usize,
@@ -41,7 +41,7 @@ pub struct HdrDecoder<T: ZReaderTrait> {
 
 impl<T> HdrDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     /// Create a new HDR decoder
     ///
@@ -54,10 +54,11 @@ where
     /// # Examples
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_hdr::HdrDecoder;
     /// // read hdr file to memory
-    /// let file_data = std::fs::read("sample.hdr").unwrap();
-    /// let decoder = HdrDecoder::new(&file_data);
+    /// let file_data = std::io::BufReader::new(std::fs::File::open("sample.hdr").unwrap());
+    /// let decoder = HdrDecoder::new(file_data);
     /// ```
     pub fn new(data: T) -> HdrDecoder<T> {
         Self::new_with_options(data, DecoderOptions::default())
@@ -75,19 +76,20 @@ where
     /// # Examples
     ///
     /// ```no_run
+    /// use std::io::BufReader;
     /// use zune_core::options::DecoderOptions;
     /// use zune_hdr::HdrDecoder;
     /// // read hdr file to memory
-    /// let file_data = std::fs::read("sample.hdr").unwrap();
+    /// let file_data = std::fs::File::open("sample.hdr").unwrap();
     /// // set that the decoder does not decode images greater than
     /// // 50 px width
     /// let options = DecoderOptions::default().set_max_width(50);
     /// // use the options set
-    /// let decoder = HdrDecoder::new_with_options(&file_data,options);
+    /// let decoder = HdrDecoder::new_with_options(BufReader::new(file_data),options);
     /// ```
     pub fn new_with_options(data: T, options: DecoderOptions) -> HdrDecoder<T> {
         HdrDecoder {
-            buf: ZByteReader::new(data),
+            buf: ZReader::new(data),
             options,
             width: 0,
             height: 0,
@@ -279,8 +281,9 @@ where
     /// - Read  headers and then alloc a buffer big enough to hold the image
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_hdr::HdrDecoder;
-    /// let mut decoder = HdrDecoder::new(&[]);
+    /// let mut decoder = HdrDecoder::new(ZByteBuffer::new(&[]));
     /// // before we get output, we must decode the headers to get width
     /// // height, and input colorspace
     /// decoder.decode_headers().unwrap();
@@ -323,21 +326,16 @@ where
 
             if i != 2 {
                 // undo byte read
-                self.buf.rewind(1);
+                self.buf.rewind(1)?;
 
                 self.decompress(&mut scanline, self.width as i32)?;
                 convert_scanline(&scanline, out_scanline);
                 continue;
             }
-            if !self.buf.has(3) {
-                // not enough bytes for below
-                // panic.
-                return Err(HdrDecodeErrors::Generic("Not enough bytes"));
-            }
 
-            scanline[1] = self.buf.get_u8();
-            scanline[2] = self.buf.get_u8();
-            i = self.buf.get_u8();
+            scanline[1] = self.buf.get_u8_err()?;
+            scanline[2] = self.buf.get_u8_err()?;
+            i = self.buf.get_u8_err()?;
 
             if scanline[1] != 2 || (scanline[2] & 128) != 0 {
                 scanline[0] = 2;
@@ -354,10 +352,10 @@ where
                 let mut j = 0;
 
                 loop {
-                    if j >= self.width * 4 || self.buf.eof() {
+                    if j >= self.width * 4 {
                         break;
                     }
-                    let mut run = i32::from(self.buf.get_u8());
+                    let mut run = i32::from(self.buf.get_u8_err()?);
 
                     if run > 128 {
                         let val = self.buf.get_u8();
@@ -397,16 +395,10 @@ where
         let mut scanline_offset = 0;
 
         while width > 0 {
-            if !self.buf.has(4) {
-                // not enough bytes for below
-                // panic.
-                return Err(HdrDecodeErrors::Generic("Not enough bytes"));
-            }
-
-            scanline[0] = self.buf.get_u8();
-            scanline[1] = self.buf.get_u8();
-            scanline[2] = self.buf.get_u8();
-            scanline[3] = self.buf.get_u8();
+            scanline[0] = self.buf.get_u8_err()?;
+            scanline[1] = self.buf.get_u8_err()?;
+            scanline[2] = self.buf.get_u8_err()?;
+            scanline[3] = self.buf.get_u8_err()?;
 
             if scanline[0] == 1 && scanline[1] == 1 && scanline[2] == 1 {
                 let run = scanline[3];
@@ -441,29 +433,20 @@ where
     fn get_buffer_until(
         &mut self, needle: u8, write_to: &mut Vec<u8>
     ) -> Result<usize, HdrDecodeErrors> {
-        let start = self.buf.get_position();
+        write_to.clear();
+        let start = self.buf.position()?;
 
-        // skip until you get a newline
-        self.buf.skip_until_false(|c| c != needle);
+        while !self.buf.eof()? {
+            let byte = self.buf.get_u8_err()?;
+            write_to.push(byte);
 
-        let end = self.buf.get_position();
-        // difference in bytes
-        let diff = end - start + 1;
-        // rewind buf to start
-        self.buf.set_position(start);
-
-        if diff > write_to.len() {
-            write_to.resize(diff + 2, 0);
+            if byte == needle {
+                break;
+            }
         }
-        // read those bytes
-        self.buf
-            .read_exact(&mut write_to[..diff])
-            .map_err(HdrDecodeErrors::Generic)?;
+        let end = self.buf.position()?;
 
-        // return position
-        // +1 increments past needle
-        self.buf.set_position(end + 1);
-        Ok(diff)
+        Ok(usize::try_from(end - start).unwrap())
     }
 }
 

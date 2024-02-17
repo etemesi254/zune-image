@@ -11,6 +11,7 @@ use core::convert::From;
 use core::fmt::{Debug, Display, Formatter};
 use core::num::ParseIntError;
 
+use zune_core::bytestream::ZByteIoError;
 use zune_core::colorspace::ColorSpace;
 
 /// HDR decoding errors
@@ -27,7 +28,8 @@ pub enum HdrDecodeErrors {
     Generic(&'static str),
     /// The output array is too small to contain the whole
     /// image
-    TooSmallOutputArray(usize, usize)
+    TooSmallOutputArray(usize, usize),
+    IoErrors(ZByteIoError)
 }
 
 impl Debug for HdrDecodeErrors {
@@ -57,6 +59,9 @@ impl Debug for HdrDecodeErrors {
             HdrDecodeErrors::TooSmallOutputArray(expected, found) => {
                 writeln!(f, "Too small of an output array, expected array of at least length {} but found {}", expected, found)
             }
+            HdrDecodeErrors::IoErrors(err) => {
+                writeln!(f, "{:?}", err)
+            }
         }
     }
 }
@@ -67,6 +72,11 @@ impl From<ParseIntError> for HdrDecodeErrors {
     }
 }
 
+impl From<ZByteIoError> for HdrDecodeErrors {
+    fn from(value: ZByteIoError) -> Self {
+        HdrDecodeErrors::IoErrors(value)
+    }
+}
 impl Display for HdrDecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "{:?}", self)

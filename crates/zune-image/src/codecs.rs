@@ -31,10 +31,10 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
-use std::io::Cursor;
+use std::io::{BufReader, Cursor};
 use std::path::Path;
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteBuffer, ZByteIoTrait, ZByteReader, ZReader, ZReaderTrait};
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
@@ -120,20 +120,20 @@ impl ImageFormat {
                 return true;
             }
         }
-        return self.get_decoder::<&[u8]>(&[]).is_ok();
+        return self.get_decoder(ZByteBuffer::new(&[])).is_ok();
     }
-    pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait<T> + 'a>, ImageErrors>
+    pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZReaderTrait + 'a
+        T: ZByteIoTrait + 'a
     {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
 
     pub fn get_decoder_with_options<'a, T>(
         &self, data: T, options: DecoderOptions
-    ) -> Result<Box<dyn DecoderTrait<T> + 'a>, ImageErrors>
+    ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZReaderTrait + 'a
+        T: ZByteIoTrait + 'a
     {
         match self {
             ImageFormat::JPEG => {
@@ -240,8 +240,8 @@ impl ImageFormat {
                 {
                     // use a ZByteReader which implements read, this prevents unnecessary
                     // copy
-                    let reader = ZByteReader::new(data);
 
+                    let reader = ZReader::new(data);
                     Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(
                         reader, options
                     )?))
@@ -338,7 +338,7 @@ impl ImageFormat {
     }
     pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
     where
-        T: ZReaderTrait
+        T: ZByteIoTrait
     {
         guess_format(bytes)
     }
@@ -583,9 +583,8 @@ impl Image {
     pub fn open_with_options<P: AsRef<Path>>(
         file: P, options: DecoderOptions
     ) -> Result<Image, ImageErrors> {
-        let file = std::fs::read(file)?;
-
-        Self::read(file, options)
+        let reader = BufReader::new(std::fs::File::open(file)?);
+        Self::read(reader, options)
     }
     /// Open a new file from memory with the configured options
     ///  
@@ -596,14 +595,15 @@ impl Image {
     /// - Open a memory source with the default options
     ///
     ///```no_run
+    /// use zune_core::bytestream::ZByteBuffer;
     /// use zune_core::options::DecoderOptions;
     /// use zune_image::image::Image;
     /// // create a simple ppm p5 grayscale format
-    /// let image = Image::read(b"P5 1 1 255 1",DecoderOptions::default());
+    /// let image = Image::read(ZByteBuffer::new(b"P5 1 1 255 1"),DecoderOptions::default());
     ///```
     pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
     where
-        T: ZReaderTrait
+        T: ZByteIoTrait
     {
         let decoder = ImageFormat::guess_format(src);
 
@@ -630,9 +630,9 @@ impl Image {
 /// - None: Indicates the format isn't known/understood by the library
 pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
-    let reader = ZByteReader::new(bytes);
+    let mut reader = ZReader::new(bytes);
     // stolen from imagers
     let magic_bytes: Vec<(&[u8], ImageFormat)> = vec![
         (&[137, 80, 78, 71, 13, 10, 26, 10], ImageFormat::PNG),
@@ -660,7 +660,7 @@ where
     ];
 
     for (magic, decoder) in magic_bytes {
-        if (reader.has(magic.len())) && reader.peek_at(0, magic.len()).unwrap().starts_with(magic) {
+        if reader.peek_at(0, magic.len()).ok()?.starts_with(magic) {
             return Some((decoder, reader.consume()));
         }
     }
@@ -669,12 +669,11 @@ where
         // get a slice reference
         // bmp requires 15 bytes to determine if it is a valid one.
         // so take 16 just to be safe
-        if reader.has(16) {
-            let reference = reader.peek_at(0, 16).unwrap();
 
-            if zune_bmp::probe_bmp(reference) {
-                return Some((ImageFormat::BMP, reader.consume()));
-            }
+        let reference = reader.peek_at(0, 16).ok()?;
+
+        if zune_bmp::probe_bmp(reference) {
+            return Some((ImageFormat::BMP, reader.consume()));
         }
     }
 

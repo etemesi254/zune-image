@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteIoTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, warn};
 
@@ -38,7 +38,7 @@ use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
-impl<T: ZReaderTrait> JpegDecoder<T> {
+impl<T: ZByteIoTrait> JpegDecoder<T> {
     /// Decode a progressive image
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
@@ -586,11 +586,9 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
-fn get_marker<T>(
-    reader: &mut ZByteReader<T>, stream: &mut BitStream
-) -> Result<Marker, DecodeErrors>
+fn get_marker<T>(reader: &mut ZReader<T>, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     if let Some(marker) = stream.marker {
         stream.marker = None;
@@ -599,7 +597,7 @@ where
 
     // read until we get a marker
 
-    while !reader.eof() {
+    while !reader.eof()? {
         let marker = reader.get_u8_err()?;
 
         if marker == 255 {

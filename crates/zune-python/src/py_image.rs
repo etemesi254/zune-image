@@ -14,6 +14,7 @@ use numpy::{dtype, Element, PyArray2, PyArray3, PyUntypedArray};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_core::bit_depth::BitType;
+use zune_core::bytestream::ZByteBuffer;
 use zune_core::colorspace::ColorSpace as ZColorSpace;
 use zune_core::log::warn;
 use zune_core::options::DecoderOptions;
@@ -857,7 +858,7 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
 }
 
 pub fn decode_image(bytes: &[u8]) -> PyResult<Image> {
-    let im_result = ZImage::read(bytes, DecoderOptions::new_fast());
+    let im_result = ZImage::read(ZByteBuffer::new(bytes), DecoderOptions::new_fast());
     match im_result {
         Ok(result) => Ok(Image::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(
@@ -876,7 +877,8 @@ impl From<ZImageErrors> for pyo3::PyErr {
 pub fn decode_file(file: String) -> PyResult<Image> {
     match read(file) {
         Ok(bytes) => Ok(Image::new(
-            ZImage::read(bytes, DecoderOptions::new_fast()).map_err(ZImageErrors::from)?
+            ZImage::read(ZByteBuffer::new(bytes), DecoderOptions::new_fast())
+                .map_err(ZImageErrors::from)?
         )),
         Err(e) => Err(PyErr::new::<PyException, _>(format!("{e}")))
     }

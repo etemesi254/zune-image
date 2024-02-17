@@ -9,6 +9,8 @@
 use alloc::string::String;
 use core::fmt::{Debug, Formatter};
 
+use zune_core::bytestream::ZByteIoError;
+
 /// BMP errors that can occur during decoding
 pub enum BmpDecoderErrors {
     /// The file/bytes do not start with `BM`
@@ -24,7 +26,8 @@ pub enum BmpDecoderErrors {
     /// height
     TooLargeDimensions(&'static str, usize, usize),
     /// A calculation overflowed
-    OverFlowOccurred
+    OverFlowOccurred,
+    IoErrors(ZByteIoError)
 }
 
 impl Debug for BmpDecoderErrors {
@@ -55,6 +58,15 @@ impl Debug for BmpDecoderErrors {
             Self::OverFlowOccurred => {
                 writeln!(f, "Overflow occurred")
             }
+            Self::IoErrors(err) => {
+                writeln!(f, "{:?}", err)
+            }
         }
+    }
+}
+
+impl From<ZByteIoError> for BmpDecoderErrors {
+    fn from(value: ZByteIoError) -> Self {
+        BmpDecoderErrors::IoErrors(value)
     }
 }

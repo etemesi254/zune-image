@@ -2,7 +2,7 @@ use std::ffi::{c_char, CStr};
 use std::ptr;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteBuffer, ZByteIoTrait, ZReader};
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
@@ -56,7 +56,7 @@ pub extern "C" fn zil_imread(
 
     match std::fs::read(file_cstr) {
         Ok(data) => {
-            if let Some(im_metadata) = zune_image::utils::decode_info(&data) {
+            if let Some(im_metadata) = zune_image::utils::decode_info(ZByteBuffer::new(&data)) {
                 // allocate a space big enough
                 let (w, h) = im_metadata.get_dimensions();
                 let colorspace = im_metadata.get_colorspace().num_components();
@@ -64,7 +64,7 @@ pub extern "C" fn zil_imread(
 
                 let new_size = w * h * colorspace * im_depth;
 
-                let output = unsafe { libc::malloc(new_size) };
+                let output = unsafe { zil_malloc(new_size) };
                 if output.is_null() {
                     unsafe {
                         *status = ZStatus::new(
@@ -202,7 +202,7 @@ pub extern "C" fn zil_read_headers_from_memory(
     };
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
         None => ZImageMetadata::default(),
         Some(metadata) => {
             let (w, h) = metadata.get_dimensions();
@@ -245,7 +245,7 @@ pub extern "C" fn zil_imdecode(
     }
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
@@ -315,7 +315,7 @@ pub extern "C" fn zil_imdecode_into(
     // Safety the caller is supposed to uphold this
     let buf = unsafe { std::slice::from_raw_parts_mut(output, output_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
@@ -335,7 +335,7 @@ pub extern "C" fn zil_imdecode_into(
                 return;
             }
 
-            if let Err(e) = imdecode_inner(contents, buf) {
+            if let Err(e) = imdecode_inner(ZByteBuffer::new(contents), buf) {
                 unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::DecodeErrors) };
                 return;
             }
@@ -361,7 +361,7 @@ pub extern "C" fn zil_imdecode_into(
 
 fn imdecode_inner<T>(data: T, output: &mut [u8]) -> Result<(), ImageErrors>
 where
-    T: ZReaderTrait
+    T: ZByteIoTrait
 {
     if let Some((im_format, data)) = zune_image::codecs::guess_format(data) {
         match im_format {
@@ -487,7 +487,9 @@ where
                     // misalignment
                     return Err(ImageErrors::GenericStr("Buffer misalignment"));
                 }
-                decoder.decode_into(output_buf)?;
+                decoder
+                    .decode_into(output_buf)
+                    .map_err(|x| ImageErrors::GenericString(format!("{:?}", x)))?;
             }
             ImageFormat::QOI => {
                 // just write into buffer
@@ -496,9 +498,10 @@ where
                 decoder.decode_into(output)?;
             }
             ImageFormat::JPEG_XL => {
-                let c = ZByteReader::new(data);
-                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
-                    .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
+                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(
+                    ZReader::new(data)
+                )
+                .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
 
                 let result = decoder
                     .render_next_frame()
