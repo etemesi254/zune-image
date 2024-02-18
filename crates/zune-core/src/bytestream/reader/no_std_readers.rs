@@ -128,17 +128,6 @@ impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
     fn is_eof(&mut self) -> Result<bool, ZByteIoError> {
         Ok(self.position >= self.stream.as_ref().len())
     }
-
-    #[inline(always)]
-    fn z_size(&mut self) -> Result<i64, ZByteIoError> {
-        Ok(self.stream.as_ref().len() as i64)
-    }
-
-    #[inline(always)]
-    fn name(&self) -> &'static str {
-        "ZByteBuffer<T>"
-    }
-
     #[inline(always)]
     fn z_position(&mut self) -> Result<u64, ZByteIoError> {
         Ok(self.position as u64)

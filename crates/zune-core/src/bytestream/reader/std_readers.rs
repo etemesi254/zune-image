@@ -90,12 +90,7 @@ where
 
     #[inline(always)]
 
-    fn z_size(&mut self) -> Result<i64, ZByteIoError> {
-        Ok(self.get_ref().as_ref().len() as i64)
-    }
-    fn name(&self) -> &'static str {
-        "Cursor<T>"
-    }
+    
 
     fn z_position(&mut self) -> Result<u64, ZByteIoError> {
         Ok(self.position())
@@ -164,24 +159,6 @@ impl<T: io::Read + io::Seek> ZByteIoTrait for BufReader<T> {
         self.fill_buf()
             .map(|b| b.is_empty())
             .map_err(ZByteIoError::from)
-    }
-
-    #[inline(always)]
-    fn z_size(&mut self) -> Result<i64, ZByteIoError> {
-        let old_pos = self.stream_position()?;
-        let len = self.seek(SeekFrom::End(0))?;
-
-        // Avoid seeking a third time when we were already at the end of the
-        // stream. The branch is usually way cheaper than a seek operation.
-        if old_pos != len {
-            self.seek(SeekFrom::Start(old_pos))?;
-        }
-
-        Ok(len as i64)
-    }
-
-    fn name(&self) -> &'static str {
-        "BufReader<T>"
     }
 
     #[inline(always)]
