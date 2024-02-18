@@ -224,7 +224,14 @@ impl BitStream {
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
         if self.bits_left < 32 && self.marker.is_none() {
-            if let Ok(bytes) = reader.get_fixed_bytes_or_err::<4>() {
+            // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
+            // as it is the common case
+            //
+            // so we always read 4 bytes, if read_fixed_bytes errors out, the cursor is
+            // guaranteed not to advance in case of failure (is this true), so
+            // we revert the read later on (if we have 255), if this fails, we use the normal
+            // byte at a time read
+            if let Ok(bytes) = reader.read_fixed_bytes_or_error::<4>() {
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
                 let msb_buf = u32::from_be_bytes(bytes);
@@ -236,8 +243,9 @@ impl BitStream {
                     self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     return Ok(true);
                 }
+
+                reader.rewind(4)?;
             }
-            reader.rewind(4)?;
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse

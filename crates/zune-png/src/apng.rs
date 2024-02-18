@@ -167,12 +167,12 @@ impl SingleFrame {
 /// # Examples
 ///
 /// ```no_run
-/// use zune_core::bytestream::ZByteBuffer;
+/// use zune_core::bytestream::ZCursor;
 /// use zune_core::options::EncoderOptions;
 /// use zune_png::{PngDecoder, post_process_image};
 /// // read the file
 /// // set up decoder
-/// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
+/// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
 /// // decode headers
 /// decoder.decode_headers().unwrap();
 /// // get useful information about the image

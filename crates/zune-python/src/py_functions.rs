@@ -12,7 +12,7 @@ use numpy::{PyArray2, PyArray3, PyUntypedArray};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteBuffer, ZByteReader};
+use zune_core::bytestream::{ZCursor, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
@@ -34,7 +34,7 @@ use crate::py_enums::ImageFormat;
 /// bytes: An array of bytes consisting of an encoded image
 #[pyfunction]
 pub fn guess_format(bytes: &[u8]) -> ImageFormat {
-    match zune_image::codecs::guess_format(ZByteBuffer::new(bytes)) {
+    match zune_image::codecs::guess_format(ZCursor::new(bytes)) {
         Some((format, _)) => ImageFormat::from(format),
         None => ImageFormat::Unknown
     }
@@ -152,7 +152,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     //
                     // so we branch on the depth, cheat a bit on 16 bit and return whatever we can
                     //
-                    let mut decoder = PngDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = PngDecoder::new(ZCursor::new(&bytes));
                     decoder
                         .decode_headers()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
@@ -216,7 +216,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     }
                 }
                 ImageFormat::JPEG => {
-                    let mut decoder = JpegDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = JpegDecoder::new(ZCursor::new(&bytes));
 
                     decoder
                         .decode_headers()
@@ -235,7 +235,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     return Ok(arr.as_untyped());
                 }
                 ImageFormat::BMP => {
-                    let mut decoder = BmpDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = BmpDecoder::new(ZCursor::new(&bytes));
 
                     decoder
                         .decode_headers()
@@ -255,7 +255,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     return Ok(arr.as_untyped());
                 }
                 ImageFormat::PPM => {
-                    let mut decoder = PPMDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = PPMDecoder::new(ZCursor::new(&bytes));
                     let bytes = decoder
                         .decode()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
@@ -269,7 +269,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     //
                     // we can make it do it once, but it's an uncommon format so we
                     // should be okay with the speed hit
-                    let mut decoder = PSDDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = PSDDecoder::new(ZCursor::new(&bytes));
                     let bytes = decoder
                         .decode()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
@@ -279,7 +279,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     decode_result(py, bytes, w, h, colorspace)
                 }
                 ImageFormat::FarbFeld => {
-                    let mut decoder = FarbFeldDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = FarbFeldDecoder::new(ZCursor::new(&bytes));
 
                     decoder
                         .decode_headers()
@@ -298,7 +298,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     return Ok(arr.as_untyped());
                 }
                 ImageFormat::Qoi => {
-                    let mut decoder = QoiDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = QoiDecoder::new(ZCursor::new(&bytes));
 
                     decoder
                         .decode_headers()
@@ -318,7 +318,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     return Ok(arr.as_untyped());
                 }
                 ImageFormat::HDR => {
-                    let mut decoder = HdrDecoder::new(ZByteBuffer::new(&bytes));
+                    let mut decoder = HdrDecoder::new(ZCursor::new(&bytes));
 
                     decoder
                         .decode_headers()
@@ -338,7 +338,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     return Ok(arr.as_untyped());
                 }
                 ImageFormat::JPEG_XL => {
-                    let c = ZByteReader::new(&bytes);
+                    let c = ZReader::new(ZCursor::new(&bytes));
 
                     let mut decoder =
                         zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)

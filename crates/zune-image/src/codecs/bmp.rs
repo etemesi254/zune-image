@@ -11,7 +11,7 @@
 #![cfg(feature = "bmp")]
 
 pub use zune_bmp::*;
-use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
+use zune_core::bytestream::ZByteIoTrait;
 use zune_core::colorspace::ColorSpace;
 
 use crate::codecs::ImageFormat;

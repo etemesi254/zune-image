@@ -9,7 +9,7 @@
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
-use zune_core::bytestream::{ZByteBuffer, ZByteReader};
+use zune_core::bytestream::{ZCursor};
 use zune_core::options::DecoderOptions;
 use zune_psd::PSDDecoder;
 
@@ -41,7 +41,7 @@ fn test_psd() {
 
         let options = DecoderOptions::default();
 
-        let mut decoder = PSDDecoder::new_with_options(ZByteBuffer::new(&file_contents), options);
+        let mut decoder = PSDDecoder::new_with_options(ZCursor::new(&file_contents), options);
         let pixels = decoder.decode_raw().unwrap();
 
         let hash = hash(&pixels);

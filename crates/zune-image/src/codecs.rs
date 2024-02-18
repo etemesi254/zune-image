@@ -34,7 +34,7 @@
 use std::io::{BufReader, Cursor};
 use std::path::Path;
 
-use zune_core::bytestream::{ZByteBuffer, ZByteIoTrait, ZByteReader, ZReader, ZReaderTrait};
+use zune_core::bytestream::{ZCursor, ZByteIoTrait, ZReader};
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
@@ -120,7 +120,7 @@ impl ImageFormat {
                 return true;
             }
         }
-        return self.get_decoder(ZByteBuffer::new(&[])).is_ok();
+        return self.get_decoder(ZCursor::new(&[])).is_ok();
     }
     pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
@@ -595,11 +595,11 @@ impl Image {
     /// - Open a memory source with the default options
     ///
     ///```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_core::options::DecoderOptions;
     /// use zune_image::image::Image;
     /// // create a simple ppm p5 grayscale format
-    /// let image = Image::read(ZByteBuffer::new(b"P5 1 1 255 1"),DecoderOptions::default());
+    /// let image = Image::read(ZCursor::new(b"P5 1 1 255 1"),DecoderOptions::default());
     ///```
     pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
     where

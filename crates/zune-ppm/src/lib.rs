@@ -31,8 +31,8 @@
 //! use zune_core::result::DecodingResult;
 //!
 //! fn main()->Result<(),PPMDecodeErrors>{
-//!    use zune_core::bytestream::ZByteBuffer;
-//! let mut decoder = PPMDecoder::new(ZByteBuffer::new(&[]));
+//!    use zune_core::bytestream::ZCursor;
+//! let mut decoder = PPMDecoder::new(ZCursor::new(&[]));
 //!    let pix = decoder.decode()?;
 //!    match pix {  
 //!        DecodingResult::U8(_) => {

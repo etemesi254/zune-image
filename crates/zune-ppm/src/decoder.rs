@@ -91,9 +91,9 @@ where
     ///
     /// # Example
     /// ```
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_ppm::PPMDecoder;
-    /// let mut decoder = PPMDecoder::new(ZByteBuffer::new(b"NOT VALID PPM"));
+    /// let mut decoder = PPMDecoder::new(ZCursor::new(b"NOT VALID PPM"));
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
@@ -107,10 +107,10 @@ where
     /// - data: PPM encoded fata.
     /// # Example
     /// ```
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_core::options::DecoderOptions;
     /// use zune_ppm::PPMDecoder;
-    /// let mut decoder = PPMDecoder::new_with_options(ZByteBuffer::new(b"NOT VALID PPM"),DecoderOptions::default());
+    /// let mut decoder = PPMDecoder::new_with_options(ZCursor::new(b"NOT VALID PPM"),DecoderOptions::default());
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
@@ -511,11 +511,11 @@ where
     /// ```
     /// use zune_ppm::PPMDecoder;
     /// use zune_core::bit_depth::BitDepth;
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// // a 1 by 1 grayscale 16 bit ppm
     /// let data = b"P5 1 1 65535 23";
     ///
-    /// let mut decoder = PPMDecoder::new(ZByteBuffer::new(data));
+    /// let mut decoder = PPMDecoder::new(ZCursor::new(data));
     ///
     /// decoder.decode_headers().unwrap();
     ///

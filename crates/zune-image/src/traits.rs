@@ -45,12 +45,12 @@ pub trait DecoderTrait {
     ///
     /// # Example
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// #[cfg(feature = "jpeg")]
     /// {
     ///     use zune_image::traits::DecoderTrait;
     ///     use zune_jpeg::JpegDecoder;
-    ///     let mut decoder = JpegDecoder::new(ZByteBuffer::new([0xFF,0xD8]));
+    ///     let mut decoder = JpegDecoder::new(ZCursor::new([0xFF,0xD8]));
     ///
     ///     decoder.decode().unwrap();
     /// }

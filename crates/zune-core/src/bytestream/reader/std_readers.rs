@@ -3,7 +3,8 @@
 use std::io;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
-use crate::bytestream::{ZByteIoError, ZByteIoTrait, ZSeekFrom};
+use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
+use crate::bytestream::ZByteIoTrait;
 
 impl<T> ZByteIoTrait for std::io::Cursor<T>
 where
@@ -123,7 +124,7 @@ impl<T: io::Read + io::Seek> ZByteIoTrait for BufReader<T> {
     }
 
     fn name(&self) -> &'static str {
-        todo!()
+        "BufReader<T>"
     }
 
     fn z_position(&mut self) -> Result<u64, ZByteIoError> {

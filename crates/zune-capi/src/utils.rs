@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 
 use libc::size_t;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 
 use crate::enums::ZImageFormat;
 
@@ -22,7 +22,7 @@ use crate::enums::ZImageFormat;
 pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZImageFormat {
     let slice = std::slice::from_raw_parts(bytes, size);
 
-    match zune_image::codecs::guess_format(ZByteBuffer::new(slice)) {
+    match zune_image::codecs::guess_format(ZCursor::new(slice)) {
         None => ZImageFormat::UnknownFormat,
         Some((format, _)) => ZImageFormat::from(format)
     }

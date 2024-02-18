@@ -54,7 +54,7 @@ where
     /// # Examples
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_hdr::HdrDecoder;
     /// // read hdr file to memory
     /// let file_data = std::io::BufReader::new(std::fs::File::open("sample.hdr").unwrap());
@@ -281,9 +281,9 @@ where
     /// - Read  headers and then alloc a buffer big enough to hold the image
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_hdr::HdrDecoder;
-    /// let mut decoder = HdrDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = HdrDecoder::new(ZCursor::new(&[]));
     /// // before we get output, we must decode the headers to get width
     /// // height, and input colorspace
     /// decoder.decode_headers().unwrap();

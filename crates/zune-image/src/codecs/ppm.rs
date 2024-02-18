@@ -9,7 +9,7 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
+use zune_core::bytestream::ZByteIoTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;

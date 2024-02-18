@@ -1,38 +1,238 @@
-/*
- * Copyright (c) 2023.
- *
- * This software is free software;
- *
- * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
- */
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::fmt::Formatter;
+use std::io::ErrorKind;
 
-use core::cmp::min;
-
-use crate::bytestream::traits::ZReaderTrait;
 pub(crate) mod no_std_readers;
 pub(crate) mod std_readers;
+use crate::bytestream::ZByteIoTrait;
 
-const ERROR_MSG: &str = "No more bytes";
+/// Enumeration of possible methods to seek within an I/O object.
+///
+/// It is analogous to the [SeekFrom](std::io::SeekFrom) in the std library but
+/// it's here to allow this to work in no-std crates
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum ZSeekFrom {
+    /// Sets the offset to the provided number of bytes.
+    Start(u64),
 
-/// An encapsulation of a byte stream reader
-///
-/// This provides an interface similar to [std::io::Cursor] but
-/// it provides fine grained options for reading different integer data types from
-/// the underlying buffer.
-///
-/// There are two variants mainly error and non error variants,
-/// the error variants are useful for cases where you need bytes
-/// from the underlying stream, and cannot do with zero result.
-/// the non error variants are useful when you may have proved data already exists
-/// eg by using [`has`] method or you are okay with returning zero if the underlying
-/// buffer has been completely read.
-///
-/// [std::io::Cursor]: https://doc.rust-lang.org/std/io/struct.Cursor.html
-/// [`has`]: Self::has
-pub struct ZByteReader<T: ZReaderTrait> {
-    /// Data stream
-    stream:   T,
-    position: usize
+    /// Sets the offset to the size of this object plus the specified number of
+    /// bytes.
+    ///
+    /// It is possible to seek beyond the end of an object, but it's an error to
+    /// seek before byte 0.
+    End(i64),
+
+    /// Sets the offset to the current position plus the specified number of
+    /// bytes.
+    ///
+    /// It is possible to seek beyond the end of an object, but it's an error to
+    /// seek before byte 0.
+    Current(i64)
+}
+
+impl ZSeekFrom {
+    /// Convert to [SeekFrom](std::io::SeekFrom) from the `std::io` library
+    ///
+    /// This is only present when std feature is present
+    #[cfg(feature = "std")]
+    pub(crate) fn to_std_seek(self) -> std::io::SeekFrom {
+        match self {
+            ZSeekFrom::Start(pos) => std::io::SeekFrom::Start(pos),
+            ZSeekFrom::End(pos) => std::io::SeekFrom::End(pos),
+            ZSeekFrom::Current(pos) => std::io::SeekFrom::Current(pos)
+        }
+    }
+}
+
+pub enum ZByteIoError {
+    #[cfg(feature = "std")]
+    StdIoError(std::io::Error),
+    TryFromIntError(core::num::TryFromIntError),
+    // requested, read
+    NotEnoughBytes(usize, usize),
+    Generic(&'static str),
+    SeekError(&'static str),
+    SeekErrorOwned(String)
+}
+
+impl core::fmt::Debug for ZByteIoError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            #[cfg(feature = "std")]
+            ZByteIoError::StdIoError(err) => {
+                writeln!(f, "Underlying I/O error {}", err)
+            }
+            ZByteIoError::TryFromIntError(err) => {
+                writeln!(f, "Cannot convert to int {}", err)
+            }
+            ZByteIoError::NotEnoughBytes(expected, found) => {
+                writeln!(f, "Not enough bytes, expected {expected} but found {found}")
+            }
+            ZByteIoError::Generic(err) => {
+                writeln!(f, "Generic I/O error: {err}")
+            }
+            ZByteIoError::SeekError(err) => {
+                writeln!(f, "Seek error: {err}")
+            }
+            ZByteIoError::SeekErrorOwned(err) => {
+                writeln!(f, "Seek error {err}")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<std::io::Error> for ZByteIoError {
+    fn from(value: std::io::Error) -> Self {
+        ZByteIoError::StdIoError(value)
+    }
+}
+
+impl From<core::num::TryFromIntError> for ZByteIoError {
+    fn from(value: core::num::TryFromIntError) -> Self {
+        ZByteIoError::TryFromIntError(value)
+    }
+}
+
+impl From<&'static str> for ZByteIoError {
+    fn from(value: &'static str) -> Self {
+        ZByteIoError::Generic(value)
+    }
+}
+
+pub struct ZReader<T: ZByteIoTrait> {
+    inner:       T,
+    temp_buffer: Vec<u8>
+}
+
+impl<T: ZByteIoTrait> ZReader<T> {
+    pub fn new(source: T) -> ZReader<T> {
+        ZReader {
+            inner:       source,
+            temp_buffer: vec![]
+        }
+    }
+    /// Destroy this reader returning
+    /// the underlying source of the bytes
+    /// from which we were decoding
+
+    #[inline(always)]
+    pub fn consume(self) -> T {
+        self.inner
+    }
+    #[inline(always)]
+
+    pub fn skip(&mut self, num: usize) -> Result<u64, ZByteIoError> {
+        self.inner.z_seek(ZSeekFrom::Current(num as i64))
+    }
+    #[inline(always)]
+    pub fn rewind(&mut self, num: usize) -> Result<u64, ZByteIoError> {
+        self.inner.z_seek(ZSeekFrom::Current(-(num as i64)))
+    }
+    #[inline(always)]
+
+    pub fn seek(&mut self, from: ZSeekFrom) -> Result<u64, ZByteIoError> {
+        self.inner.z_seek(from)
+    }
+    #[inline(always)]
+    pub fn get_u8(&mut self) -> u8 {
+        let mut buf = [0];
+        let _ = self.inner.read_exact_bytes(&mut buf);
+        buf[0]
+    }
+    #[inline(always)]
+    pub fn get_u8_err(&mut self) -> Result<u8, ZByteIoError> {
+        let mut buf = [0];
+        self.inner.read_exact_bytes(&mut buf)?;
+        Ok(buf[0])
+    }
+
+    /// Look ahead position bytes and return a reference
+    /// to num_bytes from that position, or an error if the
+    /// peek would be out of bounds.
+    ///
+    /// This doesn't increment the position, bytes would have to be discarded
+    /// at a later point.
+    #[inline]
+    pub fn peek_at(&mut self, position: usize, num_bytes: usize) -> Result<&[u8], ZByteIoError> {
+        // short circuit for zero
+        if position != 0 {
+            // skip position bytes from start
+            self.skip(position)?;
+        }
+        // resize buffer
+        self.temp_buffer.resize(num_bytes, 0);
+        // read bytes
+        match self.inner.peek_exact_bytes(&mut self.temp_buffer[..]) {
+            Ok(_) => {
+                // rewind back to where we were
+                if position != 0 {
+                    self.rewind(position)?;
+                }
+                Ok(&self.temp_buffer)
+            }
+            Err(e) => Err(e)
+        }
+    }
+    #[inline]
+    pub fn read_fixed_bytes_or_error<const N: usize>(&mut self) -> Result<[u8; N], ZByteIoError> {
+        let mut byte_store: [u8; N] = [0; N];
+        match self.inner.read_exact_bytes(&mut byte_store) {
+            Ok(_) => Ok(byte_store),
+            Err(e) => Err(e)
+        }
+    }
+    #[inline]
+    pub fn get_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
+        let mut byte_store: [u8; N] = [0; N];
+        match self.inner.read_exact_bytes(&mut byte_store) {
+            Ok(_) => byte_store,
+            Err(_) => byte_store
+        }
+    }
+
+    pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F) -> Result<(), ZByteIoError> {
+        while !self.inner.is_eof()? {
+            let byte = self.get_u8();
+            if !(func)(byte) {
+                self.rewind(1)?;
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub fn set_position(&mut self, position: usize) -> Result<(), ZByteIoError> {
+        self.seek(ZSeekFrom::Start(position as u64))?;
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub fn eof(&mut self) -> Result<bool, ZByteIoError> {
+        self.inner.is_eof()
+    }
+    #[inline(always)]
+    pub fn position(&mut self) -> Result<u64, ZByteIoError> {
+        self.inner.z_position()
+    }
+
+    pub fn remaining_bytes(&mut self) -> Result<&[u8], ZByteIoError> {
+        self.temp_buffer.clear();
+        let bytes_read = self.inner.read_remaining(&mut self.temp_buffer)?;
+        Ok(&self.temp_buffer[..bytes_read])
+    }
+
+    pub fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
+        self.inner.read_exact_bytes(buf)
+    }
+
+    pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
+        self.inner.read_bytes(buf)
+    }
 }
 
 enum Mode {
@@ -41,291 +241,9 @@ enum Mode {
     // Little Endian
     LE
 }
-#[cfg(feature = "std")]
-impl<T: ZReaderTrait> std::io::Read for ZByteReader<T> {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        Ok(self.read(buf).unwrap())
-    }
-}
-
-impl<T: ZReaderTrait> ZByteReader<T> {
-    /// Create a new instance of the byte stream
-    ///
-    /// Bytes will be read from the start of `buf`.
-    ///
-    /// `buf` is expected to live as long as this and
-    /// all references to it live
-    ///
-    /// # Returns
-    /// A byte reader which will pull bits from bye
-    pub const fn new(buf: T) -> ZByteReader<T> {
-        ZByteReader {
-            stream:   buf,
-            position: 0
-        }
-    }
-    /// Destroy this reader returning
-    /// the underlying source of the bytes
-    /// from which we were decoding
-    pub fn consume(self) -> T {
-        self.stream
-    }
-    /// Skip `num` bytes ahead of the stream.
-    ///
-    /// This bumps up the internal cursor wit a wrapping addition
-    /// The bytes between current position and `num` will be skipped
-    ///
-    /// # Arguments
-    /// `num`: How many bytes to skip
-    ///
-    /// # Note
-    /// This does not consider length of the buffer, so skipping more bytes
-    /// than possible and then reading bytes will return an error if using error variants
-    /// or zero if using non-error variants
-    ///
-    /// # Example
-    /// ```
-    /// use zune_core::bytestream::ZByteReader;
-    /// let zero_to_hundred:Vec<u8> = (0..100).collect();
-    /// let mut stream = ZByteReader::new(&zero_to_hundred);
-    /// // skip 37 bytes
-    /// stream.skip(37);
-    ///
-    /// assert_eq!(stream.get_u8(),37);
-    /// ```
-    ///
-    /// See [`rewind`](ZByteReader::rewind) for moving the internal cursor back
-    pub fn skip(&mut self, num: usize) {
-        // Can this overflow ??
-        self.position = self.position.wrapping_add(num);
-    }
-    /// Undo a buffer read by moving the position pointer `num`
-    /// bytes behind.
-    ///
-    /// This operation will saturate at zero
-    pub fn rewind(&mut self, num: usize) {
-        self.position = self.position.saturating_sub(num);
-    }
-
-    /// Return whether the underlying buffer
-    /// has `num` bytes available for reading
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use zune_core::bytestream::ZByteReader;
-    /// let data = [0_u8;120];
-    /// let reader = ZByteReader::new(data.as_slice());
-    /// assert!(reader.has(3));
-    /// assert!(!reader.has(121));
-    /// ```
-    #[inline]
-    pub fn has(&self, num: usize) -> bool {
-        self.position.saturating_add(num) <= self.stream.get_len()
-    }
-    /// Get number of bytes available in the stream
-    #[inline]
-    pub fn get_bytes_left(&self) -> usize {
-        // Must be saturating to prevent underflow
-        self.stream.get_len().saturating_sub(self.position)
-    }
-    /// Get length of the underlying buffer.
-    ///
-    /// To get the number of bytes left in the buffer,
-    /// use [remaining] method
-    ///
-    /// [remaining]: Self::remaining
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.stream.get_len()
-    }
-    /// Return true if the underlying buffer stream is empty
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.stream.get_len() == 0
-    }
-    /// Get current position of the buffer.
-    #[inline]
-    pub const fn get_position(&self) -> usize {
-        self.position
-    }
-    /// Return true whether or not we read to the end of the
-    /// buffer and have no more bytes left.
-    #[inline]
-    pub fn eof(&self) -> bool {
-        self.position >= self.len()
-    }
-    /// Get number of bytes unread inside this
-    /// stream.
-    ///
-    /// To get the length of the underlying stream,
-    /// use [len] method
-    ///
-    /// [len]: Self::len()
-    #[inline]
-    pub fn remaining(&self) -> usize {
-        self.stream.get_len().saturating_sub(self.position)
-    }
-    /// Get a part of the bytestream as a reference.
-    ///
-    /// This increments the position to point past the bytestream
-    /// if position+num is in bounds
-    pub fn get(&mut self, num: usize) -> Result<&[u8], &'static str> {
-        match self.stream.get_slice(self.position..self.position + num) {
-            Some(bytes) => {
-                self.position += num;
-                Ok(bytes)
-            }
-            None => Err(ERROR_MSG)
-        }
-    }
-    /// Look ahead position bytes and return a reference
-    /// to num_bytes from that position, or an error if the
-    /// peek would be out of bounds.
-    ///
-    /// This doesn't increment the position, bytes would have to be discarded
-    /// at a later point.
-    #[inline]
-    pub fn peek_at(&self, position: usize, num_bytes: usize) -> Result<&[u8], &'static str> {
-        let start = self.position + position;
-        let end = self.position + position + num_bytes;
-
-        match self.stream.get_slice(start..end) {
-            Some(bytes) => Ok(bytes),
-            None => Err(ERROR_MSG)
-        }
-    }
-    /// Get a fixed amount of bytes or return an error if we cant
-    /// satisfy the read
-    ///
-    /// This should be combined with [`has`] since if there are no
-    /// more bytes you get an error.
-    ///
-    /// But it's useful for cases where you expect bytes but they are not present
-    ///
-    /// For the zero  variant see, [`get_fixed_bytes_or_zero`]
-    ///
-    /// # Example
-    /// ```rust
-    /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new([0x0,0x5,0x3,0x2].as_slice());
-    /// let first_bytes = stream.get_fixed_bytes_or_err::<10>(); // not enough bytes
-    /// assert!(first_bytes.is_err());
-    /// ```
-    ///
-    /// [`has`]:Self::has
-    /// [`get_fixed_bytes_or_zero`]: Self::get_fixed_bytes_or_zero
-    #[inline]
-    pub fn get_fixed_bytes_or_err<const N: usize>(&mut self) -> Result<[u8; N], &'static str> {
-        let mut byte_store: [u8; N] = [0; N];
-
-        match self.stream.get_slice(self.position..self.position + N) {
-            Some(bytes) => {
-                self.position += N;
-                byte_store.copy_from_slice(bytes);
-
-                Ok(byte_store)
-            }
-            None => Err(ERROR_MSG)
-        }
-    }
-
-    /// Get a fixed amount of bytes or return a zero array size
-    /// if we can't satisfy the read
-    ///
-    /// This should be combined with [`has`] since if there are no
-    /// more bytes you get a zero initialized array
-    ///
-    /// For the error variant see, [`get_fixed_bytes_or_err`]
-    ///
-    /// # Example
-    /// ```rust
-    /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new([0x0,0x5,0x3,0x2].as_slice());
-    /// let first_bytes = stream.get_fixed_bytes_or_zero::<2>();
-    /// assert_eq!(first_bytes,[0x0,0x5]);
-    /// ```
-    ///
-    /// [`has`]:Self::has
-    /// [`get_fixed_bytes_or_err`]: Self::get_fixed_bytes_or_err
-    #[inline]
-    pub fn get_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
-        let mut byte_store: [u8; N] = [0; N];
-
-        match self.stream.get_slice(self.position..self.position + N) {
-            Some(bytes) => {
-                self.position += N;
-                byte_store.copy_from_slice(bytes);
-
-                byte_store
-            }
-            None => byte_store
-        }
-    }
-    #[inline]
-    /// Skip bytes until a condition becomes false or the stream runs out of bytes
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use zune_core::bytestream::ZByteReader;
-    /// let mut stream = ZByteReader::new([0;10].as_slice());
-    /// stream.skip_until_false(|x| x.is_ascii()) // skip until we meet a non ascii character
-    /// ```
-    pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F) {
-        // iterate until we have no more bytes
-        while !self.eof() {
-            // get a byte from stream
-            let byte = self.get_u8();
-
-            if !(func)(byte) {
-                // function returned false meaning we stop skipping
-                self.rewind(1);
-                break;
-            }
-        }
-    }
-    /// Return the remaining unread bytes in this byte reader
-    pub fn remaining_bytes(&self) -> &[u8] {
-        debug_assert!(self.position <= self.len());
-        self.stream.get_slice(self.position..self.len()).unwrap()
-    }
-
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, &'static str> {
-        let buf_length = buf.len();
-        let start = self.position;
-        let end = min(self.len(), self.position + buf_length);
-        let diff = end - start;
-
-        buf[0..diff].copy_from_slice(self.stream.get_slice(start..end).unwrap());
-
-        self.skip(diff);
-
-        Ok(diff)
-    }
-
-    /// Read enough bytes to fill in
-    pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), &'static str> {
-        let size = self.read(buf)?;
-
-        if size != buf.len() {
-            return Err("Could not read into the whole buffer");
-        }
-        Ok(())
-    }
-
-    /// Set the cursor position
-    ///
-    /// After this, all reads will proceed from the position as an anchor
-    /// point
-    pub fn set_position(&mut self, position: usize) {
-        self.position = position;
-    }
-}
-
 macro_rules! get_single_type {
     ($name:tt,$name2:tt,$name3:tt,$name4:tt,$name5:tt,$name6:tt,$int_type:tt) => {
-        impl<T:ZReaderTrait> ZByteReader<T>
+        impl<T:ZByteIoTrait> ZReader<T>
         {
             #[inline(always)]
             fn $name(&mut self, mode: Mode) -> $int_type
@@ -334,50 +252,36 @@ macro_rules! get_single_type {
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                match self.stream.get_slice(self.position..self.position + SIZE_OF_VAL)
+                match self.inner.read_exact_bytes(&mut space)
                 {
-                    Some(position) =>
-                    {
-                        space.copy_from_slice(position);
-                        self.position += SIZE_OF_VAL;
-
-                        match mode
-                        {
-                            Mode::LE => $int_type::from_le_bytes(space),
-                            Mode::BE => $int_type::from_be_bytes(space),
-                        }
-                    }
-                    None => 0,
+                    Ok(_) => match mode {
+                        Mode::BE => $int_type::from_be_bytes(space),
+                        Mode::LE => $int_type::from_le_bytes(space)
+                    },
+                     Err(_) => 0
                 }
             }
 
             #[inline(always)]
-            fn $name2(&mut self, mode: Mode) -> Result<$int_type, &'static str>
+            fn $name2(&mut self, mode: Mode) -> Result<$int_type, ZByteIoError>
             {
                 const SIZE_OF_VAL: usize = core::mem::size_of::<$int_type>();
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                match self.stream.get_slice(self.position..self.position + SIZE_OF_VAL)
+                match self.inner.read_exact_bytes(&mut space)
                 {
-                    Some(position) =>
-                    {
-                        space.copy_from_slice(position);
-                        self.position += SIZE_OF_VAL;
-
-                        match mode
-                        {
-                            Mode::LE => Ok($int_type::from_le_bytes(space)),
-                            Mode::BE => Ok($int_type::from_be_bytes(space)),
-                        }
-                    }
-                    None => Err(ERROR_MSG),
+                    Ok(_) => match mode {
+                        Mode::BE => Ok($int_type::from_be_bytes(space)),
+                        Mode::LE => Ok($int_type::from_le_bytes(space))
+                    },
+                     Err(e) =>  Err(e)
                 }
             }
             #[doc=concat!("Read ",stringify!($int_type)," as a big endian integer")]
             #[doc=concat!("Returning an error if the underlying buffer cannot support a ",stringify!($int_type)," read.")]
             #[inline]
-            pub fn $name3(&mut self) -> Result<$int_type, &'static str>
+            pub fn $name3(&mut self) -> Result<$int_type, ZByteIoError>
             {
                 self.$name2(Mode::BE)
             }
@@ -385,7 +289,7 @@ macro_rules! get_single_type {
             #[doc=concat!("Read ",stringify!($int_type)," as a little endian integer")]
             #[doc=concat!("Returning an error if the underlying buffer cannot support a ",stringify!($int_type)," read.")]
             #[inline]
-            pub fn $name4(&mut self) -> Result<$int_type, &'static str>
+            pub fn $name4(&mut self) -> Result<$int_type, ZByteIoError>
             {
                 self.$name2(Mode::LE)
             }
@@ -406,50 +310,7 @@ macro_rules! get_single_type {
         }
     };
 }
-// U8 implementation
-// The benefit of our own unrolled u8 impl instead of macros is that this is sometimes used in some
-// impls and is called multiple times, e.g jpeg during huffman decoding.
-// we can make some functions leaner like get_u8 is branchless
-impl<T> ZByteReader<T>
-where
-    T: ZReaderTrait
-{
-    /// Retrieve a byte from the underlying stream
-    /// returning 0 if there are no more bytes available
-    ///
-    /// This means 0 might indicate a bit or an end of stream, but
-    /// this is useful for some scenarios where one needs a byte.
-    ///
-    /// For the panicking one, see [`get_u8_err`]
-    ///
-    /// [`get_u8_err`]: Self::get_u8_err
-    #[inline(always)]
-    pub fn get_u8(&mut self) -> u8 {
-        let byte = *self.stream.get_byte(self.position).unwrap_or(&0);
 
-        self.position += usize::from(self.position < self.len());
-        byte
-    }
-
-    /// Retrieve a byte from the underlying stream
-    /// returning an error if there are no more bytes available
-    ///
-    /// For the non panicking one, see [`get_u8`]
-    ///
-    /// [`get_u8`]: Self::get_u8
-    #[inline(always)]
-    pub fn get_u8_err(&mut self) -> Result<u8, &'static str> {
-        match self.stream.get_byte(self.position) {
-            Some(byte) => {
-                self.position += 1;
-                Ok(*byte)
-            }
-            None => Err(ERROR_MSG)
-        }
-    }
-}
-
-// u16,u32,u64 -> macros
 get_single_type!(
     get_u16_inner_or_default,
     get_u16_inner_or_die,
@@ -477,3 +338,14 @@ get_single_type!(
     get_u64_le,
     u64
 );
+
+#[cfg(feature = "std")]
+impl<T> std::io::Read for ZReader<T>
+where
+    T: ZByteIoTrait
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.read_bytes(buf)
+            .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{:?}", e)))
+    }
+}

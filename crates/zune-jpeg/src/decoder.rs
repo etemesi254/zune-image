@@ -272,10 +272,10 @@ where
     ///
     /// # Example
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
     ///
-    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
     /// // get current options
     /// let mut options = decoder.get_options();
     /// // modify it
@@ -315,9 +315,9 @@ where
     /// Set maximum jpeg progressive passes to be 4
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder =JpegDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder =JpegDecoder::new(ZCursor::new(&[]));
     /// // this works also because DecoderOptions implements `Copy`
     /// let options = decoder.get_options().jpeg_set_max_scans(4);
     /// // set the new options
@@ -679,9 +679,9 @@ where
     /// - Read  headers and then alloc a buffer big enough to hold the image
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
     /// // before we get output, we must decode the headers to get width
     /// // height, and input colorspace
     /// decoder.decode_headers().unwrap();
@@ -720,11 +720,11 @@ where
     ///
     /// # Examples
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::{JpegDecoder};
     ///
     /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
-    /// let mut decoder = JpegDecoder::new(ZByteBuffer::new(&img_data));
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&img_data));
     /// decoder.decode_headers().unwrap();
     ///
     /// println!("Total decoder dimensions are : {:?} pixels",decoder.dimensions());

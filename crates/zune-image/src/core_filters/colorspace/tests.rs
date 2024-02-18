@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use nanorand::Rng;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 
 use crate::core_filters::colorspace::ColorspaceConv;
@@ -40,7 +40,7 @@ fn test_real_time_rgb_to_cmyk() {
     // tell jpeg to output to cmyk
     let opts = DecoderOptions::new_fast().jpeg_set_out_colorspace(ColorSpace::CMYK);
     // set it up
-    let decoder = JpegDecoder::new_with_options(ZByteBuffer::new(&data), opts);
+    let decoder = JpegDecoder::new_with_options(ZCursor::new(&data), opts);
     let mut c: Box<dyn DecoderTrait> = Box::new(decoder);
     let mut im = c.decode().unwrap();
     // just confirm that this is good
