@@ -16,7 +16,7 @@
 //!
 use jpeg_encoder::{ColorType, EncodingError};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
+use zune_core::bytestream::ZByteIoTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;

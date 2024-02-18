@@ -145,9 +145,9 @@ where
     ///
     /// # Example
     /// ```
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_farbfeld::FarbFeldDecoder;
-    /// let mut decoder = FarbFeldDecoder::new(ZByteBuffer::new(b"NOT A VALID FILE"));
+    /// let mut decoder = FarbFeldDecoder::new(ZCursor::new(b"NOT A VALID FILE"));
     ///
     /// assert!(decoder.decode().is_err());
     /// ```
@@ -184,10 +184,10 @@ where
     /// Or none if the headers haven't been decoded
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_farbfeld::FarbFeldDecoder;
-    /// let mut decoder = FarbFeldDecoder::new(ZByteBuffer::new([]));
-    /// 
+    /// let mut decoder = FarbFeldDecoder::new(ZCursor::new([]));
+    ///
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.

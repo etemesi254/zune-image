@@ -26,7 +26,7 @@ use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
@@ -50,14 +50,14 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 
 fn decode_raw_zune(data: &[u8]) -> Vec<u8> {
     let options = DecoderOptions::default().png_set_strip_to_8bit(true);
-    zune_png::PngDecoder::new_with_options(ZByteBuffer::new(data), options)
+    zune_png::PngDecoder::new_with_options(ZCursor::new(data), options)
         .decode_raw()
         .unwrap()
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
     let options = DecoderOptions::default().png_set_strip_to_8bit(true);
-    zune_png::PngDecoder::new_with_options(ZByteBuffer::new(data), options)
+    zune_png::PngDecoder::new_with_options(ZCursor::new(data), options)
         .decode()
         .unwrap()
         .u8()
@@ -66,7 +66,7 @@ fn decode_zune(data: &[u8]) -> Vec<u8> {
 
 fn decode_into_zune(data: &[u8]) -> Vec<u8> {
     let options = DecoderOptions::default().png_set_strip_to_8bit(true);
-    let mut decoder = zune_png::PngDecoder::new_with_options(ZByteBuffer::new(data), options);
+    let mut decoder = zune_png::PngDecoder::new_with_options(ZCursor::new(data), options);
     decoder.decode_headers().unwrap();
     let size = decoder.output_buffer_size().unwrap();
     let mut buffer = vec![0; size];

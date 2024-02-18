@@ -67,8 +67,8 @@ where
     /// # Example
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
-    /// let mut decoder = zune_qoi::QoiDecoder::new(ZByteBuffer::new(&[]));
+    /// use zune_core::bytestream::ZCursor;
+    /// let mut decoder = zune_qoi::QoiDecoder::new(ZCursor::new(&[]));
     /// // additional code
     /// ```
     pub fn new(data: T) -> QoiDecoder<T> {
@@ -84,14 +84,14 @@ where
     ///
     /// # Example
     /// ```
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_core::options::DecoderOptions;
     /// use zune_qoi::{QoiDecoder};
     /// // only decode images less than 10 in both width and height
     ///
     /// let  options = DecoderOptions::default().set_max_width(10).set_max_height(10);
     ///
-    /// let mut decoder=QoiDecoder::new_with_options(ZByteBuffer::new([]),options);
+    /// let mut decoder=QoiDecoder::new_with_options(ZCursor::new([]),options);
     /// ```
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(data: T, options: DecoderOptions) -> QoiDecoder<T> {
@@ -120,7 +120,7 @@ where
         //let header_bytes = 4/*magic*/ + 8/*Width+height*/ + 1/*channels*/ + 1 /*colorspace*/;
 
         // match magic bytes.
-        let magic = self.stream.get_fixed_bytes_or_err::<4>()?;
+        let magic = self.stream.read_fixed_bytes_or_error::<4>()?;
 
         if &magic != b"qoif" {
             return Err(QoiErrors::WrongMagicBytes);
@@ -360,9 +360,9 @@ where
     ///
     /// ```
     /// use zune_core::bit_depth::BitDepth;
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_qoi::QoiDecoder;
-    /// let decoder = QoiDecoder::new(ZByteBuffer::new(&[]));
+    /// let decoder = QoiDecoder::new(ZCursor::new(&[]));
     /// assert_eq!(decoder.get_bit_depth(),BitDepth::Eight)
     /// ```
     ///
@@ -383,9 +383,9 @@ where
     /// # Example
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_qoi::QoiDecoder;
-    /// let mut decoder = QoiDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = QoiDecoder::new(ZCursor::new(&[]));
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.

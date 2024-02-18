@@ -735,9 +735,9 @@ impl<T: ZByteIoTrait> PngDecoder<T> {
     ///
     /// This example gets frame information of an animated image
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
     ///
     /// // decode the headers to get the information
     /// decoder.decode_headers().unwrap();
@@ -852,10 +852,10 @@ impl<T: ZByteIoTrait> PngDecoder<T> {
     /// # Example
     ///
     /// ```no_run
-    /// use zune_core::bytestream::ZByteBuffer;
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_core::result::DecodingResult;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(ZByteBuffer::new(&[]));
+    /// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
     ///
     /// match decoder.decode().unwrap(){
     ///     DecodingResult::U16(value)=>{

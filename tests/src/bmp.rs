@@ -10,7 +10,7 @@ use std::fs::read;
 use std::path::{Path, PathBuf};
 
 use zune_bmp::BmpDecoder;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
 
 use crate::{hash, sample_path, TestEntry};
@@ -37,7 +37,7 @@ fn test_bmp() {
         let expected_hash = path.hash;
 
         // load file
-        let file_contents = ZByteBuffer::new(read(&file_name).unwrap());
+        let file_contents = ZCursor::new(read(&file_name).unwrap());
 
         let options = DecoderOptions::default();
 

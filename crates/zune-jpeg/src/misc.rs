@@ -13,7 +13,7 @@ use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
-use zune_core::bytestream::{ZByteIoTrait, ZByteReader, ZReaderTrait};
+use zune_core::bytestream::ZByteIoTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 
@@ -182,24 +182,6 @@ impl fmt::Debug for SOFMarkers {
             Self::LosslessArithmetic => write!(f, "Lossless (sequential) arithmetic coding")
         }
     }
-}
-
-/// Read `buf.len()*2` data from the underlying `u8` buffer and convert it into
-/// u16, and store it into `buf`
-///
-/// # Arguments
-/// - reader: A mutable reference to the underlying reader.
-/// - buf: A mutable reference to a slice containing u16's
-#[inline]
-pub fn read_u16_into<T>(reader: &mut ZByteReader<T>, buf: &mut [u16]) -> Result<(), DecodeErrors>
-where
-    T: ZReaderTrait
-{
-    for i in buf {
-        *i = reader.get_u16_be_err()?;
-    }
-
-    Ok(())
 }
 
 /// Set up component parameters.

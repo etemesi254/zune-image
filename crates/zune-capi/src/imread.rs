@@ -2,7 +2,7 @@ use std::ffi::{c_char, CStr};
 use std::ptr;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteBuffer, ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZCursor, ZByteIoTrait, ZReader};
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
@@ -56,7 +56,7 @@ pub extern "C" fn zil_imread(
 
     match std::fs::read(file_cstr) {
         Ok(data) => {
-            if let Some(im_metadata) = zune_image::utils::decode_info(ZByteBuffer::new(&data)) {
+            if let Some(im_metadata) = zune_image::utils::decode_info(ZCursor::new(&data)) {
                 // allocate a space big enough
                 let (w, h) = im_metadata.get_dimensions();
                 let colorspace = im_metadata.get_colorspace().num_components();
@@ -202,7 +202,7 @@ pub extern "C" fn zil_read_headers_from_memory(
     };
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => ZImageMetadata::default(),
         Some(metadata) => {
             let (w, h) = metadata.get_dimensions();
@@ -245,7 +245,7 @@ pub extern "C" fn zil_imdecode(
     }
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
@@ -315,7 +315,7 @@ pub extern "C" fn zil_imdecode_into(
     // Safety the caller is supposed to uphold this
     let buf = unsafe { std::slice::from_raw_parts_mut(output, output_size) };
 
-    match zune_image::utils::decode_info(ZByteBuffer::new(contents)) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
@@ -335,7 +335,7 @@ pub extern "C" fn zil_imdecode_into(
                 return;
             }
 
-            if let Err(e) = imdecode_inner(ZByteBuffer::new(contents), buf) {
+            if let Err(e) = imdecode_inner(ZCursor::new(contents), buf) {
                 unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::DecodeErrors) };
                 return;
             }

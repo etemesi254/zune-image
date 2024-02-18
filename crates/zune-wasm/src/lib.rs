@@ -10,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 
 use wasm_bindgen::prelude::*;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 use zune_core::log::{debug, error, info};
 // use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
@@ -173,7 +173,7 @@ impl WasmImage {
 /// or none otherwise
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
-    if let Some((format, content)) = ImageFormat::guess_format(ZByteBuffer::new(bytes)) {
+    if let Some((format, content)) = ImageFormat::guess_format(ZCursor::new(bytes)) {
         if let Ok(mut decoder) = format.get_decoder(content) {
             let mut image = decoder.decode().unwrap();
 
@@ -184,7 +184,7 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
         } else {
             error!(
                 "Could not decode {:?}",
-                format.get_decoder(ZByteBuffer::new(bytes)).err().unwrap()
+                format.get_decoder(ZCursor::new(bytes)).err().unwrap()
             )
         }
     }
@@ -196,7 +196,7 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
 /// or None otherwise
 #[wasm_bindgen]
 pub fn guess_format(bytes: &[u8]) -> Option<WasmImageDecodeFormats> {
-    if let Some((format, _)) = ImageFormat::guess_format(ZByteBuffer::new(bytes)) {
+    if let Some((format, _)) = ImageFormat::guess_format(ZCursor::new(bytes)) {
         return Some(WasmImageDecodeFormats::from_formats(format));
     }
     None

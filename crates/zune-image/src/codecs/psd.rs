@@ -11,7 +11,7 @@
 //! for decoding images
 #![cfg(feature = "psd")]
 
-use zune_core::bytestream::{ZByteIoTrait, ZReaderTrait};
+use zune_core::bytestream::ZByteIoTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::result::DecodingResult;
 pub use zune_psd::*;

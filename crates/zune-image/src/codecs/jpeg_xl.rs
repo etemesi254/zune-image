@@ -24,7 +24,6 @@ use std::time::Duration;
 pub use jxl_oxide;
 use jxl_oxide::{PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};

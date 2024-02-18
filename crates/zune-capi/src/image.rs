@@ -3,7 +3,7 @@ use std::ptr;
 
 use libc::c_char;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 use zune_image::errors::ImageErrors;
@@ -223,7 +223,7 @@ pub extern "C" fn zil_zimg_read_from_memory(
         return;
     }
     let input_array = unsafe { std::slice::from_raw_parts(input, input_size) };
-    let buffer = ZByteBuffer::new(input_array);
+    let buffer = ZCursor::new(input_array);
 
     match ZImage::read(buffer, DecoderOptions::new_fast()) {
         Ok(im) => {

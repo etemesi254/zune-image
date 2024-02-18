@@ -401,7 +401,7 @@ where
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
                     let [b, g, r] = self
                         .bytes
-                        .get_fixed_bytes_or_err::<3>()
+                        .read_fixed_bytes_or_error::<3>()
                         .unwrap_or([0, 0, 0]);
 
                     x.red = r;
@@ -414,7 +414,7 @@ where
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
                     let [b, g, r, _] = self
                         .bytes
-                        .get_fixed_bytes_or_err::<4>()
+                        .read_fixed_bytes_or_error::<4>()
                         .unwrap_or([0, 0, 0, 0]);
 
                     x.red = r;

@@ -10,7 +10,7 @@ use std::fs::read;
 use std::path::Path;
 
 use png::Transformations;
-use zune_core::bytestream::ZByteBuffer;
+use zune_core::bytestream::ZCursor;
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
@@ -32,7 +32,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
-    zune_png::PngDecoder::new(ZByteBuffer::new(data))
+    zune_png::PngDecoder::new(ZCursor::new(data))
         .decode_raw()
         .unwrap()
 }

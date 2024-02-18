@@ -42,23 +42,23 @@
 //! - Other (limited) supported formats are and  BGR, BGRA
 //!
 //!```no_run
-//! use zune_core::bytestream::ZByteBuffer;
+//! use zune_core::bytestream::ZCursor;
 //! use zune_core::colorspace::ColorSpace;
 //! use zune_core::options::DecoderOptions;
 //! use zune_jpeg::JpegDecoder;
 //!
 //! let mut options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
 //!
-//! let mut decoder = JpegDecoder::new_with_options(ZByteBuffer::new(&[]),options);
+//! let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&[]),options);
 //! let pixels = decoder.decode().unwrap();
 //! ```
 //!
 //! ## Decode an image and get it's width and height.
 //!```no_run
-//! use zune_core::bytestream::ZByteBuffer;
+//! use zune_core::bytestream::ZCursor;
 //! use zune_jpeg::JpegDecoder;
 //!
-//! let mut decoder = JpegDecoder::new(ZByteBuffer::new(&[]));
+//! let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
 //! decoder.decode_headers().unwrap();
 //! let image_info = decoder.info().unwrap();
 //! println!("{},{}",image_info.width,image_info.height)

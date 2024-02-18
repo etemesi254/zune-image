@@ -1,20 +1,26 @@
-use crate::bytestream::{ZByteIoError, ZByteIoTrait, ZReaderTrait, ZSeekFrom};
+use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
+use crate::bytestream::ZByteIoTrait;
 
-pub struct ZByteBuffer<T: ZReaderTrait> {
+/// Wraps an in memory buffer providing it with a `Seek` method
+/// but works in `no_std` environments
+///
+/// `std::io::Cursor` is available in std environments, but we also need support
+/// for `no_std` environments so this serves as a drop in replacement
+pub struct ZCursor<T: AsRef<[u8]>> {
     stream:   T,
     position: usize
 }
 
-impl<T: ZReaderTrait> ZByteBuffer<T> {
-    pub fn new(buffer: T) -> ZByteBuffer<T> {
-        ZByteBuffer {
+impl<T: AsRef<[u8]>> ZCursor<T> {
+    pub fn new(buffer: T) -> ZCursor<T> {
+        ZCursor {
             stream:   buffer,
             position: 0
         }
     }
 }
 
-impl<T: ZReaderTrait> ZByteBuffer<T> {
+impl<T: AsRef<[u8]>> ZCursor<T> {
     #[inline]
     pub fn skip(&mut self, num: usize) {
         // Can this overflow ??
@@ -22,15 +28,17 @@ impl<T: ZReaderTrait> ZByteBuffer<T> {
     }
     #[inline]
     pub fn rewind(&mut self, num: usize) {
-        self.position = self.position.saturating_sub(num);
+        self.position = self.position.checked_sub(num).unwrap();
     }
 }
 
-impl<T: ZReaderTrait> ZByteIoTrait for ZByteBuffer<T> {
+impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
     #[inline(always)]
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
         let bytes_read = self.read_bytes(buf)?;
         if bytes_read != buf.len() {
+            // restore read to initial position it was in.
+            self.rewind(bytes_read);
             // not all bytes were read.
             return Err(ZByteIoError::NotEnoughBytes(bytes_read, buf.len()));
         }
@@ -38,25 +46,32 @@ impl<T: ZReaderTrait> ZByteIoTrait for ZByteBuffer<T> {
     }
     #[inline(always)]
     fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
-        let start = core::cmp::min(self.position, self.stream.get_len());
-        let end = core::cmp::min(self.position + buf.len(), self.stream.get_len());
+        let stream_end = self.stream.as_ref().len();
 
-        let slice = self.stream.get_slice(start..end).unwrap();
+        let start = core::cmp::min(self.position, stream_end);
+        let end = core::cmp::min(self.position + buf.len(), stream_end);
+
+        let slice = self.stream.as_ref().get(start..end).unwrap();
         buf[..slice.len()].copy_from_slice(slice);
+        let len = slice.len();
 
-        self.skip(end - start);
+        self.skip(len);
 
-        Ok(end - start)
+        Ok(len)
     }
 
     #[inline(always)]
     fn peek_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
-        // read bytes
-        let bytes_read = self.read_bytes(buf)?;
-        // rewind
-        self.rewind(bytes_read);
+        let stream_end = self.stream.as_ref().len();
 
-        Ok(bytes_read)
+        let start = core::cmp::min(self.position, stream_end);
+        let end = core::cmp::min(self.position + buf.len(), stream_end);
+
+        let slice = self.stream.as_ref().get(start..end).unwrap();
+        buf[..slice.len()].copy_from_slice(slice);
+        let len = slice.len();
+
+        Ok(len)
     }
 
     #[inline(always)]
@@ -68,35 +83,31 @@ impl<T: ZReaderTrait> ZByteIoTrait for ZByteBuffer<T> {
 
     #[inline(always)]
     fn z_seek(&mut self, from: ZSeekFrom) -> Result<u64, ZByteIoError> {
-        match from {
-            ZSeekFrom::Start(position) => {
-                // set position to be seek
-                // we know this can't overflow
-                self.position = usize::try_from(position).map_err(ZByteIoError::from)?;
+        let (base_pos, offset) = match from {
+            ZSeekFrom::Start(n) => {
+                self.position = n as usize;
+                return Ok(n);
             }
-            ZSeekFrom::End(position) => {
-                // size of stream
-                let end = self.z_size()?;
-                let new_position = end + position;
-                self.position = usize::try_from(new_position).map_err(ZByteIoError::from)?;
+            ZSeekFrom::End(n) => (self.stream.as_ref().len(), n as isize),
+            ZSeekFrom::Current(n) => (self.position, n as isize)
+        };
+        match base_pos.checked_add_signed(offset) {
+            Some(n) => {
+                self.position = n;
+                Ok(self.position as u64)
             }
-            ZSeekFrom::Current(position) => {
-                let current_position = i64::try_from(self.position).map_err(ZByteIoError::from)?;
-                let new_position = current_position + position;
-                self.position = usize::try_from(new_position).map_err(ZByteIoError::from)?;
-            }
+            None => Err(ZByteIoError::SeekError("Negative seek"))
         }
-        Ok(self.position as u64)
     }
 
     #[inline(always)]
     fn is_eof(&mut self) -> Result<bool, ZByteIoError> {
-        Ok(self.position >= self.stream.get_len())
+        Ok(self.position >= self.stream.as_ref().len())
     }
 
     #[inline(always)]
     fn z_size(&mut self) -> Result<i64, ZByteIoError> {
-        Ok(self.stream.get_len() as i64)
+        Ok(self.stream.as_ref().len() as i64)
     }
 
     #[inline(always)]
@@ -111,8 +122,8 @@ impl<T: ZReaderTrait> ZByteIoTrait for ZByteBuffer<T> {
 
     fn read_remaining(&mut self, sink: &mut Vec<u8>) -> Result<usize, ZByteIoError> {
         let start = self.position;
-        let end = self.stream.get_len();
-        match self.stream.get_slice(start..end) {
+        let end = self.stream.as_ref().len();
+        match self.stream.as_ref().get(start..end) {
             None => {
                 return Err(ZByteIoError::Generic(
                     "Somehow read remaining couldn't satisfy it's invariants"
@@ -122,6 +133,31 @@ impl<T: ZReaderTrait> ZByteIoTrait for ZByteBuffer<T> {
                 sink.extend_from_slice(e);
             }
         }
+        self.skip(end - start);
         Ok(end - start)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let (base_pos, offset) = match pos {
+            std::io::SeekFrom::Start(n) => {
+                self.position = n as usize;
+                return Ok(n);
+            }
+            std::io::SeekFrom::End(n) => (self.stream.as_ref().len(), n as isize),
+            std::io::SeekFrom::Current(n) => (self.position, n as isize)
+        };
+        match base_pos.checked_add_signed(offset) {
+            Some(n) => {
+                self.position = n;
+                Ok(self.position as u64)
+            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Negative seek"
+            ))
+        }
     }
 }

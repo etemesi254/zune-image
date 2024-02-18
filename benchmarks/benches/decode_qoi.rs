@@ -11,14 +11,14 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use zune_benches::sample_path;
-use zune_jpeg::zune_core::bytestream::ZByteBuffer;
+use zune_jpeg::zune_core::bytestream::ZCursor;
 
 fn decode_rapid_qoi(data: &[u8]) -> Vec<u8> {
     rapid_qoi::Qoi::decode_alloc(data).unwrap().1
 }
 
 fn decode_zune_qoi(data: &[u8]) -> Vec<u8> {
-    zune_qoi::QoiDecoder::new(ZByteBuffer::new(data))
+    zune_qoi::QoiDecoder::new(ZCursor::new(data))
         .decode()
         .unwrap()
 }
