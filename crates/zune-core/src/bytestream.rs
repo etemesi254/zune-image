@@ -14,7 +14,6 @@
 //!
 //! Useful for a lot of image readers and writers, it's put
 //! here to minimize code reuse
-pub use new_testing::*;
 pub use reader::ZReader;
 pub use traits::*;
 pub use writer::ZByteWriter;
@@ -23,7 +22,6 @@ pub use crate::bytestream::reader::no_std_readers::*;
 pub use crate::bytestream::reader::std_readers::*;
 pub use crate::bytestream::reader::ZByteIoError;
 
-mod new_testing;
 mod reader;
 mod traits;
 mod writer;
