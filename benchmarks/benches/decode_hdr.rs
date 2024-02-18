@@ -7,16 +7,17 @@
  */
 
 use std::fs::{read, File};
-use std::io::{BufReader, Cursor, Seek};
+use std::io::{BufReader, Cursor};
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use image::ImageFormat;
 use zune_benches::sample_path;
+use zune_hdr::zune_core::bytestream::ZCursor;
 use zune_png::zune_core::options::DecoderOptions;
 
 fn zune_decode_hdr(buf: &[u8]) -> zune_image::image::Image {
-    zune_image::image::Image::read(buf, DecoderOptions::new_fast()).unwrap()
+    zune_image::image::Image::read(ZCursor::new(buf), DecoderOptions::new_fast()).unwrap()
 }
 
 fn zune_decode_hdr_file(buf: BufReader<File>) -> Vec<f32> {

@@ -117,8 +117,6 @@ pub(crate) trait JxlBitEncoder {
             output.put_bits(nbits, bits);
         }
     }
-    /// Finalize encoding a run
-    fn finalize(_: usize) {}
     /// Return number of bit symbols
     /// needed to encode the bits
     fn num_symbols(&self, _: bool) -> usize;

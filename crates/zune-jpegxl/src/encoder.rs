@@ -530,7 +530,6 @@ fn compute_code_lengths(
 }
 
 pub(crate) trait Enc<T: JxlBitEncoder> {
-    fn encode_rle(&mut self, count: usize);
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize);
     fn finalize(&mut self, run: usize);
 }
@@ -593,10 +592,6 @@ where
 }
 
 impl<'a, T: JxlBitEncoder> Enc<T> for ChunkEncoder<'a, T> {
-    fn encode_rle(&mut self, count: usize) {
-        self.encode_rle(count);
-    }
-
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
         self.chunk(run, residuals, skip, n);
     }
@@ -607,10 +602,6 @@ impl<'a, T: JxlBitEncoder> Enc<T> for ChunkEncoder<'a, T> {
 }
 
 impl<'a, T: JxlBitEncoder> Enc<T> for ChunkSampleCollector<'a, T> {
-    fn encode_rle(&mut self, count: usize) {
-        self.encode_rle(count)
-    }
-
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
         self.chunk(run, residuals, skip, n);
     }
@@ -1432,9 +1423,7 @@ fn fast_lossless_write_output(
         let bw_pos = &mut frame.bit_writer_byte_pos;
 
         if *curr >= max_iters {
-            out_writer
-                .flush()
-                .map_err(JxlEncodeErrors::Generic)?;
+            out_writer.flush().map_err(JxlEncodeErrors::Generic)?;
             assert_eq!(out_writer.bits_in_buffer, 0);
             return Ok(out_writer.position);
         }
@@ -1470,9 +1459,7 @@ fn fast_lossless_write_output(
             *bw_pos = 0;
             *curr += 1;
 
-            out_writer
-                .flush()
-                .map_err(JxlEncodeErrors::Generic)?;
+            out_writer.flush().map_err(JxlEncodeErrors::Generic)?;
 
             if (*curr - 1) % nbc == 0 && out_writer.bits_in_buffer != 0 {
                 out_writer

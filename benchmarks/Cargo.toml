@@ -16,7 +16,7 @@ libdeflater = "1.19.0"
 zune-inflate = { path = "../crates/zune-inflate" }
 
 # png benchmarks
-png = { version = "0.17.11" }
+png = { version = "0.17.11",features = ["unstable"] }
 spng = { version = "0.1.0", features = ["zlib-ng"] }
 lodepng = "3.7.2"
 zune-png = { path = "../crates/zune-png" }
