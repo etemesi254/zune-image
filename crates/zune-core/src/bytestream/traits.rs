@@ -14,7 +14,10 @@
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 
 pub trait ZByteIoTrait {
+    fn read_byte_no_error(&mut self) -> u8;
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError>;
+    fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError>;
+    fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]);
     fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError>;
     /// Reads data into provided buffer but does not advance read position.
     fn peek_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError>;
@@ -25,10 +28,8 @@ pub trait ZByteIoTrait {
     fn is_eof(&mut self) -> Result<bool, ZByteIoError>;
     /// Returns stream size or -1 if it is not known.
     fn z_size(&mut self) -> Result<i64, ZByteIoError>;
-
     /// The name of the impl
     fn name(&self) -> &'static str;
     fn z_position(&mut self) -> Result<u64, ZByteIoError>;
-
     fn read_remaining(&mut self, sink: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError>;
 }

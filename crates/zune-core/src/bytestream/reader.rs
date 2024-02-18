@@ -138,9 +138,7 @@ impl<T: ZByteIoTrait> ZReader<T> {
     }
     #[inline(always)]
     pub fn get_u8(&mut self) -> u8 {
-        let mut buf = [0];
-        let _ = self.inner.read_exact_bytes(&mut buf);
-        buf[0]
+        self.inner.read_byte_no_error()
     }
     #[inline(always)]
     pub fn get_u8_err(&mut self) -> Result<u8, ZByteIoError> {
@@ -176,21 +174,19 @@ impl<T: ZByteIoTrait> ZReader<T> {
             Err(e) => Err(e)
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn read_fixed_bytes_or_error<const N: usize>(&mut self) -> Result<[u8; N], ZByteIoError> {
         let mut byte_store: [u8; N] = [0; N];
-        match self.inner.read_exact_bytes(&mut byte_store) {
+        match self.inner.read_const_bytes(&mut byte_store) {
             Ok(_) => Ok(byte_store),
             Err(e) => Err(e)
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn get_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
         let mut byte_store: [u8; N] = [0; N];
-        match self.inner.read_exact_bytes(&mut byte_store) {
-            Ok(_) => byte_store,
-            Err(_) => byte_store
-        }
+        self.inner.read_const_bytes_no_error(&mut byte_store);
+        byte_store
     }
 
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F) -> Result<(), ZByteIoError> {
@@ -252,13 +248,11 @@ macro_rules! get_single_type {
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                match self.inner.read_exact_bytes(&mut space)
-                {
-                    Ok(_) => match mode {
+                self.inner.read_const_bytes_no_error(&mut space);
+
+                match mode {
                         Mode::BE => $int_type::from_be_bytes(space),
                         Mode::LE => $int_type::from_le_bytes(space)
-                    },
-                     Err(_) => 0
                 }
             }
 
@@ -269,7 +263,7 @@ macro_rules! get_single_type {
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                match self.inner.read_exact_bytes(&mut space)
+                match self.inner.read_const_bytes(&mut space)
                 {
                     Ok(_) => match mode {
                         Mode::BE => Ok($int_type::from_be_bytes(space)),

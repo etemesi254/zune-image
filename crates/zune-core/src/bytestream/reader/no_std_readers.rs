@@ -34,6 +34,12 @@ impl<T: AsRef<[u8]>> ZCursor<T> {
 
 impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
     #[inline(always)]
+    fn read_byte_no_error(&mut self) -> u8 {
+        let byte = self.stream.as_ref().get(self.position).unwrap_or(&0);
+        self.position += 1;
+        *byte
+    }
+    #[inline(always)]
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
         let bytes_read = self.read_bytes(buf)?;
         if bytes_read != buf.len() {
@@ -44,19 +50,37 @@ impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
         }
         Ok(())
     }
+
+    fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError> {
+        if self.position + N < self.stream.as_ref().len() {
+            // we are in bounds
+            let reference = self.stream.as_ref();
+            let position = self.position;
+            if let Some(buf_ref) = reference.get(position..position + N) {
+                self.position += N;
+                buf.copy_from_slice(buf_ref);
+                return Ok(());
+            }
+        }
+        Err(ZByteIoError::Generic("Cannot satisfy read"))
+    }
+
+    fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]) {
+        if self.position + N < self.stream.as_ref().len() {
+            // we are in bounds
+            let reference = self.stream.as_ref();
+            let position = self.position;
+            if let Some(buf_ref) = reference.get(position..position + N) {
+                self.position += N;
+                buf.copy_from_slice(buf_ref);
+            }
+        }
+    }
+
     #[inline(always)]
     fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
-        let stream_end = self.stream.as_ref().len();
-
-        let start = core::cmp::min(self.position, stream_end);
-        let end = core::cmp::min(self.position + buf.len(), stream_end);
-
-        let slice = self.stream.as_ref().get(start..end).unwrap();
-        buf[..slice.len()].copy_from_slice(slice);
-        let len = slice.len();
-
+        let len = self.peek_bytes(buf)?;
         self.skip(len);
-
         Ok(len)
     }
 
