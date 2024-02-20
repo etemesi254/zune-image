@@ -79,7 +79,7 @@ pub trait ZByteIoTrait {
     /// ## Warning
     /// This may cause an additional syscall e.g when we are reading from a file, we must query the file
     /// multiple times to check if we really are at the end of the file and the user didn't sneakily
-    /// add more contents to it
+    /// add more contents to it hence use it with care
     ///
     /// ## Returns
     /// - `Ok(bool)` - The answer to whether or not we are at end of file

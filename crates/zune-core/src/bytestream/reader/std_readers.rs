@@ -1,7 +1,7 @@
 #![cfg(feature = "std")]
 
 use std::io;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek};
 
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 use crate::bytestream::ZByteIoTrait;
@@ -27,11 +27,12 @@ where
 
     #[inline(always)]
     fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError> {
-        if self.position() as usize + N < self.get_ref().as_ref().len() {
+        let ref_bytes = self.get_ref().as_ref();
+
+        if self.position() as usize + N <= ref_bytes.len() {
             // we are in bounds
-            let reference = self.get_ref().as_ref();
             let position = self.position() as usize;
-            if let Some(buf_ref) = reference.get(position..position + N) {
+            if let Some(buf_ref) = ref_bytes.get(position..position + N) {
                 buf.copy_from_slice(buf_ref);
                 self.set_position((position + N) as u64);
                 return Ok(());
@@ -41,11 +42,11 @@ where
     }
 
     fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]) {
-        if self.position() as usize + N < self.get_ref().as_ref().len() {
+        let ref_bytes = self.get_ref().as_ref();
+        if self.position() as usize + N <= ref_bytes.len() {
             // we are in bounds
-            let reference = self.get_ref().as_ref();
             let position = self.position() as usize;
-            if let Some(buf_ref) = reference.get(position..position + N) {
+            if let Some(buf_ref) = ref_bytes.get(position..position + N) {
                 buf.copy_from_slice(buf_ref);
                 self.set_position((position + N) as u64);
             }
@@ -89,8 +90,6 @@ where
     }
 
     #[inline(always)]
-
-    
 
     fn z_position(&mut self) -> Result<u64, ZByteIoError> {
         Ok(self.position())
