@@ -315,7 +315,7 @@ where
                 index[color_hash] = px;
             }
         }
-        let remaining = self.stream.remaining_bytes()?;
+        let remaining = self.stream.read_fixed_bytes_or_error()?;
 
         if remaining != LAST_BYTES {
             if self.options.get_strict_mode() {
