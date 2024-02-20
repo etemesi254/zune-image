@@ -156,6 +156,8 @@ impl<T: ZByteIoTrait> ZReader<T> {
     #[inline]
     pub fn peek_at(&mut self, position: usize, num_bytes: usize) -> Result<&[u8], ZByteIoError> {
         // short circuit for zero
+        // important since implementations like File will
+        // cause a syscall on skip
         if position != 0 {
             // skip position bytes from start
             self.skip(position)?;
