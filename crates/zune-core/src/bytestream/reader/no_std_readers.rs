@@ -133,7 +133,7 @@ impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
         Ok(self.position as u64)
     }
 
-    fn read_remaining(&mut self, sink: &mut Vec<u8>) -> Result<usize, ZByteIoError> {
+    fn read_remaining(&mut self, sink: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError> {
         let start = self.position;
         let end = self.stream.as_ref().len();
         match self.stream.as_ref().get(start..end) {
