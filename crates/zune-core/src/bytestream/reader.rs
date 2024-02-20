@@ -251,8 +251,8 @@ macro_rules! get_single_type {
                 self.inner.read_const_bytes_no_error(&mut space);
 
                 match mode {
-                        Mode::BE => $int_type::from_be_bytes(space),
-                        Mode::LE => $int_type::from_le_bytes(space)
+                    Mode::BE => $int_type::from_be_bytes(space),
+                    Mode::LE => $int_type::from_le_bytes(space)
                 }
             }
 

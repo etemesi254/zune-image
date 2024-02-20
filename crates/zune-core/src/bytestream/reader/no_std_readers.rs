@@ -52,7 +52,7 @@ impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
     }
 
     fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError> {
-        if self.position + N < self.stream.as_ref().len() {
+        if self.position + N <= self.stream.as_ref().len() {
             // we are in bounds
             let reference = self.stream.as_ref();
             let position = self.position;
@@ -66,7 +66,7 @@ impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
     }
 
     fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]) {
-        if self.position + N < self.stream.as_ref().len() {
+        if self.position + N <= self.stream.as_ref().len() {
             // we are in bounds
             let reference = self.stream.as_ref();
             let position = self.position;
