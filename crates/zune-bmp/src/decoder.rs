@@ -557,12 +557,6 @@ where
                         self.flip_vertically ^= true;
                     } else {
                         // copy
-                        let bytes = self.bytes.remaining_bytes()?;
-
-                        // if bytes.len() < (output_size * 8) / usize::from(self.depth) {
-                        //     return Err(BmpDecoderErrors::TooSmallBuffer(output_size, bytes.len()));
-                        // }
-
                         if self.depth == 32 || self.depth == 16 {
                             // bpp of 32 doesn't have padding, width should be a multiple of 4 already
 
@@ -576,13 +570,10 @@ where
                             if self.rgb_bitfields == [0; 4] && self.depth == 32 {
                                 // if there are no bitfields, it's simply a copy, adding alpha channel
                                 // as 255
-                                for (out, input) in buf
-                                    .rchunks_exact_mut(pad_size)
-                                    .zip(bytes.chunks_exact(pad_size))
-                                {
-                                    for (a, b) in out.chunks_exact_mut(4).zip(input.chunks_exact(4))
-                                    {
-                                        a.copy_from_slice(b);
+                                for out in buf.rchunks_exact_mut(pad_size) {
+                                    for a in out.chunks_exact_mut(4) {
+                                        let pixels = self.bytes.get_fixed_bytes_or_zero::<4>();
+                                        a.copy_from_slice(&pixels);
                                         a[3] = 255;
                                     }
                                 }
@@ -604,14 +595,9 @@ where
                                     // for the case where the bit-depth is 32, there are no padding bytes
                                     // hence we can iterate simply
 
-                                    for (out, input) in buf
-                                        .rchunks_exact_mut(pad_size)
-                                        .zip(bytes.chunks_exact(pad_size))
-                                    {
-                                        for (a, b) in
-                                            out.chunks_exact_mut(4).zip(input.chunks_exact(4))
-                                        {
-                                            let v = u32::from_le_bytes(b.try_into().unwrap());
+                                    for out in buf.rchunks_exact_mut(pad_size) {
+                                        for a in out.chunks_exact_mut(4) {
+                                            let v = self.bytes.get_u32_le();
 
                                             a[0] = shift_signed(v & mr, rshift, rcount) as u8;
                                             a[1] = shift_signed(v & mg, gshift, gcount) as u8;
@@ -625,6 +611,7 @@ where
                                         }
                                     }
                                 } else if self.depth == 16 {
+                                    //let bytes = self.bytes.remaining_bytes()?;
                                     // this path is confirmed by the rgb16.bmp image in test-images/bmp
 
                                     // optimizer hint to say that the inner loop will always
@@ -646,17 +633,18 @@ where
                                     // for the input, we are reading two bytes( for every three bytes (or four)
                                     // consumed hence if we know how many iterations we will be doing
                                     // we can use that to chunk appropriately
-                                    for (out, input) in buf
-                                        .rchunks_exact_mut(pad_size)
-                                        .zip(bytes.chunks_exact(input_bytes_per_width * 2))
-                                    {
-                                        for (a, b) in out
+
+                                    let row_size = input_bytes_per_width * 2;
+                                    for out in buf.rchunks_exact_mut(pad_size) {
+                                        let mut count = 0;
+                                        for a in out
                                             .chunks_exact_mut(self.pix_fmt.num_components())
-                                            .zip(input.chunks_exact(2))
+                                            .take(input_bytes_per_width)
                                         {
                                             let v = u32::from(u16::from_le_bytes(
-                                                b.try_into().unwrap()
+                                                self.bytes.get_fixed_bytes_or_zero::<2>()
                                             ));
+                                            count += 2;
 
                                             a[0] = shift_signed(v & mr, rshift, rcount) as u8;
                                             a[1] = shift_signed(v & mg, gshift, gcount) as u8;
@@ -672,12 +660,21 @@ where
                                                 }
                                             }
                                         }
+                                        //assert_eq!(count, input_bytes_per_width * 2);
+                                        debug_assert!(
+                                            input_bytes_per_width * 2 >= count,
+                                            "Input bytes cannot be greater than count"
+                                        );
+                                        self.bytes.skip(
+                                            (input_bytes_per_width * 2).saturating_sub(count)
+                                        )?;
                                     }
                                 }
                             }
 
                             self.flip_vertically ^= true;
                         } else {
+                            // let bytes = self.bytes.remaining_bytes()?;
                             // bmp rounds up each line to be a multiple of 4, padding the end if necessary
                             // remove padding bytes
                             let out_width = self.width * self.pix_fmt.num_components();
@@ -685,11 +682,10 @@ where
                             // includes pad bytes (multiple of 4)
                             let in_width = ((self.width * usize::from(self.depth) + 31) / 8) & !3;
 
-                            for (out, input) in buf
-                                .rchunks_exact_mut(out_width)
-                                .zip(bytes.chunks_exact(in_width))
-                            {
-                                out.copy_from_slice(&input[..out_width]);
+                            for out in buf.rchunks_exact_mut(out_width) {
+                                self.bytes.read_exact_bytes(out)?;
+                                // skip padding bytes
+                                self.bytes.skip(in_width.saturating_sub(out_width))?;
                             }
                             self.flip_vertically ^= true;
                         }
@@ -705,71 +701,29 @@ where
                             "Bit Depths less than 8 must have a palette"
                         ));
                     }
-                    let index_bytes = self.bytes.remaining_bytes()?;
                     let width_bytes = ((self.width + 7) >> 3) << 3;
+
+                    // temporary location for an scaled down image width, bytes are read here
+                    // before expanding them in a separate pass
                     let in_width_bytes = ((self.width * usize::from(self.depth)) + 7) / 8;
+                    let mut in_width_buf = vec![0_u8; in_width_bytes];
 
                     let scanline_size = width_bytes * 3;
                     let mut scanline_bytes = vec![0_u8; scanline_size];
 
-                    for (in_bytes, out_bytes) in index_bytes
-                        .chunks_exact(in_width_bytes)
-                        .zip(buf.rchunks_exact_mut((3 + usize::from(self.is_alpha)) * self.width))
+                    for out_bytes in
+                        buf.rchunks_exact_mut((3 + usize::from(self.is_alpha)) * self.width)
                     {
+                        // read a whole width scanline before expanding
+                        self.bytes.read_exact_bytes(&mut in_width_buf)?;
+
                         expand_bits_to_byte(
                             self.depth as usize,
                             true,
-                            in_bytes,
+                            &in_width_buf,
                             &mut scanline_bytes
                         );
-
-                        // duplicated here to please rust gods
-                        {
-                            // expand palette code
-                            let palette: &[PaletteEntry; 256] =
-                                &self.palette[0..256].try_into().unwrap();
-
-                            let pad =
-                                usize::from(true) * (((-(self.width as i32)) as u32) & 3) as usize;
-
-                            if self.is_alpha {
-                                // bmp rounds up each line to be a multiple of 4, padding the end if necessary
-                                // remove padding bytes
-
-                                for (out_stride, in_stride) in out_bytes
-                                    .rchunks_exact_mut(self.width * 4)
-                                    .take(self.height)
-                                    .zip(scanline_bytes.chunks_exact(self.width + pad))
-                                {
-                                    for (pal_byte, chunks) in
-                                        in_stride.iter().zip(out_stride.chunks_exact_mut(4))
-                                    {
-                                        let entry = palette[usize::from(*pal_byte)];
-
-                                        chunks[0] = entry.red;
-                                        chunks[1] = entry.green;
-                                        chunks[2] = entry.blue;
-                                        chunks[3] = entry.alpha;
-                                    }
-                                }
-                            } else {
-                                for (out_stride, in_stride) in out_bytes
-                                    .rchunks_exact_mut(self.width * 3)
-                                    .take(self.height)
-                                    .zip(scanline_bytes.chunks_exact(self.width + pad))
-                                {
-                                    for (pal_byte, chunks) in
-                                        in_stride.iter().zip(out_stride.chunks_exact_mut(3))
-                                    {
-                                        let entry = palette[usize::from(*pal_byte)];
-
-                                        chunks[0] = entry.red;
-                                        chunks[1] = entry.green;
-                                        chunks[2] = entry.blue;
-                                    }
-                                }
-                            }
-                        }
+                        self.expand_palette(&scanline_bytes, out_bytes, true);
                     }
                     self.flip_vertically ^= true;
                 }
@@ -869,7 +823,7 @@ where
     fn expand_palette_from_remaining_bytes(
         &mut self, buf: &mut [u8], unpad: bool
     ) -> Result<(), ZByteIoError> {
-        let in_bytes = self.bytes.remaining_bytes()?;
+        //let in_bytes = self.bytes.remaining_bytes()?;
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();
 
         let pad = usize::from(unpad) * (((-(self.width as i32)) as u32) & 3) as usize;
@@ -878,33 +832,30 @@ where
             // bmp rounds up each line to be a multiple of 4, padding the end if necessary
             // remove padding bytes
 
-            for (out_stride, in_stride) in buf
-                .rchunks_exact_mut(self.width * 4)
-                .take(self.height)
-                .zip(in_bytes.chunks_exact(self.width + pad))
-            {
-                for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(4)) {
-                    let entry = palette[usize::from(*pal_byte)];
+            for out_stride in buf.rchunks_exact_mut(self.width * 4).take(self.height) {
+                for chunks in out_stride.chunks_exact_mut(4) {
+                    let byte = self.bytes.get_u8();
+                    let entry = palette[usize::from(byte)];
 
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
                     chunks[3] = entry.alpha;
                 }
+                self.bytes.skip(pad)?;
             }
         } else {
-            for (out_stride, in_stride) in buf
-                .rchunks_exact_mut(self.width * 3)
-                .take(self.height)
-                .zip(in_bytes.chunks_exact(self.width + pad))
-            {
-                for (pal_byte, chunks) in in_stride.iter().zip(out_stride.chunks_exact_mut(3)) {
-                    let entry = palette[usize::from(*pal_byte)];
+            for out_stride in buf.rchunks_exact_mut(self.width * 3).take(self.height) {
+                for chunks in out_stride.chunks_exact_mut(3) {
+                    let byte = self.bytes.get_u8();
+                    let entry = palette[usize::from(byte)];
 
                     chunks[0] = entry.red;
                     chunks[1] = entry.green;
                     chunks[2] = entry.blue;
                 }
+
+                self.bytes.skip(pad)?;
             }
         }
         Ok(())
@@ -1059,6 +1010,7 @@ where
                                 // end of picture
                                 Ok(pixels)
                             } else {
+                                // panic!();
                                 let msg = "Next line is beyond picture bounds";
                                 Err(BmpDecoderErrors::GenericStatic(msg))
                             };
