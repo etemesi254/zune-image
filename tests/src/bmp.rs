@@ -55,7 +55,6 @@ fn test_bmp() {
                 file_name, expected_hash, hash, path
             );
             eprintln!("{}\n", err);
-            panic!();
         }
     }
     if error {
