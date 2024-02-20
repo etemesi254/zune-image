@@ -634,7 +634,6 @@ where
                                     // consumed hence if we know how many iterations we will be doing
                                     // we can use that to chunk appropriately
 
-                                    let row_size = input_bytes_per_width * 2;
                                     for out in buf.rchunks_exact_mut(pad_size) {
                                         let mut count = 0;
                                         for a in out
