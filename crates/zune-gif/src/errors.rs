@@ -11,7 +11,11 @@ pub enum GifDecoderErrors {
     /// To large dimensions for width or height
     TooLargeDimensions(&'static str, usize, usize),
     /// Underlying input output errors
-    IoErrors(ZByteIoError)
+    IoErrors(ZByteIoError),
+    /// A calculation that wasn't meant to overflow overflowed
+    OverflowError(&'static str),
+    /// Too small size
+    TooSmallSize(usize, usize)
 }
 impl Debug for GifDecoderErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -27,6 +31,15 @@ impl Debug for GifDecoderErrors {
                     f,
                     "Too large dimensions for {a} expected less than {b} but found  {c}"
                 )
+            }
+            Self::OverflowError(err) => {
+                writeln!(
+                    f,
+                    "A calculation that wasn't meant to overflow overflowed :{err}"
+                )
+            }
+            Self::TooSmallSize(at_least, present) => {
+                writeln!(f, "Expected a size of {at_least} but found {present}")
             }
             Self::IoErrors(err) => {
                 writeln!(f, "{:?}", err)
