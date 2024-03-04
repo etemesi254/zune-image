@@ -356,18 +356,6 @@ impl<T: ZByteIoTrait> PngDecoder<T> {
             _ => PngChunkType::unkn
         };
 
-        // if !self.stream.has(chunk_length + 4 /*crc stream*/) {
-        //     let err = format!(
-        //         "Not enough bytes for chunk {:?}, bytes requested are {}, but bytes present are {}",
-        //         chunk_type,
-        //         chunk_length + 4,
-        //         self.stream.remaining()
-        //     );
-        //
-        //     return Err(PngDecodeErrors::Generic(err));
-        // }
-        // Confirm the CRC here.
-
         if self.options.png_get_confirm_crc() {
             use crate::crc::crc32_slice8;
 
@@ -1020,7 +1008,7 @@ impl<T: ZByteIoTrait> PngDecoder<T> {
 
             current = &mut current[0..out_chunk_size];
 
-            // get the previlet (w,h)ous row.
+            // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
             let mut prev_row: &[u8] = &[0_u8];
