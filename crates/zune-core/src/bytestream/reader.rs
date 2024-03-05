@@ -2,7 +2,6 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Formatter;
-use std::io::ErrorKind;
 
 pub(crate) mod no_std_readers;
 pub(crate) mod std_readers;
@@ -341,6 +340,7 @@ where
     T: ZByteIoTrait
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::ErrorKind;
         self.read_bytes(buf)
             .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{:?}", e)))
     }
