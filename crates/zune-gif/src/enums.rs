@@ -1,4 +1,5 @@
 /// Different GIF disposal methods
+#[derive(Copy, Clone, PartialEq)]
 pub(crate) enum DisposalMethod {
     None = 0,
     InPlace = 1,
