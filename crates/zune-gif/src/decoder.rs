@@ -5,6 +5,13 @@ use zune_core::options::DecoderOptions;
 use crate::enums::DisposalMethod;
 use crate::errors::GifDecoderErrors;
 
+#[derive(Default)]
+struct DisposeArea {
+    left:   usize,
+    top:    usize,
+    width:  usize,
+    height: usize
+}
 pub struct GifDecoder<T: ZByteIoTrait> {
     stream:       ZReader<T>,
     options:      DecoderOptions,
@@ -17,7 +24,7 @@ pub struct GifDecoder<T: ZByteIoTrait> {
     _background:  u16, // current b
     frame_pos:    usize,
     pal:          [[u8; 4]; 256],
-    dispose_area: [usize; 4],
+    dispose_area: DisposeArea,
     background:   Vec<u8>
 }
 
@@ -63,7 +70,7 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
         }
         // check if we have a global palette
         if (self.flags & 0x80) > 0 {
-            self.parse_colortable(2 << (self.flags & 7), usize::MAX)?;
+            self.parse_colortable(2 << (self.flags & 0b111), usize::MAX)?;
         }
         trace!("Image width  :{}", self.width);
         trace!("Image height :{}", self.height);
@@ -95,20 +102,15 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
     }
 
     #[inline]
-    fn fill_rect(dispose_area: &[usize; 4], width: usize, output: &mut [u8], color: u32) {
-        let left = dispose_area[0];
-        let top = dispose_area[1];
-        let width = dispose_area[2];
-        let height = dispose_area[3];
-
+    fn fill_rect(dispose_area: &DisposeArea, width: usize, output: &mut [u8], color: u32) {
         output
             .chunks_exact_mut(width)
-            .skip(top)
-            .take(height)
+            .skip(dispose_area.top)
+            .take(dispose_area.height)
             .for_each(|x| {
                 x.chunks_exact_mut(4)
-                    .skip(left)
-                    .take(width)
+                    .skip(dispose_area.left)
+                    .take(dispose_area.width)
                     .for_each(|x| x.copy_from_slice(&color.to_le_bytes()))
             });
     }
@@ -128,7 +130,7 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
         }
         let output = &mut output[..output_size];
 
-        if (self.frame_pos == 0) {
+        if self.frame_pos == 0 {
             // zero out everything
             self.background.resize(output_size, 0);
             output.fill(0);
@@ -148,7 +150,6 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
                 }
                 DisposalMethod::Background => {
                     // use previous
-
                     // Self::fill_rect(&self.dispose_area, self.width, output);
                 }
                 DisposalMethod::Restore => {}
