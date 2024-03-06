@@ -203,8 +203,8 @@ impl OperationsTrait for Crop {
 ///
 /// - If `out_image` is smaller than expected, bottom output will be truncated
 ///
-/// # Panics
-/// - If `in_width` > `out_width`
+/// - If `out_width` > `in_width` , does not copy, image will be black. This helps avoid an out of bounds
+/// read->panic
 pub fn crop<T: Copy>(
     in_image: &[T], in_width: usize, out_image: &mut [T], out_width: usize, out_height: usize,
     x: usize, y: usize
@@ -220,7 +220,9 @@ pub fn crop<T: Copy>(
         .take(out_height)
         .zip(out_image.chunks_exact_mut(out_width))
     {
-        single_out_width.copy_from_slice(&single_in_width[x..x + out_width]);
+        if let Some(v) = single_in_width.get(x..x + out_width) {
+            single_out_width.copy_from_slice(v);
+        }
     }
 }
 
