@@ -12,7 +12,7 @@ use alloc::{format, vec};
 use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::{BitDepth, BitType, ByteEndian};
-use zune_core::bytestream::{ZByteIoError, ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -23,7 +23,7 @@ use zune_core::result::DecodingResult;
 /// The decoder can currently decode P5 and P6 formats
 pub struct PPMDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     width:           usize,
     height:          usize,
@@ -82,7 +82,7 @@ impl Debug for PPMDecodeErrors {
 
 impl<T> PPMDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     /// Create a new ppm decoder with default options
     ///
@@ -625,7 +625,7 @@ where
 /// we reach eof
 fn skip_spaces<T>(byte_stream: &mut ZReader<T>) -> Result<(), PPMDecodeErrors>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     while !byte_stream.eof()? {
         let mut byte = byte_stream.get_u8();
@@ -652,7 +652,7 @@ where
 ///
 /// # Panics
 /// If end < start
-fn get_bytes_until_whitespace<T: ZByteIoTrait>(
+fn get_bytes_until_whitespace<T: ZByteReaderTrait>(
     z: &mut ZReader<T>, write_to: &mut Vec<u8>
 ) -> Result<usize, PPMDecodeErrors> {
     let start = z.position()?;

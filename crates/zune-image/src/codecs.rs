@@ -34,7 +34,7 @@
 use std::io::{BufReader, Cursor};
 use std::path::Path;
 
-use zune_core::bytestream::{ZCursor, ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor, ZReader};
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
 
@@ -124,7 +124,7 @@ impl ImageFormat {
     }
     pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteIoTrait + 'a
+        T: ZByteReaderTrait + 'a
     {
         self.get_decoder_with_options(data, DecoderOptions::default())
     }
@@ -133,7 +133,7 @@ impl ImageFormat {
         &self, data: T, options: DecoderOptions
     ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteIoTrait + 'a
+        T: ZByteReaderTrait + 'a
     {
         match self {
             ImageFormat::JPEG => {
@@ -338,7 +338,7 @@ impl ImageFormat {
     }
     pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         guess_format(bytes)
     }
@@ -603,7 +603,7 @@ impl Image {
     ///```
     pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         let decoder = ImageFormat::guess_format(src);
 
@@ -630,7 +630,7 @@ impl Image {
 /// - None: Indicates the format isn't known/understood by the library
 pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     let mut reader = ZReader::new(bytes);
     // stolen from imagers

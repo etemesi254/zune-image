@@ -1,7 +1,7 @@
 //! A set of miscellaneous functions that are good to have
 use std::cmp::min;
 
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
@@ -177,7 +177,7 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
     }
 }
 
-pub fn decode_info<T: ZByteIoTrait>(bytes: T) -> Option<ImageMetadata> {
+pub fn decode_info<T: ZByteReaderTrait>(bytes: T) -> Option<ImageMetadata> {
     match crate::codecs::guess_format(bytes) {
         None => None,
         Some((format, bytes)) => {

@@ -2,7 +2,7 @@ use std::ffi::{c_char, CStr};
 use std::ptr;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZCursor, ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor, ZReader};
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
@@ -361,7 +361,7 @@ pub extern "C" fn zil_imdecode_into(
 
 fn imdecode_inner<T>(data: T, output: &mut [u8]) -> Result<(), ImageErrors>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     if let Some((im_format, data)) = zune_image::codecs::guess_format(data) {
         match im_format {

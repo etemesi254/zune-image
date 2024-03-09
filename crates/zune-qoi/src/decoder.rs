@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace};
 use zune_core::options::DecoderOptions;
@@ -41,7 +41,7 @@ enum QoiColorspace {
 /// [`decode`]:QoiDecoder::decode
 pub struct QoiDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     width:             usize,
     height:            usize,
@@ -54,7 +54,7 @@ where
 
 impl<T> QoiDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     /// Create a new QOI format decoder with the default options
     ///

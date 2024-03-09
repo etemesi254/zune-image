@@ -5,7 +5,7 @@ use core::fmt::Formatter;
 
 pub(crate) mod no_std_readers;
 pub(crate) mod std_readers;
-use crate::bytestream::ZByteIoTrait;
+use crate::bytestream::ZByteReaderTrait;
 
 /// Enumeration of possible methods to seek within an I/O object.
 ///
@@ -101,12 +101,12 @@ impl From<&'static str> for ZByteIoError {
     }
 }
 
-pub struct ZReader<T: ZByteIoTrait> {
+pub struct ZReader<T: ZByteReaderTrait> {
     inner:       T,
     temp_buffer: Vec<u8>
 }
 
-impl<T: ZByteIoTrait> ZReader<T> {
+impl<T: ZByteReaderTrait> ZReader<T> {
     pub fn new(source: T) -> ZReader<T> {
         ZReader {
             inner:       source,
@@ -240,7 +240,7 @@ enum Mode {
 }
 macro_rules! get_single_type {
     ($name:tt,$name2:tt,$name3:tt,$name4:tt,$name5:tt,$name6:tt,$int_type:tt) => {
-        impl<T:ZByteIoTrait> ZReader<T>
+        impl<T:ZByteReaderTrait> ZReader<T>
         {
             #[inline(always)]
             fn $name(&mut self, mode: Mode) -> $int_type
@@ -337,7 +337,7 @@ get_single_type!(
 #[cfg(feature = "std")]
 impl<T> std::io::Read for ZReader<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         use std::io::ErrorKind;

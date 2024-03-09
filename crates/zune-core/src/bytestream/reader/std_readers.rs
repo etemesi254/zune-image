@@ -4,9 +4,9 @@ use std::io;
 use std::io::{BufRead, BufReader, Read, Seek};
 
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
-use crate::bytestream::ZByteIoTrait;
+use crate::bytestream::ZByteReaderTrait;
 
-impl<T> ZByteIoTrait for std::io::Cursor<T>
+impl<T> ZByteReaderTrait for std::io::Cursor<T>
 where
     T: AsRef<[u8]>
 {
@@ -100,7 +100,7 @@ where
     }
 }
 
-impl<T: io::Read + io::Seek> ZByteIoTrait for BufReader<T> {
+impl<T: io::Read + io::Seek> ZByteReaderTrait for BufReader<T> {
     #[inline(always)]
     fn read_byte_no_error(&mut self) -> u8 {
         let mut buf = [0];

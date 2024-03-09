@@ -14,7 +14,7 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, trace, warn};
 
@@ -26,7 +26,7 @@ use crate::misc::{SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
-pub(crate) fn parse_huffman<T: ZByteIoTrait>(
+pub(crate) fn parse_huffman<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors>
 where
@@ -112,7 +112,7 @@ where
 
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation, clippy::needless_range_loop)]
-pub(crate) fn parse_dqt<T: ZByteIoTrait>(img: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
+pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
     // read length
     let mut qt_length =
         img.stream
@@ -176,7 +176,7 @@ pub(crate) fn parse_dqt<T: ZByteIoTrait>(img: &mut JpegDecoder<T>) -> Result<(),
 
 /// Section:`B.2.2 Frame header syntax`
 
-pub(crate) fn parse_start_of_frame<T: ZByteIoTrait>(
+pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     sof: SOFMarkers, img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     if img.seen_sof {
@@ -275,7 +275,9 @@ pub(crate) fn parse_start_of_frame<T: ZByteIoTrait>(
 }
 
 /// Parse a start of scan data
-pub(crate) fn parse_sos<T: ZByteIoTrait>(image: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
+pub(crate) fn parse_sos<T: ZByteReaderTrait>(
+    image: &mut JpegDecoder<T>
+) -> Result<(), DecodeErrors> {
     // Scan header length
     let ls = image.stream.get_u16_be_err()?;
     // Number of image components in scan
@@ -402,7 +404,7 @@ pub(crate) fn parse_sos<T: ZByteIoTrait>(image: &mut JpegDecoder<T>) -> Result<(
 }
 
 /// Parse Adobe App14 segment
-pub(crate) fn parse_app14<T: ZByteIoTrait>(
+pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // skip length
@@ -455,7 +457,7 @@ pub(crate) fn parse_app14<T: ZByteIoTrait>(
 /// Parse the APP1 segment
 ///
 /// This contains the exif tag
-pub(crate) fn parse_app1<T: ZByteIoTrait>(
+pub(crate) fn parse_app1<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // contains exif data
@@ -484,7 +486,7 @@ pub(crate) fn parse_app1<T: ZByteIoTrait>(
     Ok(())
 }
 
-pub(crate) fn parse_app2<T: ZByteIoTrait>(
+pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     let mut length = usize::from(decoder.stream.get_u16_be());

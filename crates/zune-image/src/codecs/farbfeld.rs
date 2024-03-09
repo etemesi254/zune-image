@@ -12,7 +12,7 @@
 //! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
 //! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
@@ -25,7 +25,7 @@ use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait for FarbFeldDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self
