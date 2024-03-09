@@ -10,7 +10,6 @@
 #![allow(unused_variables)]
 
 //! Represents an png image decoder
-use exif::experimental::Writer;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
