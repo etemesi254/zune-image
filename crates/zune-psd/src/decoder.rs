@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -40,7 +40,7 @@ use crate::errors::PSDDecodeErrors;
 /// image pixels. But for now this is a good basis.
 pub struct PSDDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     width:          usize,
     height:         usize,
@@ -55,7 +55,7 @@ where
 
 impl<T> PSDDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     /// Create a new decoder that reads a photoshop encoded file
     /// from `T` and returns pixels

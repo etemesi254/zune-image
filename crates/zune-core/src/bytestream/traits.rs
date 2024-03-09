@@ -18,7 +18,7 @@ use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 /// This provides the basic functions needed to quick and sometimes
 /// heap free I/O for the zune image decoders with easy support for extending it
 /// to multiple implementations.
-pub trait ZByteIoTrait {
+pub trait ZByteReaderTrait {
     /// Read a single byte from the decoder and return
     /// `0` if we can't read the byte, e.g because of EOF
     ///

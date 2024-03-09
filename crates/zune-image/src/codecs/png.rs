@@ -11,7 +11,7 @@
 
 //! Represents an png image decoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -28,7 +28,7 @@ use crate::traits::{DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait for PngDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();

@@ -9,7 +9,7 @@ use alloc::{format, vec};
 use core::cmp::min;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -159,7 +159,7 @@ pub struct PngInfo {
 /// and access the relevant fields exposed
 pub struct PngDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     pub(crate) stream:                  ZReader<T>,
     pub(crate) options:                 DecoderOptions,
@@ -178,7 +178,7 @@ where
     pub(crate) called_from_decode_into: bool
 }
 
-impl<T: ZByteIoTrait> PngDecoder<T> {
+impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Create a new PNG decoder
     ///
     /// # Arguments

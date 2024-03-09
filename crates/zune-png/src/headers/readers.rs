@@ -6,7 +6,7 @@
 
 use alloc::{format, vec};
 
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
 use zune_inflate::DeflateDecoder;
 
@@ -16,7 +16,7 @@ use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::PngDecoder;
 
-impl<T: ZByteIoTrait> PngDecoder<T> {
+impl<T: ZByteReaderTrait> PngDecoder<T> {
     pub(crate) fn parse_ihdr(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         if self.seen_hdr {
             return Err(PngDecodeErrors::GenericStatic("Multiple IHDR, corrupt PNG"));

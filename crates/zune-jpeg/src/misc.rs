@@ -13,7 +13,7 @@ use alloc::format;
 use core::cmp::max;
 use core::fmt;
 
-use zune_core::bytestream::ZByteIoTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 
@@ -188,7 +188,7 @@ impl fmt::Debug for SOFMarkers {
 ///
 /// This modifies the components in place setting up details needed by other
 /// parts fo the decoder.
-pub(crate) fn setup_component_params<T: ZByteIoTrait>(
+pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     let img_width = img.width();

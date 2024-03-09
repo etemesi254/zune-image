@@ -99,7 +99,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoError, ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
@@ -148,7 +148,7 @@ struct PaletteEntry {
 /// A BMP decoder.
 pub struct BmpDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     bytes:           ZReader<T>,
     options:         DecoderOptions,
@@ -169,7 +169,7 @@ where
 
 impl<T> BmpDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     /// Create a new bmp decoder that reads data from
     /// `data`

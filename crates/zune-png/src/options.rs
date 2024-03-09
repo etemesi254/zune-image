@@ -8,7 +8,7 @@
 
 use alloc::format;
 
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::trace;
 
 use crate::error::PngDecodeErrors;
@@ -17,7 +17,7 @@ pub fn default_chunk_handler<T>(
     length: usize, chunk_type: [u8; 4], reader: &mut ZReader<T>, _crc: u32
 ) -> Result<(), PngDecodeErrors>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     let chunk_name = core::str::from_utf8(&chunk_type).unwrap_or("XXXX");
 

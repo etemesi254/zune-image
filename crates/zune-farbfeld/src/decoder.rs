@@ -10,7 +10,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -24,7 +24,7 @@ const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 ///
 /// One can modify the decoder accepted dimensions
 /// via `DecoderOptions`
-pub struct FarbFeldDecoder<T: ZByteIoTrait> {
+pub struct FarbFeldDecoder<T: ZByteReaderTrait> {
     stream:          ZReader<T>,
     width:           usize,
     height:          usize,
@@ -34,7 +34,7 @@ pub struct FarbFeldDecoder<T: ZByteIoTrait> {
 
 impl<T> FarbFeldDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     ///Create a new decoder.
     ///

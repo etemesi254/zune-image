@@ -1,4 +1,4 @@
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
@@ -12,7 +12,7 @@ struct DisposeArea {
     width:  usize,
     height: usize
 }
-pub struct GifDecoder<T: ZByteIoTrait> {
+pub struct GifDecoder<T: ZByteReaderTrait> {
     stream:       ZReader<T>,
     options:      DecoderOptions,
     width:        usize,
@@ -28,7 +28,7 @@ pub struct GifDecoder<T: ZByteIoTrait> {
     background:   Vec<u8>
 }
 
-impl<T: ZByteIoTrait> GifDecoder<T> {
+impl<T: ZByteReaderTrait> GifDecoder<T> {
     pub fn new(source: T) -> GifDecoder<T> {
         return GifDecoder::new_with_options(source, DecoderOptions::new_fast());
     }
@@ -50,6 +50,11 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
         self.width = usize::from(self.stream.get_u16_le_err()?);
         self.height = usize::from(self.stream.get_u16_le_err()?);
 
+        // bit 7:	local color table flag
+        // bit 6:	interlace flag
+        // bit 5:	sorted flag
+        // bit 4-3: Reserved
+        // bit 2-0:	size of local color table
         self.flags = self.stream.get_u8_err()?;
         self.bgindex = self.stream.get_u8_err()?;
         self.ratio = self.stream.get_u8_err()?;
@@ -161,7 +166,7 @@ impl<T: ZByteIoTrait> GifDecoder<T> {
     }
 }
 
-fn test_gif<T: ZByteIoTrait>(buffer: &mut ZReader<T>) -> bool {
+fn test_gif<T: ZByteReaderTrait>(buffer: &mut ZReader<T>) -> bool {
     if buffer.get_u8() != b'G'
         || buffer.get_u8() != b'I'
         || buffer.get_u8() != b'F'

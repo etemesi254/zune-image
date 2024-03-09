@@ -1,5 +1,5 @@
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
-use crate::bytestream::ZByteIoTrait;
+use crate::bytestream::ZByteReaderTrait;
 
 /// Wraps an in memory buffer providing it with a `Seek` method
 /// but works in `no_std` environments
@@ -32,7 +32,7 @@ impl<T: AsRef<[u8]>> ZCursor<T> {
     }
 }
 
-impl<T: AsRef<[u8]>> ZByteIoTrait for ZCursor<T> {
+impl<T: AsRef<[u8]>> ZByteReaderTrait for ZCursor<T> {
     #[inline(always)]
     fn read_byte_no_error(&mut self) -> u8 {
         let byte = self.stream.as_ref().get(self.position).unwrap_or(&0);

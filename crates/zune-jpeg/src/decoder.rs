@@ -13,7 +13,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
@@ -78,7 +78,7 @@ pub(crate) struct ICCChunk {
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
-pub struct JpegDecoder<T: ZByteIoTrait> {
+pub struct JpegDecoder<T: ZByteReaderTrait> {
     /// Struct to hold image information from SOI
     pub(crate) info:              ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
@@ -153,7 +153,7 @@ pub struct JpegDecoder<T: ZByteIoTrait> {
 
 impl<T> JpegDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {

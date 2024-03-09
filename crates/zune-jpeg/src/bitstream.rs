@@ -50,7 +50,7 @@ use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
 
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
 use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -169,7 +169,7 @@ impl BitStream {
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
     fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -275,7 +275,7 @@ impl BitStream {
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         let (mut symbol, r);
 
@@ -318,7 +318,7 @@ impl BitStream {
         qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -406,7 +406,7 @@ impl BitStream {
         dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
         *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
@@ -417,7 +417,7 @@ impl BitStream {
         &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         // refinement scan
         if self.bits_left < 1 {
@@ -442,7 +442,7 @@ impl BitStream {
         &mut self, reader: &mut ZReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         let shift = self.successive_low;
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
@@ -499,7 +499,7 @@ impl BitStream {
         &mut self, reader: &mut ZReader<T>, table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteIoTrait
+        T: ZByteReaderTrait
     {
         let bit = (1 << self.successive_low) as i16;
 

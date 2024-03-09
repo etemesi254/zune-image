@@ -14,7 +14,7 @@ use core::iter::Iterator;
 use core::option::Option::{self, *};
 use core::result::Result::{self, *};
 
-use zune_core::bytestream::{ZByteIoTrait, ZReader};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -30,7 +30,7 @@ use crate::errors::HdrDecodeErrors;
 /// the map as an API access method.
 ///
 /// For sophisticated algorithms, they may use the metadata to further understand the data.
-pub struct HdrDecoder<T: ZByteIoTrait> {
+pub struct HdrDecoder<T: ZByteReaderTrait> {
     buf:             ZReader<T>,
     options:         DecoderOptions,
     metadata:        BTreeMap<String, String>,
@@ -41,7 +41,7 @@ pub struct HdrDecoder<T: ZByteIoTrait> {
 
 impl<T> HdrDecoder<T>
 where
-    T: ZByteIoTrait
+    T: ZByteReaderTrait
 {
     /// Create a new HDR decoder
     ///
