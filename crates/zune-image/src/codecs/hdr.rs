@@ -9,7 +9,7 @@
 #![cfg(feature = "hdr")]
 //! Radiance HDR decoding support
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_hdr::*;
@@ -88,7 +88,9 @@ impl EncoderTrait for HdrEncoder {
         "Hdr"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.depth(), BitDepth::Float32);
@@ -98,7 +100,7 @@ impl EncoderTrait for HdrEncoder {
         let encoder_options = zune_hdr::HdrEncoder::new(data, options);
 
         let data = encoder_options
-            .encode()
+            .encode(sink)
             .map_err(<HdrEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)

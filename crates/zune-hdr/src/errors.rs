@@ -99,7 +99,8 @@ pub enum HdrEncodeErrors {
     /// The input size was expected to be of a certain size but isn't
     WrongInputSize(usize, usize),
     /// Generic message
-    Static(&'static str)
+    Static(&'static str),
+    IoErrors(ZByteIoError)
 }
 
 impl Debug for HdrEncodeErrors {
@@ -111,7 +112,8 @@ impl Debug for HdrEncodeErrors {
             HdrEncodeErrors::WrongInputSize(expected, found) => {
                 writeln!(f, "Input array length {found} doesn't match {expected}")
             }
-            HdrEncodeErrors::Static(err) => writeln!(f, "{}", err)
+            HdrEncodeErrors::Static(err) => writeln!(f, "{}", err),
+            HdrEncodeErrors::IoErrors(err) => writeln!(f, "I/O error {:?}", err)
         }
     }
 }
@@ -119,5 +121,10 @@ impl Debug for HdrEncodeErrors {
 impl From<&'static str> for HdrEncodeErrors {
     fn from(value: &'static str) -> Self {
         HdrEncodeErrors::Static(value)
+    }
+}
+impl From<ZByteIoError> for HdrEncodeErrors {
+    fn from(value: ZByteIoError) -> Self {
+        HdrEncodeErrors::IoErrors(value)
     }
 }

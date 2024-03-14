@@ -97,3 +97,12 @@ pub trait ZByteReaderTrait {
     /// - `Err()` An error that occurred when reading bytes
     fn read_remaining(&mut self, sink: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError>;
 }
+
+pub trait ZByteWriterTrait {
+    fn write_bytes(&mut self, buf: &[u8]) -> Result<usize, ZByteIoError>;
+    fn write_all_bytes(&mut self, buf: &[u8]) -> Result<(), ZByteIoError>;
+    fn write_const_bytes<const N: usize>(&mut self, buf: &[u8; N]) -> Result<(), ZByteIoError>;
+    fn flush_bytes(&mut self) -> Result<(), ZByteIoError>;
+
+    fn pre_allocate_hint(&mut self, size: usize) -> Result<(), ZByteIoError>;
+}

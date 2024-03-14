@@ -12,7 +12,7 @@
 //! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
 //! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
@@ -104,17 +104,19 @@ impl EncoderTrait for FarbFeldEncoder {
         "farbfeld"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.depth(), BitDepth::Sixteen);
 
         let data = &image.to_u8()[0];
 
-        let encoder_options = zune_farbfeld::FarbFeldEncoder::new(data, options);
+        let encoder = zune_farbfeld::FarbFeldEncoder::new(data, options);
 
-        let data = encoder_options
-            .encode()
+        let data = encoder
+            .encode(sink)
             .map_err(<FarbFeldEncoderErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)

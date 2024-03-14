@@ -7,25 +7,25 @@ use crate::errors::GifDecoderErrors;
 
 #[derive(Default)]
 struct DisposeArea {
-    left:   usize,
-    top:    usize,
-    width:  usize,
-    height: usize
+    _left:   usize,
+    _top:    usize,
+    _width:  usize,
+    _height: usize
 }
 pub struct GifDecoder<T: ZByteReaderTrait> {
-    stream:       ZReader<T>,
-    options:      DecoderOptions,
-    width:        usize,
-    height:       usize,
-    flags:        u8,
-    bgindex:      u8,
-    ratio:        u8,
-    read_headers: bool,
-    _background:  u16, // current b
-    frame_pos:    usize,
-    pal:          [[u8; 4]; 256],
-    dispose_area: DisposeArea,
-    background:   Vec<u8>
+    stream:        ZReader<T>,
+    options:       DecoderOptions,
+    width:         usize,
+    height:        usize,
+    flags:         u8,
+    bgindex:       u8,
+    ratio:         u8,
+    read_headers:  bool,
+    _background:   u16, // current b
+    frame_pos:     usize,
+    pal:           [[u8; 4]; 256],
+    _dispose_area: DisposeArea,
+    background:    Vec<u8>
 }
 
 impl<T: ZByteReaderTrait> GifDecoder<T> {
@@ -36,7 +36,17 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
         return GifDecoder {
             stream: ZReader::new(source),
             options,
-            ..Default::default()
+            width: 0,
+            height: 0,
+            flags: 0,
+            bgindex: 0,
+            ratio: 0,
+            read_headers: false,
+            _background: 0,
+            frame_pos: 0,
+            pal: [[0; 4]; 256],
+            _dispose_area: Default::default(),
+            background: vec![]
         };
     }
     pub fn decode_headers(&mut self) -> Result<(), GifDecoderErrors> {
@@ -107,15 +117,15 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
     }
 
     #[inline]
-    fn fill_rect(dispose_area: &DisposeArea, width: usize, output: &mut [u8], color: u32) {
+    fn _fill_rect(dispose_area: &DisposeArea, width: usize, output: &mut [u8], color: u32) {
         output
             .chunks_exact_mut(width)
-            .skip(dispose_area.top)
-            .take(dispose_area.height)
+            .skip(dispose_area._top)
+            .take(dispose_area._height)
             .for_each(|x| {
                 x.chunks_exact_mut(4)
-                    .skip(dispose_area.left)
-                    .take(dispose_area.width)
+                    .skip(dispose_area._left)
+                    .take(dispose_area._width)
                     .for_each(|x| x.copy_from_slice(&color.to_le_bytes()))
             });
     }
@@ -143,7 +153,7 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
             // second frame, figure out how to dispose the first one
 
             let mut dispose = DisposalMethod::from_flags((self.flags & 0x1C) >> 2);
-            let pix_count = self.width * self.height;
+            let _pix_count = self.width * self.height;
 
             if dispose == DisposalMethod::Restore && two_back.is_none() {
                 // fall back to background if we lack a background from two frames back

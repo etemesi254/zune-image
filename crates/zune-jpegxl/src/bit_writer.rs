@@ -11,6 +11,8 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
+use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+
 /// Construct a new bit writer
 /// This bit writer owns it's output and you need to call
 /// `allocate` before using it
@@ -98,37 +100,36 @@ impl BitWriter {
 
 /// A bit writer that uses an already given output
 /// array to write bits into
-#[derive(Debug)]
-pub struct BorrowingBitWriter<'a> {
+pub struct BorrowingBitWriter<'a, T: ZByteWriterTrait> {
     pub bits_in_buffer: u8,
     pub buffer:         u64,
     pub position:       usize,
-    pub dest:           &'a mut [u8]
+    pub dest:           &'a mut ZByteWriter<T>
 }
 
-impl<'a> BorrowingBitWriter<'a> {
+impl<'a, T: ZByteWriterTrait> BorrowingBitWriter<'a, T> {
     /// Write pending bits to the buffer
-    pub(crate) fn flush(&mut self) -> Result<(), &'static str> {
-        if self.dest.len().saturating_sub(self.position) < 8 {
-            return Err("Bytes will overrun");
-        }
+    pub(crate) fn flush(&mut self) -> Result<(), ZByteIoError> {
         let buf = self.buffer.to_le_bytes();
         // write 8 bytes
-        self.dest[self.position..self.position + 8].copy_from_slice(&buf);
+        //self.dest[self.position..self.position + 8].copy_from_slice(&buf);
         // but update position to point to the full number of symbols we read
-        let bytes_written = self.bits_in_buffer & 56;
+        let bits_written = self.bits_in_buffer & 56;
 
+        let bytes_written = usize::from(bits_written >> 3);
         // remove those bits we wrote.
-        self.buffer >>= bytes_written;
+        self.buffer >>= bits_written;
         // increment position
-        self.position += (bytes_written >> 3) as usize;
+        self.position += bytes_written;
+        // potentially expensive call
+        self.dest.write_all(&buf[..bytes_written])?;
 
         self.bits_in_buffer &= 7;
         Ok(())
     }
 
     /// Construct a new bit-writer
-    pub fn new(data: &'a mut [u8]) -> BorrowingBitWriter<'a> {
+    pub fn new(data: &'a mut ZByteWriter<T>) -> BorrowingBitWriter<'a, T> {
         BorrowingBitWriter {
             bits_in_buffer: 0,
             buffer:         0,
@@ -139,7 +140,7 @@ impl<'a> BorrowingBitWriter<'a> {
 
     /// Put some bits to the buffer
     /// And periodically flush to output when necessary
-    pub fn put_bits(&mut self, nbits: u8, bit: u64) -> Result<(), &'static str> {
+    pub fn put_bits(&mut self, nbits: u8, bit: u64) -> Result<(), ZByteIoError> {
         debug_assert!(nbits <= 56);
 
         if self.bits_in_buffer + nbits > 56 {
@@ -170,7 +171,7 @@ impl<'a> BorrowingBitWriter<'a> {
         self.bits_in_buffer += nbits;
     }
 
-    pub fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+    pub fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), ZByteIoError> {
         //check if we can simply copy from input to output
         // when we have aligned bits, that becomes possible
         if (self.bits_in_buffer & 7) == 0 {
@@ -179,7 +180,7 @@ impl<'a> BorrowingBitWriter<'a> {
             // ensure no bits are present
             assert_eq!(self.bits_in_buffer, 0);
             // copy
-            self.dest[self.position..self.position + bytes.len()].copy_from_slice(bytes);
+            self.dest.write_all(bytes)?;
             // update position
             self.position += bytes.len();
         } else {

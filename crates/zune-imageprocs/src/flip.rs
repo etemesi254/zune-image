@@ -54,7 +54,7 @@ impl OperationsTrait for Flip {
                 BitType::F32 => {
                     flip(inp.reinterpret_as_mut::<f32>()?);
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 
@@ -107,7 +107,7 @@ impl OperationsTrait for VerticalFlip {
                 BitType::F32 => {
                     vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

@@ -33,9 +33,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
-    PngDecoder::new(ZCursor::new(data))
-        .decode_raw()
-        .unwrap()
+    PngDecoder::new(ZCursor::new(data)).decode_raw().unwrap()
 }
 
 fn test_decoding<P: AsRef<Path>>(path: P) {

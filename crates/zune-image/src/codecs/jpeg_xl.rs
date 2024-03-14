@@ -24,6 +24,7 @@ use std::time::Duration;
 pub use jxl_oxide;
 use jxl_oxide::{PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
@@ -64,7 +65,9 @@ impl EncoderTrait for JxlEncoder {
         "jxl-encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
@@ -72,7 +75,7 @@ impl EncoderTrait for JxlEncoder {
         let encoder = JxlSimpleEncoder::new(data, options);
 
         let data = encoder
-            .encode()
+            .encode(sink)
             .map_err(<JxlEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)

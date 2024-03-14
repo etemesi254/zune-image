@@ -1,6 +1,6 @@
 mod decoder;
-mod errors;
 mod enums;
+mod errors;
 
 pub use decoder::GifDecoder;
 pub use errors::GifDecoderErrors;

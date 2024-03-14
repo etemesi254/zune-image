@@ -51,6 +51,7 @@ pub enum ZByteIoError {
     TryFromIntError(core::num::TryFromIntError),
     // requested, read
     NotEnoughBytes(usize, usize),
+    NotEnoughBuffer(usize, usize),
     Generic(&'static str),
     SeekError(&'static str),
     SeekErrorOwned(String)
@@ -68,6 +69,12 @@ impl core::fmt::Debug for ZByteIoError {
             }
             ZByteIoError::NotEnoughBytes(expected, found) => {
                 writeln!(f, "Not enough bytes, expected {expected} but found {found}")
+            }
+            ZByteIoError::NotEnoughBuffer(expected, found) => {
+                writeln!(
+                    f,
+                    "Not enough buffer to write {expected} bytes, buffer size is {found}"
+                )
             }
             ZByteIoError::Generic(err) => {
                 writeln!(f, "Generic I/O error: {err}")

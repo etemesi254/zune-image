@@ -14,9 +14,9 @@
 //!
 //! The decoder and encoder both support metadata extraction and saving.
 //!
-use jpeg_encoder::{ColorType, EncodingError};
+use jpeg_encoder::{ColorType, EncodingError, JfifWrite};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZByteWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -29,6 +29,17 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
+struct TempVt<'a, T: ZByteWriterTrait> {
+    inner: &'a mut ZByteWriter<T>
+}
+impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), EncodingError> {
+        self.inner.write_all(buf).map_err(|r| match r {
+            ZByteIoError::StdIoError(e) => EncodingError::IoError(e),
+            r => EncodingError::Write(format!("{:?}", r))
+        })
+    }
+}
 impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     fn decode(&mut self) -> Result<Image, crate::errors::ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
@@ -119,7 +130,9 @@ impl EncoderTrait for JpegEncoder {
         "jpeg-encoder(vstroebel)"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         assert_eq!(
             image.depth(),
             BitDepth::Eight,
@@ -141,15 +154,15 @@ impl EncoderTrait for JpegEncoder {
                 );
                 return Err(ImgEncodeErrors::ImageEncodeErrors(msg).into());
             }
+            let mut writer = ZByteWriter::new(sink);
+            let temp_c = TempVt { inner: &mut writer };
             // create space for our encoder
-            let mut encoded_data =
-                Vec::with_capacity(width * height * image.colorspace().num_components());
 
             let options = create_options_for_encoder(self.options, image);
 
             // create encoder finally
             // vec<u8> supports write so we use that as our encoder
-            let mut encoder = jpeg_encoder::Encoder::new(&mut encoded_data, options.get_quality());
+            let mut encoder = jpeg_encoder::Encoder::new(temp_c, options.get_quality());
 
             // add options
             encoder.set_progressive(options.jpeg_encode_progressive());
@@ -183,7 +196,7 @@ impl EncoderTrait for JpegEncoder {
 
             encoder.encode(pixels, width as u16, height as u16, colorspace)?;
 
-            Ok(encoded_data)
+            Ok(writer.bytes_written())
         } else {
             Err(ImgEncodeErrors::UnsupportedColorspace(
                 image.colorspace(),
