@@ -10,6 +10,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Read};
 use std::path::Path;
 use std::string::String;
+use std::time::Instant;
 
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
@@ -117,9 +118,16 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                                     match fd {
                                         Ok(file) => {
                                             let mut file_c = BufWriter::new(file);
+                                            let start = Instant::now();
                                             let bytes =
                                                 format.encode(image, options, &mut file_c)?;
-                                            trace!("Wrote {} bytes to {:?}", bytes, out_file);
+                                            let end = Instant::now();
+                                            trace!(
+                                                "Took {:?} to encode {} bytes to {:?}",
+                                                end - start,
+                                                bytes,
+                                                out_file
+                                            );
                                         }
                                         Err(e) => {
                                             error!("Cannot encode to file, error opening {:?}", e);
