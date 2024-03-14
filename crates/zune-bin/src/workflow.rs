@@ -6,14 +6,14 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::fs::File;
-use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{BufWriter, Read};
 use std::path::Path;
 use std::string::String;
 
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
@@ -24,6 +24,19 @@ use crate::cmd_parsers::{get_decoder_options, get_encoder_options};
 use crate::file_io::ZuneFile;
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
+
+struct CmdPipeline<T: IntoImage> {
+    inner:   Pipeline<T>,
+    formats: Vec<ImageFormat>
+}
+impl<T: IntoImage> CmdPipeline<T> {
+    pub fn new() -> CmdPipeline<T> {
+        return CmdPipeline {
+            inner:   Pipeline::new(),
+            formats: vec![]
+        };
+    }
+}
 
 #[allow(unused_variables)]
 #[allow(clippy::unused_io_amount)] // yes it's what I want
@@ -43,15 +56,17 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     let mut buf = [0; 30];
 
     for in_file in args.get_raw("in").unwrap() {
-        let mut workflow: Pipeline<ZuneFile> = Pipeline::new();
+        let mut workflow: CmdPipeline<ZuneFile> = CmdPipeline::new();
 
         File::open(in_file)?.read(&mut buf)?;
 
-        add_operations(args, &mut workflow)?;
+        add_operations(args, &mut workflow.inner)?;
 
         if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&buf)) {
             if format.has_decoder() {
-                workflow.add_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options))
+                workflow
+                    .inner
+                    .add_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options))
             } else {
                 return Err(ImageErrors::ImageDecoderNotImplemented(format));
             }
@@ -65,12 +80,11 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if source == CommandLine {
                 for out_file in args.get_raw("out").unwrap() {
                     if let Some(ext) = Path::new(out_file).extension() {
-                        if let Some((encode_type, mut encoder)) =
+                        if let Some(encode_type) =
                             ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
                         {
                             debug!("Treating {:?} as a {:?} format", out_file, encode_type);
-                            encoder.set_options(options);
-                            workflow.add_encoder(encoder);
+                            workflow.formats.push(encode_type);
                         } else {
                             error!("Unknown or unsupported format {:?}", out_file)
                         }
@@ -81,9 +95,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             }
         }
 
-        workflow.advance_to_end()?;
-        let results = workflow.get_results();
-        let mut curr_result_position = 0;
+        workflow.inner.advance_to_end()?;
 
         // write to output
 
@@ -94,27 +106,27 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 for out_file in args.get_raw("out").unwrap() {
                     //write to file
                     if let Some(ext) = Path::new(out_file).extension() {
-                        if let Some((encode_type, _)) =
-                            ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
-                        {
-                            if encode_type.has_encoder()
-                                && results[curr_result_position].format() == encode_type
-                            {
-                                info!(
-                                    "Writing data as {:?} format to file {:?}",
-                                    results[curr_result_position].format(),
-                                    out_file
-                                );
-
-                                std::fs::write(out_file, results[curr_result_position].data())
-                                    .unwrap();
-
-                                curr_result_position += 1;
-                            } else {
-                                warn!("Ignoring {:?} file", out_file);
+                        for format in &workflow.formats {
+                            if format.has_encoder() {
+                                for image in workflow.inner.images() {
+                                    let fd = OpenOptions::new()
+                                        .create(true)
+                                        .write(true)
+                                        .truncate(true)
+                                        .open(out_file);
+                                    match fd {
+                                        Ok(file) => {
+                                            let mut file_c = BufWriter::new(file);
+                                            let bytes =
+                                                format.encode(image, options, &mut file_c)?;
+                                            trace!("Wrote {} bytes to {:?}", bytes, out_file);
+                                        }
+                                        Err(e) => {
+                                            error!("Cannot encode to file, error opening {:?}", e);
+                                        }
+                                    }
+                                }
                             }
-                        } else {
-                            warn!("Ignoring {:?} file", out_file);
                         }
                     }
                 }
@@ -123,7 +135,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         if let Some(view) = args.value_source("view") {
             if view == CommandLine {
-                for image in workflow.images() {
+                for image in workflow.inner.images() {
                     open_in_default_app(image);
                 }
             }

@@ -12,7 +12,7 @@
 #![cfg(feature = "qoi")]
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
@@ -101,18 +101,20 @@ impl EncoderTrait for QoiEncoder {
         "QOI Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
         let mut qoi_encoder = zune_qoi::QoiEncoder::new(data, options);
 
-        let data = qoi_encoder
-            .encode()
+        let bytes_written = qoi_encoder
+            .encode(sink)
             .map_err(<QoiEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
-        Ok(data)
+        Ok(bytes_written)
     }
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[ColorSpace::RGBA, ColorSpace::RGB]

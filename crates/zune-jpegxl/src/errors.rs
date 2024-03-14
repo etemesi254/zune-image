@@ -11,6 +11,7 @@
 use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZByteIoError;
 use zune_core::colorspace::ColorSpace;
 
 const MAX_DIMENSIONS: usize = 1 << 30;
@@ -29,7 +30,9 @@ pub enum JxlEncodeErrors {
     /// Mismatch in length expected vs what was found
     LengthMismatch(usize, usize),
     /// Generic error
-    Generic(&'static str)
+    Generic(&'static str),
+
+    IoErrors(ZByteIoError)
 }
 
 pub const SUPPORTED_COLORSPACES: [ColorSpace; 4] = [
@@ -68,6 +71,15 @@ impl Debug for JxlEncodeErrors {
             JxlEncodeErrors::Generic(msg) => {
                 writeln!(f, "{}", msg)
             }
+            JxlEncodeErrors::IoErrors(e) => {
+                writeln!(f, "I/O error {:?}", e)
+            }
         }
+    }
+}
+
+impl From<ZByteIoError> for JxlEncodeErrors {
+    fn from(value: ZByteIoError) -> Self {
+        JxlEncodeErrors::IoErrors(value)
     }
 }

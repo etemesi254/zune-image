@@ -7,13 +7,10 @@
  */
 
 //! Encoding support for Farbfeld image format
-
-use alloc::vec;
-use alloc::vec::Vec;
 use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteWriter;
+use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
@@ -30,7 +27,8 @@ pub enum FarbFeldEncoderErrors {
     UnsupportedColorSpace(ColorSpace),
     /// Too short of an input buffer, the buffer size is not same as expected buffer
     /// size
-    TooShortInput(usize, usize)
+    TooShortInput(usize, usize),
+    IOErrors(ZByteIoError)
 }
 
 impl Debug for FarbFeldEncoderErrors {
@@ -51,10 +49,18 @@ impl Debug for FarbFeldEncoderErrors {
                     "Too short of input, expected {expected:?}, found {found:?}",
                 )
             }
+            FarbFeldEncoderErrors::IOErrors(err) => {
+                writeln!(f, "I/O error {:?}", err)
+            }
         }
     }
 }
 
+impl From<ZByteIoError> for FarbFeldEncoderErrors {
+    fn from(value: ZByteIoError) -> Self {
+        FarbFeldEncoderErrors::IOErrors(value)
+    }
+}
 /// A FarbFeld encoder
 ///
 /// The encoder's entry point is `new` which initializes the encoder
@@ -113,7 +119,9 @@ impl<'a> FarbFeldEncoder<'a> {
         FarbFeldEncoder { data, options }
     }
 
-    fn encode_headers(&self, stream: &mut ZByteWriter) -> Result<(), FarbFeldEncoderErrors> {
+    fn encode_headers<T: ZByteWriterTrait>(
+        &self, stream: &mut ZByteWriter<T>
+    ) -> Result<(), FarbFeldEncoderErrors> {
         // these routines panic because I need them
         // to panic as it is a me problem
         stream.write_all(b"farbfeld").unwrap();
@@ -138,7 +146,7 @@ impl<'a> FarbFeldEncoder<'a> {
 
     /// Encode the contents returning a vector containing
     /// encoded contents or an error if anything occurs
-    pub fn encode(&self) -> Result<Vec<u8>, FarbFeldEncoderErrors> {
+    pub fn encode<T: ZByteWriterTrait>(&self, sink: T) -> Result<usize, FarbFeldEncoderErrors> {
         if self.options.get_depth() != BitDepth::Sixteen {
             return Err(FarbFeldEncoderErrors::UnsupportedBitDepth(
                 self.options.get_depth()
@@ -159,9 +167,9 @@ impl<'a> FarbFeldEncoder<'a> {
 
         let out_size = calc_out_size(self.options);
 
-        let mut out = vec![0; out_size];
+        let mut stream = ZByteWriter::new(sink);
 
-        let mut stream = ZByteWriter::new(&mut out);
+        stream.reserve(out_size)?;
 
         self.encode_headers(&mut stream)?;
 
@@ -169,16 +177,11 @@ impl<'a> FarbFeldEncoder<'a> {
         // chunk in two and write to stream
         for slice in self.data.chunks_exact(2) {
             let byte = u16::from_ne_bytes(slice.try_into().unwrap());
-            stream.write_u16_be(byte)
+            stream.write_u16_be_err(byte)?;
         }
+        let position = stream.bytes_written();
 
-        assert!(!stream.eof());
-        let position = stream.position();
-
-        // truncate to how many bytes we wrote
-        out.truncate(position);
-
-        Ok(out)
+        Ok(position)
     }
 }
 

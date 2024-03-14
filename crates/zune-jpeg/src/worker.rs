@@ -119,7 +119,7 @@ fn copy_removing_padding(
         }
     }
 }
-#[allow(clippy::cast_possible_truncation,clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn copy_removing_padding_4x(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
 ) {

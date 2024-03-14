@@ -108,7 +108,9 @@ pub enum QoiEncodeErrors {
     /// The dimensions cannot be correctly encoded to a width
     TooLargeDimensions(usize),
 
-    Generic(&'static str)
+    Generic(&'static str),
+
+    IoError(ZByteIoError)
 }
 
 impl Debug for QoiEncodeErrors {
@@ -126,6 +128,9 @@ impl Debug for QoiEncodeErrors {
             }
             QoiEncodeErrors::Generic(val) => {
                 writeln!(f, "{}", val)
+            }
+            QoiEncodeErrors::IoError(v) => {
+                writeln!(f, "I/O error {:?}", v)
             }
         }
     }
@@ -147,3 +152,9 @@ impl std::error::Error for QoiEncodeErrors {}
 
 #[cfg(feature = "std")]
 impl std::error::Error for QoiErrors {}
+
+impl From<ZByteIoError> for QoiEncodeErrors {
+    fn from(value: ZByteIoError) -> Self {
+        Self::IoError(value)
+    }
+}

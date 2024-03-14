@@ -11,7 +11,7 @@
 
 //! Represents an png image decoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -21,6 +21,7 @@ pub use zune_png::*;
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
 use crate::errors::ImageErrors::ImageDecodeErrors;
+use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
 use crate::frame::Frame;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
@@ -165,7 +166,9 @@ impl EncoderTrait for PngEncoder {
         "PNG encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let frame = &image.to_u8_be()[0];
@@ -194,7 +197,9 @@ impl EncoderTrait for PngEncoder {
                 }
             }
         }
-        Ok(encoder.encode())
+        encoder
+            .encode(sink)
+            .map_err(|e| ImageErrors::EncodeErrors(ImageEncodeErrors(format!("{:?}", e))))
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {

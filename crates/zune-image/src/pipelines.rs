@@ -9,12 +9,12 @@
 use std::time::Instant;
 
 use zune_core::log::Level::Trace;
-use zune_core::log::{log_enabled, trace, Level};
+use zune_core::log::{log_enabled, trace};
 
 use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
 use crate::image::Image;
-use crate::traits::{EncoderTrait, IntoImage, OperationsTrait};
+use crate::traits::{IntoImage, OperationsTrait};
 
 #[derive(Copy, Clone, Debug)]
 enum PipelineState {
@@ -73,12 +73,10 @@ impl EncodeResult {
 /// via  [`images`](crate::pipelines::Pipeline::images) and
 ///  [`images_mut`](crate::pipelines::Pipeline::images_mut)
 pub struct Pipeline<T: IntoImage> {
-    state:         Option<PipelineState>,
-    decode:        Option<T>,
-    image:         Vec<Image>,
-    operations:    Vec<Box<dyn OperationsTrait>>,
-    encode:        Vec<Box<dyn EncoderTrait>>,
-    encode_result: Vec<EncodeResult>
+    state:      Option<PipelineState>,
+    decode:     Option<T>,
+    image:      Vec<Image>,
+    operations: Vec<Box<dyn OperationsTrait>>
 }
 
 impl<T> Pipeline<T>
@@ -89,35 +87,13 @@ where
     #[allow(clippy::new_without_default)]
     pub fn new() -> Pipeline<T> {
         Pipeline {
-            image:         vec![],
-            state:         Some(PipelineState::Initialized),
-            decode:        None,
-            operations:    vec![],
-            encode:        vec![],
-            encode_result: vec![]
+            image:      vec![],
+            state:      Some(PipelineState::Initialized),
+            decode:     None,
+            operations: vec![]
         }
     }
-    /// Add a single encoder for this image
-    ///
-    /// One can define multiple encoders for a single decoder
-    /// the workflow will run all encoders in order of definition
-    ///
-    /// # Example
-    /// ```no_run
-    ///
-    /// use std::fs::File;
-    /// use std::io::BufWriter;
-    /// use zune_image::codecs::ppm::PPMEncoder;
-    /// use zune_image::image::Image;
-    /// use zune_image::pipelines::Pipeline;
-    /// let mut buf = BufWriter::new(File::open(".").unwrap());
-    /// let encoder = PPMEncoder::new();    
-    /// let x= Pipeline::<Image>::new().add_encoder(Box::new(encoder));
-    ///
-    /// ```
-    pub fn add_encoder(&mut self, encoder: Box<dyn EncoderTrait>) {
-        self.encode.push(encoder);
-    }
+
     /// Add a single decoder for this image
     pub fn add_decoder(&mut self, decoder: T) {
         self.decode = Some(decoder);
@@ -131,15 +107,6 @@ where
         self.image.push(image);
     }
 
-    /// Add an encoder to this chain
-    ///
-    ///  You can add multiple encoders to the same pipeline.
-    /// This will have the effect of encoding the same image multiple
-    /// times and storing the result in
-    pub fn chain_encoder(&mut self, encoder: Box<dyn EncoderTrait>) -> &mut Pipeline<T> {
-        self.encode.push(encoder);
-        self
-    }
     pub fn chain_decoder(&mut self, decoder: T) -> &mut Pipeline<T> {
         self.decode = Some(decoder);
         self
@@ -256,40 +223,6 @@ where
                         self.state = state.next();
                     }
                 }
-                PipelineState::Encode => {
-                    if self.image.is_empty() {
-                        return Err(ImageErrors::NoImageForOperations);
-                    }
-
-                    if log_enabled!(Trace) && !self.encode.is_empty() {
-                        println!();
-                        trace!("Current state: {:?}\n", state);
-                    }
-
-                    for image in self.image.iter() {
-                        for encoder in self.encode.iter_mut() {
-                            let encoder_name = encoder.name();
-
-                            trace!("Running {}", encoder_name);
-
-                            let start = Instant::now();
-
-                            let result = encoder.encode_to_result(image)?;
-                            self.encode_result.push(result);
-                            let stop = Instant::now();
-
-                            trace!(
-                                "Finished running `{encoder_name}` in {} ms",
-                                (stop - start).as_millis()
-                            );
-                            if log_enabled!(Level::Info) {
-                                eprintln!();
-                            }
-                        }
-                    }
-
-                    self.state = state.next();
-                }
                 PipelineState::Finished => {
                     trace!("Finished operations for this workflow");
 
@@ -315,8 +248,5 @@ where
             }
         }
         Ok(())
-    }
-    pub fn get_results(&self) -> &[EncodeResult] {
-        &self.encode_result
     }
 }

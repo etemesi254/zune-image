@@ -50,7 +50,7 @@ pub enum ChannelErrors {
     /// Indicating that wea re trying to align the channel data to something
     /// that does not evenly divide it
     UnevenLength(usize, usize),
-    DifferentType(TypeId, TypeId),
+    DifferentType(TypeId, TypeId)
 }
 
 impl Debug for ChannelErrors {
@@ -82,11 +82,11 @@ impl Debug for ChannelErrors {
 /// `reinterpret` methods, both as reference and as mutable.
 #[derive(Eq)]
 pub struct Channel {
-    ptr: *mut u8,
-    length: usize,
+    ptr:      *mut u8,
+    length:   usize,
     capacity: usize,
     // type id for which the channel was created with
-    type_id: TypeId,
+    type_id:  TypeId
 }
 
 // safety: The functions ae unsafe because the
@@ -279,7 +279,7 @@ impl Channel {
             BitType::U8 => TypeId::of::<u8>(),
             BitType::U16 => TypeId::of::<u16>(),
             BitType::F32 => TypeId::of::<f32>(),
-            _ => unimplemented!("Bit-depth :{:?}", depth),
+            _ => unimplemented!("Bit-depth :{:?}", depth)
         };
 
         Self::new_with_length_and_type(length, t_r)
@@ -331,7 +331,7 @@ impl Channel {
             ptr,
             length: 0,
             capacity,
-            type_id,
+            type_id
         }
     }
 
@@ -353,7 +353,7 @@ impl Channel {
     /// ```
     pub fn from_elm<T>(length: usize, elm: T) -> Channel
     where
-        T: Clone + Copy + 'static + Zeroable + Pod,
+        T: Clone + Copy + 'static + Zeroable + Pod
     {
         // new currently zeroes memory
         let mut new_chan = Channel::new_with_length::<T>(length * size_of::<T>());
@@ -407,7 +407,7 @@ impl Channel {
         //
         self.ptr.wrapping_add(self.length).copy_from(
             data.as_ptr().cast::<u8>(),
-            data.len().saturating_mul(data_size),
+            data.len().saturating_mul(data_size)
         );
 
         // new length becomes old length + items added
@@ -538,7 +538,7 @@ impl Channel {
     /// ```
     pub fn fill<T>(&mut self, element: T) -> Result<(), ChannelErrors>
     where
-        T: Clone + Copy + 'static + Pod,
+        T: Clone + Copy + 'static + Pod
     {
         // reinterpret to be type T
         let array = self.reinterpret_as_mut()?;
@@ -555,7 +555,7 @@ impl Channel {
         if !is_aligned::<T>(self.ptr) {
             return Err(ChannelErrors::UnalignedPointer(
                 self.ptr as usize,
-                size_of::<T>(),
+                size_of::<T>()
             ));
         }
 
@@ -568,7 +568,7 @@ impl Channel {
         if converted_type_id != self.type_id {
             return Err(ChannelErrors::DifferentType(
                 self.type_id,
-                converted_type_id,
+                converted_type_id
             ));
         }
 

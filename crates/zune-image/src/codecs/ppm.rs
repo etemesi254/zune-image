@@ -9,7 +9,7 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -42,18 +42,20 @@ impl EncoderTrait for PPMEncoder {
         "PPM Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
         let ppm_encoder = PPMEnc::new(data, options);
 
-        let data = ppm_encoder
-            .encode()
+        let bytes_written = ppm_encoder
+            .encode(sink)
             .map_err(<PPMEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
-        Ok(data)
+        Ok(bytes_written)
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {

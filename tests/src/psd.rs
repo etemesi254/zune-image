@@ -9,7 +9,7 @@
 use std::fs::read;
 use std::path::{Path, PathBuf};
 
-use zune_core::bytestream::{ZCursor};
+use zune_core::bytestream::ZCursor;
 use zune_core::options::DecoderOptions;
 use zune_psd::PSDDecoder;
 
