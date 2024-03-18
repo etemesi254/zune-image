@@ -245,7 +245,7 @@ pub fn post_process_image(
 
     // ensure we can have at least enough space to write output
     if current_frame.len() < frame_dims {
-        let msg = format!(
+        let msg = alloc::format!(
             "Current frame dimensions ({}) less than  expected dimensions ({})",
             current_frame.len(),
             frame_dims
