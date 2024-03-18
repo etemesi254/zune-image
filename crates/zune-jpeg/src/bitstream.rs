@@ -179,7 +179,7 @@ impl BitStream {
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
-                $byte = u64::from(reader.get_u8());
+                $byte = u64::from(reader.read_u8());
                 self.overread_by += usize::from(reader.eof()?);
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
@@ -190,12 +190,12 @@ impl BitStream {
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff {
                     // read next byte
-                    let mut next_byte = u64::from(reader.get_u8());
+                    let mut next_byte = u64::from(reader.read_u8());
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
-                            next_byte = u64::from(reader.get_u8());
+                            next_byte = u64::from(reader.read_u8());
                         }
 
                         if next_byte != 0x00 {
