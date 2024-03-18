@@ -100,7 +100,8 @@ impl From<ZByteIoError> for FarbFeldEncoderErrors {
 ///
 /// // encode to farbfeld format
 /// // it expects native endian so no need to change
-/// FarbFeldEncoder::new(&alias,options).encode().unwrap();
+/// let mut write_to = vec![];
+/// FarbFeldEncoder::new(&alias,options).encode(&mut write_to).unwrap();
 /// ```
 pub struct FarbFeldEncoder<'a> {
     data:    &'a [u8],

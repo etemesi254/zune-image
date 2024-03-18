@@ -184,7 +184,7 @@ pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
         } else {
             error!(
                 "Could not decode {:?}",
-                format.get_decoder(ZCursor::new(bytes)).err().unwrap()
+                format.decoder(ZCursor::new(bytes)).err().unwrap()
             )
         }
     }

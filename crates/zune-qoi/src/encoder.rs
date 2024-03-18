@@ -34,7 +34,8 @@ const SUPPORTED_COLORSPACES: [ColorSpace; 2] = [ColorSpace::RGB, ColorSpace::RGB
 /// fn main()->Result<(), QoiEncodeErrors>{
 ///     let pixels = std::array::from_fn::<u8,{W * H * 3},_>(|i| (i%256) as u8);
 ///     let mut encoder = QoiEncoder::new(&pixels,EncoderOptions::new(W,H,ColorSpace::RGB,BitDepth::Eight));
-///     let pix = encoder.encode()?;
+///     let mut sink = vec![];
+///     let pix = encoder.encode(&mut sink)?;
 ///     // write pixels, or do something
 ///     Ok(())
 ///}
@@ -224,32 +225,47 @@ impl<'a> QoiEncoder<'a> {
     }
 }
 
-#[test]
-fn test_qoi_encode_rgb() {
-    use zune_core::bit_depth::BitDepth;
-    const W: usize = 100;
-    const H: usize = 100;
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::EncoderOptions;
 
-    let pixels = std::array::from_fn::<u8, { W * H * 3 }, _>(|i| (i % 256) as u8);
-    let mut encoder = QoiEncoder::new(
-        &pixels,
-        EncoderOptions::new(W, H, ColorSpace::RGB, BitDepth::Eight)
-    );
-    encoder.encode().unwrap();
-    // write pixels, do something
-}
+    use crate::QoiEncoder;
 
-#[test]
-fn test_qoi_encode_rgba() {
-    use zune_core::bit_depth::BitDepth;
-    const W: usize = 100;
-    const H: usize = 100;
+    #[test]
+    fn test_qoi_encode_rgb() {
+        use zune_core::bit_depth::BitDepth;
+        const W: usize = 100;
+        const H: usize = 100;
 
-    let pixels = std::array::from_fn::<u8, { W * H * 4 }, _>(|i| (i % 256) as u8);
-    let mut encoder = QoiEncoder::new(
-        &pixels,
-        EncoderOptions::new(W, H, ColorSpace::RGBA, BitDepth::Eight)
-    );
-    encoder.encode().unwrap();
-    // write pixels, do something
+        let pixels = std::array::from_fn::<u8, { W * H * 3 }, _>(|i| (i % 256) as u8);
+        let mut encoder = QoiEncoder::new(
+            &pixels,
+            EncoderOptions::new(W, H, ColorSpace::RGB, BitDepth::Eight)
+        );
+        let mut output = vec![];
+        encoder.encode(&mut output).unwrap();
+        // write pixels, do something
+    }
+
+    #[test]
+    fn test_qoi_encode_rgba() {
+        use zune_core::bit_depth::BitDepth;
+        const W: usize = 100;
+        const H: usize = 100;
+
+        let pixels = std::array::from_fn::<u8, { W * H * 4 }, _>(|i| (i % 256) as u8);
+        let mut encoder = QoiEncoder::new(
+            &pixels,
+            EncoderOptions::new(W, H, ColorSpace::RGBA, BitDepth::Eight)
+        );
+
+        let mut output = vec![];
+        encoder.encode(&mut output).unwrap();
+        // write pixels, do something
+        let mut decoder = crate::QoiDecoder::new(ZCursor::new(&output));
+        let decoded_pixels = decoder.decode().unwrap();
+        assert_eq!(&pixels[..], &decoded_pixels[..]);
+    }
 }

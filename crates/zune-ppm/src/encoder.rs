@@ -85,7 +85,8 @@ impl Display for PPMVersions {
 ///    const H:usize = 100;
 ///    let data:[u8;{W * H}] = std::array::from_fn(|x| (x % 256) as u8);
 ///    let encoder = PPMEncoder::new(&data,EncoderOptions::new(W,H,ColorSpace::Luma,BitDepth::Eight));
-///    encoder.encode()?;
+///    let mut write_to =vec![];
+///    encoder.encode(&mut write_to)?;
 ///    Ok(())
 /// }
 /// ```
