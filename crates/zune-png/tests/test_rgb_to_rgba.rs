@@ -24,10 +24,10 @@ fn test_decoding<P: AsRef<Path>>(path: P) {
     let mut decoder = PngDecoder::new_with_options(ZCursor::new(&contents), options);
     let pixels = decoder.decode_raw().unwrap();
 
-    assert!(decoder.get_colorspace().unwrap().has_alpha());
-    let (width, height) = decoder.get_dimensions().unwrap();
-    let colorspace = decoder.get_colorspace().unwrap();
-    let depth = decoder.get_depth().unwrap();
+    assert!(decoder.colorspace().unwrap().has_alpha());
+    let (width, height) = decoder.dimensions().unwrap();
+    let colorspace = decoder.colorspace().unwrap();
+    let depth = decoder.depth().unwrap();
 
     assert_eq!(
         pixels.len(),

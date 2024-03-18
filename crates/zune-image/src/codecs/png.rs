@@ -34,14 +34,14 @@ where
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
 
-        let depth = self.get_depth().unwrap();
-        let (width, height) = self.get_dimensions().unwrap();
-        let colorspace = self.get_colorspace().unwrap();
+        let depth = self.depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let colorspace = self.colorspace().unwrap();
 
-        if self.is_animated() && self.get_options().png_decode_animated() {
+        if self.is_animated() && self.options().png_decode_animated() {
             // decode apng frames
             //let mut previous_frame
-            let info = self.get_info().unwrap().clone();
+            let info = self.info().unwrap().clone();
             // the output, since we know that no frame will be bigger than the width and height, we can
             // set this up outside of the loop.
             let mut output = vec![0; info.width * info.height * colorspace.num_components()];
@@ -97,11 +97,11 @@ where
         }
     }
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace().unwrap()
+        self.colorspace().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -112,21 +112,21 @@ where
         self.decode_headers()
             .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.depth().unwrap();
 
         let mut metadata = ImageMetadata {
             format: Some(ImageFormat::PNG),
-            colorspace: self.get_colorspace().unwrap(),
+            colorspace: self.colorspace().unwrap(),
             depth: depth,
             width: width,
             height: height,
-            default_gamma: self.get_info().unwrap().gamma,
+            default_gamma: self.info().unwrap().gamma,
             ..Default::default()
         };
         #[cfg(feature = "metadata")]
         {
-            let info = self.get_info().unwrap();
+            let info = self.info().unwrap();
             // see if we have an exif chunk
             if let Some(exif) = &info.exif {
                 metadata.parse_raw_exif(exif)

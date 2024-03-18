@@ -112,15 +112,15 @@ impl<'a> PPMEncoder<'a> {
     fn encode_headers<T: ZByteWriterTrait>(
         &self, stream: &mut ZByteWriter<T>
     ) -> Result<(), PPMEncodeErrors> {
-        let version = version_for_colorspace(self.options.get_colorspace()).ok_or(
-            PPMEncodeErrors::UnsupportedColorspace(self.options.get_colorspace())
+        let version = version_for_colorspace(self.options.colorspace()).ok_or(
+            PPMEncodeErrors::UnsupportedColorspace(self.options.colorspace())
         )?;
 
-        let width = self.options.get_width();
-        let height = self.options.get_height();
-        let components = self.options.get_colorspace().num_components();
-        let max_val = self.options.get_depth().max_value();
-        let colorspace = self.options.get_colorspace();
+        let width = self.options.width();
+        let height = self.options.height();
+        let components = self.options.colorspace().num_components();
+        let max_val = self.options.depth().max_value();
+        let colorspace = self.options.colorspace();
 
         let header = match version {
             PPMVersions::P5 | PPMVersions::P6 => {
@@ -161,7 +161,7 @@ impl<'a> PPMEncoder<'a> {
 
         self.encode_headers(&mut stream)?;
 
-        match self.options.get_depth().bit_type() {
+        match self.options.depth().bit_type() {
             BitType::U8 => stream.write_all(self.data)?,
             BitType::U16 => {
                 // chunk in two and write to stream
@@ -206,12 +206,12 @@ const PPM_HEADER_SIZE: usize = 100;
 #[inline]
 pub fn max_out_size(options: &EncoderOptions) -> usize {
     options
-        .get_width()
-        .checked_mul(options.get_depth().size_of())
+        .width()
+        .checked_mul(options.depth().size_of())
         .unwrap()
-        .checked_mul(options.get_height())
+        .checked_mul(options.height())
         .unwrap()
-        .checked_mul(options.get_colorspace().num_components())
+        .checked_mul(options.colorspace().num_components())
         .unwrap()
         .checked_add(PPM_HEADER_SIZE)
         .unwrap()

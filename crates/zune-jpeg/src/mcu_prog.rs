@@ -169,7 +169,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             continue 'eoi;
                         }
                         Err(msg) => {
-                            if self.options.get_strict_mode() {
+                            if self.options.strict_mode() {
                                 return Err(msg);
                             }
                             error!("{:?}", msg);
@@ -187,7 +187,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     marker = marker_n;
                 }
                 Err(e) => {
-                    if self.options.get_strict_mode() {
+                    if self.options.strict_mode() {
                         return Err(e);
                     }
                     error!("{}", e);
@@ -598,13 +598,13 @@ where
     // read until we get a marker
 
     while !reader.eof()? {
-        let marker = reader.get_u8_err()?;
+        let marker = reader.read_u8_err()?;
 
         if marker == 255 {
-            let mut r = reader.get_u8_err()?;
+            let mut r = reader.read_u8_err()?;
             // 0xFF 0XFF(some images may be like that)
             while r == 0xFF {
-                r = reader.get_u8_err()?;
+                r = reader.read_u8_err()?;
             }
 
             if r != 0 {

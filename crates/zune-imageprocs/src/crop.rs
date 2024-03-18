@@ -128,7 +128,7 @@ impl OperationsTrait for Crop {
         let depth = image.depth().bit_type();
 
         for channel in image.channels_mut(false) {
-            let mut new_vec = Channel::new_with_length_and_type(new_dims, channel.get_type_id());
+            let mut new_vec = Channel::new_with_length_and_type(new_dims, channel.type_id());
 
             // since crop is just bytewise copies, we can use the lowest common denominator for it
             // and it will still work

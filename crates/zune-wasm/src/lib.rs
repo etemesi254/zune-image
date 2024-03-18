@@ -174,7 +174,7 @@ impl WasmImage {
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
     if let Some((format, content)) = ImageFormat::guess_format(ZCursor::new(bytes)) {
-        if let Ok(mut decoder) = format.get_decoder(content) {
+        if let Ok(mut decoder) = format.decoder(content) {
             let mut image = decoder.decode().unwrap();
 
             // WASM works with 8 bit images, so convert this to an 8 biy image

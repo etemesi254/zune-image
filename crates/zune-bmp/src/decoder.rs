@@ -225,7 +225,7 @@ where
             return Ok(());
         }
 
-        if self.bytes.get_u8_err()? != b'B' || self.bytes.get_u8_err()? != b'M' {
+        if self.bytes.read_u8_err()? != b'B' || self.bytes.read_u8_err()? != b'M' {
             return Err(BmpDecoderErrors::InvalidMagicBytes);
         }
         // 4 bytes file size
@@ -262,18 +262,18 @@ where
         self.height = (height as i32).unsigned_abs() as usize;
         self.width = width as usize;
 
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "height",
-                self.options.get_max_height(),
+                self.options.max_height(),
                 self.height
             ));
         }
 
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "width",
-                self.options.get_max_width(),
+                self.options.max_width(),
                 self.width
             ));
         }
@@ -378,7 +378,7 @@ where
 
                 if t < 0 || t > (1 << depth) {
                     let msg = format!("Incorrect number of colors {} for depth {}", t, depth);
-                    if self.options.get_strict_mode() {
+                    if self.options.strict_mode() {
                         return Err(BmpDecoderErrors::Generic(msg));
                     }
                     warn!("{}", msg);
@@ -461,7 +461,7 @@ where
     /// since it's the only one BMP supports
     ///
     /// Images with less than 8 bits per pixel are usually scaled to be eight bits
-    pub fn get_depth(&self) -> BitDepth {
+    pub fn depth(&self) -> BitDepth {
         BitDepth::Eight
     }
     /// Get dimensions of the image
@@ -472,7 +472,7 @@ where
     /// - `Some((width,height))`  - The image dimensions
     /// - `None`: Indicates that the image headers weren't decoded
     ///    or an error occurred during decoding the headers   
-    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub fn dimensions(&self) -> Option<(usize, usize)> {
         if !self.decoded_headers {
             return None;
         }
@@ -484,7 +484,7 @@ where
     /// - `Some(colorspace)`: The colorspace of the image
     /// - `None`: Indicates headers weren't decoded or an error occured
     /// during decoding of headers
-    pub fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub fn colorspace(&self) -> Option<ColorSpace> {
         if !self.decoded_headers {
             return None;
         }
@@ -572,7 +572,7 @@ where
                                 // as 255
                                 for out in buf.rchunks_exact_mut(pad_size) {
                                     for a in out.chunks_exact_mut(4) {
-                                        let pixels = self.bytes.get_fixed_bytes_or_zero::<4>();
+                                        let pixels = self.bytes.read_fixed_bytes_or_zero::<4>();
                                         a.copy_from_slice(&pixels);
                                         a[3] = 255;
                                     }
@@ -641,7 +641,7 @@ where
                                             .take(input_bytes_per_width)
                                         {
                                             let v = u32::from(u16::from_le_bytes(
-                                                self.bytes.get_fixed_bytes_or_zero::<2>()
+                                                self.bytes.read_fixed_bytes_or_zero::<2>()
                                             ));
                                             count += 2;
 
@@ -833,7 +833,7 @@ where
 
             for out_stride in buf.rchunks_exact_mut(self.width * 4).take(self.height) {
                 for chunks in out_stride.chunks_exact_mut(4) {
-                    let byte = self.bytes.get_u8();
+                    let byte = self.bytes.read_u8();
                     let entry = palette[usize::from(byte)];
 
                     chunks[0] = entry.red;
@@ -846,7 +846,7 @@ where
         } else {
             for out_stride in buf.rchunks_exact_mut(self.width * 3).take(self.height) {
                 for chunks in out_stride.chunks_exact_mut(3) {
-                    let byte = self.bytes.get_u8();
+                    let byte = self.bytes.read_u8();
                     let entry = palette[usize::from(byte)];
 
                     chunks[0] = entry.red;
@@ -905,11 +905,11 @@ where
             let mut rle_code: u16;
             let mut stream_byte;
             while line >= 0 && pos <= self.width {
-                rle_code = u16::from(self.bytes.get_u8());
+                rle_code = u16::from(self.bytes.read_u8());
 
                 if rle_code == 0 {
                     /* fetch the next byte to see how to handle escape code */
-                    stream_byte = self.bytes.get_u8();
+                    stream_byte = self.bytes.read_u8();
 
                     if stream_byte == 0 {
                         // move to the next line
@@ -930,9 +930,9 @@ where
                         return Ok(pixels);
                     } else if stream_byte == 2 {
                         // reposition frame decode coordinates
-                        stream_byte = self.bytes.get_u8();
+                        stream_byte = self.bytes.read_u8();
                         pos += usize::from(stream_byte);
-                        stream_byte = self.bytes.get_u8();
+                        stream_byte = self.bytes.read_u8();
                         line -= i32::from(stream_byte);
 
                         if line < 0 {
@@ -953,7 +953,7 @@ where
                                 break;
                             }
 
-                            stream_byte = self.bytes.get_u8();
+                            stream_byte = self.bytes.read_u8();
                             output[pos] = stream_byte >> 4;
                             pos += 1;
 
@@ -975,7 +975,7 @@ where
                         let msg = "Frame pointer went out of bounds";
                         return Err(BmpDecoderErrors::GenericStatic(msg));
                     }
-                    stream_byte = self.bytes.get_u8();
+                    stream_byte = self.bytes.read_u8();
 
                     for i in 0..rle_code {
                         if pos >= self.width {
@@ -997,10 +997,10 @@ where
             let (mut p1, mut p2);
             // loop until no more bytes are left
             while !self.bytes.eof()? {
-                p1 = self.bytes.get_u8();
+                p1 = self.bytes.read_u8();
                 if p1 == 0 {
                     // escape code
-                    p2 = self.bytes.get_u8();
+                    p2 = self.bytes.read_u8();
                     if p2 == 0 {
                         // end of line
                         line -= 1;
@@ -1031,8 +1031,8 @@ where
                         return Ok(pixels);
                     } else if p2 == 2 {
                         // skip
-                        p1 = self.bytes.get_u8();
-                        p2 = self.bytes.get_u8();
+                        p1 = self.bytes.read_u8();
+                        p2 = self.bytes.read_u8();
 
                         pos += usize::from(p1);
 
@@ -1074,8 +1074,8 @@ where
                             .chunks_exact_mut(2)
                             .take(usize::from(p2))
                             .for_each(|x| {
-                                x[0] = self.bytes.get_u8();
-                                x[1] = self.bytes.get_u8();
+                                x[0] = self.bytes.read_u8();
+                                x[1] = self.bytes.read_u8();
                             });
                         pos += 2 * usize::from(p2);
                     } else if self.depth == 32 {
@@ -1083,10 +1083,10 @@ where
                             .chunks_exact_mut(4)
                             .take(usize::from(p2))
                             .for_each(|x| {
-                                x[0] = self.bytes.get_u8();
-                                x[1] = self.bytes.get_u8();
-                                x[2] = self.bytes.get_u8();
-                                x[3] = self.bytes.get_u8();
+                                x[0] = self.bytes.read_u8();
+                                x[1] = self.bytes.read_u8();
+                                x[2] = self.bytes.read_u8();
+                                x[3] = self.bytes.read_u8();
                             });
                         pos += 4 * usize::from(p2);
                     }
@@ -1099,13 +1099,13 @@ where
                     }
                     match self.depth {
                         8 => {
-                            pix[0] = self.bytes.get_u8();
+                            pix[0] = self.bytes.read_u8();
                             output[pos..pos + usize::from(p1)].fill(pix[0]);
                             pos += usize::from(p1);
                         }
                         16 => {
-                            pix[0] = self.bytes.get_u8();
-                            pix[1] = self.bytes.get_u8();
+                            pix[0] = self.bytes.read_u8();
+                            pix[1] = self.bytes.read_u8();
 
                             output[pos..]
                                 .chunks_exact_mut(2)
@@ -1116,9 +1116,9 @@ where
                             pos += 2 * usize::from(p1);
                         }
                         24 => {
-                            pix[0] = self.bytes.get_u8();
-                            pix[1] = self.bytes.get_u8();
-                            pix[2] = self.bytes.get_u8();
+                            pix[0] = self.bytes.read_u8();
+                            pix[1] = self.bytes.read_u8();
+                            pix[2] = self.bytes.read_u8();
 
                             output[pos..]
                                 .chunks_exact_mut(3)
@@ -1136,10 +1136,10 @@ where
                             // }
                         }
                         32 => {
-                            pix[0] = self.bytes.get_u8();
-                            pix[1] = self.bytes.get_u8();
-                            pix[2] = self.bytes.get_u8();
-                            pix[3] = self.bytes.get_u8();
+                            pix[0] = self.bytes.read_u8();
+                            pix[1] = self.bytes.read_u8();
+                            pix[2] = self.bytes.read_u8();
+                            pix[3] = self.bytes.read_u8();
 
                             output[pos..]
                                 .chunks_exact_mut(4)

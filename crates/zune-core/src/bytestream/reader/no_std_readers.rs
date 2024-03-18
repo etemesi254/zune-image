@@ -174,3 +174,10 @@ impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
         }
     }
 }
+// 
+// #[cfg(feature = "std")]
+// impl<T: AsRef<[u8]>> std::io::Read for ZCursor<T> {
+//     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+//         self.read_bytes(buf).map_err(|x|{ std::io::Error::new()})
+//     }
+// }

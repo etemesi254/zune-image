@@ -185,7 +185,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             if stream.overread_by > 37
             // favourite number :)
             {
-                if self.options.get_strict_mode() {
+                if self.options.strict_mode() {
                     return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
                 };
 
@@ -286,7 +286,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.handle_rst(stream)?;
                     }
                 } else {
-                    if self.options.get_strict_mode() {
+                    if self.options.strict_mode() {
                         return Err(DecodeErrors::Format(format!(
                             "Marker {m:?} found where not expected"
                         )));

@@ -154,19 +154,19 @@ where
         trace!("Image colorspace: {:?}", color);
         trace!("Image dimensions: ({},{})", w, h);
         // check dimensions if bigger than supported
-        if w > self.options.get_max_width() {
+        if w > self.options.max_width() {
             let msg = format!(
                 "Image width {}, greater than max set width {}",
                 w,
-                self.options.get_max_width()
+                self.options.max_width()
             );
             return Err(ImageErrors::ImageDecodeErrors(msg));
         }
-        if h > self.options.get_max_height() {
+        if h > self.options.max_height() {
             let msg = format!(
                 "Image height {}, greater than max set height {}",
                 h,
-                self.options.get_max_height()
+                self.options.max_height()
             );
             return Err(ImageErrors::ImageDecodeErrors(msg));
         }

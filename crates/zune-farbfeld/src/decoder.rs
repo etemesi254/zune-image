@@ -71,10 +71,10 @@ where
         trace!("Image width: {}", self.width);
         trace!("Image height: {}", self.height);
 
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             return Err(FarbFeldErrors::Generic("Image Height is greater than max height. Bump up max_height to support such images"));
         }
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             return Err(FarbFeldErrors::Generic("Image width is greater than max width. Bump up max_width in options to support such images"));
         }
 
@@ -169,13 +169,13 @@ where
     /// Returns farbfeld default image colorspace.
     ///
     /// This is always RGBA
-    pub const fn get_colorspace(&self) -> ColorSpace {
+    pub const fn colorspace(&self) -> ColorSpace {
         FARBFELD_COLORSPACE
     }
     /// Return farbfeld default bit depth
     ///
     /// This is always 16
-    pub const fn get_bit_depth(&self) -> BitDepth {
+    pub const fn bit_depth(&self) -> BitDepth {
         FARBFELD_BIT_DEPTH
     }
 
@@ -191,9 +191,9 @@ where
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.
-    /// let (w,h)=decoder.get_dimensions().unwrap();
+    /// let (w,h)=decoder.dimensions().unwrap();
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub const fn dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_headers {
             return Some((self.width, self.height));
         }

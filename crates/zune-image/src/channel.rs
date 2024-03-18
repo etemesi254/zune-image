@@ -296,9 +296,9 @@ impl Channel {
     /// use zune_image::channel::Channel;
     /// let channel = Channel::new::<u8>();
     ///
-    /// assert_eq!(channel.get_type_id(),TypeId::of::<u8>());
+    /// assert_eq!(channel.type_id(),TypeId::of::<u8>());
     /// ```
-    pub fn get_type_id(&self) -> TypeId {
+    pub fn type_id(&self) -> TypeId {
         self.type_id
     }
     /// Create a new channel with the specified capacity

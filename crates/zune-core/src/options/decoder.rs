@@ -213,26 +213,26 @@ impl DecoderOptions {
 impl DecoderOptions {
     /// Get maximum width configured for which the decoder
     /// should not try to decode images greater than this width
-    pub const fn get_max_width(&self) -> usize {
+    pub const fn max_width(&self) -> usize {
         self.max_width
     }
 
     /// Get maximum height configured for which the decoder should
     /// not try to decode images greater than this height
-    pub const fn get_max_height(&self) -> usize {
+    pub const fn max_height(&self) -> usize {
         self.max_height
     }
 
     /// Return true whether the decoder should be in strict mode
     /// And reject most errors
-    pub fn get_strict_mode(&self) -> bool {
+    pub fn strict_mode(&self) -> bool {
         self.flags.jpg_error_on_non_conformance
             | self.flags.png_confirm_crc
             | self.flags.inflate_confirm_adler
     }
     /// Return true if the decoder should use unsafe
     /// routines where possible
-    pub const fn get_use_unsafe(&self) -> bool {
+    pub const fn use_unsafe(&self) -> bool {
         self.flags.zune_use_unsafe
     }
 
@@ -324,7 +324,7 @@ impl DecoderOptions {
 
     /// Get the byte endian for which samples that span more than one byte will
     /// be treated
-    pub const fn get_byte_endian(&self) -> ByteEndian {
+    pub const fn byte_endian(&self) -> ByteEndian {
         self.endianness
     }
 }

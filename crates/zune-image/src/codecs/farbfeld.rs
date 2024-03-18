@@ -31,8 +31,8 @@ where
         let pixels = self
             .decode()
             .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
-        let colorspace = self.get_colorspace();
-        let (width, height) = self.get_dimensions().unwrap();
+        let colorspace = self.colorspace();
+        let (width, height) = self.dimensions().unwrap();
 
         let mut image = Image::from_u16(&pixels, width, height, colorspace);
 
@@ -42,11 +42,11 @@ where
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace()
+        self.colorspace()
     }
 
     fn name(&self) -> &'static str {
@@ -61,12 +61,12 @@ where
         self.decode_headers()
             .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.bit_depth();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::Farbfeld),
-            colorspace: self.get_colorspace(),
+            colorspace: self.colorspace(),
             depth: depth,
             width: width,
             height: height,

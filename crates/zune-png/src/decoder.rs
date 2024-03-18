@@ -155,7 +155,7 @@ pub struct PngInfo {
 /// The decoder currently expands images less than 8 bits per pixels to 8 bits per pixel
 /// if this is not desired, then I'd suggest another png decoder
 ///
-/// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::get_info)
+/// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::info)
 /// and access the relevant fields exposed
 pub struct PngDecoder<T>
 where
@@ -234,7 +234,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// - `Some((width,height))`
     /// - `None`: The image headers haven't been decoded
     ///   or there was an error decoding them
-    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub fn dimensions(&self) -> Option<(usize, usize)> {
         if !self.seen_hdr {
             return None;
         }
@@ -248,7 +248,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// # Returns
     /// - `Some(depth)`:  The bit depth of the image.
     /// - `None`: The header wasn't decoded hence the depth wasn't discovered.
-    pub const fn get_depth(&self) -> Option<BitDepth> {
+    pub const fn depth(&self) -> Option<BitDepth> {
         if !self.seen_hdr {
             return None;
         }
@@ -270,7 +270,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
     ///  - `None`: If the image headers haven't been decoded, or there was an error
     ///     during decoding
-    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub const fn colorspace(&self) -> Option<ColorSpace> {
         if !self.seen_hdr {
             return None;
         }
@@ -483,7 +483,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// If the image depth is less than 16 bit, then the endianness has
     /// no effect
     pub const fn byte_endian(&self) -> ByteEndian {
-        self.options.get_byte_endian()
+        self.options.byte_endian()
     }
 
     /// Return the number of bytes required to hold a decoded image frame
@@ -503,8 +503,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let info = &self.png_info;
         let bytes = if info.depth == 16 && !self.options.png_get_strip_to_8bit() { 2 } else { 1 };
 
-        let out_n = self.get_colorspace()?.num_components();
-        let dims = self.get_dimensions().unwrap();
+        let out_n = self.colorspace()?.num_components();
+        let dims = self.dimensions().unwrap();
 
         dims.0
             .checked_mul(dims.1)?
@@ -531,7 +531,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // stripping 16 bit to 8 bit
         let bytes = if p_info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace()?.num_components();
+        let out_n = self.colorspace()?.num_components();
 
         info.width
             .checked_mul(info.height)?
@@ -545,7 +545,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// # Returns
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
-    pub const fn get_info(&self) -> Option<&PngInfo> {
+    pub const fn info(&self) -> Option<&PngInfo> {
         if self.seen_headers {
             Some(&self.png_info)
         } else {
@@ -557,7 +557,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///
     /// Can be used to modify options before actual decoding but after initial
     /// creation
-    pub const fn get_options(&self) -> &DecoderOptions {
+    pub const fn options(&self) -> &DecoderOptions {
         &self.options
     }
 
@@ -620,7 +620,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         self.decode_headers()?;
 
         trace!("Input Colorspace: {:?} ", self.png_info.color);
-        trace!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
+        trace!("Output Colorspace: {:?} ", self.colorspace().unwrap());
 
         if self.frames.get(self.current_frame).is_none() {
             return Err(PngDecodeErrors::GenericStatic("No more frames"));
@@ -658,7 +658,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         }
 
         // convert to set endian if need be
-        if self.get_depth().unwrap() == BitDepth::Sixteen {
+        if self.depth().unwrap() == BitDepth::Sixteen {
             convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
         }
         // one more frame decoded
@@ -759,7 +759,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace().unwrap().num_components();
+        let out_n = self.colorspace().unwrap().num_components();
 
         let new_len = frame_info.width * frame_info.height * out_n * bytes;
 
@@ -887,7 +887,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace().unwrap().num_components();
+        let out_n = self.colorspace().unwrap().num_components();
         let new_len = info.width * info.height * out_n;
 
         let mut out_u8: Vec<u8> = vec![0; new_len * usize::from(info.depth != 16)];
@@ -934,7 +934,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_colorspace = self.get_colorspace().unwrap();
+        let out_colorspace = self.colorspace().unwrap();
 
         let mut img_width_bytes;
 
@@ -1170,7 +1170,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                         &self.previous_stride,
                         to_filter_row,
                         self.png_info.color,
-                        self.get_depth().unwrap()
+                        self.depth().unwrap()
                     );
                 }
             }
@@ -1258,7 +1258,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                         &self.previous_stride,
                         to_filter_row,
                         self.png_info.color,
-                        self.get_depth().unwrap()
+                        self.depth().unwrap()
                     );
                 }
             }

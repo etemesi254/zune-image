@@ -13,12 +13,12 @@ use crate::encoder::PngEncoder;
 
 pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter<&mut Vec<u8>>) {
     // write width and height
-    output.write_u32_be(ctx.options.get_width() as u32);
-    output.write_u32_be(ctx.options.get_height() as u32);
+    output.write_u32_be(ctx.options.width() as u32);
+    output.write_u32_be(ctx.options.height() as u32);
     // write depth
-    output.write_u8(ctx.options.get_depth().bit_size() as u8);
+    output.write_u8(ctx.options.depth().bit_size() as u8);
     // write color
-    let color = ctx.options.get_colorspace();
+    let color = ctx.options.colorspace();
 
     let color_int = match color {
         ColorSpace::Luma => 0,
@@ -63,6 +63,11 @@ pub fn write_iend(_: &PngEncoder, _: &mut ZByteWriter<&mut Vec<u8>>) {}
 pub fn write_header_fn<T: ZByteWriterTrait, F: Fn(&PngEncoder, &mut ZByteWriter<&mut Vec<u8>>)>(
     v: &PngEncoder, writer: &mut ZByteWriter<T>, name: &[u8; 4], func: F
 ) -> Result<(), ZByteIoError> {
+    // We use a vec so that we make crc calculations easier for myself
+    // and the problem is that how png chunks work is that you have to go back and write length
+    // but you can't know the length without writing the whole thing,
+    //
+
     // format
     // length - chunk type - [data] -  crc chunk
     let mut temp_space = Vec::with_capacity(10);

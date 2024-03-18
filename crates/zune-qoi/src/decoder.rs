@@ -130,23 +130,23 @@ where
         // routines
         let width = self.stream.get_u32_be() as usize;
         let height = self.stream.get_u32_be() as usize;
-        let colorspace = self.stream.get_u8();
-        let colorspace_layout = self.stream.get_u8();
+        let colorspace = self.stream.read_u8();
+        let colorspace_layout = self.stream.read_u8();
 
-        if width > self.options.get_max_width() {
+        if width > self.options.max_width() {
             let msg = format!(
                 "Width {} greater than max configured width {}",
                 width,
-                self.options.get_max_width()
+                self.options.max_width()
             );
             return Err(QoiErrors::Generic(msg));
         }
 
-        if height > self.options.get_max_height() {
+        if height > self.options.max_height() {
             let msg = format!(
                 "Height {} greater than max configured height {}",
                 height,
-                self.options.get_max_height()
+                self.options.max_height()
             );
             return Err(QoiErrors::Generic(msg));
         }
@@ -160,7 +160,7 @@ where
             0 => QoiColorspace::sRGB,
             1 => QoiColorspace::Linear,
             _ => {
-                if self.options.get_strict_mode() {
+                if self.options.strict_mode() {
                     return Err(QoiErrors::UnknownColorspace(colorspace_layout));
                 } else {
                     error!("Unknown/invalid colorspace value {colorspace_layout}, expected 0 or 1");
@@ -211,7 +211,7 @@ where
     /// be decoded
     ///
     /// [`decode_headers`]:Self::decode_headers
-    /// [`get_dimensions`]:Self::get_dimensions
+    /// [`get_dimensions`]:Self::dimensions
     /// [QoiErrors]:crate::errors::QoiErrors
     pub fn decode(&mut self) -> Result<Vec<u8>, QoiErrors> {
         if !self.decoded_headers {
@@ -272,16 +272,16 @@ where
                 run -= 1;
                 pix_chunk.copy_from_slice(&px[0..SIZE]);
             } else {
-                let chunk = self.stream.get_u8();
+                let chunk = self.stream.read_u8();
 
                 if chunk == QOI_OP_RGB {
-                    let packed_bytes = self.stream.get_fixed_bytes_or_zero::<3>();
+                    let packed_bytes = self.stream.read_fixed_bytes_or_zero::<3>();
 
                     px[0] = packed_bytes[0];
                     px[1] = packed_bytes[1];
                     px[2] = packed_bytes[2];
                 } else if chunk == QOI_OP_RGBA {
-                    let packed_bytes = self.stream.get_fixed_bytes_or_zero::<4>();
+                    let packed_bytes = self.stream.read_fixed_bytes_or_zero::<4>();
 
                     px.copy_from_slice(&packed_bytes);
                 } else if (chunk & QOI_MASK_2) == QOI_OP_INDEX {
@@ -291,7 +291,7 @@ where
                     px[1] = px[1].wrapping_add(((chunk >> 2) & 0x03).wrapping_sub(2));
                     px[2] = px[2].wrapping_add(((chunk >> 0) & 0x03).wrapping_sub(2));
                 } else if (chunk & QOI_MASK_2) == QOI_OP_LUMA {
-                    let b2 = self.stream.get_u8();
+                    let b2 = self.stream.read_u8();
                     let vg = (chunk & 0x3f).wrapping_sub(32);
 
                     px[0] = px[0].wrapping_add(vg.wrapping_sub(8).wrapping_add((b2 >> 4) & 0x0f));
@@ -318,7 +318,7 @@ where
         let remaining = self.stream.read_fixed_bytes_or_error()?;
 
         if remaining != LAST_BYTES {
-            if self.options.get_strict_mode() {
+            if self.options.strict_mode() {
                 return Err(QoiErrors::GenericStatic(
                     "Last bytes do not match QOI signature"
                 ));
@@ -342,7 +342,7 @@ where
     ///
     /// [RGB]: zune_core::colorspace::ColorSpace::RGB
     /// [RGBA]: zune_core::colorspace::ColorSpace::RGB
-    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub const fn colorspace(&self) -> Option<ColorSpace> {
         if self.decoded_headers {
             Some(self.colorspace)
         } else {
@@ -363,11 +363,11 @@ where
     /// use zune_core::bytestream::ZCursor;
     /// use zune_qoi::QoiDecoder;
     /// let decoder = QoiDecoder::new(ZCursor::new(&[]));
-    /// assert_eq!(decoder.get_bit_depth(),BitDepth::Eight)
+    /// assert_eq!(decoder.bit_depth(),BitDepth::Eight)
     /// ```
     ///
     /// [`BitDepth::U8`]:zune_core::bit_depth::BitDepth::Eight
-    pub const fn get_bit_depth(&self) -> BitDepth {
+    pub const fn bit_depth(&self) -> BitDepth {
         BitDepth::Eight
     }
 
@@ -389,9 +389,9 @@ where
     ///
     /// decoder.decode_headers().unwrap();
     /// // get dimensions now.
-    /// let (w,h)=decoder.get_dimensions().unwrap();
+    /// let (w,h)=decoder.dimensions().unwrap();
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub const fn dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_headers {
             return Some((self.width, self.height));
         }

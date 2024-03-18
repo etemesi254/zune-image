@@ -108,9 +108,9 @@ impl ImageMetadata {
     ///use zune_image::metadata::ImageMetadata;
     /// let meta = ImageMetadata::default();
     /// // default dimensions are usually zero
-    /// assert_eq!(meta.get_dimensions(),(0,0));
+    /// assert_eq!(meta.dimensions(),(0,0));
     /// ```
-    pub const fn get_dimensions(&self) -> (usize, usize) {
+    pub const fn dimensions(&self) -> (usize, usize) {
         (self.width, self.height)
     }
     /// Set image dimensions
@@ -122,7 +122,7 @@ impl ImageMetadata {
     /// // set image dimensions
     /// meta.set_dimensions(23,24);
     /// // get image dimensions
-    /// assert_eq!(meta.get_dimensions(),(23,24));
+    /// assert_eq!(meta.dimensions(),(23,24));
     /// ```
     pub fn set_dimensions(&mut self, width: usize, height: usize) {
         self.width = width;
@@ -132,7 +132,7 @@ impl ImageMetadata {
     ///
     /// The default colorspace is usually [`ColorSpace::Unknown`]
     /// which represents an uninitialized image
-    pub const fn get_colorspace(&self) -> ColorSpace {
+    pub const fn colorspace(&self) -> ColorSpace {
         self.colorspace
     }
     /// Set the image's colorspace
@@ -144,7 +144,7 @@ impl ImageMetadata {
     /// Color transfer characteristics tell us more about how
     /// the colorspace values are represented
     /// whether they are linear or gamma encoded
-    pub const fn get_color_trc(&self) -> Option<ColorCharacteristics> {
+    pub const fn color_trc(&self) -> Option<ColorCharacteristics> {
         self.color_trc
     }
     /// Set color transfer characteristics for this image
@@ -156,7 +156,7 @@ impl ImageMetadata {
     /// Default value is [`BitDepth::Unknown`]
     /// which indicates that the bit-depth is currently unknown for a
     /// particular image
-    pub const fn get_depth(&self) -> BitDepth {
+    pub const fn depth(&self) -> BitDepth {
         self.depth
     }
     /// Set the image bit depth
@@ -183,7 +183,7 @@ impl ImageMetadata {
     /// Get the image for which this metadata was fetched from
     ///
     /// May be None if the caller didn't set a format
-    pub const fn get_image_format(&self) -> Option<ImageFormat> {
+    pub const fn image_format(&self) -> Option<ImageFormat> {
         self.format
     }
 

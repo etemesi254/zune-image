@@ -27,7 +27,7 @@ where
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
         let (width, height) = self.get_dimensions().unwrap();
-        let colorspace = self.get_colorspace().unwrap();
+        let colorspace = self.colorspace().unwrap();
 
         Ok(Image::from_u8(&pixels, width, height, colorspace))
     }
@@ -37,7 +37,7 @@ where
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace().unwrap()
+        self.colorspace().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -48,11 +48,11 @@ where
         self.decode_headers()?;
 
         let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_depth();
+        let depth = self.depth();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::BMP),
-            colorspace: self.get_colorspace().expect("Impossible"),
+            colorspace: self.colorspace().expect("Impossible"),
             depth: depth,
             width: width,
             height: height,

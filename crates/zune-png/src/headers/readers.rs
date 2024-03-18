@@ -35,24 +35,24 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             ));
         }
 
-        if self.png_info.width > self.options.get_max_width() {
+        if self.png_info.width > self.options.max_width() {
             return Err(PngDecodeErrors::Generic(format!(
                 "Image width {}, larger than maximum configured width {}, aborting",
                 self.png_info.width,
-                self.options.get_max_width()
+                self.options.max_width()
             )));
         }
 
-        if self.png_info.height > self.options.get_max_height() {
+        if self.png_info.height > self.options.max_height() {
             return Err(PngDecodeErrors::Generic(format!(
                 "Image height {}, larger than maximum configured height {}, aborting",
                 self.png_info.height,
-                self.options.get_max_height()
+                self.options.max_height()
             )));
         }
 
-        self.png_info.depth = self.stream.get_u8();
-        let color = self.stream.get_u8();
+        self.png_info.depth = self.stream.read_u8();
+        let color = self.stream.read_u8();
 
         if let Some(img_color) = PngColor::from_int(color) {
             self.png_info.color = img_color;
@@ -80,11 +80,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             }
         }
 
-        if self.stream.get_u8() != 0 {
+        if self.stream.read_u8() != 0 {
             return Err(PngDecodeErrors::GenericStatic("Unknown compression method"));
         }
 
-        let filter_method = self.stream.get_u8();
+        let filter_method = self.stream.read_u8();
 
         if let Some(method) = FilterMethod::from_int(filter_method) {
             self.png_info.filter_method = method;
@@ -94,7 +94,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             )));
         }
 
-        let interlace_method = self.stream.get_u8();
+        let interlace_method = self.stream.read_u8();
 
         if let Some(method) = InterlaceMethod::from_int(interlace_method) {
             self.png_info.interlace_method = method;
@@ -144,9 +144,9 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         self.palette.resize(256, PLTEEntry::default());
 
         for pal_chunk in self.palette.iter_mut().take(chunk.length / 3) {
-            pal_chunk.red = self.stream.get_u8();
-            pal_chunk.green = self.stream.get_u8();
-            pal_chunk.blue = self.stream.get_u8();
+            pal_chunk.red = self.stream.read_u8();
+            pal_chunk.green = self.stream.read_u8();
+            pal_chunk.blue = self.stream.read_u8();
         }
 
         // skip crc chunk
@@ -163,7 +163,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // we will later pass these to the deflate decoder as a whole, to get the whole
         // uncompressed stream.
 
-        let chunk = self.frames[0].get_chunk();
+        let chunk = self.frames[0].chunk_mut();
         let prev_len = chunk.len();
         chunk.resize(chunk.len() + png_chunk.length, 0);
         self.stream.read_exact_bytes(&mut chunk[prev_len..])?;
@@ -201,7 +201,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                     )));
                 }
                 for i in 0..chunk.length {
-                    self.palette[i].alpha = self.stream.get_u8();
+                    self.palette[i].alpha = self.stream.read_u8();
                 }
             }
             _ => {
@@ -217,7 +217,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         Ok(())
     }
     pub(crate) fn parse_gama(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
-        if self.options.get_strict_mode() && chunk.length != 4 {
+        if self.options.strict_mode() && chunk.length != 4 {
             let error = format!("Gama chunk length is not 4 but {}", chunk.length);
             return Err(PngDecodeErrors::Generic(error));
         }
@@ -261,7 +261,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Parse the tIME chunk if present in PNG
     pub(crate) fn parse_time(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         if chunk.length != 7 {
-            if self.options.get_strict_mode() {
+            if self.options.strict_mode() {
                 return Err(PngDecodeErrors::GenericStatic("Invalid tIME chunk length"));
             }
             warn!("Invalid time chunk length {:?}", chunk.length);
@@ -271,11 +271,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         }
 
         let year = self.stream.get_u16_be();
-        let month = self.stream.get_u8() % 13;
-        let day = self.stream.get_u8() % 32;
-        let hour = self.stream.get_u8() % 24;
-        let minute = self.stream.get_u8() % 60;
-        let second = self.stream.get_u8() % 61;
+        let month = self.stream.read_u8() % 13;
+        let day = self.stream.read_u8() % 32;
+        let hour = self.stream.read_u8() % 24;
+        let minute = self.stream.read_u8() % 60;
+        let second = self.stream.read_u8() % 61;
 
         let time = TimeInfo {
             year,
@@ -300,7 +300,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // First check does litle endian, and second big endian
         // See https://ftp-osl.osuosl.org/pub/libpng/documents/pngext-1.5.0.html#C.eXIf
         if !(data.starts_with(&[73, 73, 42, 0]) || data.starts_with(&[77, 77, 0, 42])) {
-            if self.options.get_strict_mode() {
+            if self.options.strict_mode() {
                 return Err(PngDecodeErrors::GenericStatic(
                     "[strict-mode]: Invalid exif chunk"
                 ));
@@ -335,7 +335,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 .saturating_sub(1); // compression method
 
             // read compression method
-            let _ = self.stream.get_u8();
+            let _ = self.stream.read_u8();
 
             // read remaining chunk
             let data = self.stream.peek_at(0, remainder).unwrap();
@@ -441,7 +441,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 .saturating_sub(1); // compression method
 
             // read compression method
-            let _ = self.stream.get_u8();
+            let _ = self.stream.read_u8();
 
             // read remaining chunk
             let data = self.stream.peek_at(0, remainder).unwrap();
@@ -509,7 +509,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 }
                 // get frame data
                 // skip four  bytes since it's usually sequence number
-                let chunk = self.frames.last_mut().unwrap().get_chunk();
+                let chunk = self.frames.last_mut().unwrap().chunk_mut();
                 let prev_len = chunk.len();
                 // skip the header
                 self.stream.skip(4)?;
@@ -550,8 +550,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let y_offset = self.stream.get_u32_be() as usize;
         let delay_num = self.stream.get_u16_be();
         let delay_denom = self.stream.get_u16_be();
-        let dispose_op = DisposeOp::from_int(self.stream.get_u8())?;
-        let blend_op = BlendOp::from_int(self.stream.get_u8())?;
+        let dispose_op = DisposeOp::from_int(self.stream.read_u8())?;
+        let blend_op = BlendOp::from_int(self.stream.read_u8())?;
 
         let fctl_info = FrameInfo {
             seq_number,

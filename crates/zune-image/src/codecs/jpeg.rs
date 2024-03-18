@@ -48,12 +48,12 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
             .decode()
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
 
-        let colorspace = self.get_output_colorspace().unwrap();
+        let colorspace = self.output_colorspace().unwrap();
         let (width, height) = self.dimensions().unwrap();
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
         image.metadata = metadata;
-        image.metadata.colorspace = self.get_output_colorspace().unwrap();
+        image.metadata.colorspace = self.output_colorspace().unwrap();
         Ok(image)
     }
 
@@ -62,7 +62,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_output_colorspace().unwrap()
+        self.output_colorspace().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -77,7 +77,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
 
         let mut metadata = ImageMetadata {
             format: Some(ImageFormat::JPEG),
-            colorspace: self.get_input_colorspace().unwrap(),
+            colorspace: self.input_colorspace().unwrap(),
             depth: BitDepth::Eight,
             width: width,
             height: height,
@@ -162,7 +162,7 @@ impl EncoderTrait for JpegEncoder {
 
             // create encoder finally
             // vec<u8> supports write so we use that as our encoder
-            let mut encoder = jpeg_encoder::Encoder::new(temp_c, options.get_quality());
+            let mut encoder = jpeg_encoder::Encoder::new(temp_c, options.quality());
 
             // add options
             encoder.set_progressive(options.jpeg_encode_progressive());

@@ -158,9 +158,9 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (width, height) = decoder.dimensions().unwrap();
-                    let color = decoder.get_colorspace().unwrap();
+                    let color = decoder.colorspace().unwrap();
 
-                    match decoder.get_depth().unwrap() {
+                    match decoder.depth().unwrap() {
                         BitDepth::Eight => {
                             let arr = PyArray3::<u8>::zeros(
                                 py,
@@ -197,7 +197,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                             // set sample endianness to match platform
                             #[cfg(target_endian = "little")]
                             {
-                                let options = decoder.get_options().set_byte_endian(ByteEndian::LE);
+                                let options = decoder.options().set_byte_endian(ByteEndian::LE);
                                 decoder.set_options(options);
                             }
                             #[cfg(target_endian = "big")]
@@ -223,7 +223,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (w, h) = decoder.dimensions().unwrap();
-                    let color = decoder.get_output_colorspace().unwrap();
+                    let color = decoder.output_colorspace().unwrap();
 
                     let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
                     let mut write_array = arr.try_readwrite()?;
@@ -242,7 +242,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
                     let (w, h) = decoder.dimensions().unwrap();
 
-                    let color = decoder.get_colorspace().unwrap();
+                    let color = decoder.colorspace().unwrap();
 
                     let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
 
@@ -259,8 +259,8 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let bytes = decoder
                         .decode()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
-                    let colorspace = decoder.get_colorspace().unwrap();
-                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let colorspace = decoder.colorspace().unwrap();
+                    let (w, h) = decoder.dimensions().unwrap();
 
                     decode_result(py, bytes, w, h, colorspace)
                 }
@@ -273,8 +273,8 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let bytes = decoder
                         .decode()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
-                    let colorspace = decoder.get_colorspace().unwrap();
-                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let colorspace = decoder.colorspace().unwrap();
+                    let (w, h) = decoder.dimensions().unwrap();
 
                     decode_result(py, bytes, w, h, colorspace)
                 }
@@ -286,7 +286,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (w, h) = decoder.dimensions().unwrap();
-                    let color = decoder.get_colorspace();
+                    let color = decoder.colorspace();
 
                     let arr = PyArray3::<u16>::zeros(py, [h, w, color.num_components()], false);
                     let mut write_array = arr.try_readwrite()?;
@@ -305,7 +305,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (w, h) = decoder.dimensions().unwrap();
-                    let color = decoder.get_colorspace().unwrap();
+                    let color = decoder.colorspace().unwrap();
 
                     let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
 
@@ -323,7 +323,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     decoder
                         .decode_headers()
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
-                    let (w, h) = decoder.get_dimensions().unwrap();
+                    let (w, h) = decoder.dimensions().unwrap();
 
                     let color = decoder.get_colorspace().unwrap();
 

@@ -58,12 +58,12 @@ fn test_animation() {
     let data = open_and_read(path);
     let mut decoder = PngDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
-    let colorspace = decoder.get_colorspace().unwrap();
-    let _depth = decoder.get_depth().unwrap();
-    let info = decoder.get_info().unwrap().clone();
+    let colorspace = decoder.colorspace().unwrap();
+    let _depth = decoder.depth().unwrap();
+    let info = decoder.info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
-        vec![0; info.width * info.height * decoder.get_colorspace().unwrap().num_components()];
+        vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
@@ -94,13 +94,13 @@ fn test_animation_2() {
     let data = open_and_read(path);
     let mut decoder = PngDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
-    let colorspace = decoder.get_colorspace().unwrap();
-    let _depth = decoder.get_depth().unwrap();
+    let colorspace = decoder.colorspace().unwrap();
+    let _depth = decoder.depth().unwrap();
     //let mut i = 0;
-    let info = decoder.get_info().unwrap().clone();
+    let info = decoder.info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
-        vec![0; info.width * info.height * decoder.get_colorspace().unwrap().num_components()];
+        vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();

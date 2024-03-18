@@ -102,7 +102,7 @@ where
     ///
     /// In case the key or value contains non-valid UTF-8, the
     /// characters are replaced with [REPLACEMENT_CHARACTER](core::char::REPLACEMENT_CHARACTER)
-    pub const fn get_metadata(&self) -> &BTreeMap<String, String> {
+    pub const fn metadata(&self) -> &BTreeMap<String, String> {
         &self.metadata
     }
     /// Decode headers for the HDR image
@@ -187,18 +187,18 @@ where
                 ));
             }
         }
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             return Err(HdrDecodeErrors::TooLargeDimensions(
                 "height",
-                self.options.get_max_height(),
+                self.options.max_height(),
                 self.height
             ));
         }
 
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             return Err(HdrDecodeErrors::TooLargeDimensions(
                 "width",
-                self.options.get_max_width(),
+                self.options.max_width(),
                 self.width
             ));
         }
@@ -217,7 +217,7 @@ where
     /// # Returns
     /// - `Some(width,height)`: Image dimensions
     /// -  None : The image headers haven't been decoded
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub const fn dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_headers {
             Some((self.width, self.height))
         } else {
@@ -317,31 +317,31 @@ where
             .take(self.height)
         {
             if self.width < 8 || self.width > 0x7fff {
-                self.decompress(&mut scanline, self.width as i32)?;
+                self.decompress(&mut scanline, self.width as i32, 0)?;
                 convert_scanline(&scanline, out_scanline);
                 continue;
             }
 
-            let mut i = self.buf.get_u8();
+            let mut i = self.buf.read_u8();
 
             if i != 2 {
                 // undo byte read
                 self.buf.rewind(1)?;
 
-                self.decompress(&mut scanline, self.width as i32)?;
+                self.decompress(&mut scanline, self.width as i32, 0)?;
                 convert_scanline(&scanline, out_scanline);
                 continue;
             }
 
-            scanline[1] = self.buf.get_u8_err()?;
-            scanline[2] = self.buf.get_u8_err()?;
-            i = self.buf.get_u8_err()?;
+            scanline[1] = self.buf.read_u8_err()?;
+            scanline[2] = self.buf.read_u8_err()?;
+            i = self.buf.read_u8_err()?;
 
             if scanline[1] != 2 || (scanline[2] & 128) != 0 {
                 scanline[0] = 2;
                 scanline[3] = i;
 
-                self.decompress(&mut scanline, self.width as i32)?;
+                self.decompress(&mut scanline[4..], self.width as i32 - 1, 0)?;
                 convert_scanline(&scanline, out_scanline);
                 continue;
             }
@@ -355,10 +355,10 @@ where
                     if j >= self.width * 4 {
                         break;
                     }
-                    let mut run = i32::from(self.buf.get_u8_err()?);
+                    let mut run = i32::from(self.buf.read_u8_err()?);
 
                     if run > 128 {
-                        let val = self.buf.get_u8();
+                        let val = self.buf.read_u8();
                         run &= 127;
 
                         while run > 0 {
@@ -378,7 +378,7 @@ where
                                 break;
                             }
 
-                            new_scanline[j] = self.buf.get_u8();
+                            new_scanline[j] = self.buf.read_u8();
                             j += 4;
                         }
                     }
@@ -390,18 +390,22 @@ where
         Ok(())
     }
 
-    fn decompress(&mut self, scanline: &mut [u8], mut width: i32) -> Result<(), HdrDecodeErrors> {
+    fn decompress(
+        &mut self, scanline: &mut [u8], mut width: i32, mut scanline_offset: usize
+    ) -> Result<(), HdrDecodeErrors> {
         let mut shift = 0;
-        let mut scanline_offset = 0;
 
         while width > 0 {
-            scanline[0] = self.buf.get_u8_err()?;
-            scanline[1] = self.buf.get_u8_err()?;
-            scanline[2] = self.buf.get_u8_err()?;
-            scanline[3] = self.buf.get_u8_err()?;
+            scanline[scanline_offset] = self.buf.read_u8_err()?;
+            scanline[scanline_offset + 1] = self.buf.read_u8_err()?;
+            scanline[scanline_offset + 2] = self.buf.read_u8_err()?;
+            scanline[scanline_offset + 3] = self.buf.read_u8_err()?;
 
-            if scanline[0] == 1 && scanline[1] == 1 && scanline[2] == 1 {
-                let run = scanline[3];
+            if scanline[scanline_offset] == 1
+                && scanline[scanline_offset + 1] == 1
+                && scanline[scanline_offset + 2] == 1
+            {
+                let run = scanline[scanline_offset + 3];
 
                 let mut i = i32::from(run) << shift;
 
@@ -437,7 +441,7 @@ where
         let start = self.buf.position()?;
 
         while !self.buf.eof()? {
-            let byte = self.buf.get_u8_err()?;
+            let byte = self.buf.read_u8_err()?;
             write_to.push(byte);
 
             if byte == needle {
@@ -502,11 +506,11 @@ fn ldexp_neg(x: f32, exp: u32) -> f32 {
 #[inline]
 fn convert_pos(val: i32, exponent: i32) -> f32 {
     let v = (val as f32) / 256.0;
-    ldexp_pos(v, exponent as u32)
+    ldexp_pos(v, exponent.unsigned_abs() & 31)
 }
 
 #[inline]
 fn convert_neg(val: i32, exponent: i32) -> f32 {
     let v = (val as f32) / 256.0;
-    ldexp_neg(v, exponent.unsigned_abs())
+    ldexp_neg(v, exponent.unsigned_abs() & 31)
 }
