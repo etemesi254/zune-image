@@ -120,11 +120,8 @@ impl SingleFrame {
             fctl_info
         }
     }
-    /// Push a chunk onto this frame
-    //pub fn push_chunk(&mut self, chunk: &[u8]) {
-    //    self.fdat.extend_from_slice(chunk);
-    //}
-    pub fn get_chunk(&mut self) -> &mut Vec<u8> {
+
+    pub fn chunk_mut(&mut self) -> &mut Vec<u8> {
         &mut self.fdat
     }
     /// Set Frame control details for this frame
@@ -176,18 +173,18 @@ impl SingleFrame {
 /// // decode headers
 /// decoder.decode_headers().unwrap();
 /// // get useful information about the image
-/// let colorspace = decoder.get_colorspace().unwrap();
-/// let depth = decoder.get_depth().unwrap();
+/// let colorspace = decoder.colorspace().unwrap();
+/// let depth = decoder.depth().unwrap();
 /// //  get decoder information,we clone this because we need a standalone
 /// // info since we mutably modify decoder struct below
-/// let info = decoder.get_info().unwrap().clone();
+/// let info = decoder.info().unwrap().clone();
 /// // set up our background variable. Soon it will contain the data for the previous
 /// // frame, the first frame has no background hence why this is None
 /// let mut background: Option<Vec<u8>> = None;
 /// // the output, since we know that no frame will be bigger than the width and height, we can
 /// // set this up outside of the loop.
 /// let mut output =
-///  vec![0; info.width * info.height * decoder.get_colorspace().unwrap().num_components()];
+///  vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 /// let mut i = 0;
 ///
 /// while decoder.more_frames() {
@@ -212,7 +209,8 @@ impl SingleFrame {
 ///     // create encoder parameters
 ///    let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
 ///
-///    let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
+///     let mut out = vec![];
+///    let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(&mut out);
 ///
 ///     //std::fs::write(format!("./{i}.png"), bytes).unwrap();
 ///     // this is expensive, but we need a copy of the previous fully rendered frame

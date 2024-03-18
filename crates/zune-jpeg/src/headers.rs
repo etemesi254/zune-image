@@ -38,7 +38,7 @@ where
 
     while dht_length > 16 {
         // HT information
-        let ht_info = decoder.stream.get_u8_err()?;
+        let ht_info = decoder.stream.read_u8_err()?;
         // third bit indicates whether the huffman encoding is DC or AC type
         let dc_or_ac = (ht_info >> 4) & 0xF;
         // Indicate the position of this table, should be less than 4;
@@ -123,7 +123,7 @@ pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result
             ))?;
     // A single DQT header may have multiple QT's
     while qt_length > 0 {
-        let qt_info = img.stream.get_u8_err()?;
+        let qt_info = img.stream.read_u8_err()?;
         // 0 = 8 bit otherwise 16 bit dqt
         let precision = (qt_info >> 4) as usize;
         // last 4 bits give us position
@@ -188,7 +188,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     let length = img.stream.get_u16_be_err()?;
     // usually 8, but can be 12 and 16, we currently support only 8
     // so sorry about that 12 bit images
-    let dt_precision = img.stream.get_u8_err()?;
+    let dt_precision = img.stream.read_u8_err()?;
 
     if dt_precision != 8 {
         return Err(DecodeErrors::SofError(format!(
@@ -209,12 +209,12 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     trace!("Image width  :{}", img_width);
     trace!("Image height :{}", img_height);
 
-    if usize::from(img_width) > img.options.get_max_width() {
-        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.get_max_width())));
+    if usize::from(img_width) > img.options.max_width() {
+        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.max_width())));
     }
 
-    if usize::from(img_height) > img.options.get_max_height() {
-        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.get_max_height())));
+    if usize::from(img_height) > img.options.max_height() {
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.max_height())));
     }
 
     // Check image width or height is zero
@@ -223,7 +223,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     }
 
     // Number of components for the image.
-    let num_components = img.stream.get_u8_err()?;
+    let num_components = img.stream.read_u8_err()?;
 
     if num_components == 0 {
         return Err(DecodeErrors::SofError(
@@ -281,7 +281,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     // Scan header length
     let ls = image.stream.get_u16_be_err()?;
     // Number of image components in scan
-    let ns = image.stream.get_u8_err()?;
+    let ns = image.stream.read_u8_err()?;
 
     let mut seen = [-1; { MAX_COMPONENTS + 1 }];
 
@@ -309,7 +309,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     // consume spec parameters
     for i in 0..ns {
         // CS_i parameter, I don't need it so I might as well delete it
-        let id = image.stream.get_u8_err()?;
+        let id = image.stream.read_u8_err()?;
 
         if seen.contains(&i32::from(id)) {
             return Err(DecodeErrors::SofError(format!(
@@ -321,7 +321,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
         // lower four bits contain ac huffman destination table
-        let y = image.stream.get_u8_err()?;
+        let y = image.stream.read_u8_err()?;
 
         let mut j = 0;
 
@@ -356,11 +356,11 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     // Page 42
 
     // Start of spectral / predictor selection. (between 0 and 63)
-    image.spec_start = image.stream.get_u8_err()?;
+    image.spec_start = image.stream.read_u8_err()?;
     // End of spectral selection
-    image.spec_end = image.stream.get_u8_err()?;
+    image.spec_end = image.stream.read_u8_err()?;
 
-    let bit_approx = image.stream.get_u8_err()?;
+    let bit_approx = image.stream.read_u8_err()?;
     // successive approximation bit position high
     image.succ_high = bit_approx >> 4;
 
@@ -424,7 +424,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // skip version, flags0 and flags1
         decoder.stream.skip(5)?;
         // get color transform
-        let transform = decoder.stream.get_u8();
+        let transform = decoder.stream.read_u8();
         // https://exiftool.org/TagNames/JPEG.html#Adobe
         match transform {
             0 => decoder.input_colorspace = ColorSpace::CMYK,
@@ -441,7 +441,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // version =  5
         // transform = 1
         length = length.saturating_sub(14);
-    } else if decoder.options.get_strict_mode() {
+    } else if decoder.options.strict_mode() {
         return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
     } else {
         length = length.saturating_sub(2);
@@ -502,8 +502,8 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         // skip 12 bytes which indicate ICC profile
         length -= 12;
         decoder.stream.skip(12)?;
-        let seq_no = decoder.stream.get_u8();
-        let num_markers = decoder.stream.get_u8();
+        let seq_no = decoder.stream.read_u8();
+        let num_markers = decoder.stream.read_u8();
         // deduct the two bytes we read above
         length -= 2;
 

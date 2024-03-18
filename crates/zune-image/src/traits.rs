@@ -163,7 +163,7 @@ pub trait OperationsTrait {
         //     PremultiplyAlpha::new(self.alpha_state());
         // }
         // check we support the bit depth
-        let bit_type = image.metadata.get_depth().bit_type();
+        let bit_type = image.metadata.depth().bit_type();
 
         let supported = self.supported_types().iter().any(|x| *x == bit_type);
 

@@ -26,14 +26,14 @@ where
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let bytes = self.decode()?;
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
         Ok(Image::from_f32(&bytes, width, height, colorspace))
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
@@ -47,7 +47,7 @@ where
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
         self.decode_headers()?;
 
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
 
         let metadata = ImageMetadata {
             width: width,

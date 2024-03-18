@@ -113,16 +113,16 @@ impl ImageFormat {
                 return true;
             }
         }
-        return self.get_decoder(ZCursor::new(&[])).is_ok();
+        return self.decoder(ZCursor::new(&[])).is_ok();
     }
-    pub fn get_decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
+    pub fn decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
         T: ZByteReaderTrait + 'a
     {
-        self.get_decoder_with_options(data, DecoderOptions::default())
+        self.decoder_with_options(data, DecoderOptions::default())
     }
 
-    pub fn get_decoder_with_options<'a, T>(
+    pub fn decoder_with_options<'a, T>(
         &self, data: T, options: DecoderOptions
     ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
@@ -319,9 +319,9 @@ impl ImageFormat {
             }
             _ => {}
         }
-        return Err(ImageErrors::EncodeErrors(
+         Err(ImageErrors::EncodeErrors(
             ImgEncodeErrors::NoEncoderForFormat(*self)
-        ));
+        ))
     }
 
     pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
@@ -331,7 +331,7 @@ impl ImageFormat {
         guess_format(bytes)
     }
 
-    pub fn get_encoder_for_extension<P: AsRef<str>>(extension: P) -> Option<ImageFormat> {
+    pub fn encoder_for_extension<P: AsRef<str>>(extension: P) -> Option<ImageFormat> {
         match extension.as_ref() {
             "qoi" => {
                 #[cfg(feature = "qoi")]
@@ -435,7 +435,7 @@ impl Image {
     /// ```
     pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors> {
         return if let Some(ext) = file.as_ref().extension() {
-            if let Some(format) = ImageFormat::get_encoder_for_extension(ext.to_str().unwrap()) {
+            if let Some(format) = ImageFormat::encoder_for_extension(ext.to_str().unwrap()) {
                 self.save_to(file, format)
             } else {
                 let msg = format!("No encoder for extension {ext:?}");
@@ -589,7 +589,7 @@ impl Image {
         let decoder = ImageFormat::guess_format(src);
 
         if let Some(format) = decoder {
-            let mut image_decoder = format.0.get_decoder_with_options(format.1, options)?;
+            let mut image_decoder = format.0.decoder_with_options(format.1, options)?;
             // save format
             let mut image = image_decoder.decode()?;
             image.metadata.format = Some(format.0);

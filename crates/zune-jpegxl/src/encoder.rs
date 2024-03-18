@@ -1056,13 +1056,13 @@ impl<'a> JxlSimpleEncoder<'a> {
     /// Err(e): The error incase one is encountered
     ///
     pub fn encode<T: ZByteWriterTrait>(&self, sink: T) -> Result<usize, JxlEncodeErrors> {
-        if self.options.get_width() <= 1 {
+        if self.options.width() <= 1 {
             return Err(JxlEncodeErrors::ZeroDimension("width"));
         }
-        if self.options.get_height() <= 1 {
+        if self.options.height() <= 1 {
             return Err(JxlEncodeErrors::ZeroDimension("height"));
         }
-        let depth = self.options.get_depth();
+        let depth = self.options.depth();
 
         let mut frame_state = match depth {
             BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
@@ -1082,11 +1082,11 @@ impl<'a> JxlSimpleEncoder<'a> {
     pub(crate) fn encode_inner<B: JxlBitEncoder + Send + Sync>(
         &self, encoder: B
     ) -> Result<FrameState, JxlEncodeErrors> {
-        let depth = self.options.get_depth();
-        let width = self.options.get_width();
-        let height = self.options.get_height();
-        let colorspace = self.options.get_colorspace();
-        let effort = usize::from(self.options.get_effort()).clamp(0, 127);
+        let depth = self.options.depth();
+        let width = self.options.width();
+        let height = self.options.height();
+        let colorspace = self.options.colorspace();
+        let effort = usize::from(self.options.effort()).clamp(0, 127);
         let num_components = colorspace.num_components();
         let stride = depth.size_of() * width * num_components;
 
@@ -1106,7 +1106,7 @@ impl<'a> JxlSimpleEncoder<'a> {
             trace!("Height: {}", height);
             trace!("Colorspace: {:?}", colorspace);
             trace!("Depth: {:?}", depth);
-            trace!("Configured threads: {:?}", self.options.get_num_threads());
+            trace!("Configured threads: {:?}", self.options.num_threads());
         }
 
         let expected = calculate_expected_input(&self.options);
@@ -1252,7 +1252,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             #[cfg(feature = "threads")]
             {
-                if !one_group && self.options.get_num_threads() > 0 {
+                if !one_group && self.options.num_threads() > 0 {
                     ran_runners = true;
                     let open_threads = Arc::new(AtomicUsize::new(0));
 
@@ -1267,7 +1267,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                             // i.e the user asked for 10 threads but frame can be divided 11 times,
                             // we don't open 11 threads.
                             while num_threads.load(Ordering::Relaxed)
-                                > usize::from(self.options.get_num_threads())
+                                > usize::from(self.options.num_threads())
                             // assumed maximum threads to open
                             {
                                 // tell CPU to wait, don't burn stuff
@@ -1373,7 +1373,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 fn fast_lossless_write_output<T: ZByteWriterTrait>(
     frame: &mut FrameState, output: &mut ZByteWriter<T>
 ) -> Result<(), JxlEncodeErrors> {
-    let components = frame.option.get_colorspace().num_components();
+    let components = frame.option.colorspace().num_components();
 
     let mut out_writer = BorrowingBitWriter::new(output);
 
@@ -1389,7 +1389,7 @@ fn fast_lossless_write_output<T: ZByteWriterTrait>(
             return Ok(());
         }
 
-        let nbc = frame.option.get_colorspace().num_components();
+        let nbc = frame.option.colorspace().num_components();
 
         let writer = if *curr == 0 {
             &mut frame.header
@@ -1446,8 +1446,8 @@ fn fast_lossless_max_required_output(frame_state: &FrameState) -> usize {
 
 #[allow(clippy::needless_range_loop)]
 fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool) {
-    let colorspace = frame.option.get_colorspace();
-    let depth = frame.option.get_depth();
+    let colorspace = frame.option.colorspace();
+    let depth = frame.option.depth();
 
     let output = &mut frame.header;
     output.allocate(1000 + frame.group_data.len() * 32);
@@ -1456,7 +1456,7 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
 
     for i in 0..frame.group_data.len() {
         let mut sz = 0;
-        for j in 0..frame.option.get_colorspace().num_components() {
+        for j in 0..frame.option.colorspace().num_components() {
             let writer = &frame.group_data[i][j];
 
             sz += (writer.position * 8) + usize::from(writer.bits_in_buffer);
@@ -1493,9 +1493,9 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
                 output.put_bits(3, 0);
             }
         };
-        write_header(frame.option.get_height(), true);
+        write_header(frame.option.height(), true);
 
-        write_header(frame.option.get_width(), false);
+        write_header(frame.option.width(), false);
         // hand crafted image metadata
         output.put_bits(1, 0); // defaults
         output.put_bits(1, 0); // extra fields
@@ -1505,10 +1505,10 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
             BitDepth::Eight => output.put_bits(2, 0),
             _ => {
                 output.put_bits(2, 0b11);
-                output.put_bits(6, (frame.option.get_depth().bit_size() - 1) as u64);
+                output.put_bits(6, (frame.option.depth().bit_size() - 1) as u64);
             }
         };
-        if frame.option.get_depth().bit_size() <= 14 {
+        if frame.option.depth().bit_size() <= 14 {
             // 16 bit buffer sufficient
             output.put_bits(1, 1);
         } else {
@@ -1596,12 +1596,12 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
 
 fn calculate_expected_input(options: &EncoderOptions) -> usize {
     options
-        .get_width()
-        .checked_mul(options.get_depth().size_of())
+        .width()
+        .checked_mul(options.depth().size_of())
         .unwrap()
-        .checked_mul(options.get_height())
+        .checked_mul(options.height())
         .unwrap()
-        .checked_mul(options.get_colorspace().num_components())
+        .checked_mul(options.colorspace().num_components())
         .unwrap()
 }
 

@@ -138,12 +138,12 @@
 //!
 //! decoder.decode().unwrap();
 //! // the colorspace will always be have an alpha
-//! assert!(decoder.get_colorspace().unwrap().has_alpha());
+//! assert!(decoder.colorspace().unwrap().has_alpha());
 //! ```
 //!
 //! # Extracting metadata
 //!
-//! Once headers have been decoded, image metadata can be accessed via [`get_info()`](PngDecoder::get_info) method
+//! Once headers have been decoded, image metadata can be accessed via [`get_info()`](PngDecoder::info) method
 //!
 //! Some data is usually borrowed from the underlying reader, so the lifetime of the [`PngInfo`] struct is tied
 //! to the lifetime of the [`PngDecoder`] struct from which it was derived

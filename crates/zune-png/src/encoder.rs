@@ -90,17 +90,17 @@ impl<'a> PngEncoder<'a> {
     }
 
     const fn calculate_scanline_size(&self) -> usize {
-        self.options.get_width()
-            * self.options.get_depth().size_of()
-            * self.options.get_colorspace().num_components()
+        self.options.width()
+            * self.options.depth().size_of()
+            * self.options.colorspace().num_components()
     }
 
     fn add_filters(&mut self) {
         let scanline_length = (self.calculate_scanline_size() + 1)
-            .checked_mul(self.options.get_height())
+            .checked_mul(self.options.height())
             .unwrap();
         let components =
-            self.options.get_colorspace().num_components() * self.options.get_depth().size_of();
+            self.options.colorspace().num_components() * self.options.depth().size_of();
 
         // allocate space for filtered scanline
         self.filter_scanline.resize(scanline_length, 0);
@@ -113,7 +113,7 @@ impl<'a> PngEncoder<'a> {
         for (i, filter_s) in self
             .filter_scanline
             .chunks_exact_mut(scanline_size + 1)
-            .take(self.options.get_height())
+            .take(self.options.height())
             .enumerate()
         {
             let (previous, current) = self.data.split_at(i * scanline_size);

@@ -29,9 +29,9 @@ where
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
 
-        let depth = self.get_bit_depth().unwrap();
-        let (width, height) = self.get_dimensions().unwrap();
-        let colorspace = self.get_colorspace().unwrap();
+        let depth = self.bit_depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let colorspace = self.colorspace().unwrap();
 
         let mut image = match pixels {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
@@ -45,11 +45,11 @@ where
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace().unwrap()
+        self.colorspace().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -64,12 +64,12 @@ where
         self.decode_headers()
             .map_err(<errors::PSDDecodeErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.bit_depth().unwrap();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::PSD),
-            colorspace: self.get_colorspace().unwrap(),
+            colorspace: self.colorspace().unwrap(),
             depth: depth,
             width: width,
             height: height,

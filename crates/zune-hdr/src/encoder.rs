@@ -57,8 +57,8 @@ impl<'a> HdrEncoder<'a> {
     /// The size of the output will depend on the nature of your data
     pub fn expected_buffer_size(&self) -> Option<usize> {
         self.options
-            .get_width()
-            .checked_mul(self.options.get_height())?
+            .width()
+            .checked_mul(self.options.height())?
             .checked_mul(4)?
             .checked_add(1024)
     }
@@ -107,8 +107,8 @@ impl<'a> HdrEncoder<'a> {
     pub fn encode<T: ZByteWriterTrait>(&self, out: T) -> Result<usize, HdrEncodeErrors> {
         let expected = self
             .options
-            .get_width()
-            .checked_mul(self.options.get_height())
+            .width()
+            .checked_mul(self.options.height())
             .ok_or(HdrEncodeErrors::Static("overflow detected"))?
             .checked_mul(3)
             .ok_or(HdrEncodeErrors::Static("overflow detected"))?;
@@ -118,9 +118,9 @@ impl<'a> HdrEncoder<'a> {
         if expected != found {
             return Err(HdrEncodeErrors::WrongInputSize(expected, found));
         }
-        if self.options.get_colorspace() != ColorSpace::RGB {
+        if self.options.colorspace() != ColorSpace::RGB {
             return Err(HdrEncodeErrors::UnsupportedColorspace(
-                self.options.get_colorspace()
+                self.options.colorspace()
             ));
         }
         let mut writer = ZByteWriter::new(out);
@@ -143,13 +143,13 @@ impl<'a> HdrEncoder<'a> {
             // write lengths
             let length_format = format!(
                 "-Y {} +X {}\n",
-                self.options.get_height(),
-                self.options.get_width()
+                self.options.height(),
+                self.options.width()
             );
 
             writer.write_all(length_format.as_bytes())?;
         }
-        let width = self.options.get_width();
+        let width = self.options.width();
 
         let scanline_stride = width * 3;
 

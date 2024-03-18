@@ -21,7 +21,7 @@ use zune_image::pipelines::Pipeline;
 use zune_image::traits::IntoImage;
 
 use crate::cmd_parsers::global_options::CmdOptions;
-use crate::cmd_parsers::{get_decoder_options, get_encoder_options};
+use crate::cmd_parsers::{decoder_options, encoder_options};
 use crate::file_io::ZuneFile;
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
@@ -53,7 +53,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
     info!("Creating workflows from input");
 
-    let decoder_options = get_decoder_options(args);
+    let decoder_options = decoder_options(args);
     let mut buf = [0; 30];
 
     for in_file in args.get_raw("in").unwrap() {
@@ -75,14 +75,14 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
         }
 
-        let options = get_encoder_options(args);
+        let options = encoder_options(args);
 
         if let Some(source) = args.value_source("out") {
             if source == CommandLine {
                 for out_file in args.get_raw("out").unwrap() {
                     if let Some(ext) = Path::new(out_file).extension() {
                         if let Some(encode_type) =
-                            ImageFormat::get_encoder_for_extension(ext.to_str().unwrap())
+                            ImageFormat::encoder_for_extension(ext.to_str().unwrap())
                         {
                             debug!("Treating {:?} as a {:?} format", out_file, encode_type);
                             workflow.formats.push(encode_type);

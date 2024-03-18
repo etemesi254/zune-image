@@ -65,21 +65,21 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
         // bit 5:	sorted flag
         // bit 4-3: Reserved
         // bit 2-0:	size of local color table
-        self.flags = self.stream.get_u8_err()?;
-        self.bgindex = self.stream.get_u8_err()?;
-        self.ratio = self.stream.get_u8_err()?;
+        self.flags = self.stream.read_u8_err()?;
+        self.bgindex = self.stream.read_u8_err()?;
+        self.ratio = self.stream.read_u8_err()?;
 
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             return Err(GifDecoderErrors::TooLargeDimensions(
                 "width",
-                self.options.get_max_width(),
+                self.options.max_width(),
                 self.width
             ));
         }
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             return Err(GifDecoderErrors::TooLargeDimensions(
                 "height",
-                self.options.get_max_height(),
+                self.options.max_height(),
                 self.height
             ));
         }
@@ -101,9 +101,9 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
             .enumerate()
             .for_each(|(pos, x)| {
                 // weird order
-                x[2] = self.stream.get_u8();
-                x[1] = self.stream.get_u8();
-                x[0] = self.stream.get_u8();
+                x[2] = self.stream.read_u8();
+                x[1] = self.stream.read_u8();
+                x[0] = self.stream.read_u8();
                 x[3] = if transp == pos { 0 } else { 255 }
             });
         Ok(())
@@ -177,18 +177,18 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
 }
 
 fn test_gif<T: ZByteReaderTrait>(buffer: &mut ZReader<T>) -> bool {
-    if buffer.get_u8() != b'G'
-        || buffer.get_u8() != b'I'
-        || buffer.get_u8() != b'F'
-        || buffer.get_u8() != b'8'
+    if buffer.read_u8() != b'G'
+        || buffer.read_u8() != b'I'
+        || buffer.read_u8() != b'F'
+        || buffer.read_u8() != b'8'
     {
         return false;
     }
-    let sz = buffer.get_u8();
+    let sz = buffer.read_u8();
     if sz != b'9' && sz != b'7' {
         return false;
     }
-    if buffer.get_u8() != b'a' {
+    if buffer.read_u8() != b'a' {
         return false;
     }
     true

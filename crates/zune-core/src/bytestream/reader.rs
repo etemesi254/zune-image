@@ -143,11 +143,11 @@ impl<T: ZByteReaderTrait> ZReader<T> {
         self.inner.z_seek(from)
     }
     #[inline(always)]
-    pub fn get_u8(&mut self) -> u8 {
+    pub fn read_u8(&mut self) -> u8 {
         self.inner.read_byte_no_error()
     }
     #[inline(always)]
-    pub fn get_u8_err(&mut self) -> Result<u8, ZByteIoError> {
+    pub fn read_u8_err(&mut self) -> Result<u8, ZByteIoError> {
         let mut buf = [0];
         self.inner.read_exact_bytes(&mut buf)?;
         Ok(buf[0])
@@ -191,7 +191,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
         }
     }
     #[inline(always)]
-    pub fn get_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
+    pub fn read_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
         let mut byte_store: [u8; N] = [0; N];
         self.inner.read_const_bytes_no_error(&mut byte_store);
         byte_store
@@ -199,7 +199,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
 
     pub fn skip_until_false<F: Fn(u8) -> bool>(&mut self, func: F) -> Result<(), ZByteIoError> {
         while !self.inner.is_eof()? {
-            let byte = self.get_u8();
+            let byte = self.read_u8();
             if !(func)(byte) {
                 self.rewind(1)?;
                 break;

@@ -121,16 +121,16 @@ where
         let height = self.stream.get_u32_be_err()? as usize;
         let width = self.stream.get_u32_be_err()? as usize;
 
-        if width > self.options.get_max_width() {
+        if width > self.options.max_width() {
             return Err(PSDDecodeErrors::LargeDimensions(
-                self.options.get_max_width(),
+                self.options.max_width(),
                 width
             ));
         }
 
-        if height > self.options.get_max_height() {
+        if height > self.options.max_height() {
             return Err(PSDDecodeErrors::LargeDimensions(
-                self.options.get_max_height(),
+                self.options.max_height(),
                 height
             ));
         }
@@ -265,7 +265,7 @@ where
                     let mut i = channel;
 
                     while i < pixel_count {
-                        out_channel[i] = self.stream.get_u8_err()?;
+                        out_channel[i] = self.stream.read_u8_err()?;
                         i += self.channel_count;
                     }
                 }
@@ -390,7 +390,7 @@ where
         let mut position = 0;
 
         while nleft > 0 {
-            let mut len = usize::from(self.stream.get_u8());
+            let mut len = usize::from(self.stream.read_u8());
 
             match len.cmp(&128) {
                 Ordering::Less => {
@@ -406,7 +406,7 @@ where
                     }
 
                     while len > 0 {
-                        buffer[position] = self.stream.get_u8();
+                        buffer[position] = self.stream.read_u8();
                         position += self.channel_count;
                         len -= 1;
                     }
@@ -421,7 +421,7 @@ where
                         return Err(PSDDecodeErrors::BadRLE);
                     }
                     count += len;
-                    let val = self.stream.get_u8();
+                    let val = self.stream.read_u8();
 
                     if position + (self.channel_count * len) > buffer.len() {
                         return Err(PSDDecodeErrors::BadRLE);
@@ -441,7 +441,7 @@ where
     }
 
     /// Get image bit depth or None if the headers haven't been decoded
-    pub const fn get_bit_depth(&self) -> Option<BitDepth> {
+    pub const fn bit_depth(&self) -> Option<BitDepth> {
         if self.decoded_header {
             return Some(self.depth);
         }
@@ -450,7 +450,7 @@ where
 
     /// Get image width and height respectively or None if the
     /// headers haven't been decoded
-    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub fn dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_header {
             return Some((self.width, self.height));
         }
@@ -458,7 +458,7 @@ where
     }
     /// Get image colorspace or None if the
     /// image header hasn't been decoded
-    pub fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub fn colorspace(&self) -> Option<ColorSpace> {
         if let Some(color) = self.color_type {
             if color == ColorModes::RGB {
                 return if self.channel_count == 4 {

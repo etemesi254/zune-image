@@ -277,7 +277,7 @@ where
     ///
     /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
     /// // get current options
-    /// let mut options = decoder.get_options();
+    /// let mut options = decoder.options();
     /// // modify it
     ///  let new_options = options.set_max_width(10);
     /// // set it back
@@ -285,7 +285,7 @@ where
     ///
     /// ```
     #[must_use]
-    pub const fn get_options(&self) -> &DecoderOptions {
+    pub const fn options(&self) -> &DecoderOptions {
         &self.options
     }
     /// Return the input colorspace of the image
@@ -298,7 +298,7 @@ where
     /// -`Some(Colorspace)`: Input colorspace
     /// - None : Indicates the headers weren't decoded
     #[must_use]
-    pub fn get_input_colorspace(&self) -> Option<ColorSpace> {
+    pub fn input_colorspace(&self) -> Option<ColorSpace> {
         return if self.headers_decoded { Some(self.input_colorspace) } else { None };
     }
     /// Set decoder options
@@ -319,7 +319,7 @@ where
     /// use zune_jpeg::JpegDecoder;
     /// let mut decoder =JpegDecoder::new(ZCursor::new(&[]));
     /// // this works also because DecoderOptions implements `Copy`
-    /// let options = decoder.get_options().jpeg_set_max_scans(4);
+    /// let options = decoder.options().jpeg_set_max_scans(4);
     /// // set the new options
     /// decoder.set_options(options);
     /// // now decode
@@ -378,7 +378,7 @@ where
 
         loop {
             // read a byte
-            let mut m = self.stream.get_u8_err()?;
+            let mut m = self.stream.read_u8_err()?;
 
             // AND OF COURSE some images will have fill bytes in their marker
             // bitstreams because why not.
@@ -397,7 +397,7 @@ where
                 // so this is for you (with love)
                 while m == 0xFF || m == 0x0 {
                     last_byte = m;
-                    m = self.stream.get_u8_err()?;
+                    m = self.stream.read_u8_err()?;
                 }
             }
             // Last byte should be 0xFF to confirm existence of a marker since markers look
@@ -406,7 +406,7 @@ where
                 let marker = Marker::from_u8(m);
                 if let Some(n) = marker {
                     if bytes_before_marker > 3 {
-                        if self.options.get_strict_mode()
+                        if self.options.strict_mode()
                         /*No reason to use this*/
                         {
                             return Err(DecodeErrors::FormatStatic(
@@ -659,7 +659,7 @@ where
     ///output array will be in
     ///- `None
     #[must_use]
-    pub fn get_output_colorspace(&self) -> Option<ColorSpace> {
+    pub fn output_colorspace(&self) -> Option<ColorSpace> {
         return if self.headers_decoded {
             Some(self.options.jpeg_get_out_colorspace())
         } else {
@@ -785,15 +785,15 @@ where
                 }
                 (2, 1) => {
                     comp.sample_ratio = SampleRatios::H;
-                    choose_horizontal_samp_function(self.options.get_use_unsafe())
+                    choose_horizontal_samp_function(self.options.use_unsafe())
                 }
                 (1, 2) => {
                     comp.sample_ratio = SampleRatios::V;
-                    choose_v_samp_function(self.options.get_use_unsafe())
+                    choose_v_samp_function(self.options.use_unsafe())
                 }
                 (2, 2) => {
                     comp.sample_ratio = SampleRatios::HV;
-                    choose_hv_samp_function(self.options.get_use_unsafe())
+                    choose_hv_samp_function(self.options.use_unsafe())
                 }
                 _ => {
                     return Err(DecodeErrors::Format(

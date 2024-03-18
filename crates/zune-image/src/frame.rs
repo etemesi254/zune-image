@@ -314,7 +314,7 @@ impl Frame {
     pub fn u16_to_native_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
-            if channel.get_type_id() != TypeId::of::<u16>() {
+            if channel.type_id() != TypeId::of::<u16>() {
                 panic!("Wrong type ID, expected u16 but got another type");
                 // wrong type id, that's an error
                 //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));
@@ -398,7 +398,7 @@ impl Frame {
     pub fn u16_to_big_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
-            if channel.get_type_id() != TypeId::of::<u16>() {
+            if channel.type_id() != TypeId::of::<u16>() {
                 panic!("Wrong type ID, expected u16 but got another type");
                 // wrong type id, that's an error
                 //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));

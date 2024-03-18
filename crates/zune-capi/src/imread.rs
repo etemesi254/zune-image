@@ -58,9 +58,9 @@ pub extern "C" fn zil_imread(
         Ok(data) => {
             if let Some(im_metadata) = zune_image::utils::decode_info(ZCursor::new(&data)) {
                 // allocate a space big enough
-                let (w, h) = im_metadata.get_dimensions();
-                let colorspace = im_metadata.get_colorspace().num_components();
-                let im_depth = im_metadata.get_depth().size_of();
+                let (w, h) = im_metadata.dimensions();
+                let colorspace = im_metadata.colorspace().num_components();
+                let im_depth = im_metadata.depth().size_of();
 
                 let new_size = w * h * colorspace * im_depth;
 
@@ -205,17 +205,17 @@ pub extern "C" fn zil_read_headers_from_memory(
     match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => ZImageMetadata::default(),
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
+            let (w, h) = metadata.dimensions();
 
             unsafe { (*status) = ZStatus::okay() };
 
             ZImageMetadata {
                 width:      w as u32,
                 height:     h as u32,
-                depth:      ZImageDepth::from(metadata.get_depth()),
-                colorspace: ZImageColorspace::from(metadata.get_colorspace()),
+                depth:      ZImageDepth::from(metadata.depth()),
+                colorspace: ZImageColorspace::from(metadata.colorspace()),
                 format:     ZImageFormat::from(
-                    metadata.get_image_format().unwrap_or(ImageFormat::Unknown)
+                    metadata.image_format().unwrap_or(ImageFormat::Unknown)
                 )
             }
         }
@@ -253,9 +253,9 @@ pub extern "C" fn zil_imdecode(
             return ptr::null();
         }
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
-            let im_depth = metadata.get_depth();
-            let colorspace = metadata.get_colorspace();
+            let (w, h) = metadata.dimensions();
+            let im_depth = metadata.depth();
+            let colorspace = metadata.colorspace();
             let size = w * h * im_depth.size_of() * colorspace.num_components();
 
             let output = unsafe { zil_malloc(size) };
@@ -322,9 +322,9 @@ pub extern "C" fn zil_imdecode_into(
             unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
         }
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
-            let im_depth = metadata.get_depth();
-            let colorspace = metadata.get_colorspace();
+            let (w, h) = metadata.dimensions();
+            let im_depth = metadata.depth();
+            let colorspace = metadata.colorspace();
             let size = w * h * im_depth.size_of() * colorspace.num_components();
 
             // the buffer has to be that big
@@ -382,7 +382,7 @@ where
                 //
                 let mut decoder = PngDecoder::new(data);
 
-                match decoder.get_depth().unwrap() {
+                match decoder.depth().unwrap() {
                     BitDepth::Eight => {
                         decoder.decode_into(output)?;
 
@@ -398,7 +398,7 @@ where
                         // set sample endianness to match platform
                         #[cfg(target_endian = "little")]
                         {
-                            let options = decoder.get_options().set_byte_endian(ByteEndian::LE);
+                            let options = decoder.options().set_byte_endian(ByteEndian::LE);
                             decoder.set_options(options);
                         }
                         #[cfg(target_endian = "big")]
@@ -415,9 +415,9 @@ where
             ImageFormat::PPM => {
                 let mut decoder = PPMDecoder::new(data);
                 decoder.decode_headers()?;
-                let (w, h) = decoder.get_dimensions().unwrap();
-                let color = decoder.get_colorspace().unwrap();
-                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let (w, h) = decoder.dimensions().unwrap();
+                let color = decoder.colorspace().unwrap();
+                let depth = decoder.bit_depth().unwrap().size_of();
                 let size = w * h * color.num_components() * depth;
 
                 if output.len() < size {
@@ -448,9 +448,9 @@ where
             ImageFormat::PSD => {
                 let mut decoder = PSDDecoder::new(data);
                 decoder.decode_headers()?;
-                let (w, h) = decoder.get_dimensions().unwrap();
-                let color = decoder.get_colorspace().unwrap();
-                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let (w, h) = decoder.dimensions().unwrap();
+                let color = decoder.colorspace().unwrap();
+                let depth = decoder.bit_depth().unwrap().size_of();
                 let size = w * h * color.num_components() * depth;
 
                 if output.len() < size {

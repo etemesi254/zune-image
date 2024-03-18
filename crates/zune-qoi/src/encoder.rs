@@ -67,18 +67,18 @@ impl<'a> QoiEncoder<'a> {
     /// Return the maximum size for which the encoder can safely
     /// encode the image without fearing for an out of space error
     pub fn max_size(&self) -> usize {
-        self.options.get_width()
-            * self.options.get_height()
-            * (self.options.get_colorspace().num_components() + 1)
+        self.options.width()
+            * self.options.height()
+            * (self.options.colorspace().num_components() + 1)
             + QOI_HEADER_SIZE
             + QOI_PADDING
     }
     fn encode_headers<T: ZByteWriterTrait>(
         &self, writer: &mut ZByteWriter<T>
     ) -> Result<(), QoiEncodeErrors> {
-        let expected_len = self.options.get_width()
-            * self.options.get_height()
-            * self.options.get_colorspace().num_components();
+        let expected_len = self.options.width()
+            * self.options.height()
+            * self.options.colorspace().num_components();
 
         if self.pixel_data.len() != expected_len {
             return Err(QoiEncodeErrors::Generic(
@@ -90,28 +90,28 @@ impl<'a> QoiEncoder<'a> {
         writer.write_all(&QOI_MAGIC.to_be_bytes())?;
 
         let options = &self.options;
-        if (options.get_width() as u64) > u64::from(u32::MAX) {
+        if (options.width() as u64) > u64::from(u32::MAX) {
             // error out
-            return Err(QoiEncodeErrors::TooLargeDimensions(options.get_width()));
+            return Err(QoiEncodeErrors::TooLargeDimensions(options.width()));
         }
-        if (options.get_height() as u64) > u64::from(u32::MAX) {
-            return Err(QoiEncodeErrors::TooLargeDimensions(options.get_height()));
+        if (options.height() as u64) > u64::from(u32::MAX) {
+            return Err(QoiEncodeErrors::TooLargeDimensions(options.height()));
         }
         // it's safe to convert to u32 here. since we checked
         // the number can be safely encoded.
 
         // width
-        writer.write_u32_be_err(options.get_width() as u32)?;
+        writer.write_u32_be_err(options.width() as u32)?;
         // height
-        writer.write_u32_be_err(options.get_height() as u32)?;
+        writer.write_u32_be_err(options.height() as u32)?;
         //channel
-        let channel = match self.options.get_colorspace() {
+        let channel = match self.options.colorspace() {
             ColorSpace::RGB => 3,
             ColorSpace::RGBA => 4,
 
             _ => {
                 return Err(QoiEncodeErrors::UnsupportedColorspace(
-                    self.options.get_colorspace(),
+                    self.options.colorspace(),
                     &SUPPORTED_COLORSPACES
                 ))
             }
@@ -145,7 +145,7 @@ impl<'a> QoiEncoder<'a> {
 
         let mut run = 0;
 
-        let channel_count = self.options.get_colorspace().num_components();
+        let channel_count = self.options.colorspace().num_components();
 
         for pix_chunk in self.pixel_data.chunks_exact(channel_count) {
             px[0..channel_count].copy_from_slice(pix_chunk);

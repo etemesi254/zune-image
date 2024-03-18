@@ -126,20 +126,20 @@ impl<'a> FarbFeldEncoder<'a> {
         // to panic as it is a me problem
         stream.write_all(b"farbfeld").unwrap();
 
-        if (self.options.get_width() as u64) > u64::from(u32::MAX) {
+        if (self.options.width() as u64) > u64::from(u32::MAX) {
             // error out
             return Err(FarbFeldEncoderErrors::TooLargeDimensions(
-                self.options.get_width()
+                self.options.width()
             ));
         }
-        if (self.options.get_height() as u64) > u64::from(u32::MAX) {
+        if (self.options.height() as u64) > u64::from(u32::MAX) {
             return Err(FarbFeldEncoderErrors::TooLargeDimensions(
-                self.options.get_height()
+                self.options.height()
             ));
         }
         // dimensions
-        stream.write_u32_be(self.options.get_width() as u32);
-        stream.write_u32_be(self.options.get_height() as u32);
+        stream.write_u32_be(self.options.width() as u32);
+        stream.write_u32_be(self.options.height() as u32);
 
         Ok(())
     }
@@ -147,14 +147,14 @@ impl<'a> FarbFeldEncoder<'a> {
     /// Encode the contents returning a vector containing
     /// encoded contents or an error if anything occurs
     pub fn encode<T: ZByteWriterTrait>(&self, sink: T) -> Result<usize, FarbFeldEncoderErrors> {
-        if self.options.get_depth() != BitDepth::Sixteen {
+        if self.options.depth() != BitDepth::Sixteen {
             return Err(FarbFeldEncoderErrors::UnsupportedBitDepth(
-                self.options.get_depth()
+                self.options.depth()
             ));
         }
-        if self.options.get_colorspace() != ColorSpace::RGBA {
+        if self.options.colorspace() != ColorSpace::RGBA {
             return Err(FarbFeldEncoderErrors::UnsupportedColorSpace(
-                self.options.get_colorspace()
+                self.options.colorspace()
             ));
         }
 
@@ -193,10 +193,10 @@ const FARBFELD_HEADER_SIZE: usize = 20;
 #[inline]
 fn calc_out_size(options: EncoderOptions) -> usize {
     options
-        .get_width()
+        .width()
         .checked_mul(2)
         .unwrap()
-        .checked_mul(options.get_height())
+        .checked_mul(options.height())
         .unwrap()
         .checked_mul(4)
         .unwrap()

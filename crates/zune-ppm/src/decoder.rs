@@ -138,10 +138,10 @@ where
     /// - `Err(PPMDecodeErrors)`: This will return an `InvalidHeader`  enum, the string
     /// will more information about what went wrong
     ///
-    /// [`get_dimensions`]:Self::get_dimensions
+    /// [`get_dimensions`]:Self::dimensions
     pub fn decode_headers(&mut self) -> Result<(), PPMDecodeErrors> {
-        let p = self.reader.get_u8_err()?;
-        let version = self.reader.get_u8_err()?;
+        let p = self.reader.read_u8_err()?;
+        let version = self.reader.read_u8_err()?;
 
         if p != b'P' {
             let msg = format!("Expected P as first PPM byte but got '{}' ", p as char);
@@ -176,11 +176,11 @@ where
         // read width
         self.width = self.get_integer()?;
 
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             let msg = format!(
                 "Width {} greater than max width {}",
                 self.width,
-                self.options.get_max_width()
+                self.options.max_width()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -189,11 +189,11 @@ where
 
         self.height = self.get_integer()?;
 
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             let msg = format!(
                 "Height {} greater than max height {}",
                 self.width,
-                self.options.get_max_height()
+                self.options.max_height()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -258,9 +258,9 @@ where
                 b"WIDTH " => {
                     self.width = self.get_integer()?;
 
-                    if self.width > self.options.get_max_width() {
+                    if self.width > self.options.max_width() {
                         return Err(PPMDecodeErrors::LargeDimensions(
-                            self.options.get_max_width(),
+                            self.options.max_width(),
                             self.width
                         ));
                     }
@@ -269,9 +269,9 @@ where
                 b"HEIGHT " => {
                     self.height = self.get_integer()?;
 
-                    if self.height > self.options.get_max_height() {
+                    if self.height > self.options.max_height() {
                         return Err(PPMDecodeErrors::LargeDimensions(
-                            self.options.get_max_height(),
+                            self.options.max_height(),
                             self.height
                         ));
                     }
@@ -373,11 +373,11 @@ where
         // read width
         self.width = self.get_integer()?;
 
-        if self.width > self.options.get_max_width() {
+        if self.width > self.options.max_width() {
             let msg = format!(
                 "Width {} greater than max width {}",
                 self.width,
-                self.options.get_max_width()
+                self.options.max_width()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -386,11 +386,11 @@ where
 
         self.height = self.get_integer()?;
 
-        if self.height > self.options.get_max_height() {
+        if self.height > self.options.max_height() {
             let msg = format!(
                 "Height {} greater than max height {}",
                 self.width,
-                self.options.get_max_height()
+                self.options.max_height()
             );
             return Err(PPMDecodeErrors::Generic(msg));
         }
@@ -424,7 +424,7 @@ where
         let mut value = 0_usize;
 
         while !self.reader.eof()? {
-            let byte = self.reader.get_u8();
+            let byte = self.reader.read_u8();
 
             if byte.is_ascii_digit() {
                 // if it overflows, we have bigger problems.
@@ -448,7 +448,7 @@ where
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
     /// in parsing
     ///
-    pub const fn get_bit_depth(&self) -> Option<BitDepth> {
+    pub const fn bit_depth(&self) -> Option<BitDepth> {
         if self.decoded_headers {
             Some(self.bit_depth)
         } else {
@@ -462,7 +462,7 @@ where
     /// - `Some(ColorSpace)`: The colorspace of the input image
     /// - None: Indicates headers weren't decoded or an unhandled error occurred
     /// during header decoding
-    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub const fn colorspace(&self) -> Option<ColorSpace> {
         if self.decoded_headers {
             Some(self.colorspace)
         } else {
@@ -486,10 +486,10 @@ where
     ///
     /// decoder.decode_headers().unwrap();
     ///
-    /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Eight));
-    /// assert_eq!(decoder.get_dimensions(),Some((34,32)))
+    /// assert_eq!(decoder.bit_depth(),Some(BitDepth::Eight));
+    /// assert_eq!(decoder.dimensions(),Some((34,32)))
     /// ```
-    pub const fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub const fn dimensions(&self) -> Option<(usize, usize)> {
         if self.decoded_headers {
             Some((self.width, self.height))
         } else {
@@ -519,8 +519,8 @@ where
     ///
     /// decoder.decode_headers().unwrap();
     ///
-    /// assert_eq!(decoder.get_bit_depth(),Some(BitDepth::Sixteen));
-    /// assert_eq!(decoder.get_dimensions(),Some((1,1)));
+    /// assert_eq!(decoder.bit_depth(),Some(BitDepth::Sixteen));
+    /// assert_eq!(decoder.dimensions(),Some((1,1)));
     /// let bytes = decoder.decode().unwrap();
     ///
     /// assert_eq!(&bytes.u16().unwrap(),&[12851]); // 23 in ascii is 12851
@@ -570,7 +570,7 @@ where
             BitType::F32 => {
                 // match endianness
                 // specified by the decoder options
-                let mut result = if self.options.get_byte_endian() == ByteEndian::BE {
+                let mut result = if self.options.byte_endian() == ByteEndian::BE {
                     let mut output =
                         vec![0.0f32; self.width * self.height * self.colorspace.num_components()];
 
@@ -579,7 +579,7 @@ where
                         *out = f32::from_bits(self.reader.get_u32_be_err()?);
                     }
                     output
-                } else if self.options.get_byte_endian() == ByteEndian::LE {
+                } else if self.options.byte_endian() == ByteEndian::LE {
                     let mut output =
                         vec![0.0f32; self.width * self.height * self.colorspace.num_components()];
 
@@ -628,13 +628,13 @@ where
     T: ZByteReaderTrait
 {
     while !byte_stream.eof()? {
-        let mut byte = byte_stream.get_u8();
+        let mut byte = byte_stream.read_u8();
 
         if byte == b'#' {
             // comment
             // skip the whole comment
             while byte != b'\n' && !byte_stream.eof()? {
-                byte = byte_stream.get_u8();
+                byte = byte_stream.read_u8();
             }
         } else if !byte.is_ascii_whitespace() {
             // go back one step, we hit something that is not a space
@@ -661,7 +661,7 @@ fn get_bytes_until_whitespace<T: ZByteReaderTrait>(
     write_to.clear();
 
     while !z.eof()? {
-        let byte = z.get_u8();
+        let byte = z.read_u8();
         write_to.push(byte);
 
         if byte.is_ascii_whitespace() {
