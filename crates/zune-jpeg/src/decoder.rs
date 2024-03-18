@@ -264,7 +264,7 @@ where
         };
     }
 
-    /// Get a mutable reference to the decoder options
+    /// Get an immutable reference to the decoder options
     /// for the decoder instance
     ///
     /// This can be used to modify options before actual decoding
