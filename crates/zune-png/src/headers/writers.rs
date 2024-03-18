@@ -4,6 +4,8 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use alloc::vec::Vec;
+
 use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 
@@ -36,7 +38,7 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter<&mut Vec<u8>
     output.write_u8(0);
 }
 
-pub fn write_exif(ctx: &PngEncoder, writer: &mut ZByteWriter<&mut Vec<u8>>) {
+pub fn write_exif(ctx: &PngEncoder, writer: &mut ZByteWriter<&mut alloc::vec::Vec<u8>>) {
     if let Some(exif) = ctx.exif {
         writer.write_all(exif).unwrap();
     }
