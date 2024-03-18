@@ -24,7 +24,6 @@ use zune_image::codecs::png::PngDecoder;
 use zune_image::codecs::ppm::PPMDecoder;
 use zune_image::codecs::psd::PSDDecoder;
 use zune_image::codecs::qoi::QoiDecoder;
-use zune_image::traits::DecoderTrait;
 
 use crate::py_enums::ImageFormat;
 

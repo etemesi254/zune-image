@@ -88,7 +88,7 @@ pub(crate) struct FrameState {
 ///     let image:[u8;100] = std::array::from_fn(|x| x as u8);
 ///
 ///     let encoder = JxlSimpleEncoder::new(&image,options);
-///     let mut outptut =vec![];
+///     let mut output =vec![];
 ///     // encode the image
 ///     encoder.encode(&mut output)?;
 ///     

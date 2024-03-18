@@ -78,13 +78,14 @@ impl<T: ZByteWriterTrait> ZByteWriter<T> {
     /// ```
     /// use zune_core::bytestream::ZByteWriter;
     /// let mut buf = [0;10];
-    /// let mut stream  =  ZByteWriter::new(&mut buf);
+    /// let mut stream  =  ZByteWriter::new(&mut buf[..]);
     /// assert!(stream.write_u8_err(34).is_ok());
     /// ```
     /// No space
     /// ```
     /// use zune_core::bytestream::ZByteWriter;
-    /// let mut stream = ZByteWriter::new(&mut []);
+    /// let mut no_space = [];
+    /// let mut stream = ZByteWriter::new(&mut no_space[..]);
     /// assert!(stream.write_u8_err(32).is_err());
     /// ```
     ///
