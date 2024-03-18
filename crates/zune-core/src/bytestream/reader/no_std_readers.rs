@@ -1,6 +1,5 @@
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 use crate::bytestream::ZByteReaderTrait;
-
 /// Wraps an in memory buffer providing it with a `Seek` method
 /// but works in `no_std` environments
 ///
@@ -174,7 +173,7 @@ impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
         }
     }
 }
-// 
+//
 // #[cfg(feature = "std")]
 // impl<T: AsRef<[u8]>> std::io::Read for ZCursor<T> {
 //     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {

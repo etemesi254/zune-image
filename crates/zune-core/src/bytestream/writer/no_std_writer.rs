@@ -42,7 +42,7 @@ impl ZByteWriterTrait for &mut [u8] {
     }
 }
 
-impl ZByteWriterTrait for &mut Vec<u8> {
+impl ZByteWriterTrait for &mut alloc::vec::Vec<u8> {
     fn write_bytes(&mut self, buf: &[u8]) -> Result<usize, ZByteIoError> {
         self.extend_from_slice(buf);
         Ok(buf.len())
