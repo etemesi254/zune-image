@@ -655,6 +655,30 @@ impl Image {
             ))
         }
     }
+
+    /// Open a new file from memory with the configured decoder
+    ///  
+    /// # Arguments
+    ///  - `decoder`: The configured decoder
+    /// # Example
+    /// - Open a memory source with the ppm decoder
+    ///
+    ///```no_run
+    /// // requires ppm feature
+    /// use zune_image::codecs::ppm::PPMDecoder;
+    /// use zune_image::image::Image;
+    ///
+    /// // create a simple ppm p5 grayscale format
+    /// let decoder = PPMDecoder::new(b"P5 1 1 255 1");
+    ///
+    /// let image = Image::from_decoder(decoder);
+    ///```
+    pub fn from_decoder<T>(mut decoder: impl DecoderTrait<T>) -> Result<Image, ImageErrors>
+    where
+        T: ZReaderTrait
+    {
+        decoder.decode()
+    }
 }
 /// Guess the format of an image based on it's magic bytes
 ///
