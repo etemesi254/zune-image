@@ -545,6 +545,42 @@ impl Image {
         }
     }
 
+    /// Encode an image returning a vector containing the result
+    /// of the encoding using the specified encoder
+    ///
+    /// # Arguments
+    ///
+    /// * `encoder`: The encoder to use for encoding
+    ///
+    /// returns: `Result<Vec<u8, Global>, ImageErrors>`
+    ///
+    /// # Examples
+    ///
+    /// - Encode a simple image to JPEG format
+    /// ```
+    /// use zune_core::colorspace::ColorSpace;
+    /// // requires jpeg feature
+    /// use zune_image::codecs::jpeg::JpegEncoder;
+    /// use zune_image::image::Image;
+    /// 
+    /// let encoder = JpegEncoder::new();
+    /// 
+    /// // create an image using from fn, to generate a gradient image
+    /// let image = Image::from_fn::<u8,_>(300,300,ColorSpace::RGB,|x,y,px|{
+    ///         let r = (0.3 * x as f32) as u8;
+    ///         let b = (0.3 * y as f32) as u8;
+    ///         px[0] = r;
+    ///         px[2] = b;
+    /// });
+    /// // write to jpeg now
+    /// let contents = image.write_with_encoder(encoder).unwrap();
+    /// ```
+    pub fn write_with_encoder(
+        &self, mut encoder: impl EncoderTrait
+    ) -> Result<Vec<u8>, ImageErrors> {
+        encoder.encode(self)
+    }
+
     /// Open an encoded file for which the library has a configured decoder for it
     ///
     /// # Note
