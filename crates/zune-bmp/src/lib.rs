@@ -46,6 +46,8 @@
 #![macro_use]
 extern crate alloc;
 
+extern crate core;
+
 pub use zune_core;
 
 pub use crate::decoder::{probe_bmp, BmpDecoder};

@@ -52,6 +52,8 @@
 #![no_std]
 extern crate alloc;
 
+pub use zune_core;
+
 pub use crate::decoder::*;
 pub use crate::encoder::*;
 

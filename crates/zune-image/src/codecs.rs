@@ -31,7 +31,7 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
-use std::io::{BufReader, Cursor};
+use std::io::Cursor;
 use std::path::Path;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait, ZCursor, ZReader};
@@ -251,6 +251,7 @@ impl ImageFormat {
     /// into that format
     pub fn has_encoder(&self) -> bool {
         // if the feature is included, means we have an encoder
+        #[allow(clippy::match_like_matches_macro)]
         match self {
             ImageFormat::JPEG => cfg!(feature = "jpeg"),
             ImageFormat::PNG => cfg!(feature = "png"),
@@ -319,7 +320,7 @@ impl ImageFormat {
             }
             _ => {}
         }
-         Err(ImageErrors::EncodeErrors(
+        Err(ImageErrors::EncodeErrors(
             ImgEncodeErrors::NoEncoderForFormat(*self)
         ))
     }
@@ -480,8 +481,14 @@ impl Image {
     /// Ok::<(),ImageErrors>(())
     /// ```
     pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
-        let contents = self.write_to_vec(format)?;
-        std::fs::write(file, contents)?;
+        // open a file for which we will write directly to
+        let mut file = std::io::BufWriter::new(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(file)?
+        );
+        self.encode(format, &mut file)?;
         Ok(())
     }
 
@@ -517,7 +524,7 @@ impl Image {
         if format.has_encoder() {
             let mut sink = vec![];
             self.encode(format, &mut sink)?;
-            return Ok(sink);
+            Ok(sink)
             // encode
         } else {
             Err(ImageErrors::EncodeErrors(
@@ -564,7 +571,7 @@ impl Image {
     pub fn open_with_options<P: AsRef<Path>>(
         file: P, options: DecoderOptions
     ) -> Result<Image, ImageErrors> {
-        let reader = BufReader::new(std::fs::File::open(file)?);
+        let reader = std::io::BufReader::new(std::fs::File::open(file)?);
         Self::read(reader, options)
     }
     /// Open a new file from memory with the configured options
