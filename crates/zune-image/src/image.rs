@@ -15,6 +15,7 @@ use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::{Channel, ChannelErrors};
@@ -24,7 +25,7 @@ use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
 use crate::frame::Frame;
 use crate::metadata::ImageMetadata;
-use crate::traits::{OperationsTrait, ZuneInts};
+use crate::traits::{EncoderTrait, OperationsTrait, ZuneInts};
 
 /// Maximum supported color channels
 pub const MAX_CHANNELS: usize = 4;
@@ -319,6 +320,12 @@ impl Image {
             4 => Image::from_fn_inner::<_, _, 4>(width, height, func, colorspace),
             _ => unreachable!()
         }
+    }
+
+    pub fn write_with_encoder<T: ZByteWriterTrait>(
+        &self, mut encoder: impl EncoderTrait, sink: T
+    ) -> Result<usize, ImageErrors> {
+        encoder.encode(self, sink)
     }
 
     /// Template code to use with from_fn which engraves component number

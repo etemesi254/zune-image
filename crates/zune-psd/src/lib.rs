@@ -39,7 +39,7 @@
 //#![forbid(unsafe_code)]
 #![no_std]
 extern crate alloc;
-extern crate zune_core;
+pub extern crate zune_core;
 pub use decoder::PSDDecoder;
 
 mod constants;

@@ -9,25 +9,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29d47fbf90d5149a107494b15a7dc8d69b351be2db3bb9691740e88ec17fd880"
 
 [[package]]
-name = "bitflags"
-version = "1.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
-
-[[package]]
 name = "cc"
 version = "1.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9f73505338f7d905b19d18738976aae232eb46b8efc15554ffc56deb5d9ebe4"
 dependencies = [
-    "jobserver",
+ "jobserver",
 ]
-
-[[package]]
-name = "cfg-if"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "jobserver"
@@ -35,7 +23,7 @@ version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "068b1ee6743e4d11fb9c6a1e6064b3693a1b600e7f5f5988047d98b3dc9fb90b"
 dependencies = [
-    "libc",
+ "libc",
 ]
 
 [[package]]
@@ -50,18 +38,9 @@ version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8fff891139ee62800da71b7fd5b508d570b9ad95e614a53c6f453ca08366038"
 dependencies = [
-    "arbitrary",
-    "cc",
-    "once_cell",
-]
-
-[[package]]
-name = "log"
-version = "0.4.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
-dependencies = [
-    "cfg-if",
+ "arbitrary",
+ "cc",
+ "once_cell",
 ]
 
 [[package]]
@@ -71,31 +50,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86f0b0d4bf799edbc74508c1e8bf170ff5f41238e5f8225603ca7caaae2b7860"
 
 [[package]]
-name = "serde"
-version = "1.0.155"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71f2b4817415c6d4210bfe1c7bfcf4801b2d904cb4d0e1a8fdb651013c9e86b8"
-
-[[package]]
 name = "zune-core"
-version = "0.2.1"
-dependencies = [
-    "bitflags",
-    "serde",
-]
+version = "0.4.12"
 
 [[package]]
 name = "zune-psd"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
-    "log",
-    "zune-core",
+ "zune-core",
 ]
 
 [[package]]
 name = "zune-psd-fuzz"
 version = "0.0.0"
 dependencies = [
-    "libfuzzer-sys",
-    "zune-psd",
+ "libfuzzer-sys",
+ "zune-psd",
 ]

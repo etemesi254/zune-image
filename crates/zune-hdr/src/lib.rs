@@ -35,11 +35,10 @@
 #![macro_use]
 extern crate alloc;
 extern crate core;
-
+pub extern crate zune_core;
 pub use decoder::HdrDecoder;
 pub use encoder::HdrEncoder;
 pub use errors::{HdrDecodeErrors, HdrEncodeErrors};
-pub use zune_core;
 
 mod decoder;
 mod encoder;

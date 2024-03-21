@@ -74,7 +74,7 @@
 //!     // convert a 16 bit input to 8 bit native endian output, each two bytes represent one sample
 //!     let sixteen_bit = [0,u16::MAX,0,u16::MAX].iter().flat_map(|x| x.to_ne_bytes()).collect::<Vec<u8>>();
 //!     let mut encoder = JxlSimpleEncoder::new(&sixteen_bit,EncoderOptions::new(2,2,ColorSpace::Luma,BitDepth::Sixteen));
-//! let mut write_to = vec![];
+//!     let mut write_to = vec![];
 //!     encoder.encode(&mut write_to)?;
 //!     Ok(())
 //! }
