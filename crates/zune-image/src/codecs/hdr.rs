@@ -9,7 +9,7 @@
 #![cfg(feature = "hdr")]
 //! Radiance HDR decoding support
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_hdr::*;
@@ -20,20 +20,20 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for HdrDecoder<T>
+impl<T> DecoderTrait for HdrDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let bytes = self.decode()?;
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
         let colorspace = self.get_colorspace().unwrap();
 
         Ok(Image::from_f32(&bytes, width, height, colorspace))
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
@@ -47,7 +47,7 @@ where
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
         self.decode_headers()?;
 
-        let (width, height) = self.get_dimensions().unwrap();
+        let (width, height) = self.dimensions().unwrap();
 
         let metadata = ImageMetadata {
             width: width,
@@ -88,7 +88,9 @@ impl EncoderTrait for HdrEncoder {
         "Hdr"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.depth(), BitDepth::Float32);
@@ -98,7 +100,7 @@ impl EncoderTrait for HdrEncoder {
         let encoder_options = zune_hdr::HdrEncoder::new(data, options);
 
         let data = encoder_options
-            .encode()
+            .encode(sink)
             .map_err(<HdrEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)

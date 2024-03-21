@@ -73,7 +73,7 @@ impl EncoderOptions {
         }
     }
     /// Get the width for which the image will be encoded in
-    pub const fn get_width(&self) -> usize {
+    pub const fn width(&self) -> usize {
         self.width
     }
 
@@ -83,12 +83,12 @@ impl EncoderOptions {
     ///
     /// # Panics
     /// If height is zero
-    pub fn get_height(&self) -> usize {
+    pub fn height(&self) -> usize {
         assert_ne!(self.height, 0);
         self.height
     }
     /// Get the depth for which the image will be encoded in
-    pub const fn get_depth(&self) -> BitDepth {
+    pub const fn depth(&self) -> BitDepth {
         self.depth
     }
     /// Get the quality for which the image will be encoded with
@@ -104,14 +104,14 @@ impl EncoderOptions {
     /// smaller
     ///
     /// - Low quality indicates less time is spent in making the file bigger
-    pub const fn get_quality(&self) -> u8 {
+    pub const fn quality(&self) -> u8 {
         self.quality
     }
     /// Get the colorspace for which the image will be encoded in
-    pub const fn get_colorspace(&self) -> ColorSpace {
+    pub const fn colorspace(&self) -> ColorSpace {
         self.colorspace
     }
-    pub const fn get_effort(&self) -> u8 {
+    pub const fn effort(&self) -> u8 {
         self.effort
     }
 
@@ -136,7 +136,7 @@ impl EncoderOptions {
     /// Quality is clamped from 0..100
     ///
     /// Quality means different options depending on the encoder, see
-    /// [get_quality](Self::get_quality)
+    /// [get_quality](Self::quality)
     pub fn set_quality(mut self, quality: u8) -> Self {
         self.quality = quality.clamp(0, 100);
         self
@@ -165,7 +165,7 @@ impl EncoderOptions {
     ///
     /// This is used for multi-threaded encoders,
     /// currently only jpeg-xl
-    pub const fn get_num_threads(&self) -> u8 {
+    pub const fn num_threads(&self) -> u8 {
         self.num_threads
     }
 

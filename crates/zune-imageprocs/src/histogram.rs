@@ -26,6 +26,21 @@ use zune_image::traits::OperationsTrait;
 ///
 /// This struct does not mutate the image in any way, but it needs to conform to the trait
 /// definition of `OperationsTrait` hence why it needs a mutable image
+///
+/// # Example
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::histogram::ChannelHistogram;
+/// let mut image = Image::fill(100_u8,ColorSpace::RGB,100,100);
+/// let histogram = ChannelHistogram::new();
+/// histogram.execute(&mut image).unwrap();
+///let values =  histogram.histogram().unwrap();
+/// // r had 100 items
+/// assert_eq!(values[0][100], 100_u32*100);
+/// assert_eq!(values[1][100], 100_u32*100);
+/// ```
 #[derive(Default)]
 pub struct ChannelHistogram {
     histogram: RefCell<Vec<Vec<u32>>>

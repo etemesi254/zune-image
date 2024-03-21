@@ -8,6 +8,7 @@ use alloc::string::String;
 /// Errors possible during decoding.
 use core::fmt::{Debug, Display, Formatter};
 
+use zune_core::bytestream::ZByteIoError;
 use zune_core::colorspace::ColorSpace;
 
 /// Possible Errors that may occur during decoding
@@ -37,7 +38,8 @@ pub enum QoiErrors {
     /// Generic message does not need heap allocation
     GenericStatic(&'static str),
     /// To small output size
-    TooSmallOutput(usize, usize)
+    TooSmallOutput(usize, usize),
+    IoErrors(ZByteIoError)
 }
 
 impl Debug for QoiErrors {
@@ -76,6 +78,9 @@ impl Debug for QoiErrors {
                     "Too small output size, expected {expected}, but found {found}"
                 )
             }
+            QoiErrors::IoErrors(value) => {
+                writeln!(f, "I/O error {:?}", value)
+            }
         }
     }
 }
@@ -86,6 +91,11 @@ impl From<&'static str> for QoiErrors {
     }
 }
 
+impl From<ZByteIoError> for QoiErrors {
+    fn from(value: ZByteIoError) -> Self {
+        QoiErrors::IoErrors(value)
+    }
+}
 /// Errors encountered during encoding
 pub enum QoiEncodeErrors {
     /// Unsupported colorspace
@@ -98,7 +108,9 @@ pub enum QoiEncodeErrors {
     /// The dimensions cannot be correctly encoded to a width
     TooLargeDimensions(usize),
 
-    Generic(&'static str)
+    Generic(&'static str),
+
+    IoError(ZByteIoError)
 }
 
 impl Debug for QoiEncodeErrors {
@@ -116,6 +128,9 @@ impl Debug for QoiEncodeErrors {
             }
             QoiEncodeErrors::Generic(val) => {
                 writeln!(f, "{}", val)
+            }
+            QoiEncodeErrors::IoError(v) => {
+                writeln!(f, "I/O error {:?}", v)
             }
         }
     }
@@ -137,3 +152,9 @@ impl std::error::Error for QoiEncodeErrors {}
 
 #[cfg(feature = "std")]
 impl std::error::Error for QoiErrors {}
+
+impl From<ZByteIoError> for QoiEncodeErrors {
+    fn from(value: ZByteIoError) -> Self {
+        Self::IoError(value)
+    }
+}

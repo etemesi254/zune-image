@@ -9,7 +9,7 @@ use alloc::{format, vec};
 use core::cmp::min;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
@@ -155,13 +155,13 @@ pub struct PngInfo {
 /// The decoder currently expands images less than 8 bits per pixels to 8 bits per pixel
 /// if this is not desired, then I'd suggest another png decoder
 ///
-/// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::get_info)
+/// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::info)
 /// and access the relevant fields exposed
 pub struct PngDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
-    pub(crate) stream:                  ZByteReader<T>,
+    pub(crate) stream:                  ZReader<T>,
     pub(crate) options:                 DecoderOptions,
     pub(crate) png_info:                PngInfo,
     pub(crate) palette:                 Vec<PLTEEntry>,
@@ -178,7 +178,7 @@ where
     pub(crate) called_from_decode_into: bool
 }
 
-impl<T: ZReaderTrait> PngDecoder<T> {
+impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Create a new PNG decoder
     ///
     /// # Arguments
@@ -207,7 +207,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     pub fn new_with_options(data: T, options: DecoderOptions) -> PngDecoder<T> {
         PngDecoder {
             seen_hdr:                false,
-            stream:                  ZByteReader::new(data),
+            stream:                  ZReader::new(data),
             options:                 options,
             palette:                 Vec::new(),
             png_info:                PngInfo::default(),
@@ -234,7 +234,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// - `Some((width,height))`
     /// - `None`: The image headers haven't been decoded
     ///   or there was an error decoding them
-    pub fn get_dimensions(&self) -> Option<(usize, usize)> {
+    pub fn dimensions(&self) -> Option<(usize, usize)> {
         if !self.seen_hdr {
             return None;
         }
@@ -248,7 +248,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// # Returns
     /// - `Some(depth)`:  The bit depth of the image.
     /// - `None`: The header wasn't decoded hence the depth wasn't discovered.
-    pub const fn get_depth(&self) -> Option<BitDepth> {
+    pub const fn depth(&self) -> Option<BitDepth> {
         if !self.seen_hdr {
             return None;
         }
@@ -270,7 +270,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
     ///  - `None`: If the image headers haven't been decoded, or there was an error
     ///     during decoding
-    pub const fn get_colorspace(&self) -> Option<ColorSpace> {
+    pub const fn colorspace(&self) -> Option<ColorSpace> {
         if !self.seen_hdr {
             return None;
         }
@@ -356,25 +356,13 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             _ => PngChunkType::unkn
         };
 
-        if !self.stream.has(chunk_length + 4 /*crc stream*/) {
-            let err = format!(
-                "Not enough bytes for chunk {:?}, bytes requested are {}, but bytes present are {}",
-                chunk_type,
-                chunk_length + 4,
-                self.stream.remaining()
-            );
-
-            return Err(PngDecodeErrors::Generic(err));
-        }
-        // Confirm the CRC here.
-
         if self.options.png_get_confirm_crc() {
             use crate::crc::crc32_slice8;
 
             // go back and point to chunk type.
-            self.stream.rewind(4);
+            self.stream.rewind(4)?;
             // read chunk type + chunk data
-            let bytes = self.stream.peek_at(0, chunk_length + 4).unwrap();
+            let bytes = self.stream.peek_at(0, chunk_length + 4)?;
 
             // calculate crc
             let calc_crc = !crc32_slice8(bytes, u32::MAX);
@@ -385,7 +373,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
             // go point after the chunk type
             // The other parts expect the bit-reader to point to the
             // start of the chunk data.
-            self.stream.skip(4);
+            self.stream.skip(4)?;
         }
 
         Ok(PngChunk {
@@ -464,16 +452,16 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                 self.parse_exif(header)?;
             }
             PngChunkType::iCCP => {
-                self.parse_iccp(header);
+                self.parse_iccp(header)?;
             }
             PngChunkType::iTXt => {
-                self.parse_itxt(header);
+                self.parse_itxt(header)?;
             }
             PngChunkType::zTXt => {
-                self.parse_ztxt(header);
+                self.parse_ztxt(header)?;
             }
             PngChunkType::tEXt => {
-                self.parse_text(header);
+                self.parse_text(header)?;
             }
             PngChunkType::fcTL => {
                 // may read more headers internally
@@ -495,7 +483,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// If the image depth is less than 16 bit, then the endianness has
     /// no effect
     pub const fn byte_endian(&self) -> ByteEndian {
-        self.options.get_byte_endian()
+        self.options.byte_endian()
     }
 
     /// Return the number of bytes required to hold a decoded image frame
@@ -515,8 +503,8 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         let info = &self.png_info;
         let bytes = if info.depth == 16 && !self.options.png_get_strip_to_8bit() { 2 } else { 1 };
 
-        let out_n = self.get_colorspace()?.num_components();
-        let dims = self.get_dimensions().unwrap();
+        let out_n = self.colorspace()?.num_components();
+        let dims = self.dimensions().unwrap();
 
         dims.0
             .checked_mul(dims.1)?
@@ -543,7 +531,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         // stripping 16 bit to 8 bit
         let bytes = if p_info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace()?.num_components();
+        let out_n = self.colorspace()?.num_components();
 
         info.width
             .checked_mul(info.height)?
@@ -557,7 +545,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// # Returns
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
-    pub const fn get_info(&self) -> Option<&PngInfo> {
+    pub const fn info(&self) -> Option<&PngInfo> {
         if self.seen_headers {
             Some(&self.png_info)
         } else {
@@ -569,7 +557,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///
     /// Can be used to modify options before actual decoding but after initial
     /// creation
-    pub const fn get_options(&self) -> &DecoderOptions {
+    pub const fn options(&self) -> &DecoderOptions {
         &self.options
     }
 
@@ -632,7 +620,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         self.decode_headers()?;
 
         trace!("Input Colorspace: {:?} ", self.png_info.color);
-        trace!("Output Colorspace: {:?} ", self.get_colorspace().unwrap());
+        trace!("Output Colorspace: {:?} ", self.colorspace().unwrap());
 
         if self.frames.get(self.current_frame).is_none() {
             return Err(PngDecodeErrors::GenericStatic("No more frames"));
@@ -670,7 +658,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         }
 
         // convert to set endian if need be
-        if self.get_depth().unwrap() == BitDepth::Sixteen {
+        if self.depth().unwrap() == BitDepth::Sixteen {
             convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
         }
         // one more frame decoded
@@ -735,8 +723,9 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     ///
     /// This example gets frame information of an animated image
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(&[]);
+    /// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
     ///
     /// // decode the headers to get the information
     /// decoder.decode_headers().unwrap();
@@ -770,7 +759,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace().unwrap().num_components();
+        let out_n = self.colorspace().unwrap().num_components();
 
         let new_len = frame_info.width * frame_info.height * out_n * bytes;
 
@@ -851,9 +840,10 @@ impl<T: ZReaderTrait> PngDecoder<T> {
     /// # Example
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_core::result::DecodingResult;
     /// use zune_png::PngDecoder;
-    /// let mut decoder = PngDecoder::new(&[]);
+    /// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
     ///
     /// match decoder.decode().unwrap(){
     ///     DecodingResult::U16(value)=>{
@@ -897,7 +887,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_n = self.get_colorspace().unwrap().num_components();
+        let out_n = self.colorspace().unwrap().num_components();
         let new_len = info.width * info.height * out_n;
 
         let mut out_u8: Vec<u8> = vec![0; new_len * usize::from(info.depth != 16)];
@@ -944,7 +934,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
-        let out_colorspace = self.get_colorspace().unwrap();
+        let out_colorspace = self.colorspace().unwrap();
 
         let mut img_width_bytes;
 
@@ -1018,7 +1008,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
 
             current = &mut current[0..out_chunk_size];
 
-            // get the previlet (w,h)ous row.
+            // get the previous row.
             //Set this to a dummy to handle special case of first row, if we aren't in the first
             // row, we actually take the real slice a line down
             let mut prev_row: &[u8] = &[0_u8];
@@ -1180,7 +1170,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                         &self.previous_stride,
                         to_filter_row,
                         self.png_info.color,
-                        self.get_depth().unwrap()
+                        self.depth().unwrap()
                     );
                 }
             }
@@ -1268,7 +1258,7 @@ impl<T: ZReaderTrait> PngDecoder<T> {
                         &self.previous_stride,
                         to_filter_row,
                         self.png_info.color,
-                        self.get_depth().unwrap()
+                        self.depth().unwrap()
                     );
                 }
             }

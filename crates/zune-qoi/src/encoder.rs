@@ -4,10 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use alloc::vec;
-use alloc::vec::Vec;
-
-use zune_core::bytestream::ZByteWriter;
+use zune_core::bytestream::{ZByteWriter, ZByteWriterTrait};
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_core::options::EncoderOptions;
 
@@ -37,7 +34,8 @@ const SUPPORTED_COLORSPACES: [ColorSpace; 2] = [ColorSpace::RGB, ColorSpace::RGB
 /// fn main()->Result<(), QoiEncodeErrors>{
 ///     let pixels = std::array::from_fn::<u8,{W * H * 3},_>(|i| (i%256) as u8);
 ///     let mut encoder = QoiEncoder::new(&pixels,EncoderOptions::new(W,H,ColorSpace::RGB,BitDepth::Eight));
-///     let pix = encoder.encode()?;
+///     let mut sink = vec![];
+///     let pix = encoder.encode(&mut sink)?;
 ///     // write pixels, or do something
 ///     Ok(())
 ///}
@@ -70,16 +68,18 @@ impl<'a> QoiEncoder<'a> {
     /// Return the maximum size for which the encoder can safely
     /// encode the image without fearing for an out of space error
     pub fn max_size(&self) -> usize {
-        self.options.get_width()
-            * self.options.get_height()
-            * (self.options.get_colorspace().num_components() + 1)
+        self.options.width()
+            * self.options.height()
+            * (self.options.colorspace().num_components() + 1)
             + QOI_HEADER_SIZE
             + QOI_PADDING
     }
-    fn encode_headers(&self, writer: &mut ZByteWriter) -> Result<(), QoiEncodeErrors> {
-        let expected_len = self.options.get_width()
-            * self.options.get_height()
-            * self.options.get_colorspace().num_components();
+    fn encode_headers<T: ZByteWriterTrait>(
+        &self, writer: &mut ZByteWriter<T>
+    ) -> Result<(), QoiEncodeErrors> {
+        let expected_len = self.options.width()
+            * self.options.height()
+            * self.options.colorspace().num_components();
 
         if self.pixel_data.len() != expected_len {
             return Err(QoiEncodeErrors::Generic(
@@ -87,47 +87,42 @@ impl<'a> QoiEncoder<'a> {
             ));
         }
 
-        if writer.has(QOI_HEADER_SIZE) {
-            // qoif
-            writer.write_all(&QOI_MAGIC.to_be_bytes()).unwrap();
+        // qoif
+        writer.write_all(&QOI_MAGIC.to_be_bytes())?;
 
-            let options = &self.options;
-            if (options.get_width() as u64) > u64::from(u32::MAX) {
-                // error out
-                return Err(QoiEncodeErrors::TooLargeDimensions(options.get_width()));
-            }
-            if (options.get_height() as u64) > u64::from(u32::MAX) {
-                return Err(QoiEncodeErrors::TooLargeDimensions(options.get_height()));
-            }
-            // it's safe to convert to u32 here. since we checked
-            // the number can be safely encoded.
-
-            // width
-            writer.write_u32_be(options.get_width() as u32);
-            // height
-            writer.write_u32_be(options.get_height() as u32);
-            //channel
-            let channel = match self.options.get_colorspace() {
-                ColorSpace::RGB => 3,
-                ColorSpace::RGBA => 4,
-
-                _ => {
-                    return Err(QoiEncodeErrors::UnsupportedColorspace(
-                        self.options.get_colorspace(),
-                        &SUPPORTED_COLORSPACES
-                    ))
-                }
-            };
-
-            writer.write_u8(channel);
-            // colorspace
-            let xtic = u8::from(self.color_characteristics == ColorCharacteristics::Linear);
-            writer.write_u8(xtic);
-        } else {
-            return Err(QoiEncodeErrors::Generic(
-                "Cannot allocate internal space for headers"
-            ));
+        let options = &self.options;
+        if (options.width() as u64) > u64::from(u32::MAX) {
+            // error out
+            return Err(QoiEncodeErrors::TooLargeDimensions(options.width()));
         }
+        if (options.height() as u64) > u64::from(u32::MAX) {
+            return Err(QoiEncodeErrors::TooLargeDimensions(options.height()));
+        }
+        // it's safe to convert to u32 here. since we checked
+        // the number can be safely encoded.
+
+        // width
+        writer.write_u32_be_err(options.width() as u32)?;
+        // height
+        writer.write_u32_be_err(options.height() as u32)?;
+        //channel
+        let channel = match self.options.colorspace() {
+            ColorSpace::RGB => 3,
+            ColorSpace::RGBA => 4,
+
+            _ => {
+                return Err(QoiEncodeErrors::UnsupportedColorspace(
+                    self.options.colorspace(),
+                    &SUPPORTED_COLORSPACES
+                ))
+            }
+        };
+
+        writer.write_u8_err(channel)?;
+        // colorspace
+        let xtic = u8::from(self.color_characteristics == ColorCharacteristics::Linear);
+        writer.write_u8_err(xtic)?;
+
         Ok(())
     }
     /// Encode into a pre-allocated buffer and error out if
@@ -139,8 +134,8 @@ impl<'a> QoiEncoder<'a> {
     /// # Returns
     /// - Ok(size): Actual bytes used for encoding
     /// - Err: The error encountered during encoding
-    pub fn encode_into(&mut self, buf: &mut [u8]) -> Result<usize, QoiEncodeErrors> {
-        let mut stream = ZByteWriter::new(buf);
+    pub fn encode<T: ZByteWriterTrait>(&mut self, sink: T) -> Result<usize, QoiEncodeErrors> {
+        let mut stream = ZByteWriter::new(sink);
 
         self.encode_headers(&mut stream)?;
 
@@ -151,26 +146,21 @@ impl<'a> QoiEncoder<'a> {
 
         let mut run = 0;
 
-        let channel_count = self.options.get_colorspace().num_components();
+        let channel_count = self.options.colorspace().num_components();
 
         for pix_chunk in self.pixel_data.chunks_exact(channel_count) {
             px[0..channel_count].copy_from_slice(pix_chunk);
-
-            if !stream.has(5) {
-                // worst case is RGBA+ chunk type
-                return Err(QoiEncodeErrors::Generic("Not enough space"));
-            }
 
             if px == px_prev {
                 run += 1;
 
                 if run == 62 {
-                    stream.write_u8(QOI_OP_RUN | (run - 1));
+                    stream.write_u8_err(QOI_OP_RUN | (run - 1))?;
                     run = 0;
                 }
             } else {
                 if run > 0 {
-                    stream.write_u8(QOI_OP_RUN | (run - 1));
+                    stream.write_u8_err(QOI_OP_RUN | (run - 1))?;
                     run = 0;
                 }
 
@@ -181,7 +171,7 @@ impl<'a> QoiEncoder<'a> {
                     % 64;
 
                 if index[index_pos] == px {
-                    stream.write_u8(QOI_OP_INDEX | (index_pos as u8));
+                    stream.write_u8_err(QOI_OP_INDEX | (index_pos as u8))?;
                 } else {
                     index[index_pos] = px;
 
@@ -193,7 +183,10 @@ impl<'a> QoiEncoder<'a> {
                         let vg_r = vr.wrapping_sub(vg);
                         let vg_b = vb.wrapping_sub(vg);
 
-                        if !(2..=253).contains(&vr) && !(2..=253).contains(&vg) && !(2..=253).contains(&vb) {
+                        if !(2..=253).contains(&vr)
+                            && !(2..=253).contains(&vg)
+                            && !(2..=253).contains(&vb)
+                        {
                             stream.write_u8(
                                 QOI_OP_DIFF
                                     | vr.wrapping_add(2) << 4
@@ -204,18 +197,16 @@ impl<'a> QoiEncoder<'a> {
                             && !(32..=223).contains(&vg)
                             && !(8..=247).contains(&vg_b)
                         {
-                            stream.write_u8(QOI_OP_LUMA | vg.wrapping_add(32));
-                            stream.write_u8(vg_r.wrapping_add(8) << 4 | vg_b.wrapping_add(8));
+                            stream.write_u8_err(QOI_OP_LUMA | vg.wrapping_add(32))?;
+                            stream
+                                .write_u8_err(vg_r.wrapping_add(8) << 4 | vg_b.wrapping_add(8))?;
                         } else {
-                            stream.write_u8(QOI_OP_RGB);
-                            stream.write_u8(px[0]);
-                            stream.write_u8(px[1]);
-                            stream.write_u8(px[2]);
+                            stream.write_u8_err(QOI_OP_RGB)?;
+                            stream.write_const_bytes(&[px[0], px[1], px[2]])?;
                         }
                     } else {
-                        stream.write_u8(QOI_OP_RGBA);
-
-                        stream.write_u32_be(u32::from_be_bytes(px));
+                        stream.write_u8_err(QOI_OP_RGBA)?;
+                        stream.write_u32_be_err(u32::from_be_bytes(px))?;
                     }
                 }
             }
@@ -223,61 +214,58 @@ impl<'a> QoiEncoder<'a> {
             px_prev.copy_from_slice(&px);
         }
         if run > 0 {
-            stream.write_u8(QOI_OP_RUN | (run - 1));
+            stream.write_u8_err(QOI_OP_RUN | (run - 1))?;
         }
         // write trailing bytes
-        stream.write_u64_be(0x01);
+        stream.write_u64_be_err(0x01)?;
         // done
-        let len = stream.position();
+        let len = stream.bytes_written();
 
         Ok(len)
     }
-    /// Encode an image and return a vector containing encoded content
-    /// or error out in case of anything
-    ///
-    /// # Returns
-    /// Ok(vec): A vector containing the bytes as encoded output
-    /// Err: An error encountered during encoding
-    ///
-    #[allow(clippy::manual_range_contains)]
-    pub fn encode(&mut self) -> Result<Vec<u8>, QoiEncodeErrors> {
-        // set encoded data to be an array of zeroes
-        let mut encoded_data = vec![0; self.max_size()];
-        let size = self.encode_into(&mut encoded_data)?;
-        // done
-        // reduce the length to be the expected value
-        encoded_data.truncate(size);
+}
 
-        Ok(encoded_data)
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::EncoderOptions;
+
+    use crate::QoiEncoder;
+
+    #[test]
+    fn test_qoi_encode_rgb() {
+        use zune_core::bit_depth::BitDepth;
+        const W: usize = 100;
+        const H: usize = 100;
+
+        let pixels = std::array::from_fn::<u8, { W * H * 3 }, _>(|i| (i % 256) as u8);
+        let mut encoder = QoiEncoder::new(
+            &pixels,
+            EncoderOptions::new(W, H, ColorSpace::RGB, BitDepth::Eight)
+        );
+        let mut output = vec![];
+        encoder.encode(&mut output).unwrap();
+        // write pixels, do something
     }
-}
 
-#[test]
-fn test_qoi_encode_rgb() {
-    use zune_core::bit_depth::BitDepth;
-    const W: usize = 100;
-    const H: usize = 100;
+    #[test]
+    fn test_qoi_encode_rgba() {
+        use zune_core::bit_depth::BitDepth;
+        const W: usize = 100;
+        const H: usize = 100;
 
-    let pixels = std::array::from_fn::<u8, { W * H * 3 }, _>(|i| (i % 256) as u8);
-    let mut encoder = QoiEncoder::new(
-        &pixels,
-        EncoderOptions::new(W, H, ColorSpace::RGB, BitDepth::Eight)
-    );
-    encoder.encode().unwrap();
-    // write pixels, do something
-}
+        let pixels = std::array::from_fn::<u8, { W * H * 4 }, _>(|i| (i % 256) as u8);
+        let mut encoder = QoiEncoder::new(
+            &pixels,
+            EncoderOptions::new(W, H, ColorSpace::RGBA, BitDepth::Eight)
+        );
 
-#[test]
-fn test_qoi_encode_rgba() {
-    use zune_core::bit_depth::BitDepth;
-    const W: usize = 100;
-    const H: usize = 100;
-
-    let pixels = std::array::from_fn::<u8, { W * H * 4 }, _>(|i| (i % 256) as u8);
-    let mut encoder = QoiEncoder::new(
-        &pixels,
-        EncoderOptions::new(W, H, ColorSpace::RGBA, BitDepth::Eight)
-    );
-    encoder.encode().unwrap();
-    // write pixels, do something
+        let mut output = vec![];
+        encoder.encode(&mut output).unwrap();
+        // write pixels, do something
+        let mut decoder = crate::QoiDecoder::new(ZCursor::new(&output));
+        let decoded_pixels = decoder.decode().unwrap();
+        assert_eq!(&pixels[..], &decoded_pixels[..]);
+    }
 }

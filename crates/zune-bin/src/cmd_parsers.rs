@@ -15,7 +15,7 @@ pub mod global_options;
 pub mod filters;
 pub mod operations;
 
-pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions {
+pub fn decoder_options(options: &ArgMatches) -> DecoderOptions {
     let max_width = *options.get_one::<usize>("max-width").unwrap();
     let max_height = *options.get_one::<usize>("max-height").unwrap();
     let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
@@ -34,7 +34,7 @@ pub fn get_decoder_options(options: &ArgMatches) -> DecoderOptions {
     options
 }
 
-pub fn get_encoder_options(options: &ArgMatches) -> EncoderOptions {
+pub fn encoder_options(options: &ArgMatches) -> EncoderOptions {
     let quality = *options.get_one::<u8>("quality").unwrap();
     let encode_threads = *options.get_one::<u8>("encode-threads").unwrap();
     let effort = *options.get_one::<u8>("effort").unwrap();

@@ -1,0 +1,22 @@
+name: Investigate  image features that run
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        features:[image_formats, serde-support, metadata, threads, simd, log,jpeg, ppm, png, psd, farbfeld, qoi, jpeg-xl, hdr, bmp]
+
+    runs-on: ubuntu-latest
+
+
+
+    steps:
+      - name: Check independent feature build Basics
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: -p zune-image --no-default-features -F ${{ matrix.features }}
+

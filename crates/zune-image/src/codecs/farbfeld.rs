@@ -12,7 +12,7 @@
 //! This uses the delegate library [`zune-farbfeld`](zune_farbfeld)
 //! for encoding and decoding images
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_farbfeld::*;
@@ -23,14 +23,16 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for FarbFeldDecoder<T>
+impl<T> DecoderTrait for FarbFeldDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
-        let pixels = self.decode()?;
-        let colorspace = self.get_colorspace();
-        let (width, height) = self.get_dimensions().unwrap();
+        let pixels = self
+            .decode()
+            .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
+        let colorspace = self.colorspace();
+        let (width, height) = self.dimensions().unwrap();
 
         let mut image = Image::from_u16(&pixels, width, height, colorspace);
 
@@ -40,11 +42,11 @@ where
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace()
+        self.colorspace()
     }
 
     fn name(&self) -> &'static str {
@@ -56,14 +58,15 @@ where
     }
 
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
-        self.decode_headers()?;
+        self.decode_headers()
+            .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.bit_depth();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::Farbfeld),
-            colorspace: self.get_colorspace(),
+            colorspace: self.colorspace(),
             depth: depth,
             width: width,
             height: height,
@@ -101,17 +104,19 @@ impl EncoderTrait for FarbFeldEncoder {
         "farbfeld"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         assert_eq!(image.depth(), BitDepth::Sixteen);
 
         let data = &image.to_u8()[0];
 
-        let encoder_options = zune_farbfeld::FarbFeldEncoder::new(data, options);
+        let encoder = zune_farbfeld::FarbFeldEncoder::new(data, options);
 
-        let data = encoder_options
-            .encode()
+        let data = encoder
+            .encode(sink)
             .map_err(<FarbFeldEncoderErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)

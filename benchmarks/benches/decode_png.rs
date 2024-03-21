@@ -12,6 +12,7 @@ use std::time::Duration;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use spng::DecodeFlags;
 use zune_benches::sample_path;
+use zune_jpeg::zune_core::bytestream::ZCursor;
 
 fn decode_ref(data: &[u8]) -> Vec<u8> {
     let mut decoder = png::Decoder::new(data);
@@ -28,7 +29,9 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 }
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
-    zune_png::PngDecoder::new(data).decode_raw().unwrap()
+    zune_png::PngDecoder::new(ZCursor::new(data))
+        .decode_raw()
+        .unwrap()
 }
 
 fn decode_spng(data: &[u8]) -> Vec<u8> {

@@ -13,6 +13,7 @@ use core::cmp::{max, min};
 use core::marker::PhantomData;
 
 use zune_core::bit_depth::BitDepth;
+use zune_core::bytestream::{ZByteWriter, ZByteWriterTrait};
 use zune_core::log::{log_enabled, trace, Level};
 use zune_core::options::EncoderOptions;
 
@@ -87,8 +88,9 @@ pub(crate) struct FrameState {
 ///     let image:[u8;100] = std::array::from_fn(|x| x as u8);
 ///
 ///     let encoder = JxlSimpleEncoder::new(&image,options);
+///     let mut output =vec![];
 ///     // encode the image
-///     encoder.encode()?;
+///     encoder.encode(&mut output)?;
 ///     
 ///     Ok(())
 /// }
@@ -530,7 +532,6 @@ fn compute_code_lengths(
 }
 
 pub(crate) trait Enc<T: JxlBitEncoder> {
-    fn encode_rle(&mut self, count: usize);
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize);
     fn finalize(&mut self, run: usize);
 }
@@ -593,10 +594,6 @@ where
 }
 
 impl<'a, T: JxlBitEncoder> Enc<T> for ChunkEncoder<'a, T> {
-    fn encode_rle(&mut self, count: usize) {
-        self.encode_rle(count);
-    }
-
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
         self.chunk(run, residuals, skip, n);
     }
@@ -607,10 +604,6 @@ impl<'a, T: JxlBitEncoder> Enc<T> for ChunkEncoder<'a, T> {
 }
 
 impl<'a, T: JxlBitEncoder> Enc<T> for ChunkSampleCollector<'a, T> {
-    fn encode_rle(&mut self, count: usize) {
-        self.encode_rle(count)
-    }
-
     fn chunk(&mut self, run: usize, residuals: &[T::Upixel], skip: usize, n: usize) {
         self.chunk(run, residuals, skip, n);
     }
@@ -1054,42 +1047,6 @@ impl<'a> JxlSimpleEncoder<'a> {
         JxlSimpleEncoder { data, options }
     }
 
-    /// Encode a jxl image into a user provided buffer
-    ///
-
-    ///
-    /// # Arguments
-    /// - buf: The buffer to write bytes into
-    /// It is difficult to estimate the size of output buffer as many factors influence
-    /// the size of the final image. A good metric is that the buffer size can be equal to
-    /// the raw pixel size.
-    ///
-    ///   If the buffer is not big enough the library will bail and return an error
-    ///
-    /// # Returns
-    ///
-    /// - Ok(size) Number of bytes written into `buf` for the encoded image
-    /// - Err() An error in case it occurred during encoding
-    pub fn encode_into(&mut self, buf: &mut [u8]) -> Result<usize, JxlEncodeErrors> {
-        if self.options.get_width() <= 1 {
-            return Err(JxlEncodeErrors::ZeroDimension("width"));
-        }
-        if self.options.get_height() <= 1 {
-            return Err(JxlEncodeErrors::ZeroDimension("height"));
-        }
-        let depth = self.options.get_depth();
-
-        let mut frame_state = match depth {
-            BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
-            BitDepth::Sixteen => self.encode_inner(MoreThan14Bits())?,
-            _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth))
-        };
-        prepare_header(&mut frame_state, true, true);
-
-        let written = fast_lossless_write_output(&mut frame_state, buf)?;
-
-        Ok(written)
-    }
     /// Encode a jxl image producing the raw encoded
     /// bytes or an error if there was any that occurred during encoding
     ///
@@ -1098,14 +1055,14 @@ impl<'a> JxlSimpleEncoder<'a> {
     ///
     /// Err(e): The error incase one is encountered
     ///
-    pub fn encode(&self) -> Result<Vec<u8>, JxlEncodeErrors> {
-        if self.options.get_width() <= 1 {
+    pub fn encode<T: ZByteWriterTrait>(&self, sink: T) -> Result<usize, JxlEncodeErrors> {
+        if self.options.width() <= 1 {
             return Err(JxlEncodeErrors::ZeroDimension("width"));
         }
-        if self.options.get_height() <= 1 {
+        if self.options.height() <= 1 {
             return Err(JxlEncodeErrors::ZeroDimension("height"));
         }
-        let depth = self.options.get_depth();
+        let depth = self.options.depth();
 
         let mut frame_state = match depth {
             BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
@@ -1116,22 +1073,20 @@ impl<'a> JxlSimpleEncoder<'a> {
         // TODO: Make this an encode_inner function
         let size = fast_lossless_max_required_output(&frame_state);
 
-        let mut output = vec![0; size];
-        let written = fast_lossless_write_output(&mut frame_state, &mut output)?;
-
-        output.truncate(written);
-
-        Ok(output)
+        let mut writer = ZByteWriter::new(sink);
+        writer.reserve(size)?;
+        fast_lossless_write_output(&mut frame_state, &mut writer)?;
+        Ok(writer.bytes_written())
     }
 
     pub(crate) fn encode_inner<B: JxlBitEncoder + Send + Sync>(
         &self, encoder: B
     ) -> Result<FrameState, JxlEncodeErrors> {
-        let depth = self.options.get_depth();
-        let width = self.options.get_width();
-        let height = self.options.get_height();
-        let colorspace = self.options.get_colorspace();
-        let effort = usize::from(self.options.get_effort()).clamp(0, 127);
+        let depth = self.options.depth();
+        let width = self.options.width();
+        let height = self.options.height();
+        let colorspace = self.options.colorspace();
+        let effort = usize::from(self.options.effort()).clamp(0, 127);
         let num_components = colorspace.num_components();
         let stride = depth.size_of() * width * num_components;
 
@@ -1151,7 +1106,7 @@ impl<'a> JxlSimpleEncoder<'a> {
             trace!("Height: {}", height);
             trace!("Colorspace: {:?}", colorspace);
             trace!("Depth: {:?}", depth);
-            trace!("Configured threads: {:?}", self.options.get_num_threads());
+            trace!("Configured threads: {:?}", self.options.num_threads());
         }
 
         let expected = calculate_expected_input(&self.options);
@@ -1297,7 +1252,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
             #[cfg(feature = "threads")]
             {
-                if !one_group && self.options.get_num_threads() > 0 {
+                if !one_group && self.options.num_threads() > 0 {
                     ran_runners = true;
                     let open_threads = Arc::new(AtomicUsize::new(0));
 
@@ -1312,7 +1267,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                             // i.e the user asked for 10 threads but frame can be divided 11 times,
                             // we don't open 11 threads.
                             while num_threads.load(Ordering::Relaxed)
-                                > usize::from(self.options.get_num_threads())
+                                > usize::from(self.options.num_threads())
                             // assumed maximum threads to open
                             {
                                 // tell CPU to wait, don't burn stuff
@@ -1415,14 +1370,11 @@ impl<'a> JxlSimpleEncoder<'a> {
 
 /// Write output from the frame to `output`
 #[allow(clippy::never_loop)]
-fn fast_lossless_write_output(
-    frame: &mut FrameState, output: &mut [u8]
-) -> Result<usize, JxlEncodeErrors> {
-    let components = frame.option.get_colorspace().num_components();
+fn fast_lossless_write_output<T: ZByteWriterTrait>(
+    frame: &mut FrameState, output: &mut ZByteWriter<T>
+) -> Result<(), JxlEncodeErrors> {
+    let components = frame.option.colorspace().num_components();
 
-    if output.len() < 8 {
-        return Err(JxlEncodeErrors::Generic("Output is too short"));
-    }
     let mut out_writer = BorrowingBitWriter::new(output);
 
     let max_iters = 1 + frame.group_data.len() * components;
@@ -1432,14 +1384,12 @@ fn fast_lossless_write_output(
         let bw_pos = &mut frame.bit_writer_byte_pos;
 
         if *curr >= max_iters {
-            out_writer
-                .flush()
-                .map_err(JxlEncodeErrors::Generic)?;
+            out_writer.flush()?;
             assert_eq!(out_writer.bits_in_buffer, 0);
-            return Ok(out_writer.position);
+            return Ok(());
         }
 
-        let nbc = frame.option.get_colorspace().num_components();
+        let nbc = frame.option.colorspace().num_components();
 
         let writer = if *curr == 0 {
             &mut frame.header
@@ -1453,31 +1403,22 @@ fn fast_lossless_write_output(
 
         let full_byte_count = writer.position - *bw_pos;
 
-        out_writer
-            .put_bytes(&writer.dest[*bw_pos..*bw_pos + full_byte_count])
-            .map_err(JxlEncodeErrors::Generic)?;
-
+        out_writer.put_bytes(&writer.dest[*bw_pos..*bw_pos + full_byte_count])?;
         *bw_pos += full_byte_count;
 
         if *bw_pos == writer.position {
             // check for any spare bytes
             if writer.bits_in_buffer != 0 {
                 // transfer those bits to our general writer
-                out_writer
-                    .put_bits(writer.bits_in_buffer, writer.buffer)
-                    .map_err(JxlEncodeErrors::Generic)?;
+                out_writer.put_bits(writer.bits_in_buffer, writer.buffer)?;
             }
             *bw_pos = 0;
             *curr += 1;
 
-            out_writer
-                .flush()
-                .map_err(JxlEncodeErrors::Generic)?;
+            out_writer.flush()?;
 
             if (*curr - 1) % nbc == 0 && out_writer.bits_in_buffer != 0 {
-                out_writer
-                    .put_bits(8 - out_writer.bits_in_buffer, 0)
-                    .map_err(JxlEncodeErrors::Generic)?;
+                out_writer.put_bits(8 - out_writer.bits_in_buffer, 0)?;
             }
         }
     }
@@ -1505,8 +1446,8 @@ fn fast_lossless_max_required_output(frame_state: &FrameState) -> usize {
 
 #[allow(clippy::needless_range_loop)]
 fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool) {
-    let colorspace = frame.option.get_colorspace();
-    let depth = frame.option.get_depth();
+    let colorspace = frame.option.colorspace();
+    let depth = frame.option.depth();
 
     let output = &mut frame.header;
     output.allocate(1000 + frame.group_data.len() * 32);
@@ -1515,7 +1456,7 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
 
     for i in 0..frame.group_data.len() {
         let mut sz = 0;
-        for j in 0..frame.option.get_colorspace().num_components() {
+        for j in 0..frame.option.colorspace().num_components() {
             let writer = &frame.group_data[i][j];
 
             sz += (writer.position * 8) + usize::from(writer.bits_in_buffer);
@@ -1552,9 +1493,9 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
                 output.put_bits(3, 0);
             }
         };
-        write_header(frame.option.get_height(), true);
+        write_header(frame.option.height(), true);
 
-        write_header(frame.option.get_width(), false);
+        write_header(frame.option.width(), false);
         // hand crafted image metadata
         output.put_bits(1, 0); // defaults
         output.put_bits(1, 0); // extra fields
@@ -1564,10 +1505,10 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
             BitDepth::Eight => output.put_bits(2, 0),
             _ => {
                 output.put_bits(2, 0b11);
-                output.put_bits(6, (frame.option.get_depth().bit_size() - 1) as u64);
+                output.put_bits(6, (frame.option.depth().bit_size() - 1) as u64);
             }
         };
-        if frame.option.get_depth().bit_size() <= 14 {
+        if frame.option.depth().bit_size() <= 14 {
             // 16 bit buffer sufficient
             output.put_bits(1, 1);
         } else {
@@ -1655,12 +1596,12 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
 
 fn calculate_expected_input(options: &EncoderOptions) -> usize {
     options
-        .get_width()
-        .checked_mul(options.get_depth().size_of())
+        .width()
+        .checked_mul(options.depth().size_of())
         .unwrap()
-        .checked_mul(options.get_height())
+        .checked_mul(options.height())
         .unwrap()
-        .checked_mul(options.get_colorspace().num_components())
+        .checked_mul(options.colorspace().num_components())
         .unwrap()
 }
 

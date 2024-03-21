@@ -12,7 +12,6 @@ zune-image = { version = "0.4", path = "../zune-image", features = ["all"] }
 zune-core = { path = "../zune-core", version = "0.4" }
 zune-imageprocs = { path = "../zune-imageprocs" }
 #zune-opencl = { path = "../zune-opencl" }
-memmap2 = "0.7.1"
 serde_json = "1.0.93"
 serde = "1.0.152"
 

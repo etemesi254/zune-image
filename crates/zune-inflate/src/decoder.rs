@@ -674,7 +674,9 @@ impl<'a> DeflateDecoder<'a> {
              * To reduce latency, the bit-buffer is refilled and the next litlen
              * decode table entry is preloaded before each loop iteration.
              */
-            let (mut literal, mut length, mut offset, mut entry) = (0, 0, 0, 0);
+
+            // ll can either track literal or length, and used interchangeably
+            let (mut ll, mut entry) = (0, 0);
 
             let mut saved_bitbuf;
 
@@ -702,13 +704,9 @@ impl<'a> DeflateDecoder<'a> {
                         // recheck after every sequence
                         // when we hit continue, we need to recheck this
                         // as we are trying to emulate a do while
-                        let new_check = self.stream.src.len() < self.stream.position + 8;
-
-                        if new_check {
+                        if !self.stream.refill_inner_loop() {
                             break 'sequence;
                         }
-
-                        self.stream.refill_inner_loop();
                         /*
                          * Consume the bits for the litlen decode table entry.  Save the
                          * original bit-buf for later, in case the extra match length
@@ -734,7 +732,7 @@ impl<'a> DeflateDecoder<'a> {
                              * that happens later while decoding the match offset).
                              */
 
-                            literal = entry >> 16;
+                            ll = entry >> 16;
 
                             let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
@@ -743,32 +741,28 @@ impl<'a> DeflateDecoder<'a> {
 
                             self.stream.drop_bits(entry as u8);
 
-                            let out: &mut [u8; 2] = out_block
-                                .get_mut(dest_offset..dest_offset + 2)
-                                .unwrap()
-                                .try_into()
-                                .unwrap();
-
-                            out[0] = literal as u8;
-                            dest_offset += 1;
-
-                            if (entry & HUFFDEC_LITERAL) != 0 {
-                                /*
-                                 * Another fast literal, but this one is in lieu of the
-                                 * primary item, so it doesn't count as one of the extras.
-                                 */
-
-                                // load in the next entry.
-                                literal = entry >> 16;
-
-                                let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
-
-                                entry = litlen_decode_table[new_pos];
-
-                                out[1] = literal as u8;
+                            if let Some(bytes) = out_block.get_mut(dest_offset..dest_offset + 2) {
+                                bytes[0] = ll as u8;
                                 dest_offset += 1;
 
-                                continue;
+                                if (entry & HUFFDEC_LITERAL) != 0 {
+                                    /*
+                                     * Another fast literal, but this one is in lieu of the
+                                     * primary item, so it doesn't count as one of the extras.
+                                     */
+
+                                    // load in the next entry.
+                                    ll = entry >> 16;
+
+                                    let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
+
+                                    entry = litlen_decode_table[new_pos];
+
+                                    bytes[1] = ll as u8;
+                                    dest_offset += 1;
+
+                                    continue;
+                                }
                             }
                         }
                         /*
@@ -801,11 +795,11 @@ impl<'a> DeflateDecoder<'a> {
                                 // decode a literal that required a sub table
                                 let new_pos = self.stream.peek_bits::<LITLEN_DECODE_BITS>();
 
-                                literal = entry >> 16;
+                                ll = entry >> 16;
                                 entry = litlen_decode_table[new_pos];
 
                                 *out_block.get_mut(dest_offset).unwrap_or(&mut 0) =
-                                    (literal & 0xFF) as u8;
+                                    (ll & 0xFF) as u8;
 
                                 dest_offset += 1;
 
@@ -833,11 +827,11 @@ impl<'a> DeflateDecoder<'a> {
                         let entry_dup = entry;
 
                         entry = offset_decode_table[self.stream.peek_bits::<OFFSET_TABLEBITS>()];
-                        length = (entry_dup >> 16) as usize;
+                        ll = entry_dup >> 16;
 
                         let mask = (1 << entry_dup as u8) - 1;
 
-                        length += (saved_bitbuf & mask) as usize >> ((entry_dup >> 8) as u8);
+                        ll += ((saved_bitbuf & mask) >> ((entry_dup >> 8) as u8)) as u32;
 
                         // offset requires a subtable
                         if (entry & HUFFDEC_EXCEPTIONAL) != 0 {
@@ -853,7 +847,7 @@ impl<'a> DeflateDecoder<'a> {
 
                         let mask = (1 << entry as u8) - 1;
 
-                        offset = (entry >> 16) as usize;
+                        let mut offset = (entry >> 16) as usize;
                         offset += (saved_bitbuf & mask) as usize >> (((entry >> 8) & 0xFF) as u8);
 
                         if offset > dest_offset {
@@ -883,7 +877,7 @@ impl<'a> DeflateDecoder<'a> {
 
                         let mut current_position = dest_offset;
 
-                        dest_offset += length;
+                        dest_offset += ll as usize;
 
                         if offset == 1 {
                             // RLE fill with a single byte
@@ -921,7 +915,7 @@ impl<'a> DeflateDecoder<'a> {
                                     break;
                                 }
                             }
-                        } else if length > FASTCOPY_BYTES {
+                        } else if ll > FASTCOPY_BYTES as u32 {
                             current_position += FASTCOPY_BYTES;
                             // fast non-overlapping copy
                             //
@@ -1011,13 +1005,12 @@ impl<'a> DeflateDecoder<'a> {
                         self.stream.drop_bits((entry & 0xFF) as u8);
                     }
 
-                    length = (entry >> 16) as usize;
+                    let mut length = (entry >> 16) as usize;
 
                     if (entry & HUFFDEC_LITERAL) != 0 {
                         resize_and_push(&mut out_block, dest_offset, length as u8);
 
                         dest_offset += 1;
-
                         continue;
                     }
 
@@ -1043,15 +1036,15 @@ impl<'a> DeflateDecoder<'a> {
                     }
 
                     // ensure there is enough space for a fast copy
-                    if dest_offset + length + FASTCOPY_BYTES > out_block.len() {
-                        let new_len = out_block.len() + RESIZE_BY + length;
+                    if dest_offset + (ll as usize) + FASTCOPY_BYTES > out_block.len() {
+                        let new_len = out_block.len() + RESIZE_BY + FASTCOPY_BYTES;
                         out_block.resize(new_len, 0);
                     }
                     saved_bitbuf = self.stream.buffer;
 
                     let mask = (1 << (entry & 0xFF) as u8) - 1;
 
-                    offset = (entry >> 16) as usize;
+                    let mut offset = (entry >> 16) as usize;
                     offset += (saved_bitbuf & mask) as usize >> ((entry >> 8) as u8);
 
                     if offset > dest_offset {
@@ -1629,9 +1622,13 @@ const RESIZE_BY: usize = 1024 * 4; // 4 kb
 /// be able to store a new byte and then push an element to that new space
 #[inline(always)]
 fn resize_and_push(buf: &mut Vec<u8>, position: usize, elm: u8) {
-    if buf.len() <= position {
+    if let Some(t) = buf.get_mut(position) {
+        *t = elm;
+    } else {
         let new_len = buf.len() + RESIZE_BY;
         buf.resize(new_len, 0);
+        if let Some(re) = buf.get_mut(position) {
+            *re = elm;
+        }
     }
-    buf[position] = elm;
 }

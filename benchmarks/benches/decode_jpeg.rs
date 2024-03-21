@@ -16,9 +16,10 @@ use zune_benches::sample_path;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
 use zune_jpeg::JpegDecoder;
+use zune_png::zune_core::bytestream::ZCursor;
 
 fn decode_jpeg(buf: &[u8]) -> Vec<u8> {
-    let mut d = JpegDecoder::new(buf);
+    let mut d = JpegDecoder::new(ZCursor::new(buf));
 
     d.decode().unwrap()
 }
@@ -134,7 +135,7 @@ fn decode_hv_samp(c: &mut Criterion) {
 fn decode_jpeg_grayscale(buf: &[u8]) -> Vec<u8> {
     let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
 
-    let mut d = JpegDecoder::new_with_options(buf, options);
+    let mut d = JpegDecoder::new_with_options(ZCursor::new(buf), options);
 
     d.decode().unwrap()
 }
@@ -252,7 +253,7 @@ fn decode_hv_samp_prog(c: &mut Criterion) {
 }
 
 fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8> {
-    let mut d = JpegDecoder::new_with_options(buf, options);
+    let mut d = JpegDecoder::new_with_options(ZCursor::new(buf), options);
 
     d.decode().unwrap()
 }

@@ -24,7 +24,7 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, warn};
 
@@ -38,7 +38,7 @@ use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
-impl<T: ZReaderTrait> JpegDecoder<T> {
+impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode a progressive image
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
@@ -169,7 +169,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                             continue 'eoi;
                         }
                         Err(msg) => {
-                            if self.options.get_strict_mode() {
+                            if self.options.strict_mode() {
                                 return Err(msg);
                             }
                             error!("{:?}", msg);
@@ -187,7 +187,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     marker = marker_n;
                 }
                 Err(e) => {
-                    if self.options.get_strict_mode() {
+                    if self.options.strict_mode() {
                         return Err(e);
                     }
                     error!("{}", e);
@@ -586,11 +586,9 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
-fn get_marker<T>(
-    reader: &mut ZByteReader<T>, stream: &mut BitStream
-) -> Result<Marker, DecodeErrors>
+fn get_marker<T>(reader: &mut ZReader<T>, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     if let Some(marker) = stream.marker {
         stream.marker = None;
@@ -599,14 +597,14 @@ where
 
     // read until we get a marker
 
-    while !reader.eof() {
-        let marker = reader.get_u8_err()?;
+    while !reader.eof()? {
+        let marker = reader.read_u8_err()?;
 
         if marker == 255 {
-            let mut r = reader.get_u8_err()?;
+            let mut r = reader.read_u8_err()?;
             // 0xFF 0XFF(some images may be like that)
             while r == 0xFF {
-                r = reader.get_u8_err()?;
+                r = reader.read_u8_err()?;
             }
 
             if r != 0 {

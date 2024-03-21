@@ -30,9 +30,8 @@ pub enum ZStatusType {
     /// An operation expecting a non_null image got a null image
     ImageIsNull,
     /// Image operation failed
-    ImageOperationError
-    // Image encoding failed
-    //ImageEncodingFailed
+    ImageOperationError // Image encoding failed
+                        //ImageEncodingFailed
 }
 
 /// A status indicator that tells you more about things that went wrong

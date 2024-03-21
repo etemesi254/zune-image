@@ -31,7 +31,8 @@
 //! use zune_core::result::DecodingResult;
 //!
 //! fn main()->Result<(),PPMDecodeErrors>{
-//!    let mut decoder = PPMDecoder::new(&[]);
+//!    use zune_core::bytestream::ZCursor;
+//! let mut decoder = PPMDecoder::new(ZCursor::new(&[]));
 //!    let pix = decoder.decode()?;
 //!    match pix {  
 //!        DecodingResult::U8(_) => {
@@ -42,7 +43,7 @@
 //!        }
 //!        DecodingResult::F32(_) => {
 //!            // deal with 32 bit images (PFM)
-//!        },
+//!        }
 //!        _=>unreachable!()};
 //! Ok(())
 //! }

@@ -95,12 +95,12 @@ impl Image {
     }
     /// Get image dimensions as a tuple of (width,height)
     pub const fn dimensions(&self) -> (usize, usize) {
-        self.metadata.get_dimensions()
+        self.metadata.dimensions()
     }
 
     /// Get the image depth of this image
     pub const fn depth(&self) -> BitDepth {
-        self.metadata.get_depth()
+        self.metadata.depth()
     }
     /// Set image depth
     pub fn set_depth(&mut self, depth: BitDepth) {
@@ -160,7 +160,7 @@ impl Image {
     /// Flatten can be used to interleave all channels into one vector
     pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>> {
         //
-        assert_eq!(self.metadata.get_depth().size_of(), size_of::<T>());
+        assert_eq!(self.metadata.depth().size_of(), size_of::<T>());
         let colorspace = self.colorspace();
 
         self.frames_ref()
@@ -178,9 +178,9 @@ impl Image {
     #[allow(dead_code)]
     pub(crate) fn to_u8(&self) -> Vec<Vec<u8>> {
         let colorspace = self.colorspace();
-        if self.metadata.get_depth() == BitDepth::Eight {
+        if self.metadata.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
-        } else if self.metadata.get_depth() == BitDepth::Sixteen {
+        } else if self.metadata.depth() == BitDepth::Sixteen {
             self.frames_ref()
                 .iter()
                 .map(|z| z.u16_to_native_endian(colorspace))
@@ -201,9 +201,9 @@ impl Image {
     #[allow(dead_code)]
     pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
         let colorspace = self.colorspace();
-        if self.metadata.get_depth() == BitDepth::Eight {
+        if self.metadata.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
-        } else if self.metadata.get_depth() == BitDepth::Sixteen {
+        } else if self.metadata.depth() == BitDepth::Sixteen {
             self.frames_ref()
                 .iter()
                 .map(|z| z.u16_to_big_endian(colorspace))
@@ -260,8 +260,6 @@ impl Image {
         let dims = width * height;
 
         let channels = vec![Channel::from_elm::<T>(dims, pixel); colorspace.num_components()];
-
-        
 
         Image::new(channels, T::depth(), width, height, colorspace)
     }

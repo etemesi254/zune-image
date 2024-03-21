@@ -47,11 +47,12 @@
 //! The below example shows how to do that
 //!
 //!```no_run
+//! use zune_core::bytestream::ZCursor;
 //! use zune_core::options::DecoderOptions;
 //! use zune_png::PngDecoder;
 //! // tell the png decoder to always strip 16 bit images to 8 bits
 //! let options = DecoderOptions::default().png_set_strip_to_8bit(true);
-//! let mut decoder = PngDecoder::new_with_options(&[],options);
+//! let mut decoder = PngDecoder::new_with_options(ZCursor::new([]),options);
 //!
 //! let pixels = decoder.decode_raw();
 //! ```
@@ -74,8 +75,9 @@
 //! A more convenient API is given below, using `decode`
 //!
 //!```no_run
+//! use zune_core::bytestream::ZCursor;
 //! use zune_png::PngDecoder;
-//! let mut decoder = PngDecoder::new(&[]);
+//! let mut decoder = PngDecoder::new(ZCursor::new(&[]));
 //!
 //! let pixels = decoder.decode_raw();
 //! ```
@@ -88,9 +90,10 @@
 //! That's what the `decode` api for the PngDecoder does.
 //!
 //!```no_run
+//! use zune_core::bytestream::ZCursor;
 //! use zune_png::PngDecoder;
 //! use zune_core::result::DecodingResult;
-//! let mut decoder = PngDecoder::new(&[]);
+//! let mut decoder = PngDecoder::new(ZCursor::new(&[]));
 //!
 //! let pixels = decoder.decode().unwrap();
 //!
@@ -125,21 +128,22 @@
 //! to convert it to such types use the zune-image crate which provides efficient transforms for that
 //!
 //!```no_run
+//! use zune_core::bytestream::ZCursor;
 //! use zune_core::options::DecoderOptions;
 //! use zune_png::PngDecoder;
 //! // set option to add alpha channel
 //! let options = DecoderOptions::default().png_set_add_alpha_channel(true);
 //! // use the above option to decode
-//! let mut decoder = PngDecoder::new_with_options(&[],options);
+//! let mut decoder = PngDecoder::new_with_options(ZCursor::new([]),options);
 //!
 //! decoder.decode().unwrap();
 //! // the colorspace will always be have an alpha
-//! assert!(decoder.get_colorspace().unwrap().has_alpha());
+//! assert!(decoder.colorspace().unwrap().has_alpha());
 //! ```
 //!
 //! # Extracting metadata
 //!
-//! Once headers have been decoded, image metadata can be accessed via [`get_info()`](PngDecoder::get_info) method
+//! Once headers have been decoded, image metadata can be accessed via [`get_info()`](PngDecoder::info) method
 //!
 //! Some data is usually borrowed from the underlying reader, so the lifetime of the [`PngInfo`] struct is tied
 //! to the lifetime of the [`PngDecoder`] struct from which it was derived

@@ -24,7 +24,7 @@ use std::time::Duration;
 pub use jxl_oxide;
 use jxl_oxide::{PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
@@ -65,7 +65,9 @@ impl EncoderTrait for JxlEncoder {
         "jxl-encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
@@ -73,7 +75,7 @@ impl EncoderTrait for JxlEncoder {
         let encoder = JxlSimpleEncoder::new(data, options);
 
         let data = encoder
-            .encode()
+            .encode(sink)
             .map_err(<JxlEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
         Ok(data)
@@ -132,15 +134,14 @@ impl<R: Read> JxlDecoder<R> {
     }
 }
 
-impl<R, T> DecoderTrait<T> for JxlDecoder<R>
+impl<R> DecoderTrait for JxlDecoder<R>
 where
-    R: Read,
-    T: ZReaderTrait
+    R: Read
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         // by now headers have been decoded, so we can fetch these
-        let (w, h) = <JxlDecoder<R> as DecoderTrait<T>>::dimensions(self).unwrap();
-        let color = <JxlDecoder<R> as DecoderTrait<T>>::out_colorspace(self);
+        let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
+        let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
 
         let mut total_frames = vec![];
 
@@ -153,19 +154,19 @@ where
         trace!("Image colorspace: {:?}", color);
         trace!("Image dimensions: ({},{})", w, h);
         // check dimensions if bigger than supported
-        if w > self.options.get_max_width() {
+        if w > self.options.max_width() {
             let msg = format!(
                 "Image width {}, greater than max set width {}",
                 w,
-                self.options.get_max_width()
+                self.options.max_width()
             );
             return Err(ImageErrors::ImageDecodeErrors(msg));
         }
-        if h > self.options.get_max_height() {
+        if h > self.options.max_height() {
             let msg = format!(
                 "Image height {}, greater than max set height {}",
                 h,
-                self.options.get_max_height()
+                self.options.max_height()
             );
             return Err(ImageErrors::ImageDecodeErrors(msg));
         }

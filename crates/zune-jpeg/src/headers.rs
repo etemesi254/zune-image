@@ -14,7 +14,7 @@ use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, trace, warn};
 
@@ -26,7 +26,7 @@ use crate::misc::{SOFMarkers, UN_ZIGZAG};
 
 ///**B.2.4.2 Huffman table-specification syntax**
 #[allow(clippy::similar_names, clippy::cast_sign_loss)]
-pub(crate) fn parse_huffman<T: ZReaderTrait>(
+pub(crate) fn parse_huffman<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors>
 where
@@ -38,7 +38,7 @@ where
 
     while dht_length > 16 {
         // HT information
-        let ht_info = decoder.stream.get_u8_err()?;
+        let ht_info = decoder.stream.read_u8_err()?;
         // third bit indicates whether the huffman encoding is DC or AC type
         let dc_or_ac = (ht_info >> 4) & 0xF;
         // Indicate the position of this table, should be less than 4;
@@ -58,10 +58,7 @@ where
             )));
         }
 
-        decoder
-            .stream
-            .read_exact(&mut num_symbols[1..17])
-            .map_err(|_| DecodeErrors::ExhaustedData)?;
+        decoder.stream.read_exact_bytes(&mut num_symbols[1..17])?;
 
         dht_length -= 1 + 16;
 
@@ -84,10 +81,7 @@ where
 
         decoder
             .stream
-            .read_exact(&mut symbols[0..(symbols_sum as usize)])
-            .map_err(|x| {
-                DecodeErrors::Format(format!("Could not read symbols into the buffer\n{x}"))
-            })?;
+            .read_exact_bytes(&mut symbols[0..(symbols_sum as usize)])?;
         // store
         match dc_or_ac {
             0 => {
@@ -118,7 +112,7 @@ where
 
 ///**B.2.4.1 Quantization table-specification syntax**
 #[allow(clippy::cast_possible_truncation, clippy::needless_range_loop)]
-pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
+pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
     // read length
     let mut qt_length =
         img.stream
@@ -129,7 +123,7 @@ pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(),
             ))?;
     // A single DQT header may have multiple QT's
     while qt_length > 0 {
-        let qt_info = img.stream.get_u8_err()?;
+        let qt_info = img.stream.read_u8_err()?;
         // 0 = 8 bit otherwise 16 bit dqt
         let precision = (qt_info >> 4) as usize;
         // last 4 bits give us position
@@ -144,9 +138,8 @@ pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(),
             0 => {
                 let mut qt_values = [0; 64];
 
-                img.stream.read_exact(&mut qt_values).map_err(|x| {
-                    DecodeErrors::Format(format!("Could not read symbols into the buffer\n{x}"))
-                })?;
+                img.stream.read_exact_bytes(&mut qt_values)?;
+
                 qt_length -= (precision_value as u16) + 1 /*QT BIT*/;
                 // carry out un zig-zag here
                 un_zig_zag(&qt_values)
@@ -183,7 +176,7 @@ pub(crate) fn parse_dqt<T: ZReaderTrait>(img: &mut JpegDecoder<T>) -> Result<(),
 
 /// Section:`B.2.2 Frame header syntax`
 
-pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
+pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     sof: SOFMarkers, img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     if img.seen_sof {
@@ -195,7 +188,7 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
     let length = img.stream.get_u16_be_err()?;
     // usually 8, but can be 12 and 16, we currently support only 8
     // so sorry about that 12 bit images
-    let dt_precision = img.stream.get_u8_err()?;
+    let dt_precision = img.stream.read_u8_err()?;
 
     if dt_precision != 8 {
         return Err(DecodeErrors::SofError(format!(
@@ -216,12 +209,12 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
     trace!("Image width  :{}", img_width);
     trace!("Image height :{}", img_height);
 
-    if usize::from(img_width) > img.options.get_max_width() {
-        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.get_max_width())));
+    if usize::from(img_width) > img.options.max_width() {
+        return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.max_width())));
     }
 
-    if usize::from(img_height) > img.options.get_max_height() {
-        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.get_max_height())));
+    if usize::from(img_height) > img.options.max_height() {
+        return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.max_height())));
     }
 
     // Check image width or height is zero
@@ -230,7 +223,7 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
     }
 
     // Number of components for the image.
-    let num_components = img.stream.get_u8_err()?;
+    let num_components = img.stream.read_u8_err()?;
 
     if num_components == 0 {
         return Err(DecodeErrors::SofError(
@@ -265,9 +258,8 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
 
     for pos in 0..num_components {
         // read 3 bytes for each component
-        img.stream
-            .read_exact(&mut temp)
-            .map_err(|x| DecodeErrors::Format(format!("Could not read component data\n{x}")))?;
+        img.stream.read_exact_bytes(&mut temp)?;
+
         // create a component.
         let component = Components::from(temp, pos)?;
 
@@ -283,11 +275,13 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
 }
 
 /// Parse a start of scan data
-pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(), DecodeErrors> {
+pub(crate) fn parse_sos<T: ZByteReaderTrait>(
+    image: &mut JpegDecoder<T>
+) -> Result<(), DecodeErrors> {
     // Scan header length
     let ls = image.stream.get_u16_be_err()?;
     // Number of image components in scan
-    let ns = image.stream.get_u8_err()?;
+    let ns = image.stream.read_u8_err()?;
 
     let mut seen = [-1; { MAX_COMPONENTS + 1 }];
 
@@ -315,7 +309,7 @@ pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(
     // consume spec parameters
     for i in 0..ns {
         // CS_i parameter, I don't need it so I might as well delete it
-        let id = image.stream.get_u8_err()?;
+        let id = image.stream.read_u8_err()?;
 
         if seen.contains(&i32::from(id)) {
             return Err(DecodeErrors::SofError(format!(
@@ -327,7 +321,7 @@ pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(
         // DC and AC huffman table position
         // top 4 bits contain dc huffman destination table
         // lower four bits contain ac huffman destination table
-        let y = image.stream.get_u8_err()?;
+        let y = image.stream.read_u8_err()?;
 
         let mut j = 0;
 
@@ -362,11 +356,11 @@ pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(
     // Page 42
 
     // Start of spectral / predictor selection. (between 0 and 63)
-    image.spec_start = image.stream.get_u8_err()?;
+    image.spec_start = image.stream.read_u8_err()?;
     // End of spectral selection
-    image.spec_end = image.stream.get_u8_err()?;
+    image.spec_end = image.stream.read_u8_err()?;
 
-    let bit_approx = image.stream.get_u8_err()?;
+    let bit_approx = image.stream.read_u8_err()?;
     // successive approximation bit position high
     image.succ_high = bit_approx >> 4;
 
@@ -410,27 +404,27 @@ pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(
 }
 
 /// Parse Adobe App14 segment
-pub(crate) fn parse_app14<T: ZReaderTrait>(
+pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // skip length
     let mut length = usize::from(decoder.stream.get_u16_be());
 
-    if length < 2 || !decoder.stream.has(length - 2) {
-        return Err(DecodeErrors::ExhaustedData);
+    if length < 2 {
+        return Err(DecodeErrors::FormatStatic("Too small APP14 length"));
     }
     if length < 14 {
         return Err(DecodeErrors::FormatStatic(
             "Too short of a length for App14 segment"
         ));
     }
-    if decoder.stream.peek_at(0, 5) == Ok(b"Adobe") {
+    if decoder.stream.peek_at(0, 5)? == b"Adobe" {
         // move stream 6 bytes to remove adobe id
-        decoder.stream.skip(6);
+        decoder.stream.skip(6)?;
         // skip version, flags0 and flags1
-        decoder.stream.skip(5);
+        decoder.stream.skip(5)?;
         // get color transform
-        let transform = decoder.stream.get_u8();
+        let transform = decoder.stream.read_u8();
         // https://exiftool.org/TagNames/JPEG.html#Adobe
         match transform {
             0 => decoder.input_colorspace = ColorSpace::CMYK,
@@ -447,7 +441,7 @@ pub(crate) fn parse_app14<T: ZReaderTrait>(
         // version =  5
         // transform = 1
         length = length.saturating_sub(14);
-    } else if decoder.options.get_strict_mode() {
+    } else if decoder.options.strict_mode() {
         return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
     } else {
         length = length.saturating_sub(2);
@@ -455,7 +449,7 @@ pub(crate) fn parse_app14<T: ZReaderTrait>(
     }
     // skip any proceeding lengths.
     // we do not need them
-    decoder.stream.skip(length);
+    decoder.stream.skip(length)?;
 
     Ok(())
 }
@@ -463,57 +457,57 @@ pub(crate) fn parse_app14<T: ZReaderTrait>(
 /// Parse the APP1 segment
 ///
 /// This contains the exif tag
-pub(crate) fn parse_app1<T: ZReaderTrait>(
+pub(crate) fn parse_app1<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // contains exif data
     let mut length = usize::from(decoder.stream.get_u16_be());
 
-    if length < 2 || !decoder.stream.has(length - 2) {
-        return Err(DecodeErrors::ExhaustedData);
+    if length < 2 {
+        return Err(DecodeErrors::FormatStatic("Too small app1 length"));
     }
     // length bytes
     length -= 2;
 
-    if length > 6 && decoder.stream.peek_at(0, 6).unwrap() == b"Exif\x00\x00" {
+    if length > 6 && decoder.stream.peek_at(0, 6)? == b"Exif\x00\x00" {
         trace!("Exif segment present");
         // skip bytes we read above
-        decoder.stream.skip(6);
+        decoder.stream.skip(6)?;
         length -= 6;
 
-        let exif_bytes = decoder.stream.peek_at(0, length).unwrap().to_vec();
+        let exif_bytes = decoder.stream.peek_at(0, length)?.to_vec();
 
         decoder.exif_data = Some(exif_bytes);
     } else {
         warn!("Wrongly formatted exif tag");
     }
 
-    decoder.stream.skip(length);
+    decoder.stream.skip(length)?;
     Ok(())
 }
 
-pub(crate) fn parse_app2<T: ZReaderTrait>(
+pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     let mut length = usize::from(decoder.stream.get_u16_be());
 
-    if length < 2 || !decoder.stream.has(length - 2) {
-        return Err(DecodeErrors::ExhaustedData);
+    if length < 2 {
+        return Err(DecodeErrors::FormatStatic("Too small app2 segment"));
     }
     // length bytes
     length -= 2;
 
-    if length > 14 && decoder.stream.peek_at(0, 12).unwrap() == *b"ICC_PROFILE\0" {
+    if length > 14 && decoder.stream.peek_at(0, 12)? == *b"ICC_PROFILE\0" {
         trace!("ICC Profile present");
         // skip 12 bytes which indicate ICC profile
         length -= 12;
-        decoder.stream.skip(12);
-        let seq_no = decoder.stream.get_u8();
-        let num_markers = decoder.stream.get_u8();
+        decoder.stream.skip(12)?;
+        let seq_no = decoder.stream.read_u8();
+        let num_markers = decoder.stream.read_u8();
         // deduct the two bytes we read above
         length -= 2;
 
-        let data = decoder.stream.peek_at(0, length).unwrap().to_vec();
+        let data = decoder.stream.peek_at(0, length)?.to_vec();
 
         let icc_chunk = ICCChunk {
             seq_no,
@@ -523,7 +517,7 @@ pub(crate) fn parse_app2<T: ZReaderTrait>(
         decoder.icc_data.push(icc_chunk);
     }
 
-    decoder.stream.skip(length);
+    decoder.stream.skip(length)?;
 
     Ok(())
 }

@@ -9,7 +9,7 @@
 #![cfg(feature = "ppm")]
 //! Represents a PPM and PAL image encoder
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -42,18 +42,20 @@ impl EncoderTrait for PPMEncoder {
         "PPM Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
         let ppm_encoder = PPMEnc::new(data, options);
 
-        let data = ppm_encoder
-            .encode()
+        let bytes_written = ppm_encoder
+            .encode(sink)
             .map_err(<PPMEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
-        Ok(data)
+        Ok(bytes_written)
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
@@ -87,16 +89,16 @@ impl EncoderTrait for PPMEncoder {
     }
 }
 
-impl<T> DecoderTrait<T> for PPMDecoder<T>
+impl<T> DecoderTrait for PPMDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
 
-        let depth = self.get_bit_depth().unwrap();
-        let (width, height) = self.get_dimensions().unwrap();
-        let colorspace = self.get_colorspace().unwrap();
+        let depth = self.bit_depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let colorspace = self.colorspace().unwrap();
 
         let mut image = match pixels {
             DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
@@ -112,11 +114,11 @@ where
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace().unwrap_or(ColorSpace::Unknown)
+        self.colorspace().unwrap_or(ColorSpace::Unknown)
     }
 
     fn name(&self) -> &'static str {
@@ -127,12 +129,12 @@ where
         self.decode_headers()
             .map_err(<PPMDecodeErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth().unwrap();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.bit_depth().unwrap();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::PPM),
-            colorspace: self.get_colorspace().unwrap(),
+            colorspace: self.colorspace().unwrap(),
             depth: depth,
             width: width,
             height: height,

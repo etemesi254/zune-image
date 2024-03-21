@@ -15,7 +15,7 @@
 //!
 #![allow(unused_variables)]
 use zune_core::bit_depth::{BitDepth, BitType};
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::{ColorSpace, ALL_COLORSPACES};
 use zune_core::log::{trace, warn};
 use zune_core::options::EncoderOptions;
@@ -32,7 +32,7 @@ use crate::pipelines::EncodeResult;
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
-pub trait DecoderTrait<T: ZReaderTrait> {
+pub trait DecoderTrait {
     /// Decode a buffer already in memory
     ///
     /// The buffer to be decoded is the one passed
@@ -46,11 +46,12 @@ pub trait DecoderTrait<T: ZReaderTrait> {
     ///
     /// # Example
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// #[cfg(feature = "jpeg")]
     /// {
     ///     use zune_image::traits::DecoderTrait;
     ///     use zune_jpeg::JpegDecoder;
-    ///     let mut decoder = JpegDecoder::new(&[0xFF,0xD8]);
+    ///     let mut decoder = JpegDecoder::new(ZCursor::new([0xFF,0xD8]));
     ///
     ///     decoder.decode().unwrap();
     /// }
@@ -162,7 +163,7 @@ pub trait OperationsTrait {
         //     PremultiplyAlpha::new(self.alpha_state());
         // }
         // check we support the bit depth
-        let bit_type = image.metadata.get_depth().bit_type();
+        let bit_type = image.metadata.depth().bit_type();
 
         let supported = self.supported_types().iter().any(|x| *x == bit_type);
 
@@ -256,7 +257,9 @@ pub trait EncoderTrait {
     ///
     /// - Err : An unrecoverable error occurred
     ///
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors>;
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors>;
 
     /// Return all colorspaces supported by this encoder.
     ///
@@ -286,7 +289,9 @@ pub trait EncoderTrait {
     /// e.g to do colorspace conversions or bit-depth conversions, hence it
     /// is recommended to have the image in a format that can be encoded
     /// directly to prevent such
-    fn encode(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         // confirm things hold themselves
         confirm_invariants(image)?;
 
@@ -339,9 +344,9 @@ pub trait EncoderTrait {
             // confirm again we didn't mess up
             confirm_invariants(&image_clone)?;
 
-            self.encode_inner(&image_clone)
+            self.encode_inner(&image_clone, sink)
         } else {
-            self.encode_inner(image)
+            self.encode_inner(image, sink)
         }
     }
     /// Return the image format for which this
@@ -363,10 +368,11 @@ pub trait EncoderTrait {
     /// Call `encode` and then store the image
     /// and format in `EncodeResult`
     fn encode_to_result(&mut self, image: &Image) -> Result<EncodeResult, ImageErrors> {
-        let data = self.encode(image)?;
+        let mut sink = vec![];
+        let data = self.encode(image, &mut sink)?;
 
         Ok(EncodeResult {
-            data,
+            data:   vec![],
             format: self.format()
         })
     }

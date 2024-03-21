@@ -12,7 +12,7 @@
 #![cfg(feature = "qoi")]
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZReaderTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 pub use zune_qoi::*;
@@ -23,17 +23,17 @@ use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait<T> for QoiDecoder<T>
+impl<T> DecoderTrait for QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self.decode()?;
         // safe because these are none when we haven't decoded.
-        let colorspace = self.get_colorspace().unwrap();
-        let (width, height) = self.get_dimensions().unwrap();
+        let colorspace = self.colorspace().unwrap();
+        let (width, height) = self.dimensions().unwrap();
 
-        let depth = self.get_bit_depth();
+        let depth = self.bit_depth();
 
         let mut image = Image::from_u8(&pixels, width, height, colorspace);
 
@@ -44,11 +44,11 @@ where
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
-        self.get_dimensions()
+        self.dimensions()
     }
 
     fn out_colorspace(&self) -> ColorSpace {
-        self.get_colorspace().unwrap()
+        self.colorspace().unwrap()
     }
 
     fn name(&self) -> &'static str {
@@ -63,12 +63,12 @@ where
         self.decode_headers()
             .map_err(<QoiErrors as Into<ImageErrors>>::into)?;
 
-        let (width, height) = self.get_dimensions().unwrap();
-        let depth = self.get_bit_depth();
+        let (width, height) = self.dimensions().unwrap();
+        let depth = self.bit_depth();
 
         let metadata = ImageMetadata {
             format: Some(ImageFormat::QOI),
-            colorspace: self.get_colorspace().unwrap(),
+            colorspace: self.colorspace().unwrap(),
             depth: depth,
             width: width,
             height: height,
@@ -101,18 +101,20 @@ impl EncoderTrait for QoiEncoder {
         "QOI Encoder"
     }
 
-    fn encode_inner(&mut self, image: &Image) -> Result<Vec<u8>, ImageErrors> {
+    fn encode_inner<T: ZByteWriterTrait>(
+        &mut self, image: &Image, sink: T
+    ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
         let data = &image.to_u8()[0];
 
         let mut qoi_encoder = zune_qoi::QoiEncoder::new(data, options);
 
-        let data = qoi_encoder
-            .encode()
+        let bytes_written = qoi_encoder
+            .encode(sink)
             .map_err(<QoiEncodeErrors as Into<ImgEncodeErrors>>::into)?;
 
-        Ok(data)
+        Ok(bytes_written)
     }
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[ColorSpace::RGBA, ColorSpace::RGB]
@@ -163,7 +165,7 @@ impl From<zune_qoi::QoiEncodeErrors> for ImgEncodeErrors {
 
 impl<T> DecodeInto for QoiDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
         self.decode_into(buffer)?;

@@ -1,9 +1,11 @@
 //! A set of miscellaneous functions that are good to have
+use std::cmp::min;
+
+use zune_core::bytestream::ZByteReaderTrait;
+
 use crate::channel::Channel;
 use crate::errors::ImageErrors;
 use crate::metadata::ImageMetadata;
-use std::cmp::min;
-use zune_core::bytestream::ZReaderTrait;
 
 /// Swizzle three channels optionally using simd intrinsics where possible
 fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
@@ -115,7 +117,7 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// }
 /// ```
 pub fn swizzle_channels<T: Copy + Default + 'static>(
-    channels: &[Channel], output: &mut [T],
+    channels: &[Channel], output: &mut [T]
 ) -> Result<usize, ImageErrors> {
     match channels.len() {
         // copy
@@ -170,16 +172,16 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
             Ok(size)
         }
         _ => Err(ImageErrors::GenericStr(
-            "Image channels not in supported count, the library supports images from 1-4 channels",
-        )),
+            "Image channels not in supported count, the library supports images from 1-4 channels"
+        ))
     }
 }
 
-pub fn decode_info<T: ZReaderTrait>(bytes: T) -> Option<ImageMetadata> {
+pub fn decode_info<T: ZByteReaderTrait>(bytes: T) -> Option<ImageMetadata> {
     match crate::codecs::guess_format(bytes) {
         None => None,
         Some((format, bytes)) => {
-            let mut decoder = format.get_decoder(bytes).ok()?;
+            let mut decoder = format.decoder(bytes).ok()?;
             decoder.read_headers().ok()?
         }
     }

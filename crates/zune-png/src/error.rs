@@ -10,6 +10,8 @@
 use alloc::string::String;
 use core::fmt::{Debug, Display, Formatter};
 
+use zune_core::bytestream::ZByteIoError;
+
 /// Errors possible during decoding
 pub enum PngDecodeErrors {
     /// Image signature is not png signature
@@ -27,7 +29,8 @@ pub enum PngDecodeErrors {
     /// Unsupported Animated PNG
     UnsupportedAPNGImage,
     /// Too small output slice
-    TooSmallOutput(usize, usize)
+    TooSmallOutput(usize, usize),
+    IoErrors(ZByteIoError)
 }
 
 impl Display for PngDecodeErrors {
@@ -61,6 +64,9 @@ impl Debug for PngDecodeErrors {
             Self::TooSmallOutput(expected, found) => {
                 write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes")
             }
+            Self::IoErrors(e) => {
+                writeln!(f, "I/O error {:?}", e)
+            }
         }
     }
 }
@@ -80,5 +86,11 @@ impl From<String> for PngDecodeErrors {
 impl From<zune_inflate::errors::InflateDecodeErrors> for PngDecodeErrors {
     fn from(val: zune_inflate::errors::InflateDecodeErrors) -> Self {
         Self::ZlibDecodeErrors(val)
+    }
+}
+
+impl From<ZByteIoError> for PngDecodeErrors {
+    fn from(val: ZByteIoError) -> Self {
+        Self::IoErrors(val)
     }
 }

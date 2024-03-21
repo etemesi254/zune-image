@@ -13,7 +13,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
@@ -78,7 +78,7 @@ pub(crate) struct ICCChunk {
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
-pub struct JpegDecoder<T: ZReaderTrait> {
+pub struct JpegDecoder<T: ZByteReaderTrait> {
     /// Struct to hold image information from SOI
     pub(crate) info:              ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
@@ -139,7 +139,7 @@ pub struct JpegDecoder<T: ZReaderTrait> {
     // decoder options
     pub(crate) options:          DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZByteReader<T>,
+    pub(crate) stream:           ZReader<T>,
     // Indicate whether headers have been decoded
     pub(crate) headers_decoded:  bool,
     pub(crate) seen_sof:         bool,
@@ -153,7 +153,7 @@ pub struct JpegDecoder<T: ZReaderTrait> {
 
 impl<T> JpegDecoder<T>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {
@@ -186,7 +186,7 @@ where
             restart_interval:  0,
             todo:              0x7fff_ffff,
             options:           options,
-            stream:            ZByteReader::new(buffer),
+            stream:            ZReader::new(buffer),
             headers_decoded:   false,
             seen_sof:          false,
             exif_data:         None,
@@ -264,7 +264,7 @@ where
         };
     }
 
-    /// Get a mutable reference to the decoder options
+    /// Get an immutable reference to the decoder options
     /// for the decoder instance
     ///
     /// This can be used to modify options before actual decoding
@@ -272,11 +272,12 @@ where
     ///
     /// # Example
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
     ///
-    /// let mut decoder = JpegDecoder::new(&[]);
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
     /// // get current options
-    /// let mut options = decoder.get_options();
+    /// let mut options = decoder.options();
     /// // modify it
     ///  let new_options = options.set_max_width(10);
     /// // set it back
@@ -284,7 +285,7 @@ where
     ///
     /// ```
     #[must_use]
-    pub const fn get_options(&self) -> &DecoderOptions {
+    pub const fn options(&self) -> &DecoderOptions {
         &self.options
     }
     /// Return the input colorspace of the image
@@ -297,7 +298,7 @@ where
     /// -`Some(Colorspace)`: Input colorspace
     /// - None : Indicates the headers weren't decoded
     #[must_use]
-    pub fn get_input_colorspace(&self) -> Option<ColorSpace> {
+    pub fn input_colorspace(&self) -> Option<ColorSpace> {
         return if self.headers_decoded { Some(self.input_colorspace) } else { None };
     }
     /// Set decoder options
@@ -314,10 +315,11 @@ where
     /// Set maximum jpeg progressive passes to be 4
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder =JpegDecoder::new(&[]);
+    /// let mut decoder =JpegDecoder::new(ZCursor::new(&[]));
     /// // this works also because DecoderOptions implements `Copy`
-    /// let options = decoder.get_options().jpeg_set_max_scans(4);
+    /// let options = decoder.options().jpeg_set_max_scans(4);
     /// // set the new options
     /// decoder.set_options(options);
     /// // now decode
@@ -376,7 +378,7 @@ where
 
         loop {
             // read a byte
-            let mut m = self.stream.get_u8_err()?;
+            let mut m = self.stream.read_u8_err()?;
 
             // AND OF COURSE some images will have fill bytes in their marker
             // bitstreams because why not.
@@ -395,7 +397,7 @@ where
                 // so this is for you (with love)
                 while m == 0xFF || m == 0x0 {
                     last_byte = m;
-                    m = self.stream.get_u8_err()?;
+                    m = self.stream.read_u8_err()?;
                 }
             }
             // Last byte should be 0xFF to confirm existence of a marker since markers look
@@ -404,7 +406,7 @@ where
                 let marker = Marker::from_u8(m);
                 if let Some(n) = marker {
                     if bytes_before_marker > 3 {
-                        if self.options.get_strict_mode()
+                        if self.options.strict_mode()
                         /*No reason to use this*/
                         {
                             return Err(DecodeErrors::FormatStatic(
@@ -442,7 +444,7 @@ where
                     }
 
                     warn!("Skipping {} bytes", length - 2);
-                    self.stream.skip((length - 2) as usize);
+                    self.stream.skip((length - 2) as usize)?;
                 }
             }
             last_byte = m;
@@ -487,15 +489,16 @@ where
                     )));
                 }
                 // skip for now
-                if length > 5 && self.stream.has(5) {
+                if length > 5 {
                     let mut buffer = [0u8; 5];
-                    self.stream.read_exact(&mut buffer).unwrap();
+                    self.stream.read_exact_bytes(&mut buffer)?;
                     if &buffer == b"AVI1\0" {
                         self.is_mjpeg = true;
                     }
                     length -= 5;
                 }
-                self.stream.skip(length.saturating_sub(2) as usize);
+
+                self.stream.skip(length.saturating_sub(2) as usize)?;
 
                 //parse_app(buf, m, &mut self.info)?;
             }
@@ -559,7 +562,7 @@ where
                     )));
                 }
                 warn!("Skipping {} bytes", length - 2);
-                self.stream.skip((length - 2) as usize);
+                self.stream.skip((length - 2) as usize)?;
             }
         }
         Ok(())
@@ -656,7 +659,7 @@ where
     ///output array will be in
     ///- `None
     #[must_use]
-    pub fn get_output_colorspace(&self) -> Option<ColorSpace> {
+    pub fn output_colorspace(&self) -> Option<ColorSpace> {
         return if self.headers_decoded {
             Some(self.options.jpeg_get_out_colorspace())
         } else {
@@ -676,8 +679,9 @@ where
     /// - Read  headers and then alloc a buffer big enough to hold the image
     ///
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
-    /// let mut decoder = JpegDecoder::new(&[]);
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
     /// // before we get output, we must decode the headers to get width
     /// // height, and input colorspace
     /// decoder.decode_headers().unwrap();
@@ -716,10 +720,11 @@ where
     ///
     /// # Examples
     /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::{JpegDecoder};
     ///
     /// let img_data = std::fs::read("a_valid.jpeg").unwrap();
-    /// let mut decoder = JpegDecoder::new(&img_data);
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&img_data));
     /// decoder.decode_headers().unwrap();
     ///
     /// println!("Total decoder dimensions are : {:?} pixels",decoder.dimensions());
@@ -780,15 +785,15 @@ where
                 }
                 (2, 1) => {
                     comp.sample_ratio = SampleRatios::H;
-                    choose_horizontal_samp_function(self.options.get_use_unsafe())
+                    choose_horizontal_samp_function(self.options.use_unsafe())
                 }
                 (1, 2) => {
                     comp.sample_ratio = SampleRatios::V;
-                    choose_v_samp_function(self.options.get_use_unsafe())
+                    choose_v_samp_function(self.options.use_unsafe())
                 }
                 (2, 2) => {
                     comp.sample_ratio = SampleRatios::HV;
-                    choose_hv_samp_function(self.options.get_use_unsafe())
+                    choose_hv_samp_function(self.options.use_unsafe())
                 }
                 _ => {
                     return Err(DecodeErrors::Format(

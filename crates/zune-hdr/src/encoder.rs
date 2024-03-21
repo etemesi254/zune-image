@@ -6,11 +6,10 @@
 
 //! Radiance HDR encoder
 
-use alloc::vec::Vec;
 use alloc::{format, vec};
 use std::collections::HashMap;
 
-use zune_core::bytestream::ZByteWriter;
+use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
@@ -58,13 +57,13 @@ impl<'a> HdrEncoder<'a> {
     /// The size of the output will depend on the nature of your data
     pub fn expected_buffer_size(&self) -> Option<usize> {
         self.options
-            .get_width()
-            .checked_mul(self.options.get_height())?
+            .width()
+            .checked_mul(self.options.height())?
             .checked_mul(4)?
             .checked_add(1024)
     }
 
-    /// Encode data in HDR format
+    /// Encode into a sink
     ///
     /// The encoder expects colorspace to be in RGB and the  length to match
     ///
@@ -72,45 +71,6 @@ impl<'a> HdrEncoder<'a> {
     ///
     /// The floating point data is expected to be normalized between 0.0 and 1.0, it will not be clipped
     /// if not in this range
-    ///
-    /// # Returns
-    ///
-    /// The encoded data in case of no errors in case of errors returns error
-    ///
-    /// # See also
-    ///
-    /// - [encode_into](crate::encoder::HdrEncoder::encode_into): Encodes into a pre-allocated buffer
-    pub fn encode(&self) -> Result<Vec<u8>, HdrEncodeErrors> {
-        let expected = self
-            .options
-            .get_width()
-            .checked_mul(self.options.get_height())
-            .unwrap()
-            .checked_mul(3) // RGB
-            .unwrap();
-        let found = self.data.len();
-
-        if expected != found {
-            return Err(HdrEncodeErrors::WrongInputSize(expected, found));
-        }
-        if self.options.get_colorspace() != ColorSpace::RGB {
-            return Err(HdrEncodeErrors::UnsupportedColorspace(
-                self.options.get_colorspace()
-            ));
-        }
-        let size = self
-            .expected_buffer_size()
-            .ok_or(HdrEncodeErrors::Static("overflow detected"))?;
-
-        let mut out = vec![0_u8; size];
-
-        let pos = self.encode_into(&mut out)?;
-        out.truncate(pos);
-
-        Ok(out)
-    }
-
-    /// Encode into a pre-allocated buffer
     ///
     /// The size of output cannot be determined up until compression is over hence
     /// we cannot be sure if the output buffer will be enough.
@@ -140,13 +100,35 @@ impl<'a> HdrEncoder<'a> {
     /// let encoder = HdrEncoder::new(&data,opts);
     /// // create output buffer , this is the upper limit on it
     /// let mut output = vec![0;encoder.expected_buffer_size().unwrap()];
-    /// let size = encoder.encode_into(&mut output).unwrap();
+    /// let size = encoder.encode(&mut output).unwrap();
     /// // trim it so that the buffer only contains encoded hdr
     /// output.truncate(size);
     ///```  
-    pub fn encode_into(&self, out: &mut [u8]) -> Result<usize, HdrEncodeErrors> {
-        let mut writer = ZByteWriter::new(out);
+    pub fn encode<T: ZByteWriterTrait>(&self, out: T) -> Result<usize, HdrEncodeErrors> {
+        let expected = self
+            .options
+            .width()
+            .checked_mul(self.options.height())
+            .ok_or(HdrEncodeErrors::Static("overflow detected"))?
+            .checked_mul(3)
+            .ok_or(HdrEncodeErrors::Static("overflow detected"))?;
 
+        let found = self.data.len();
+
+        if expected != found {
+            return Err(HdrEncodeErrors::WrongInputSize(expected, found));
+        }
+        if self.options.colorspace() != ColorSpace::RGB {
+            return Err(HdrEncodeErrors::UnsupportedColorspace(
+                self.options.colorspace()
+            ));
+        }
+        let mut writer = ZByteWriter::new(out);
+        // reserve space
+        let size = self
+            .expected_buffer_size()
+            .ok_or(HdrEncodeErrors::Static("overflow detected"))?;
+        writer.reserve(size)?;
         // write headers
         {
             writer.write_all(b"#?RADIANCE\n")?;
@@ -161,13 +143,13 @@ impl<'a> HdrEncoder<'a> {
             // write lengths
             let length_format = format!(
                 "-Y {} +X {}\n",
-                self.options.get_height(),
-                self.options.get_width()
+                self.options.height(),
+                self.options.width()
             );
 
             writer.write_all(length_format.as_bytes())?;
         }
-        let width = self.options.get_width();
+        let width = self.options.width();
 
         let scanline_stride = width * 3;
 
@@ -183,10 +165,8 @@ impl<'a> HdrEncoder<'a> {
                 }
                 writer.write_all(&in_scanline)?;
             } else {
-                writer.write_u8_err(2)?;
-                writer.write_u8_err(2)?;
-                writer.write_u8_err((width >> 8) as u8)?;
-                writer.write_u8_err((width & 255) as u8)?;
+                let bytes = [2, 2, (width >> 8) as u8, (width & 255) as u8];
+                writer.write_const_bytes(&bytes)?;
 
                 for (pixels, out) in scanline
                     .chunks_exact(3)
@@ -200,12 +180,14 @@ impl<'a> HdrEncoder<'a> {
             }
         }
         // truncate position to where we reached
-        let position = writer.position();
+        let position = writer.bytes_written();
         Ok(position)
     }
 }
 
-fn rle(data: &[u8], writer: &mut ZByteWriter, width: usize) -> Result<(), &'static str> {
+fn rle<T: ZByteWriterTrait>(
+    data: &[u8], writer: &mut ZByteWriter<T>, width: usize
+) -> Result<(), ZByteIoError> {
     const MIN_RLE: usize = 4;
     let mut cur = 0;
 

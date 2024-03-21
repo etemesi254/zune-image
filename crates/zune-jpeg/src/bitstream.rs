@@ -50,7 +50,7 @@ use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
 
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
 use crate::errors::DecodeErrors;
 use crate::huffman::{HuffmanTable, HUFF_LOOKAHEAD};
@@ -167,9 +167,9 @@ impl BitStream {
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
-    fn refill<T>(&mut self, reader: &mut ZByteReader<T>) -> Result<bool, DecodeErrors>
+    fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -179,8 +179,8 @@ impl BitStream {
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
-                $byte = u64::from(reader.get_u8());
-                self.overread_by += usize::from(reader.eof());
+                $byte = u64::from(reader.read_u8());
+                self.overread_by += usize::from(reader.eof()?);
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
@@ -190,12 +190,12 @@ impl BitStream {
                 // Check for special case  of OxFF, to see if it's a stream or a marker
                 if $byte == 0xff {
                     // read next byte
-                    let mut next_byte = u64::from(reader.get_u8());
+                    let mut next_byte = u64::from(reader.read_u8());
                     // Byte snuffing, if we encounter byte snuff, we skip the byte
                     if next_byte != 0x00 {
                         // skip that byte we read
                         while next_byte == 0xFF {
-                            next_byte = u64::from(reader.get_u8());
+                            next_byte = u64::from(reader.read_u8());
                         }
 
                         if next_byte != 0x00 {
@@ -224,12 +224,17 @@ impl BitStream {
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
         if self.bits_left < 32 && self.marker.is_none() {
-            // So before we do anything, check if we have a 0xFF byte
-
-            if reader.has(4) {
+            // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
+            // as it is the common case
+            //
+            // so we always read 4 bytes, if read_fixed_bytes errors out, the cursor is
+            // guaranteed not to advance in case of failure (is this true), so
+            // we revert the read later on (if we have 255), if this fails, we use the normal
+            // byte at a time read
+            if let Ok(bytes) = reader.read_fixed_bytes_or_error::<4>() {
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
-                let msb_buf = reader.get_u32_be();
+                let msb_buf = u32::from_be_bytes(bytes);
                 // check if we have 0xff
                 if !has_byte(msb_buf, 255) {
                     self.bits_left += 32;
@@ -238,14 +243,13 @@ impl BitStream {
                     self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     return Ok(true);
                 }
-                // not there, rewind the read
-                reader.rewind(4);
+
+                reader.rewind(4)?;
             }
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
             let mut byte;
-
             // 4 refills, if all succeed the stream should contain enough bits to decode a
             // value
             refill!(self.buffer, byte, self.bits_left);
@@ -255,7 +259,6 @@ impl BitStream {
             // Construct an MSB buffer whose top bits are the bitstream we are currently holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
         }
-
         return Ok(true);
     }
     /// Decode the DC coefficient in a MCU block.
@@ -269,10 +272,10 @@ impl BitStream {
     )]
     #[inline(always)]
     fn decode_dc<T>(
-        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         let (mut symbol, r);
 
@@ -311,11 +314,11 @@ impl BitStream {
     )]
     #[inline(never)]
     pub fn decode_mcu_block<T>(
-        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
         qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -399,11 +402,11 @@ impl BitStream {
     #[allow(clippy::cast_possible_truncation)]
     #[inline]
     pub(crate) fn decode_prog_dc_first<T>(
-        &mut self, reader: &mut ZByteReader<T>, dc_table: &HuffmanTable, block: &mut i16,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, block: &mut i16,
         dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
         *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
@@ -411,10 +414,10 @@ impl BitStream {
     }
     #[inline]
     pub(crate) fn decode_prog_dc_refine<T>(
-        &mut self, reader: &mut ZByteReader<T>, block: &mut i16
+        &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         // refinement scan
         if self.bits_left < 1 {
@@ -436,10 +439,10 @@ impl BitStream {
         return k;
     }
     pub(crate) fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZByteReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
+        &mut self, reader: &mut ZReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         let shift = self.successive_low;
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
@@ -493,10 +496,10 @@ impl BitStream {
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     pub(crate) fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZByteReader<T>, table: &HuffmanTable, block: &mut [i16; 64]
+        &mut self, reader: &mut ZReader<T>, table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZReaderTrait
+        T: ZByteReaderTrait
     {
         let bit = (1 << self.successive_low) as i16;
 
@@ -650,14 +653,14 @@ fn huff_extend(x: i32, s: i32) -> i32 {
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
 }
 
-fn has_zero(v: u32) -> bool {
+const fn has_zero(v: u32) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     return !((((v & 0x7F7F_7F7F) + 0x7F7F_7F7F) | v) | 0x7F7F_7F7F) != 0;
 }
 
-fn has_byte(b: u32, val: u8) -> bool {
+const fn has_byte(b: u32, val: u8) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
-    has_zero(b ^ ((!0_u32 / 255) * u32::from(val)))
+    has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
 }

@@ -2,7 +2,7 @@ use std::ffi::{c_char, CStr};
 use std::ptr;
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
-use zune_core::bytestream::{ZByteReader, ZReaderTrait};
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor, ZReader};
 use zune_core::result::DecodingResult;
 use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
@@ -56,15 +56,15 @@ pub extern "C" fn zil_imread(
 
     match std::fs::read(file_cstr) {
         Ok(data) => {
-            if let Some(im_metadata) = zune_image::utils::decode_info(&data) {
+            if let Some(im_metadata) = zune_image::utils::decode_info(ZCursor::new(&data)) {
                 // allocate a space big enough
-                let (w, h) = im_metadata.get_dimensions();
-                let colorspace = im_metadata.get_colorspace().num_components();
-                let im_depth = im_metadata.get_depth().size_of();
+                let (w, h) = im_metadata.dimensions();
+                let colorspace = im_metadata.colorspace().num_components();
+                let im_depth = im_metadata.depth().size_of();
 
                 let new_size = w * h * colorspace * im_depth;
 
-                let output = unsafe { libc::malloc(new_size) };
+                let output = unsafe { zil_malloc(new_size) };
                 if output.is_null() {
                     unsafe {
                         *status = ZStatus::new(
@@ -202,20 +202,20 @@ pub extern "C" fn zil_read_headers_from_memory(
     };
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => ZImageMetadata::default(),
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
+            let (w, h) = metadata.dimensions();
 
             unsafe { (*status) = ZStatus::okay() };
 
             ZImageMetadata {
                 width:      w as u32,
                 height:     h as u32,
-                depth:      ZImageDepth::from(metadata.get_depth()),
-                colorspace: ZImageColorspace::from(metadata.get_colorspace()),
+                depth:      ZImageDepth::from(metadata.depth()),
+                colorspace: ZImageColorspace::from(metadata.colorspace()),
                 format:     ZImageFormat::from(
-                    metadata.get_image_format().unwrap_or(ImageFormat::Unknown)
+                    metadata.image_format().unwrap_or(ImageFormat::Unknown)
                 )
             }
         }
@@ -245,7 +245,7 @@ pub extern "C" fn zil_imdecode(
     }
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
@@ -253,9 +253,9 @@ pub extern "C" fn zil_imdecode(
             return ptr::null();
         }
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
-            let im_depth = metadata.get_depth();
-            let colorspace = metadata.get_colorspace();
+            let (w, h) = metadata.dimensions();
+            let im_depth = metadata.depth();
+            let colorspace = metadata.colorspace();
             let size = w * h * im_depth.size_of() * colorspace.num_components();
 
             let output = unsafe { zil_malloc(size) };
@@ -315,16 +315,16 @@ pub extern "C" fn zil_imdecode_into(
     // Safety the caller is supposed to uphold this
     let buf = unsafe { std::slice::from_raw_parts_mut(output, output_size) };
 
-    match zune_image::utils::decode_info(contents) {
+    match zune_image::utils::decode_info(ZCursor::new(contents)) {
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
             unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
         }
         Some(metadata) => {
-            let (w, h) = metadata.get_dimensions();
-            let im_depth = metadata.get_depth();
-            let colorspace = metadata.get_colorspace();
+            let (w, h) = metadata.dimensions();
+            let im_depth = metadata.depth();
+            let colorspace = metadata.colorspace();
             let size = w * h * im_depth.size_of() * colorspace.num_components();
 
             // the buffer has to be that big
@@ -335,7 +335,7 @@ pub extern "C" fn zil_imdecode_into(
                 return;
             }
 
-            if let Err(e) = imdecode_inner(contents, buf) {
+            if let Err(e) = imdecode_inner(ZCursor::new(contents), buf) {
                 unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::DecodeErrors) };
                 return;
             }
@@ -361,7 +361,7 @@ pub extern "C" fn zil_imdecode_into(
 
 fn imdecode_inner<T>(data: T, output: &mut [u8]) -> Result<(), ImageErrors>
 where
-    T: ZReaderTrait
+    T: ZByteReaderTrait
 {
     if let Some((im_format, data)) = zune_image::codecs::guess_format(data) {
         match im_format {
@@ -382,7 +382,7 @@ where
                 //
                 let mut decoder = PngDecoder::new(data);
 
-                match decoder.get_depth().unwrap() {
+                match decoder.depth().unwrap() {
                     BitDepth::Eight => {
                         decoder.decode_into(output)?;
 
@@ -398,7 +398,7 @@ where
                         // set sample endianness to match platform
                         #[cfg(target_endian = "little")]
                         {
-                            let options = decoder.get_options().set_byte_endian(ByteEndian::LE);
+                            let options = decoder.options().set_byte_endian(ByteEndian::LE);
                             decoder.set_options(options);
                         }
                         #[cfg(target_endian = "big")]
@@ -415,9 +415,9 @@ where
             ImageFormat::PPM => {
                 let mut decoder = PPMDecoder::new(data);
                 decoder.decode_headers()?;
-                let (w, h) = decoder.get_dimensions().unwrap();
-                let color = decoder.get_colorspace().unwrap();
-                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let (w, h) = decoder.dimensions().unwrap();
+                let color = decoder.colorspace().unwrap();
+                let depth = decoder.bit_depth().unwrap().size_of();
                 let size = w * h * color.num_components() * depth;
 
                 if output.len() < size {
@@ -448,9 +448,9 @@ where
             ImageFormat::PSD => {
                 let mut decoder = PSDDecoder::new(data);
                 decoder.decode_headers()?;
-                let (w, h) = decoder.get_dimensions().unwrap();
-                let color = decoder.get_colorspace().unwrap();
-                let depth = decoder.get_bit_depth().unwrap().size_of();
+                let (w, h) = decoder.dimensions().unwrap();
+                let color = decoder.colorspace().unwrap();
+                let depth = decoder.bit_depth().unwrap().size_of();
                 let size = w * h * color.num_components() * depth;
 
                 if output.len() < size {
@@ -487,7 +487,9 @@ where
                     // misalignment
                     return Err(ImageErrors::GenericStr("Buffer misalignment"));
                 }
-                decoder.decode_into(output_buf)?;
+                decoder
+                    .decode_into(output_buf)
+                    .map_err(|x| ImageErrors::GenericString(format!("{:?}", x)))?;
             }
             ImageFormat::QOI => {
                 // just write into buffer
@@ -496,9 +498,10 @@ where
                 decoder.decode_into(output)?;
             }
             ImageFormat::JPEG_XL => {
-                let c = ZByteReader::new(data);
-                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
-                    .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
+                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(
+                    ZReader::new(data)
+                )
+                .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
 
                 let result = decoder
                     .render_next_frame()
