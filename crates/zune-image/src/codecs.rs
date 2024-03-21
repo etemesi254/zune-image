@@ -526,14 +526,14 @@ impl Image {
         }
     }
 
-    /// Encode an image returning a vector containing the result
-    /// of the encoding using the specified encoder
+    /// Write data to a sink using a custom encoder returning how many bytes were written if successful
     ///
     /// # Arguments
     ///
     /// * `encoder`: The encoder to use for encoding
+    /// * `sink`: Where does output data goes
     ///
-    /// returns: `Result<Vec<u8, Global>, ImageErrors>`
+    /// returns: `Result<usize, ImageErrors>`
     ///
     /// # Examples
     ///
@@ -553,13 +553,16 @@ impl Image {
     ///         px[0] = r;
     ///         px[2] = b;
     /// });
+    ///
+    /// let mut output = vec![];
+    ///
     /// // write to jpeg now
-    /// let contents = image.write_with_encoder(encoder).unwrap();
+    /// let contents = image.write_with_encoder(encoder, &mut output).unwrap();
     /// ```
-    pub fn write_with_encoder(
-        &self, mut encoder: impl EncoderTrait,
-    ) -> Result<Vec<u8>, ImageErrors> {
-        encoder.encode(self)
+    pub fn write_with_encoder<T: ZByteWriterTrait>(
+        &self, mut encoder: impl EncoderTrait, sink: T
+    ) -> Result<usize, ImageErrors> {
+        encoder.encode(self, sink)
     }
 
     /// Open an encoded file for which the library has a configured decoder for it
@@ -657,17 +660,16 @@ impl Image {
     ///
     ///```no_run
     /// // requires ppm feature
+    /// use std::io::Cursor;
     /// use zune_image::codecs::ppm::PPMDecoder;
     /// use zune_image::image::Image;
     ///
     /// // create a simple ppm p5 grayscale format
-    /// let decoder = PPMDecoder::new(b"P5 1 1 255 1");
+    /// let decoder = PPMDecoder::new(Cursor::new(b"P5 1 1 255 1"));
     ///
     /// let image = Image::from_decoder(decoder);
     ///```
-    pub fn from_decoder<T>(mut decoder: impl DecoderTrait<T>) -> Result<Image, ImageErrors>
-    where
-        T: ZReaderTrait,
+    pub fn from_decoder(mut decoder: impl DecoderTrait) -> Result<Image, ImageErrors>
     {
         decoder.decode()
     }
