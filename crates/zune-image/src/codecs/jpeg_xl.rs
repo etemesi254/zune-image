@@ -35,6 +35,7 @@ use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::frame::Frame;
 use crate::image::Image;
+use crate::metadata::ImageMetadata;
 use crate::traits::{DecoderTrait, EncoderTrait};
 
 /// A simple JXL encoder that ties the bridge between
@@ -239,5 +240,25 @@ where
 
     fn name(&self) -> &'static str {
         "jxl-decoder (tirr-c)"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
+        let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
+        let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
+
+        let (width, height) = self.dimensions().unwrap();
+
+        let icc = self.inner.rendered_icc();
+        let metadata = ImageMetadata {
+            format: Some(ImageFormat::JPEG_XL),
+            colorspace: color,
+            depth: BitDepth::Float32,
+            width: width,
+            height: height,
+            icc_chunk: Some(icc),
+            ..Default::default()
+        };
+
+        Ok(Some(metadata))
     }
 }

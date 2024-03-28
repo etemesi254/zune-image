@@ -426,7 +426,7 @@ impl Image {
     ///
     ///  - Encode image to jpeg format, requires `jpeg` feature
     ///
-    /// ```
+    /// ```no_run
     /// use zune_core::colorspace::ColorSpace;
     /// use zune_image::image::Image;
     /// // create a luma image

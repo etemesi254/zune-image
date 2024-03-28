@@ -45,7 +45,8 @@ pub struct ImageMetadata {
     pub(crate) format:        Option<ImageFormat>,
     pub(crate) alpha:         AlphaState,
     #[cfg(feature = "metadata")]
-    pub(crate) exif:          Option<Vec<::exif::Field>>
+    pub(crate) exif:          Option<Vec<::exif::Field>>,
+    pub(crate) icc_chunk:     Option<Vec<u8>>
 }
 
 impl Default for ImageMetadata {
@@ -60,7 +61,9 @@ impl Default for ImageMetadata {
             format: None,
             alpha: AlphaState::NonPreMultiplied,
             #[cfg(feature = "metadata")]
-            exif: None
+            exif: None,
+
+            icc_chunk: None
         }
     }
 }
@@ -196,5 +199,13 @@ impl ImageMetadata {
 
     pub fn set_alpha(&mut self, alpha_state: AlphaState) {
         self.alpha = alpha_state;
+    }
+
+    pub fn set_icc_chunk(&mut self, icc_chunk: Vec<u8>) {
+        self.icc_chunk = Some(icc_chunk);
+    }
+    /// Return the icc chunk of the image
+    pub fn icc_chunk(&self) -> Option<&Vec<u8>> {
+        self.icc_chunk.as_ref()
     }
 }

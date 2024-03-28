@@ -90,6 +90,9 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
                 metadata.parse_raw_exif(exif)
             }
         }
+        if let Some(icc) = self.icc_profile(){
+            metadata.set_icc_chunk(icc);
+        }
 
         Ok(Some(metadata))
     }

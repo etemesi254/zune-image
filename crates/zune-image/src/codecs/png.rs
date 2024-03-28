@@ -132,6 +132,10 @@ where
                 metadata.parse_raw_exif(exif)
             }
         }
+        // load icc
+        if let Some(icc) = &self.info().unwrap().icc_profile{
+            metadata.set_icc_chunk(icc.to_owned());
+        }
 
         Ok(Some(metadata))
     }
