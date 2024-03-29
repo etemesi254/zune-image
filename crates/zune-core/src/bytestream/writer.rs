@@ -115,7 +115,7 @@ impl<T: ZByteWriterTrait> ZByteWriter<T> {
     }
 
     pub fn reserve(&mut self, additional: usize) -> Result<(), ZByteIoError> {
-        self.buffer.pre_allocate_hint(additional)
+        self.buffer.reserve_capacity(additional)
     }
     pub fn inner(self) -> T {
         self.buffer

@@ -36,7 +36,7 @@ impl ZByteWriterTrait for &mut [u8] {
     fn flush_bytes(&mut self) -> Result<(), ZByteIoError> {
         Ok(())
     }
-    fn pre_allocate_hint(&mut self, _: usize) -> Result<(), ZByteIoError> {
+    fn reserve_capacity(&mut self, _: usize) -> Result<(), ZByteIoError> {
         // can't really pre-allocate anything here
         Ok(())
     }
@@ -60,7 +60,7 @@ impl ZByteWriterTrait for &mut alloc::vec::Vec<u8> {
     fn flush_bytes(&mut self) -> Result<(), ZByteIoError> {
         Ok(())
     }
-    fn pre_allocate_hint(&mut self, size: usize) -> Result<(), ZByteIoError> {
+    fn reserve_capacity(&mut self, size: usize) -> Result<(), ZByteIoError> {
         self.reserve(size);
         Ok(())
     }

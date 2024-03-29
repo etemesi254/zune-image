@@ -19,7 +19,7 @@ impl crate::bytestream::ZByteWriterTrait for &mut BufWriter<File> {
     fn flush_bytes(&mut self) -> Result<(), ZByteIoError> {
         self.flush().map_err(ZByteIoError::StdIoError)
     }
-    fn pre_allocate_hint(&mut self, _: usize) -> Result<(), ZByteIoError> {
+    fn reserve_capacity(&mut self, _: usize) -> Result<(), ZByteIoError> {
         Ok(())
     }
 }
