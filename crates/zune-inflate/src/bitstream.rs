@@ -25,6 +25,9 @@ pub struct BitStreamReader<'src> {
 impl<'src> BitStreamReader<'src> {
     /// Create a new `BitStreamReader` instance
     ///
+    /// # Expectations
+    /// The buffer must be padded with fill bytes in the end,
+    /// if not, this becomes UB in the refill phase.
     pub fn new(in_buffer: &'src [u8]) -> BitStreamReader<'src> {
         BitStreamReader {
             bits_left: 0,
@@ -65,7 +68,7 @@ impl<'src> BitStreamReader<'src> {
         }
     }
     #[inline(always)]
-    pub fn refill_inner_loop(&mut self) -> bool {
+    pub fn refill_inner_loop(&mut self) {
         /*
          * The refill always guarantees refills between 56-63
          *
@@ -87,11 +90,8 @@ impl<'src> BitStreamReader<'src> {
                 // update bits left
                 // bits left are now between 56-63
                 self.bits_left |= 56;
-
-                return true;
             }
         }
-        false
     }
     #[inline(never)]
     fn refill_slow(&mut self) {
