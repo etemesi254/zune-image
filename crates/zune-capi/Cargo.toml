@@ -2,6 +2,7 @@
 name = "zune-capi"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-capi"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
