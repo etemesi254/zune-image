@@ -2,6 +2,7 @@
 name = "zune-python"
 version = "0.4.0"
 edition = "2021"
+repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-python"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -15,3 +16,4 @@ zune-core = { path = "../zune-core", features = ["log"] }
 zune-imageprocs = { path = "../zune-imageprocs", features = ["threads", "exif"] }
 numpy = "0.20.0"
 pyo3-log = "0.9.0"
+
