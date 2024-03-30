@@ -436,7 +436,7 @@ impl Image {
     /// ```
     pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors> {
         return if let Some(ext) = file.as_ref().extension() {
-            if let Some(format) = ImageFormat::encoder_for_extension(ext.to_str().unwrap()) {
+            if let Some(format) = ImageFormat::encoder_for_extension(ext.to_string_lossy()) {
                 self.save_to(file, format)
             } else {
                 let msg = format!("No encoder for extension {ext:?}");
