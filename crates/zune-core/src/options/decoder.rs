@@ -31,7 +31,11 @@ fn decoder_strict_mode() -> DecoderFlags {
         jxl_decode_animated:       true
     }
 }
-
+/// A decoder that can handle errors
+fn decoder_error_tolerance_mode() -> DecoderFlags {
+    // similar to fast options currently, so no need to write a new one
+    fast_options()
+}
 /// Fast decoder options
 ///
 /// Enables all intrinsics + unsafe routines
@@ -643,6 +647,30 @@ impl DecoderOptions {
     }
 }
 impl Default for DecoderOptions {
+    /// Create a default and sane option for decoders
+    ///
+    /// The following are the defaults
+    ///
+    /// - All decoders
+    ///     - max_width: 16536
+    ///     - max_height: 16535
+    ///     - use_unsafe: Use unsafe intrinsics where possible.
+    ///
+    /// - JPEG
+    ///     - max_scans: 100 (progressive images only, artificial cap to prevent a specific DOS)
+    ///     - error_on_non_conformance: False (slightly corrupt images will be allowed)
+    /// - DEFLATE
+    ///     - deflate_limit: 1GB (will not continue decoding deflate archives larger than this)
+    /// - PNG
+    ///   - endianness: Default endianess is Big Endian when decoding 16 bit images to be viewed as 8 byte images
+    ///   - confirm_crc: False (CRC will not be confirmed to be safe)
+    ///   - strip_16_bit_to_8: False, 16 bit images are handled as 16 bit images
+    ///   - add alpha: False, alpha channel is not added where it isn't present
+    ///   - decode_animated: True: All frames in an animated image are decoded
+    ///
+    ///  - JXL
+    ///    - decode_animated: True: All frames in an animated image are decoded
+    ///
     fn default() -> Self {
         Self {
             out_colorspace: ColorSpace::RGB,
@@ -650,7 +678,7 @@ impl Default for DecoderOptions {
             max_height:     1 << 14,
             max_scans:      100,
             deflate_limit:  1 << 30,
-            flags:          decoder_strict_mode(),
+            flags:          decoder_error_tolerance_mode(),
             endianness:     ByteEndian::BE
         }
     }
