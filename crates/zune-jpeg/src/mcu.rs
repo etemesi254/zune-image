@@ -341,7 +341,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let mut px = *pixels_written;
         // indicates whether image is vertically up-sampled
-        let is_vertically_sampled = self.v_max > 1;
+        let is_vertically_sampled = self
+            .components
+            .iter()
+            .any(|c| c.sample_ratio == SampleRatios::HV || c.sample_ratio == SampleRatios::V);
 
         let mut comp_len = self.components.len();
 
@@ -394,16 +397,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     } else {
                         &component.upsample_dest
                     };
-                }
-
-                // ensure length matches for all samples
-                let first_len = samples[0].len();
-                for samp in samples.iter().take(comp_len) {
-                    if first_len != samp.len() {
-                        return Err(DecodeErrors::FormatStatic(
-                            "The current sampling factors are too complex to be decoded, note if you have a genuine image with the samples below, please open a PR"
-                        ));
-                    }
                 }
             }
             for comp in comps.iter_mut() {

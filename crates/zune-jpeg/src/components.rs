@@ -72,7 +72,9 @@ pub(crate) struct Components {
     pub x: usize,
     pub w2: usize,
     pub y: usize,
-    pub sample_ratio: SampleRatios
+    pub sample_ratio: SampleRatios,
+    // a very annoying bug
+    pub fix_an_annoying_bug: usize
 }
 
 impl Components {
@@ -153,7 +155,8 @@ impl Components {
             x: 0,
             y: 0,
             w2: 0,
-            sample_ratio: SampleRatios::None
+            sample_ratio: SampleRatios::None,
+            fix_an_annoying_bug: 1
         })
     }
     /// Setup space for upsampling
@@ -171,7 +174,8 @@ impl Components {
         self.row_up = vec![0; self.width_stride * self.vertical_sample];
         self.first_row_upsample_dest =
             vec![128; self.vertical_sample * self.width_stride * self.sample_ratio.sample()];
-        self.upsample_dest = vec![128; self.width_stride * self.sample_ratio.sample() * 8];
+        self.upsample_dest =
+            vec![0; self.width_stride * self.sample_ratio.sample() * self.fix_an_annoying_bug * 8];
     }
 }
 
