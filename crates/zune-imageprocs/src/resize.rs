@@ -6,9 +6,13 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-//! (BROKEN): Resize an image to a new width and height
+//! Resize an image to a new width and height
 //!
-//! (BROKEN): Do not use, **IT DOESN'T WORK**
+//!
+//! Currently only implements a simple bilinear resizer, future plans are to have
+//! more complicated resizers implemented.
+//!
+//!
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
