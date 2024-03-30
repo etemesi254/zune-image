@@ -48,20 +48,45 @@ pub struct Composite<'a> {
 }
 
 impl<'a> Composite<'a> {
-    pub fn try_new(
-        image: &'a Image, composite_method: CompositeMethod, geometry: Option<(usize, usize)>,
-        gravity: Option<Gravity>
-    ) -> Result<Self, &'static str> {
-        if geometry.is_none() && gravity.is_none() {
-            return Err("Composite cannot have both gravity and geometry as none");
-        }
-        let composite = Composite {
-            geometry,
-            composite_method,
+    /// Create a new filter that will copy an image to a specific location specified by `position`
+    /// using  the composite method specified.
+    ///
+    /// # Arguments
+    /// - image: The source image, this will be composited on top of the destination image
+    /// - composite_method: The composite technique we are using to join two images together
+    ///  - position: The absolute position to place the source image on top of the destination image
+    ///   A tuple of (x,y) coordinate
+    ///
+    /// See also [Self::new_gravity] if you don't want to manually calculate coordinates
+    pub fn new(
+        image: &'a Image, composite_method: CompositeMethod, position: (usize, usize)
+    ) -> Composite<'a> {
+        Composite {
+            geometry: Some(position),
             src_image: image,
-            gravity
-        };
-        Ok(composite)
+            composite_method,
+            gravity: None
+        }
+    }
+    /// Create a new filter that will composite `image` with the dest image placing it in the location
+    /// specified by gravity using the composite method specified.
+    ///
+    /// # Arguments
+    /// - image: The source image, this will be composited on top of the destination image
+    /// - composite_method: The composite technique we are using to join two images together
+    /// - gravity: The location to place the image, useful for when you don't want to manually calculate the image coordinates yourself.
+    ///
+    ///
+    /// See also [Self::new] if you want to use absolute coordinates
+    pub fn new_gravity(
+        image: &'a Image, composite_method: CompositeMethod, gravity: Gravity
+    ) -> Composite<'a> {
+        Composite {
+            geometry: None,
+            gravity: Some(gravity),
+            src_image: image,
+            composite_method
+        }
     }
 }
 
