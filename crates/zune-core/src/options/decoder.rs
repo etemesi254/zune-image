@@ -12,25 +12,6 @@
 use crate::bit_depth::ByteEndian;
 use crate::colorspace::ColorSpace;
 
-fn decoder_strict_mode() -> DecoderFlags {
-    DecoderFlags {
-        inflate_confirm_adler:        true,
-        png_confirm_crc:              true,
-        jpg_error_on_non_conformance: true,
-
-        zune_use_unsafe:           true,
-        zune_use_neon:             true,
-        zune_use_avx:              true,
-        zune_use_avx2:             true,
-        zune_use_sse2:             true,
-        zune_use_sse3:             true,
-        zune_use_sse41:            true,
-        png_add_alpha_channel:     false,
-        png_strip_16_bit_to_8_bit: false,
-        png_decode_animated:       true,
-        jxl_decode_animated:       true
-    }
-}
 /// A decoder that can handle errors
 fn decoder_error_tolerance_mode() -> DecoderFlags {
     // similar to fast options currently, so no need to write a new one
