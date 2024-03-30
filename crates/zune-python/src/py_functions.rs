@@ -19,7 +19,6 @@ use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
 use zune_image::codecs::hdr::HdrDecoder;
 use zune_image::codecs::jpeg::JpegDecoder;
-use zune_image::codecs::jpeg_xl::jxl_oxide::RenderResult;
 use zune_image::codecs::png::PngDecoder;
 use zune_image::codecs::ppm::PPMDecoder;
 use zune_image::codecs::psd::PSDDecoder;
@@ -339,39 +338,34 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                 ImageFormat::JPEG_XL => {
                     let c = ZReader::new(ZCursor::new(&bytes));
 
-                    let mut decoder =
-                        zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(c)
-                            .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
+                    let decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::builder()
+                        .read(c)
+                        .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
                     let (w, h) = (decoder.width() as usize, decoder.height() as usize);
                     let color = decoder.pixel_format();
 
-                    let result = decoder
-                        .render_next_frame()
+                    let render = decoder
+                        .render_frame(0)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x}")))?;
 
-                    match result {
-                        RenderResult::Done(render) => {
-                            // get the images
-                            let im_plannar = render.image();
+                    // get the images
+                    let im_plannar = render.image();
 
-                            if color.channels() == 1 {
-                                let arr = PyArray2::zeros(py, [h, w], false);
-                                arr.try_readwrite()?
-                                    .as_slice_mut()?
-                                    .copy_from_slice(im_plannar.buf());
+                    if color.channels() == 1 {
+                        let arr = PyArray2::zeros(py, [h, w], false);
+                        arr.try_readwrite()?
+                            .as_slice_mut()?
+                            .copy_from_slice(im_plannar.buf());
 
-                                Ok(arr.as_untyped())
-                            } else {
-                                let arr = PyArray3::zeros(py, [h, w, color.channels()], false);
-                                arr.try_readwrite()?
-                                    .as_slice_mut()?
-                                    .copy_from_slice(im_plannar.buf());
+                        Ok(arr.as_untyped())
+                    } else {
+                        let arr = PyArray3::zeros(py, [h, w, color.channels()], false);
+                        arr.try_readwrite()?
+                            .as_slice_mut()?
+                            .copy_from_slice(im_plannar.buf());
 
-                                Ok(arr.as_untyped())
-                            }
-                        }
-                        _ => return Err(PyErr::new::<PyException, _>("Cannot process jxl frame"))
+                        Ok(arr.as_untyped())
                     }
                 }
                 d @ ImageFormat::Unknown => Err(PyErr::new::<PyException, _>(format!(

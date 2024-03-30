@@ -8,7 +8,6 @@ use zune_image::codecs::bmp::BmpDecoder;
 use zune_image::codecs::farbfeld::FarbFeldDecoder;
 use zune_image::codecs::hdr::HdrDecoder;
 use zune_image::codecs::jpeg::JpegDecoder;
-use zune_image::codecs::jpeg_xl::jxl_oxide::RenderResult;
 use zune_image::codecs::png::PngDecoder;
 use zune_image::codecs::ppm::PPMDecoder;
 use zune_image::codecs::psd::PSDDecoder;
@@ -498,36 +497,30 @@ where
                 decoder.decode_into(output)?;
             }
             ImageFormat::JPEG_XL => {
-                let mut decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::from_reader(
-                    ZReader::new(data)
-                )
-                .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
-
-                let result = decoder
-                    .render_next_frame()
+                let decoder = zune_image::codecs::jpeg_xl::jxl_oxide::JxlImage::builder()
+                    .read(ZReader::new(data))
                     .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
 
-                match result {
-                    RenderResult::Done(render) => {
-                        let (a, f32_buf, c) = unsafe { output.align_to_mut() };
+                let render = decoder
+                    .render_frame(0)
+                    .map_err(|x| ImageErrors::GenericString(x.to_string()))?;
 
-                        if !(a.is_empty() && c.is_empty()) {
-                            // misalignment
-                            return Err(ImageErrors::GenericStr("Buffer misalignment"));
-                        }
+                let (a, f32_buf, c) = unsafe { output.align_to_mut() };
 
-                        let im_plannar = render.image();
-                        let buf_len = im_plannar.buf().len();
-
-                        if buf_len > f32_buf.len() {
-                            return Err(ImageErrors::GenericStr(
-                                "Too small of a buffer for jxl output"
-                            ));
-                        }
-                        f32_buf[..buf_len].copy_from_slice(im_plannar.buf())
-                    }
-                    _ => return Err(ImageErrors::GenericStr("Cannot handle jxl status"))
+                if !(a.is_empty() && c.is_empty()) {
+                    // misalignment
+                    return Err(ImageErrors::GenericStr("Buffer misalignment"));
                 }
+
+                let im_plannar = render.image();
+                let buf_len = im_plannar.buf().len();
+
+                if buf_len > f32_buf.len() {
+                    return Err(ImageErrors::GenericStr(
+                        "Too small of a buffer for jxl output"
+                    ));
+                }
+                f32_buf[..buf_len].copy_from_slice(im_plannar.buf())
             }
             ImageFormat::HDR => {
                 let mut decoder = HdrDecoder::new(data);

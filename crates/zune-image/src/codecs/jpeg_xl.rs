@@ -22,7 +22,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 pub use jxl_oxide;
-use jxl_oxide::{PixelFormat, RenderResult};
+use jxl_oxide::{JxlImage, PixelFormat, RenderResult};
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
@@ -117,14 +117,15 @@ impl From<JxlEncodeErrors> for ImgEncodeErrors {
     }
 }
 
-pub struct JxlDecoder<R: Read> {
-    inner:   jxl_oxide::JxlImage<R>,
+pub struct JxlDecoder {
+    inner:   jxl_oxide::JxlImage,
     options: DecoderOptions
 }
 
-impl<R: Read> JxlDecoder<R> {
-    pub fn try_new(source: R, options: DecoderOptions) -> Result<JxlDecoder<R>, ImageErrors> {
-        let parser = jxl_oxide::JxlImage::from_reader(source)
+impl JxlDecoder {
+    pub fn try_new<R: Read>(source: R, options: DecoderOptions) -> Result<JxlDecoder, ImageErrors> {
+        let parser = jxl_oxide::JxlImage::builder()
+            .read(source)
             .map_err(|x| ImageErrors::ImageDecodeErrors(format!("{:?}", x)))?;
 
         let decoder = JxlDecoder {
@@ -135,15 +136,12 @@ impl<R: Read> JxlDecoder<R> {
     }
 }
 
-impl<R> DecoderTrait for JxlDecoder<R>
-where
-    R: Read
-{
+impl DecoderTrait for JxlDecoder {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         // by now headers have been decoded, so we can fetch these
         let metadata = self.read_headers()?;
-        let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
-        let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
+        let (w, h) = <JxlDecoder as DecoderTrait>::dimensions(self).unwrap();
+        let color = <JxlDecoder as DecoderTrait>::out_colorspace(self);
 
         let mut total_frames = vec![];
 
@@ -173,44 +171,37 @@ where
             return Err(ImageErrors::ImageDecodeErrors(msg));
         }
 
-        loop {
-            let result = self
+        let taken = if self.options.jxl_decode_animated() {
+            self.inner.num_loaded_frames()
+        } else {
+            1
+        };
+
+        for frame in 0..taken {
+            let render = self
                 .inner
-                .render_next_frame()
+                .render_frame(frame)
                 .map_err(|x| ImageErrors::ImageDecodeErrors(format!("{}", x)))?;
 
-            match result {
-                RenderResult::Done(render) => {
-                    // get the images
-                    let duration = render.duration();
+            // get the images
+            let duration = render.duration();
 
-                    let im_plannar = render.image_planar();
-                    let mut frame_v = vec![];
+            let im_plannar = render.image_planar();
+            let mut frame_v = vec![];
 
-                    for channel in im_plannar {
-                        let mut chan = Channel::new_with_bit_type(
-                            channel.width() * channel.height() * size_of::<f32>(),
-                            BitType::F32
-                        );
-                        // copy the channel as plannar
-                        let c = chan.reinterpret_as_mut()?;
-                        c.copy_from_slice(channel.buf());
-                        // then store it in frame_v
-                        frame_v.push(chan);
-                    }
-                    let frame = Frame::new(frame_v);
-                    total_frames.push(frame);
-                }
-                RenderResult::NeedMoreData => {
-                    sleep(Duration::new(1, 0));
-                    // return to the loop
-                }
-                RenderResult::NoMoreFrames => break
+            for channel in im_plannar {
+                let mut chan = Channel::new_with_bit_type(
+                    channel.width() * channel.height() * size_of::<f32>(),
+                    BitType::F32
+                );
+                // copy the channel as plannar
+                let c = chan.reinterpret_as_mut()?;
+                c.copy_from_slice(channel.buf());
+                // then store it in frame_v
+                frame_v.push(chan);
             }
-            if !self.options.jxl_decode_animated() {
-                // we won't be decoding animated, so don't decode the next frame
-                break;
-            }
+            let frame = Frame::new(frame_v);
+            total_frames.push(frame);
         }
         // then create a new image
         let mut image = Image::new_frames(total_frames, BitDepth::Float32, w, h, color);
@@ -242,8 +233,8 @@ where
     }
 
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
-        let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
-        let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
+        let (w, h) = <JxlDecoder as DecoderTrait>::dimensions(self).unwrap();
+        let color = <JxlDecoder as DecoderTrait>::out_colorspace(self);
 
         let (width, height) = self.dimensions().unwrap();
 
