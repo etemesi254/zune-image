@@ -473,12 +473,16 @@ impl Image {
     /// use zune_image::codecs::ImageFormat;
     /// use zune_image::errors::ImageErrors;
     /// use zune_image::image::Image;
-    /// // create a simple 200x200 grayscale image consisting of pure black
-    /// let image = Image::fill::<u8>(0,ColorSpace::Luma,200,200);
-    /// // save that to jpeg
-    /// image.save_to("black.jpg",ImageFormat::JPEG)?;
-    ///
-    /// Ok::<(),ImageErrors>(())
+    /// fn main()->Result<(),ImageErrors>{
+    ///     // create a simple 200x200 grayscale image consisting of pure black
+    ///     let image = Image::fill::<u8>(0,ColorSpace::Luma,200,200);
+    ///     // save that to jpeg
+    ///     #[cfg(feature = "jpeg")]
+    ///     {
+    ///         image.save_to("black.jpg",ImageFormat::JPEG)?;
+    ///     }
+    ///     Ok(())
+    /// }
     /// ```
     pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
         // open a file for which we will write directly to
