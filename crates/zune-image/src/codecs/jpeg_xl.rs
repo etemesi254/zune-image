@@ -141,6 +141,7 @@ where
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         // by now headers have been decoded, so we can fetch these
+        let metadata = self.read_headers()?;
         let (w, h) = <JxlDecoder<R> as DecoderTrait>::dimensions(self).unwrap();
         let color = <JxlDecoder<R> as DecoderTrait>::out_colorspace(self);
 
@@ -212,13 +213,11 @@ where
             }
         }
         // then create a new image
-        Ok(Image::new_frames(
-            total_frames,
-            BitDepth::Float32,
-            w,
-            h,
-            color
-        ))
+        let mut image = Image::new_frames(total_frames, BitDepth::Float32, w, h, color);
+        if let Some(im_metadata) = metadata {
+            image.metadata = im_metadata;
+        }
+        Ok(image)
     }
 
     fn dimensions(&self) -> Option<(usize, usize)> {
