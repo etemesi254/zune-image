@@ -17,7 +17,7 @@ use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 
-use crate::components::SampleRatios;
+use crate::components::{ComponentID, SampleRatios};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::JpegDecoder;
@@ -263,13 +263,43 @@ pub(crate) fn setup_component_params<T: ZReaderTrait>(
         // initially stride contains its horizontal sub-sampling
         component.width_stride *= img.mcu_x * 8;
     }
-    if img.is_interleaved
-        && img.components[0].horizontal_sample == 1
-        && img.components[0].vertical_sample == 1
     {
-        return Err(DecodeErrors::FormatStatic(
-            "Unsupported unsampled Y component with sampled Cb / Cr components"
-        ));
+        // Sampling factors are one thing that suck
+        // this fixes a specific problem with images like
+        //
+        // (2 2) None
+        // (2 1) H
+        // (2 1) H
+        //
+        // The images exist in the wild, the images are not meant to exist
+        // but they do, it's just an annoying horizontal sub-sampling that
+        // I don't know why it exists.
+        // But it does
+        // So we try to cope with that.
+        // I am not sure of how to explain how to fix it, but it involved a debugger
+        // and to much coke(the legal one)
+        //
+        // If this wasn't present, self.upsample_dest would have the wrong length
+        let mut handle_that_annoying_bug = false;
+
+        if let Some(y_component) = img
+            .components
+            .iter()
+            .find(|c| c.component_id == ComponentID::Y)
+        {
+            if y_component.horizontal_sample == 2 && y_component.vertical_sample == 2 {
+                handle_that_annoying_bug = true;
+            }
+        }
+        if handle_that_annoying_bug {
+            for comp in &mut img.components {
+                if (comp.component_id != ComponentID::Y)
+                    && (comp.horizontal_sample != 1 || comp.vertical_sample != 1)
+                {
+                    comp.fix_an_annoying_bug = 2;
+                }
+            }
+        }
     }
 
     if img.is_mjpeg {
