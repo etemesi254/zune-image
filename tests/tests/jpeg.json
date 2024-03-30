@@ -101,5 +101,10 @@
     "name": "mjpeg_huffman.jpg",
     "hash": 309069272274389382301715239622093501038,
     "comment": "Image needs to be filled with default huffman tables"
+  },
+  {
+    "name": "sampling_factors.jpg",
+    "hash": 133590576700352645999203782976613902199,
+    "comment": "Another weird sampling factor,(when will it end)"
   }
 ]
