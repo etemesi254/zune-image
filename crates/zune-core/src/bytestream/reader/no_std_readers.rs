@@ -180,3 +180,8 @@ impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
 //         self.read_bytes(buf).map_err(|x|{ std::io::Error::new()})
 //     }
 // }
+impl<T: AsRef<[u8]>> From<T> for ZCursor<T> {
+    fn from(value: T) -> Self {
+        ZCursor::new(value)
+    }
+}
