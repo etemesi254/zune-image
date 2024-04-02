@@ -283,6 +283,13 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     // acknowledge and ignore EOI marker.
                     stream.marker.take();
                     trace!("Found EOI marker");
+                    // Google Introduced the Ultra-HD image format which is basically
+                    // stitching two images into one container.
+                    // They basically separate two images via a EOI and SOI marker
+                    // so let's just ensure if we ever see EOI, we never read past that
+                    // ever.
+                    // https://github.com/google/libultrahdr
+                    stream.seen_eoi = true;
                 } else if let Marker::RST(_) = m {
                     if self.todo == 0 {
                         self.handle_rst(stream)?;
