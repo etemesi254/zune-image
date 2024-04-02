@@ -181,6 +181,7 @@ impl EncoderTrait for PngEncoder {
 
         let mut encoder = zune_png::PngEncoder::new(frame, options);
 
+        #[allow(unused_mut)]
         let mut buf: Cursor<Vec<u8>> = std::io::Cursor::new(vec![]);
 
         #[cfg(feature = "metadata")]
