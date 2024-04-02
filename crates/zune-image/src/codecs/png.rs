@@ -10,6 +10,8 @@
 #![allow(unused_variables)]
 
 //! Represents an png image decoder
+use std::io::Cursor;
+
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
@@ -133,7 +135,7 @@ where
             }
         }
         // load icc
-        if let Some(icc) = &self.info().unwrap().icc_profile{
+        if let Some(icc) = &self.info().unwrap().icc_profile {
             metadata.set_icc_chunk(icc.to_owned());
         }
 
@@ -179,7 +181,7 @@ impl EncoderTrait for PngEncoder {
 
         let mut encoder = zune_png::PngEncoder::new(frame, options);
 
-        let mut buf = std::io::Cursor::new(vec![]);
+        let mut buf: Cursor<Vec<u8>> = std::io::Cursor::new(vec![]);
 
         #[cfg(feature = "metadata")]
         {
