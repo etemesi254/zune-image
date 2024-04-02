@@ -2,16 +2,19 @@ name: Investigate  image features that run
 
 env:
   CARGO_TERM_COLOR: always
+on:
+  push:
+    branches: [ "main","dev" ]
+  pull_request:
+    branches: [ "main" ,"dev" ]
 
 jobs:
   build:
     strategy:
       matrix:
-        features:[image_formats, serde-support, metadata, threads, simd, log,jpeg, ppm, png, psd, farbfeld, qoi, jpeg-xl, hdr, bmp]
+        features: [ "image_formats", "serde-support", "metadata", "threads", "simd", "log","jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr", "bmp" ]
 
     runs-on: ubuntu-latest
-
-
 
     steps:
       - name: Check independent feature build Basics
