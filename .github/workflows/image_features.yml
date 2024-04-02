@@ -5,8 +5,12 @@ env:
 on:
   push:
     branches: [ "main","dev" ]
+    paths:
+      - 'crates/zune-image/**'
   pull_request:
     branches: [ "main" ,"dev" ]
+    paths:
+      - 'crates/zune-image/**'
 
 jobs:
   build:
@@ -20,6 +24,6 @@ jobs:
       - name: Check independent feature build Basics
         uses: actions-rs/cargo@v1
         with:
-          command: check
+          command: build
           args: -p zune-image --no-default-features -F ${{ matrix.features }}
 
