@@ -122,7 +122,10 @@ pub(crate) struct BitStream {
     spec_start:          u8,
     spec_end:            u8,
     pub eob_run:         i32,
-    pub overread_by:     usize
+    pub overread_by:     usize,
+    /// True if we have seen end of image marker.
+    /// Don't read anything after that.
+    pub seen_eoi:        bool
 }
 
 impl BitStream {
@@ -138,7 +141,8 @@ impl BitStream {
             spec_start:      0,
             spec_end:        0,
             eob_run:         0,
-            overread_by:     0
+            overread_by:     0,
+            seen_eoi:        false
         }
     }
 
@@ -155,7 +159,8 @@ impl BitStream {
             spec_start:      spec_start,
             spec_end:        spec_end,
             eob_run:         0,
-            overread_by:     0
+            overread_by:     0,
+            seen_eoi:        false
         }
     }
 
@@ -223,7 +228,7 @@ impl BitStream {
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
-        if self.bits_left < 32 && self.marker.is_none() {
+        if self.bits_left < 32 && self.marker.is_none() && !self.seen_eoi {
             // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
             // as it is the common case
             //
