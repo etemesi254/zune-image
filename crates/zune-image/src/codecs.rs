@@ -167,13 +167,13 @@ impl ImageFormat {
                 }
             }
             ImageFormat::PSD => {
-                #[cfg(feature = "ppm")]
+                #[cfg(feature = "psd")]
                 {
                     Ok(Box::new(zune_psd::PSDDecoder::new_with_options(
                         data, options
                     )))
                 }
-                #[cfg(not(feature = "ppm"))]
+                #[cfg(not(feature = "psd"))]
                 {
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
