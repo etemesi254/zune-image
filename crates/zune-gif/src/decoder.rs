@@ -30,10 +30,10 @@ pub struct GifDecoder<T: ZByteReaderTrait> {
 
 impl<T: ZByteReaderTrait> GifDecoder<T> {
     pub fn new(source: T) -> GifDecoder<T> {
-        return GifDecoder::new_with_options(source, DecoderOptions::new_fast());
+        GifDecoder::new_with_options(source, DecoderOptions::new_fast())
     }
     pub fn new_with_options(source: T, options: DecoderOptions) -> GifDecoder<T> {
-        return GifDecoder {
+        GifDecoder {
             stream: ZReader::new(source),
             options,
             width: 0,
@@ -47,7 +47,7 @@ impl<T: ZByteReaderTrait> GifDecoder<T> {
             pal: [[0; 4]; 256],
             _dispose_area: Default::default(),
             background: vec![]
-        };
+        }
     }
     pub fn decode_headers(&mut self) -> Result<(), GifDecoderErrors> {
         if self.read_headers {

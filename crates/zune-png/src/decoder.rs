@@ -865,9 +865,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         //      zero, and in creating an empty vec nothing is allocated on the heap
         //  2 - We convert samples to native endian, so that transmuting is a no-op in case of
         //      16 bit images in the next step
-        //  3 - We use bytemuck to to safe align, hence keeping the no unsafe mantra except
-        //      for platform specific intrinsics
-
+      
         if !self.seen_headers || !self.seen_iend {
             self.decode_headers()?;
         }
@@ -1026,7 +1024,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             // raw image bytes
             let raw = &in_stride[1..];
 
-            // get it's type
+            // get its type
             let mut filter = FilterMethod::from_int(filter_byte)
                 .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))?;
 

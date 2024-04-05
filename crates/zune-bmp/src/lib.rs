@@ -36,12 +36,6 @@
 //! The decoder is continuously fuzz tested in CI to ensure it does not crash on malicious input
 //! in case a sample causes it to crash, an issue would be welcome.
 
-// failing tests
-// pal4rlecut.bmp
-// pal8rlecut.bmp
-// q/rgb24rle24.bmp
-//
-
 #![no_std]
 #![macro_use]
 extern crate alloc;
