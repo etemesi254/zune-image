@@ -32,31 +32,34 @@ impl Serialize for ImageMetadata {
         state.serialize_field("color_transfer_characteristics", &self.color_trc)?;
         state.serialize_field("gamma_value", &self.default_gamma)?;
 
-        let mut fields = BTreeMap::new();
-        if let Some(ex) = &self.exif {
-            for f in ex {
-                let key = f.tag.to_string();
+        #[cfg(feature = "metadata")]
+        {
+            let mut fields = BTreeMap::new();
+            if let Some(ex) = &self.exif {
+                for f in ex {
+                    let key = f.tag.to_string();
 
-                // some tags may have leading quotes yet they
-                // are enclosed in a string.
-                // This helps remove them
-                let value = f
-                    .display_value()
-                    .with_unit(f)
-                    .to_string()
-                    .trim_start_matches(|x| x == '\"')
-                    .trim_end_matches(|x| x == '\"')
-                    .to_string();
+                    // some tags may have leading quotes yet they
+                    // are enclosed in a string.
+                    // This helps remove them
+                    let value = f
+                        .display_value()
+                        .with_unit(f)
+                        .to_string()
+                        .trim_start_matches(|x| x == '\"')
+                        .trim_end_matches(|x| x == '\"')
+                        .to_string();
 
-                if value.len() < 100 {
-                    fields.insert(key, value);
+                    if value.len() < 100 {
+                        fields.insert(key, value);
+                    }
                 }
             }
-        }
-        if fields.is_empty() {
-            state.serialize_field::<Option<BTreeMap<String, String>>>("exif", &None)?;
-        } else {
-            state.serialize_field("exif", &fields)?;
+            if fields.is_empty() {
+                state.serialize_field::<Option<BTreeMap<String, String>>>("exif", &None)?;
+            } else {
+                state.serialize_field("exif", &fields)?;
+            }
         }
 
         state.end()
