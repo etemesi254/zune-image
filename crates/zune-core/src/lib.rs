@@ -26,6 +26,13 @@
 //!  - `serde`: Enables serializing of some of the data structures
 //!     present in the crate
 //!
+//!
+//! # Input/Output
+//! If you have an in memory buffer, use [`ZCursor`](crate::bytestream::ZCursor),
+//! it's optimized for in memory buffers.
+//!
+//!  
+//!
 #![cfg_attr(not(feature = "std"), no_std)]
 #![macro_use]
 extern crate alloc;
