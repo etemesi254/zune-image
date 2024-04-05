@@ -39,7 +39,7 @@ all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
 [dependencies]
 #zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
-zune-core = { path = "../zune-core", version = "^0.4.12" }
+zune-core = { path = "../zune-core", version = "^0.4.12", features = ["std"] }
 # Images
 zune-png = { path = "../zune-png", version = "0.4", optional = true }
 zune-jpeg = { path = "../zune-jpeg", version = "0.4", optional = true }
