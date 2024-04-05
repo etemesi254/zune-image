@@ -1,4 +1,4 @@
-name: Investigate  image features that run
+name: Build zune-image with single features.
 
 env:
   CARGO_TERM_COLOR: always
