@@ -1,3 +1,6 @@
+// We cannot use the below impls and std ones because we'll re-implement the
+// same trait fot &[u8] which is blanketed by write. Ending up with two separate implementations
+#![cfg(not(feature = "std"))]
 use crate::bytestream::{ZByteIoError, ZByteWriterTrait};
 
 impl ZByteWriterTrait for &mut [u8] {

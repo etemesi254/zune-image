@@ -1,10 +1,10 @@
 #![cfg(feature = "std")]
-use std::fs::File;
-use std::io::{BufWriter, Write};
+
+use std::io::Write;
 
 use crate::bytestream::ZByteIoError;
 
-impl crate::bytestream::ZByteWriterTrait for &mut BufWriter<File> {
+impl<T: Write> crate::bytestream::ZByteWriterTrait for T {
     fn write_bytes(&mut self, buf: &[u8]) -> Result<usize, ZByteIoError> {
         self.write(buf).map_err(ZByteIoError::StdIoError)
     }
@@ -20,6 +20,8 @@ impl crate::bytestream::ZByteWriterTrait for &mut BufWriter<File> {
         self.flush().map_err(ZByteIoError::StdIoError)
     }
     fn reserve_capacity(&mut self, _: usize) -> Result<(), ZByteIoError> {
+        // we can't reserve capacity, sorry to implementations where this
+        // matters
         Ok(())
     }
 }
