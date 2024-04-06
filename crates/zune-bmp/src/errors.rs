@@ -12,6 +12,7 @@ use core::fmt::{Debug, Formatter};
 use zune_core::bytestream::ZByteIoError;
 
 /// BMP errors that can occur during decoding
+#[non_exhaustive]
 pub enum BmpDecoderErrors {
     /// The file/bytes do not start with `BM`
     InvalidMagicBytes,
