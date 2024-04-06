@@ -15,6 +15,7 @@
 //! - Fast
 //! - Minimal dependencies
 //! - Very minimal internal allocation. (most paths do not allocate any more than output buffer)
+//!
 //! # Supported formats
 //! - RLE (4 bit and 8 bit)
 //! - Paletted images(1 bit, 2 bits, 4  bits and 8 bits)
@@ -23,19 +24,51 @@
 //! # Unsupported formats
 //! - Embedded PNG and JPEGs
 //!
-//! # Usage
-//! ```no_run
-//! use std::io::Cursor;
-//! use zune_bmp::BmpDecoder;
+//! # Features
+//!  - `log`: Use the `log` crate features to print image information when decoding
+//!  - `std`: Allow direct decoding from anything that implements [BufRead](std::io::BufRead) + [Seek](std::io::Seek)
 //!
-//! let decoder:Vec<u8> = BmpDecoder::new(Cursor::new(b"BMP")).decode().unwrap();
+//! # Usage
+//!  It is recommended that if you have an in memory buffer you use
+//! `ZCursor` to read as it is more optimized when compared to [Cursor](std::io::Cursor) since it's
+//!  methods are specialized for the [`ZByteReaderTrait`](crate::zune_core::bytestream::ZByteReaderTrait)
+//!
+//!
+//! ```no_run
+//! use zune_bmp::BmpDecoder;
+//! use zune_core::bytestream::ZCursor;
+//!
+//! let decoder:Vec<u8> = BmpDecoder::new(ZCursor::new(b"BMP")).decode().unwrap();
+//! ```
+//!
+//! You can also read directly from bmp files. This can be preferred when you don't have the file contents
+//! in memory and just want the pixels
+//!
+//! It's recommended you wrap the file in a bufreader.
+//!
+//! This requires the `std` feature to work.
+//! ```no_run
+//! use std::fs::File;
+//! use std::io::BufReader;
+//! use zune_bmp::BmpDecoder;
+//! // read from a file
+//! let source = BufReader::new(File::open("./image.bmp").unwrap());
+//! // only run when std is enabled, otherwise zune_core doesn't implement the ZByteReader trait
+//! // on File since it doesn't exist in `no_std` land
+//! #[cfg(feature = "std")]
+//! let decoder = BmpDecoder::new(source);
+//!
 //! ```
 //!
 //! # Security
 //!
 //! The decoder is continuously fuzz tested in CI to ensure it does not crash on malicious input
 //! in case a sample causes it to crash, an issue would be welcome.
-
+//!
+//! # Performance
+//! BMP isn't a compute heavy image format, this crate should not be a bottleneck in any way possible,
+//! benchmark just in case you think it's slowing you down in any way.
+//!
 #![no_std]
 #![macro_use]
 extern crate alloc;
