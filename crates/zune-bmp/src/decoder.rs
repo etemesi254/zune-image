@@ -146,6 +146,48 @@ struct PaletteEntry {
 }
 
 /// A BMP decoder.
+///
+/// # Usage
+/// The decoder can be used to read image information and or get the pixels out of a valid bmp
+/// image.
+///
+/// ## Extracting image metadata
+/// - use `read_headers`+ utility functions to get information
+/// ```no_run
+/// use zune_bmp::BmpDecoder;
+/// use zune_core::bytestream::ZCursor;
+///
+/// fn main()->Result<(),zune_bmp::BmpDecoderErrors>{
+///
+///     let source = ZCursor::new(b"BMP");
+///     let mut decoder = BmpDecoder::new(source);
+///     decoder.decode_headers()?;
+///     // after decoding headers, we can safely access the image metadata
+///     // unwrap won't panic
+///     let (w,h) = decoder.dimensions().unwrap();
+///     println!("Image width: {}\t Image height: {}",w,h);
+///     println!("Colorspace: {:?}\t",decoder.colorspace().unwrap());
+///
+///     Ok(())
+///     
+/// }
+/// ```
+///
+/// ## Just getting the pixels
+///
+/// ```no_run
+/// use zune_bmp::BmpDecoder;
+/// use zune_core::bytestream::ZCursor;
+///
+/// fn main()->Result<(),zune_bmp::BmpDecoderErrors>{
+///
+///     let source = ZCursor::new(b"BMP");
+///     let mut decoder = BmpDecoder::new(source);
+///     let pixels = decoder.decode()?;
+///     println!("Pixels length:{}",pixels.len());
+///     Ok(())
+/// }
+/// ```
 pub struct BmpDecoder<T>
 where
     T: ZByteReaderTrait
