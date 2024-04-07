@@ -254,7 +254,12 @@ pub fn post_process_image(
     }
 
     match frame_info.dispose_op {
-        DisposeOp::None => {} // do nothing
+        DisposeOp::None => {
+            // it may cause artifacts especially if the frame is smaller
+            // than the image, previous things may leak
+            // See https://github.com/etemesi254/zune-image/issues/185
+            output.fill(0);
+        } // do nothing
         DisposeOp::Background => {
             // output to fully black
             output.fill(0);
