@@ -18,6 +18,14 @@ use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 /// This provides the basic functions needed to quick and sometimes
 /// heap free I/O for the zune image decoders with easy support for extending it
 /// to multiple implementations.
+///
+/// # Considerations
+///
+/// If you have an in memory buffer, prefer [`ZCursor`](crate::bytestream::ZCursor) over [`Cursor`](std::io::Cursor).
+/// We implement this trait for two types, `ZCursor`, and any thing that implements `BufRead`+`Seek`, `Cursor` falls in the latter
+/// and since Rust doesn't have specialization for traits, we can only implement it once. This means functions like
+/// [`read_byte_no_error`](crate::bytestream::ZByteReaderTrait::read_byte_no_error) are slower than they should be for `Cursor`.
+///
 pub trait ZByteReaderTrait {
     /// Read a single byte from the decoder and return
     /// `0` if we can't read the byte, e.g because of EOF

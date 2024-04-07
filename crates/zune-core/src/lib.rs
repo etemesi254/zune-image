@@ -28,6 +28,16 @@
 //!
 //!
 //! # Input/Output
+//!
+//! zune-image supports many different input and output devices. For input readers
+//! we can read anything that implements `BufRead` + `Seek` and provide an optimized routine for
+//! handling in memory buffers by using [`ZCursor`](crate::bytestream::ZCursor).
+//!
+//! For output, we support anything that implements `Write` trait, this includes files, standard io streams
+//! network sockets, etc
+//!
+//! In a `no_std` environment. We can write to in memory buffers `&mut [u8]` and `&mut Vec<u8>`
+//!
 //! If you have an in memory buffer, use [`ZCursor`](crate::bytestream::ZCursor),
 //! it's optimized for in memory buffers.
 //!

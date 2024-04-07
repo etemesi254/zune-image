@@ -105,7 +105,6 @@ impl<T: ZByteWriterTrait> ZByteWriter<T> {
     /// Write a single byte in the stream or don't write
     /// anything if the buffer is full and cannot support the byte read
     ///
-    /// Should be combined with [`has`](Self::has)static
     #[inline]
     pub fn write_u8(&mut self, byte: u8) {
         let _ = self.write_const_bytes(&[byte]);
@@ -183,7 +182,6 @@ macro_rules! write_single_type {
 
             #[doc=concat!("Write ",stringify!($int_type)," as a big endian integer")]
             #[doc=concat!("Or don't write anything if the reader cannot support a ",stringify!($int_type)," write.")]
-            #[doc=concat!("\nShould be combined with the [`has`](Self::has) method to ensure a write succeeds")]
             #[inline]
             pub fn $name5(&mut self, byte: $int_type)
             {
@@ -191,7 +189,6 @@ macro_rules! write_single_type {
             }
             #[doc=concat!("Write ",stringify!($int_type)," as a little endian integer")]
             #[doc=concat!("Or don't write anything if the reader cannot support a ",stringify!($int_type)," write.")]
-            #[doc=concat!("Should be combined with the [`has`](Self::has) method to ensure a write succeeds")]
             #[inline]
             pub fn $name6(&mut self, byte: $int_type)
             {

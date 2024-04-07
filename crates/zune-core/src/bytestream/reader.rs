@@ -196,7 +196,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     /// If an error occurs, it will return `0` as default output
     /// hence it may be difficult to distinguish a `0` from the underlying source
     /// and a `0` from an error.
-    /// For that there is [Self::read_u8_error]
+    /// For that there is [Self::read_u8_err]
     ///
     /// # Returns.
     /// - The next byte on the stream.
