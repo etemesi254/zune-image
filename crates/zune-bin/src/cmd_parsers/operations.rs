@@ -38,16 +38,16 @@ pub fn parse_options<T: IntoImage>(
 ) -> Result<(), String> {
     if argument == "flip" {
         debug!("Added flip operation");
-        workflow.add_operation(Box::new(Flip::new()));
+        workflow.chain_operations(Box::new(Flip::new()));
     } else if argument == "grayscale" {
         debug!("Added grayscale operation");
-        workflow.add_operation(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
+        workflow.chain_operations(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
     } else if argument == "transpose" {
         debug!("Added transpose operation");
-        workflow.add_operation(Box::new(Transpose::new()));
+        workflow.chain_operations(Box::new(Transpose::new()));
     } else if argument == "flop" {
         debug!("Added flop operation");
-        workflow.add_operation(Box::new(Flop::new()))
+        workflow.chain_operations(Box::new(Flop::new()))
     } else if argument == "median" {
         //let radius = *args.get_one::<usize>("median").unwrap();
         // workflow.add_operation(Box::new(Median::new(radius)));
@@ -59,7 +59,7 @@ pub fn parse_options<T: IntoImage>(
         let radius = str::parse::<usize>(val[0]).map_err(|x| x.to_string())?;
         let stats_mode = SpatialOperations::from_string_result(val[1])?;
 
-        workflow.add_operation(Box::new(SpatialOps::new(radius, stats_mode)));
+        workflow.chain_operations(Box::new(SpatialOps::new(radius, stats_mode)));
         debug!("Added StatisticsOps operation");
     } else if argument == "mirror" {
         let value = args.get_one::<String>("mirror").unwrap().trim();
@@ -78,14 +78,14 @@ pub fn parse_options<T: IntoImage>(
         }
 
         debug!("Added mirror with direction {:?}", value);
-        workflow.add_operation(Box::new(Mirror::new(direction)))
+        workflow.chain_operations(Box::new(Mirror::new(direction)))
     } else if argument == "invert" {
         debug!("Added invert operation");
-        workflow.add_operation(Box::new(Invert::new()))
+        workflow.chain_operations(Box::new(Invert::new()))
     } else if argument == "brighten" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added brighten operation with {:?}", value);
-        workflow.add_operation(Box::new(Brighten::new(value)))
+        workflow.chain_operations(Box::new(Brighten::new(value)))
     } else if argument == "crop" {
         let crop_args = args
             .get_many::<usize>(argument)
@@ -99,7 +99,7 @@ pub fn parse_options<T: IntoImage>(
             crop_args[0], crop_args[1], crop_args[2], crop_args[3]
         );
 
-        workflow.add_operation(Box::new(crop));
+        workflow.chain_operations(Box::new(crop));
     } else if argument == "threshold" {
         let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
 
@@ -108,7 +108,7 @@ pub fn parse_options<T: IntoImage>(
         let thresh_mode = ThresholdMethod::from_string_result(val[1])?;
         let threshold = Threshold::new(radius, thresh_mode);
 
-        workflow.add_operation(Box::new(threshold));
+        workflow.chain_operations(Box::new(threshold));
 
         debug!(
             "Added threshold operation with mode {:?}  and value {:?}",
@@ -129,15 +129,15 @@ pub fn parse_options<T: IntoImage>(
             lower, upper
         );
         let stretch_contrast = StretchContrast::new(lower, upper);
-        workflow.add_operation(Box::new(stretch_contrast));
+        workflow.chain_operations(Box::new(stretch_contrast));
     } else if argument == "gamma" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added gamma filter with value {}", value);
-        workflow.add_operation(Box::new(Gamma::new(value)));
+        workflow.chain_operations(Box::new(Gamma::new(value)));
     } else if argument == "contrast" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added contrast filter with value {},", value);
-        workflow.add_operation(Box::new(Contrast::new(value)));
+        workflow.chain_operations(Box::new(Contrast::new(value)));
     } else if argument == "resize" {
         let values = args
             .get_many::<usize>(argument)
@@ -154,7 +154,7 @@ pub fn parse_options<T: IntoImage>(
             "Added resize operation with width:{}, height:{}",
             width, height
         );
-        workflow.add_operation(Box::new(func));
+        workflow.chain_operations(Box::new(func));
     } else if argument == "depth" {
         let value = *args.get_one::<u8>(argument).unwrap();
         let depth = match value {
@@ -168,7 +168,7 @@ pub fn parse_options<T: IntoImage>(
         };
         debug!("Added depth operation with depth of {value}");
 
-        workflow.add_operation(Box::new(Depth::new(depth)));
+        workflow.chain_operations(Box::new(Depth::new(depth)));
     } else if argument == "colorspace" {
         let colorspace = args
             .get_one::<IColorSpace>("colorspace")
@@ -177,29 +177,29 @@ pub fn parse_options<T: IntoImage>(
 
         debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
 
-        workflow.add_operation(Box::new(ColorspaceConv::new(colorspace)))
+        workflow.chain_operations(Box::new(ColorspaceConv::new(colorspace)))
     } else if argument == "auto-orient" {
         debug!("Add auto orient operation");
         //workflow.add_operation(Box::new(AutoOrient))
     } else if argument == "exposure" {
         let exposure = *args.get_one::<f32>(argument).unwrap();
 
-        workflow.add_operation(Box::new(Exposure::new(exposure, 0.)));
+        workflow.chain_operations(Box::new(Exposure::new(exposure, 0.)));
         debug!("Adding exposure argument with value {}", exposure);
     } else if argument == "v-flip" {
         debug!("Added v-flip argument");
-        workflow.add_operation(Box::new(VerticalFlip::new()))
+        workflow.chain_operations(Box::new(VerticalFlip::new()))
     } else if argument == "huerotate" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.add_operation(Box::new(HsvAdjust::new(value, 1f32, 1f32)));
+        workflow.chain_operations(Box::new(HsvAdjust::new(value, 1f32, 1f32)));
         debug!("Added hue-rotate argument with value {}", value);
     } else if argument == "saturate" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.add_operation(Box::new(HsvAdjust::new(0f32, value, 1f32)));
+        workflow.chain_operations(Box::new(HsvAdjust::new(0f32, value, 1f32)));
         debug!("Added saturate argument with value {}", value);
     } else if argument == "lightness" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.add_operation(Box::new(HsvAdjust::new(0f32, 1f32, value)));
+        workflow.chain_operations(Box::new(HsvAdjust::new(0f32, 1f32, value)));
         debug!("Added lightness argument with value {}", value);
     }
 

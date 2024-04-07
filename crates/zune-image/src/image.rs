@@ -103,14 +103,22 @@ impl Image {
         self.metadata.depth()
     }
     /// Set image depth
+    ///
+    /// Ensure that the image is in a certain depth before changing this
+    /// otherwise bad things will happen
     pub fn set_depth(&mut self, depth: BitDepth) {
         self.metadata.set_depth(depth)
     }
 
+    /// Return an immutable reference to the metadata of the image
     pub const fn metadata(&self) -> &ImageMetadata {
         &self.metadata
     }
 
+    /// Return a mutable reference to the image metadata.
+    ///
+    /// Do not modify elements like width and height anyhowly, it may corrupt
+    /// the image in ways only God knows
     pub fn metadata_mut(&mut self) -> &mut ImageMetadata {
         &mut self.metadata
     }
@@ -125,6 +133,8 @@ impl Image {
         &self.frames
     }
 
+    /// Return a mutable reference to all image frames.
+    ///
     pub fn frames_mut(&mut self) -> &mut [Frame] {
         &mut self.frames
     }
@@ -189,6 +199,7 @@ impl Image {
             todo!("Unimplemented")
         }
     }
+    /// Convert the images to
     pub fn flatten_to_u8(&self) -> Vec<Vec<u8>> {
         if self.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
@@ -228,6 +239,9 @@ impl Image {
         self.metadata.set_dimensions(width, height);
     }
 
+    /// Set the colorspace of the image.
+    ///
+    /// Do not do this without ensuring the image is in that colorspace
     pub(crate) fn set_colorspace(&mut self, colorspace: ColorSpace) {
         self.metadata.set_colorspace(colorspace);
     }

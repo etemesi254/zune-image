@@ -9,13 +9,16 @@
 use alloc::{format, vec};
 use std::collections::HashMap;
 
-use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
 use crate::errors::HdrEncodeErrors;
 
 /// A simple HDR encoder
+///
+/// Data is expected to be in `f32` and its size should be
+/// `width*height*3`
 pub struct HdrEncoder<'a> {
     data:    &'a [f32],
     headers: Option<&'a HashMap<String, String>>,
@@ -86,7 +89,7 @@ impl<'a> HdrEncoder<'a> {
     /// - Err(HdrEncodeErrors): An error if something occurred
     ///
     /// # Examples
-    /// Encode a black image of 10x10
+    /// - Encode a black image of 10x10
     ///```
     /// use zune_core::bit_depth::BitDepth;
     /// use zune_core::colorspace::ColorSpace;
@@ -99,11 +102,30 @@ impl<'a> HdrEncoder<'a> {
     /// let opts = EncoderOptions::new(w,h,ColorSpace::RGB,BitDepth::Float32);
     /// let encoder = HdrEncoder::new(&data,opts);
     /// // create output buffer , this is the upper limit on it
-    /// let mut output = vec![0;encoder.expected_buffer_size().unwrap()];
+    /// let mut output = Vec::with_capacity(encoder.expected_buffer_size().unwrap());
     /// let size = encoder.encode(&mut output).unwrap();
-    /// // trim it so that the buffer only contains encoded hdr
-    /// output.truncate(size);
     ///```  
+    ///
+    /// - Encode but directly write to a file
+    ///```no_run
+    /// use std::fs::OpenOptions;
+    /// use std::io::{BufReader, BufWriter};
+    /// use zune_core::bit_depth::BitDepth;
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_core::options::EncoderOptions;
+    /// use zune_hdr::HdrEncoder;
+    /// let w = 10;
+    /// let h = 10;
+    /// let comp = 3;
+    /// let data = vec![0.0_f32;w*h*comp];
+    /// let opts = EncoderOptions::new(w,h,ColorSpace::RGB,BitDepth::Float32);
+    /// let encoder = HdrEncoder::new(&data,opts);
+    /// // create output buffer , this is the upper limit on it
+    /// let mut output = OpenOptions::new().create(true).write(true).truncate(true).open("./black.hdr").unwrap();
+    /// let mut buffered_output = BufWriter::new(output);
+    /// let size = encoder.encode(&mut buffered_output).unwrap();
+    ///
+    /// ```
     pub fn encode<T: ZByteWriterTrait>(&self, out: T) -> Result<usize, HdrEncodeErrors> {
         let expected = self
             .options
@@ -141,11 +163,8 @@ impl<'a> HdrEncoder<'a> {
             writer.write_all(b"FORMAT=32-bit_rle_rgbe\n\n")?;
 
             // write lengths
-            let length_format = format!(
-                "-Y {} +X {}\n",
-                self.options.height(),
-                self.options.width()
-            );
+            let length_format =
+                format!("-Y {} +X {}\n", self.options.height(), self.options.width());
 
             writer.write_all(length_format.as_bytes())?;
         }

@@ -29,13 +29,13 @@ pub fn parse_options<T: IntoImage>(
         debug!("Added box blur filter with radius {}", radius);
 
         let box_blur = BoxBlur::new(radius);
-        workflow.add_operation(Box::new(box_blur));
+        workflow.chain_operations(Box::new(box_blur));
     } else if argument == "blur" {
         let sigma = *args.get_one::<f32>(argument).unwrap();
         debug!("Added gaussian blur filter with radius {}", sigma);
 
         let gaussian_blur = GaussianBlur::new(sigma);
-        workflow.add_operation(Box::new(gaussian_blur));
+        workflow.chain_operations(Box::new(gaussian_blur));
     } else if argument == "unsharpen" {
         // parse first one as threshold
         let values: Vec<f32> = args.get_many::<f32>(argument).unwrap().copied().collect();
@@ -48,19 +48,19 @@ pub fn parse_options<T: IntoImage>(
         );
 
         let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, 0);
-        workflow.add_operation(Box::new(unsharpen))
+        workflow.chain_operations(Box::new(unsharpen))
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added mean blur filter with radius {}", radius);
 
         let mean_blur = SpatialOps::new(radius, SpatialOperations::Mean);
-        workflow.add_operation(Box::new(mean_blur));
+        workflow.chain_operations(Box::new(mean_blur));
     } else if argument == "sobel" {
         debug!("Added sobel filter");
-        workflow.add_operation(Box::new(Sobel::new()));
+        workflow.chain_operations(Box::new(Sobel::new()));
     } else if argument == "scharr" {
         debug!("Added scharr filter");
-        workflow.add_operation(Box::new(Scharr::new()))
+        workflow.chain_operations(Box::new(Scharr::new()))
     } else if argument == "convolve" {
         debug!("Adding convolution filter");
 
@@ -72,13 +72,13 @@ pub fn parse_options<T: IntoImage>(
             .map(|x| **x)
             .collect();
 
-        workflow.add_operation(Box::new(Convolve::new(values, 1.0)))
+        workflow.chain_operations(Box::new(Convolve::new(values, 1.0)))
     } else if argument == "median-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
 
         let blur = Median::new(radius);
         debug!("Added median blur with  radius of {radius}");
-        workflow.add_operation(Box::new(blur));
+        workflow.chain_operations(Box::new(blur));
     }
 
     Ok(())

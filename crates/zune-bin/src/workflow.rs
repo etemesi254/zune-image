@@ -67,7 +67,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if format.has_decoder() {
                 workflow
                     .inner
-                    .add_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options))
+                    .chain_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options));
             } else {
                 return Err(ImageErrors::ImageDecoderNotImplemented(format));
             }

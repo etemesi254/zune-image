@@ -20,6 +20,7 @@
 //!
 //! # Metadata
 //! - Radiance images usually store metadata in key value pairs.
+//!
 //! During decoding, we extract this metadata from the headers into a hashmap for which we provide
 //! via get_metadata method, the decoder does not in any way interpret the metadata to understand
 //! the image characteristics or colorspace, it is the caller's work to do that.

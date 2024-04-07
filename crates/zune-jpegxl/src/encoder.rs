@@ -1051,7 +1051,7 @@ impl<'a> JxlSimpleEncoder<'a> {
     /// bytes or an error if there was any that occurred during encoding
     ///
     /// # Returns
-    /// Ok(vec): The result of encoding the image
+    /// Ok(usize): The number of bytes written to the sink
     ///
     /// Err(e): The error incase one is encountered
     ///

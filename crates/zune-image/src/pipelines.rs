@@ -94,19 +94,16 @@ where
         }
     }
 
-    /// Add a single decoder for this image
-    pub fn add_decoder(&mut self, decoder: T) {
-        self.decode = Some(decoder);
-    }
-
-    pub fn add_operation(&mut self, operations: Box<dyn OperationsTrait>) {
-        self.operations.push(operations);
-    }
     /// Add an image to this chain.
     pub fn chain_image(&mut self, image: Image) {
         self.image.push(image);
     }
 
+    /// Override the decoder present in the pipeline with a different
+    /// decoder.
+    ///
+    /// There can only be one decoder in a pipeline, so the last decoder
+    /// is the one that will be considered.
     pub fn chain_decoder(&mut self, decoder: T) -> &mut Pipeline<T> {
         self.decode = Some(decoder);
         self

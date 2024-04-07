@@ -50,8 +50,8 @@ where
         let (width, height) = self.dimensions().unwrap();
 
         let metadata = ImageMetadata {
-            width: width,
-            height: height,
+            width,
+            height,
             colorspace: ColorSpace::RGB,
             depth: BitDepth::Float32,
             format: Some(ImageFormat::HDR),

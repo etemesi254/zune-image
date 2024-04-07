@@ -579,9 +579,6 @@ impl Image {
 
     /// Open an encoded file for which the library has a configured decoder for it
     ///
-    /// # Note
-    /// - This reads the whole file into memory before parsing
-    /// do not use for large files
     ///
     /// - The decoders supported can be switched on and off depending on how
     ///  you configure your Cargo.toml. It is generally recommended to not enable decoders
@@ -591,7 +588,7 @@ impl Image {
     /// - file: The file path from which to read the file from, the file must be a supported format
     /// otherwise it's an error to try and decode
     ///
-    /// See also [open_from_mem](Self::read) for reading from memory
+    /// See also [read](Self::read) for reading from memory
     pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors> {
         Self::open_with_options(file, DecoderOptions::default())
     }
@@ -652,11 +649,31 @@ impl Image {
         }
     }
 
-    fn encode<T: ZByteWriterTrait>(
+    /// Encode to a generic sink an image of a specific format
+    ///
+    /// # Arguments
+    ///
+    ///  - format: The image format to write to sink
+    ///  - sink: An encapsulation of where we will be sending data to
+    ///
+    /// # Returns
+    ///  - The size of bytes written to sink or an error if it occurs
+    ///
+    pub fn encode<T: ZByteWriterTrait>(
         &self, format: ImageFormat, sink: T
     ) -> Result<usize, ImageErrors> {
         self.encode_with_options(format, EncoderOptions::default(), sink)
     }
+    /// Encode to a generic sink an image of a specific format
+    ///
+    /// # Arguments
+    ///
+    ///  - format: The image format to write to sink
+    ///  - sink: An encapsulation of where we will be sending data to
+    ///  - encoder_options: Custom options used for encoding
+    /// # Returns
+    ///  - The size of bytes written to sink or an error if it occurs
+    ///
     fn encode_with_options<T: ZByteWriterTrait>(
         &self, format: ImageFormat, encoder_options: EncoderOptions, sink: T
     ) -> Result<usize, ImageErrors> {
