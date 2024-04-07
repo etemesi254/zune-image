@@ -9,29 +9,29 @@ use crate::utils::{zil_free, zil_malloc};
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum ZStatusType {
     /// Everything is okay, operation succeeded
-    Ok = 0,
+    ZilOk = 0,
     /// The buffer passed to a function wasn't enough to
     /// store the results
-    NotEnoughSpaceInDest,
+    ZilNotEnoughSpaceInDest,
     /// An error that doesn't fit into a specific genre
-    Generic,
+    ZilGeneric,
     /// An error originating from decoding
-    DecodeErrors,
+    ZilDecodeErrors,
     /// An error originating from Input output errors
-    IoErrors,
+    ZilIoErrors,
     /// Malloc failed
-    MallocFailed,
+    ZilMallocFailed,
     /// Status is null, indicates the passed status value is null
     /// useful when we have been asked for status code but
     /// passed a null status
-    NullStatus,
+    ZilNullStatus,
     /// Image is null
     ///
     /// An operation expecting a non_null image got a null image
-    ImageIsNull,
+    ZilImageIsNull,
     /// Image operation failed
-    ImageOperationError // Image encoding failed
-                        //ImageEncodingFailed
+    ZilImageOperationError // Image encoding failed
+                           //ImageEncodingFailed
 }
 
 /// A status indicator that tells you more about things that went wrong
@@ -73,7 +73,7 @@ impl ZStatus {
     }
     /// Return okay
     pub fn okay() -> ZStatus {
-        ZStatus::new("Ok", ZStatusType::Ok)
+        ZStatus::new("Ok", ZStatusType::ZilOk)
     }
 }
 
@@ -92,7 +92,7 @@ pub extern "C" fn zil_status_ok(status: *const ZStatus) -> bool {
     if status.is_null() {
         return false;
     }
-    unsafe { (*status).status == ZStatusType::Ok }
+    unsafe { (*status).status == ZStatusType::ZilOk }
 }
 
 /// Create a new image status struct
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn zil_status_new() -> *mut ZStatus {
     }
     if !ptr.is_null() {
         (*ptr.cast::<ZStatus>()).message = mem.cast();
-        (*ptr.cast::<ZStatus>()).status = ZStatusType::Ok;
+        (*ptr.cast::<ZStatus>()).status = ZStatusType::ZilOk;
     }
     // make pointer
     ptr.cast()
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn zil_status_new() -> *mut ZStatus {
 #[no_mangle]
 pub extern "C" fn zil_status_code(status: *const ZStatus) -> ZStatusType {
     if status.is_null() {
-        return ZStatusType::NullStatus;
+        return ZStatusType::ZilNullStatus;
     }
     // safety, checked above if it's null
     unsafe { (*status).status }

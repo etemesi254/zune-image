@@ -68,7 +68,7 @@ pub extern "C" fn zil_imread(
                     unsafe {
                         *status = ZStatus::new(
                             format!("Malloc failed to allocate buffer with size of {}", new_size),
-                            ZStatusType::MallocFailed
+                            ZStatusType::ZilMallocFailed
                         )
                     };
                     return ptr::null();
@@ -89,13 +89,13 @@ pub extern "C" fn zil_imread(
                 }
             } else {
                 unsafe {
-                    *status = ZStatus::new("UnknownDepth image format", ZStatusType::Generic)
+                    *status = ZStatus::new("ZilUnknownDepth image format", ZStatusType::ZilGeneric)
                 };
                 return ptr::null();
             }
         }
         Err(e) => {
-            unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::IoErrors) };
+            unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::ZilIoErrors) };
             return ptr::null();
         }
     }
@@ -149,7 +149,7 @@ pub extern "C" fn zil_imread_into(
             status
         ),
         Err(err) => {
-            unsafe { *status = ZStatus::new(err.to_string(), ZStatusType::IoErrors) };
+            unsafe { *status = ZStatus::new(err.to_string(), ZStatusType::ZilIoErrors) };
         }
     }
 }
@@ -172,7 +172,7 @@ pub extern "C" fn zil_read_headers_from_file(
         Ok(bytes) => zil_read_headers_from_memory(bytes.as_ptr(), bytes.len() as _, status),
         Err(error) => {
             unsafe {
-                (*status) = ZStatus::new(error.to_string(), ZStatusType::IoErrors);
+                (*status) = ZStatus::new(error.to_string(), ZStatusType::ZilIoErrors);
             };
             ZImageMetadata::default()
         }
@@ -196,7 +196,7 @@ pub extern "C" fn zil_read_headers_from_memory(
     unsafe {
         (*status) = ZStatus::new(
             "Could not decode headers, unknown error",
-            ZStatusType::DecodeErrors
+            ZStatusType::ZilDecodeErrors
         );
     };
     let contents = unsafe { std::slice::from_raw_parts(input, input_size) };
@@ -248,7 +248,7 @@ pub extern "C" fn zil_imdecode(
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
-            unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
+            unsafe { *status = ZStatus::new(msg, ZStatusType::ZilDecodeErrors) };
             return ptr::null();
         }
         Some(metadata) => {
@@ -262,7 +262,7 @@ pub extern "C" fn zil_imdecode(
                 unsafe {
                     *status = ZStatus::new(
                         format!("Malloc failed to allocate buffer with size of {}", size),
-                        ZStatusType::MallocFailed
+                        ZStatusType::ZilMallocFailed
                     )
                 };
                 return ptr::null();
@@ -318,7 +318,7 @@ pub extern "C" fn zil_imdecode_into(
         None => {
             let msg = "Could not decode headers".to_string();
             // safety: We checked above if status is null
-            unsafe { *status = ZStatus::new(msg, ZStatusType::DecodeErrors) };
+            unsafe { *status = ZStatus::new(msg, ZStatusType::ZilDecodeErrors) };
         }
         Some(metadata) => {
             let (w, h) = metadata.dimensions();
@@ -330,12 +330,12 @@ pub extern "C" fn zil_imdecode_into(
             if buf.len() < size {
                 let msg = format!("Expected buffer of size {},but found {}", size, buf.len());
                 // safety, we checked above if status is null
-                unsafe { *status = ZStatus::new(msg, ZStatusType::NotEnoughSpaceInDest) };
+                unsafe { *status = ZStatus::new(msg, ZStatusType::ZilNotEnoughSpaceInDest) };
                 return;
             }
 
             if let Err(e) = imdecode_inner(ZCursor::new(contents), buf) {
-                unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::DecodeErrors) };
+                unsafe { *status = ZStatus::new(e.to_string(), ZStatusType::ZilDecodeErrors) };
                 return;
             }
             // write parameters
@@ -353,7 +353,7 @@ pub extern "C" fn zil_imdecode_into(
             }
 
             // safety, we checked above if the status is null
-            unsafe { (*status).status = ZStatusType::Ok }
+            unsafe { (*status).status = ZStatusType::ZilOk }
         }
     }
 }

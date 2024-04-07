@@ -34,7 +34,7 @@ where
     }
     if image.is_null() {
         unsafe {
-            *status = ZStatus::new("Image is null", ZStatusType::ImageIsNull);
+            *status = ZStatus::new("Image is null", ZStatusType::ZilImageIsNull);
         };
         return;
     }
@@ -42,7 +42,7 @@ where
 
     if let Err(err) = filter.execute_impl(image) {
         unsafe {
-            *status = ZStatus::new(err.to_string(), ZStatusType::ImageOperationError);
+            *status = ZStatus::new(err.to_string(), ZStatusType::ZilImageOperationError);
         }
     }
 }
@@ -122,7 +122,7 @@ pub extern "C" fn zil_imgproc_blend(
     }
     if image2.is_null() {
         unsafe {
-            *status = ZStatus::new("Image2 is null", ZStatusType::ImageIsNull);
+            *status = ZStatus::new("Image2 is null", ZStatusType::ZilImageIsNull);
         }
         return;
     }

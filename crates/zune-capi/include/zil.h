@@ -16,44 +16,52 @@ typedef enum ZImageColorspace {
   /**
    * Unknown image colorspace
    */
-  UnknownColorspace = 0,
+  ZilUnknownColorspace = 0,
   /**
    * Red, Green , Blue
    */
-  RGB,
+  ZilRGB,
   /**
    * Red, Green, Blue, Alpha
    */
-  RGBA,
+  ZilRGBA,
   /**
    * YUV colorspace
    */
-  YCbCr,
+  ZilYCbCr,
   /**
    * Grayscale colorspace
    */
-  Luma,
+  ZilLuma,
   /**
    * Grayscale with alpha colorspace
    */
-  LumaA,
-  YCCK,
+  ZilLumaA,
+  ZilYCCK,
   /**
    * Cyan , Magenta, Yellow, Black
    */
-  CMYK,
+  ZilCMYK,
   /**
    * Blue, Green, Red
    */
-  BGR,
+  ZilBGR,
   /**
    * Blue, Green, Red, Alpha
    */
-  BGRA,
+  ZilBGRA,
   /**
    * Alpha, Blue Green, Red
    */
-  ARGB,
+  ZilARGB,
+  /**
+   * Hue, Saturation, Lightness,
+   */
+  ZilHSL,
+  /**
+   * Hue, Saturation,Variance
+   */
+  ZilHSV,
 } ZImageColorspace;
 
 /**
@@ -72,19 +80,19 @@ typedef enum ZImageDepth {
   /**
    * Image depth is unknown
    */
-  UnknownDepth = 0,
+  ZilUnknownDepth = 0,
   /**
    *8-bit images
    */
-  U8 = 1,
+  ZilU8 = 1,
   /**
    * 16 bit images
    */
-  U16 = 2,
+  ZilU16 = 2,
   /**
    * Float 32 images
    */
-  F32 = 4,
+  ZilF32 = 4,
 } ZImageDepth;
 
 /**
@@ -98,43 +106,43 @@ typedef enum ZImageFormat {
   /**
    * Any unknown format
    */
-  UnknownFormat = 0,
+  ZilUnknownFormat = 0,
   /**
    * Joint Photographic Experts Group
    */
-  JPEG,
+  ZilJPEG,
   /**
    * Portable Network Graphics
    */
-  PNG,
+  ZilPNG,
   /**
    * Portable Pixel Map image
    */
-  PPM,
+  ZilPPM,
   /**
    * Photoshop PSD component
    */
-  PSD,
+  ZilPSD,
   /**
    * Farbfeld format
    */
-  Farbfeld,
+  ZilFarbfeld,
   /**
    * Quite Okay Image
    */
-  QOI,
+  ZilQOI,
   /**
    * JPEG XL, new format
    */
-  JPEG_XL,
+  ZilJPEG_XL,
   /**
    * Radiance HDR decoder
    */
-  HDR,
+  ZilHDR,
   /**
    * Windows Bitmap Files
    */
-  BMP,
+  ZilBMP,
 } ZImageFormat;
 
 /**
@@ -184,6 +192,10 @@ typedef enum ZStatusType {
   ImageOperationError,
 } ZStatusType;
 
+/**
+ * Represents a single image
+ */
+typedef struct Image Image;
 
 /**
  * A status indicator that tells you more about things that went wrong
@@ -254,12 +266,12 @@ void zil_free_and_null(void **ptr);
  * This function inspects the first few bytes of an image file
  * to determine the actual image codec the file is in
  *
- * If the format cannot be deduced or it's unknown returns `ZImageFormat::UnknownDepth`
+ * If the format cannot be deduced or it's unknown returns `ZImageFormat::ZilUnknownDepth`
  *
  * @param bytes: A memory address containing image data, must point to a valid memory address
  * @param size: Size of the bytes parameter, must not exceed `bytes` length
  *
- * @returns ZImageFormat the image format of the bytes, or ZImageFormat::UnknownDepth if the image is unknown
+ * @returns ZImageFormat the image format of the bytes, or ZImageFormat::ZilUnknownDepth if the image is unknown
  *
  */
 enum ZImageFormat zil_guess_format(const uint8_t *bytes,
@@ -391,8 +403,7 @@ void zil_imgproc_blend(ZImage *image1,
 /**
  * Brighten an image
  *
- * This increases an image pixels by a specific value `value`
- * which has a brighten effect.
+ * This increases or reduces an image pixels by a specific value `value`
  *
  * Formula
  *
@@ -401,10 +412,12 @@ void zil_imgproc_blend(ZImage *image1,
  * \endcode
  *
  * \param image: Mutable image, should not be null
- * \param value: Value to be added to image
+ * \param value: Value to be added to image, should be between -1 and 1 where -1 is total darkness and 1 is total brightness
  * \param status: Image status recorder
  */
-void zil_imgproc_brighten(ZImage *image, float value, struct ZStatus *status);
+void zil_imgproc_brighten(ZImage *image,
+                          float value,
+                          struct ZStatus *status);
 
 /**
  * Change image bit depth of the image
@@ -549,6 +562,17 @@ void zil_imgproc_gaussian_blur(ZImage *image, float sigma, struct ZStatus *statu
  *
  */
 void zil_imgproc_invert(ZImage *image, struct ZStatus *status);
+
+/**
+ * Carry out a median blur operation on the image
+ *
+ * Applies a median filter of given dimensions to an image. Each output pixel is the median
+ * of the pixels in a `(2 * radius + 1) * (2 * radius + 1)` kernel of pixels in the input image.
+ *
+ *
+ * \param radius: The radius of the window
+ */
+void zil_imgproc_median_blur(ZImage *image, size_t radius, struct ZStatus *status);
 
 /**
  * Carry out scharr operations

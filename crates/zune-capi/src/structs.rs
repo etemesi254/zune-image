@@ -17,9 +17,9 @@ impl Default for ZImageMetadata {
         ZImageMetadata {
             width:      0,
             height:     0,
-            depth:      ZImageDepth::UnknownDepth,
-            colorspace: ZImageColorspace::UnknownColorspace,
-            format:     ZImageFormat::UnknownFormat
+            depth:      ZImageDepth::ZilUnknownDepth,
+            colorspace: ZImageColorspace::ZilUnknownColorspace,
+            format:     ZImageFormat::ZilUnknownFormat
         }
     }
 }

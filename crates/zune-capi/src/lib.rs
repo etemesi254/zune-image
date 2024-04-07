@@ -38,7 +38,7 @@ fn hello() {
     // let c_str = CString::new(file).unwrap();
     // let mut w = 0;
     // let mut h = 0;
-    // let mut depth = ZImageDepth::UnknownDepth;
+    // let mut depth = ZImageDepth::ZilUnknownDepth;
     // let mut channels = 0;
     // let mut status = zil_status_new();
     //

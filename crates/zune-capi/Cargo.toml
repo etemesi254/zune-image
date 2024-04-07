@@ -1,19 +1,19 @@
 [package]
 name = "zune-capi"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-capi"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-crate-type = ["dylib","staticlib"]
-name="zil_c"
+crate-type = ["dylib", "staticlib"]
+name = "zil_c"
 
 
 [dependencies]
 zune-image = { path = "../zune-image" }
 zune-imageprocs = { path = "../zune-imageprocs" }
-zune-core = {path = "../zune-core"}
-libc="0.2.147"
+zune-core = { path = "../zune-core" }
+libc = "0.2.147"
 

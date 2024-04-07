@@ -9,7 +9,7 @@ use zune_core::options::DecoderOptions;
 use zune_image::errors::ImageErrors;
 
 use crate::enums::{ZImageColorspace, ZImageDepth, ZImageFormat};
-use crate::errno::ZStatusType::{DecodeErrors, ImageIsNull, IoErrors};
+use crate::errno::ZStatusType::{ZilDecodeErrors, ZilImageIsNull, ZilIoErrors};
 use crate::errno::{ZStatus, ZStatusType};
 use crate::utils::zil_free;
 use crate::ZImage;
@@ -19,7 +19,7 @@ use crate::ZImage;
 extern "C" fn zil_zimg_width(image: *mut ZImage, status: *mut ZStatus) -> usize {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return 0;
     }
@@ -31,7 +31,7 @@ extern "C" fn zil_zimg_width(image: *mut ZImage, status: *mut ZStatus) -> usize 
 extern "C" fn zil_zimg_height(image: *mut ZImage, status: *mut ZStatus) -> usize {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return 0;
     }
@@ -43,9 +43,9 @@ extern "C" fn zil_zimg_height(image: *mut ZImage, status: *mut ZStatus) -> usize
 extern "C" fn zil_zimg_depth(image: *mut ZImage, status: *mut ZStatus) -> ZImageDepth {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
-        return ZImageDepth::UnknownDepth;
+        return ZImageDepth::ZilUnknownDepth;
     }
     unsafe { ZImageDepth::from((*image).depth()) }
 }
@@ -55,9 +55,9 @@ extern "C" fn zil_zimg_depth(image: *mut ZImage, status: *mut ZStatus) -> ZImage
 extern "C" fn zil_zimg_colorspace(image: *mut ZImage, status: *mut ZStatus) -> ZImageColorspace {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
-        return ZImageColorspace::UnknownColorspace;
+        return ZImageColorspace::ZilUnknownColorspace;
     }
     unsafe { ZImageColorspace::from((*image).colorspace()) }
 }
@@ -73,7 +73,7 @@ extern "C" fn zil_zimg_colorspace(image: *mut ZImage, status: *mut ZStatus) -> Z
 extern "C" fn zil_zimg_get_out_buffer_size(image: *mut ZImage, status: *mut ZStatus) -> usize {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return 0;
     }
@@ -100,7 +100,7 @@ pub extern "C" fn zil_zimg_write_to_output(
 ) -> usize {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return 0;
     }
@@ -137,7 +137,9 @@ pub extern "C" fn zil_zimg_write_to_output(
         Ok(bytes) => bytes * image.depth().size_of(),
         Err(err) => {
             if !status.is_null() {
-                unsafe { *status = ZStatus::new(err.to_string(), ZStatusType::ImageOperationError) }
+                unsafe {
+                    *status = ZStatus::new(err.to_string(), ZStatusType::ZilImageOperationError)
+                }
             }
             0
         }
@@ -180,7 +182,7 @@ pub extern "C" fn zil_zimg_free(image: *mut ZImage) {
 pub extern "C" fn zil_zimg_open(file: *const c_char, image: *mut ZImage, status: *mut ZStatus) {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return;
     }
@@ -193,13 +195,13 @@ pub extern "C" fn zil_zimg_open(file: *const c_char, image: *mut ZImage, status:
             }
             Err(err) => {
                 if !status.is_null() {
-                    unsafe { *status = ZStatus::new(err.to_string(), DecodeErrors) };
+                    unsafe { *status = ZStatus::new(err.to_string(), ZilDecodeErrors) };
                 }
             }
         },
         Err(err) => {
             if !status.is_null() {
-                unsafe { *status = ZStatus::new(err.to_string(), IoErrors) };
+                unsafe { *status = ZStatus::new(err.to_string(), ZilIoErrors) };
             }
         }
     }
@@ -218,7 +220,7 @@ pub extern "C" fn zil_zimg_read_from_memory(
 ) {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return;
     }
@@ -231,7 +233,7 @@ pub extern "C" fn zil_zimg_read_from_memory(
         }
         Err(err) => {
             if !status.is_null() {
-                unsafe { *status = ZStatus::new(err.to_string(), DecodeErrors) };
+                unsafe { *status = ZStatus::new(err.to_string(), ZilDecodeErrors) };
             }
         }
     };
@@ -252,7 +254,7 @@ pub extern "C" fn zil_zimg_write_to_disk(
 ) {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return;
     }
@@ -264,13 +266,13 @@ pub extern "C" fn zil_zimg_write_to_disk(
         Ok(bytes) => {
             if let Err(e) = image.save(bytes) {
                 if !status.is_null() {
-                    unsafe { *status = ZStatus::new(e.to_string(), DecodeErrors) };
+                    unsafe { *status = ZStatus::new(e.to_string(), ZilDecodeErrors) };
                 }
             }
         }
         Err(err) => {
             if !status.is_null() {
-                unsafe { *status = ZStatus::new(err.to_string(), IoErrors) };
+                unsafe { *status = ZStatus::new(err.to_string(), ZilIoErrors) };
             }
         }
     }
@@ -293,7 +295,7 @@ pub extern "C" fn zil_zimg_write_to_disk_with_format(
 ) {
     if image.is_null() {
         if !status.is_null() {
-            unsafe { *status = ZStatus::new("Image null", ImageIsNull) };
+            unsafe { *status = ZStatus::new("Image null", ZilImageIsNull) };
         }
         return;
     }
@@ -305,13 +307,13 @@ pub extern "C" fn zil_zimg_write_to_disk_with_format(
         Ok(bytes) => {
             if let Err(e) = image.save_to(bytes, format.to_format()) {
                 if !status.is_null() {
-                    unsafe { *status = ZStatus::new(e.to_string(), DecodeErrors) };
+                    unsafe { *status = ZStatus::new(e.to_string(), ZilDecodeErrors) };
                 }
             }
         }
         Err(err) => {
             if !status.is_null() {
-                unsafe { *status = ZStatus::new(err.to_string(), IoErrors) };
+                unsafe { *status = ZStatus::new(err.to_string(), ZilIoErrors) };
             }
         }
     }

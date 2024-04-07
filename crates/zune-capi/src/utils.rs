@@ -11,19 +11,19 @@ use crate::enums::ZImageFormat;
 /// This function inspects the first few bytes of an image file
 /// to determine the actual image codec the file is in
 ///
-/// If the format cannot be deduced or it's unknown returns `ZImageFormat::UnknownDepth`
+/// If the format cannot be deduced or it's unknown returns `ZImageFormat::ZilUnknownDepth`
 ///
 /// @param bytes: A memory address containing image data, must point to a valid memory address
 /// @param size: Size of the bytes parameter, must not exceed `bytes` length
 ///
-/// @returns ZImageFormat the image format of the bytes, or ZImageFormat::UnknownDepth if the image is unknown
+/// @returns ZImageFormat the image format of the bytes, or ZImageFormat::ZilUnknownDepth if the image is unknown
 ///
 #[no_mangle]
 pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZImageFormat {
     let slice = std::slice::from_raw_parts(bytes, size);
 
     match zune_image::codecs::guess_format(ZCursor::new(slice)) {
-        None => ZImageFormat::UnknownFormat,
+        None => ZImageFormat::ZilUnknownFormat,
         Some((format, _)) => ZImageFormat::from(format)
     }
 }
