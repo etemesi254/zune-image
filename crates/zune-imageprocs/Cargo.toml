@@ -1,6 +1,6 @@
 [package]
 name = "zune-imageprocs"
-version = "0.4.15"
+version = "0.5.0-rc0"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-imageprocs"
 license = "MIT OR Apache-2.0 OR Zlib"
@@ -12,11 +12,11 @@ description = "Common image processing routines for zune-image"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "^0.4.12" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 kamadak-exif = { version = "0.5.5", optional = true }
 
 [dependencies.zune-image]
-version = "^0.4.14"
+version = "^0.5.0-rc0"
 path = "../zune-image"
 default-features = false
 #features = ["all"]

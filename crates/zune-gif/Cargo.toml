@@ -1,6 +1,6 @@
 [package]
 name = "zune-gif"
-version = "0.1.0"
+version = "0.5.0-rc0"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-gif"
 
@@ -11,5 +11,5 @@ repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-gif"
 log = ["zune-core/log"]
 
 [dependencies]
-zune-core = { version = "0.4", path = "../zune-core", default-features = false }
+zune-core = { version = "0.5.0-rc0", path = "../zune-core", default-features = false }
 

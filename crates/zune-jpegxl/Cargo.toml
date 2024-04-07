@@ -1,11 +1,11 @@
 [package]
 name = "zune-jpegxl"
-version = "0.4.0"
+version = "0.5.0-rc0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpegxl"
 license = "MIT OR Apache-2.0 OR Zlib"
-keywords = ["jpeg-xl", "jpeg-xl-decoder", "decoder","jxl"]
+keywords = ["jpeg-xl", "jpeg-xl-decoder", "decoder", "jxl"]
 categories = ["multimedia::images"]
 exclude = []
 description = "A simple, fast and fully safe modular jxl encoder"
@@ -14,7 +14,7 @@ description = "A simple, fast and fully safe modular jxl encoder"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { version = "0.4", path = "../zune-core" }
+zune-core = { version = "^0.5.0-rc0", path = "../zune-core" }
 
 [features]
 threads = []

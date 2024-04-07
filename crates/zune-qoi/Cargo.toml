@@ -1,6 +1,6 @@
 [package]
 name = "zune-qoi"
-version = "0.4.10"
+version = "0.5.0-rc0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-qoi"
@@ -13,8 +13,8 @@ description = "Quite Ok Image (QOI) decoder and encoder part of the zune-image f
 
 [features]
 log = ["zune-core/log"]
-std = []
+std = ["zune-core/std"]
 default = ["std", "log"]
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.4" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 

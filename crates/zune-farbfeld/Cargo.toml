@@ -1,12 +1,12 @@
 [package]
 name = "zune-farbfeld"
-version = "0.4.0"
+version = "0.5.0-rc0"
 edition = "2021"
 description = "Farbfeld image decoder"
 exclude = ["tests/"]
 homepage = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-farbfeld"
 keywords = ["image"]
-categories = ["multimedia::images", "multimedia::encoding","multimedia::decoding"]
+categories = ["multimedia::images", "multimedia::encoding"]
 license = "MIT OR Apache-2.0 OR Zlib"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,4 +14,4 @@ license = "MIT OR Apache-2.0 OR Zlib"
 log = ["zune-core/log"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.4" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }

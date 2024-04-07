@@ -1,6 +1,6 @@
 [package]
 name = "zune-png"
-version = "0.4.10"
+version = "0.5.0-rc0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/zune-png"
@@ -21,7 +21,7 @@ portable-simd = []
 default = ["sse", "std"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.4" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
 
 [dev-dependencies]

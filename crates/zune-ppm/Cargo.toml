@@ -1,6 +1,6 @@
 [package]
 name = "zune-ppm"
-version = "0.4.0"
+version = "0.5.0-rc0"
 edition = "2021"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-ppm"
@@ -17,4 +17,4 @@ description = "Portable Pixmap and Portable Floatmap Format Decoder and Encoder"
 log = ["zune-core/log"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "0.4" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
