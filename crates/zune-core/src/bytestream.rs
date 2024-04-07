@@ -16,7 +16,7 @@
 //! here to minimize code reuse
 pub use reader::ZReader;
 pub use traits::*;
-pub use writer::ZByteWriter;
+pub use writer::ZWriter;
 
 pub use crate::bytestream::reader::no_std_readers::*;
 //use crate::bytestream::reader::std_readers::*;

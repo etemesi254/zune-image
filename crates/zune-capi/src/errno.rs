@@ -7,6 +7,7 @@ use crate::utils::{zil_free, zil_malloc};
 /// Various representations of things that may go wrong
 #[repr(C)]
 #[derive(Copy, Clone, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum ZStatusType {
     /// Everything is okay, operation succeeded
     ZilOk = 0,

@@ -9,7 +9,7 @@
 use alloc::{format, vec};
 use std::collections::HashMap;
 
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
@@ -123,7 +123,7 @@ impl<'a> HdrEncoder<'a> {
                 self.options.colorspace()
             ));
         }
-        let mut writer = ZByteWriter::new(out);
+        let mut writer = ZWriter::new(out);
         // reserve space
         let size = self
             .expected_buffer_size()
@@ -186,7 +186,7 @@ impl<'a> HdrEncoder<'a> {
 }
 
 fn rle<T: ZByteWriterTrait>(
-    data: &[u8], writer: &mut ZByteWriter<T>, width: usize
+    data: &[u8], writer: &mut ZWriter<T>, width: usize
 ) -> Result<(), ZByteIoError> {
     const MIN_RLE: usize = 4;
     let mut cur = 0;

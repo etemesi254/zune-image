@@ -10,7 +10,7 @@
 use core::fmt::{Debug, Formatter};
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
@@ -121,7 +121,7 @@ impl<'a> FarbFeldEncoder<'a> {
     }
 
     fn encode_headers<T: ZByteWriterTrait>(
-        &self, stream: &mut ZByteWriter<T>
+        &self, stream: &mut ZWriter<T>
     ) -> Result<(), FarbFeldEncoderErrors> {
         // these routines panic because I need them
         // to panic as it is a me problem
@@ -168,7 +168,7 @@ impl<'a> FarbFeldEncoder<'a> {
 
         let out_size = calc_out_size(self.options);
 
-        let mut stream = ZByteWriter::new(sink);
+        let mut stream = ZWriter::new(sink);
 
         stream.reserve(out_size)?;
 

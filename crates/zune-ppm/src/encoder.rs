@@ -10,7 +10,7 @@ use alloc::format;
 use core::fmt::{Debug, Display, Formatter};
 
 use zune_core::bit_depth::BitType;
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::EncoderOptions;
 
@@ -111,7 +111,7 @@ impl<'a> PPMEncoder<'a> {
     }
 
     fn encode_headers<T: ZByteWriterTrait>(
-        &self, stream: &mut ZByteWriter<T>
+        &self, stream: &mut ZWriter<T>
     ) -> Result<(), PPMEncodeErrors> {
         let version = version_for_colorspace(self.options.colorspace()).ok_or(
             PPMEncodeErrors::UnsupportedColorspace(self.options.colorspace())
@@ -157,7 +157,7 @@ impl<'a> PPMEncoder<'a> {
         if expected != found {
             return Err(PPMEncodeErrors::TooShortInput(expected, found));
         }
-        let mut stream = ZByteWriter::new(out);
+        let mut stream = ZWriter::new(out);
         stream.reserve(expected + 37)?; // 37 arbitrary number, chosen by divinity, guaranteed to work
 
         self.encode_headers(&mut stream)?;
@@ -199,11 +199,9 @@ fn convert_tuple_type_to_pam(colorspace: ColorSpace) -> &'static str {
 
 const PPM_HEADER_SIZE: usize = 100;
 
-/// Gives expected minimum size for which the encoder wil guarrantee
+/// Gives expected minimum size for which the encoder wil guarantee
 /// that the given raw bytes will fit
 ///
-/// This can be used with [`encode_into`](crate::encoder::PPMEncoder::encode_into) to
-/// properly allocate an input buffer to be used for encoding
 #[inline]
 pub fn max_out_size(options: &EncoderOptions) -> usize {
     options

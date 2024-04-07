@@ -6,7 +6,7 @@
 
 use alloc::vec::Vec;
 
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::options::EncoderOptions;
 use zune_inflate::DeflateEncoder;
 
@@ -52,7 +52,7 @@ impl<'a> PngEncoder<'a> {
     }
 
     pub fn encode_headers<T: ZByteWriterTrait>(
-        &self, writer: &mut ZByteWriter<T>
+        &self, writer: &mut ZWriter<T>
     ) -> Result<(), ZByteIoError> {
         // write signature
         writer.write_u64_be(PNG_SIGNATURE);
@@ -72,7 +72,7 @@ impl<'a> PngEncoder<'a> {
     }
 
     pub fn encode<T: ZByteWriterTrait>(&mut self, sink: T) -> Result<usize, ZByteIoError> {
-        let mut writer = ZByteWriter::new(sink);
+        let mut writer = ZWriter::new(sink);
 
         self.encode_headers(&mut writer)?;
 
@@ -137,7 +137,7 @@ impl<'a> PngEncoder<'a> {
         self.encoded_chunks = DeflateEncoder::new(&self.filter_scanline).encode_zlib();
     }
     fn write_idat_chunks<T: ZByteWriterTrait>(
-        &self, writer: &mut ZByteWriter<T>
+        &self, writer: &mut ZWriter<T>
     ) -> Result<(), ZByteIoError> {
         debug_assert!(!self.encoded_chunks.is_empty());
         // Most decoders love data in 8KB chunks, since

@@ -4,7 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use zune_core::bytestream::{ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZWriter, ZByteWriterTrait};
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_core::options::EncoderOptions;
 
@@ -75,7 +75,7 @@ impl<'a> QoiEncoder<'a> {
             + QOI_PADDING
     }
     fn encode_headers<T: ZByteWriterTrait>(
-        &self, writer: &mut ZByteWriter<T>
+        &self, writer: &mut ZWriter<T>
     ) -> Result<(), QoiEncodeErrors> {
         let expected_len = self.options.width()
             * self.options.height()
@@ -135,7 +135,7 @@ impl<'a> QoiEncoder<'a> {
     /// - Ok(size): Actual bytes used for encoding
     /// - Err: The error encountered during encoding
     pub fn encode<T: ZByteWriterTrait>(&mut self, sink: T) -> Result<usize, QoiEncodeErrors> {
-        let mut stream = ZByteWriter::new(sink);
+        let mut stream = ZWriter::new(sink);
 
         self.encode_headers(&mut stream)?;
 

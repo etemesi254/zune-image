@@ -20,14 +20,25 @@ impl<T: AsRef<[u8]>> ZCursor<T> {
 }
 
 impl<T: AsRef<[u8]>> ZCursor<T> {
+    /// Move forward `num` bytes  from
+    /// the current position.
+    ///
+    /// It doesn't check that position overflowed, new position
+    /// may point past the internal buffer, all subsequent reads will
+    /// either return an error or zero depending on the method called
     #[inline]
     pub fn skip(&mut self, num: usize) {
         // Can this overflow ??
         self.position = self.position.wrapping_add(num);
     }
+    /// Move back `num` bytes from the current position
+    ///
+    ///
+    /// This saturates at zero, it can never be negative or wraparound
+    /// when the value becomes too small
     #[inline]
     pub fn rewind(&mut self, num: usize) {
-        self.position = self.position.checked_sub(num).unwrap();
+        self.position = self.position.saturating_sub(num);
     }
 }
 

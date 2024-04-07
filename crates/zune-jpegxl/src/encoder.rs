@@ -13,7 +13,7 @@ use core::cmp::{max, min};
 use core::marker::PhantomData;
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteWriterTrait, ZWriter};
 use zune_core::log::{log_enabled, trace, Level};
 use zune_core::options::EncoderOptions;
 
@@ -1073,7 +1073,7 @@ impl<'a> JxlSimpleEncoder<'a> {
         // TODO: Make this an encode_inner function
         let size = fast_lossless_max_required_output(&frame_state);
 
-        let mut writer = ZByteWriter::new(sink);
+        let mut writer = ZWriter::new(sink);
         writer.reserve(size)?;
         fast_lossless_write_output(&mut frame_state, &mut writer)?;
         Ok(writer.bytes_written())
@@ -1371,7 +1371,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 /// Write output from the frame to `output`
 #[allow(clippy::never_loop)]
 fn fast_lossless_write_output<T: ZByteWriterTrait>(
-    frame: &mut FrameState, output: &mut ZByteWriter<T>
+    frame: &mut FrameState, output: &mut ZWriter<T>
 ) -> Result<(), JxlEncodeErrors> {
     let components = frame.option.colorspace().num_components();
 

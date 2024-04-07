@@ -16,7 +16,7 @@
 //!
 use jpeg_encoder::{ColorType, EncodingError, JfifWrite};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
@@ -30,7 +30,7 @@ use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 struct TempVt<'a, T: ZByteWriterTrait> {
-    inner: &'a mut ZByteWriter<T>
+    inner: &'a mut ZWriter<T>
 }
 impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), EncodingError> {
@@ -90,7 +90,7 @@ impl<T: ZByteReaderTrait> DecoderTrait for zune_jpeg::JpegDecoder<T> {
                 metadata.parse_raw_exif(exif)
             }
         }
-        if let Some(icc) = self.icc_profile(){
+        if let Some(icc) = self.icc_profile() {
             metadata.set_icc_chunk(icc);
         }
 
@@ -157,7 +157,7 @@ impl EncoderTrait for JpegEncoder {
                 );
                 return Err(ImgEncodeErrors::ImageEncodeErrors(msg).into());
             }
-            let mut writer = ZByteWriter::new(sink);
+            let mut writer = ZWriter::new(sink);
             let temp_c = TempVt { inner: &mut writer };
             // create space for our encoder
 

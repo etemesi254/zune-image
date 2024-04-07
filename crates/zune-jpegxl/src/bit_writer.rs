@@ -11,7 +11,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
 
 /// Construct a new bit writer
 /// This bit writer owns it's output and you need to call
@@ -104,7 +104,7 @@ pub struct BorrowingBitWriter<'a, T: ZByteWriterTrait> {
     pub bits_in_buffer: u8,
     pub buffer:         u64,
     pub position:       usize,
-    pub dest:           &'a mut ZByteWriter<T>
+    pub dest:           &'a mut ZWriter<T>
 }
 
 impl<'a, T: ZByteWriterTrait> BorrowingBitWriter<'a, T> {
@@ -129,7 +129,7 @@ impl<'a, T: ZByteWriterTrait> BorrowingBitWriter<'a, T> {
     }
 
     /// Construct a new bit-writer
-    pub fn new(data: &'a mut ZByteWriter<T>) -> BorrowingBitWriter<'a, T> {
+    pub fn new(data: &'a mut ZWriter<T>) -> BorrowingBitWriter<'a, T> {
         BorrowingBitWriter {
             bits_in_buffer: 0,
             buffer:         0,

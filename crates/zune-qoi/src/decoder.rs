@@ -282,7 +282,6 @@ where
                     px[2] = packed_bytes[2];
                 } else if chunk == QOI_OP_RGBA {
                     let packed_bytes = self.stream.read_fixed_bytes_or_zero::<4>();
-
                     px.copy_from_slice(&packed_bytes);
                 } else if (chunk & QOI_MASK_2) == QOI_OP_INDEX {
                     px.copy_from_slice(&index[usize::from(chunk) & 63]);

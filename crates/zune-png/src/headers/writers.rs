@@ -6,14 +6,14 @@
 
 use alloc::vec::Vec;
 
-use zune_core::bytestream::{ZByteIoError, ZByteWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 
 use crate::crc::{calc_crc, calc_crc_with_bytes};
 use crate::decoder::PngChunk;
 use crate::encoder::PngEncoder;
 
-pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter<&mut Vec<u8>>) {
+pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZWriter<&mut Vec<u8>>) {
     // write width and height
     output.write_u32_be(ctx.options.width() as u32);
     output.write_u32_be(ctx.options.height() as u32);
@@ -38,13 +38,13 @@ pub(crate) fn write_ihdr(ctx: &PngEncoder, output: &mut ZByteWriter<&mut Vec<u8>
     output.write_u8(0);
 }
 
-pub fn write_exif(ctx: &PngEncoder, writer: &mut ZByteWriter<&mut alloc::vec::Vec<u8>>) {
+pub fn write_exif(ctx: &PngEncoder, writer: &mut ZWriter<&mut alloc::vec::Vec<u8>>) {
     if let Some(exif) = ctx.exif {
         writer.write_all(exif).unwrap();
     }
 }
 
-pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZByteWriter<&mut Vec<u8>>) {
+pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZWriter<&mut Vec<u8>>) {
     if let Some(gamma) = ctx.gamma {
         // scale by 100000.0
         let gamma_value = (gamma * 100000.0) as u32;
@@ -53,7 +53,7 @@ pub fn write_gamma(ctx: &PngEncoder, writer: &mut ZByteWriter<&mut Vec<u8>>) {
 }
 
 // iend is a no-op
-pub fn write_iend(_: &PngEncoder, _: &mut ZByteWriter<&mut Vec<u8>>) {}
+pub fn write_iend(_: &PngEncoder, _: &mut ZWriter<&mut Vec<u8>>) {}
 
 /// Write header writes the boilerplate for each png chunk
 ///
@@ -62,8 +62,8 @@ pub fn write_iend(_: &PngEncoder, _: &mut ZByteWriter<&mut Vec<u8>>) {}
 ///
 /// This should be called with the appropriate inner function to write data
 ///
-pub fn write_header_fn<T: ZByteWriterTrait, F: Fn(&PngEncoder, &mut ZByteWriter<&mut Vec<u8>>)>(
-    v: &PngEncoder, writer: &mut ZByteWriter<T>, name: &[u8; 4], func: F
+pub fn write_header_fn<T: ZByteWriterTrait, F: Fn(&PngEncoder, &mut ZWriter<&mut Vec<u8>>)>(
+    v: &PngEncoder, writer: &mut ZWriter<T>, name: &[u8; 4], func: F
 ) -> Result<(), ZByteIoError> {
     // We use a vec so that we make crc calculations easier for myself
     // and the problem is that how png chunks work is that you have to go back and write length
@@ -75,7 +75,7 @@ pub fn write_header_fn<T: ZByteWriterTrait, F: Fn(&PngEncoder, &mut ZByteWriter<
     let mut temp_space = Vec::with_capacity(10);
     // space for length
     temp_space.extend_from_slice(&[0; 4]);
-    let mut local_writer = ZByteWriter::new(&mut temp_space);
+    let mut local_writer = ZWriter::new(&mut temp_space);
     // write the type
     local_writer.write_all(name).unwrap();
     // call underlying function
@@ -92,7 +92,7 @@ pub fn write_header_fn<T: ZByteWriterTrait, F: Fn(&PngEncoder, &mut ZByteWriter<
 }
 
 pub(crate) fn write_chunk<T: ZByteWriterTrait>(
-    chunk: PngChunk, data: &[u8], writer: &mut ZByteWriter<T>
+    chunk: PngChunk, data: &[u8], writer: &mut ZWriter<T>
 ) -> Result<(), ZByteIoError> {
     // write length
     writer.write_u32_be_err(chunk.length as u32)?;
