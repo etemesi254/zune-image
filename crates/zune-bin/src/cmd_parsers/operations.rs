@@ -47,7 +47,7 @@ pub fn parse_options<T: IntoImage>(
         workflow.chain_operations(Box::new(Transpose::new()));
     } else if argument == "flop" {
         debug!("Added flop operation");
-        workflow.chain_operations(Box::new(Flop::new()))
+        workflow.chain_operations(Box::new(Flop::new()));
     } else if argument == "median" {
         //let radius = *args.get_one::<usize>("median").unwrap();
         // workflow.add_operation(Box::new(Median::new(radius)));
@@ -78,14 +78,14 @@ pub fn parse_options<T: IntoImage>(
         }
 
         debug!("Added mirror with direction {:?}", value);
-        workflow.chain_operations(Box::new(Mirror::new(direction)))
+        workflow.chain_operations(Box::new(Mirror::new(direction)));
     } else if argument == "invert" {
         debug!("Added invert operation");
-        workflow.chain_operations(Box::new(Invert::new()))
+        workflow.chain_operations(Box::new(Invert::new()));
     } else if argument == "brighten" {
         let value = *args.get_one::<f32>(argument).unwrap();
         debug!("Added brighten operation with {:?}", value);
-        workflow.chain_operations(Box::new(Brighten::new(value)))
+        workflow.chain_operations(Box::new(Brighten::new(value)));
     } else if argument == "crop" {
         let crop_args = args
             .get_many::<usize>(argument)
@@ -177,7 +177,7 @@ pub fn parse_options<T: IntoImage>(
 
         debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
 
-        workflow.chain_operations(Box::new(ColorspaceConv::new(colorspace)))
+        workflow.chain_operations(Box::new(ColorspaceConv::new(colorspace)));
     } else if argument == "auto-orient" {
         debug!("Add auto orient operation");
         //workflow.add_operation(Box::new(AutoOrient))
@@ -188,7 +188,7 @@ pub fn parse_options<T: IntoImage>(
         debug!("Adding exposure argument with value {}", exposure);
     } else if argument == "v-flip" {
         debug!("Added v-flip argument");
-        workflow.chain_operations(Box::new(VerticalFlip::new()))
+        workflow.chain_operations(Box::new(VerticalFlip::new()));
     } else if argument == "huerotate" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(value, 1f32, 1f32)));

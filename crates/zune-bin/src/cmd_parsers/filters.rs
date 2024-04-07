@@ -48,7 +48,7 @@ pub fn parse_options<T: IntoImage>(
         );
 
         let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, 0);
-        workflow.chain_operations(Box::new(unsharpen))
+        workflow.chain_operations(Box::new(unsharpen));
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added mean blur filter with radius {}", radius);
@@ -60,7 +60,7 @@ pub fn parse_options<T: IntoImage>(
         workflow.chain_operations(Box::new(Sobel::new()));
     } else if argument == "scharr" {
         debug!("Added scharr filter");
-        workflow.chain_operations(Box::new(Scharr::new()))
+        workflow.chain_operations(Box::new(Scharr::new()));
     } else if argument == "convolve" {
         debug!("Adding convolution filter");
 
@@ -72,7 +72,7 @@ pub fn parse_options<T: IntoImage>(
             .map(|x| **x)
             .collect();
 
-        workflow.chain_operations(Box::new(Convolve::new(values, 1.0)))
+        workflow.chain_operations(Box::new(Convolve::new(values, 1.0)));
     } else if argument == "median-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
 
