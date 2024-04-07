@@ -26,11 +26,11 @@
 //!
 //! # Features
 //!  - `log`: Use the `log` crate features to print image information when decoding
-//!  - `std`: Allow direct decoding from anything that implements [BufRead](std::io::BufRead) + [Seek](std::io::Seek)
+//!  - `std`: Allow direct decoding from anything that implements `std::io::BufRead` + `std::io::Seek`
 //!
 //! # Usage
 //!  It is recommended that if you have an in memory buffer you use
-//! `ZCursor` to read as it is more optimized when compared to [Cursor](std::io::Cursor) since it's
+//! `ZCursor` to read as it is more optimized when compared to `std::io::Cursor` since it's
 //!  methods are specialized for the [`ZByteReaderTrait`](crate::zune_core::bytestream::ZByteReaderTrait)
 //!
 //!
