@@ -1,5 +1,10 @@
 [
   {
+    "name": "incomplete_image.jpg",
+    "hash": 251401188534951286404961362012369211693,
+    "comment": "The image isn't full"
+  },
+  {
     "name": "weird_components.jpg",
     "hash": 261174253918394387855126993634653689568
   },
