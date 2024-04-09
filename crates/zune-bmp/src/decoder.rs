@@ -723,12 +723,16 @@ where
                             // includes pad bytes (multiple of 4)
                             let in_width = ((self.width * usize::from(self.depth) + 31) / 8) & !3;
 
-                            for out in buf.rchunks_exact_mut(out_width) {
+                            for out in buf.chunks_exact_mut(out_width) {
                                 self.bytes.read_exact_bytes(out)?;
                                 // skip padding bytes
                                 self.bytes.skip(in_width.saturating_sub(out_width))?;
+                                // then flip bgr to rgb
+                                for pix_pair in out.chunks_exact_mut(3) {
+                                    pix_pair.swap(0, 2);
+                                }
                             }
-                            self.flip_vertically ^= true;
+                            //self.flip_vertically ^= true;
                         }
                     }
                 }
