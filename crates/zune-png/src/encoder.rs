@@ -72,6 +72,22 @@ impl<'a> PngEncoder<'a> {
     }
 
     pub fn encode<T: ZByteWriterTrait>(&mut self, sink: T) -> Result<usize, ZByteIoError> {
+        let expected_data_size = self
+            .options
+            .width()
+            .checked_mul(self.options.height())
+            .ok_or(ZByteIoError::Generic("Overflow"))?
+            .checked_mul(self.options.depth().size_of())
+            .ok_or(ZByteIoError::Generic("Overflow"))?
+            .checked_mul(self.options.colorspace().num_components())
+            .ok_or(ZByteIoError::Generic("Overflow"))?;
+
+        if self.data.len() != expected_data_size {
+            return Err(ZByteIoError::NotEnoughBytes(
+                expected_data_size,
+                self.data.len()
+            ));
+        }
         let mut writer = ZWriter::new(sink);
 
         self.encode_headers(&mut writer)?;
