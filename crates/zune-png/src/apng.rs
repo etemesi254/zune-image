@@ -254,15 +254,18 @@ pub fn post_process_image(
     }
 
     match frame_info.dispose_op {
-        DisposeOp::None => {
-            // it may cause artifacts especially if the frame is smaller
-            // than the image, previous things may leak
-            // See https://github.com/etemesi254/zune-image/issues/185
-            output.fill(0);
-        } // do nothing
+        DisposeOp::None => {} // do nothing
         DisposeOp::Background => {
-            // output to fully black
-            output.fill(0);
+            // APNG_DISPOSE_OP_BACKGROUND: the frame's region of the output buffer
+            // is to be cleared to fully transparent black before rendering the next frame.
+            for line_stride in output
+                .chunks_exact_mut(info.width)
+                .skip(frame_info.y_offset)
+                .take(frame_info.width)
+            {
+                line_stride[frame_info.x_offset * nc..(frame_info.x_offset + info.width) * nc]
+                    .fill(0);
+            }
         }
         DisposeOp::Previous => {
             // copy background if possible
@@ -280,18 +283,15 @@ pub fn post_process_image(
             }
         } // blend
     }
-    // move to the start of the y position to render frame
-    let start_pos = frame_info.y_offset * info.width * nc;
-
-    let start = &mut output[start_pos..];
     // deal with gamma
-    let gamma_value = gamma.unwrap_or(2.2);
+    let gamma_value = gamma.unwrap_or(2.3);
     let gamma_inv = 1.0 / gamma_value;
 
     // iterate by a width stride
     for (src_width, h) in current_frame.chunks_exact(frame_info.width * nc).zip(
-        start
+        output
             .chunks_exact_mut(info.width * nc)
+            .skip(frame_info.y_offset)
             .take(frame_info.height)
     ) {
         // move to the x offset
@@ -320,11 +320,17 @@ pub fn post_process_image(
                     *item = linfg;
                 }
 
-                for (src_comp, dst_comp) in src_width.chunks_exact(nc).zip(h.chunks_exact_mut(nc)) {
-                    let foreground_alpha = f32::from(*src_comp.last().unwrap()) / 255.0;
+                for (src_comp, dst_comp) in src_width.chunks_exact(nc).zip(h_x.chunks_exact_mut(nc))
+                {
+                    let alpha = *src_comp.last().unwrap();
+                    let foreground_alpha = f32::from(alpha) / 255.0;
                     let dst_alpha = 1.0 - foreground_alpha;
 
                     let max_sample = 255.0;
+
+                    if alpha == 0 {
+                        continue;
+                    }
 
                     for (a, b) in src_comp.iter().zip(dst_comp).take(nc - 1) {
                         // convert to floating point, undo gamma encoding
@@ -333,11 +339,14 @@ pub fn post_process_image(
                         // composite
                         let commpix = linfg * foreground_alpha + linbg * dst_alpha;
                         // scale up and output to b
-                        *b = (commpix * max_sample + 0.5) as u8;
+                        let pix = (commpix * max_sample + 0.5) as u8;
+
+                        *b = pix;
                     }
                 }
             }
         }
     }
+
     Ok(())
 }
