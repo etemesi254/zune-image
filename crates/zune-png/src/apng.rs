@@ -263,8 +263,10 @@ pub fn post_process_image(
                 .skip(frame_info.y_offset)
                 .take(frame_info.width)
             {
-                line_stride[frame_info.x_offset * nc..(frame_info.x_offset + info.width) * nc]
-                    .fill(0);
+                let start_frame = frame_info.x_offset * nc;
+                let end_frame = (frame_info.x_offset + info.width) * nc;
+
+                line_stride[start_frame..end_frame].fill(0);
             }
         }
         DisposeOp::Previous => {
@@ -284,7 +286,7 @@ pub fn post_process_image(
         } // blend
     }
     // deal with gamma
-    let gamma_value = gamma.unwrap_or(2.3);
+    let gamma_value = gamma.unwrap_or(2.2);
     let gamma_inv = 1.0 / gamma_value;
 
     // iterate by a width stride
@@ -312,11 +314,18 @@ pub fn post_process_image(
                 }
                 // pre-calculate the gamma samples
                 let mut gamma_values = [0.0; 256];
+                let mut inv_gamma_values = [0.0; 256];
                 let max_sample = 255.0;
 
-                for (i, item) in gamma_values.iter_mut().enumerate() {
+                for (i, (item, c)) in gamma_values
+                    .iter_mut()
+                    .zip(inv_gamma_values.iter_mut())
+                    .enumerate()
+                {
                     let gam = (i as f32) / max_sample;
                     let linfg = f32::powf(gam, gamma_inv);
+                    let inv_fg = f32::powf(gam, gamma_value);
+                    *c = inv_fg;
                     *item = linfg;
                 }
 
@@ -329,6 +338,11 @@ pub fn post_process_image(
                     let max_sample = 255.0;
 
                     if alpha == 0 {
+                        /*
+                         * Foreground image is transparent here.
+                         * If the background image is already in the frame
+                         * buffer, there is nothing to do.
+                         */
                         continue;
                     }
 
@@ -338,15 +352,18 @@ pub fn post_process_image(
                         let linbg = gamma_values[usize::from(*b)];
                         // composite
                         let commpix = linfg * foreground_alpha + linbg * dst_alpha;
+                        // gamma encode for storage
+                        // NB: (cae): This function becomes quite expensive.
+                        // I'm not sure if memoization may help us here.
+                        //  Anyone with tricks??
+                        let gamout = f32::powf(commpix, gamma_value);
                         // scale up and output to b
-                        let pix = (commpix * max_sample + 0.5) as u8;
-
+                        let pix = (gamout * max_sample + 0.5) as u8;
                         *b = pix;
                     }
                 }
             }
         }
     }
-
     Ok(())
 }
