@@ -252,7 +252,7 @@ pub trait EncoderTrait {
     /// - image: An image which we are trying to encode.
     ///
     /// # Returns
-    /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
+    /// - `Ok(usize)`: The number of bytes written into `sink`
     /// in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
@@ -279,7 +279,8 @@ pub trait EncoderTrait {
     /// - image: The image to encode
     ///
     /// # Returns
-    /// - `Ok(Vec<u8>)`: The inner `Vec<u8>` contains the encoded data
+    ///
+    /// - `Ok(usize)`: The number of bytes written into `sink`
     /// in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
