@@ -23,6 +23,7 @@
 //!
 //! # Unsupported formats
 //! - Embedded PNG and JPEGs
+//! - Images with embedded color profiles. (the embedded color profile is ignored)
 //!
 //! # Features
 //!  - `log`: Use the `log` crate features to print image information when decoding
