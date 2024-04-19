@@ -18,4 +18,4 @@ jobs:
       - name: Check semver
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          manifest-path: zune-image/Cargo.toml
+          manifest-path: $GITHUB_WORKSPACE
