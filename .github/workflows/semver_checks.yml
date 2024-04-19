@@ -13,9 +13,14 @@ jobs:
   semver-checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Check semver
-        uses: obi1kenobi/cargo-semver-checks-action@v2
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
         with:
-          manifest-path: $GITHUB_WORKSPACE
+          toolchain: stable
+          override: true
+      - name: Install Cargo semver
+        run: cargo install cargo-semver-checks --locked
+      - name: Check semver
+        run: cargo semver-checks --workspace
+
