@@ -818,7 +818,7 @@ where
                                 // skip padding bytes
                                 self.bytes.skip(in_width.saturating_sub(out_width))?;
                                 // then flip bgr to rgb
-                                if (PRESERVE_BGRA) {
+                                if PRESERVE_BGRA {
                                     for pix_pair in out.chunks_exact_mut(3) {
                                         pix_pair.swap(0, 2);
                                     }
