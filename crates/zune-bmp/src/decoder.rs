@@ -557,6 +557,16 @@ where
         }
         Some(self.pix_fmt.into_colorspace())
     }
+    /// Whether the decoder should preserve BGR(A) format when decoding images
+    ///
+    /// This needs the `rgb_inverse` feature to work, otherwise it's a no-op
+    ///
+    /// If true,image is maintained in BGR(A) format, if false, image is converted to
+    /// RGB(A) format
+    pub fn preserve_bgra(&mut self, yes: bool) -> &mut Self {
+        self.convert_rgba_to_bgra = yes;
+        self
+    }
     /// Decode an image returning the decoded bytes as an
     /// allocated `Vec<u8>` or an error if decoding could not be completed
     ///
