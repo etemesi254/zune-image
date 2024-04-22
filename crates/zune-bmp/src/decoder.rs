@@ -97,6 +97,7 @@
 
 use alloc::vec::Vec;
 use alloc::{format, vec};
+use log::error;
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZReader};
@@ -139,10 +140,10 @@ pub fn probe_bmp(bytes: &[u8]) -> bool {
 /// For some configurations, alpha is disabled,
 #[derive(Clone, Copy, Default, Debug)]
 struct PaletteEntry {
-    red:   u8,
+    red: u8,
     green: u8,
-    blue:  u8,
-    alpha: u8
+    blue: u8,
+    alpha: u8,
 }
 
 /// A BMP decoder.
@@ -190,28 +191,39 @@ struct PaletteEntry {
 /// ```
 pub struct BmpDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
-    bytes:           ZReader<T>,
-    options:         DecoderOptions,
-    width:           usize,
-    height:          usize,
+    bytes: ZReader<T>,
+    options: DecoderOptions,
+    width: usize,
+    height: usize,
     flip_vertically: bool,
-    rgb_bitfields:   [u32; 4],
+    rgb_bitfields: [u32; 4],
     decoded_headers: bool,
-    pix_fmt:         BmpPixelFormat,
-    comp:            BmpCompression,
-    ihszie:          u32,
-    hsize:           u32,
-    palette:         Vec<PaletteEntry>,
-    depth:           u16,
-    is_alpha:        bool,
-    palette_numbers: usize
+    pix_fmt: BmpPixelFormat,
+    comp: BmpCompression,
+    ihszie: u32,
+    hsize: u32,
+    palette: Vec<PaletteEntry>,
+    depth: u16,
+    is_alpha: bool,
+    palette_numbers: usize,
+    /// Convert RGBA layout to BGRA
+    /// We can do this cheaply (depends on what you consider cheap)
+    /// but this requires the rgb_inverse feature
+    convert_rgba_to_bgra: bool,
+    /// Whether the image is in bgra already
+    /// Images are expected to be in rgb(a), but we also support
+    /// outputting images in bgr(a) format.
+    ///
+    /// Some passes may directly output bgra, but others don't (e.g palette),
+    /// so for now we handle those paths separately
+    image_in_bgra: bool,
 }
 
 impl<T> BmpDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     /// Create a new bmp decoder that reads data from
     /// `data`
@@ -249,7 +261,9 @@ where
             depth: 0,
             palette: vec![],
             is_alpha: false,
-            palette_numbers: 0
+            palette_numbers: 0,
+            convert_rgba_to_bgra: false,
+            image_in_bgra: false,
         }
     }
 
@@ -294,7 +308,7 @@ where
             }
             _ => {
                 return Err(BmpDecoderErrors::GenericStatic(
-                    "Unknown information header size"
+                    "Unknown information header size",
                 ));
             }
         }
@@ -308,7 +322,7 @@ where
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "height",
                 self.options.max_height(),
-                self.height
+                self.height,
             ));
         }
 
@@ -316,17 +330,17 @@ where
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "width",
                 self.options.max_width(),
-                self.width
+                self.width,
             ));
         }
         if self.width == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Width is zero, invalid image"
+                "Width is zero, invalid image",
             ));
         }
         if self.height == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Height is zero, invalid image"
+                "Height is zero, invalid image",
             ));
         }
 
@@ -342,7 +356,7 @@ where
 
         if depth == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Depth is zero, invalid image"
+                "Depth is zero, invalid image",
             ));
         }
 
@@ -351,7 +365,7 @@ where
                 Some(c) => c,
                 None => {
                     return Err(BmpDecoderErrors::GenericStatic(
-                        "Unsupported BMP compression scheme"
+                        "Unsupported BMP compression scheme",
                     ));
                 }
             }
@@ -531,6 +545,16 @@ where
             return None;
         }
 
+        #[cfg(feature = "rgb_inverse")]
+        if self.convert_rgba_to_bgra {
+            return Some(match self.pix_fmt {
+                BmpPixelFormat::None => ColorSpace::Unknown,
+                BmpPixelFormat::RGBA => ColorSpace::BGRA,
+                BmpPixelFormat::PAL8 => ColorSpace::BGR,
+                BmpPixelFormat::GRAY8 => ColorSpace::Luma,
+                BmpPixelFormat::RGB => ColorSpace::BGR,
+            });
+        }
         Some(self.pix_fmt.into_colorspace())
     }
     /// Decode an image returning the decoded bytes as an
@@ -557,6 +581,24 @@ where
     ///
     /// Also see [`decode`](Self::decode) which allocates and decodes into buffer
     pub fn decode_into(&mut self, buf: &mut [u8]) -> Result<(), BmpDecoderErrors> {
+        #[cfg(feature = "rgb_inverse")]
+        {
+            if self.convert_rgba_to_bgra {
+                return self.decode_into_inner::<true>(buf);
+            }
+        }
+        self.decode_into_inner::<false>(buf)
+    }
+    /// Decode an encoded image into a buffer or return an error
+    /// if something bad occurred
+    ///
+    /// Also see [`decode`](Self::decode) which allocates and decodes into buffer
+    ///
+    /// - If `PRESERVE_BGRA` is false, data is in rgb(a) format
+    /// - If `PRESERVE_RGBA` is true, data is in bgr(a) format
+    fn decode_into_inner<const PRESERVE_BGRA: bool>(
+        &mut self, buf: &mut [u8],
+    ) -> Result<(), BmpDecoderErrors> {
         self.decode_headers()?;
 
         let output_size = self
@@ -616,11 +658,14 @@ where
                                     for a in out.chunks_exact_mut(4) {
                                         let mut pixels = self.bytes.read_fixed_bytes_or_zero::<4>();
                                         // swap bgr and rgb
-                                        pixels.swap(0, 2);
+                                        if !PRESERVE_BGRA {
+                                            pixels.swap(0, 2);
+                                        }
                                         a.copy_from_slice(&pixels);
                                         a[3] = 255;
                                     }
                                 }
+                                self.image_in_bgra = true;
                             } else {
                                 // extract bitfields
                                 let [mr, mg, mb, ma] = self.rgb_bitfields;
@@ -643,17 +688,34 @@ where
                                         for a in out.chunks_exact_mut(4) {
                                             let v = self.bytes.get_u32_le();
 
-                                            a[0] = shift_signed(v & mr, rshift, rcount) as u8;
-                                            a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                            a[2] = shift_signed(v & mb, bshift, bcount) as u8;
-                                            if ma == 0 {
-                                                // alpha would be zero
-                                                a[3] = 255;
+                                            if PRESERVE_BGRA {
+                                                // set order to be BGRA
+                                                a[0] = shift_signed(v & mb, rshift, rcount) as u8;
+                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                                a[2] = shift_signed(v & mr, bshift, bcount) as u8;
+                                                if ma == 0 {
+                                                    // alpha would be zero
+                                                    a[3] = 255;
+                                                } else {
+                                                    a[3] =
+                                                        shift_signed(v & ma, ashift, acount) as u8;
+                                                }
                                             } else {
-                                                a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                                // order to be RGBA
+                                                a[0] = shift_signed(v & mr, rshift, rcount) as u8;
+                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                                a[2] = shift_signed(v & mb, bshift, bcount) as u8;
+                                                if ma == 0 {
+                                                    // alpha would be zero
+                                                    a[3] = 255;
+                                                } else {
+                                                    a[3] =
+                                                        shift_signed(v & ma, ashift, acount) as u8;
+                                                }
                                             }
                                         }
                                     }
+                                    self.image_in_bgra = true;
                                 } else if self.depth == 16 {
                                     //let bytes = self.bytes.remaining_bytes()?;
                                     // this path is confirmed by the rgb16.bmp image in test-images/bmp
@@ -685,21 +747,36 @@ where
                                             .take(input_bytes_per_width)
                                         {
                                             let v = u32::from(u16::from_le_bytes(
-                                                self.bytes.read_fixed_bytes_or_zero::<2>()
+                                                self.bytes.read_fixed_bytes_or_zero::<2>(),
                                             ));
                                             count += 2;
+                                            if PRESERVE_BGRA {
+                                                a[0] = shift_signed(v & mb, rshift, rcount) as u8;
+                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                                a[2] = shift_signed(v & mr, bshift, bcount) as u8;
 
-                                            a[0] = shift_signed(v & mr, rshift, rcount) as u8;
-                                            a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                            a[2] = shift_signed(v & mb, bshift, bcount) as u8;
+                                                if a.len() > 3 {
+                                                    // handle alpha channel
+                                                    if ma == 0 {
+                                                        a[3] = 255;
+                                                    } else {
+                                                        a[3] = shift_signed(v & ma, ashift, acount)
+                                                            as u8;
+                                                    }
+                                                }
+                                            } else {
+                                                a[0] = shift_signed(v & mr, rshift, rcount) as u8;
+                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                                a[2] = shift_signed(v & mb, bshift, bcount) as u8;
 
-                                            if a.len() > 3 {
-                                                // handle alpha channel
-                                                if ma == 0 {
-                                                    a[3] = 255;
-                                                } else {
-                                                    a[3] =
-                                                        shift_signed(v & ma, ashift, acount) as u8;
+                                                if a.len() > 3 {
+                                                    // handle alpha channel
+                                                    if ma == 0 {
+                                                        a[3] = 255;
+                                                    } else {
+                                                        a[3] = shift_signed(v & ma, ashift, acount)
+                                                            as u8;
+                                                    }
                                                 }
                                             }
                                         }
@@ -709,9 +786,10 @@ where
                                             "Input bytes cannot be greater than count"
                                         );
                                         self.bytes.skip(
-                                            (input_bytes_per_width * 2).saturating_sub(count)
+                                            (input_bytes_per_width * 2).saturating_sub(count),
                                         )?;
                                     }
+                                    self.image_in_bgra = true;
                                 }
                             }
 
@@ -730,9 +808,12 @@ where
                                 // skip padding bytes
                                 self.bytes.skip(in_width.saturating_sub(out_width))?;
                                 // then flip bgr to rgb
-                                for pix_pair in out.chunks_exact_mut(3) {
-                                    pix_pair.swap(0, 2);
+                                if (PRESERVE_BGRA) {
+                                    for pix_pair in out.chunks_exact_mut(3) {
+                                        pix_pair.swap(0, 2);
+                                    }
                                 }
+                                self.image_in_bgra = true;
                             }
                             self.flip_vertically ^= true;
                         }
@@ -745,7 +826,7 @@ where
                     // to bytes and then read palette entries
                     if self.pix_fmt != BmpPixelFormat::PAL8 {
                         return Err(BmpDecoderErrors::GenericStatic(
-                            "Bit Depths less than 8 must have a palette"
+                            "Bit Depths less than 8 must have a palette",
                         ));
                     }
                     let width_bytes = ((self.width + 7) >> 3) << 3;
@@ -768,13 +849,13 @@ where
                             self.depth as usize,
                             true,
                             &in_width_buf,
-                            &mut scanline_bytes
+                            &mut scanline_bytes,
                         );
                         self.expand_palette(&scanline_bytes, out_bytes, true);
                     }
                     self.flip_vertically ^= true;
                 }
-                d => unreachable!("Unhandled depth {}", d)
+                d => unreachable!("Unhandled depth {}", d),
             }
         }
         // The code for flip uses xor, so that if the image was to be flipped
@@ -812,6 +893,27 @@ where
                 // copy previous scanline to in dim
                 out_dim.copy_from_slice(&scanline);
             }
+        }
+        // If we are to preserve BGRA, some paths may not honor that, (i think palette)
+        // paths that honor that set `self.image_in_bgra to be true, if that is true
+        // we know that the image is in bgra (which only matters if we are to preserve bgra feature)
+        if PRESERVE_BGRA && !self.image_in_bgra {
+            // image is not in bgr(a), convert it to bgr(a)
+            // depends on the colorspace. We should only have 3 or 4 components
+            match self.pix_fmt.into_colorspace().num_components() {
+                3 => {
+                    for pix in buf.chunks_exact_mut(3) {
+                        pix.swap(0, 2);
+                    }
+                }
+                4 => {
+                    for pix in buf.chunks_exact_mut(4) {
+                        pix.swap(0, 2);
+                    }
+                }
+                _ => error!("Unhandled pixel format"),
+            }
+            self.image_in_bgra = true;
         }
 
         Ok(())
@@ -868,7 +970,7 @@ where
     }
     // RUST borrowing rules
     fn expand_palette_from_remaining_bytes(
-        &mut self, buf: &mut [u8], unpad: bool
+        &mut self, buf: &mut [u8], unpad: bool,
     ) -> Result<(), ZByteIoError> {
         //let in_bytes = self.bytes.remaining_bytes()?;
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();
@@ -1195,7 +1297,7 @@ where
                                 .for_each(|x| x[0..4].copy_from_slice(&pix[..4]));
                             pos += 4 * usize::from(p1);
                         }
-                        _ => unreachable!("Uhh ohh")
+                        _ => unreachable!("Uhh ohh"),
                     }
                 }
             }
@@ -1215,7 +1317,7 @@ fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32 {
         0x21, /*0b00100001*/
         0x41, /*0b01000001*/
         0x81, /*0b10000001*/
-        0x01  /*0b00000001*/
+        0x01, /*0b00000001*/
     ];
     const SHIFT_TABLE: [i32; 9] = [0, 0, 0, 1, 0, 2, 4, 6, 0];
 
