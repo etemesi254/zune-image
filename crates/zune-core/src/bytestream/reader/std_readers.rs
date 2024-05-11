@@ -15,23 +15,29 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
     }
     #[inline(always)]
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
-        match self.read(buf) {
-            Ok(bytes) => {
-                if bytes != buf.len() {
-                    // if a read succeeds but doesn't satisfy the buffer, it means it may be EOF
-                    // so we seek back to where we started because some paths may aggressively read
-                    // forward and ZCursor maintains the position.
+        let mut bytes_read = 0;
+
+        while bytes_read < buf.len() {
+            match self.read(&mut buf[bytes_read..]) {
+                Ok(0) => {
+                    // if a read returns zero bytes read, it means it encountered an EOF so we seek
+                    // back to where we started because some paths may aggressively read forward and
+                    // ZCursor maintains the position.
 
                     // NB: (cae) This adds a branch on every read, and will slow down every function
                     // resting on it. Sorry
-                    self.seek(SeekFrom::Current(-(bytes as i64)))
+                    self.seek(SeekFrom::Current(-(bytes_read as i64)))
                         .map_err(ZByteIoError::from)?;
-                    return Err(ZByteIoError::NotEnoughBytes(bytes, buf.len()));
+                    return Err(ZByteIoError::NotEnoughBytes(bytes_read, buf.len()));
                 }
-                Ok(())
-            }
-            Err(e) => Err(ZByteIoError::from(e))
-        }
+                Ok(bytes) => {
+                    bytes_read += bytes;
+                }
+                Err(e) => return Err(ZByteIoError::from(e))
+          }
+      }
+
+      Ok(())
     }
 
     #[inline]
