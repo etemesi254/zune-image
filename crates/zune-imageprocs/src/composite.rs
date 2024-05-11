@@ -9,7 +9,7 @@ use crate::utils::{calculate_gravity, Gravity};
 /// Composite method to use for composing
 ///
 /// Not all composite methods are supported
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CompositeMethod {
     /// Put the source over the destination
     Over,
@@ -21,13 +21,13 @@ pub enum CompositeMethod {
     /// Does nothing compose
     Dst,
     /// Mask the background with shape
-    DstIn
+    DstIn,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum CompositeMethodType {
     ChannelBased,
-    AlphaChannel
+    AlphaChannel,
 }
 impl CompositeMethod {
     fn composite_type(self) -> CompositeMethodType {
@@ -35,16 +35,16 @@ impl CompositeMethod {
             CompositeMethod::Src | CompositeMethod::Dst | CompositeMethod::Over => {
                 CompositeMethodType::ChannelBased
             }
-            CompositeMethod::DstIn => CompositeMethodType::AlphaChannel
+            CompositeMethod::DstIn => CompositeMethodType::AlphaChannel,
         }
     }
 }
 
 pub struct Composite<'a> {
-    geometry:         Option<(usize, usize)>,
-    src_image:        &'a Image,
+    geometry: Option<(usize, usize)>,
+    src_image: &'a Image,
     composite_method: CompositeMethod,
-    gravity:          Option<Gravity>
+    gravity: Option<Gravity>,
 }
 
 impl<'a> Composite<'a> {
@@ -59,13 +59,13 @@ impl<'a> Composite<'a> {
     ///
     /// See also [Self::new_gravity] if you don't want to manually calculate coordinates
     pub fn new(
-        image: &'a Image, composite_method: CompositeMethod, position: (usize, usize)
+        image: &'a Image, composite_method: CompositeMethod, position: (usize, usize),
     ) -> Composite<'a> {
         Composite {
             geometry: Some(position),
             src_image: image,
             composite_method,
-            gravity: None
+            gravity: None,
         }
     }
     /// Create a new filter that will composite `image` with the dest image placing it in the location
@@ -79,13 +79,13 @@ impl<'a> Composite<'a> {
     ///
     /// See also [Self::new] if you want to use absolute coordinates
     pub fn new_gravity(
-        image: &'a Image, composite_method: CompositeMethod, gravity: Gravity
+        image: &'a Image, composite_method: CompositeMethod, gravity: Gravity,
     ) -> Composite<'a> {
         Composite {
             geometry: None,
             gravity: Some(gravity),
             src_image: image,
-            composite_method
+            composite_method,
         }
     }
 }
@@ -109,7 +109,7 @@ impl<'a> OperationsTrait for Composite<'a> {
         // confirm compatibility
         if image.depth() != self.src_image.depth() {
             return Err(ImageErrors::GenericStr(
-                "Image depths do not match for composite"
+                "Image depths do not match for composite",
             ));
         }
 
@@ -129,12 +129,14 @@ impl<'a> OperationsTrait for Composite<'a> {
                     for (src_frame, dst_frame) in
                         self.src_image.frames_ref().iter().zip(image.frames_mut())
                     {
-                        let all_dst_channels = dst_frame.channels_vec();
-
                         let (src_color_channels, src_alpha_channel) =
                             src_frame.separate_color_and_alpha_ref(colorspace).unwrap();
 
-                        for (src_chan, d_chan) in src_color_channels.iter().zip(all_dst_channels) {
+                        let (dst_color_channels, dst_alpha_channel) =
+                            dst_frame.separate_color_and_alpha_mut(colorspace).unwrap();
+
+                        for (src_chan, d_chan) in src_color_channels.iter().zip(dst_color_channels)
+                        {
                             match b_type {
                                 BitType::U8 => composite_alpha::<u8>(
                                     src_chan.reinterpret_as()?,
@@ -144,7 +146,7 @@ impl<'a> OperationsTrait for Composite<'a> {
                                     dims.1,
                                     src_width,
                                     dst_width,
-                                    self.composite_method
+                                    self.composite_method,
                                 ),
                                 BitType::U16 => composite_alpha::<u16>(
                                     src_chan.reinterpret_as()?,
@@ -154,7 +156,7 @@ impl<'a> OperationsTrait for Composite<'a> {
                                     dims.1,
                                     src_width,
                                     dst_width,
-                                    self.composite_method
+                                    self.composite_method,
                                 ),
                                 BitType::F32 => composite_alpha::<f32>(
                                     src_chan.reinterpret_as()?,
@@ -164,14 +166,57 @@ impl<'a> OperationsTrait for Composite<'a> {
                                     dims.1,
                                     src_width,
                                     dst_width,
-                                    self.composite_method
+                                    self.composite_method,
                                 ),
                                 d => {
                                     return Err(ImageErrors::ImageOperationNotImplemented(
                                         self.name(),
-                                        d
+                                        d,
                                     ));
                                 }
+                            }
+                        }
+
+                        // composite the alpha channel now
+                        match b_type {
+                            BitType::U8 => {
+                                composite_alpha_channel::<u8>(
+                                    src_alpha_channel.reinterpret_as()?,
+                                    dst_alpha_channel.reinterpret_as_mut()?,
+                                    dims.0,
+                                    dims.1,
+                                    src_width,
+                                    dst_width,
+                                    self.composite_method,
+                                );
+                            }
+                            BitType::U16 => {
+                                composite_alpha_channel::<u16>(
+                                    src_alpha_channel.reinterpret_as()?,
+                                    dst_alpha_channel.reinterpret_as_mut()?,
+                                    dims.0,
+                                    dims.1,
+                                    src_width,
+                                    dst_width,
+                                    self.composite_method,
+                                );
+                            }
+                            BitType::F32 => {
+                                composite_alpha_channel::<f32>(
+                                    src_alpha_channel.reinterpret_as()?,
+                                    dst_alpha_channel.reinterpret_as_mut()?,
+                                    dims.0,
+                                    dims.1,
+                                    src_width,
+                                    dst_width,
+                                    self.composite_method,
+                                );
+                            }
+                            d => {
+                                return Err(ImageErrors::ImageOperationNotImplemented(
+                                    self.name(),
+                                    d,
+                                ));
                             }
                         }
                     }
@@ -190,7 +235,7 @@ impl<'a> OperationsTrait for Composite<'a> {
                                 dims.1,
                                 src_width,
                                 dst_width,
-                                self.composite_method
+                                self.composite_method,
                             ),
                             BitType::U16 => composite::<u16>(
                                 src_chan.reinterpret_as()?,
@@ -199,7 +244,7 @@ impl<'a> OperationsTrait for Composite<'a> {
                                 dims.1,
                                 src_width,
                                 dst_width,
-                                self.composite_method
+                                self.composite_method,
                             ),
                             BitType::F32 => composite::<f32>(
                                 src_chan.reinterpret_as()?,
@@ -208,12 +253,12 @@ impl<'a> OperationsTrait for Composite<'a> {
                                 dims.1,
                                 src_width,
                                 dst_width,
-                                self.composite_method
+                                self.composite_method,
                             ),
                             d => {
                                 return Err(ImageErrors::ImageOperationNotImplemented(
                                     self.name(),
-                                    d
+                                    d,
                                 ));
                             }
                         }
@@ -235,22 +280,54 @@ impl<'a> OperationsTrait for Composite<'a> {
 #[allow(clippy::too_many_arguments)]
 fn composite_alpha<T>(
     src: &[T], dest: &mut [T], src_alpha: &[T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize, method: CompositeMethod
+    width_dest: usize, method: CompositeMethod,
 ) where
     T: Copy + NumOps<T>,
-    f32: From<T>
+    f32: From<T>,
 {
-    if let CompositeMethod::Over = method {
+    if method == CompositeMethod::Over {
         composite_over_alpha(
-            src, dest, src_alpha, start_x, start_y, width_src, width_dest
+            src, dest, src_alpha, start_x, start_y, width_src, width_dest,
         );
     } else {
         unreachable!()
     }
 }
+fn composite_alpha_channel<T>(
+    alpha_src: &[T], dst_alpha: &mut [T], start_x: usize, start_y: usize, width_src: usize,
+    width_dest: usize, method: CompositeMethod,
+) where
+    T: Copy + NumOps<T>,
+    f32: From<T>,
+{
+    if method == CompositeMethod::Over {
+        let max_v = 1.0 / f32::from(T::max_val());
+
+        for (dst_width, src_width) in dst_alpha
+            .chunks_exact_mut(width_dest)
+            .skip(start_y)
+            .zip(alpha_src.chunks_exact(width_src))
+        {
+            if let Some(slice) = dst_width.get_mut(start_x..) {
+                // get the minimum width to remove out of bounds panics
+                let min_width = slice.len().min(src_width.len());
+
+                for (src_p, dst) in src_width[..min_width].iter().zip(slice.iter_mut()) {
+                    // formula : a_o = a_x + a_y(1-a_x)
+                    let src_normalized = (f32::from(*src_p) * max_v).clamp(0.0, 1.0);
+                    let dst_alpha = 1.0 - src_normalized;
+
+                    *dst = T::from_f32(
+                        (src_normalized * f32::from(*src_p)) + (dst_alpha * f32::from(*dst)),
+                    );
+                }
+            }
+        }
+    }
+}
 fn composite<T: Copy + NumOps<T>>(
     src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
-    method: CompositeMethod
+    method: CompositeMethod,
 ) {
     match method {
         CompositeMethod::Over => composite_over(src, dest, start_x, start_y, width_src, width_dest),
@@ -263,7 +340,7 @@ fn composite<T: Copy + NumOps<T>>(
 }
 
 fn composite_src<T: Copy + NumOps<T>>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize
+    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
 ) {
     // fill with max value, this whitens the output
     // or opaques the alpha channel
@@ -271,7 +348,7 @@ fn composite_src<T: Copy + NumOps<T>>(
     composite_over(src, dest, start_x, start_y, width_src, width_dest);
 }
 fn composite_over<T: Copy>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize
+    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
 ) {
     //
     for (dst_width, src_width) in dest
@@ -290,10 +367,10 @@ fn composite_over<T: Copy>(
 
 fn composite_over_alpha<T>(
     src: &[T], dest: &mut [T], src_alpha: &[T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize
+    width_dest: usize,
 ) where
     T: Copy + NumOps<T>,
-    f32: From<T>
+    f32: From<T>,
 {
     let max_v = 1.0 / f32::from(T::max_val());
 
@@ -315,44 +392,55 @@ fn composite_over_alpha<T>(
                 let src_normalized = (f32::from(*src_alpha) * max_v).clamp(0.0, 1.0);
                 let dst_alpha = 1.0 - src_normalized;
                 *dst = T::from_f32(
-                    (src_normalized * f32::from(*src_p)) + (dst_alpha * f32::from(*dst))
+                    (src_normalized * f32::from(*src_p)) + (dst_alpha * f32::from(*dst)),
                 );
             }
         }
     }
 }
-// #[cfg(test)]
-// mod tests {
-//     use zune_core::colorspace::ColorSpace;
-//     use zune_image::image::Image;
-//     use zune_image::traits::OperationsTrait;
-//
-//     use crate::composite::{Composite, CompositeMethod};
-//     use crate::utils::Gravity;
-//
-//     #[test]
-//     fn test_composite_over() {
-//         let mut src_image = Image::open("/run/media/caleb/Home/CITAM/logo - Copy.png").unwrap();
-//         let mut dst_image = Image::open(
-//             "/home/caleb/Pictures/backgrounds/wallpapers/backgrounds/Canazei Granite Ridges.jpg"
-//         )
-//         .unwrap();
-//
-//         src_image.convert_color(ColorSpace::RGBA).unwrap();
-//         dst_image.convert_color(ColorSpace::RGBA).unwrap();
-//
-//         // PremultiplyAlpha::new(AlphaState::PreMultiplied)
-//         //     .execute(&mut src_image)
-//         //     .unwrap();
-//
-//         let composite = Composite::try_new(
-//             &src_image,
-//             CompositeMethod::Over,
-//             None,
-//             Some(Gravity::BottomRight)
-//         )
-//         .unwrap();
-//         composite.execute(&mut dst_image).unwrap();
-//         dst_image.save("./composite.jpg").unwrap();
-//     }
-// }
+
+#[cfg(test)]
+mod tests {
+    use crate::composite::{Composite, CompositeMethod};
+    use zune_image::{image::Image, traits::OperationsTrait};
+
+    #[test]
+    fn test_alpha_channel() {
+        let mut transparent_image = Image::from_fn(
+            1usize,
+            1usize,
+            zune_core::colorspace::ColorSpace::RGBA,
+            |_y, _x, pixels| {
+                pixels[0] = 0u8;
+                pixels[1] = 0u8;
+                pixels[2] = 0u8;
+                pixels[3] = 0u8;
+            },
+        );
+
+        let opaque_image = Image::from_fn(
+            1usize,
+            1usize,
+            zune_core::colorspace::ColorSpace::RGBA,
+            |_y, _x, pixels| {
+                pixels[0] = 0u8;
+                pixels[1] = 0u8;
+                pixels[2] = 0u8;
+                pixels[3] = 0xffu8;
+            },
+        );
+
+        let composite = Composite::new(&opaque_image, CompositeMethod::Over, (0usize, 0usize));
+
+        composite.execute(&mut transparent_image).unwrap();
+
+        unsafe {
+            transparent_image.channels_ref(false)[3]
+                .alias()
+                .iter()
+                .for_each(|x| {
+                    assert_eq!(*x, 0xffu8);
+                });
+        }
+    }
+}
