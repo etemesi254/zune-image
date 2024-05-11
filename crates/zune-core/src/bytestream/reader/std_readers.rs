@@ -1,6 +1,7 @@
 #![cfg(feature = "std")]
 
 use std::io;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 use crate::bytestream::ZByteReaderTrait;
@@ -14,7 +15,23 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
     }
     #[inline(always)]
     fn read_exact_bytes(&mut self, buf: &mut [u8]) -> Result<(), ZByteIoError> {
-        self.read_exact(buf).map_err(ZByteIoError::from)
+        match self.read(buf) {
+            Ok(bytes) => {
+                if bytes != buf.len() {
+                    // if a read succeeds but doesn't satisfy the buffer, it means it may be EOF
+                    // so we seek back to where we started because some paths may aggressively read
+                    // forward and ZCursor maintains the position.
+
+                    // NB: (cae) This adds a branch on every read, and will slow down every function
+                    // resting on it. Sorry
+                    self.seek(SeekFrom::Current(-(bytes as i64)))
+                        .map_err(ZByteIoError::from)?;
+                    return Err(ZByteIoError::NotEnoughBytes(bytes, buf.len()));
+                }
+                Ok(())
+            }
+            Err(e) => Err(ZByteIoError::from(e)),
+        }
     }
 
     #[inline]
