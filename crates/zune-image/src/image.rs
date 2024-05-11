@@ -373,7 +373,7 @@ impl Image {
             for x in 0..width {
                 (func)(y, x, &mut pxs);
 
-                let offset = y * height + x;
+                let offset = y * width + x;
 
                 for i in 0..COMPONENTS {
                     channels_ref[i][offset] = pxs[i];
