@@ -56,6 +56,7 @@ where
             depth: depth,
             width: width,
             height: height,
+            icc_chunk: self.icc_profile().cloned(),
             ..Default::default()
         };
 
