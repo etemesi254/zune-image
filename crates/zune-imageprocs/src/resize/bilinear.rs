@@ -23,10 +23,9 @@ pub fn bilinear_impl<T>(
     for y in 0..out_height {
         let new_y = y as f32 * h_ratio;
         let mut y0 = new_y.floor() as usize;
-        let mut y1 = y0 + 1;
-
+        let y1 = (y0 + 1).min(in_height - 1);
+        
         if smaller_image_to_larger {
-            y1 = y1.min(in_height - 1);
             y0 = y0.min(in_height - 1);
         }
         let b = new_y - y0 as f32;
@@ -35,7 +34,7 @@ pub fn bilinear_impl<T>(
             let new_x = x as f32 * w_ratio;
             // floor and truncate are slow due to handling overflow and such, so avoid them here
             let mut x0 = new_x.floor() as usize;
-            let mut x1 = x0 + 1;
+            let x1 = (x0 + 1).min(in_width - 1);
 
             // PS: I'm not sure about the impact, but it cuts down on code executed
             // the branch is deterministic hence the CPU should have an easy time predicting it
@@ -43,7 +42,6 @@ pub fn bilinear_impl<T>(
                 // in case of result image being greater than source image, it may happen that
                 // the above go beyond picture dimensions, so clamp them here if they do
                 // clamp to image width and height
-                x1 = x1.min(in_width - 1);
                 x0 = x0.min(in_width - 1);
             }
 
