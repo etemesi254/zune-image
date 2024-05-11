@@ -97,15 +97,15 @@
 
 use alloc::vec::Vec;
 use alloc::{format, vec};
-use log::error;
 
+use log::error;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZReader};
-use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::{ColorPrimaries, ColorSpace, RenderingIntent};
 use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 
-use crate::common::{BmpCompression, BmpPixelFormat};
+use crate::common::{BmpCompression, BmpPixelFormat, PROFILE_EMBEDDED, PROFILE_LINKED};
 use crate::utils::expand_bits_to_byte;
 use crate::BmpDecoderErrors;
 
@@ -140,10 +140,10 @@ pub fn probe_bmp(bytes: &[u8]) -> bool {
 /// For some configurations, alpha is disabled,
 #[derive(Clone, Copy, Default, Debug)]
 struct PaletteEntry {
-    red: u8,
+    red:   u8,
     green: u8,
-    blue: u8,
-    alpha: u8,
+    blue:  u8,
+    alpha: u8
 }
 
 /// A BMP decoder.
@@ -191,23 +191,23 @@ struct PaletteEntry {
 /// ```
 pub struct BmpDecoder<T>
 where
-    T: ZByteReaderTrait,
+    T: ZByteReaderTrait
 {
-    bytes: ZReader<T>,
-    options: DecoderOptions,
-    width: usize,
-    height: usize,
-    flip_vertically: bool,
-    rgb_bitfields: [u32; 4],
-    decoded_headers: bool,
-    pix_fmt: BmpPixelFormat,
-    comp: BmpCompression,
-    ihszie: u32,
-    hsize: u32,
-    palette: Vec<PaletteEntry>,
-    depth: u16,
-    is_alpha: bool,
-    palette_numbers: usize,
+    bytes:                ZReader<T>,
+    options:              DecoderOptions,
+    width:                usize,
+    height:               usize,
+    flip_vertically:      bool,
+    rgb_bitfields:        [u32; 4],
+    decoded_headers:      bool,
+    pix_fmt:              BmpPixelFormat,
+    comp:                 BmpCompression,
+    ihszie:               u32,
+    hsize:                u32,
+    palette:              Vec<PaletteEntry>,
+    depth:                u16,
+    is_alpha:             bool,
+    palette_numbers:      usize,
     /// Convert RGBA layout to BGRA
     /// We can do this cheaply (depends on what you consider cheap)
     /// but this requires the rgb_inverse feature
@@ -218,12 +218,16 @@ where
     ///
     /// Some passes may directly output bgra, but others don't (e.g palette),
     /// so for now we handle those paths separately
-    image_in_bgra: bool,
+    image_in_bgra:        bool,
+    /// The bytes of an ICC embedded profile if it exists
+    icc_bytes:            Option<Vec<u8>>,
+    /// Color primaries if present
+    color_primaries:      Option<ColorPrimaries>
 }
 
 impl<T> BmpDecoder<T>
 where
-    T: ZByteReaderTrait,
+    T: ZByteReaderTrait
 {
     /// Create a new bmp decoder that reads data from
     /// `data`
@@ -264,6 +268,8 @@ where
             palette_numbers: 0,
             convert_rgba_to_bgra: false,
             image_in_bgra: false,
+            icc_bytes: None,
+            color_primaries: None
         }
     }
 
@@ -289,32 +295,151 @@ where
         self.bytes.skip(8)?;
 
         let hsize = self.bytes.get_u32_le_err()?;
+        let beginning_of_header = self.bytes.position()?;
+
         let ihsize = self.bytes.get_u32_le_err()?;
 
         if ihsize.saturating_add(14) > hsize {
             return Err(BmpDecoderErrors::GenericStatic("Invalid header size"));
         }
 
-        let (width, height);
+        let (width, height, _planes, bpp, compression);
         match ihsize {
-            16 | 40 | 52 | 56 | 64 | 108 | 124 => {
-                width = self.bytes.get_u32_le_err()?;
-                height = self.bytes.get_u32_le_err()?;
-            }
             12 => {
                 // os-v2 images
                 width = self.bytes.get_u16_le_err()? as u32;
                 height = self.bytes.get_u16_le_err()? as u32;
+                _planes = self.bytes.get_u16_le_err()?;
+                bpp = self.bytes.get_u16_le_err()?;
+                compression = BmpCompression::RGB;
             }
+            40 | 52 | 56 | 64 | 108 | 124 => {
+                // Microsoft Windows bmp file
+                width = self.bytes.get_u32_le_err()?;
+                height = self.bytes.get_u32_le_err()?;
+                _planes = self.bytes.get_u16_le_err()?;
+                bpp = self.bytes.get_u16_le_err()?;
+                compression = if hsize >= 40 {
+                    match BmpCompression::from_u32(self.bytes.get_u32_le_err()?) {
+                        Some(c) => c,
+                        None => {
+                            return Err(BmpDecoderErrors::GenericStatic(
+                                "Unsupported BMP compression scheme"
+                            ));
+                        }
+                    }
+                } else {
+                    BmpCompression::RGB
+                };
+                let size = self.bytes.get_u32_le_err()?;
+                let x_pixels = self.bytes.get_u32_le_err()?;
+                let y_pixels = self.bytes.get_u32_le_err()?;
+                let color_used = self.bytes.get_u32_le_err()?;
+                let important_colors = self.bytes.get_u32_le_err()?;
+
+                trace!("Image size {}", size);
+                trace!("X Pixels: {}", x_pixels);
+                trace!("Y Pixels: {}", y_pixels);
+                trace!("Color used : {}", color_used);
+                trace!("Important Colors: {}", important_colors);
+
+                self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
+                self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
+                self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+
+                let mut colorspace_type = 0;
+
+                if ihsize > 40 {
+                    // alpha mask
+                    self.rgb_bitfields[3] = self.bytes.get_u32_le_err()?;
+
+                    colorspace_type = self.bytes.get_u32_le_err()?;
+
+                    const BMP_DENOM: f64 = 0x40000000_u32 as f64;
+
+                    let mut primaries = ColorPrimaries::default();
+
+                    primaries.red.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.red.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.red.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+
+                    primaries.green.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.green.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.green.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+
+                    primaries.blue.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.blue.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                    primaries.blue.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+
+                    self.color_primaries = Some(primaries);
+                    // gamma for red, green and blue
+                    self.bytes.skip(4 * 3)?;
+                }
+
+                if ihsize > 108 {
+                    // bmp version 5, color management info
+                    let mut intent = None;
+
+                    match self.bytes.get_u32_le_err()? {
+                        1 => intent = Some(RenderingIntent::AbsoluteColorimetric),
+                        2 => intent = Some(RenderingIntent::Saturation),
+                        4 => intent = Some(RenderingIntent::RelativeColorimetric),
+                        8 => intent = Some(RenderingIntent::Perceptual),
+                        _ => {}
+                    }
+                    trace!("Intent :{:?}", intent);
+                    let profile_data = self.bytes.get_u32_le_err()?;
+                    let profile_size = self.bytes.get_u32_le_err()?;
+                    trace!("ICC profile Data Offset: {}", profile_data);
+                    trace!("ICC profile data size: {}", profile_size);
+                    // The offset, in bytes, from the beginning of the
+                    // BITMAPV5HEADER structure to the start of the profile data.
+                    let true_position = beginning_of_header + profile_data as u64;
+
+                    trace!("True ICC offset: {true_position}");
+
+                    let current_pos = self.bytes.position()?;
+
+                    // NB: (cae) [tag=perf]: The main format is usually to have the profile
+                    // after pixels, so this may cause unnecessary jumps/seeks
+                    // but that's okay, as I prefer it here to confirm to the notion
+                    // that all headers are decoded after calling decode_header()
+
+                    let icc_bytes = self.bytes.peek_at(
+                        (true_position.saturating_sub(current_pos)) as usize,
+                        profile_size as usize
+                    );
+                    match icc_bytes {
+                        Ok(bytes) => {
+                            if colorspace_type == PROFILE_LINKED {
+                                // NB: (cae) [tag=bug]: The format is windows characters.
+                                // but I don't feel like adding the encoding_rs crate
+                                // to correctly map the characters, so those that can't
+                                // be represented by utf-8 will be filled with the replacement
+                                // character
+
+                                trace!("File: {}", alloc::string::String::from_utf8_lossy(bytes));
+                            }
+                            if colorspace_type == PROFILE_EMBEDDED {
+                                trace!("Read ICC profile from BMP file");
+                                self.icc_bytes = Some(bytes.to_vec())
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error reading ICC profile. {:?}", e);
+                        }
+                    }
+                }
+            }
+
             _ => {
                 return Err(BmpDecoderErrors::GenericStatic(
-                    "Unknown information header size",
+                    "Unknown information header size"
                 ));
             }
         }
 
         self.flip_vertically = (height as i32) > 0;
-
         self.height = (height as i32).unsigned_abs() as usize;
         self.width = width as usize;
 
@@ -322,69 +447,39 @@ where
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "height",
                 self.options.max_height(),
-                self.height,
+                self.height
             ));
         }
-
         if self.width > self.options.max_width() {
             return Err(BmpDecoderErrors::TooLargeDimensions(
                 "width",
                 self.options.max_width(),
-                self.width,
+                self.width
             ));
         }
         if self.width == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Width is zero, invalid image",
+                "Width is zero, invalid image"
             ));
         }
         if self.height == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Height is zero, invalid image",
+                "Height is zero, invalid image"
             ));
         }
 
         trace!("Width: {}", self.width);
         trace!("Height: {}", self.height);
 
-        // planes
-        if self.bytes.get_u16_le_err()? != 1 {
-            return Err(BmpDecoderErrors::GenericStatic("Invalid BMP header"));
-        }
-
-        let depth = self.bytes.get_u16_le_err()?;
-
-        if depth == 0 {
+        if bpp == 0 {
             return Err(BmpDecoderErrors::GenericStatic(
-                "Depth is zero, invalid image",
+                "Depth is zero, invalid image"
             ));
         }
 
-        let compression = if hsize >= 40 {
-            match BmpCompression::from_u32(self.bytes.get_u32_le_err()?) {
-                Some(c) => c,
-                None => {
-                    return Err(BmpDecoderErrors::GenericStatic(
-                        "Unsupported BMP compression scheme",
-                    ));
-                }
-            }
-        } else {
-            BmpCompression::RGB
-        };
-        if compression == BmpCompression::BITFIELDS {
-            self.bytes.skip(20)?;
+        //
 
-            self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
-            self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
-            self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
-
-            if ihsize > 40 {
-                self.rgb_bitfields[3] = self.bytes.get_u32_le_err()?;
-            }
-        }
-
-        match depth {
+        match bpp {
             32 => self.pix_fmt = BmpPixelFormat::RGBA,
             24 => self.pix_fmt = BmpPixelFormat::RGB,
             16 => {
@@ -402,20 +497,20 @@ where
                 }
             }
             1 | 2 | 4 => {
-                if depth == 2 {
+                if bpp == 2 {
                     warn!("Depth of 2 not officially supported");
                 }
 
                 if hsize.wrapping_sub(ihsize).wrapping_sub(14) > 0 {
                     self.pix_fmt = BmpPixelFormat::PAL8;
                 } else {
-                    let message = format!("Unknown palette for {}-color bmp", 1 << depth);
+                    let message = format!("Unknown palette for {}-color bmp", 1 << bpp);
                     return Err(BmpDecoderErrors::Generic(message));
                 }
             }
 
             _ => {
-                let message = format!("Depth {depth} unsupported");
+                let message = format!("Depth {bpp} unsupported");
                 return Err(BmpDecoderErrors::Generic(message));
             }
         };
@@ -426,14 +521,14 @@ where
         let p = self.hsize.wrapping_sub(self.ihszie).wrapping_sub(14);
 
         if self.pix_fmt == BmpPixelFormat::PAL8 {
-            let mut colors = 1_u32 << depth;
+            let mut colors = 1_u32 << bpp;
 
             if ihsize >= 36 {
                 self.bytes.set_position(46)?;
                 let t = self.bytes.get_u32_le_err()? as i32;
 
-                if t < 0 || t > (1 << depth) {
-                    let msg = format!("Incorrect number of colors {} for depth {}", t, depth);
+                if t < 0 || t > (1 << bpp) {
+                    let msg = format!("Incorrect number of colors {} for depth {}", t, bpp);
                     if self.options.strict_mode() {
                         return Err(BmpDecoderErrors::Generic(msg));
                     }
@@ -486,9 +581,9 @@ where
 
         trace!("Pixel format : {:?}", self.pix_fmt);
         trace!("Compression  : {:?}", compression);
-        trace!("Bit depth: {:?}", depth);
+        trace!("Bit depth: {:?}", bpp);
         self.comp = compression;
-        self.depth = depth;
+        self.depth = bpp;
         self.ihszie = ihsize;
         self.hsize = hsize;
         self.bytes.set_position(hsize as usize)?;
@@ -552,7 +647,7 @@ where
                 BmpPixelFormat::RGBA => ColorSpace::BGRA,
                 BmpPixelFormat::PAL8 => ColorSpace::BGR,
                 BmpPixelFormat::GRAY8 => ColorSpace::Luma,
-                BmpPixelFormat::RGB => ColorSpace::BGR,
+                BmpPixelFormat::RGB => ColorSpace::BGR
             });
         }
         Some(self.pix_fmt.into_colorspace())
@@ -586,6 +681,24 @@ where
         Ok(output)
     }
 
+    /// Return a copy of the image color primaries if present or `None` if
+    /// not
+    ///
+    /// Some specific BMP images (BMP v4 and v5) have primaries specified, if one decodes
+    /// an image like that, the primaries will be saved here
+    pub fn color_primaries(&self) -> Option<ColorPrimaries> {
+        self.color_primaries
+    }
+
+    /// Return a reference to the ICC profile of the image if present or `None` if not
+    ///
+    ///
+    /// Some specific BMP images (BMP v5) can embed an ICC profile after pixel data,
+    /// if one decodes an image like that, the icc profile can be extracted from here.
+    pub fn icc_profile(&self) -> Option<&Vec<u8>> {
+        self.icc_bytes.as_ref()
+    }
+
     /// Decode an encoded image into a buffer or return an error
     /// if something bad occurred
     ///
@@ -607,7 +720,7 @@ where
     /// - If `PRESERVE_BGRA` is false, data is in rgb(a) format
     /// - If `PRESERVE_RGBA` is true, data is in bgr(a) format
     fn decode_into_inner<const PRESERVE_BGRA: bool>(
-        &mut self, buf: &mut [u8],
+        &mut self, buf: &mut [u8]
     ) -> Result<(), BmpDecoderErrors> {
         self.decode_headers()?;
 
@@ -757,7 +870,7 @@ where
                                             .take(input_bytes_per_width)
                                         {
                                             let v = u32::from(u16::from_le_bytes(
-                                                self.bytes.read_fixed_bytes_or_zero::<2>(),
+                                                self.bytes.read_fixed_bytes_or_zero::<2>()
                                             ));
                                             count += 2;
                                             if PRESERVE_BGRA {
@@ -796,7 +909,7 @@ where
                                             "Input bytes cannot be greater than count"
                                         );
                                         self.bytes.skip(
-                                            (input_bytes_per_width * 2).saturating_sub(count),
+                                            (input_bytes_per_width * 2).saturating_sub(count)
                                         )?;
                                     }
                                     self.image_in_bgra = true;
@@ -836,7 +949,7 @@ where
                     // to bytes and then read palette entries
                     if self.pix_fmt != BmpPixelFormat::PAL8 {
                         return Err(BmpDecoderErrors::GenericStatic(
-                            "Bit Depths less than 8 must have a palette",
+                            "Bit Depths less than 8 must have a palette"
                         ));
                     }
                     let width_bytes = ((self.width + 7) >> 3) << 3;
@@ -859,13 +972,13 @@ where
                             self.depth as usize,
                             true,
                             &in_width_buf,
-                            &mut scanline_bytes,
+                            &mut scanline_bytes
                         );
                         self.expand_palette(&scanline_bytes, out_bytes, true);
                     }
                     self.flip_vertically ^= true;
                 }
-                d => unreachable!("Unhandled depth {}", d),
+                d => unreachable!("Unhandled depth {}", d)
             }
         }
         // The code for flip uses xor, so that if the image was to be flipped
@@ -921,7 +1034,7 @@ where
                         pix.swap(0, 2);
                     }
                 }
-                _ => error!("Unhandled pixel format"),
+                _ => error!("Unhandled pixel format")
             }
             self.image_in_bgra = true;
         }
@@ -980,7 +1093,7 @@ where
     }
     // RUST borrowing rules
     fn expand_palette_from_remaining_bytes(
-        &mut self, buf: &mut [u8], unpad: bool,
+        &mut self, buf: &mut [u8], unpad: bool
     ) -> Result<(), ZByteIoError> {
         //let in_bytes = self.bytes.remaining_bytes()?;
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();
@@ -1307,7 +1420,7 @@ where
                                 .for_each(|x| x[0..4].copy_from_slice(&pix[..4]));
                             pos += 4 * usize::from(p1);
                         }
-                        _ => unreachable!("Uhh ohh"),
+                        _ => unreachable!("Uhh ohh")
                     }
                 }
             }
@@ -1327,7 +1440,7 @@ fn shift_signed(mut v: u32, shift: i32, mut bits: u32) -> u32 {
         0x21, /*0b00100001*/
         0x41, /*0b01000001*/
         0x81, /*0b10000001*/
-        0x01, /*0b00000001*/
+        0x01  /*0b00000001*/
     ];
     const SHIFT_TABLE: [i32; 9] = [0, 0, 0, 1, 0, 2, 4, 6, 0];
 
