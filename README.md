@@ -1,6 +1,6 @@
 # zune-image
 
-This workspace features a set of small,independent and performant image codecs that can be used
+This workspace features a set of small, independent and performant image codecs that can be used
 for decoding maniuplating and sometimes encoding images in a variety of formats.
 
 The set of codecs aim to have the following features in order of priority
