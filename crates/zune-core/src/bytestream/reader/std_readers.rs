@@ -1,7 +1,7 @@
 #![cfg(feature = "std")]
 
 use std::io;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
 use crate::bytestream::ZByteReaderTrait;
@@ -30,7 +30,7 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
                 }
                 Ok(())
             }
-            Err(e) => Err(ZByteIoError::from(e)),
+            Err(e) => Err(ZByteIoError::from(e))
         }
     }
 
