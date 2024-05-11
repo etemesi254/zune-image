@@ -124,3 +124,24 @@ pub enum ColorCharacteristics {
     /// The image is in linear colorspace
     Linear
 }
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct SingleColorPrimary {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64
+}
+#[derive(Default, Debug, Copy, Clone)]
+pub struct ColorPrimaries {
+    pub red:   SingleColorPrimary,
+    pub green: SingleColorPrimary,
+    pub blue:  SingleColorPrimary
+}
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum RenderingIntent {
+    AbsoluteColorimetric,
+    Saturation,
+    RelativeColorimetric,
+    Perceptual
+}
