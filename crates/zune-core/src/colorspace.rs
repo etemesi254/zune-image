@@ -124,20 +124,34 @@ pub enum ColorCharacteristics {
     /// The image is in linear colorspace
     Linear
 }
-
+/// Represents a single channel color primary.
+///
+/// This can be viewed as a 3D coordinate of the color primary
+/// for a given colorspace
 #[derive(Default, Debug, Copy, Clone)]
 pub struct SingleColorPrimary {
     pub x: f64,
     pub y: f64,
     pub z: f64
 }
+/// A collection of red,green and blue color primaries placed
+/// in one struct for easy manipulation
 #[derive(Default, Debug, Copy, Clone)]
 pub struct ColorPrimaries {
+    /// Red color primaries
     pub red:   SingleColorPrimary,
+    /// Green color primaries
     pub green: SingleColorPrimary,
+    /// Blue color primaries
     pub blue:  SingleColorPrimary
 }
 
+/// Rendering intents indicate what one may want to do with colors outside of it's gamut
+///
+///
+/// Further reading
+///  - [IBM Rendering Intent](https://www.ibm.com/docs/en/i/7.5?topic=management-rendering-intents)
+///  - [ColorGate Blog](https://blog.colorgate.com/en/rendering-intent-explained)   
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum RenderingIntent {
     AbsoluteColorimetric,
