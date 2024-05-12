@@ -24,7 +24,7 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
                     // back to where we started because some paths may aggressively read forward and
                     // ZCursor maintains the position.
 
-                    // NB: (cae) This adds a branch on every read, and will slow down every function
+                    // NB: (cae) [tag=perf] This adds a branch on every read, and will slow down every function
                     // resting on it. Sorry
                     self.seek(SeekFrom::Current(-(bytes_read as i64)))
                         .map_err(ZByteIoError::from)?;
@@ -34,10 +34,10 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
                     bytes_read += bytes;
                 }
                 Err(e) => return Err(ZByteIoError::from(e))
-          }
-      }
+            }
+        }
 
-      Ok(())
+        Ok(())
     }
 
     #[inline]
