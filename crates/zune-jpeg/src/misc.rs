@@ -269,7 +269,7 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             .iter()
             .find(|c| c.component_id == ComponentID::Y)
         {
-            if y_component.horizontal_sample == 2 && y_component.vertical_sample == 2 {
+            if y_component.horizontal_sample == 2 || y_component.vertical_sample == 2 {
                 handle_that_annoying_bug = true;
             }
         }
