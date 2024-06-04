@@ -148,6 +148,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut stream = BitStream::new();
         let mut tmp = [0_i32; DCT_BLOCK];
 
+        let comp_len = self.components.len();
+
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
@@ -157,8 +159,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
                 pos
             ) == pos
-                || self.input_colorspace == ColorSpace::YCCK
-                || self.input_colorspace == ColorSpace::CMYK
+                || comp_len == 4
+            // Special colorspace
             {
                 // allocate enough space to hold a whole MCU width
                 // this means we should take into account sampling ratios
@@ -486,5 +488,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         *pixels_written = px;
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+
+    use crate::JpegDecoder;
+
+    #[test]
+    fn im() {
+        let image = std::fs::read("/home/caleb/Downloads/re.jpg").unwrap();
+        JpegDecoder::new(ZCursor::new(&image)).decode().unwrap();
     }
 }
