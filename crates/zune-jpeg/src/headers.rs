@@ -256,6 +256,11 @@ pub(crate) fn parse_start_of_frame<T: ZReaderTrait>(
         img.options = img.options.jpeg_set_out_colorspace(ColorSpace::Luma);
         debug!("Overriding default colorspace set to Luma");
     }
+    if num_components == 4 && img.input_colorspace == ColorSpace::YCbCr {
+        trace!("Input image has 4 components, defaulting to CMYK colorspace");
+        // https://entropymine.wordpress.com/2018/10/22/how-is-a-jpeg-images-color-type-determined/
+        img.input_colorspace = ColorSpace::CMYK;
+    }
 
     // set number of components
     img.info.components = num_components;

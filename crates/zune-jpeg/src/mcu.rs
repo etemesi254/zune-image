@@ -148,6 +148,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         let mut stream = BitStream::new();
         let mut tmp = [0_i32; DCT_BLOCK];
 
+        let comp_len = self.components.len();
+
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
@@ -157,8 +159,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
                 pos
             ) == pos
-                || self.input_colorspace == ColorSpace::YCCK
-                || self.input_colorspace == ColorSpace::CMYK
+                || comp_len == 4
+            // Special colorspace
             {
                 // allocate enough space to hold a whole MCU width
                 // this means we should take into account sampling ratios
@@ -480,23 +482,4 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         *pixels_written = px;
         Ok(())
     }
-}
-
-#[test]
-fn test_random_crash() {
-    use zune_core::bit_depth::BitDepth;
-    use zune_core::options::EncoderOptions;
-    use zune_ppm::PPMEncoder;
-    let file =
-        std::fs::read("/home/caleb/Downloads/293810656-812435e7-c83f-4335-bfb8-1668b1208220.jpg")
-            .unwrap();
-    let mut decoder = JpegDecoder::new(file);
-    let pix = decoder.decode().unwrap();
-    let (w, h) = decoder.dimensions().unwrap();
-    let c = PPMEncoder::new(
-        &pix,
-        EncoderOptions::new(w, h, ColorSpace::RGB, BitDepth::Eight)
-    );
-    let file = c.encode().unwrap();
-    std::fs::write("./hello.ppm", &file).unwrap();
 }
