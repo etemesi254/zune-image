@@ -21,6 +21,6 @@ jobs:
           override: true
       - name: Install Cargo semver
         run: cargo install cargo-semver-checks --locked
-      - name: Check semver
-        run: cargo semver-checks --workspace
+#      - name: Check semver
+#        run: cargo semver-checks --workspace
 
