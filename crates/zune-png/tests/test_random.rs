@@ -6,6 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+#![allow(unused_variables, unused_imports)]
 use std::fs::{read, File, OpenOptions};
 use std::path::Path;
 
