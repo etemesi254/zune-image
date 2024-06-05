@@ -490,15 +490,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
 }
-#[cfg(test)]
-mod tests {
-    use zune_core::bytestream::ZCursor;
-
-    use crate::JpegDecoder;
-
-    #[test]
-    fn im() {
-        let image = std::fs::read("/home/caleb/Downloads/re.jpg").unwrap();
-        JpegDecoder::new(ZCursor::new(&image)).decode().unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn im() {
+//         let image = std::fs::read("/home/caleb/Downloads/re.jpg").unwrap();
+//         JpegDecoder::new(ZCursor::new(&image)).decode().unwrap();
+//     }
+// }
