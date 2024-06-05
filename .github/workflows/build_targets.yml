@@ -35,7 +35,9 @@ jobs:
             os: macos-14
             target: aarch64-apple-darwin
 
-
+          - name: x86 Architecture
+            os: ubuntu-latest
+            target: i686-unknown-linux-gnu
     
     runs-on: ${{ matrix.os }}
 
