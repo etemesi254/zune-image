@@ -6,6 +6,9 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+#![cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#![cfg(feature = "sse41")]
+
 #[test]
 fn test_transpose_sse_scalar_identical() {
     use nanorand::Rng;
