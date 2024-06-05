@@ -258,16 +258,37 @@ pub fn post_process_image(
         DisposeOp::Background => {
             // APNG_DISPOSE_OP_BACKGROUND: the frame's region of the output buffer
             // is to be cleared to fully transparent black before rendering the next frame.
-            for line_stride in output
-                .chunks_exact_mut(info.width)
-                .skip(frame_info.y_offset)
-                .take(frame_info.width)
-            {
-                let start_frame = frame_info.x_offset * nc;
-                let end_frame = (frame_info.x_offset + info.width) * nc;
-
-                line_stride[start_frame..end_frame].fill(0);
-            }
+            // for line_stride in output
+            //     .chunks_exact_mut(info.width * nc)
+            //     .skip(frame_info.y_offset)
+            //     .take(frame_info.width)
+            // {
+            //     let start_frame = frame_info.x_offset * nc;
+            //     let end_frame = (frame_info.x_offset + frame_info.width) * nc;
+            //
+            //     line_stride[start_frame..end_frame].fill(0);
+            // }
+            // // Also zero out the area around the frame
+            // //
+            // //{
+            // // zero out top area
+            // for line_stride in output
+            //     .chunks_exact_mut(info.width * nc)
+            //     .take(frame_info.y_offset)
+            // {
+            //     line_stride.fill(0);
+            // }
+            output.fill(0);
+            //
+            //     // zero out area around frame
+            //     for line_stride in output
+            //         .chunks_exact_mut(info.width * nc)
+            //         .skip(frame_info.y_offset)
+            //         .take(frame_info.width)
+            //     {
+            //         line_stride[..].fill(0);
+            //     }
+            // }
         }
         DisposeOp::Previous => {
             // copy background if possible
