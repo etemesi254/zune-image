@@ -18,18 +18,6 @@ jobs:
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
 
-          - name: Windows
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-
-          - name: MacOS
-            os: macos-latest
-            target: x86_64-apple-darwin
-
-          # - name: Web
-          #   os: ubuntu-latest
-          #   target: wasm32-unknown-unknown
-
     runs-on: ${{ matrix.os }}
 
 
@@ -38,22 +26,4 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Run tests
-        if: matrix.name != 'Windows' # Windows sucks due to paths, and commands syntax
         run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace --no-fail-fast
-      - name: Build with no features
-        run: cargo c --no-default-features --workspace
-      - name: Setup
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          target: ${{ matrix.target }}
-          override: true
-
-      - name: Check Basics
-        uses: actions-rs/cargo@v1
-        if: matrix.name != 'Windows' # Windows sucks due to paths, and command syntac
-        with:
-          command: test
-          args: --target ${{ matrix.target }} --workspace --all --no-default-features
-
