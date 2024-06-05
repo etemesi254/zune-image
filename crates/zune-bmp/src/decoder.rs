@@ -313,7 +313,7 @@ where
                 bpp = self.bytes.get_u16_le_err()?;
                 compression = BmpCompression::RGB;
             }
-            40 | 52 | 56 | 64 | 108 | 124 => {
+            16 | 40 | 52 | 56 | 64 | 108 | 124 => {
                 // Microsoft Windows bmp file
                 width = self.bytes.get_u32_le_err()?;
                 height = self.bytes.get_u32_le_err()?;
@@ -331,102 +331,107 @@ where
                 } else {
                     BmpCompression::RGB
                 };
-                let size = self.bytes.get_u32_le_err()?;
-                let x_pixels = self.bytes.get_u32_le_err()?;
-                let y_pixels = self.bytes.get_u32_le_err()?;
-                let color_used = self.bytes.get_u32_le_err()?;
-                let important_colors = self.bytes.get_u32_le_err()?;
+                if ihsize > 16 {
+                    let size = self.bytes.get_u32_le_err()?;
+                    let x_pixels = self.bytes.get_u32_le_err()?;
+                    let y_pixels = self.bytes.get_u32_le_err()?;
+                    let color_used = self.bytes.get_u32_le_err()?;
+                    let important_colors = self.bytes.get_u32_le_err()?;
 
-                trace!("Image size {}", size);
-                trace!("X Pixels: {}", x_pixels);
-                trace!("Y Pixels: {}", y_pixels);
-                trace!("Color used : {}", color_used);
-                trace!("Important Colors: {}", important_colors);
+                    trace!("Image size {}", size);
+                    trace!("X Pixels: {}", x_pixels);
+                    trace!("Y Pixels: {}", y_pixels);
+                    trace!("Color used : {}", color_used);
+                    trace!("Important Colors: {}", important_colors);
 
-                self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
-                self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
-                self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
+                    self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
+                    self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
+                    self.rgb_bitfields[2] = self.bytes.get_u32_le_err()?;
 
-                let mut colorspace_type = 0;
+                    let mut colorspace_type = 0;
 
-                if ihsize > 40 {
-                    // alpha mask
-                    self.rgb_bitfields[3] = self.bytes.get_u32_le_err()?;
+                    if ihsize > 40 {
+                        // alpha mask
+                        self.rgb_bitfields[3] = self.bytes.get_u32_le_err()?;
 
-                    colorspace_type = self.bytes.get_u32_le_err()?;
+                        colorspace_type = self.bytes.get_u32_le_err()?;
 
-                    const BMP_DENOM: f64 = 0x40000000_u32 as f64;
+                        const BMP_DENOM: f64 = 0x40000000_u32 as f64;
 
-                    let mut primaries = ColorPrimaries::default();
+                        let mut primaries = ColorPrimaries::default();
 
-                    primaries.red.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.red.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.red.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.red.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.red.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.red.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
 
-                    primaries.green.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.green.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.green.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.green.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.green.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.green.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
 
-                    primaries.blue.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.blue.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
-                    primaries.blue.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.blue.x = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.blue.y = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
+                        primaries.blue.z = (self.bytes.get_u32_le_err()? as f64) / BMP_DENOM;
 
-                    self.color_primaries = Some(primaries);
-                    // gamma for red, green and blue
-                    self.bytes.skip(4 * 3)?;
-                }
-
-                if ihsize > 108 {
-                    // bmp version 5, color management info
-                    let mut intent = None;
-
-                    match self.bytes.get_u32_le_err()? {
-                        1 => intent = Some(RenderingIntent::AbsoluteColorimetric),
-                        2 => intent = Some(RenderingIntent::Saturation),
-                        4 => intent = Some(RenderingIntent::RelativeColorimetric),
-                        8 => intent = Some(RenderingIntent::Perceptual),
-                        _ => {}
+                        self.color_primaries = Some(primaries);
+                        // gamma for red, green and blue
+                        self.bytes.skip(4 * 3)?;
                     }
-                    trace!("Intent :{:?}", intent);
-                    let profile_data = self.bytes.get_u32_le_err()?;
-                    let profile_size = self.bytes.get_u32_le_err()?;
-                    trace!("ICC profile Data Offset: {}", profile_data);
-                    trace!("ICC profile data size: {}", profile_size);
-                    // The offset, in bytes, from the beginning of the
-                    // BITMAPV5HEADER structure to the start of the profile data.
-                    let true_position = beginning_of_header + profile_data as u64;
 
-                    trace!("True ICC offset: {true_position}");
+                    if ihsize > 108 {
+                        // bmp version 5, color management info
+                        let mut intent = None;
 
-                    let current_pos = self.bytes.position()?;
-
-                    // NB: (cae) [tag=perf]: The main format is usually to have the profile
-                    // after pixels, so this may cause unnecessary jumps/seeks
-                    // but that's okay, as I prefer it here to confirm to the notion
-                    // that all headers are decoded after calling decode_header()
-
-                    let icc_bytes = self.bytes.peek_at(
-                        (true_position.saturating_sub(current_pos)) as usize,
-                        profile_size as usize
-                    );
-                    match icc_bytes {
-                        Ok(bytes) => {
-                            if colorspace_type == PROFILE_LINKED {
-                                // NB: (cae) [tag=bug]: The format is windows characters.
-                                // but I don't feel like adding the encoding_rs crate
-                                // to correctly map the characters, so those that can't
-                                // be represented by utf-8 will be filled with the replacement
-                                // character
-
-                                trace!("File: {}", alloc::string::String::from_utf8_lossy(bytes));
-                            }
-                            if colorspace_type == PROFILE_EMBEDDED {
-                                trace!("Read ICC profile from BMP file");
-                                self.icc_bytes = Some(bytes.to_vec())
-                            }
+                        match self.bytes.get_u32_le_err()? {
+                            1 => intent = Some(RenderingIntent::AbsoluteColorimetric),
+                            2 => intent = Some(RenderingIntent::Saturation),
+                            4 => intent = Some(RenderingIntent::RelativeColorimetric),
+                            8 => intent = Some(RenderingIntent::Perceptual),
+                            _ => {}
                         }
-                        Err(e) => {
-                            error!("Error reading ICC profile. {:?}", e);
+                        trace!("Intent :{:?}", intent);
+                        let profile_data = self.bytes.get_u32_le_err()?;
+                        let profile_size = self.bytes.get_u32_le_err()?;
+                        trace!("ICC profile Data Offset: {}", profile_data);
+                        trace!("ICC profile data size: {}", profile_size);
+                        // The offset, in bytes, from the beginning of the
+                        // BITMAPV5HEADER structure to the start of the profile data.
+                        let true_position = beginning_of_header + profile_data as u64;
+
+                        trace!("True ICC offset: {true_position}");
+
+                        let current_pos = self.bytes.position()?;
+
+                        // NB: (cae) [tag=perf]: The main format is usually to have the profile
+                        // after pixels, so this may cause unnecessary jumps/seeks
+                        // but that's okay, as I prefer it here to confirm to the notion
+                        // that all headers are decoded after calling decode_header()
+
+                        let icc_bytes = self.bytes.peek_at(
+                            (true_position.saturating_sub(current_pos)) as usize,
+                            profile_size as usize
+                        );
+                        match icc_bytes {
+                            Ok(bytes) => {
+                                if colorspace_type == PROFILE_LINKED {
+                                    // NB: (cae) [tag=bug]: The format is windows characters.
+                                    // but I don't feel like adding the encoding_rs crate
+                                    // to correctly map the characters, so those that can't
+                                    // be represented by utf-8 will be filled with the replacement
+                                    // character
+
+                                    trace!(
+                                        "File: {}",
+                                        alloc::string::String::from_utf8_lossy(bytes)
+                                    );
+                                }
+                                if colorspace_type == PROFILE_EMBEDDED {
+                                    trace!("Read ICC profile from BMP file");
+                                    self.icc_bytes = Some(bytes.to_vec())
+                                }
+                            }
+                            Err(e) => {
+                                error!("Error reading ICC profile. {:?}", e);
+                            }
                         }
                     }
                 }
@@ -769,12 +774,18 @@ where
 
                             let pad_size = self.width * self.pix_fmt.num_components();
 
-                            if self.rgb_bitfields == [0; 4] && self.depth == 16 {
+                            if (self.rgb_bitfields == [0; 4]
+                                || self.comp != BmpCompression::BITFIELDS)
+                                && self.depth == 16
+                            {
                                 // no bitfields. set default bitfields masks
                                 self.rgb_bitfields = [31 << 10, 31 << 5, 31, 31];
                             }
 
-                            if self.rgb_bitfields == [0; 4] && self.depth == 32 {
+                            if (self.rgb_bitfields == [0; 4]
+                                || self.comp != BmpCompression::BITFIELDS)
+                                && self.depth == 32
+                            {
                                 // if there are no bitfields, it's simply a copy, adding alpha channel
                                 // as 255
                                 for out in buf.rchunks_exact_mut(pad_size) {
@@ -803,39 +814,36 @@ where
                                 let bcount = mb.count_ones();
                                 let acount = ma.count_ones();
 
+                                // Anonymous conversion function
+                                let conv_function = |v: u32, a: &mut [u8]| {
+                                    if PRESERVE_BGRA {
+                                        a[0] = shift_signed(v & mb, rshift, rcount) as u8;
+                                        a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                        a[2] = shift_signed(v & mr, bshift, bcount) as u8;
+                                    } else {
+                                        a[0] = shift_signed(v & mr, rshift, rcount) as u8;
+                                        a[1] = shift_signed(v & mg, gshift, gcount) as u8;
+                                        a[2] = shift_signed(v & mb, bshift, bcount) as u8;
+                                    }
+
+                                    if a.len() > 3 {
+                                        if ma == 0 {
+                                            // alpha would be zero
+                                            a[3] = 255;
+                                        } else {
+                                            a[3] = shift_signed(v & ma, ashift, acount) as u8;
+                                        }
+                                    }
+                                };
+
                                 if self.depth == 32 {
                                     // for the case where the bit-depth is 32, there are no padding bytes
                                     // hence we can iterate simply
 
                                     for out in buf.rchunks_exact_mut(pad_size) {
-                                        for a in out.chunks_exact_mut(4) {
+                                        for raw_pix in out.chunks_exact_mut(4) {
                                             let v = self.bytes.get_u32_le();
-
-                                            if PRESERVE_BGRA {
-                                                // set order to be BGRA
-                                                a[0] = shift_signed(v & mb, rshift, rcount) as u8;
-                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                                a[2] = shift_signed(v & mr, bshift, bcount) as u8;
-                                                if ma == 0 {
-                                                    // alpha would be zero
-                                                    a[3] = 255;
-                                                } else {
-                                                    a[3] =
-                                                        shift_signed(v & ma, ashift, acount) as u8;
-                                                }
-                                            } else {
-                                                // order to be RGBA
-                                                a[0] = shift_signed(v & mr, rshift, rcount) as u8;
-                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                                a[2] = shift_signed(v & mb, bshift, bcount) as u8;
-                                                if ma == 0 {
-                                                    // alpha would be zero
-                                                    a[3] = 255;
-                                                } else {
-                                                    a[3] =
-                                                        shift_signed(v & ma, ashift, acount) as u8;
-                                                }
-                                            }
+                                            conv_function(v, raw_pix);
                                         }
                                     }
                                     self.image_in_bgra = true;
@@ -865,7 +873,7 @@ where
 
                                     for out in buf.rchunks_exact_mut(pad_size) {
                                         let mut count = 0;
-                                        for a in out
+                                        for raw_pix in out
                                             .chunks_exact_mut(self.pix_fmt.num_components())
                                             .take(input_bytes_per_width)
                                         {
@@ -873,44 +881,17 @@ where
                                                 self.bytes.read_fixed_bytes_or_zero::<2>()
                                             ));
                                             count += 2;
-                                            if PRESERVE_BGRA {
-                                                a[0] = shift_signed(v & mb, rshift, rcount) as u8;
-                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                                a[2] = shift_signed(v & mr, bshift, bcount) as u8;
 
-                                                if a.len() > 3 {
-                                                    // handle alpha channel
-                                                    if ma == 0 {
-                                                        a[3] = 255;
-                                                    } else {
-                                                        a[3] = shift_signed(v & ma, ashift, acount)
-                                                            as u8;
-                                                    }
-                                                }
-                                            } else {
-                                                a[0] = shift_signed(v & mr, rshift, rcount) as u8;
-                                                a[1] = shift_signed(v & mg, gshift, gcount) as u8;
-                                                a[2] = shift_signed(v & mb, bshift, bcount) as u8;
-
-                                                if a.len() > 3 {
-                                                    // handle alpha channel
-                                                    if ma == 0 {
-                                                        a[3] = 255;
-                                                    } else {
-                                                        a[3] = shift_signed(v & ma, ashift, acount)
-                                                            as u8;
-                                                    }
-                                                }
-                                            }
+                                            conv_function(v, raw_pix);
                                         }
                                         //assert_eq!(count, input_bytes_per_width * 2);
                                         debug_assert!(
                                             input_bytes_per_width * 2 >= count,
                                             "Input bytes cannot be greater than count"
                                         );
-                                        self.bytes.skip(
-                                            (input_bytes_per_width * 2).saturating_sub(count)
-                                        )?;
+                                        let padding_bytes =
+                                            (input_bytes_per_width * 2).saturating_sub(count);
+                                        self.bytes.skip(padding_bytes)?;
                                     }
                                     self.image_in_bgra = true;
                                 }
@@ -931,7 +912,7 @@ where
                                 // skip padding bytes
                                 self.bytes.skip(in_width.saturating_sub(out_width))?;
                                 // then flip bgr to rgb
-                                if PRESERVE_BGRA {
+                                if !PRESERVE_BGRA {
                                     for pix_pair in out.chunks_exact_mut(3) {
                                         pix_pair.swap(0, 2);
                                     }
