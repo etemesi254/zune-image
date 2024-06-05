@@ -22,6 +22,7 @@ jobs:
 
 
     steps:
+      - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - name: Run tests
         run: RUSTFLAGS="-C debuginfo=2"  cargo test --verbose --release --workspace --no-fail-fast
