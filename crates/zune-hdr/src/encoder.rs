@@ -20,9 +20,9 @@ use crate::errors::HdrEncodeErrors;
 /// Data is expected to be in `f32` and its size should be
 /// `width*height*3`
 pub struct HdrEncoder<'a> {
-    data:    &'a [f32],
+    data: &'a [f32],
     headers: Option<&'a HashMap<String, String>>,
-    options: EncoderOptions
+    options: EncoderOptions,
 }
 
 impl<'a> HdrEncoder<'a> {
@@ -36,7 +36,7 @@ impl<'a> HdrEncoder<'a> {
         Self {
             data,
             headers: None,
-            options
+            options,
         }
     }
     /// Add extra headers to be encoded  with the image
@@ -142,7 +142,7 @@ impl<'a> HdrEncoder<'a> {
         }
         if self.options.colorspace() != ColorSpace::RGB {
             return Err(HdrEncodeErrors::UnsupportedColorspace(
-                self.options.colorspace()
+                self.options.colorspace(),
             ));
         }
         let mut writer = ZWriter::new(out);
@@ -205,7 +205,7 @@ impl<'a> HdrEncoder<'a> {
 }
 
 fn rle<T: ZByteWriterTrait>(
-    data: &[u8], writer: &mut ZWriter<T>, width: usize
+    data: &[u8], writer: &mut ZWriter<T>, width: usize,
 ) -> Result<(), ZByteIoError> {
     const MIN_RLE: usize = 4;
     let mut cur = 0;
@@ -338,7 +338,7 @@ fn frexp(s: f32) -> (f32, i32) {
         let lg = fast_log2(abs(s));
         let lg_floor = floor(lg);
         // Note: This is the only reason we need the standard library
-        // I haven't found a goof exp2 function, fast_exp2 doesn't work
+        // I haven't found a good exp2 function, fast_exp2 doesn't work
         // and libm/musl exp2 introduces visible color distortions and is slow, so for
         // now let's stick to whatever the platform provides
         let x = (lg - lg_floor - 1.0).exp2();

@@ -6,11 +6,12 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::fs::read;
+use std::fs::{read, File, OpenOptions};
 use std::path::Path;
 
 use png::Transformations;
 use zune_core::bytestream::ZCursor;
+use zune_core::options::EncoderOptions;
 use zune_png::{post_process_image, PngDecoder};
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
@@ -59,18 +60,19 @@ fn test_animation() {
     let mut decoder = PngDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
     let colorspace = decoder.colorspace().unwrap();
-    let _depth = decoder.depth().unwrap();
+    let depth = decoder.depth().unwrap();
     let info = decoder.info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
         vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 
+    let mut i = 0;
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
         let frame = decoder.frame_info().unwrap();
 
         let pix = decoder.decode_raw().unwrap();
-        //let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+        let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
         post_process_image(
             &info,
             colorspace,
@@ -82,7 +84,16 @@ fn test_animation() {
         )
         .unwrap();
 
-        //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
+        // let c = std::io::BufWriter::new(
+        //     OpenOptions::new()
+        //         .write(true)
+        //         .truncate(true)
+        //         .create(true)
+        //         .open(format!("./{i}.png"))
+        //         .unwrap()
+        // );
+        i += 1;
+        //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(c);
         // std::fs::write(format!("./{i}.png"), bytes).unwrap();
         background = Some(pix);
     }

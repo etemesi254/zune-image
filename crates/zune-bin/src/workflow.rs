@@ -32,10 +32,10 @@ struct CmdPipeline<T: IntoImage> {
 }
 impl<T: IntoImage> CmdPipeline<T> {
     pub fn new() -> CmdPipeline<T> {
-        return CmdPipeline {
+        CmdPipeline {
             inner:   Pipeline::new(),
             formats: vec![]
-        };
+        }
     }
 }
 
@@ -156,7 +156,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 pub fn add_operations<T: IntoImage>(
     args: &ArgMatches, workflow: &mut Pipeline<T>
 ) -> Result<(), String> {
-    for (_pos, id) in args.ids().enumerate() {
+    for id in args.ids() {
         if args.try_get_many::<clap::Id>(id.as_str()).is_ok() {
             // ignore groups
             continue;

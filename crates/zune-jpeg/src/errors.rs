@@ -97,7 +97,7 @@ impl Debug for DecodeErrors {
                 "Too large dimensions {dimensions},library supports up to {}", crate::decoder::MAX_DIMENSIONS
             ),
             Self::TooSmallOutput(expected, found) => write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes"),
-            Self::IoErrors(error)=>write!(f,"I/O errors {:?}",error),
+            Self::IoErrors(error)=>write!(f,"I/O errors {error:?}"),
         }
     }
 }
