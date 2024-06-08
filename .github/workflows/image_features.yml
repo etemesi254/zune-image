@@ -19,7 +19,7 @@ jobs:
     strategy:
       matrix:
         features: [ "image_formats", "serde-support", "metadata", "threads", "simd", "log","jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr", "bmp" ]
-
+        imageproc: [ "avx2","sse2","sse3","sse41","log","exif","threads" ]
     runs-on: ubuntu-latest
 
     steps:
@@ -29,4 +29,9 @@ jobs:
         with:
           command: build
           args: -p zune-image --no-default-features -F ${{ matrix.features }}
+      - name: Check independent features in zune-imageprocs
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+            -p zune-imageprocs --no-default-features -F ${{ matrix.imageproc }}
 
