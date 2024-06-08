@@ -59,7 +59,7 @@ impl OperationsTrait for GaussianBlur {
                 BitType::U8 => {
                     let mut temp = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         gaussian_blur_u8(
                             channel.reinterpret_as_mut::<u8>()?,
                             &mut temp,
@@ -72,7 +72,7 @@ impl OperationsTrait for GaussianBlur {
                 BitType::U16 => {
                     let mut temp = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         gaussian_blur_u16(
                             channel.reinterpret_as_mut::<u16>()?,
                             &mut temp,
@@ -84,7 +84,7 @@ impl OperationsTrait for GaussianBlur {
                 }
                 BitType::F32 => {
                     let mut temp = vec![0.0; width * height];
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         gaussian_blur_f32(
                             channel.reinterpret_as_mut()?,
                             &mut temp,
@@ -94,12 +94,7 @@ impl OperationsTrait for GaussianBlur {
                         );
                     }
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
 

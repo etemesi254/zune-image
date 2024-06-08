@@ -64,7 +64,7 @@ impl OperationsTrait for Gamma {
         {
             trace!("Running gamma correction in single threaded mode");
 
-            for channel in image.get_channels_mut(false) {
+            for channel in image.channels_mut(false) {
                 match depth.bit_type() {
                     BitType::U16 => {
                         gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value)
@@ -82,14 +82,10 @@ impl OperationsTrait for Gamma {
                             .for_each(|x| {
                                 *x = value_inv * x.powf(self.value);
                             });
-                        Ok(())
                     }
 
                     d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ));
+                        return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                     }
                 }
             }

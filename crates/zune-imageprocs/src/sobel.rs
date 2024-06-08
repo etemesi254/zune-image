@@ -60,7 +60,7 @@ impl OperationsTrait for Sobel {
 
         #[cfg(not(feature = "threads"))]
         {
-            for channel in image.get_channels_mut(true) {
+            for channel in image.channels_mut(true) {
                 let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
                 match depth {
                     BitType::U8 => sobel_int::<u8>(
@@ -81,12 +81,7 @@ impl OperationsTrait for Sobel {
                         width,
                         height
                     ),
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ))
-                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
                 *channel = out_channel;
             }

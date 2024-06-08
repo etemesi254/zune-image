@@ -47,7 +47,7 @@ impl OperationsTrait for SpatialOps {
         {
             trace!("Running erode filter in single threaded mode");
 
-            for channel in image.get_channels_mut(true) {
+            for channel in image.channels_mut(true) {
                 let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                 match depth.bit_type() {
@@ -67,12 +67,7 @@ impl OperationsTrait for SpatialOps {
                         height,
                         self.operation
                     ),
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ))
-                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
                 *channel = new_channel;
             }

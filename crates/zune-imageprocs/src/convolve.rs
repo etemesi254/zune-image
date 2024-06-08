@@ -148,7 +148,9 @@ impl OperationsTrait for Convolve {
         }
         #[cfg(not(feature = "threads"))]
         {
-            for channel in image.get_channels_mut(true) {
+            trace!("Running convolve in single threaded mode");
+
+            for channel in image.channels_mut(true) {
                 let mut out_channel =
                     Channel::new_with_bit_type(width * height * depth.size_of(), depth.bit_type());
 
@@ -183,12 +185,7 @@ impl OperationsTrait for Convolve {
                             self.scale
                         )?;
                     }
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ))
-                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
                 *channel = out_channel;
             }

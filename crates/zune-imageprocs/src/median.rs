@@ -81,7 +81,7 @@ impl OperationsTrait for Median {
         {
             trace!("Running median filter single threaded mode");
 
-            for channel in image.get_channels_mut(false) {
+            for channel in image.channels_mut(false) {
                 let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
                 match depth.bit_type() {
@@ -99,12 +99,7 @@ impl OperationsTrait for Median {
                         width,
                         height
                     ),
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(
-                            self.get_name(),
-                            d
-                        ))
-                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
                 *channel = new_channel;
             }

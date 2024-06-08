@@ -102,7 +102,7 @@ impl OperationsTrait for BoxBlur {
                 BitType::U16 => {
                     let mut scratch_space = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         let data = channel.reinterpret_as_mut::<u16>()?;
                         box_blur_u16(data, &mut scratch_space, width, height, self.radius);
                     }
@@ -110,7 +110,7 @@ impl OperationsTrait for BoxBlur {
                 BitType::U8 => {
                     let mut scratch_space = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         let data = channel.reinterpret_as_mut::<u8>()?;
                         box_blur_u8(data, &mut scratch_space, width, height, self.radius);
                     }
@@ -119,7 +119,7 @@ impl OperationsTrait for BoxBlur {
                 BitType::F32 => {
                     let mut scratch_space = vec![0.0; width * height];
 
-                    for channel in image.get_channels_mut(false) {
+                    for channel in image.channels_mut(false) {
                         let data = channel.reinterpret_as_mut::<f32>()?;
                         box_blur_f32(data, &mut scratch_space, width, height, self.radius);
                     }

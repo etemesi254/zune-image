@@ -105,7 +105,7 @@ impl OperationsTrait for Rotate {
 
             for channel in image.channels_mut(false) {
                 let mut new_channel =
-                    Channel::new_with_length_and_type(channel.len(), channel.get_type_id());
+                    Channel::new_with_length_and_type(channel.len(), channel.type_id());
                 match im_type {
                     BitType::U8 => {
                         rotate::<u8>(

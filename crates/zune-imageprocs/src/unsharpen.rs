@@ -65,7 +65,7 @@ impl OperationsTrait for Unsharpen {
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(true) {
+                    for channel in image.channels_mut(true) {
                         unsharpen_u16(
                             channel.reinterpret_as_mut::<u16>()?,
                             &mut blur_buffer,
@@ -83,7 +83,7 @@ impl OperationsTrait for Unsharpen {
                     let mut blur_buffer = vec![0; width * height];
                     let mut blur_scratch = vec![0; width * height];
 
-                    for channel in image.get_channels_mut(true) {
+                    for channel in image.channels_mut(true) {
                         unsharpen_u8(
                             channel.reinterpret_as_mut::<u8>()?,
                             &mut blur_buffer,
@@ -96,12 +96,7 @@ impl OperationsTrait for Unsharpen {
                         );
                     }
                 }
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(
-                        self.get_name(),
-                        d
-                    ))
-                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
         }
         #[cfg(feature = "threads")]
