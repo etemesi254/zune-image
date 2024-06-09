@@ -33,5 +33,5 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-            -p zune-imageprocs --no-default-features -F ${{ matrix.imageproc }}
+          args: -p zune-imageprocs --no-default-features -F ${{ matrix.imageproc }}
 
