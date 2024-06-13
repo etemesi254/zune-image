@@ -18,7 +18,6 @@ pub struct CmdOptions {
     pub mmap:                 MmapOptions,
     pub max_width:            usize,
     pub max_height:           usize,
-    pub strict_mode:          bool,
     pub override_files:       bool,
     pub experimental_formats: bool
 }
@@ -29,7 +28,6 @@ impl CmdOptions {
             mmap:                 MmapOptions::No,
             max_width:            0,
             max_height:           0,
-            strict_mode:          false,
             override_files:       false,
             experimental_formats: false
         }
