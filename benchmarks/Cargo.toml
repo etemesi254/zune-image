@@ -30,6 +30,10 @@ zune-jpeg = { path = "../crates/zune-jpeg" }
 zune-image = { path = "../crates/zune-image", features = ["all"] }
 zune-hdr = { path = "../crates/zune-hdr" }
 image = { version = "0.24.8", default-features = false, features = ["bmp", "hdr"] }
+zune-imageprocs = { path = "../crates/zune-imageprocs" }
+
+# VIPS
+libvips = "1.7.0"
 
 [dev-dependencies.criterion]
 version = "0.5.1"
@@ -55,4 +59,8 @@ harness = false
 
 [[bench]]
 name = "decode_hdr"
+harness = false
+
+[[bench]]
+name = "imageprocs"
 harness = false
