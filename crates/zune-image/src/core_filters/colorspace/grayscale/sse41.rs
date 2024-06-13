@@ -14,7 +14,7 @@ use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
+use crate::core_filters::colorspace::grayscale::scalar::convert_rgb_to_grayscale_scalar;
 
 #[target_feature(enable = "sse4.1")]
 #[allow(
