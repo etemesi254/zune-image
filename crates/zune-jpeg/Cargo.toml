@@ -10,6 +10,12 @@ categories = ["multimedia::images"]
 exclude = ["/benches/images/*", "/tests/*", "/.idea/*", "/.gradle/*", "/test-images/*", "fuzz/*"]
 description = "A fast, correct and safe jpeg decoder"
 
+[lints.rust]
+# Disable feature checker for fuzzing since it's used and cargo doesn't
+# seem to recognise fuzzing
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 x86 = []
@@ -17,6 +23,7 @@ neon = []
 std = ["zune-core/std"]
 log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
+
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "^0.5.0-rc1" }

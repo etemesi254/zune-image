@@ -24,7 +24,7 @@ pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_val
     {
         #[cfg(feature = "avx2")]
         {
-            use crate::grayscale::avx2::convert_rgb_to_grayscale_u8_avx2;
+            use crate::core_filters::colorspace::grayscale::avx2::convert_rgb_to_grayscale_u8_avx2;
 
             if is_x86_feature_detected!("avx2") {
                 unsafe {
@@ -35,7 +35,7 @@ pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_val
 
         #[cfg(feature = "sse41")]
         {
-            use crate::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
+            use crate::core_filters::colorspace::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
 
             if is_x86_feature_detected!("sse4.1") {
                 unsafe {
@@ -56,10 +56,12 @@ pub fn rgb_to_grayscale_f32(r: &[f32], g: &[f32], b: &[f32], out: &mut [f32], ma
 mod benchmarks {
     extern crate test;
 
+    use crate::core_filters::colorspace::grayscale::scalar::convert_rgb_to_grayscale_scalar_u16;
+
     #[cfg(feature = "sse41")]
     #[bench]
     fn convert_rgb_to_grayscale_sse41_bench(b: &mut test::Bencher) {
-        use crate::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
+        use crate::core_filters::colorspace::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -79,7 +81,7 @@ mod benchmarks {
     #[cfg(feature = "avx2")]
     #[bench]
     fn convert_rgb_to_grayscale_avx2_bench(b: &mut test::Bencher) {
-        use crate::grayscale::avx2::convert_rgb_to_grayscale_u16_avx2;
+        use crate::core_filters::colorspace::grayscale::avx2::convert_rgb_to_grayscale_u8_avx2;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -91,14 +93,14 @@ mod benchmarks {
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_u16_avx2(&c1, &c2, &c3, &mut c4, 255);
+                convert_rgb_to_grayscale_u8_avx2(&c1, &c2, &c3, &mut c4, 255);
             };
         });
     }
 
     #[bench]
     fn convert_rgb_to_grayscale_scalar_bench(b: &mut test::Bencher) {
-        use crate::grayscale::scalar::convert_rgb_to_grayscale_scalar;
+        use crate::core_filters::colorspace::grayscale::scalar::convert_rgb_to_grayscale_scalar;
         let width = 800;
         let height = 800;
         let dimensions = width * height;
@@ -109,25 +111,7 @@ mod benchmarks {
 
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
-            convert_rgb_to_grayscale_scalar(&c1, &c2, &c3, &mut c4, 255);
-        });
-    }
-
-    #[cfg(feature = "avx2")]
-    #[bench]
-    fn convert_rgb_to_grayscale_u16_avx_bench(b: &mut test::Bencher) {
-        use crate::grayscale::avx2::convert_rgb_to_grayscale_u16_avx2;
-        let width = 800;
-        let height = 800;
-        let dimensions = width * height;
-
-        let c1 = vec![0_u16; dimensions];
-        let c2 = vec![0_u16; dimensions];
-        let c3 = vec![0_u16; dimensions];
-
-        let mut c4 = vec![255; dimensions];
-        b.iter(|| unsafe {
-            convert_rgb_to_grayscale_u16_avx2(&c1, &c2, &c3, &mut c4, 255);
+            convert_rgb_to_grayscale_scalar_u16(&c1, &c2, &c3, &mut c4, 255);
         });
     }
 }
