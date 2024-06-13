@@ -48,6 +48,8 @@
     clippy::wildcard_imports
 )]
 
+pub use zune_image;
+
 pub mod auto_orient;
 pub mod bilateral_filter;
 pub mod blend;
