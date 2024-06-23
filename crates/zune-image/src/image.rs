@@ -546,7 +546,7 @@ impl Image {
             }
             for y in 0..height {
                 for x in 0..width {
-                    let position = y * height + x;
+                    let position = y * width + x;
 
                     // This must be kept in sync with
                     // MAX_CHANNELS, we can't do it another way
