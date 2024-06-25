@@ -93,6 +93,8 @@
     clippy::uninlined_format_args,
     rustdoc::redundant_explicit_links
 )]
+#![cfg_attr(feature = "benchmarks", feature(test))]
+
 extern crate core;
 
 pub mod channel;
