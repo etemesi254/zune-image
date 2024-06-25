@@ -151,7 +151,7 @@ pub fn de_interleave_four_channels_f32(
 mod benchmarks {
     extern crate test;
 
-    #[cfg(feature = "sse2")]
+    #[cfg(feature = "sse41")]
     #[bench]
     fn de_interleave_3_channels_sse2_bench(b: &mut test::Bencher) {
         use crate::deinterleave::sse2::de_interleave_three_channels_sse2;
