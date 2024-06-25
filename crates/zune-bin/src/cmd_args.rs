@@ -302,6 +302,12 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help_heading(HELP_HEADING)
             .allow_negative_numbers(true)
             .help("Adjust image brightness")
+            .value_parser(value_parser!(f32)),
+        Arg::new("rotate")
+            .long("rotate")
+            .help_heading(HELP_HEADING)
+            .allow_negative_numbers(false)
+            .help("Rotate image by 90,180 or 270")
             .value_parser(value_parser!(f32))
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
