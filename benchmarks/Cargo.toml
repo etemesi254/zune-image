@@ -18,7 +18,6 @@ zune-inflate = { path = "../crates/zune-inflate" }
 # png benchmarks
 png = { version = "0.17.11" }
 spng = { version = "0.1.0", features = ["zlib-ng"] }
-lodepng = "3.7.2"
 zune-png = { path = "../crates/zune-png" }
 
 # JPEG benchmarks
@@ -29,7 +28,7 @@ zune-jpeg = { path = "../crates/zune-jpeg" }
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
 zune-hdr = { path = "../crates/zune-hdr" }
-image = { version = "0.24.8", default-features = false, features = ["bmp", "hdr"] }
+image = { version = "0.25.1", default-features = false, features = ["bmp", "hdr", "jpeg"] }
 zune-imageprocs = { path = "../crates/zune-imageprocs" }
 
 # VIPS

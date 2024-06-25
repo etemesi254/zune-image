@@ -46,10 +46,6 @@ fn decode_spng(data: &[u8]) -> Vec<u8> {
     out
 }
 
-fn decode_lodepng(data: &[u8]) -> lodepng::Image {
-    lodepng::Decoder::new().decode(data).unwrap()
-}
-
 fn decode_test(c: &mut Criterion) {
     let path = sample_path().join("test-images/png/benchmarks/speed_bench.png");
     let data = read(path).unwrap();
@@ -67,10 +63,6 @@ fn decode_test(c: &mut Criterion) {
 
     group.bench_function("spng", |b| {
         b.iter(|| black_box(decode_spng(data.as_slice())))
-    });
-
-    group.bench_function("lodepng", |b| {
-        b.iter(|| black_box(decode_lodepng(data.as_slice())))
     });
 }
 
@@ -93,10 +85,6 @@ fn decode_test_interlaced(c: &mut Criterion) {
     group.bench_function("spng", |b| {
         b.iter(|| black_box(decode_spng(data.as_slice())))
     });
-
-    group.bench_function("lodepng", |b| {
-        b.iter(|| black_box(decode_lodepng(data.as_slice())))
-    });
 }
 
 fn decode_test_16_bit(c: &mut Criterion) {
@@ -117,10 +105,6 @@ fn decode_test_16_bit(c: &mut Criterion) {
     group.bench_function("spng", |b| {
         b.iter(|| black_box(decode_spng(data.as_slice())))
     });
-
-    group.bench_function("lodepng", |b| {
-        b.iter(|| black_box(decode_lodepng(data.as_slice())))
-    });
 }
 
 fn decode_test_trns_chunk(c: &mut Criterion) {
@@ -140,10 +124,6 @@ fn decode_test_trns_chunk(c: &mut Criterion) {
 
     group.bench_function("spng", |b| {
         b.iter(|| black_box(decode_spng(data.as_slice())))
-    });
-
-    group.bench_function("lodepng", |b| {
-        b.iter(|| black_box(decode_lodepng(data.as_slice())))
     });
 }
 criterion_group!(name=benches;
