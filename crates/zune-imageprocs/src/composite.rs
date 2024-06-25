@@ -303,7 +303,7 @@ fn composite_alpha_channel<T>(
     f32: From<T>
 {
     if method == CompositeMethod::Over {
-        let max_v = 1.0 / f32::from(T::max_val());
+        let max_v = 1.0 / f32::from(T::MAX_VAL);
 
         for (dst_width, src_width) in dst_alpha
             .chunks_exact_mut(width_dest)
@@ -346,7 +346,7 @@ fn composite_src<T: Copy + NumOps<T>>(
 ) {
     // fill with max value, this whitens the output
     // or opaques the alpha channel
-    dest.fill(T::max_val());
+    dest.fill(T::MAX_VAL);
     composite_over(src, dest, start_x, start_y, width_src, width_dest);
 }
 fn composite_over<T: Copy>(

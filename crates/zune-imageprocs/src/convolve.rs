@@ -226,7 +226,7 @@ where
             .sum::<f32>()
             * scale
     )
-    .zclamp(T::min_val(), T::max_val())
+    .zclamp(T::MIN_VAL, T::MAX_VAL)
 }
 
 fn convolve_7x7_inner<T>(in_array: &[T; 49], weights: &[f32; 49], scale: f32) -> T

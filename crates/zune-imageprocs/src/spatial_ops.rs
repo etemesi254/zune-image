@@ -61,8 +61,8 @@ fn find_contrast<
 >(
     data: &[T]
 ) -> T {
-    let mut minimum = T::max_val();
-    let mut maximum = T::min_val();
+    let mut minimum = T::MAX_VAL;
+    let mut maximum = T::MIN_VAL;
 
     for datum in data {
         if *datum < minimum {

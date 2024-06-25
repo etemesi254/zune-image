@@ -176,7 +176,7 @@ fn color_matrix_component<T: NumOps<T> + Copy>(
 ) where
     f32: From<T>
 {
-    let max_t = f32::from(T::max_val());
+    let max_t = f32::from(T::MAX_VAL);
     // we need to multiply the first channel with the color matrix and then add the new offset only from the first row
 
     for (((r, g), b), a) in c1

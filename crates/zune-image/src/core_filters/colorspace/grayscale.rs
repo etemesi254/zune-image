@@ -93,14 +93,13 @@ mod benchmarks {
         let mut c4 = vec![255; dimensions];
         b.iter(|| {
             unsafe {
-                convert_rgb_to_grayscale_u8_avx2(&c1, &c2, &c3, &mut c4, 255);
+                convert_rgb_to_grayscale_u8_avx2(&c1, &c2, &c3, &mut c4);
             };
         });
     }
 
     #[bench]
     fn convert_rgb_to_grayscale_scalar_bench(b: &mut test::Bencher) {
-        use crate::core_filters::colorspace::grayscale::scalar::convert_rgb_to_grayscale_scalar;
         let width = 800;
         let height = 800;
         let dimensions = width * height;

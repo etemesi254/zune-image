@@ -82,7 +82,7 @@ where
     T: NumOps<T> + Sub<Output = T> + Copy
 {
     for pixel in in_image.iter_mut() {
-        *pixel = T::max_val() - *pixel;
+        *pixel = T::MAX_VAL - *pixel;
     }
 }
 

@@ -16,6 +16,10 @@
 /// Various number traits useful for generic image
 /// processing.
 pub trait NumOps<T> {
+    /// Maximum value supported by this type
+    const MAX_VAL: T;
+    /// Minimum value supported by this type
+    const MIN_VAL: T;
     /// Return the maximum value possible for this
     /// type
     fn max_val() -> T;
@@ -92,6 +96,9 @@ impl ZFloat for f64 {}
 macro_rules! numops_for_int {
     ($int:tt) => {
         impl NumOps<$int> for $int {
+            const MAX_VAL: $int = $int::MAX;
+            const MIN_VAL: $int = $int::MIN;
+
             #[inline(always)]
             fn max_val() -> $int {
                 $int::MAX
@@ -167,6 +174,8 @@ numops_for_int!(u16);
 numops_for_int!(i32);
 
 impl NumOps<f32> for f32 {
+    const MAX_VAL: f32 = 1.0;
+    const MIN_VAL: f32 = 0.0;
     fn max_val() -> f32 {
         1.0
     }
@@ -215,6 +224,10 @@ impl NumOps<f32> for f32 {
         1.0
     }
 
+    fn zclamp(self, min: f32, max: f32) -> f32 {
+        self.clamp(min, max)
+    }
+
     #[allow(clippy::cast_sign_loss)]
     fn to_usize(self) -> usize {
         self as _
@@ -222,10 +235,6 @@ impl NumOps<f32> for f32 {
 
     fn to_f64(self) -> f64 {
         f64::from(self)
-    }
-
-    fn zclamp(self, min: f32, max: f32) -> f32 {
-        self.clamp(min, max)
     }
 
     fn to_f32(self) -> f32 {

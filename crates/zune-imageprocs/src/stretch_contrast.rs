@@ -118,9 +118,9 @@ where
 
     for pixel in image.iter_mut() {
         if *pixel >= upper {
-            *pixel = T::max_val();
+            *pixel = T::MAX_VAL;
         } else if *pixel <= lower {
-            *pixel = T::min_val();
+            *pixel = T::MIN_VAL;
         } else {
             let numerator = maximum * u32::from(*pixel - lower);
             let scaled = fastdiv_u32(numerator, mod_len);

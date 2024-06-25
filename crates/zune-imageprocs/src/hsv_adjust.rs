@@ -155,8 +155,8 @@ where
     let vsu = v * s * (h * PI / 180.0).cos();
     let vsw = v * s * (h * PI / 180.0).sin();
 
-    let min = T::min_val().to_f32();
-    let max = T::max_val().to_f32();
+    let min = T::MIN_VAL.to_f32();
+    let max = T::MAX_VAL.to_f32();
 
     for ((r_i, g_i), b_i) in r.iter_mut().zip(g.iter_mut()).zip(b.iter_mut()) {
         let in_r = f32::from(*r_i);

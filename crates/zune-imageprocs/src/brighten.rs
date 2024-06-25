@@ -127,8 +127,8 @@ impl OperationsTrait for Brighten {
 pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
     channel: &mut [T], value: f32, _max_value: T
 ) {
-    let t_min = T::min_val().to_f32();
-    let t_max = T::max_val().to_f32();
+    let t_min = T::MIN_VAL.to_f32();
+    let t_max = T::MAX_VAL.to_f32();
     let scale_v = value.clamp(-1f32, 1f32) * (t_max - t_min);
     channel
         .iter_mut()
