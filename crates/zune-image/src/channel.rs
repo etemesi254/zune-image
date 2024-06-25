@@ -178,6 +178,12 @@ impl Channel {
     pub const fn len(&self) -> usize {
         self.length
     }
+    /// Set a new length for the channel
+    ///
+    /// # Safety
+    /// It is up to the caller to ensure the channel
+    /// bytes are valid in whatever they are to represent
+    ///
     pub(crate) unsafe fn set_len(&mut self, len: usize) {
         assert!(len <= self.capacity);
         self.length = len;
