@@ -86,7 +86,8 @@ pub struct Channel {
     length:   usize,
     capacity: usize,
     // type id for which the channel was created with
-    type_id:  TypeId
+    type_id:  TypeId,
+    layout:   Layout
 }
 
 // safety: The functions ae unsafe because the
@@ -177,6 +178,10 @@ impl Channel {
     pub const fn len(&self) -> usize {
         self.length
     }
+    pub(crate) unsafe fn set_len(&mut self, len: usize) {
+        assert!(len <= self.capacity);
+        self.length = len;
+    }
 
     /// Return true whether this channel length is zero
     ///
@@ -195,21 +200,19 @@ impl Channel {
     ///
     /// It is not unsafe to call this, it's just left as unsafe
     /// to remind one to be careful of what they are doing
-    unsafe fn alloc(size: usize) -> *mut u8 {
+    unsafe fn alloc(size: usize) -> (*mut u8, Layout) {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
         // Safety
         //  alloc zeroed == alloc + std::mem::zeroed()
         // and we are bound by the zeroed trait, hence we are sure that
         // for whatever type we are going to allocate for,
         // it can be represented with a bit-representation of zero.
-        alloc_zeroed(layout)
+        (alloc_zeroed(layout), layout)
     }
     /// Reallocate the pointer in place increasing
     /// it's capacity
-    unsafe fn realloc(&mut self, new_size: usize) {
-        let layout = Layout::from_size_align(new_size, MIN_ALIGNMENT).unwrap();
-
-        self.ptr = realloc(self.ptr, layout, new_size);
+    pub unsafe fn realloc(&mut self, new_size: usize) {
+        self.ptr = realloc(self.ptr, self.layout, new_size);
         // set capacity to be new size
         self.capacity = new_size;
     }
@@ -325,13 +328,14 @@ impl Channel {
     /// returns: Channel
     ///
     pub(crate) fn new_with_capacity_and_type(capacity: usize, type_id: TypeId) -> Channel {
-        let ptr = unsafe { Self::alloc(capacity) };
+        let (ptr, layout) = unsafe { Self::alloc(capacity) };
 
         Self {
             ptr,
             length: 0,
             capacity,
-            type_id
+            type_id,
+            layout
         }
     }
 
