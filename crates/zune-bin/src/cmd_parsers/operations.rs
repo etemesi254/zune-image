@@ -25,6 +25,7 @@ use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::mirror::{Mirror, MirrorMode};
 use zune_imageprocs::resize::{Resize, ResizeMethod};
+use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::stretch_contrast::StretchContrast;
@@ -201,6 +202,10 @@ pub fn parse_options<T: IntoImage>(
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(0f32, 1f32, value)));
         debug!("Added lightness argument with value {}", value);
+    } else if argument == "rotate" {
+        let value = *args.get_one::<f32>(argument).unwrap();
+        workflow.chain_operations(Box::new(Rotate::new(value)));
+        debug!("Added rotate argument with value {}", value);
     }
 
     Ok(())
