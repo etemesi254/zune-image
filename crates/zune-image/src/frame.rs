@@ -29,13 +29,64 @@ use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 ///
 /// Each frame also contains a duration or delay, for animated images,
 /// this is how long this particular frame should be shown
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub struct Frame {
     pub(crate) channels:    Vec<Channel>,
     pub(crate) numerator:   usize,
     pub(crate) denominator: usize
 }
 
+impl Clone for Frame {
+    fn clone(&self) -> Self {
+        #[cfg(feature = "threads")]
+        {
+            // Differences:
+            // Machine: AMD Ryzen 5 4500U, 6 Cores, 8Gb RAM
+            //  command
+            // cargo bench  --lib frame::benchmarks  --manifest-path /home/caleb/Documents/rust/zune-image/crates/zune-image/Cargo.toml --features benchmarks
+            //
+            // Results
+            //
+            // test frame::benchmarks::bench_frame_clone_in_use                                            ... bench:     683,207.72 ns/iter (+/- 216,758.39)
+            // test frame::benchmarks::bench_frame_clone_single_threaded                                   ... bench:   4,650,606.80 ns/iter (+/- 764,505.79)
+
+            // a threaded implementation of clones, this makes clones faster if we need
+            // to copy huge images
+            let channels = &self.channels;
+            // safeguards to ensure that we justify starting threads
+            if channels.len() > 1 && unsafe { channels[0].alias().len() > 1000 } {
+                let bit_type = channels[0].type_id();
+                let length = channels[0].len();
+
+                // create new channels
+                let mut new_channels = vec![Channel::new_with_length_and_type(length, bit_type)];
+
+                std::thread::scope(|c| {
+                    for (old, new) in channels.iter().zip(new_channels.iter_mut()) {
+                        c.spawn(|| {
+                            let old_alias = unsafe { old.alias() };
+                            let new_alias = unsafe { new.alias_mut() };
+
+                            assert_eq!(old_alias.len(), new_alias.len());
+                            // now copy
+                            new_alias.copy_from_slice(old_alias);
+                        });
+                    }
+                });
+                return Frame {
+                    channels:    new_channels,
+                    numerator:   self.numerator,
+                    denominator: self.denominator
+                };
+            }
+        }
+        Frame {
+            channels:    self.channels.clone(),
+            numerator:   self.numerator,
+            denominator: self.denominator
+        }
+    }
+}
 impl Frame {
     /// Create a new frame with default duration of 0
     ///
@@ -609,5 +660,36 @@ mod tests {
             .separate_color_and_alpha_ref(ColorSpace::LumaA)
             .unwrap();
         assert_eq!(colors.len(), 1);
+    }
+}
+
+#[cfg(feature = "benchmarks")]
+#[cfg(test)]
+mod benchmarks {
+    extern crate test;
+
+    use crate::channel::Channel;
+    use crate::frame::Frame;
+
+    #[bench]
+    fn bench_frame_clone_in_use(b: &mut test::Bencher) {
+        let width = 2000;
+        let height = 2000;
+        let c1 = vec![Channel::new_with_length::<u8>(width * height); 3];
+        let frame = Frame::new(c1);
+
+        b.iter(|| {
+            let _ = frame.clone();
+        });
+    }
+    #[bench]
+    fn bench_frame_clone_single_threaded(b: &mut test::Bencher) {
+        // emulation of single thread execution
+        let width = 2000;
+        let height = 2000;
+        let c1 = vec![Channel::new_with_length::<u8>(width * height); 3];
+        b.iter(|| {
+            let _ = c1.clone();
+        });
     }
 }
