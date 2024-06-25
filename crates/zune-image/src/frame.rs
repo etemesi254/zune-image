@@ -47,8 +47,8 @@ impl Clone for Frame {
             //
             // Results
             //
-            // test frame::benchmarks::bench_frame_clone_in_use                                            ... bench:     683,207.72 ns/iter (+/- 216,758.39)
-            // test frame::benchmarks::bench_frame_clone_single_threaded                                   ... bench:   4,650,606.80 ns/iter (+/- 764,505.79)
+            // test frame::benchmarks::bench_frame_clone_in_use              ... bench:     969,168.73 ns/iter (+/- 230,475.24)
+            // test frame::benchmarks::bench_frame_clone_single_threaded     ... bench:   3,398,499.05 ns/iter (+/- 322,817.40)
 
             // a threaded implementation of clones, this makes clones faster if we need
             // to copy huge images
@@ -56,15 +56,24 @@ impl Clone for Frame {
             // safeguards to ensure that we justify starting threads
             if channels.len() > 1 && unsafe { channels[0].alias().len() > 1000 } {
                 let bit_type = channels[0].type_id();
-                let length = channels[0].len();
 
                 // create new channels
-                let mut new_channels = vec![Channel::new_with_length_and_type(length, bit_type)];
+                let mut new_channels =
+                    vec![Channel::new_with_capacity_and_type(1, bit_type); channels.len()];
 
                 std::thread::scope(|c| {
                     for (old, new) in channels.iter().zip(new_channels.iter_mut()) {
                         c.spawn(|| {
                             let old_alias = unsafe { old.alias() };
+                            // make enough space to fit the new array
+                            unsafe {
+                                // Safety: This is only unsafe since we are reallocating the
+                                // old array
+                                new.realloc(old_alias.len());
+                                // Safety: We have guaranteed the new array has this size
+                                // and we double in the function (capacity >=len)
+                                new.set_len(old_alias.len());
+                            }
                             let new_alias = unsafe { new.alias_mut() };
 
                             assert_eq!(old_alias.len(), new_alias.len());
@@ -692,4 +701,13 @@ mod benchmarks {
             let _ = c1.clone();
         });
     }
+}
+
+#[test]
+fn hello() {
+    let width = 2000;
+    let height = 2000;
+    let c1 = vec![Channel::new_with_length::<u8>(width * height); 3];
+    let frame = Frame::new(c1);
+    frame.clone();
 }
