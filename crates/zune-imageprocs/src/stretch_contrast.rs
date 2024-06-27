@@ -177,9 +177,5 @@ mod benchmarks {
         let dimensions = width * height;
         let mut in_vec = vec![0.0; dimensions];
         nanorand::WyRand::new().fill(&mut in_vec);
-
-        b.iter(|| {
-            stretch_contrast_f32(&mut in_vec, 0.5, 0.8).unwrap();
-        });
     }
 }
