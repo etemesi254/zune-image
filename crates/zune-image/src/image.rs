@@ -171,12 +171,8 @@ impl Image {
     pub fn flatten_frames<T: Default + Copy + 'static + Pod>(&self) -> Vec<Vec<T>> {
         //
         assert_eq!(self.metadata.depth().size_of(), size_of::<T>());
-        let colorspace = self.colorspace();
 
-        self.frames_ref()
-            .iter()
-            .map(|x| x.flatten(colorspace))
-            .collect()
+        self.frames_ref().iter().map(|x| x.flatten()).collect()
     }
     /// Convert image to a byte representation interleaving
     /// image pixels where necessary
@@ -187,13 +183,12 @@ impl Image {
     /// i.e RGB data looks like `[R,R,G,G,G,B,B]`
     #[allow(dead_code)]
     pub(crate) fn to_u8(&self) -> Vec<Vec<u8>> {
-        let colorspace = self.colorspace();
         if self.metadata.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else if self.metadata.depth() == BitDepth::Sixteen {
             self.frames_ref()
                 .iter()
-                .map(|z| z.u16_to_native_endian(colorspace))
+                .map(|z| z.u16_to_native_endian())
                 .collect()
         } else {
             todo!("Unimplemented")
@@ -599,4 +594,23 @@ pub(crate) fn checked_mul(
         .unwrap()
         .checked_mul(colorspace_components)
         .unwrap()
+}
+
+#[cfg(feature = "benchmarks")]
+mod benchmarks {
+
+    extern crate test;
+
+    use zune_core::colorspace::ColorSpace;
+
+    use crate::image::Image;
+
+    #[bench]
+    fn bench_flatten_image(b: &mut test::Bencher) {
+        let image = Image::fill(0_u8, ColorSpace::RGB, 2000, 2000);
+
+        b.iter(|| {
+            let _ = image.flatten_to_u8();
+        });
+    }
 }
