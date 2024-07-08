@@ -4,7 +4,6 @@ use std::cmp::min;
 use zune_core::bytestream::ZByteReaderTrait;
 
 use crate::channel::{Channel, ChannelErrors};
-use crate::errors::ImageErrors;
 use crate::metadata::ImageMetadata;
 
 /// Swizzle three channels optionally using simd intrinsics where possible
@@ -173,7 +172,7 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
         }
         n => {
             let mut channels_ref = Vec::with_capacity(channels.len());
-            for channel in &channels {
+            for channel in channels {
                 channels_ref.push(channel.reinterpret_as::<T>()?);
             }
             let mut written_pixels = 0;
