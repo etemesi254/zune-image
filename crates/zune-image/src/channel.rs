@@ -184,6 +184,7 @@ impl Channel {
     /// It is up to the caller to ensure the channel
     /// bytes are valid in whatever they are to represent
     ///
+    #[allow(dead_code)]
     pub(crate) unsafe fn set_len(&mut self, len: usize) {
         assert!(len <= self.capacity);
         self.length = len;
