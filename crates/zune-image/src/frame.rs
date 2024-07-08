@@ -16,7 +16,7 @@ use std::any::TypeId;
 use bytemuck::Pod;
 use zune_core::colorspace::ColorSpace;
 
-use crate::channel::Channel;
+use crate::channel::{Channel, ChannelErrors};
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 
 /// A single image frame
@@ -314,10 +314,19 @@ impl Frame {
         self.channels.insert(index, channel)
     }
 
-    pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(
-        &self, colorspace: ColorSpace
-    ) -> Vec<T> {
-        let out_pixels = match colorspace.num_components() {
+    /// Flatten the image
+    ///
+    /// This converts the planar channels into interleaved format, e.g.
+    /// converting channels in format `RRRRR,GGGGG,BBBBBB` into `R,G,B,R,G,B,R,G,B`
+    ///
+    /// # Returns
+    /// - Ok(mem) -  A vector containing the image
+    /// - Err(e) - An error occurred trying to represent the image as type `T`
+    ///
+    pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(&self) -> Vec<T> {
+        let out_pixels = match self.channels.len() {
+            0=>vec![],
+
             1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
 
             2 => {
@@ -355,10 +364,111 @@ impl Frame {
                     .collect::<Vec<T>>()
             }
             // panics, all the way down
-            _ => unreachable!()
+            n => {
+                let mut channels_ref = Vec::with_capacity(self.channels.len());
+                for channel in &self.channels {
+                    channels_ref.push(channel.reinterpret_as::<T>().unwrap());
+                }
+                let mut output = vec![T::default(); channels_ref.len() * channels_ref[0].len()];
+                for (pos, pixel) in output.chunks_exact_mut(n).enumerate() {
+                    for (channel, out_p) in channels_ref.iter().zip(pixel) {
+                        *out_p = channel[pos];
+                    }
+                }
+                output
+            }
         };
 
         out_pixels
+    }
+    /// Flatten the image into a vector
+    ///
+    /// This converts the planar channels into interleaved format, e.g.
+    /// converting channels in format `RRRRR,GGGGG,BBBBBB` into `R,G,B,R,G,B,R,G,B`
+    ///
+    /// # Returns
+    /// - Ok(size) -  Bytes written to the memory location
+    /// - Err(e) - An error occurred trying to represent the image as type `T`
+    ///
+
+    pub fn flatten_into<T: Clone + Default + 'static + Copy + Pod>(
+        &self, into: &mut [T]
+    ) -> Result<usize, ChannelErrors> {
+        match self.channels.len() {
+            0 => Ok(0),
+            1 => {
+                let channel = self.channels[0].reinterpret_as::<T>()?;
+                let min_size = channel.len().min(into.len());
+                into[..min_size].copy_from_slice(&channel[..min_size]);
+                return Ok(min_size);
+            }
+            2 => {
+                let luma_channel = self.channels[0].reinterpret_as::<T>()?;
+                let alpha_channel = self.channels[1].reinterpret_as::<T>()?;
+
+                luma_channel
+                    .iter()
+                    .zip(alpha_channel)
+                    .zip(into.chunks_exact_mut(2))
+                    .for_each(|((l, a), dst)| {
+                        dst[0] = *l;
+                        dst[1] = *a;
+                    });
+                let min_size = luma_channel.len().min(alpha_channel.len());
+                return Ok((min_size * self.channels.len()).min(into.len()));
+            }
+            3 => {
+                let c1 = self.channels[0].reinterpret_as::<T>()?;
+                let c2 = self.channels[1].reinterpret_as::<T>()?;
+                let c3 = self.channels[2].reinterpret_as::<T>()?;
+
+                c1.iter()
+                    .zip(c2)
+                    .zip(c3)
+                    .zip(into.chunks_exact_mut(3))
+                    .for_each(|(((a, b), c), dst)| {
+                        dst[0] = *a;
+                        dst[1] = *b;
+                        dst[2] = *c;
+                    });
+                let min_size = c1.len().min(c2.len()).min(c3.len());
+                return Ok((min_size * self.channels.len()).min(into.len()));
+            }
+            4 => {
+                let c1 = self.channels[0].reinterpret_as::<T>()?;
+                let c2 = self.channels[1].reinterpret_as::<T>()?;
+                let c3 = self.channels[2].reinterpret_as::<T>()?;
+                let c4 = self.channels[3].reinterpret_as::<T>()?;
+
+                c1.iter()
+                    .zip(c2)
+                    .zip(c3)
+                    .zip(c4)
+                    .zip(into.chunks_exact_mut(4))
+                    .for_each(|((((a, b), c), d), dst)| {
+                        dst[0] = *a;
+                        dst[1] = *b;
+                        dst[2] = *c;
+                        dst[3] = *d;
+                    });
+                let min_size = c1.len().min(c2.len()).min(c3.len()).min(c4.len());
+                return Ok((min_size * self.channels.len()).min(into.len()));
+            }
+            n => {
+                let mut channels_ref = Vec::with_capacity(self.channels.len());
+                for channel in &self.channels {
+                    channels_ref.push(channel.reinterpret_as::<T>()?);
+                }
+                let mut written_pixels = 0;
+                for (pos, pixel) in into.chunks_exact_mut(n).enumerate() {
+                    for (channel, out_p) in channels_ref.iter().zip(pixel) {
+                        *out_p = channel[pos];
+                        written_pixels += 1;
+                    }
+                }
+                return Ok(written_pixels);
+            }
+        }
     }
 
     /// convert `u16` channels  to native endian
@@ -371,7 +481,7 @@ impl Frame {
     ///
     /// # Panics
     /// If channel isn't storing the u16 as it's internal  type
-    pub fn u16_to_native_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
+    pub fn u16_to_native_endian(&self) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
             if channel.type_id() != TypeId::of::<u16>() {
@@ -380,11 +490,11 @@ impl Frame {
                 //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));
             }
         }
-        let length = self.channels[0].len() * colorspace.num_components();
+        let length = self.channels[0].len() * self.channels.len();
 
         let mut out_pixel = vec![0_u8; length];
 
-        match colorspace.num_components() {
+        match self.channels.len() {
             // reinterpret as u16 first then native endian
             1 => self.channels[0]
                 .reinterpret_as::<u16>()
@@ -628,6 +738,8 @@ impl Frame {
 #[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
+    use std::num::{NonZero, NonZeroU32, NonZeroUsize};
+
     use zune_core::colorspace::ColorSpace;
 
     use crate::channel::Channel;
@@ -642,7 +754,7 @@ mod tests {
         channel.push(50000_u16);
 
         let frame = Frame::new(vec![channel]);
-        let frame_data = frame.u16_to_native_endian(ColorSpace::Luma);
+        let frame_data = frame.u16_to_native_endian();
 
         assert_eq!(&frame_data, &[80, 195]);
     }
@@ -669,6 +781,38 @@ mod tests {
             .separate_color_and_alpha_ref(ColorSpace::LumaA)
             .unwrap();
         assert_eq!(colors.len(), 1);
+    }
+
+    #[test]
+    fn test_multiband() {
+        let image = Image::fill(
+            0_u8,
+            ColorSpace::MultiBand(NonZeroU32::new(5).unwrap()),
+            100,
+            100
+        );
+        let output = image.flatten_to_u8();
+        assert_eq!(output[0].len(), 100 * 100 * 5);
+    }
+    #[test]
+    fn test_multiband_iteration() {
+        const BAND: usize = 6;
+        let mut image = Image::fill(
+            0_u8,
+            ColorSpace::MultiBand(NonZeroU32::new(BAND as u32).unwrap()),
+            100,
+            100
+        );
+        image
+            .channels_mut(false)
+            .iter_mut()
+            .enumerate()
+            .for_each(|(pos, c)| c.fill(pos as u8).unwrap());
+
+        let output = image.flatten_to_u8();
+        for pix_group in output[0].chunks_exact(BAND) {
+            assert_eq!(pix_group, &[0, 1, 2, 3, 4, 5]);
+        }
     }
 }
 
@@ -701,13 +845,4 @@ mod benchmarks {
             let _ = c1.clone();
         });
     }
-}
-
-#[test]
-fn hello() {
-    let width = 2000;
-    let height = 2000;
-    let c1 = vec![Channel::new_with_length::<u8>(width * height); 3];
-    let frame = Frame::new(c1);
-    frame.clone();
 }

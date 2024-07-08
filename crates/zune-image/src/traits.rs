@@ -94,7 +94,7 @@ pub trait DecoderTrait {
 ///
 /// All operations that can be stored in a workflow
 /// need to encapsulate this struct.
-pub trait OperationsTrait {
+pub trait OperationsTrait: Send + Sync {
     /// Get the name of this operation
     fn name(&self) -> &'static str;
 
@@ -152,11 +152,23 @@ pub trait OperationsTrait {
             .any(|x| *x == colorspace);
 
         if !supported {
-            return Err(ImageErrors::UnsupportedColorspace(
-                colorspace,
-                self.name(),
-                self.supported_colorspaces()
-            ));
+            match colorspace {
+                // for multi-band images, we want to ignore them
+                // since it is a lot of work to match them. so we assume they are images
+                // with color channels that lacks an alpha channel.
+                // This means it kinda behaves like an RGB image
+                ColorSpace::MultiBand(_) => {
+                    warn!("Multi-band image encountered");
+                    warn!("The image will be treated as a n-channel image with no alpha channel to allow operations to run on it");
+                }
+                _ => {
+                    return Err(ImageErrors::UnsupportedColorspace(
+                        colorspace,
+                        self.name(),
+                        self.supported_colorspaces()
+                    ));
+                }
+            }
         }
         // if image.metadata.alpha != self.alpha_state()
         // {
