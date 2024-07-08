@@ -32,7 +32,6 @@ use zune_imageprocs::flip::Flip;
 use zune_imageprocs::flop::Flop;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
-use zune_imageprocs::histogram::ChannelHistogram;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
@@ -581,20 +580,6 @@ impl Image {
         exec_filter(self, filter, in_place)
     }
 
-    /// Calculate the image histogram
-    ///
-    // The return type is a vector of vectors, with the interpretation of each vector depending on the colorspace
-    /// E.g if image is in RGBA, the vector would be of len 4, each the first innermost vector would give you
-    /// `R` channel histogram details, the last giving you "A" histogram details
-    pub fn histogram(&mut self) -> PyResult<Vec<Vec<u32>>> {
-        let histogram = ChannelHistogram::new();
-        histogram
-            .execute_impl(&mut self.image)
-            .map_err(|c| PyErr::new::<PyException, _>(format!("Erro {c}")))?;
-        // references, dangling pointers, the usual...
-        let x = histogram.histogram().unwrap().to_vec();
-        Ok(x)
-    }
     /// Adjust the hue saturation and lightness of an image
     ///
     /// - hue: The hue rotation argument. This is usually a value between 0 and 360 degrees
@@ -875,11 +860,5 @@ impl From<ZImageErrors> for pyo3::PyErr {
 
 /// Decode a file path containing an image
 pub fn decode_file(file: String) -> PyResult<Image> {
-    match read(file) {
-        Ok(bytes) => Ok(Image::new(
-            ZImage::read(ZCursor::new(bytes), DecoderOptions::new_fast())
-                .map_err(ZImageErrors::from)?
-        )),
-        Err(e) => Err(PyErr::new::<PyException, _>(format!("{e}")))
-    }
+    Image::open(file)
 }
