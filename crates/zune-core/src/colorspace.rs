@@ -43,7 +43,18 @@ pub enum ColorSpace {
     ///
     /// Conversion from RGB to HSV and back matches that of Python [colorsys](https://docs.python.org/3/library/colorsys.html) module
     /// Color type is expected to be in floating point
-    HSV
+    HSV,
+    /// Multiple arbitrary image channels.
+    ///
+    /// This introduces **limited** support for multi-band/multichannel images
+    /// that can have n channels.
+    ///
+    /// The library contains optimized and well-supported routines for up to 4 image channels as is
+    /// more common out there, but some pipelines may require multi-band image support.
+    ///
+    /// For operations, multi-band images are assumed to be n-channel images with no alpha
+    /// to allow for generic processing, without necessarily caring for the underlying interpretation
+    MultiBand(core::num::NonZeroU32)
 }
 
 impl ColorSpace {
@@ -56,7 +67,8 @@ impl ColorSpace {
             Self::RGBA | Self::YCCK | Self::CMYK | Self::BGRA | Self::ARGB => 4,
             Self::Luma => 1,
             Self::LumaA => 2,
-            Self::Unknown => 0
+            Self::Unknown => 0,
+            Self::MultiBand(n) => n.get() as usize
         }
     }
 
@@ -91,6 +103,8 @@ impl ColorSpace {
 
 /// Encapsulates all colorspaces supported by
 /// the library
+///
+/// This explicitly leaves out multi-band images
 pub static ALL_COLORSPACES: [ColorSpace; 12] = [
     ColorSpace::RGB,
     ColorSpace::RGBA,
