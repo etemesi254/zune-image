@@ -23,7 +23,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! zune_jpeg = "0.3"
+//! zune_jpeg = "0.5"
 //! ```
 //! # Examples
 //!
