@@ -325,7 +325,7 @@ impl Frame {
     ///
     pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(&self) -> Vec<T> {
         let out_pixels = match self.channels.len() {
-            0=>vec![],
+            0 => vec![],
 
             1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
 
