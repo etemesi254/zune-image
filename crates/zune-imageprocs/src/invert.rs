@@ -86,6 +86,28 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use zune_core::colorspace::ColorSpace;
+    use zune_image::image::Image;
+    use zune_image::traits::OperationsTrait;
+
+    use crate::invert::Invert;
+
+    #[test]
+    fn test_multiband_invert() {
+        let mut image = Image::fill(
+            0_u8,
+            ColorSpace::MultiBand(NonZeroU32::new(6).unwrap()),
+            100,
+            100
+        );
+        Invert::new().execute(&mut image).unwrap();
+    }
+}
+
 #[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {
