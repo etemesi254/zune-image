@@ -171,9 +171,9 @@ impl OperationsTrait for ColorspaceConv {
                 // convert to desired colorspace
                 image.convert_color(self.to)?;
             }
-            ColorSpace::MultiBand(n) => {
+            ColorSpace::MultiBand(_) => {
                 // handle multi-band images
-                let msg = "Multi-band images do not have a concrete colorspace either create a new image with a concrete channel or reintepret the image yourself";
+                let msg = "Multi-band images do not have a concrete colorspace either create a new image with a concrete channel or reinterpret the image yourself";
                 return Err(ImageErrors::GenericStr(msg));
             }
 
