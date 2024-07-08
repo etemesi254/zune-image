@@ -18,6 +18,7 @@ use zune_core::colorspace::ColorSpace;
 
 use crate::channel::{Channel, ChannelErrors};
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
+use crate::utils::swizzle_channels;
 
 /// A single image frame
 ///
@@ -394,81 +395,7 @@ impl Frame {
     pub fn flatten_into<T: Clone + Default + 'static + Copy + Pod>(
         &self, into: &mut [T]
     ) -> Result<usize, ChannelErrors> {
-        match self.channels.len() {
-            0 => Ok(0),
-            1 => {
-                let channel = self.channels[0].reinterpret_as::<T>()?;
-                let min_size = channel.len().min(into.len());
-                into[..min_size].copy_from_slice(&channel[..min_size]);
-                return Ok(min_size);
-            }
-            2 => {
-                let luma_channel = self.channels[0].reinterpret_as::<T>()?;
-                let alpha_channel = self.channels[1].reinterpret_as::<T>()?;
-
-                luma_channel
-                    .iter()
-                    .zip(alpha_channel)
-                    .zip(into.chunks_exact_mut(2))
-                    .for_each(|((l, a), dst)| {
-                        dst[0] = *l;
-                        dst[1] = *a;
-                    });
-                let min_size = luma_channel.len().min(alpha_channel.len());
-                return Ok((min_size * self.channels.len()).min(into.len()));
-            }
-            3 => {
-                let c1 = self.channels[0].reinterpret_as::<T>()?;
-                let c2 = self.channels[1].reinterpret_as::<T>()?;
-                let c3 = self.channels[2].reinterpret_as::<T>()?;
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(into.chunks_exact_mut(3))
-                    .for_each(|(((a, b), c), dst)| {
-                        dst[0] = *a;
-                        dst[1] = *b;
-                        dst[2] = *c;
-                    });
-                let min_size = c1.len().min(c2.len()).min(c3.len());
-                return Ok((min_size * self.channels.len()).min(into.len()));
-            }
-            4 => {
-                let c1 = self.channels[0].reinterpret_as::<T>()?;
-                let c2 = self.channels[1].reinterpret_as::<T>()?;
-                let c3 = self.channels[2].reinterpret_as::<T>()?;
-                let c4 = self.channels[3].reinterpret_as::<T>()?;
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                    .zip(into.chunks_exact_mut(4))
-                    .for_each(|((((a, b), c), d), dst)| {
-                        dst[0] = *a;
-                        dst[1] = *b;
-                        dst[2] = *c;
-                        dst[3] = *d;
-                    });
-                let min_size = c1.len().min(c2.len()).min(c3.len()).min(c4.len());
-                return Ok((min_size * self.channels.len()).min(into.len()));
-            }
-            n => {
-                let mut channels_ref = Vec::with_capacity(self.channels.len());
-                for channel in &self.channels {
-                    channels_ref.push(channel.reinterpret_as::<T>()?);
-                }
-                let mut written_pixels = 0;
-                for (pos, pixel) in into.chunks_exact_mut(n).enumerate() {
-                    for (channel, out_p) in channels_ref.iter().zip(pixel) {
-                        *out_p = channel[pos];
-                        written_pixels += 1;
-                    }
-                }
-                return Ok(written_pixels);
-            }
-        }
+        swizzle_channels(&self.channels, into)
     }
 
     /// convert `u16` channels  to native endian
