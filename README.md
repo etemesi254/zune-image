@@ -40,6 +40,7 @@ The set of codecs aim to have the following features in order of priority
 - Extensive
     - Support for `u8`, `u16` and `f32` images. This means we support HDR image processing. This isn't limited to image
       decoders and encoders but image filters support it to.
+    - Limited support for multi-band images, up to 4 billion bands supported.
     - Image decoders preserve image depth up until you want to change it, this means hdr is handled as hdr, 16-bit png
       is handled as 16 bit png.
     - Multiple image filters, we have common image manipulation filters like exposure, contrast, HSL, blurring, computer
