@@ -3,7 +3,7 @@ use std::cmp::min;
 
 use zune_core::bytestream::ZByteReaderTrait;
 
-use crate::channel::Channel;
+use crate::channel::{Channel, ChannelErrors};
 use crate::errors::ImageErrors;
 use crate::metadata::ImageMetadata;
 
@@ -84,7 +84,6 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 ///
 /// This interleaves each individual channels pixels into one contiguous array
 ///
-/// it supports up to 4 channels (library default).
 ///
 /// # Arguments:
 ///  - channels: A Slice of channels , the count must be less than 4 anf greater than 1.
@@ -118,8 +117,9 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// ```
 pub fn swizzle_channels<T: Copy + Default + 'static>(
     channels: &[Channel], output: &mut [T]
-) -> Result<usize, ImageErrors> {
+) -> Result<usize, ChannelErrors> {
     match channels.len() {
+        0 => Ok(0),
         // copy
         1 => {
             output.copy_from_slice(channels[0].reinterpret_as()?);
@@ -139,7 +139,7 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
         }
         3 => {
             // three components are usually quite common, so for those use one which can be
-            // autovectorized.
+            // auto-vectorized.
             //
             // Image dimensions (w,h,colorspace)
             // (2384, 4240, 3)
@@ -171,9 +171,20 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
             let size = min(channels[0].reinterpret_as::<T>()?.len() * 4, output.len());
             Ok(size)
         }
-        _ => Err(ImageErrors::GenericStr(
-            "Image channels not in supported count, the library supports images from 1-4 channels"
-        ))
+        n => {
+            let mut channels_ref = Vec::with_capacity(channels.len());
+            for channel in &channels {
+                channels_ref.push(channel.reinterpret_as::<T>()?);
+            }
+            let mut written_pixels = 0;
+            for (pos, pixel) in output.chunks_exact_mut(n).enumerate() {
+                for (channel, out_p) in channels_ref.iter().zip(pixel) {
+                    *out_p = channel[pos];
+                    written_pixels += 1;
+                }
+            }
+            return Ok(written_pixels);
+        }
     }
 }
 
