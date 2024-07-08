@@ -112,7 +112,8 @@ pub extern "C" fn zil_zimg_write_to_output(
     let channels = image.frames_ref()[0].channels_ref(image_colorspace, false);
 
     let result = match image.depth() {
-        BitDepth::Eight => zune_image::utils::swizzle_channels(channels, output_array),
+        BitDepth::Eight => zune_image::utils::swizzle_channels(channels, output_array)
+            .map_err(|e| ImageErrors::ChannelErrors(e)),
         BitDepth::Sixteen => {
             let (a, b, c) = unsafe { output_array.align_to_mut::<u16>() };
 
@@ -120,6 +121,7 @@ pub extern "C" fn zil_zimg_write_to_output(
                 Err(ImageErrors::GenericStr("Unaligned output"))
             } else {
                 zune_image::utils::swizzle_channels(channels, b)
+                    .map_err(|e| ImageErrors::ChannelErrors(e))
             }
         }
         BitDepth::Float32 => {
@@ -129,6 +131,7 @@ pub extern "C" fn zil_zimg_write_to_output(
                 Err(ImageErrors::GenericStr("Unaligned output"))
             } else {
                 zune_image::utils::swizzle_channels(channels, b)
+                    .map_err(|e| ImageErrors::ChannelErrors(e))
             }
         }
         _ => Err(ImageErrors::GenericStr("Unknown depth"))
