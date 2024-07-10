@@ -18,6 +18,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
+use zune_png::error::PngDecodeErrors;
 pub use zune_png::*;
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
@@ -27,7 +28,7 @@ use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
 use crate::frame::Frame;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
-use crate::traits::{DecoderTrait, EncoderTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait for PngDecoder<T>
 where
@@ -234,5 +235,27 @@ impl EncoderTrait for PngEncoder {
     }
     fn set_options(&mut self, opts: EncoderOptions) {
         self.options = Some(opts)
+    }
+}
+
+impl<T> DecodeInto for PngDecoder<T>
+where
+    T: ZByteReaderTrait
+{
+    type BufferType = u8;
+
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
+        self.decode_into(buffer)
+            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+        self.decode_headers()
+            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buffer_size().unwrap())
     }
 }

@@ -18,7 +18,7 @@ use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
-use crate::traits::{DecoderTrait, EncoderTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 impl<T> DecoderTrait for HdrDecoder<T>
 where
@@ -133,5 +133,27 @@ impl EncoderTrait for HdrEncoder {
 impl From<HdrEncodeErrors> for ImgEncodeErrors {
     fn from(value: HdrEncodeErrors) -> Self {
         ImgEncodeErrors::ImageEncodeErrors(format!("HDR: {:?}", value))
+    }
+}
+
+impl<T> DecodeInto for HdrDecoder<T>
+where
+    T: ZByteReaderTrait
+{
+    type BufferType = f32;
+
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
+        self.decode_into(buffer)
+            .map_err(<HdrDecodeErrors as Into<ImageErrors>>::into)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+        self.decode_headers()
+            .map_err(<HdrDecodeErrors as Into<ImageErrors>>::into)?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buffer_size().unwrap())
     }
 }

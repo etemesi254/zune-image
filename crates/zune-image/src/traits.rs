@@ -480,13 +480,15 @@ impl ZuneInts<f32> for f32 {
 /// can write data as raw native endian into
 /// a buffer of u8
 pub trait DecodeInto {
+    type BufferType: Sized;
+
     /// Decode raw image bytes into a buffer that can
     /// hold u8 bytes
     ///
     /// The rationale is that u8 bytes can alias any type
     /// and higher bytes offer ways to construct types from
     /// u8's hence they can be used as a base type
-    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors>;
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors>;
 
     /// Minimum buffer length which is needed to decode this image
     ///
