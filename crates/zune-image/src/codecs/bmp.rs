@@ -18,7 +18,7 @@ use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
-use crate::traits::DecoderTrait;
+use crate::traits::{DecodeInto, DecoderTrait};
 
 impl<T> DecoderTrait for BmpDecoder<T>
 where
@@ -67,5 +67,27 @@ where
 impl From<BmpDecoderErrors> for ImageErrors {
     fn from(value: BmpDecoderErrors) -> Self {
         Self::ImageDecodeErrors(format!("bmp: {:?}", value))
+    }
+}
+
+impl<T> DecodeInto for BmpDecoder<T>
+where
+    T: ZByteReaderTrait
+{
+    type BufferType = u8;
+
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
+        self.decode_into(buffer)
+            .map_err(<BmpDecoderErrors as Into<ImageErrors>>::into)?;
+
+        Ok(())
+    }
+
+    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+        self.decode_headers()
+            .map_err(<BmpDecoderErrors as Into<ImageErrors>>::into)?;
+
+        // unwrap is okay because we successfully decoded image headers
+        Ok(self.output_buf_size().unwrap())
     }
 }

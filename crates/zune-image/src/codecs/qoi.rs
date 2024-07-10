@@ -167,7 +167,9 @@ impl<T> DecodeInto for QoiDecoder<T>
 where
     T: ZByteReaderTrait
 {
-    fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
+    type BufferType = u8;
+
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
         self.decode_into(buffer)?;
 
         Ok(())

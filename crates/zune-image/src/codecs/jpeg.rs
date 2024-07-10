@@ -262,6 +262,8 @@ impl<T> DecodeInto for JpegDecoder<T>
 where
     T: ZByteReaderTrait
 {
+    type BufferType = u8;
+
     fn decode_into(&mut self, buffer: &mut [u8]) -> Result<(), ImageErrors> {
         self.decode_into(buffer)
             .map_err(<DecodeErrors as Into<ImageErrors>>::into)?;
