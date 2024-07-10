@@ -8,6 +8,9 @@
 
 #![allow(clippy::upper_case_acronyms)]
 
+/// JPEG Markers
+///
+/// **NOTE** This doesn't cover all markers, just the ones zune-jpeg supports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Marker {
     /// Start Of Frame markers
