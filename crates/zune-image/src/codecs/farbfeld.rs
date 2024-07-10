@@ -30,7 +30,7 @@ where
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let pixels = self
             .decode()
-            .map_err(|e| ImageErrors::ImageDecodeErrors(format!("{:?}", e)))?;
+            .map_err(ImageErrors::from)?;
         let colorspace = self.colorspace();
         let (width, height) = self.dimensions().unwrap();
 
@@ -74,6 +74,12 @@ where
         };
 
         Ok(Some(metadata))
+    }
+}
+
+impl From<FarbFeldErrors> for ImageErrors {
+    fn from(value: FarbFeldErrors) -> Self {
+        Self::ImageDecodeErrors(format!("ff: {value:?}"))
     }
 }
 
@@ -148,6 +154,6 @@ impl EncoderTrait for FarbFeldEncoder {
 
 impl From<FarbFeldEncoderErrors> for ImgEncodeErrors {
     fn from(value: FarbFeldEncoderErrors) -> Self {
-        ImgEncodeErrors::ImageEncodeErrors(format!("{:?}", value))
+        ImgEncodeErrors::ImageEncodeErrors(format!("ff: {:?}", value))
     }
 }

@@ -29,6 +29,7 @@ extern crate alloc;
 
 pub use decoder::*;
 pub use encoder::*;
+pub use errors::*;
 
 mod decoder;
 mod encoder;
