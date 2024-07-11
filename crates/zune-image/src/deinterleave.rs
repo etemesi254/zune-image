@@ -45,7 +45,7 @@ fn deinterleave_generic<T: Default + Clone + Copy + 'static + Zeroable + Pod>(
             ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
     }
-    let size = (interleaved_pixels.len() / colorspace.num_components()) * size_of::<T>();
+    let size = (interleaved_pixels.len() / colorspace.num_components()) * core::mem::size_of::<T>();
 
     if size == 0 {
         return Err(ImageErrors::GenericStr(
