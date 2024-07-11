@@ -665,7 +665,7 @@ impl Frame {
 #[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
-    use std::num::{NonZero, NonZeroU32, NonZeroUsize};
+    use std::num::{NonZeroU32, NonZeroUsize};
 
     use zune_core::colorspace::ColorSpace;
 
