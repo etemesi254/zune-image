@@ -8,7 +8,7 @@
 
 use std::fs::read;
 
-use numpy::{PyArray2, PyArray3, PyUntypedArray};
+use numpy::{PyArray2, PyArray3, PyArrayMethods};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
@@ -40,38 +40,41 @@ pub fn guess_format(bytes: &[u8]) -> ImageFormat {
 
 fn to_numpy_from_bytes<'py, T: Copy + Default + 'static + numpy::Element + Send>(
     py: Python<'py>, data: &[T], width: usize, height: usize, color: ColorSpace
-) -> PyResult<&'py PyUntypedArray> {
+) -> PyResult<Bound<'py, PyAny>> {
     debug_assert_eq!(data.len(), width * height * color.num_components());
 
     unsafe {
         return match color.num_components() {
             1 => {
-                let arr = PyArray2::<T>::new(py, [height, width], false);
+                let arr = PyArray2::<T>::new_bound(py, [height, width], false);
                 let mut write_array = arr.try_readwrite()?;
                 write_array.as_slice_mut()?.copy_from_slice(data);
 
-                Ok(arr.as_untyped())
+                Ok(arr.into_any())
             }
             2 => {
-                let arr = PyArray3::<T>::new(py, [height, width, color.num_components()], false);
+                let arr =
+                    PyArray3::<T>::new_bound(py, [height, width, color.num_components()], false);
                 //
                 let mut write_array = arr.try_readwrite()?;
                 write_array.as_slice_mut()?.copy_from_slice(data);
-                Ok(arr.as_untyped())
+                Ok(arr.into_any())
             }
             3 => {
-                let arr = PyArray3::<T>::new(py, [height, width, color.num_components()], false);
+                let arr =
+                    PyArray3::<T>::new_bound(py, [height, width, color.num_components()], false);
                 //
                 let mut write_array = arr.try_readwrite()?;
                 write_array.as_slice_mut()?.copy_from_slice(data);
-                Ok(arr.as_untyped())
+                Ok(arr.into_any())
             }
             4 => {
-                let arr = PyArray3::<T>::new(py, [height, width, color.num_components()], false);
+                let arr =
+                    PyArray3::<T>::new_bound(py, [height, width, color.num_components()], false);
 
                 let mut write_array = arr.try_readwrite()?;
                 write_array.as_slice_mut()?.copy_from_slice(data);
-                Ok(arr.as_untyped())
+                Ok(arr.into_any())
             }
             e => Err(PyErr::new::<PyException, _>(format!(
                 "Unimplemented color components {e}"
@@ -82,7 +85,7 @@ fn to_numpy_from_bytes<'py, T: Copy + Default + 'static + numpy::Element + Send>
 
 fn decode_result(
     py: Python, result: DecodingResult, width: usize, height: usize, colorspace: ColorSpace
-) -> PyResult<&PyUntypedArray> {
+) -> PyResult<Bound<'_, PyAny>> {
     return match result {
         DecodingResult::U8(b) => to_numpy_from_bytes(py, &b, width, height, colorspace),
         DecodingResult::U16(b) => to_numpy_from_bytes(py, &b, width, height, colorspace),
@@ -131,7 +134,7 @@ fn decode_result(
 /// - EXIF orientation is not taken into account, for that, use Image::decode() + image.auto_orient() function
 #[pyfunction]
 #[allow(clippy::too_many_lines)]
-pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
+pub fn imread(py: Python<'_>, file: String) -> PyResult<Bound<'_, PyAny>> {
     // some functions will allocate only once, e.g jpeg and qoi as they have
     // non-complicated decode_into apis
     //
@@ -160,7 +163,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
 
                     match decoder.depth().unwrap() {
                         BitDepth::Eight => {
-                            let arr = PyArray3::<u8>::zeros(
+                            let arr = PyArray3::<u8>::zeros_bound(
                                 py,
                                 [height, width, color.num_components()],
                                 false
@@ -172,10 +175,10 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                                 .decode_into(slice)
                                 .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                            return Ok(arr.as_untyped());
+                            return Ok(arr.into_any());
                         }
                         BitDepth::Sixteen => {
-                            let arr = PyArray3::<u16>::zeros(
+                            let arr = PyArray3::<u16>::zeros_bound(
                                 py,
                                 [height, width, color.num_components()],
                                 false
@@ -208,7 +211,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                                 .decode_into(b)
                                 .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                            return Ok(arr.as_untyped());
+                            return Ok(arr.into_any());
                         }
                         _ => unreachable!()
                     }
@@ -223,14 +226,15 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let (w, h) = decoder.dimensions().unwrap();
                     let color = decoder.output_colorspace().unwrap();
 
-                    let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+                    let arr =
+                        PyArray3::<u8>::zeros_bound(py, [h, w, color.num_components()], false);
                     let mut write_array = arr.try_readwrite()?;
 
                     decoder
                         .decode_into(write_array.as_slice_mut()?)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    return Ok(arr.as_untyped());
+                    return Ok(arr.into_any());
                 }
                 ImageFormat::BMP => {
                     let mut decoder = BmpDecoder::new(ZCursor::new(&bytes));
@@ -242,7 +246,8 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
 
                     let color = decoder.colorspace().unwrap();
 
-                    let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+                    let arr =
+                        PyArray3::<u8>::zeros_bound(py, [h, w, color.num_components()], false);
 
                     let mut write_array = arr.try_readwrite()?;
 
@@ -250,7 +255,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .decode_into(write_array.as_slice_mut()?)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    return Ok(arr.as_untyped());
+                    return Ok(arr.into_any());
                 }
                 ImageFormat::PPM => {
                     let mut decoder = PPMDecoder::new(ZCursor::new(&bytes));
@@ -286,14 +291,15 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let (w, h) = decoder.dimensions().unwrap();
                     let color = decoder.colorspace();
 
-                    let arr = PyArray3::<u16>::zeros(py, [h, w, color.num_components()], false);
+                    let arr =
+                        PyArray3::<u16>::zeros_bound(py, [h, w, color.num_components()], false);
                     let mut write_array = arr.try_readwrite()?;
 
                     decoder
                         .decode_into(write_array.as_slice_mut()?)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    return Ok(arr.as_untyped());
+                    return Ok(arr.into_any());
                 }
                 ImageFormat::Qoi => {
                     let mut decoder = QoiDecoder::new(ZCursor::new(&bytes));
@@ -305,7 +311,8 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let (w, h) = decoder.dimensions().unwrap();
                     let color = decoder.colorspace().unwrap();
 
-                    let arr = PyArray3::<u8>::zeros(py, [h, w, color.num_components()], false);
+                    let arr =
+                        PyArray3::<u8>::zeros_bound(py, [h, w, color.num_components()], false);
 
                     let mut write_array = arr.try_readwrite()?;
 
@@ -313,7 +320,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .decode_into(write_array.as_slice_mut()?)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    return Ok(arr.as_untyped());
+                    return Ok(arr.into_any());
                 }
                 ImageFormat::HDR => {
                     let mut decoder = HdrDecoder::new(ZCursor::new(&bytes));
@@ -325,7 +332,8 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
 
                     let color = decoder.get_colorspace().unwrap();
 
-                    let arr = PyArray3::<f32>::zeros(py, [h, w, color.num_components()], false);
+                    let arr =
+                        PyArray3::<f32>::zeros_bound(py, [h, w, color.num_components()], false);
 
                     let mut write_array = arr.try_readwrite()?;
 
@@ -333,7 +341,7 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                         .decode_into(write_array.as_slice_mut()?)
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
 
-                    return Ok(arr.as_untyped());
+                    return Ok(arr.into_any());
                 }
                 ImageFormat::JPEG_XL => {
                     let c = ZReader::new(ZCursor::new(&bytes));
@@ -353,19 +361,19 @@ pub fn imread(py: Python<'_>, file: String) -> PyResult<&PyUntypedArray> {
                     let im_plannar = render.image();
 
                     if color.channels() == 1 {
-                        let arr = PyArray2::zeros(py, [h, w], false);
+                        let arr = PyArray2::zeros_bound(py, [h, w], false);
                         arr.try_readwrite()?
                             .as_slice_mut()?
                             .copy_from_slice(im_plannar.buf());
 
-                        Ok(arr.as_untyped())
+                        Ok(arr.into_any())
                     } else {
-                        let arr = PyArray3::zeros(py, [h, w, color.channels()], false);
+                        let arr = PyArray3::zeros_bound(py, [h, w, color.channels()], false);
                         arr.try_readwrite()?
                             .as_slice_mut()?
                             .copy_from_slice(im_plannar.buf());
 
-                        Ok(arr.as_untyped())
+                        Ok(arr.into_any())
                     }
                 }
                 d @ ImageFormat::Unknown => Err(PyErr::new::<PyException, _>(format!(

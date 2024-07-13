@@ -46,7 +46,7 @@ pub fn init_logger() {
 
 #[pymodule]
 #[pyo3(name = "zil")]
-fn zune_image(_py: Python, m: &PyModule) -> PyResult<()> {
+fn zune_image(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ImageFormat>()?;
     m.add_class::<ColorSpace>()?;
     m.add_class::<Image>()?;

@@ -8,9 +8,11 @@
 mod numpy_bindings;
 
 use std::any::TypeId;
-use std::fs::read;
 
-use numpy::{dtype, Element, PyArray2, PyArray3, PyUntypedArray};
+use numpy::{
+    dtype_bound, Element, PyArray2, PyArray3, PyArrayDescrMethods, PyArrayMethods, PyUntypedArray,
+    PyUntypedArrayMethods
+};
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use zune_core::bit_depth::BitType;
@@ -511,7 +513,7 @@ impl Image {
     ///  A numpy representation of the image if okay.
     ///
     /// An error in case something went wrong
-    pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyUntypedArray> {
+    pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match self.image.depth().bit_type() {
             BitType::U8 => Ok(self.to_numpy_generic::<u8>(py, ImageDepth::U8)?),
             BitType::U16 => Ok(self.to_numpy_generic::<u16>(py, ImageDepth::U16)?),
@@ -547,7 +549,9 @@ impl Image {
     ///
     /// The array is expected to be contiguous and the array should not be mutably borrowed from the size
     #[staticmethod]
-    fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyResult<Image> {
+    fn from_numpy(
+        array: &Bound<'_, PyUntypedArray>, colorspace: Option<ColorSpace>
+    ) -> PyResult<Image> {
         from_numpy(array, colorspace)
     }
 
@@ -611,22 +615,22 @@ impl Image {
 }
 
 #[allow(clippy::cast_possible_truncation)]
-fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
+fn convert_2d<T: Element + 'static>(numpy: &Bound<'_, PyArray2<T>>) -> PyResult<ZImage> {
     let dims = numpy.shape();
     if TypeId::of::<T>() == TypeId::of::<u8>() {
-        let downcasted: &PyArray2<u8> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray2<u8>> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
         return Ok(ZImage::from_u8(bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
-        let downcasted: &PyArray2<u16> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray2<u16>> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
         return Ok(ZImage::from_u16(bytes, dims[1], dims[0], ZColorSpace::Luma));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
-        let downcasted: &PyArray2<f32> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray2<f32>> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
@@ -634,7 +638,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
         warn!("The library doesn't natively support f64, the data will be converted to f32");
-        let downcasted: &PyArray2<f64> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray2<f64>> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc
@@ -657,7 +661,7 @@ fn convert_2d<T: Element + 'static>(numpy: &PyArray2<T>) -> PyResult<ZImage> {
 
 #[allow(clippy::cast_possible_truncation)]
 pub fn convert_3d<T: Element + 'static>(
-    numpy: &PyArray3<T>, suggested_colorspace: Option<ColorSpace>
+    numpy: &Bound<'_, PyArray3<T>>, suggested_colorspace: Option<ColorSpace>
 ) -> PyResult<ZImage> {
     let dims = numpy.shape();
     let mut expected_colorspace: ZColorSpace = match dims[2] {
@@ -684,7 +688,7 @@ pub fn convert_3d<T: Element + 'static>(
     }
 
     if TypeId::of::<T>() == TypeId::of::<u8>() {
-        let downcasted: &PyArray3<u8> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray3<u8>> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
         return Ok(ZImage::from_u8(
@@ -695,7 +699,7 @@ pub fn convert_3d<T: Element + 'static>(
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<u16>() {
-        let downcasted: &PyArray3<u16> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray3<u16>> = numpy.downcast()?;
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
         return Ok(ZImage::from_u16(
@@ -706,7 +710,7 @@ pub fn convert_3d<T: Element + 'static>(
         ));
     }
     if TypeId::of::<T>() == TypeId::of::<f32>() {
-        let downcasted: &PyArray3<f32> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray3<f32>> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc.as_slice()?;
@@ -719,7 +723,7 @@ pub fn convert_3d<T: Element + 'static>(
     }
     if TypeId::of::<T>() == TypeId::of::<f64>() {
         warn!("The library doesn't natively support f64, the data will be converted to f32");
-        let downcasted: &PyArray3<f64> = numpy.downcast()?;
+        let downcasted: &Bound<'_, PyArray3<f64>> = numpy.downcast()?;
 
         let dc = downcasted.try_readonly()?;
         let bytes = dc
@@ -757,41 +761,43 @@ pub fn convert_3d<T: Element + 'static>(
 /// - `float32`,`uint8`,`uint16` - Data is ingested as is
 ///  - float64` - Image is converted into f32 type
 /// - `uint32`  - Image is converted into u16 type using a saturating cast
-pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyResult<Image> {
+pub fn from_numpy(
+    array: &Bound<'_, PyUntypedArray>, colorspace: Option<ColorSpace>
+) -> PyResult<Image> {
     return Python::with_gil::<_, PyResult<Image>>(|py| {
         let d_type = array.dtype();
         let dims = array.ndim();
         if dims == 2 {
-            if d_type.is_equiv_to(dtype::<u8>(py)) {
-                let c: &PyArray2<u8> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u8>(py)) {
+                let c: &Bound<'_, PyArray2<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<u16>(py)) {
-                let c: &PyArray2<u16> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
+                let c: &Bound<'_, PyArray2<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<f32>(py)) {
-                let c: &PyArray2<f32> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
+                let c: &Bound<'_, PyArray2<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<f64>(py)) {
-                let c: &PyArray2<f64> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
+                let c: &Bound<'_, PyArray2<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<u32>(py)) {
-                let c: &PyArray2<u32> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
+                let c: &Bound<'_, PyArray2<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_2d(c)?
@@ -800,36 +806,36 @@ pub fn from_numpy(array: &PyUntypedArray, colorspace: Option<ColorSpace>) -> PyR
         }
 
         if dims == 3 {
-            if d_type.is_equiv_to(dtype::<u8>(py)) {
-                let c: &PyArray3<u8> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u8>(py)) {
+                let c: &Bound<'_, PyArray3<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<u16>(py)) {
-                let c: &PyArray3<u16> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
+                let c: &Bound<'_, PyArray3<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<f32>(py)) {
-                let c: &PyArray3<f32> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
+                let c: &Bound<'_, PyArray3<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<f64>(py)) {
-                let c: &PyArray3<f64> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
+                let c: &Bound<'_, PyArray3<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?
                 });
             }
-            if d_type.is_equiv_to(dtype::<u32>(py)) {
-                let c: &PyArray3<u32> = array.downcast()?;
+            if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
+                let c: &Bound<'_, PyArray3<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
                     image: convert_3d(c, colorspace)?

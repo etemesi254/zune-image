@@ -6,9 +6,9 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use numpy::{PyArray2, PyArray3, PyArray4, PyUntypedArray};
+use numpy::{PyArray2, PyArray3, PyArray4, PyArrayMethods};
 use pyo3::exceptions::PyException;
-use pyo3::{PyErr, PyResult, Python};
+use pyo3::{Bound, PyAny, PyErr, PyResult, Python};
 use zune_image::utils::swizzle_channels;
 
 use crate::py_enums::ImageDepth;
@@ -17,17 +17,17 @@ use crate::py_image::Image;
 impl Image {
     pub(crate) fn to_numpy_generic<'py, T>(
         &self, py: Python<'py>, expected: ImageDepth
-    ) -> PyResult<&'py PyUntypedArray>
+    ) -> PyResult<Bound<'py, PyAny>>
     where
         T: Copy + Default + 'static + numpy::Element + Send
     {
         let colorspace = self.image.colorspace();
 
-        // handle anumated images
+        // handle animated images
         return if self.image.is_animated() {
             // create a 4D array
             let arr = unsafe {
-                PyArray4::<T>::new(
+                PyArray4::<T>::new_bound(
                     py,
                     [
                         self.image.frames_len(),
@@ -53,11 +53,12 @@ impl Image {
                     .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?;
             }
 
-            Ok(arr.as_untyped())
+            Ok(arr.into_any())
         } else {
             if colorspace.num_components() == 1 {
                 // just one component
-                let arr = unsafe { PyArray2::<T>::new(py, [self.height(), self.width()], false) };
+                let arr =
+                    unsafe { PyArray2::<T>::new_bound(py, [self.height(), self.width()], false) };
                 let mut arr_v = arr
                     .try_readwrite()
                     .expect("This should be safe as we own the array and haven't exposed it");
@@ -70,12 +71,12 @@ impl Image {
                         .map_err(|x| PyErr::new::<PyException, _>(format!("{x:?}")))?
                 );
 
-                return Ok(arr.as_untyped());
+                return Ok(arr.into_any());
             }
             let arr = {
                 //PyArray3::uget_raw()
                 let arr = unsafe {
-                    PyArray3::<T>::new(
+                    PyArray3::<T>::new_bound(
                         py,
                         [self.height(), self.width(), colorspace.num_components()],
                         false
@@ -112,7 +113,7 @@ impl Image {
 
                 arr
             };
-            Ok(arr.as_untyped())
+            Ok(arr.into_any())
         };
     }
 }
