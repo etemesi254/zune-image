@@ -483,7 +483,7 @@ pub trait DecodeInto {
     type BufferType: Sized;
 
     /// Decode raw image bytes into a buffer that can
-    /// hold u8 bytes
+    /// hold `BufferType` bytes
     ///
     /// The rationale is that u8 bytes can alias any type
     /// and higher bytes offer ways to construct types from
@@ -494,7 +494,7 @@ pub trait DecodeInto {
     ///
     /// This may call `decode_headers` for the image routine to fetch the
     /// expected output size.
-    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
+    fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors>;
 }
 /// Convert something into an image by consuming it
 pub trait IntoImage {

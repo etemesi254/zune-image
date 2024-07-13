@@ -83,7 +83,7 @@ where
         Ok(())
     }
 
-    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+    fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
         self.decode_headers()
             .map_err(<BmpDecoderErrors as Into<ImageErrors>>::into)?;
 

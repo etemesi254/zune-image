@@ -28,9 +28,7 @@ where
     T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
-        let pixels = self
-            .decode()
-            .map_err(ImageErrors::from)?;
+        let pixels = self.decode().map_err(ImageErrors::from)?;
         let colorspace = self.colorspace();
         let (width, height) = self.dimensions().unwrap();
 
@@ -171,7 +169,7 @@ where
         Ok(())
     }
 
-    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+    fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
         self.decode_headers()
             .map_err(<FarbFeldErrors as Into<ImageErrors>>::into)?;
 

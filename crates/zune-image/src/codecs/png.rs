@@ -251,11 +251,36 @@ where
         Ok(())
     }
 
-    fn output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+    fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
         self.decode_headers()
             .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
 
         // unwrap is okay because we successfully decoded image headers
         Ok(self.output_buffer_size().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_png::PngDecoder;
+
+    use crate::codecs::png::PngEncoder;
+    use crate::codecs::ImageFormat;
+    use crate::image::Image;
+    use crate::traits::DecodeInto;
+
+    fn create_png() -> Vec<u8> {
+        let encoder = PngEncoder::new();
+        let image = Image::fill(10_u8, ColorSpace::RGB, 100, 100);
+        image.write_to_vec(ImageFormat::PNG).unwrap()
+    }
+    #[test]
+    fn test_png_decode_into() {
+        let mut output = vec![0; 100 * 100 * 3];
+        let img = create_png();
+        let mut decoder = PngDecoder::new(ZCursor::new(&img));
+        decoder.decode_into(&mut output).unwrap();
     }
 }
