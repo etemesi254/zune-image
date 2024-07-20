@@ -287,7 +287,8 @@ fn color_convert_ycbcr(
     }
 }
 pub(crate) fn upsample(
-    component: &mut Components, mcu_height: usize, i: usize, upsampler_scratch_space: &mut [i16]
+    component: &mut Components, mcu_height: usize, i: usize, upsampler_scratch_space: &mut [i16],
+    has_vertical_sample: bool
 ) {
     match component.sample_ratio {
         SampleRatios::V | SampleRatios::HV => {
@@ -414,7 +415,33 @@ pub(crate) fn upsample(
             let raw_coeff = &component.raw_coeff;
             let dest_coeff = &mut component.upsample_dest;
 
-            // upsample each row
+            if has_vertical_sample {
+                /*
+                There have been images that have the following configurations.
+
+                Component ID:Y    HS:2 VS:2 QT:0
+                Component ID:Cb   HS:1 VS:1 QT:1
+                Component ID:Cr   HS:1 VS:2 QT:1
+
+                This brings out a nasty case of misaligned sampling factors. Cr will need to save a row because
+                of the way we process boundaries but Cb won't since Cr is horizontally sampled while Cb is
+                HV sampled with respect to the image sampling factors.
+
+                So during decoding of one MCU, we could only do 7 and not 8 rows, but the SampleRatio::H never had to
+                save a single line, since it doesn't suffer from boundary issues.
+
+                Now this takes care of that, saving the last MCU row in case it will be needed.
+                We save the previous row before up-sampling this row because the boundary issue is in
+                the last MCU row of the previous MCU.
+
+                PS(cae): I can't add the image to the repo as it is nsfw, but can send if required
+                */
+                let length = component.first_row_upsample_dest.len();
+                component
+                    .first_row_upsample_dest
+                    .copy_from_slice(&dest_coeff.rchunks_exact(length).next().unwrap());
+            }
+            // up-sample each row
             for (single_row, output_stride) in raw_coeff
                 .chunks_exact(component.width_stride)
                 .zip(dest_coeff.chunks_exact_mut(component.width_stride * 2))
