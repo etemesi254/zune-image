@@ -402,7 +402,13 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 }
             }
             for comp in comps.iter_mut() {
-                upsample(comp, mcu_height, i, upsampler_scratch_space);
+                upsample(
+                    comp,
+                    mcu_height,
+                    i,
+                    upsampler_scratch_space,
+                    is_vertically_sampled
+                );
             }
 
             if is_vertically_sampled {
@@ -425,22 +431,27 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     color_conv_function(num_iters, samples)?;
                 }
 
-                // After upsampling the last row, save  any row that can be used for
-                // a later upsampling,
+                // After up-sampling the last row, save  any row that can be used for
+                // a later up-sampling,
                 //
                 // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
                 // the previous mcu, since we don't have the down row, so save it
                 for component in comps.iter_mut() {
-                    // copy last row to be used for the  next color conversion
-                    let size = component.vertical_sample
-                        * component.width_stride
-                        * component.sample_ratio.sample();
+                    if component.sample_ratio != SampleRatios::H {
+                        // We don't care about H sampling factors, since it's copied in the workers function
 
-                    let last_bytes = component.raw_coeff.rchunks_exact_mut(size).next().unwrap();
+                        // copy last row to be used for the  next color conversion
+                        let size = component.vertical_sample
+                            * component.width_stride
+                            * component.sample_ratio.sample();
 
-                    component
-                        .first_row_upsample_dest
-                        .copy_from_slice(last_bytes);
+                        let last_bytes =
+                            component.raw_coeff.rchunks_exact_mut(size).next().unwrap();
+
+                        component
+                            .first_row_upsample_dest
+                            .copy_from_slice(last_bytes);
+                    }
                 }
             }
 
