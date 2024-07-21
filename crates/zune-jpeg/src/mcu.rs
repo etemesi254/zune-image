@@ -196,7 +196,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
             // decode a whole MCU width,
             // this takes into account interleaved components.
-            self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
+            let terminate = self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
             // process that width up until it's impossible
             self.post_process(
                 pixels,
@@ -207,6 +207,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 &mut pixels_written,
                 &mut upsampler_scratch_space
             )?;
+            if terminate {
+                warn!("Got terminate signal, will not process further");
+                return Ok(());
+            }
         }
         // it may happen that some images don't have the whole buffer
         // so we can't panic in case of that
@@ -218,7 +222,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
     fn decode_mcu_width(
         &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
-    ) -> Result<(), DecodeErrors> {
+    ) -> Result<bool, DecodeErrors> {
         for j in 0..mcu_width {
             // iterate over components
             for component in &mut self.components {
@@ -304,12 +308,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
                         m
                     );
-
                     self.parse_marker_inner(m)?;
+                    if m == Marker::SOS {
+                        return Ok(true);
+                    }
                 }
             }
         }
-        Ok(())
+        Ok(false)
     }
     // handle RST markers.
     // No-op if not using restarts
