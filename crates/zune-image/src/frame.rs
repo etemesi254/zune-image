@@ -476,7 +476,17 @@ impl Frame {
                 }
             }
             // panics, all the way down
-            _ => unreachable!()
+            n => {
+                let mut channels_ref = Vec::with_capacity(self.channels.len());
+                for channel in &self.channels {
+                    channels_ref.push(channel.reinterpret_as::<u16>().unwrap());
+                }
+                for (pos, pixel) in out_pixel.chunks_exact_mut(n * 2).enumerate() {
+                    for (channel, out_p) in channels_ref.iter().zip(pixel.chunks_exact_mut(2)) {
+                        out_p.copy_from_slice(&channel[pos].to_ne_bytes());
+                    }
+                }
+            }
         }
         out_pixel
     }
@@ -559,8 +569,17 @@ impl Frame {
                     out[6..8].copy_from_slice(&fourth.to_be_bytes());
                 }
             }
-            // panics, all the way down
-            _ => unreachable!()
+            n => {
+                let mut channels_ref = Vec::with_capacity(self.channels.len());
+                for channel in &self.channels {
+                    channels_ref.push(channel.reinterpret_as::<u16>().unwrap());
+                }
+                for (pos, pixel) in out_pixel.chunks_exact_mut(n * 2).enumerate() {
+                    for (channel, out_p) in channels_ref.iter().zip(pixel.chunks_exact_mut(2)) {
+                        out_p.copy_from_slice(&channel[pos].to_be_bytes());
+                    }
+                }
+            }
         }
         out_pixel
     }
