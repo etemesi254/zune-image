@@ -72,36 +72,21 @@ impl ImageMetadata {
     /// Return the exif metadata of an image or none if it
     /// doesn't exist
     ///
-    /// This requires the metadata feature otherwise
-    /// it will always return `None`
+    ///
     #[cfg(feature = "metadata")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "metadata")))]
     pub const fn exif(&self) -> Option<&Vec<::exif::Field>> {
-        #[cfg(feature = "metadata")]
-        {
-            return self.exif.as_ref();
-        }
-        #[cfg(not(feature = "metadata"))]
-        {
-            return None;
-        }
+        return self.exif.as_ref();
     }
 
     /// Return a mutable reference to the exif metadata of an image or none if it
     /// doesn't exist
     ///
-    /// This requires the metadata feature otherwise
-    /// it will always return `None`
     #[cfg(feature = "metadata")]
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "metadata")))]
 
     pub fn exif_mut(&mut self) -> Option<&mut Vec<::exif::Field>> {
-        #[cfg(feature = "metadata")]
-        {
-            return self.exif.as_mut();
-        }
-        #[cfg(not(feature = "metadata"))]
-        {
-            return None;
-        }
+        return self.exif.as_mut();
     }
     /// Get image dimensions as a tuple of width and height
     ///  

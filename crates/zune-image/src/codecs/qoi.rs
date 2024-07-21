@@ -10,6 +10,7 @@
 //! This uses the delegate library [`zune-qoi`](zune_qoi)
 //! for encoding and decoding images
 #![cfg(feature = "qoi")]
+#![cfg_attr(feature = "docs", doc(cfg(feature = "qoi")))]
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};

@@ -94,7 +94,7 @@
     rustdoc::redundant_explicit_links
 )]
 #![cfg_attr(feature = "benchmarks", feature(test))]
-
+#![cfg_attr(feature = "docs", feature(doc_cfg))]
 extern crate core;
 
 pub mod channel;

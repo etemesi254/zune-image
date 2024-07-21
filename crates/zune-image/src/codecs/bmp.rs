@@ -5,10 +5,12 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+#![cfg_attr(feature = "docs", doc(cfg(feature = "bmp")))]
+#![cfg(feature = "bmp")]
+
 //! BMP decoding support
 //!
 //! Decoding is done by the delegate library [zune-bmp](zune_bmp)
-#![cfg(feature = "bmp")]
 
 pub use zune_bmp::*;
 use zune_core::bytestream::ZByteReaderTrait;

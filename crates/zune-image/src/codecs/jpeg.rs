@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![cfg_attr(feature = "docs", doc(cfg(feature = "jpeg")))]
 #![cfg(feature = "jpeg")]
 //! Jpeg decoding and encoding support
 //!

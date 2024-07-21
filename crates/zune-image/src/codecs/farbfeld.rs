@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![cfg_attr(feature = "docs", doc(cfg(feature = "farbfeld")))]
 #![cfg(feature = "farbfeld")]
 //! Farbfeld decoding and encoding support
 //!

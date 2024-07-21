@@ -37,6 +37,8 @@ benchmarks = []
 avx2 = []
 sse41 = []
 
+docs = []
+
 all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
 
 [dependencies]

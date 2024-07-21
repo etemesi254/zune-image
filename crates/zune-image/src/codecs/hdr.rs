@@ -5,9 +5,9 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![cfg_attr(feature = "docs", doc(cfg(feature = "hdr")))]
 #![cfg(feature = "hdr")]
-//! Radiance HDR decoding support
+//! Radiance HDR decoding and encoding support
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;

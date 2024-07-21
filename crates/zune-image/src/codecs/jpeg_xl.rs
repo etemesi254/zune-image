@@ -8,7 +8,7 @@
 //! JPEG-XL decoding and encoding support
 //! This uses the delegate library [`zune-jpeg-xl`](zune_jpegxl)
 //! for encoding and  [`jxl-oxide`](jxl_oxide) for decoding images
-
+#![cfg_attr(feature = "docs", doc(cfg(feature = "jpeg-xl")))]
 #![cfg(feature = "jpeg-xl")]
 //! A simple jxl lossless encoder
 //!

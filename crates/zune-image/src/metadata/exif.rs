@@ -19,6 +19,7 @@ impl ImageMetadata {
     ///
     /// This requires the `metadata` feature to be activated
     /// otherwise it's a compile error
+    #[cfg_attr(feature = "docs", doc(cfg(feature = "metadata")))]
     pub fn parse_raw_exif(&mut self, data: &[u8]) {
         trace!("Parsing exif data");
 
