@@ -89,6 +89,10 @@ fn zune_image_rotate90_bench(input: &Image) {
 fn image_rs_rotate_90(input: &image::DynamicImage) {
     input.rotate90().to_rgb8();
 }
+
+fn image_rs_gaussian_blur(input: &image::DynamicImage) {
+    input.blur(3.0).to_rgb8();
+}
 fn vips_rotate180_bench(input: &VipsImage) {
     // vips by default uses 2.4 for gamma, so no need to specify
     let im = libvips::ops::rot(input, Angle::D180).unwrap();
@@ -192,10 +196,11 @@ fn bench_sobel(c: &mut Criterion) {
 }
 
 fn bench_gaussian(c: &mut Criterion) {
-    bench_inner_zune_vips(
+    bench_inner_zune_vips_image_rs(
         c,
         "imageprocs: gaussian blur",
         zune_image_gauss_blur_bench,
+        image_rs_gaussian_blur,
         vips_gauss_blur_bench
     );
 }
