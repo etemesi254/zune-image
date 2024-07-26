@@ -50,7 +50,7 @@ where
             let mut output = vec![0; info.width * info.height * colorspace.num_components()];
             let mut output_frames = Vec::new();
             while self.more_frames() {
-                self.decode_headers().unwrap();
+                self.decode_headers()?;
 
                 let mut frame = self.frame_info().unwrap();
                 if frame.dispose_op == DisposeOp::Previous {
@@ -59,7 +59,7 @@ where
                     // this means that there is no need to store the previous frame and copy it
                     frame.dispose_op = DisposeOp::None;
                 }
-                let pix = self.decode().unwrap();
+                let pix = self.decode()?;
                 match pix {
                     DecodingResult::U8(pix) => {
                         post_process_image(
