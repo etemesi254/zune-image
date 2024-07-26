@@ -66,7 +66,7 @@ The set of codecs aim to have the following features in order of priority
 - Safe
     - We (99.9%) won't segfault on you, unless you do something silly.
     - Decoders are fuzz tested in CI when a feature is added and also fuzz tested every day to catch bugs.
-    - Safety is kept to almost zero in most crates, with some having `#![forbid(unsafe)]` most unsafe comes from `SIMD`
+    - Unsafety is kept to almost zero in most crates, with some having `#![forbid(unsafe)]` most unsafe comes from `SIMD`
       routines which will reduce when [portable-simd](https://github.com/rust-lang/portable-simd) becomes mainstream
     - Image crashes are treated with the seriousness they deserve, i.e we fix as quickly as possible and
       acknowledge,whether it's a less common decoder or a useful routine.
