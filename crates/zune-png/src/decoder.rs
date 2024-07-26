@@ -11,7 +11,7 @@ use core::cmp::min;
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::trace;
+use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
 use zune_inflate::DeflateOptions;
@@ -813,8 +813,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                         let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
                         let out_start = (j * x + i) * out_bytes;
 
-                        out[final_start..final_start + out_bytes]
-                            .copy_from_slice(&final_out[out_start..out_start + out_bytes]);
+                       if let Some(e) =  out.get_mut(final_start..final_start + out_bytes) {
+e                           .copy_from_slice(&final_out[out_start..out_start + out_bytes]);
+                       } else{
+                           warn!("Malformed image, interlace cannot be placed correctly")
+                       }
                     }
                 }
                 image_offset += image_len;

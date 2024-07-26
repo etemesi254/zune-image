@@ -514,7 +514,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 // skip the header
                 self.stream.skip(4)?;
                 // allocate space for header ignoring content
-                chunk.resize(chunk.len() + next_header.length - 4, 0);
+                chunk.resize(chunk.len() + next_header.length.saturating_sub(4), 0);
 
                 self.stream.read_exact_bytes(&mut chunk[prev_len..])?;
                 // skip crc
