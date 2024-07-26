@@ -75,7 +75,7 @@ impl core::fmt::Debug for ZByteIoError {
             ZByteIoError::TryFromIntError(err) => {
                 writeln!(f, "Cannot convert to int {}", err)
             }
-            ZByteIoError::NotEnoughBytes(expected, found) => {
+            ZByteIoError::NotEnoughBytes(found, expected) => {
                 writeln!(f, "Not enough bytes, expected {expected} but found {found}")
             }
             ZByteIoError::NotEnoughBuffer(expected, found) => {
