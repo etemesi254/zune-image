@@ -72,20 +72,17 @@ impl EncodeResult {
 /// it has to own the image for the duration of it's lifetime, but can return references to it
 /// via  [`images`](crate::pipelines::Pipeline::images) and
 ///  [`images_mut`](crate::pipelines::Pipeline::images_mut)
-pub struct Pipeline<T: IntoImage> {
+pub struct Pipeline {
     state:      Option<PipelineState>,
-    decode:     Option<T>,
+    decode:     Option<Box<dyn IntoImage>>,
     image:      Vec<Image>,
     operations: Vec<Box<dyn OperationsTrait>>
 }
 
-impl<T> Pipeline<T>
-where
-    T: IntoImage
-{
+impl Pipeline {
     /// Create a new pipeline that can be used for default
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Pipeline<T> {
+    pub fn new() -> Pipeline {
         Pipeline {
             image:      vec![],
             state:      Some(PipelineState::Initialized),
@@ -104,7 +101,7 @@ where
     ///
     /// There can only be one decoder in a pipeline, so the last decoder
     /// is the one that will be considered.
-    pub fn chain_decoder(&mut self, decoder: T) -> &mut Pipeline<T> {
+    pub fn chain_decoder(&mut self, decoder: Box<dyn IntoImage>) -> &mut Pipeline {
         self.decode = Some(decoder);
         self
     }
@@ -129,12 +126,12 @@ where
     /// use zune_image::pipelines::Pipeline;
     ///
     ///
-    /// let image = Pipeline::<Image>::new()
+    /// let image = Pipeline::new()
     ///     .chain_operations(Box::new(ColorspaceConv::new(zune_core::colorspace::ColorSpace::Luma)))
     ///     .chain_operations(Box::new(Depth::new(zune_core::bit_depth::BitDepth::Float32)))   
     ///     .advance_to_end();
     /// ```
-    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut Pipeline<T> {
+    pub fn chain_operations(&mut self, operations: Box<dyn OperationsTrait>) -> &mut Pipeline {
         self.operations.push(operations);
         self
     }
@@ -178,7 +175,7 @@ where
                         trace!("Current state: {:?}\n", state);
                     }
 
-                    let decode_op = self.decode.take().unwrap();
+                    let mut decode_op = self.decode.take().unwrap();
 
                     let img = decode_op.into_image()?;
 
