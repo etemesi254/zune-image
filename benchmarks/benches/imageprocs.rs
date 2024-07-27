@@ -2,7 +2,9 @@ use std::fs::read;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use libvips::ops::{Angle, GammaOptions};
+use image::imageops::FilterType;
+use image::DynamicImage;
+use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
 use libvips::VipsImage;
 use zune_benches::sample_path;
 use zune_hdr::zune_core::bytestream::ZCursor;
@@ -10,10 +12,12 @@ use zune_hdr::zune_core::options::DecoderOptions;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
+use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::premul_alpha::PremultiplyAlpha;
+use zune_imageprocs::resize::{Resize, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::sobel::Sobel;
 
@@ -116,6 +120,63 @@ fn vips_invert_bench(input: &VipsImage) {
 fn zune_image_invert_bench(input: &Image) {
     // vips by default uses 2.4 for gamma, so no need to specify
     let im = Invert.clone_and_execute(input).unwrap();
+    im.flatten_frames::<u8>();
+    black_box(im);
+}
+
+fn vips_resize_bench(input: &VipsImage) {
+    let mut options = ResizeOptions::default();
+    options.kernel = Kernel::Linear;
+    options.vscale = 0.5;
+    let im = libvips::ops::resize_with_opts(input, 0.5, &options).unwrap();
+    im.image_write_to_memory();
+    black_box(im);
+}
+
+fn zune_image_resize_bench(input: &Image) {
+    let (w, h) = input.dimensions();
+    let im = Resize::new(w / 2, h / 2, ResizeMethod::Bilinear)
+        .clone_and_execute(input)
+        .unwrap();
+    im.flatten_frames::<u8>();
+    black_box(im);
+}
+
+fn image_rs_resize_bench(input: &DynamicImage) {
+    let (w, h) = (input.width(), input.height());
+    let im = input.resize(w / 2, h / 2, FilterType::Triangle);
+    let c = im.as_flat_samples_u8().unwrap().samples;
+    black_box(c);
+}
+
+fn vips_flip_horizontal_bench(input: &VipsImage) {
+    // vips by default uses 2.4 for gamma, so no need to specify
+    let im = libvips::ops::flip(input, Direction::Horizontal).unwrap();
+    im.image_write_to_memory();
+    black_box(im);
+}
+
+fn zune_image_flip_horizonal_bench(input: &Image) {
+    // vips by default uses 2.4 for gamma, so no need to specify
+    let im = Flip::new(FlipDirection::Horizontal)
+        .clone_and_execute(input)
+        .unwrap();
+    im.flatten_frames::<u8>();
+    black_box(im);
+}
+
+fn vips_flip_vertical_bench(input: &VipsImage) {
+    // vips by default uses 2.4 for gamma, so no need to specify
+    let im = libvips::ops::flip(input, Direction::Vertical).unwrap();
+    im.image_write_to_memory();
+    black_box(im);
+}
+
+fn zune_image_flip_vertical_bench(input: &Image) {
+    // vips by default uses 2.4 for gamma, so no need to specify
+    let im = Flip::new(FlipDirection::Horizontal)
+        .clone_and_execute(input)
+        .unwrap();
     im.flatten_frames::<u8>();
     black_box(im);
 }
@@ -241,12 +302,37 @@ fn bench_invert(c: &mut Criterion) {
         vips_invert_bench
     );
 }
+fn bench_resize(c: &mut Criterion) {
+    bench_inner_zune_vips_image_rs(
+        c,
+        "imageprocs: resize-linear-kernel",
+        zune_image_resize_bench,
+        image_rs_resize_bench,
+        vips_resize_bench
+    );
+}
 
+fn bench_flip_horizontal(c: &mut Criterion) {
+    bench_inner_zune_vips(
+        c,
+        "imageprocs: flip-horizontal",
+        zune_image_flip_horizonal_bench,
+        vips_flip_horizontal_bench
+    );
+}
+fn bench_flip_vertical(c: &mut Criterion) {
+    bench_inner_zune_vips(
+        c,
+        "imageprocs: flip-vertical",
+        zune_image_flip_vertical_bench,
+        vips_flip_vertical_bench
+    );
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert);
+    targets=bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize,bench_flip_horizontal,bench_flip_vertical);
 
 criterion_main!(benches);
