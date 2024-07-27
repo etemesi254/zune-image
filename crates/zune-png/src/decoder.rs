@@ -632,7 +632,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
         let png_info = self.png_info.clone();
 
-        let image_len = self.inner_buffer_size().unwrap();
+        let image_len = self.inner_buffer_size()
+            .ok_or(PngDecodeErrors::GenericStatic("Output buffer size overflowed a usize (corrupt png?)"))?;
 
         if out.len() < image_len {
             return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
