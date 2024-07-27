@@ -65,22 +65,24 @@ pub fn parse_options(options: &ArgMatches) -> CmdOptions {
 
 /// Set up logging options
 pub fn setup_logger(options: &ArgMatches) {
-    let log_level;
+    if !options.get_one::<bool>("no-log").unwrap() {
+        let log_level;
 
-    if *options.get_one::<bool>("debug").unwrap() {
-        log_level = Level::Debug;
-    } else if *options.get_one::<bool>("trace").unwrap() {
-        log_level = Level::Trace;
-    } else if *options.get_one::<bool>("warn").unwrap() {
-        log_level = Level::Warn
-    } else if *options.get_one::<bool>("info").unwrap() {
-        log_level = Level::Info;
-    } else {
-        log_level = Level::Warn;
+        if *options.get_one::<bool>("debug").unwrap() {
+            log_level = Level::Debug;
+        } else if *options.get_one::<bool>("trace").unwrap() {
+            log_level = Level::Trace;
+        } else if *options.get_one::<bool>("warn").unwrap() {
+            log_level = Level::Warn
+        } else if *options.get_one::<bool>("info").unwrap() {
+            log_level = Level::Info;
+        } else {
+            log_level = Level::Warn;
+        }
+
+        simple_logger::init_with_level(log_level).unwrap();
+
+        info!("Initialized logger");
+        info!("Log level :{}", log_level);
     }
-
-    simple_logger::init_with_level(log_level).unwrap();
-
-    info!("Initialized logger");
-    info!("Log level :{}", log_level);
 }

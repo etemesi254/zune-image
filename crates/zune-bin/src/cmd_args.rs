@@ -10,6 +10,7 @@ use std::ffi::OsString;
 
 use clap::builder::PossibleValue;
 use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
+use zune_image::codecs::ImageFormat;
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 use crate::cmd_args::help_strings::{
@@ -40,6 +41,43 @@ impl ValueEnum for MmapOptions {
         })
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub enum CmdImageFormats {
+    Format(ImageFormat)
+}
+impl ValueEnum for CmdImageFormats {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self::Format(ImageFormat::BMP),
+            Self::Format(ImageFormat::JPEG),
+            Self::Format(ImageFormat::JPEG_XL),
+            Self::Format(ImageFormat::HDR),
+            Self::Format(ImageFormat::Farbfeld),
+            Self::Format(ImageFormat::PNG),
+            Self::Format(ImageFormat::PPM),
+            Self::Format(ImageFormat::PSD),
+            Self::Format(ImageFormat::QOI)
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        match self {
+            CmdImageFormats::Format(c) => match c {
+                ImageFormat::JPEG => Some(PossibleValue::new("jpeg")),
+                ImageFormat::PNG => Some(PossibleValue::new("png")),
+                ImageFormat::PPM => Some(PossibleValue::new("ppm")),
+                ImageFormat::PSD => Some(PossibleValue::new("psd")),
+                ImageFormat::Farbfeld => Some(PossibleValue::new("farbfeld")),
+                ImageFormat::QOI => Some(PossibleValue::new("qoi")),
+                ImageFormat::JPEG_XL => Some(PossibleValue::new("jxl")),
+                ImageFormat::HDR => Some(PossibleValue::new("hdr")),
+                ImageFormat::BMP => Some(PossibleValue::new("bmp")),
+                _ => None
+            }
+        }
+    }
+}
 #[rustfmt::skip]
 pub fn create_cmd_args() -> Command {
     let (options_args, option_group) = add_operations();
@@ -67,6 +105,10 @@ pub fn create_cmd_args() -> Command {
             .action(ArgAction::Append)
             .value_parser(value_parser!(OsString))
         )
+        .arg(Arg::new("output-format")
+            .long("output-format")
+            .help("Output format to use when output is command line, to be used in conjunction with '-o -'")
+            .value_parser(value_parser!(CmdImageFormats)))
         .arg(Arg::new("mmap")
             .long("mmap")
             .help_heading("ADVANCED")
@@ -104,7 +146,7 @@ pub fn create_cmd_args() -> Command {
         .group(image_args_group)
 }
 
-fn add_logging_options() -> [Arg; 4] {
+fn add_logging_options() -> [Arg; 5] {
     [
         Arg::new("debug")
             .long("debug")
@@ -125,7 +167,12 @@ fn add_logging_options() -> [Arg; 4] {
             .long("info")
             .action(ArgAction::SetTrue)
             .help_heading("Logging")
-            .help("Display information about the decoding options")
+            .help("Display information about the decoding options"),
+        Arg::new("no-log")
+            .long("no-log")
+            .action(ArgAction::SetTrue)
+            .help_heading("Logging")
+            .help("No Logging, do not log anything")
     ]
 }
 

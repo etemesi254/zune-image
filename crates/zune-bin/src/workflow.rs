@@ -20,6 +20,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
 use zune_image::traits::IntoImage;
 
+use crate::cmd_args::CmdImageFormats;
 use crate::cmd_parsers::global_options::CmdOptions;
 use crate::cmd_parsers::{decoder_options, encoder_options};
 use crate::file_io::ZuneFile;
@@ -90,7 +91,9 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                             error!("Unknown or unsupported format {:?}", out_file)
                         }
                     } else {
-                        error!("Could not determine extension from {:?}", out_file)
+                        if out_file != "-" {
+                            error!("Could not determine extension from {:?}", out_file);
+                        }
                     }
                 }
             }
@@ -105,32 +108,49 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         if let Some(source) = args.value_source("out") {
             if source == CommandLine {
                 for out_file in args.get_raw("out").unwrap() {
-                    //write to file
-                    if let Some(ext) = Path::new(out_file).extension() {
-                        for format in &workflow.formats {
-                            if format.has_encoder() {
-                                for image in workflow.inner.images() {
-                                    let fd = OpenOptions::new()
-                                        .create(true)
-                                        .write(true)
-                                        .truncate(true)
-                                        .open(out_file);
-                                    match fd {
-                                        Ok(file) => {
-                                            let mut file_c = BufWriter::new(file);
-                                            let start = Instant::now();
-                                            let bytes =
-                                                format.encode(image, options, &mut file_c)?;
-                                            let end = Instant::now();
-                                            trace!(
-                                                "Took {:?} to encode {} bytes to {:?}",
-                                                end - start,
-                                                bytes,
-                                                out_file
-                                            );
-                                        }
-                                        Err(e) => {
-                                            error!("Cannot encode to file, error opening {:?}", e);
+                    if out_file == "-" {
+                        if let Some(cmd_format) = args.get_one::<CmdImageFormats>("output-format") {
+                            // test on jpeg only
+                            let mut out_file = std::io::stdout();
+
+                            let CmdImageFormats::Format(format) = cmd_format;
+                            for image in workflow.inner.images() {
+                                format.encode(image, options, &mut out_file)?;
+                            }
+                        } else {
+                            error!("You must specify the image format to be used while using output as '-` via the --output-format flag ");
+                        }
+                    } else {
+                        //write to file
+                        if let Some(ext) = Path::new(out_file).extension() {
+                            for format in &workflow.formats {
+                                if format.has_encoder() {
+                                    for image in workflow.inner.images() {
+                                        let fd = OpenOptions::new()
+                                            .create(true)
+                                            .write(true)
+                                            .truncate(true)
+                                            .open(out_file);
+                                        match fd {
+                                            Ok(file) => {
+                                                let mut file_c = BufWriter::new(file);
+                                                let start = Instant::now();
+                                                let bytes =
+                                                    format.encode(image, options, &mut file_c)?;
+                                                let end = Instant::now();
+                                                trace!(
+                                                    "Took {:?} to encode {} bytes to {:?}",
+                                                    end - start,
+                                                    bytes,
+                                                    out_file
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "Cannot encode to file, error opening {:?}",
+                                                    e
+                                                );
+                                            }
                                         }
                                     }
                                 }
