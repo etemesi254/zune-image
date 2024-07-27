@@ -19,6 +19,7 @@ use zune_image::traits::OperationsTrait;
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 /// The bilateral filter struct
 ///
@@ -89,84 +90,34 @@ impl OperationsTrait for BilateralFilter {
             usize::from(depth.max_value()) + 1
         );
 
-        #[cfg(feature = "threads")]
-        {
-            std::thread::scope(|s| {
-                let mut t_results = vec![];
-                for channel in image.channels_mut(true) {
-                    let result = s.spawn(|| {
-                        let mut new_channel =
-                            Channel::new_with_bit_type(channel.len(), depth.bit_type());
-                        match depth.bit_type() {
-                            BitType::U8 => bilateral_filter_int::<u8>(
-                                channel.reinterpret_as()?,
-                                new_channel.reinterpret_as_mut()?,
-                                w,
-                                h,
-                                &coeffs
-                            ),
-                            BitType::U16 => bilateral_filter_int::<u16>(
-                                channel.reinterpret_as()?,
-                                new_channel.reinterpret_as_mut()?,
-                                w,
-                                h,
-                                &coeffs
-                            ),
+        let bilateral_fn = |channel: &mut Channel| {
+            let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d
-                                ));
-                            }
-                        }
-                        *channel = new_channel;
-                        Ok(())
-                    });
-                    t_results.push(result);
+            match depth.bit_type() {
+                BitType::U8 => bilateral_filter_int::<u8>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    w,
+                    h,
+                    &coeffs
+                ),
+                BitType::U16 => bilateral_filter_int::<u16>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    w,
+                    h,
+                    &coeffs
+                ),
+
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                 }
-
-                t_results
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-
-        #[cfg(not(feature = "threads"))]
-        {
-            for channel in image.channels_mut(true) {
-                let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
-                match depth.bit_type() {
-                    BitType::U8 => {
-                        bilateral_filter_int::<u8>(
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?,
-                            w,
-                            h,
-                            &coeffs
-                        );
-                    }
-                    BitType::U16 => {
-                        bilateral_filter_int::<u16>(
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?,
-                            w,
-                            h,
-                            &coeffs
-                        );
-                    }
-
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                    }
-                }
-                // overwrite with the filtered channel
-                *channel = new_channel;
             }
-        }
+            *channel = new_channel;
+            Ok(())
+        };
 
-        Ok(())
+        execute_on(bilateral_fn, image, true)
     }
 
     fn supported_types(&self) -> &'static [BitType] {

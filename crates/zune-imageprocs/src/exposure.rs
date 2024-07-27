@@ -19,9 +19,12 @@
 //! # Gotchas
 //! -`f32` depth doesn't do any clamping, hence values may get out of range
 use zune_core::bit_depth::BitType;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+
+use crate::utils::execute_on;
 
 /// Adjust exposure of image
 ///
@@ -86,7 +89,7 @@ impl OperationsTrait for Exposure {
 
         let black = self.black.clamp(0.0, 1.0) * f32::from(image.depth().max_value());
 
-        for channel in image.channels_mut(true) {
+        let exposure_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match bit_type {
                 BitType::U8 => {
                     let raw_px = channel.reinterpret_as_mut::<u8>()?;
@@ -108,9 +111,10 @@ impl OperationsTrait for Exposure {
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
+            Ok(())
+        };
 
-        Ok(())
+        execute_on(exposure_fn, image, true)
     }
 
     fn supported_types(&self) -> &'static [BitType] {

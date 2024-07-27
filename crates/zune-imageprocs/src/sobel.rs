@@ -16,6 +16,7 @@ use zune_image::traits::OperationsTrait;
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 /// Perform a sobel image derivative.
 ///
@@ -58,80 +59,34 @@ impl OperationsTrait for Sobel {
         let depth = image.depth().bit_type();
         let (width, height) = image.dimensions();
 
-        #[cfg(not(feature = "threads"))]
-        {
-            for channel in image.channels_mut(true) {
-                let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
-                match depth {
-                    BitType::U8 => sobel_int::<u8>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height
-                    ),
-                    BitType::U16 => sobel_int::<u16>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height
-                    ),
-                    BitType::F32 => sobel_float::<f32>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-                }
-                *channel = out_channel;
+        let sobel_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
+            match depth {
+                BitType::U8 => sobel_int::<u8>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height
+                ),
+                BitType::U16 => sobel_int::<u16>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height
+                ),
+                BitType::F32 => sobel_float::<f32>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height
+                ),
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
-        #[cfg(feature = "threads")]
-        {
-            std::thread::scope(|s| {
-                let mut t_results = vec![];
-                for channel in image.channels_mut(true) {
-                    let result = s.spawn(|| {
-                        let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
-                        match depth {
-                            BitType::U8 => sobel_int::<u8>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height
-                            ),
-                            BitType::U16 => sobel_int::<u16>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height
-                            ),
-                            BitType::F32 => sobel_float::<f32>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d
-                                ))
-                            }
-                        }
-                        *channel = out_channel;
-                        Ok(())
-                    });
-                    t_results.push(result);
-                }
-                t_results
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
+            *channel = out_channel;
+            Ok(())
+        };
 
-        Ok(())
+        execute_on(sobel_fn, image, true)
     }
 
     fn supported_types(&self) -> &'static [BitType] {

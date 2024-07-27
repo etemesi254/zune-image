@@ -25,11 +25,13 @@
 //!
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 /// Brighten struct
 ///
@@ -81,7 +83,7 @@ impl OperationsTrait for Brighten {
         let max_val = image.depth().max_value();
         let depth = image.depth();
 
-        for channel in image.channels_mut(true) {
+        let brighten_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match depth.bit_type() {
                 BitType::U8 => brighten(
                     channel.reinterpret_as_mut::<u8>()?,
@@ -96,8 +98,9 @@ impl OperationsTrait for Brighten {
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
-        Ok(())
+            Ok(())
+        };
+        execute_on(brighten_fn, image, true)
     }
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[

@@ -56,7 +56,9 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-/// Crop out a part of an image  
+use crate::utils::execute_on;
+
+/// Crop out a part of an image
 ///
 /// This creates a smaller image from a bigger image
 ///
@@ -127,7 +129,7 @@ impl OperationsTrait for Crop {
         let (old_width, _) = image.dimensions();
         let depth = image.depth().bit_type();
 
-        for channel in image.channels_mut(false) {
+        let crop_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut new_vec = Channel::new_with_length_and_type(new_dims, channel.type_id());
 
             // since crop is just bytewise copies, we can use the lowest common denominator for it
@@ -169,7 +171,10 @@ impl OperationsTrait for Crop {
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
             *channel = new_vec;
-        }
+
+            Ok(())
+        };
+        execute_on(crop_fn, image, false)?;
 
         // safety: We just changed size of array
         image.set_dimensions(self.width, self.height);

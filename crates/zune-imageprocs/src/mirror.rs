@@ -8,9 +8,12 @@
 //! Rearrange the pixels along a certain axis.
 
 use zune_core::bit_depth::BitType;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+
+use crate::utils::execute_on;
 
 /// Supported mirror modes
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -79,7 +82,7 @@ impl OperationsTrait for Mirror {
         let (width, height) = image.dimensions();
         let depth = image.depth();
 
-        for channel in image.channels_mut(false) {
+        let mirror_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match depth.bit_type() {
                 BitType::U8 => {
                     mirror(
@@ -108,9 +111,9 @@ impl OperationsTrait for Mirror {
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
-
-        Ok(())
+            Ok(())
+        };
+        execute_on(mirror_fn, image, false)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]

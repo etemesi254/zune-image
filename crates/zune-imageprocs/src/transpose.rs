@@ -18,6 +18,7 @@ use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::transpose::scalar::transpose_scalar;
+use crate::utils::execute_on;
 
 pub(crate) mod scalar;
 pub(crate) mod sse41;
@@ -52,7 +53,7 @@ impl OperationsTrait for Transpose {
 
         let depth = image.depth();
 
-        for channel in image.channels_mut(false) {
+        let transpose_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut out_channel = Channel::new_with_bit_type(out_dim, depth.bit_type());
 
             match depth.bit_type() {
@@ -85,8 +86,10 @@ impl OperationsTrait for Transpose {
                 }
             };
             *channel = out_channel;
-        }
+            Ok(())
+        };
 
+        execute_on(transpose_fn, image, false)?;
         image.set_dimensions(height, width);
 
         Ok(())

@@ -8,11 +8,13 @@
 //! Threshold filter: Binarize an image
 use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ThresholdMethod {
@@ -81,9 +83,9 @@ impl OperationsTrait for Threshold {
         if !image.colorspace().is_grayscale() {
             warn!("Threshold works well with grayscale images, results may be something you don't expect");
         }
-
         let depth = image.depth();
-        for channel in image.channels_mut(true) {
+
+        let threshold_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match depth.bit_type() {
                 BitType::U16 => threshold(
                     channel.reinterpret_as_mut::<u16>()?,
@@ -102,9 +104,9 @@ impl OperationsTrait for Threshold {
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented("threshold", d))
             }
-        }
-
-        Ok(())
+            Ok(())
+        };
+        execute_on(threshold_fn, image, true)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]

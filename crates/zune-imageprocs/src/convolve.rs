@@ -15,7 +15,6 @@
 //!
 
 use zune_core::bit_depth::BitType;
-use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -23,7 +22,7 @@ use zune_image::traits::OperationsTrait;
 
 use crate::pad::{pad, PadMethod};
 use crate::traits::NumOps;
-use crate::utils::z_prefetch;
+use crate::utils::{execute_on, z_prefetch};
 
 /// Convolve an image
 ///
@@ -82,115 +81,47 @@ impl OperationsTrait for Convolve {
         let (width, height) = image.dimensions();
         let depth = image.depth();
 
-        #[cfg(feature = "threads")]
-        {
-            trace!("Running convolve in multithreaded mode");
+        let convolve_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut out_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                for channel in image.channels_mut(true) {
-                    let scope = s.spawn(|| {
-                        // Hello
-                        let mut out_channel = Channel::new_with_bit_type(
-                            width * height * depth.size_of(),
-                            depth.bit_type()
-                        );
-
-                        match depth.bit_type() {
-                            BitType::U8 => {
-                                convolve(
-                                    channel.reinterpret_as::<u8>()?,
-                                    out_channel.reinterpret_as_mut::<u8>()?,
-                                    width,
-                                    height,
-                                    &self.weights,
-                                    self.scale
-                                )?;
-                            }
-                            BitType::U16 => {
-                                convolve(
-                                    channel.reinterpret_as::<u16>()?,
-                                    out_channel.reinterpret_as_mut::<u16>()?,
-                                    width,
-                                    height,
-                                    &self.weights,
-                                    self.scale
-                                )?;
-                            }
-                            BitType::F32 => {
-                                convolve(
-                                    channel.reinterpret_as::<f32>()?,
-                                    out_channel.reinterpret_as_mut::<f32>()?,
-                                    width,
-                                    height,
-                                    &self.weights,
-                                    self.scale
-                                )?;
-                            }
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d
-                                ))
-                            }
-                        }
-
-                        *channel = out_channel;
-                        Ok(())
-                    });
-                    errors.push(scope);
+            match depth.bit_type() {
+                BitType::U8 => {
+                    convolve(
+                        channel.reinterpret_as::<u8>()?,
+                        out_channel.reinterpret_as_mut::<u8>()?,
+                        width,
+                        height,
+                        &self.weights,
+                        self.scale
+                    )?;
                 }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running convolve in single threaded mode");
-
-            for channel in image.channels_mut(true) {
-                let mut out_channel =
-                    Channel::new_with_bit_type(width * height * depth.size_of(), depth.bit_type());
-
-                match depth.bit_type() {
-                    BitType::U8 => {
-                        convolve(
-                            channel.reinterpret_as::<u8>()?,
-                            out_channel.reinterpret_as_mut::<u8>()?,
-                            width,
-                            height,
-                            &self.weights,
-                            self.scale
-                        )?;
-                    }
-                    BitType::U16 => {
-                        convolve(
-                            channel.reinterpret_as::<u16>()?,
-                            out_channel.reinterpret_as_mut::<u16>()?,
-                            width,
-                            height,
-                            &self.weights,
-                            self.scale
-                        )?;
-                    }
-                    BitType::F32 => {
-                        convolve(
-                            channel.reinterpret_as::<f32>()?,
-                            out_channel.reinterpret_as_mut::<f32>()?,
-                            width,
-                            height,
-                            &self.weights,
-                            self.scale
-                        )?;
-                    }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                BitType::U16 => {
+                    convolve(
+                        channel.reinterpret_as::<u16>()?,
+                        out_channel.reinterpret_as_mut::<u16>()?,
+                        width,
+                        height,
+                        &self.weights,
+                        self.scale
+                    )?;
                 }
-                *channel = out_channel;
+                BitType::F32 => {
+                    convolve(
+                        channel.reinterpret_as::<f32>()?,
+                        out_channel.reinterpret_as_mut::<f32>()?,
+                        width,
+                        height,
+                        &self.weights,
+                        self.scale
+                    )?;
+                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
-        Ok(())
+
+            *channel = out_channel;
+            Ok(())
+        };
+        execute_on(convolve_fn, image, true)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]

@@ -5,7 +5,8 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+use zune_image::channel::Channel;
+use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 
 /// Prefetch data at offset position
@@ -81,4 +82,33 @@ pub fn calculate_gravity(src_image: &Image, dst_image: &Image, gravity: Gravity)
             dst_height.saturating_sub(src_height)
         )
     };
+}
+/// A simple helper function to execute on threads
+pub fn execute_on<T: Fn(&mut Channel) -> Result<(), ImageErrors> + Send + Sync>(
+    function: T, image: &mut Image, ignore_alpha: bool
+) -> Result<(), ImageErrors> {
+    #[cfg(feature = "threads")]
+    {
+        std::thread::scope(|s| {
+            let mut t_results = vec![];
+            for channel in image.channels_mut(ignore_alpha) {
+                let result = s.spawn(|| function(channel));
+                t_results.push(result);
+            }
+
+            t_results
+                .into_iter()
+                .map(|x| x.join().unwrap())
+                .collect::<Result<Vec<()>, ImageErrors>>()
+        })?;
+
+        Ok(())
+    }
+    #[cfg(not(feature = "threads"))]
+    {
+        for channel in image.channels_mut(ignore_alpha) {
+            function(channel)?;
+        }
+        Ok(())
+    }
 }

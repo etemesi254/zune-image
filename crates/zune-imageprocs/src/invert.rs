@@ -18,11 +18,13 @@ use std::ops::Sub;
 
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 /// Invert an image pixel.
 ///
@@ -48,16 +50,17 @@ impl OperationsTrait for Invert {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth().bit_type();
 
-        for channel in image.channels_mut(true) {
+        let invert_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match depth {
-                BitType::U8 => invert(channel.reinterpret_as_mut::<u8>().unwrap()),
-                BitType::U16 => invert(channel.reinterpret_as_mut::<u16>().unwrap()),
-                BitType::F32 => invert(channel.reinterpret_as_mut::<f32>().unwrap()),
+                BitType::U8 => invert(channel.reinterpret_as_mut::<u8>()?),
+                BitType::U16 => invert(channel.reinterpret_as_mut::<u16>()?),
+                BitType::F32 => invert(channel.reinterpret_as_mut::<f32>()?),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
+            Ok(())
+        };
 
-        Ok(())
+        execute_on(invert_fn, image, true)
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {

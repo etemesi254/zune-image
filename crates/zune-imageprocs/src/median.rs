@@ -39,14 +39,13 @@
 //!
 
 use zune_core::bit_depth::BitType;
-use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::pad::{pad, PadMethod};
-use crate::utils::z_prefetch;
+use crate::utils::{execute_on, z_prefetch};
 
 /// Median returns a new image in which each pixel is the median of its neighbors.
 ///
@@ -77,78 +76,32 @@ impl OperationsTrait for Median {
             return Ok(());
         }
         let depth = image.depth();
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running median filter single threaded mode");
 
-            for channel in image.channels_mut(false) {
-                let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
+        let median_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
 
-                match depth.bit_type() {
-                    BitType::U16 => median_u16(
-                        channel.reinterpret_as::<u16>()?,
-                        new_channel.reinterpret_as_mut::<u16>()?,
-                        self.radius,
-                        width,
-                        height
-                    ),
-                    BitType::U8 => median_u8(
-                        channel.reinterpret_as::<u8>()?,
-                        new_channel.reinterpret_as_mut::<u8>()?,
-                        self.radius,
-                        width,
-                        height
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-                }
-                *channel = new_channel;
+            match depth.bit_type() {
+                BitType::U16 => median_u16(
+                    channel.reinterpret_as::<u16>()?,
+                    new_channel.reinterpret_as_mut::<u16>()?,
+                    self.radius,
+                    width,
+                    height
+                ),
+                BitType::U8 => median_u8(
+                    channel.reinterpret_as::<u8>()?,
+                    new_channel.reinterpret_as_mut::<u8>()?,
+                    self.radius,
+                    width,
+                    height
+                ),
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }
-        }
-        #[cfg(feature = "threads")]
-        {
-            trace!("Running median filter multithreaded mode");
+            *channel = new_channel;
+            Ok(())
+        };
 
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                for channel in image.channels_mut(true) {
-                    let result = s.spawn(|| {
-                        let mut new_channel =
-                            Channel::new_with_bit_type(channel.len(), depth.bit_type());
-
-                        match depth.bit_type() {
-                            BitType::U16 => median_u16(
-                                channel.reinterpret_as::<u16>()?,
-                                new_channel.reinterpret_as_mut::<u16>()?,
-                                self.radius,
-                                width,
-                                height
-                            ),
-                            BitType::U8 => median_u8(
-                                channel.reinterpret_as::<u8>()?,
-                                new_channel.reinterpret_as_mut::<u8>()?,
-                                self.radius,
-                                width,
-                                height
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d
-                                ))
-                            }
-                        }
-                        *channel = new_channel;
-                        Ok(())
-                    });
-                    errors.push(result);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-        Ok(())
+        execute_on(median_fn, image, true)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16]

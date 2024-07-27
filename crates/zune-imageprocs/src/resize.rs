@@ -20,6 +20,7 @@ use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 mod bicubic;
 mod bilinear;
@@ -67,99 +68,45 @@ impl OperationsTrait for Resize {
 
         let new_length = self.new_width * self.new_height * image.depth().size_of();
 
-        #[cfg(feature = "threads")]
-        {
-            std::thread::scope(|f| {
-                let mut errors = vec![];
+        let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut new_channel = Channel::new_with_bit_type(new_length, depth);
+            match depth {
+                BitType::U8 => resize::<u8>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    self.method,
+                    old_w,
+                    old_h,
+                    self.new_width,
+                    self.new_height
+                ),
+                BitType::U16 => resize::<u16>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    self.method,
+                    old_w,
+                    old_h,
+                    self.new_width,
+                    self.new_height
+                ),
 
-                for old_channel in image.channels_mut(false) {
-                    let result = f.spawn(|| {
-                        let mut new_channel = Channel::new_with_bit_type(new_length, depth);
-                        match depth {
-                            BitType::U8 => resize::<u8>(
-                                old_channel.reinterpret_as()?,
-                                new_channel.reinterpret_as_mut()?,
-                                self.method,
-                                old_w,
-                                old_h,
-                                self.new_width,
-                                self.new_height
-                            ),
-                            BitType::U16 => resize::<u16>(
-                                old_channel.reinterpret_as()?,
-                                new_channel.reinterpret_as_mut()?,
-                                self.method,
-                                old_w,
-                                old_h,
-                                self.new_width,
-                                self.new_height
-                            ),
-
-                            BitType::F32 => {
-                                resize::<f32>(
-                                    old_channel.reinterpret_as()?,
-                                    new_channel.reinterpret_as_mut()?,
-                                    self.method,
-                                    old_w,
-                                    old_h,
-                                    self.new_width,
-                                    self.new_height
-                                );
-                            }
-                            d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
-                        }
-                        *old_channel = new_channel;
-                        Ok(())
-                    });
-                    errors.push(result);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-
-        #[cfg(not(feature = "threads"))]
-        {
-            for old_channel in image.channels_mut(false) {
-                let mut new_channel = Channel::new_with_bit_type(new_length, depth);
-                match depth {
-                    BitType::U8 => resize::<u8>(
-                        old_channel.reinterpret_as()?,
+                BitType::F32 => {
+                    resize::<f32>(
+                        channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
                         self.method,
                         old_w,
                         old_h,
                         self.new_width,
                         self.new_height
-                    ),
-                    BitType::U16 => resize::<u16>(
-                        old_channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        self.method,
-                        old_w,
-                        old_h,
-                        self.new_width,
-                        self.new_height
-                    ),
-
-                    BitType::F32 => {
-                        resize::<f32>(
-                            old_channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?,
-                            self.method,
-                            old_w,
-                            old_h,
-                            self.new_width,
-                            self.new_height
-                        );
-                    }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
+                    );
                 }
-                *old_channel = new_channel;
+                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
             }
-        }
+            *channel = new_channel;
+            Ok(())
+        };
+        execute_on(resize_fn, image, false)?;
         image.set_dimensions(self.new_width, self.new_height);
 
         Ok(())
@@ -225,7 +172,7 @@ pub fn resize<T>(
     in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
     out_width: usize, out_height: usize
 ) where
-    T: Copy + NumOps<T>,
+    T: Copy + NumOps<T> + Default,
     f32: std::convert::From<T>
 {
     match method {

@@ -13,6 +13,8 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::utils::execute_on;
+
 #[derive(Copy, Clone, Debug)]
 pub enum FlipDirection {
     /// Creates a horizontal mirror image by reflecting the pixels around the central y-axis
@@ -117,28 +119,7 @@ impl OperationsTrait for Flip {
             Ok(())
         };
 
-        #[cfg(feature = "threads")]
-        {
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                for channel in image.channels_mut(false) {
-                    let t = s.spawn(|| flip_fn(channel));
-                    errors.push(t);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-        #[cfg(not(feature = "threads"))]
-        {
-            for inp in image.channels_mut(false) {
-                flip_fn(inp)?;
-            }
-        }
-
-        Ok(())
+        execute_on(flip_fn, image, false)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]

@@ -24,12 +24,13 @@
 //! - For `f32` naive execution is used
 //!
 use zune_core::bit_depth::BitType;
-use zune_core::log::trace;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 use crate::traits::NumOps;
+use crate::utils::execute_on;
 
 /// Gamma adjust an image
 ///
@@ -60,77 +61,30 @@ impl OperationsTrait for Gamma {
         let max_value = image.depth().max_value();
 
         let depth = image.depth();
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running gamma correction in single threaded mode");
 
-            for channel in image.channels_mut(false) {
-                match depth.bit_type() {
-                    BitType::U16 => {
-                        gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value)
-                    }
-                    BitType::U8 => {
-                        gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value)
-                    }
-                    BitType::F32 => {
-                        // for floats, we can't use LUT tables, the scope is too big
-                        let value_inv = 1.0 / max_value as f32;
+        let gamma_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            match depth.bit_type() {
+                BitType::U16 => gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value),
+                BitType::U8 => gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value),
+                BitType::F32 => {
+                    // for floats, we can't use LUT tables, the scope is too big
+                    let value_inv = 1.0 / max_value as f32;
 
-                        channel
-                            .reinterpret_as_mut::<f32>()?
-                            .iter_mut()
-                            .for_each(|x| {
-                                *x = value_inv * x.powf(self.value);
-                            });
-                    }
+                    channel
+                        .reinterpret_as_mut::<f32>()?
+                        .iter_mut()
+                        .for_each(|x| {
+                            *x = value_inv * x.powf(self.value);
+                        });
+                }
 
-                    d => {
-                        return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                    }
+                d => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                 }
             }
-        }
-        #[cfg(feature = "threads")]
-        {
-            trace!("Running gamma correction in multithreaded mode");
-
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                for channel in image.channels_mut(false) {
-                    let t = s.spawn(|| match depth.bit_type() {
-                        BitType::U16 => {
-                            gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value);
-                            Ok(())
-                        }
-                        BitType::U8 => {
-                            gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value);
-                            Ok(())
-                        }
-                        BitType::F32 => {
-                            // for floats, we can't use LUT tables, the scope is too big
-                            let value_inv = 1.0 / f32::from(max_value);
-
-                            channel
-                                .reinterpret_as_mut::<f32>()?
-                                .iter_mut()
-                                .for_each(|x| {
-                                    *x = value_inv * x.powf(self.value);
-                                });
-                            Ok(())
-                        }
-                        d => {
-                            return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                        }
-                    });
-                    errors.push(t);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-        Ok(())
+            Ok(())
+        };
+        execute_on(gamma_fn, image, true)
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]

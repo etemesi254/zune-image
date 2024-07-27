@@ -14,11 +14,12 @@
 //!
 
 use zune_core::bit_depth::BitType;
-use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+
+use crate::utils::execute_on;
 
 pub struct Rotate {
     angle: f32
@@ -43,100 +44,42 @@ impl OperationsTrait for Rotate {
 
         let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
 
-        #[cfg(feature = "threads")]
-        {
-            trace!("Running rotate in multithreaded mode");
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                // blur each channel on a separate thread
-                for channel in image.channels_mut(false) {
-                    let result = s.spawn(|| {
-                        let mut new_channel =
-                            Channel::new_with_length_and_type(channel.len(), channel.type_id());
+        let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut new_channel =
+                Channel::new_with_length_and_type(channel.len(), channel.type_id());
 
-                        match im_type {
-                            BitType::U8 => {
-                                rotate::<u8>(
-                                    self.angle,
-                                    width,
-                                    height,
-                                    channel.reinterpret_as()?,
-                                    new_channel.reinterpret_as_mut()?
-                                );
-                            }
-                            BitType::U16 => {
-                                rotate::<u16>(
-                                    self.angle,
-                                    width,
-                                    height,
-                                    channel.reinterpret_as()?,
-                                    new_channel.reinterpret_as_mut()?
-                                );
-                            }
-                            BitType::F32 => rotate::<f32>(
-                                self.angle,
-                                width,
-                                height,
-                                channel.reinterpret_as()?,
-                                new_channel.reinterpret_as_mut()?
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d
-                                ))
-                            }
-                        };
-                        *channel = new_channel;
-                        Ok(())
-                    });
-                    errors.push(result);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
-
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running rotate in single-threaded mode");
-
-            for channel in image.channels_mut(false) {
-                let mut new_channel =
-                    Channel::new_with_length_and_type(channel.len(), channel.type_id());
-                match im_type {
-                    BitType::U8 => {
-                        rotate::<u8>(
-                            self.angle,
-                            width,
-                            height,
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?
-                        );
-                    }
-                    BitType::U16 => {
-                        rotate::<u16>(
-                            self.angle,
-                            width,
-                            height,
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?
-                        );
-                    }
-                    BitType::F32 => rotate::<f32>(
+            match im_type {
+                BitType::U8 => {
+                    rotate::<u8>(
                         self.angle,
                         width,
                         height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-                };
-                *channel = new_channel;
-            }
-        }
+                    );
+                }
+                BitType::U16 => {
+                    rotate::<u16>(
+                        self.angle,
+                        width,
+                        height,
+                        channel.reinterpret_as()?,
+                        new_channel.reinterpret_as_mut()?
+                    );
+                }
+                BitType::F32 => rotate::<f32>(
+                    self.angle,
+                    width,
+                    height,
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?
+                ),
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+            };
+            *channel = new_channel;
+            Ok(())
+        };
+        execute_on(resize_fn, image, false)?;
 
         if will_change_dims {
             change_image_dims(image, self.angle);
