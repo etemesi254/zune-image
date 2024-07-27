@@ -18,8 +18,7 @@ use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
-use zune_imageprocs::flip::{Flip, VerticalFlip};
-use zune_imageprocs::flop::Flop;
+use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
@@ -39,7 +38,7 @@ pub fn parse_options<T: IntoImage>(
 ) -> Result<(), String> {
     if argument == "flip" {
         debug!("Added flip operation");
-        workflow.chain_operations(Box::new(Flip::new()));
+        workflow.chain_operations(Box::new(Flip::new(FlipDirection::MirrorXAxis)));
     } else if argument == "grayscale" {
         debug!("Added grayscale operation");
         workflow.chain_operations(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
@@ -48,7 +47,7 @@ pub fn parse_options<T: IntoImage>(
         workflow.chain_operations(Box::new(Transpose::new()));
     } else if argument == "flop" {
         debug!("Added flop operation");
-        workflow.chain_operations(Box::new(Flop::new()));
+        workflow.chain_operations(Box::new(Flip::new(FlipDirection::Horizontal)));
     } else if argument == "median" {
         //let radius = *args.get_one::<usize>("median").unwrap();
         // workflow.add_operation(Box::new(Median::new(radius)));
@@ -189,7 +188,7 @@ pub fn parse_options<T: IntoImage>(
         debug!("Adding exposure argument with value {}", exposure);
     } else if argument == "v-flip" {
         debug!("Added v-flip argument");
-        workflow.chain_operations(Box::new(VerticalFlip::new()));
+        workflow.chain_operations(Box::new(Flip::new(FlipDirection::Vertical)));
     } else if argument == "huerotate" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(value, 1f32, 1f32)));

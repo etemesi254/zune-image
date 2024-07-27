@@ -30,8 +30,7 @@ use zune_imageprocs::blend::Blend;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
-use zune_imageprocs::flip::Flip;
-use zune_imageprocs::flop::Flop;
+use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
@@ -336,21 +335,21 @@ impl Image {
     /// Creates a vertical mirror image by reflecting
     /// the pixels around the central x-axis.
     ///
-    ///
     /// ```text
     ///
     ///old image     new image
     /// ┌─────────┐   ┌──────────┐
-    /// │a b c d e│   │j i h g f │
-    /// │f g h i j│   │e d c b a │
+    /// │a b c d e│   │f g h i j │
+    /// │f g h i j│   │a b c d e │
     /// └─────────┘   └──────────┘
     /// ```
+    ///
     /// # Returns
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
-    pub fn flip(&mut self, in_place: bool) -> PyResult<Option<Image>> {
-        exec_filter(self, Flip, in_place)
+    pub fn vertical_flip(&mut self, in_place: bool) -> PyResult<Option<Image>> {
+        exec_filter(self, Flip::new(FlipDirection::Vertical), in_place)
     }
 
     /// Creates a horizontal mirror image by
@@ -368,8 +367,8 @@ impl Image {
     ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
     ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
-    pub fn flop(&mut self, in_place: bool) -> PyResult<Option<Image>> {
-        exec_filter(self, Flop, in_place)
+    pub fn horizontal_flip(&mut self, in_place: bool) -> PyResult<Option<Image>> {
+        exec_filter(self, Flip::new(FlipDirection::Horizontal), in_place)
     }
     /// Gamma adjust an image
     ///

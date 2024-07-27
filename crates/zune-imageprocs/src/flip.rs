@@ -8,30 +8,60 @@
 //! Flip filter: Flip an image by reflecting pixels around the x-axis.
 //!
 use zune_core::bit_depth::BitType;
+use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-/// Creates a vertical mirror image by reflecting
-/// the pixels around the central x-axis.
-///
-///
-/// ```text
-///
-///old image     new image
-/// ┌─────────┐   ┌──────────┐
-/// │a b c d e│   │j i h g f │
-/// │f g h i j│   │e d c b a │
-/// └─────────┘   └──────────┘
-/// ```
-#[derive(Default)]
-pub struct Flip;
+#[derive(Copy, Clone, Debug)]
+pub enum FlipDirection {
+    /// Creates a horizontal mirror image by reflecting the pixels around the central y-axis
+    ///```text
+    ///old image     new image
+    ///┌─────────┐   ┌──────────┐
+    ///│a b c d e│   │e d b c a │
+    ///│f g h i j│   │j i h g f │
+    ///└─────────┘   └──────────┘
+    ///```
+    Horizontal,
+
+    /// Flip the image vertically,( rotate image by 180 degrees)
+    ///
+    /// ```text
+    ///
+    ///old image     new image
+    /// ┌─────────┐   ┌──────────┐
+    /// │a b c d e│   │f g h i j │
+    /// │f g h i j│   │a b c d e │
+    /// └─────────┘   └──────────┘
+    /// ```
+    ///
+    Vertical,
+    /// Creates a vertical mirror image by reflecting
+    /// the pixels around the central x-axis.
+    ///
+    ///
+    /// ```text
+    ///
+    ///old image     new image
+    /// ┌─────────┐   ┌──────────┐
+    /// │a b c d e│   │j i h g f │
+    /// │f g h i j│   │e d c b a │
+    /// └─────────┘   └──────────┘
+    /// ```
+    MirrorXAxis
+}
+
+/// Flip an image to a certain direction
+pub struct Flip {
+    flip_direction: FlipDirection
+}
 
 impl Flip {
     /// Create a new flip operation
     #[must_use]
-    pub fn new() -> Flip {
-        Self
+    pub fn new(flip_direction: FlipDirection) -> Flip {
+        Self { flip_direction }
     }
 }
 
@@ -42,72 +72,69 @@ impl OperationsTrait for Flip {
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth();
-
-        for inp in image.channels_mut(false) {
-            match depth.bit_type() {
-                BitType::U8 => {
-                    flip(inp.reinterpret_as_mut::<u8>()?);
-                }
-                BitType::U16 => {
-                    flip(inp.reinterpret_as_mut::<u16>()?);
-                }
-                BitType::F32 => {
-                    flip(inp.reinterpret_as_mut::<f32>()?);
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-            }
-        }
-
-        Ok(())
-    }
-    fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16, BitType::F32]
-    }
-}
-
-/// Flip the image vertically,( rotate image by 180 degrees)
-///
-/// ```text
-///
-///old image     new image
-/// ┌─────────┐   ┌──────────┐
-/// │a b c d e│   │f g h i j │
-/// │f g h i j│   │a b c d e │
-/// └─────────┘   └──────────┘
-/// ```
-///
-#[derive(Default)]
-pub struct VerticalFlip;
-
-impl VerticalFlip {
-    /// Create a new VerticalFlip operation
-    #[must_use]
-    pub fn new() -> VerticalFlip {
-        Self
-    }
-}
-
-impl OperationsTrait for VerticalFlip {
-    fn name(&self) -> &'static str {
-        "Vertical Flip"
-    }
-
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.depth();
         let width = image.dimensions().0;
 
-        for inp in image.channels_mut(false) {
-            match depth.bit_type() {
-                BitType::U8 => {
-                    vertical_flip(inp.reinterpret_as_mut::<u8>()?, width);
+        let flip_fn = |inp: &mut Channel| -> Result<(), ImageErrors> {
+            match self.flip_direction {
+                FlipDirection::Horizontal => match depth.bit_type() {
+                    BitType::U8 => {
+                        flop(inp.reinterpret_as_mut::<u8>()?, width);
+                    }
+                    BitType::U16 => {
+                        flop(inp.reinterpret_as_mut::<u16>()?, width);
+                    }
+                    BitType::F32 => {
+                        flop(inp.reinterpret_as_mut::<f32>()?, width);
+                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                },
+                FlipDirection::Vertical => match depth.bit_type() {
+                    BitType::U8 => {
+                        vertical_flip(inp.reinterpret_as_mut::<u8>()?, width);
+                    }
+                    BitType::U16 => {
+                        vertical_flip(inp.reinterpret_as_mut::<u16>()?, width);
+                    }
+                    BitType::F32 => {
+                        vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
+                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                },
+                FlipDirection::MirrorXAxis => match depth.bit_type() {
+                    BitType::U8 => {
+                        flip(inp.reinterpret_as_mut::<u8>()?);
+                    }
+                    BitType::U16 => {
+                        flip(inp.reinterpret_as_mut::<u16>()?);
+                    }
+                    BitType::F32 => {
+                        flip(inp.reinterpret_as_mut::<f32>()?);
+                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 }
-                BitType::U16 => {
-                    vertical_flip(inp.reinterpret_as_mut::<u16>()?, width);
+            }
+
+            Ok(())
+        };
+
+        #[cfg(feature = "threads")]
+        {
+            std::thread::scope(|s| {
+                let mut errors = vec![];
+                for channel in image.channels_mut(false) {
+                    let t = s.spawn(|| flip_fn(channel));
+                    errors.push(t);
                 }
-                BitType::F32 => {
-                    vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                errors
+                    .into_iter()
+                    .map(|x| x.join().unwrap())
+                    .collect::<Result<Vec<()>, ImageErrors>>()
+            })?;
+        }
+        #[cfg(not(feature = "threads"))]
+        {
+            for inp in image.channels_mut(false) {
+                flip_fn(inp)?;
             }
         }
 
@@ -183,6 +210,32 @@ pub fn vertical_flip<T: Copy + Default>(channel: &mut [T], width: usize) {
     }
 }
 
+/// Flop an image
+///
+///```text
+///old image     new image
+///┌─────────┐   ┌──────────┐
+///│a b c d e│   │e d b c a │
+///│f g h i j│   │j i h g f │
+///└─────────┘   └──────────┘
+///```
+///
+pub fn flop<T: Copy>(in_out_image: &mut [T], width: usize) {
+    assert_eq!(
+        in_out_image.len() % width,
+        0,
+        "Width does not evenly divide image"
+    );
+
+    for width_chunks in in_out_image.chunks_exact_mut(width) {
+        let (left_to_right, right_to_left) = width_chunks.split_at_mut(width / 2);
+
+        // iterate and swap
+        for (ltr, rtl) in left_to_right.iter_mut().zip(right_to_left.iter_mut().rev()) {
+            std::mem::swap(ltr, rtl);
+        }
+    }
+}
 #[cfg(feature = "benchmarks")]
 #[cfg(test)]
 mod benchmarks {

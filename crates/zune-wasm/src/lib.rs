@@ -30,8 +30,7 @@ use zune_imageprocs::color_matrix::ColorMatrix;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
-use zune_imageprocs::flip::VerticalFlip;
-use zune_imageprocs::flop::Flop;
+use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
@@ -374,7 +373,7 @@ impl WasmImage {
     ///```
     ///
     pub fn flip_horizontal(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&Flop::new())
+        self.execute_ops(&Flip::new(FlipDirection::Horizontal))
     }
 
     /// Flip an image by reflecting pixels around the x-axis.( rotate image by 180 degrees)
@@ -389,7 +388,7 @@ impl WasmImage {
     /// ```
     ///
     pub fn flip_vertical(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&VerticalFlip::new())
+        self.execute_ops(&Flip::new(FlipDirection::Vertical))
     }
     /// Blur the image using a gaussian kernel with sigma `sigma`
     ///

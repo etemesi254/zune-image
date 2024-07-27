@@ -18,8 +18,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-use crate::flip::Flip;
-use crate::flop::Flop;
+use crate::flip::{Flip, FlipDirection};
 use crate::rotate::Rotate;
 use crate::transpose::Transpose;
 
@@ -62,11 +61,12 @@ impl OperationsTrait for AutoOrient {
                                 match byte {
                                     1 => (), // orientation is okay
                                     2 => {
-                                        Flop::new().execute_impl(image)?;
+                                        Flip::new(FlipDirection::Horizontal).execute_impl(image)?;
                                     }
 
                                     3 => {
-                                        Flip::new().execute_impl(image)?;
+                                        Flip::new(FlipDirection::MirrorXAxis)
+                                            .execute_impl(image)?;
                                     }
                                     4 => {
                                         // swap top with bottom
@@ -78,11 +78,12 @@ impl OperationsTrait for AutoOrient {
                                     }
                                     6 => {
                                         Transpose::new().execute_impl(image)?;
-                                        Flop::new().execute_impl(image)?;
+                                        Flip::new(FlipDirection::Horizontal).execute_impl(image)?;
                                     }
                                     7 => {
                                         Transpose::new().execute_impl(image)?;
-                                        Flip::new().execute_impl(image)?;
+                                        Flip::new(FlipDirection::MirrorXAxis)
+                                            .execute_impl(image)?;
                                     }
                                     8 => {
                                         Transpose::new().execute_impl(image)?;

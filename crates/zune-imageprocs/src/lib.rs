@@ -62,7 +62,6 @@ pub mod convolve;
 pub mod crop;
 pub mod exposure;
 pub mod flip;
-pub mod flop;
 pub mod gamma;
 pub mod gaussian_blur;
 pub mod histogram;

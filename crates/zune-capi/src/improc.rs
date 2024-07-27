@@ -10,8 +10,7 @@ use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
-use zune_imageprocs::flip::Flip;
-use zune_imageprocs::flop::Flop;
+use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
@@ -223,8 +222,8 @@ pub extern "C" fn zil_imgproc_crop(
 /// \param image: Image to flip
 /// \param status: Image execution reporter
 #[no_mangle]
-pub extern "C" fn zil_imgproc_flip(image: *mut ZImage, status: *mut ZStatus) {
-    exec_imgproc(image, Flip, status)
+pub extern "C" fn zil_imgproc_flip_mirror_x_axis(image: *mut ZImage, status: *mut ZStatus) {
+    exec_imgproc(image, Flip::new(FlipDirection::MirrorXAxis), status)
 }
 
 /// Flop an image by reflecting pixels on its y-axis
@@ -241,8 +240,8 @@ pub extern "C" fn zil_imgproc_flip(image: *mut ZImage, status: *mut ZStatus) {
 /// \param image: Image to flop
 /// \param status: Image execution reporter
 #[no_mangle]
-pub extern "C" fn zil_imgproc_flop(image: *mut ZImage, status: *mut ZStatus) {
-    exec_imgproc(image, Flop, status)
+pub extern "C" fn zil_imgproc_flip_horizontal(image: *mut ZImage, status: *mut ZStatus) {
+    exec_imgproc(image, Flip::new(FlipDirection::Horizontal), status)
 }
 
 /// Gamma adjust an image
