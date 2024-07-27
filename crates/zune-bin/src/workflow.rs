@@ -18,21 +18,20 @@ use log::{debug, error, info, trace};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
-use zune_image::traits::IntoImage;
 
 use crate::cmd_args::CmdImageFormats;
 use crate::cmd_parsers::global_options::CmdOptions;
 use crate::cmd_parsers::{decoder_options, encoder_options};
-use crate::file_io::ZuneFile;
+use crate::file_io::{ZuneFile, ZuneMem};
 use crate::probe_files::probe_input_files;
 use crate::show_gui::open_in_default_app;
 
-struct CmdPipeline<T: IntoImage> {
-    inner:   Pipeline<T>,
+struct CmdPipeline {
+    inner:   Pipeline,
     formats: Vec<ImageFormat>
 }
-impl<T: IntoImage> CmdPipeline<T> {
-    pub fn new() -> CmdPipeline<T> {
+impl CmdPipeline {
+    pub fn new() -> CmdPipeline {
         CmdPipeline {
             inner:   Pipeline::new(),
             formats: vec![]
@@ -58,22 +57,40 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     let mut buf = [0; 30];
 
     for in_file in args.get_raw("in").unwrap() {
-        let mut workflow: CmdPipeline<ZuneFile> = CmdPipeline::new();
+        let mut workflow: CmdPipeline = CmdPipeline::new();
 
-        File::open(in_file)?.read(&mut buf)?;
-
-        add_operations(args, &mut workflow.inner)?;
-
-        if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&buf)) {
-            if format.has_decoder() {
-                workflow
-                    .inner
-                    .chain_decoder(ZuneFile::new(in_file.to_os_string(), decoder_options));
+        if in_file == "-" {
+            // handle stdin
+            let mut data = Vec::new();
+            let bytes_read = std::io::stdin().read_to_end(&mut data)?;
+            if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&data)) {
+                if format.has_decoder() {
+                    workflow
+                        .inner
+                        .chain_decoder(Box::new(ZuneMem::new(data, decoder_options)));
+                } else {
+                    return Err(ImageErrors::ImageDecoderNotImplemented(format));
+                }
             } else {
-                return Err(ImageErrors::ImageDecoderNotImplemented(format));
+                return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
             }
         } else {
-            return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
+            File::open(in_file)?.read(&mut buf)?;
+
+            add_operations(args, &mut workflow.inner)?;
+
+            if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&buf)) {
+                if format.has_decoder() {
+                    workflow.inner.chain_decoder(Box::new(ZuneFile::new(
+                        in_file.to_os_string(),
+                        decoder_options
+                    )));
+                } else {
+                    return Err(ImageErrors::ImageDecoderNotImplemented(format));
+                }
+            } else {
+                return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
+            }
         }
 
         let options = encoder_options(args);
@@ -173,9 +190,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     Ok(())
 }
 
-pub fn add_operations<T: IntoImage>(
-    args: &ArgMatches, workflow: &mut Pipeline<T>
-) -> Result<(), String> {
+pub fn add_operations(args: &ArgMatches, workflow: &mut Pipeline) -> Result<(), String> {
     for id in args.ids() {
         if args.try_get_many::<clap::Id>(id.as_str()).is_ok() {
             // ignore groups

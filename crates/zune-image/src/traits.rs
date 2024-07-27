@@ -499,11 +499,5 @@ pub trait DecodeInto {
 /// Convert something into an image by consuming it
 pub trait IntoImage {
     /// Consumes this and returns an image
-    fn into_image(self) -> Result<Image, ImageErrors>;
-}
-
-impl IntoImage for Image {
-    fn into_image(self) -> Result<Image, ImageErrors> {
-        Ok(self)
-    }
+    fn into_image(&mut self) -> Result<Image, ImageErrors>;
 }

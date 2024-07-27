@@ -13,7 +13,6 @@ use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
 use zune_image::pipelines::Pipeline;
-use zune_image::traits::IntoImage;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
@@ -33,8 +32,8 @@ use zune_imageprocs::transpose::Transpose;
 
 use crate::cmd_args::arg_parsers::IColorSpace;
 
-pub fn parse_options<T: IntoImage>(
-    workflow: &mut Pipeline<T>, argument: &str, args: &ArgMatches
+pub fn parse_options(
+    workflow: &mut Pipeline, argument: &str, args: &ArgMatches
 ) -> Result<(), String> {
     if argument == "flip" {
         debug!("Added flip operation");
