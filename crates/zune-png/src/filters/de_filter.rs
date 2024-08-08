@@ -8,7 +8,7 @@
 use crate::filters::portable_simd;
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool,
 ) {
     if raw.len() < components || current.len() < components {
         return;
@@ -111,7 +111,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
 
 #[allow(clippy::manual_memcpy)]
 pub fn handle_paeth(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool,
 ) {
     if raw.len() < components || current.len() < components {
         return;
@@ -122,22 +122,22 @@ pub fn handle_paeth(
         match components {
             3 => {
                 return crate::filters::portable_simd::defilter_paeth_generic::<3>(
-                    prev_row, raw, current
+                    prev_row, raw, current,
                 )
             }
             4 => {
                 return crate::filters::portable_simd::defilter_paeth_generic::<4>(
-                    prev_row, raw, current
+                    prev_row, raw, current,
                 )
             }
             6 => {
                 return crate::filters::portable_simd::defilter_paeth_generic::<6>(
-                    prev_row, raw, current
+                    prev_row, raw, current,
                 )
             }
             8 => {
                 return crate::filters::portable_simd::defilter_paeth_generic::<8>(
-                    prev_row, raw, current
+                    prev_row, raw, current,
                 )
             }
             _ => ()
@@ -182,7 +182,7 @@ pub fn handle_paeth(
         let paeth_res = paeth(
             current[i - components],
             prev_row[i],
-            prev_row[i - components]
+            prev_row[i - components],
         );
         current[i] = raw[i].wrapping_add(paeth_res)
     }
@@ -240,19 +240,19 @@ pub fn handle_avg_first(raw: &[u8], current: &mut [u8], components: usize) {
 
 #[inline(always)]
 pub fn paeth(a: u8, b: u8, c: u8) -> u8 {
-    let a = i16::from(a);
-    let b = i16::from(b);
-    let c = i16::from(c);
-    let p = a + b - c;
-    let pa = (p - a).abs();
-    let pb = (p - b).abs();
-    let pc = (p - c).abs();
+    // FROM STB
+    // This formulation looks very different from the reference in the PNG spec, but is
+    // actually equivalent and has favorable data dependencies and admits straightforward
+    // generation of branch-free code, which helps performance significantly.
 
-    if pa <= pb && pa <= pc {
-        return a as u8;
-    }
-    if pb <= pc {
-        return b as u8;
-    }
-    c as u8
+    let a = i32::from(a);
+    let b = i32::from(b);
+    let c = i32::from(c);
+    let thresh = c * 3 - (a + b);
+    let lo = if a < b { a } else { b };
+    let hi = if a < b { b } else { a };
+
+    let t0 = if hi <= thresh {lo} else {c};
+    let t1 = if thresh <= lo {hi} else {t0};
+    return t1 as u8;
 }
