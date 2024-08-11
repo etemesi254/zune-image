@@ -124,27 +124,27 @@ fn zune_image_invert_bench(input: &Image) {
     black_box(im);
 }
 
-fn vips_resize_bench(input: &VipsImage) {
+fn vips_resize_bench(input: &VipsImage,kernel: Kernel) {
     let mut options = ResizeOptions::default();
-    options.kernel = Kernel::Linear;
+    options.kernel = kernel;
     options.vscale = 0.5;
     let im = libvips::ops::resize_with_opts(input, 0.5, &options).unwrap();
     im.image_write_to_memory();
     black_box(im);
 }
 
-fn zune_image_resize_bench(input: &Image) {
+fn zune_image_resize_bench(input: &Image,resize_method: ResizeMethod) {
     let (w, h) = input.dimensions();
-    let im = Resize::new(w / 2, h / 2, ResizeMethod::Bilinear)
+    let im = Resize::new(w / 2, h / 2, resize_method)
         .clone_and_execute(input)
         .unwrap();
     im.flatten_frames::<u8>();
     black_box(im);
 }
 
-fn image_rs_resize_bench(input: &DynamicImage) {
+fn image_rs_resize_bench(input: &DynamicImage,filter_type: FilterType) {
     let (w, h) = (input.width(), input.height());
-    let im = input.resize(w / 2, h / 2, FilterType::Triangle);
+    let im = input.resize(w / 2, h / 2, filter_type);
     let c = im.as_flat_samples_u8().unwrap().samples;
     black_box(c);
 }
@@ -302,16 +302,39 @@ fn bench_invert(c: &mut Criterion) {
         vips_invert_bench
     );
 }
-fn bench_resize(c: &mut Criterion) {
+fn bench_resize_linear(c: &mut Criterion) {
     bench_inner_zune_vips_image_rs(
         c,
         "imageprocs: resize-linear-kernel",
-        zune_image_resize_bench,
-        image_rs_resize_bench,
-        vips_resize_bench
+        |c|{
+            zune_image_resize_bench(c,ResizeMethod::Bilinear)
+        },
+        |c|{
+            image_rs_resize_bench(c,FilterType::Triangle)
+
+        },
+        |c|{
+          vips_resize_bench(c,Kernel::Linear)
+        },
     );
 }
 
+fn bench_resize_bicubic(c: &mut Criterion) {
+    bench_inner_zune_vips_image_rs(
+        c,
+        "imageprocs: resize-cubic-kernel",
+        |c|{
+            zune_image_resize_bench(c,ResizeMethod::Bicubic)
+        },
+        |c|{
+            image_rs_resize_bench(c,FilterType::CatmullRom)
+
+        },
+        |c|{
+            vips_resize_bench(c,Kernel::Cubic)
+        },
+    );
+}
 fn bench_flip_horizontal(c: &mut Criterion) {
     bench_inner_zune_vips(
         c,
@@ -333,6 +356,6 @@ criterion_group!(name=benches;
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize,bench_flip_horizontal,bench_flip_vertical);
+    targets=bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical);
 
 criterion_main!(benches);
