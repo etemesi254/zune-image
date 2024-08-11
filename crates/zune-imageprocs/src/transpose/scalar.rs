@@ -14,7 +14,7 @@ pub fn transpose_scalar<T: Copy + Default>(
     //
     // The only difference with the naive is that you
     // do tiling transpose, this allows us to use the cache better
-    // at the compromise that is is complicated.
+    // at the compromise that it is complicated.
     //
     // The gist of it is that we do scalar a single 8 by 8 transpose and write to an immediate
     // buffer and then write that buffer to our destination

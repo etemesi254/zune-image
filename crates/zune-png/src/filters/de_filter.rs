@@ -252,7 +252,7 @@ pub fn paeth(a: u8, b: u8, c: u8) -> u8 {
     let lo = if a < b { a } else { b };
     let hi = if a < b { b } else { a };
 
-    let t0 = if hi <= thresh {lo} else {c};
-    let t1 = if thresh <= lo {hi} else {t0};
+    let t0 = if hi <= thresh { lo } else { c };
+    let t1 = if thresh <= lo { hi } else { t0 };
     return t1 as u8;
 }

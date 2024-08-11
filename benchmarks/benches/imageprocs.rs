@@ -91,11 +91,11 @@ fn zune_image_rotate90_bench(input: &Image) {
 }
 
 fn image_rs_rotate_90(input: &image::DynamicImage) {
-    input.rotate90().to_rgb8();
+    black_box(input.rotate90().to_rgb8());
 }
 
 fn image_rs_gaussian_blur(input: &image::DynamicImage) {
-    input.blur(3.0).to_rgb8();
+    black_box(input.blur(3.0).to_rgb8());
 }
 fn vips_rotate180_bench(input: &VipsImage) {
     // vips by default uses 2.4 for gamma, so no need to specify

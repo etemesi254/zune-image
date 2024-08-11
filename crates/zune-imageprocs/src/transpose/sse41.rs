@@ -13,7 +13,7 @@
 //! First of all matrix transposition is an easy thing to implement
 //! it's
 //! ```rust
-//! pub unsafe fn transpose_u16(a:&[u8],b:&mut [u8],block_size:usize,stride:usize){
+//! pub fn transpose_u16(a:&[u8],b:&mut [u8],block_size:usize,stride:usize){
 //!    for i in 0..block_size/stride {
 //!       for j in 0..stride {
 //!           b[(i*stride)+j] = a[(j * stride) +i]
