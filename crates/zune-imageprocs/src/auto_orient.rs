@@ -61,33 +61,27 @@ impl OperationsTrait for AutoOrient {
                                 match byte {
                                     1 => (), // orientation is okay
                                     2 => {
-                                        Flip::new(FlipDirection::Horizontal).execute_impl(image)?;
+                                        Flip::new(FlipDirection::Horizontal).execute(image)?;
                                     }
 
                                     3 => {
-                                        Flip::new(FlipDirection::MirrorXAxis)
-                                            .execute_impl(image)?;
+                                        Rotate::new(180.0).execute(image)?;
                                     }
                                     4 => {
-                                        // swap top with bottom
-                                        // 180 degree rotation
-                                        Rotate::new(180.0).execute_impl(image)?;
+                                        Flip::new(FlipDirection::Vertical).execute(image)?;
                                     }
                                     5 => {
                                         Transpose::new().execute_impl(image)?;
                                     }
                                     6 => {
-                                        Transpose::new().execute_impl(image)?;
-                                        Flip::new(FlipDirection::Horizontal).execute_impl(image)?;
+                                        Rotate::new(90.0).execute(image)?;
                                     }
                                     7 => {
-                                        Transpose::new().execute_impl(image)?;
-                                        Flip::new(FlipDirection::MirrorXAxis)
-                                            .execute_impl(image)?;
+                                        Rotate::new(270.0).execute(image)?;
+                                        Flip::new(FlipDirection::Horizontal).execute(image)?;
                                     }
                                     8 => {
-                                        Transpose::new().execute_impl(image)?;
-                                        Rotate::new(180.0).execute_impl(image)?;
+                                        Rotate::new(270.0).execute(image)?;
                                     }
 
                                     _ => {
