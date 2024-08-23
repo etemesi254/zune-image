@@ -30,9 +30,9 @@ metadata = ["kamadak-exif"]
 # Every supported thing
 default = ["all"]
 # Whether to use threads or not for some operations
-threads = ["zune-jpegxl/threads", "jxl-oxide/rayon"]
+threads = ["zune-jpegxl?/threads", "jxl-oxide?/rayon"]
 # Simd support
-simd = ["zune-jpeg/x86", "zune-png/sse", "avx2", "sse41"]
+simd = ["zune-jpeg?/x86", "zune-png?/sse", "avx2", "sse41"]
 benchmarks = []
 avx2 = []
 sse41 = []
