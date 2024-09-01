@@ -147,7 +147,7 @@ pub fn parse_options(
 
         let height = *values[1];
 
-        let func = Resize::new(width, height, ResizeMethod::Bilinear);
+        let func = Resize::new(width, height, ResizeMethod::Bicubic);
 
         debug!(
             "Added resize operation with width:{}, height:{}",
