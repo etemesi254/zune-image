@@ -9,22 +9,8 @@ mod std_simd {
     use std::simd::{f32x4};
     use std::simd::cmp::SimdPartialOrd;
 
-    #[inline]
-    pub fn bicubic_kernel_simd(x: [f32; 4]) -> [f32; 4] {
-        // Similar to the normal bicubic kernel calculation
-        // but we flatten the calculations and remove the if's
-        // choosing blends/masks which increase ilp.
-
-        // benchmarks
-        //
-        // test resize::bicubic::benchmarks::bench_resize_cubic_normal    ... bench:   8,668,445.80 ns/iter (+/- 78,967.59)
-        // test resize::bicubic::benchmarks::bench_resize_cubic_simd      ... bench:   2,102,972.90 ns/iter (+/- 13,304.78)
-        //
-        // Machine: Apple Macbook pro m3
-        // Reproducible by running `cargo bench  "resize" --features benchmarks,portable-simd`
-
-        let x = f32x4::from_array(x);
-
+    #[inline(always)]
+    pub fn bicubic_kernel_simd_inner(x: f32x4) -> [f32; 4] {
         let a = f32x4::splat(-0.5);
         let x = x.abs();
 
@@ -48,6 +34,28 @@ mod std_simd {
         let final_value = m3.select(p3, m1.select(p1, p2));
 
         return final_value.to_array();
+    }
+
+    #[inline]
+    pub fn bicubic_kernel_simd(y0: isize, src_y: f32) -> [f32; 4] {
+        // Similar to the normal bicubic kernel calculation
+        // but we flatten the calculations and remove the if's
+        // choosing blends/masks which increase ilp.
+
+        // benchmarks
+        //
+        // test resize::bicubic::benchmarks::bench_resize_cubic_normal    ... bench:   8,668,445.80 ns/iter (+/- 78,967.59)
+        // test resize::bicubic::benchmarks::bench_resize_cubic_simd      ... bench:   2,102,972.90 ns/iter (+/- 13,304.78)
+        //
+        // Machine: Apple Macbook pro m3
+        // Reproducible by running `cargo bench  "resize" --features benchmarks,portable-simd`
+
+        let yc = f32x4::splat(y0 as f32);
+        let yy = yc + f32x4::from_array([-1., 0., 1., 2.]);
+        let src_y = f32x4::splat(src_y);
+        let x = src_y - yy;
+
+        bicubic_kernel_simd_inner(x)
     }
 }
 const A: f32 = -0.5;
@@ -74,15 +82,32 @@ pub fn bicubic_scalar(x: [f32; 4]) -> [f32; 4] {
     return out;
 }
 
+#[inline]
+fn inline_floor(x: f32) -> f32 {
+    let i32_x = x as i32;
+
+    return (i32_x - i32::from(x < i32_x as f32)) as f32; // as dgobbi above, needs less than for floor
+
+}
+
 #[allow(unreachable_code)]
 #[inline]
-fn bicubic_function(x: [f32; 4]) -> [f32; 4] {
+fn bicubic_function(y0: isize, src_y: f32) -> [f32; 4] {
     #[cfg(feature = "portable-simd")]
     {
         use std_simd::bicubic_kernel_simd;
-        return bicubic_kernel_simd(x);
+        return bicubic_kernel_simd(y0, src_y);
     }
-    return bicubic_scalar(x);
+    let yy0 = y0 + -1;
+    let yy1 = y0 + 0;
+    let yy2 = y0 + 1;
+    let yy3 = y0 + 2;
+
+    let dy0 = src_y - yy0 as f32;
+    let dy1 = src_y - yy1 as f32;
+    let dy2 = src_y - yy2 as f32;
+    let dy3 = src_y - yy3 as f32;
+    return bicubic_scalar([dy0, dy1, dy2, dy3]);
 }
 pub fn bicubic_resample<T>(input: &[T], output: &mut [T], input_width: usize, input_height: usize, new_width: usize, new_height: usize)
 where
@@ -103,46 +128,23 @@ where
 
     for x in 0..new_width {
         let src_x = x as f32 * scale_x;
-        let x0 = src_x.floor() as isize;
+        let x0 = inline_floor(src_x) as isize;
 
-        // pre-calculate the x-coeff kernels
-        let xx0 = x0 + -1;
-        let xx1 = x0 + 0;
-        let xx2 = x0 + 1;
-        let xx3 = x0 + 2;
-
-        let dx0 = src_x - xx0 as f32;
-        let dx1 = src_x - xx1 as f32;
-        let dx2 = src_x - xx2 as f32;
-        let dx3 = src_x - xx3 as f32;
-
-        let array = [dx0, dx1, dx2, dx3];
-
-        x_mega_coeffs[x] = bicubic_function(array);
+        x_mega_coeffs[x] = bicubic_function(x0, src_x);
     }
 
     for (y, output_stride) in (0..new_height).zip(output.chunks_exact_mut(new_width)) {
         let src_y = y as f32 * scale_y;
-        let y0 = src_y.floor() as isize;
+        // the ideal one is src_y.floor(), but
+        // trunk == floor for +ve values and
+        // src_y can't be negative.
+        let y0 = src_y.trunc() as isize;
 
-        // pre-calculate the y-coeff kernels
-        let yy0 = y0 + -1;
-        let yy1 = y0 + 0;
-        let yy2 = y0 + 1;
-        let yy3 = y0 + 2;
-
-        let dy0 = src_y - yy0 as f32;
-        let dy1 = src_y - yy1 as f32;
-        let dy2 = src_y - yy2 as f32;
-        let dy3 = src_y - yy3 as f32;
-
-
-        let y_coeffs = bicubic_function([dy0, dy1, dy2, dy3]);
+        let y_coeffs = bicubic_function(y0, src_y);
 
         for (x, x_coeffs) in (0..new_width).zip(x_mega_coeffs.iter()) {
             let src_x = x as f32 * scale_x;
-            let x0 = src_x.floor() as isize;
-
+            let x0 = src_x.trunc() as isize;
             let mut sum = 0.0;
             let mut weight_sum = 0.0;
 
@@ -169,7 +171,9 @@ where
                 }
                 // [cae]: I assume weight sum can never be zero, since we must multiply something
                 debug_assert!(weight_sum != 0.0);
-                output_stride[x] = T::from_f32(sum / weight_sum);
+                if (weight_sum != 0.0) {
+                    output_stride[x] = T::from_f32(sum / weight_sum);
+                }
             } else {
                 // path that is taken in boundaries
                 // less taken but has to be careful to always be in bounds
@@ -208,9 +212,10 @@ mod benchmarks {
     extern crate test;
 
     use std::hint::black_box;
+    use std::simd::f32x4;
     use nanorand::{Rng, WyRand};
     use crate::resize::bicubic::bicubic_scalar;
-    use crate::resize::bicubic::std_simd::bicubic_kernel_simd;
+    use crate::resize::bicubic::std_simd::{bicubic_kernel_simd_inner};
 
     #[bench]
     fn bench_resize_cubic_simd(b: &mut test::Bencher) {
@@ -228,7 +233,8 @@ mod benchmarks {
             let mut out = [0.; 4];
             for chunk in x.chunks_exact(4) {
                 out.copy_from_slice(chunk);
-                black_box(bicubic_kernel_simd(out));
+                let c = f32x4::from_array(out);
+                black_box(bicubic_kernel_simd_inner(c));
             }
         };
 
