@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-
 use crate::traits::NumOps;
 
 #[cfg(feature = "portable-simd")]
@@ -32,6 +31,8 @@ mod std_simd {
         let m3 = !m2;
 
         let final_value = m3.select(p3, m1.select(p1, p2));
+
+        p1.to_array().into_iter().reduce(|x, a| x + a);
 
         return final_value.to_array();
     }
@@ -144,34 +145,33 @@ where
 
         for (x, x_coeffs) in (0..new_width).zip(x_mega_coeffs.iter()) {
             let src_x = x as f32 * scale_x;
-            let x0 = src_x.trunc() as isize;
+            let x0 = src_x.trunc() as usize;
             let mut sum = 0.0;
             let mut weight_sum = 0.0;
 
-            if (y0 > 0 && y0 + 2 < input_height as isize) && (x0 > 0 && x0 + 2 < input_width as isize) {
+            if (y0 > 0 && y0 + 2 < input_height as isize) && (x0 > 0 && x0 + 2 < input_width) {
                 // common happy path
                 // inside the boundaries
-                //
+                let mut yy = y0 - 1;
                 // Improves perf by 15% in m3 so important
-                for ky in -1..=2 {
-                    let yy = y0 + ky;
+                for weight_y in y_coeffs {
                     let width_stride = yy as usize * input_width;
-                    let weight_y = y_coeffs[(ky + 1) as usize];
+                    let start = x0 + width_stride;
+                    let input_stride_c = &input[start - 1..start + 3];
 
-                    for kx in -1..=2 {
-                        let xx = x0 + kx;
+                    debug_assert!(input_stride_c.len() == 4);
 
-                        let weight_x = x_coeffs[(kx + 1) as usize];
+                    for (pix, weight_x) in input_stride_c.iter().zip(x_coeffs) {
                         let weight = weight_y * weight_x;
-
-                        let pixel = f32::from(input[width_stride + xx as usize]);
+                        let pixel = f32::from(*pix);
                         sum += pixel * weight;
                         weight_sum += weight;
                     }
+                    yy += 1;
                 }
                 // [cae]: I assume weight sum can never be zero, since we must multiply something
                 debug_assert!(weight_sum != 0.0);
-                if (weight_sum != 0.0) {
+                if weight_sum != 0.0 {
                     output_stride[x] = T::from_f32(sum / weight_sum);
                 }
             } else {
@@ -185,7 +185,7 @@ where
                         let width_stride = yy as usize * input_width;
 
                         for kx in -1..=2 {
-                            let xx = x0 + kx;
+                            let xx = (x0 as isize) + kx;
 
                             if xx >= 0 && xx < input_width as isize {
                                 let weight_x = x_coeffs[(kx + 1) as usize];
