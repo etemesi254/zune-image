@@ -71,6 +71,7 @@ impl BitWriter {
     /// # Arguments
     /// - nbits: Number of bits to store in the buffer
     /// - bit: The bits in the buffer
+    #[inline(never)] // reduce bloat, it's called from a lot of places
     pub fn put_bits(&mut self, nbits: u8, bit: u64) {
         debug_assert!(nbits < 56);
 
