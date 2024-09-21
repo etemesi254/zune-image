@@ -226,8 +226,10 @@ mod benchmarks {
 
         let mut in_vec = vec![0_f32; dimensions];
 
+
         // fill with random bytes
-        WyRand::new().fill(&mut in_vec);
+        let mut rand = WyRand::new();
+        in_vec.iter_mut().for_each(|entry|  *entry = rand.generate_range(0..25) as f32 / 10.0);
 
         let simd_exec = |x: &[f32]| {
             let mut out = [0.; 4];
@@ -253,7 +255,9 @@ mod benchmarks {
         let mut in_vec = vec![0_f32; dimensions];
 
         // fill with random bytes
-        WyRand::new().fill(&mut in_vec);
+        let mut rand = WyRand::new();
+        in_vec.iter_mut().for_each(|entry| *entry = rand.generate_range(0..25) as f32 / 10.0);
+
 
         let simd_exec = |x: &[f32]| {
             let mut out = [0.; 4];
