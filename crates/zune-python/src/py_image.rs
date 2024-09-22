@@ -36,13 +36,16 @@ use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
+use zune_imageprocs::resize::Resize;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::Threshold;
 use zune_imageprocs::transpose::Transpose;
 
-use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, ZImageErrors};
+use crate::py_enums::{
+    ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, ResizeMethod, ZImageErrors,
+};
 
 /// Execute a single filter on an image
 ///
@@ -217,6 +220,27 @@ impl Image {
         Ok(())
     }
 
+    /// Resize an image
+    ///
+    /// # Arguments
+    /// - new_width: Out width, how wide the new image should be
+    /// - new_height: Out height, how tall the new image should be
+    /// - method : Resizing algorithm to use
+    ///
+    ///  - in_place: Whether to carry out the resize in place or create a clone for which to resize
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
+    pub fn resize(
+        &mut self, new_width: usize, new_height: usize, method: ResizeMethod, in_place: bool,
+    ) -> PyResult<Option<Image>> {
+        exec_filter(
+            self,
+            Resize::new(new_width, new_height, method.to_resizemethod()),
+            in_place,
+        )
+    }
     /// Crop an image
     ///
     /// # Arguments
@@ -229,6 +253,9 @@ impl Image {
     ///
     /// Origin is defined from the top left of the image.
     ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (width, height, x, y, in_place = false))]
     pub fn crop(
         &mut self, width: usize, height: usize, x: usize, y: usize, in_place: bool,
@@ -242,6 +269,10 @@ impl Image {
     /// # Arguments
     /// - inplace: Whether to transpose the image in place or generate a clone
     /// and transpose the new clone
+    ///
+    /// # Returns
+    ///  - If `in_place=True`: Nothing on success, on error returns error that occurred
+    ///  - If `in_place=False`: An image copy on success on error, returns error that occurred
     #[pyo3(signature = (in_place = false))]
     pub fn transpose(&mut self, in_place: bool) -> PyResult<Option<Image>> {
         exec_filter(self, Transpose, in_place)
@@ -519,7 +550,7 @@ impl Image {
             BitType::F32 => Ok(self.to_numpy_generic::<f32>(py, ImageDepth::F32)?),
             d => Err(PyErr::new::<PyException, _>(format!(
                 "Error converting to depth {d:?}"
-            )))
+            ))),
         }
     }
     /// Open an image from a file path
@@ -531,12 +562,11 @@ impl Image {
     #[staticmethod]
     fn open(file: String) -> PyResult<Image> {
         match ZImage::open(file) {
-            Ok(img) => {
-                Ok(Image::new(img))
-            }
-            Err(e) => {
-                Err(PyErr::new::<PyException, _>(format!("Error opening image file: {}", e)))
-            }
+            Ok(img) => Ok(Image::new(img)),
+            Err(e) => Err(PyErr::new::<PyException, _>(format!(
+                "Error opening image file: {}",
+                e
+            ))),
         }
     }
     #[staticmethod]
@@ -778,35 +808,35 @@ pub fn from_numpy(
                 let c: &Bound<'_, PyArray2<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_2d(c)?
+                    image: convert_2d(c)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
                 let c: &Bound<'_, PyArray2<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_2d(c)?
+                    image: convert_2d(c)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
                 let c: &Bound<'_, PyArray2<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_2d(c)?
+                    image: convert_2d(c)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
                 let c: &Bound<'_, PyArray2<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_2d(c)?
+                    image: convert_2d(c)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
                 let c: &Bound<'_, PyArray2<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_2d(c)?
+                    image: convert_2d(c)?,
                 });
             }
         }
@@ -816,35 +846,35 @@ pub fn from_numpy(
                 let c: &Bound<'_, PyArray3<u8>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_3d(c, colorspace)?
+                    image: convert_3d(c, colorspace)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<u16>(py)) {
                 let c: &Bound<'_, PyArray3<u16>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_3d(c, colorspace)?
+                    image: convert_3d(c, colorspace)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<f32>(py)) {
                 let c: &Bound<'_, PyArray3<f32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_3d(c, colorspace)?
+                    image: convert_3d(c, colorspace)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<f64>(py)) {
                 let c: &Bound<'_, PyArray3<f64>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_3d(c, colorspace)?
+                    image: convert_3d(c, colorspace)?,
                 });
             }
             if d_type.is_equiv_to(&dtype_bound::<u32>(py)) {
                 let c: &Bound<'_, PyArray3<u32>> = array.downcast()?;
                 // single dimension
                 return Ok(Image {
-                    image: convert_3d(c, colorspace)?
+                    image: convert_3d(c, colorspace)?,
                 });
             }
         }
@@ -860,7 +890,7 @@ pub fn decode_image(bytes: &[u8]) -> PyResult<Image> {
         Ok(result) => Ok(Image::new(result)),
         Err(err) => Err(PyErr::new::<PyException, _>(format!(
             "Error decoding: {err:?}"
-        )))
+        ))),
     }
 }
 
@@ -869,4 +899,3 @@ impl From<ZImageErrors> for pyo3::PyErr {
         PyErr::new::<PyException, _>(format!("{:?}", value.error))
     }
 }
-
