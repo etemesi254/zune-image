@@ -28,7 +28,7 @@ use py_functions::*;
 use py_image::*;
 use pyo3::prelude::*;
 
-use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType};
+use crate::py_enums::{ColorSpace, ImageDepth, ImageFormat, ImageThresholdType, ResizeMethod};
 
 mod py_enums;
 mod py_functions;
@@ -52,6 +52,7 @@ fn zune_image(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Image>()?;
     m.add_class::<ImageDepth>()?;
     m.add_class::<ImageThresholdType>()?;
+    m.add_class::<ResizeMethod>()?;
     m.add_function(wrap_pyfunction!(init_logger, m)?)?;
 
     m.add_function(wrap_pyfunction!(guess_format, m)?)?;
