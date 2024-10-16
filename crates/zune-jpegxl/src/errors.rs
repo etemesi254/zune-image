@@ -83,3 +83,12 @@ impl From<ZByteIoError> for JxlEncodeErrors {
         JxlEncodeErrors::IoErrors(value)
     }
 }
+
+impl core::fmt::Display for JxlEncodeErrors {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "{:?}", self)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for JxlEncodeErrors {}
