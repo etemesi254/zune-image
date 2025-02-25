@@ -136,6 +136,8 @@ fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
 }
 
 fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
+    // TODO: [cae]: Use loop tiling.
+    // Does not matter that it is already good enough, we need it fast.
     for (y, pixels) in in_image.chunks_exact(width).enumerate() {
         let idx = height - y - 1;
 
