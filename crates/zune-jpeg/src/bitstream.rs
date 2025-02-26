@@ -212,13 +212,7 @@ impl BitStream {
                                 self.aligned_buffer = $buffer << (64 - $bits_left);
                             }
 
-                            self.marker =
-                                Some(Marker::from_u8(next_byte as u8).ok_or_else(|| {
-                                    DecodeErrors::Format(format!(
-                                        "Unknown marker 0xFF{:X}",
-                                        next_byte
-                                    ))
-                                })?);
+                            self.marker = Marker::from_u8(next_byte as u8);
                             return Ok(false);
                         }
                     }
