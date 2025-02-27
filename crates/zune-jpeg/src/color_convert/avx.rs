@@ -110,7 +110,7 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     g = _mm256_permute4x64_epi64::<MASK>(g);
     b = _mm256_permute4x64_epi64::<MASK>(b);
 
-    let sh_b = _mm256_setr_epi8(
+    let sh_r = _mm256_setr_epi8(
         0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14, 9, 4, 15, 10, 5, 0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14,
         9, 4, 15, 10, 5
     );
@@ -118,14 +118,14 @@ unsafe fn ycbcr_to_rgb_avx2_1(
         5, 0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14, 9, 4, 15, 10, 5, 0, 11, 6, 1, 12, 7, 2, 13, 8, 3,
         14, 9, 4, 15, 10
     );
-    let sh_r = _mm256_setr_epi8(
+    let sh_b = _mm256_setr_epi8(
         10, 5, 0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14, 9, 4, 15, 10, 5, 0, 11, 6, 1, 12, 7, 2, 13, 8,
         3, 14, 9, 4, 15
     );
 
-    let b0 = _mm256_shuffle_epi8(r, sh_b);
+    let b0 = _mm256_shuffle_epi8(r, sh_r);
     let g0 = _mm256_shuffle_epi8(g, sh_g);
-    let r0 = _mm256_shuffle_epi8(b, sh_r);
+    let r0 = _mm256_shuffle_epi8(b, sh_b);
 
     let m0 = _mm256_setr_epi8(
         0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
@@ -140,11 +140,11 @@ unsafe fn ycbcr_to_rgb_avx2_1(
     let p1 = _mm256_blendv_epi8(_mm256_blendv_epi8(g0, r0, m0), b0, m1);
     let p2 = _mm256_blendv_epi8(_mm256_blendv_epi8(r0, b0, m0), g0, m1);
 
-    let bgr0 = _mm256_permute2x128_si256::<32>(p0, p1);
-    let bgr1 = _mm256_permute2x128_si256::<48>(p2, p0);
+    let rgb0 = _mm256_permute2x128_si256::<32>(p0, p1);
+    let rgb1 = _mm256_permute2x128_si256::<48>(p2, p0);
 
-    _mm256_storeu_si256(out.as_mut_ptr().cast(), bgr0);
-    _mm_storeu_si128(out[32..].as_mut_ptr().cast(), _mm256_castsi256_si128(bgr1));
+    _mm256_storeu_si256(out.as_mut_ptr().cast(), rgb0);
+    _mm_storeu_si128(out[32..].as_mut_ptr().cast(), _mm256_castsi256_si128(rgb1));
 
     *offset += 48;
 }
