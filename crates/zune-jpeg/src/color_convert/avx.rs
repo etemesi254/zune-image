@@ -256,21 +256,21 @@ unsafe fn ycbcr_to_rgba_unsafe(
     let tmp:& mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
 
     let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
-    
+
         /*
         I'm not sure because I have no idea how to force decoder to decode into RGBA to test,
-        but all code below probably should be 
-        
+        but all code below probably should be
+
         const MASK: i32 = shuffle(3, 1, 2, 0);
         let mut c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
         let mut d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
         
         c = _mm256_permute4x64_epi64::<MASK>(r);
         d = _mm256_permute4x64_epi64::<MASK>(g);
-    
+
         let rgba0_ = _mm256_unpacklo_epi16(c, d);
         let rgba1_ = _mm256_unpackhi_epi16(c, d);
-    
+
         let rgba0 = _mm256_permute2x128_si256::<32>(rgba0_, rgba1_);
         let rgba1 = _mm256_permute2x128_si256::<32>(rgba0_, rgba1_);
         _mm256_storeu_si256(tmp.as_mut_ptr().cast(), rgba0);
@@ -290,7 +290,7 @@ unsafe fn ycbcr_to_rgba_unsafe(
     // final transpose_u16
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
-    
+
     // undo packus shuffling...
     let i = _mm256_permute2x128_si256::<{ shuffle(3, 2, 1, 0) }>(g, h);
 
@@ -311,25 +311,6 @@ unsafe fn ycbcr_to_rgba_unsafe(
     _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);
 
     *offset += 64;
-}
-
-/// Clamp values between 0 and 255
-///
-/// This function clamps all values in `reg` to be between 0 and 255
-///( the accepted values for RGB)
-#[inline]
-#[target_feature(enable = "avx2")]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn clamp_avx(reg: __m256i) -> __m256i {
-    // the lowest value
-    let min_s = _mm256_set1_epi16(0);
-
-    // Highest value
-    let max_s = _mm256_set1_epi16(255);
-
-    let max_v = _mm256_max_epi16(reg, min_s); //max(a,0)
-    let min_v = _mm256_min_epi16(max_v, max_s); //min(max(a,0),255)
-    return min_v;
 }
 
 #[inline]
