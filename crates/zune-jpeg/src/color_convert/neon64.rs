@@ -136,8 +136,6 @@ pub fn ycbcr_to_rgb_neon(
 pub fn ycbcr_to_rgba_neon(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
-    // call this in another function to tell RUST to vectorize this
-    // storing
     unsafe {
         let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
         vst4q_u8(out.as_mut_ptr(), uint8x16x4_t(r, g, b, vdupq_n_u8(255)));
