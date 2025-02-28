@@ -100,15 +100,13 @@ unsafe fn ycbcr_to_rgb_avx2_1(
 ) {
     let (mut r, mut g, mut b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
-    const MASK: i32 = shuffle(3, 1, 2, 0);
-
     r = _mm256_packus_epi16(r, _mm256_setzero_si256());
     g = _mm256_packus_epi16(g, _mm256_setzero_si256());
     b = _mm256_packus_epi16(b, _mm256_setzero_si256());
 
-    r = _mm256_permute4x64_epi64::<MASK>(r);
-    g = _mm256_permute4x64_epi64::<MASK>(g);
-    b = _mm256_permute4x64_epi64::<MASK>(b);
+    r = _mm256_permute4x64_epi64::<{ shuffle(3, 1, 2, 0) }>(r);
+    g = _mm256_permute4x64_epi64::<{ shuffle(3, 1, 2, 0) }>(g);
+    b = _mm256_permute4x64_epi64::<{ shuffle(3, 1, 2, 0) }>(b);
 
     let sh_r = _mm256_setr_epi8(
         0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14, 9, 4, 15, 10, 5, 0, 11, 6, 1, 12, 7, 2, 13, 8, 3, 14,
@@ -172,11 +170,11 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
     // At first, we have to pack i16 U and V that stores u8 into one u8 [U,V]
     // then zero extend, and keep in mind that lanes is already been permuted.
 
-    let y_coeff = _mm256_set1_epi32(Y_CF as i32);
+    let y_coeff = _mm256_set1_epi32(i32::from(Y_CF));
     let cr_coeff = _mm256_set1_epi32(R_AVX_COEF);
     let cb_coeff = _mm256_set1_epi32(B_AVX_COEF);
     let cg_coeff = _mm256_set1_epi32(G_COEF_AVX_COEF);
-    let v_rnd = _mm256_set1_epi32(YUV_RND as i32);
+    let v_rnd = _mm256_set1_epi32(i32::from(YUV_RND));
     let uv_bias = _mm256_set1_epi16(128);
 
     // UV in memory because x86/x86_64 is always little endian
@@ -257,31 +255,11 @@ unsafe fn ycbcr_to_rgba_unsafe(
 
     let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
-        /*
-        I'm not sure because I have no idea how to force decoder to decode into RGBA to test,
-        but all code below probably should be
-
-        const MASK: i32 = shuffle(3, 1, 2, 0);
-        let mut c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
-        let mut d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
-        
-        c = _mm256_permute4x64_epi64::<MASK>(r);
-        d = _mm256_permute4x64_epi64::<MASK>(g);
-
-        let rgba0_ = _mm256_unpacklo_epi16(c, d);
-        let rgba1_ = _mm256_unpackhi_epi16(c, d);
-
-        let rgba0 = _mm256_permute2x128_si256::<32>(rgba0_, rgba1_);
-        let rgba1 = _mm256_permute2x128_si256::<32>(rgba0_, rgba1_);
-        _mm256_storeu_si256(tmp.as_mut_ptr().cast(), rgba0);
-        _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), rgba1);
-     */
-
     // set alpha channel to 255 for opaque
 
     // And no these comments were not from me pressing the keyboard
 
-    // Pack the integers into u8's using signed saturation.
+    // Pack the integers into u8's using unsigned saturation.
     let c = _mm256_packus_epi16(r, g); //aaaaa_bbbbb_aaaaa_bbbbbb
     let d = _mm256_packus_epi16(b, _mm256_set1_epi16(255)); // cccccc_dddddd_ccccccc_ddddd
     // transpose_u16 and interleave channels
@@ -290,24 +268,24 @@ unsafe fn ycbcr_to_rgba_unsafe(
     // final transpose_u16
     let g = _mm256_unpacklo_epi8(e, f); //abcd_abcd_abcd_abcd_abcd
     let h = _mm256_unpackhi_epi8(e, f);
-
+    
     // undo packus shuffling...
     let i = _mm256_permute2x128_si256::<{ shuffle(3, 2, 1, 0) }>(g, h);
-
+    
     let j = _mm256_permute2x128_si256::<{ shuffle(1, 2, 3, 0) }>(g, h);
-
+    
     let k = _mm256_permute2x128_si256::<{ shuffle(3, 2, 0, 1) }>(g, h);
-
+    
     let l = _mm256_permute2x128_si256::<{ shuffle(0, 3, 2, 1) }>(g, h);
-
+    
     let m = _mm256_blend_epi32::<0b1111_0000>(i, j);
-
+    
     let n = _mm256_blend_epi32::<0b1111_0000>(k, l);
     
     // Store
     // Use streaming instructions to prevent polluting the cache?
     _mm256_storeu_si256(tmp.as_mut_ptr().cast(), m);
-
+    
     _mm256_storeu_si256(tmp[32..].as_mut_ptr().cast(), n);
 
     *offset += 64;
