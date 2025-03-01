@@ -549,6 +549,9 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
                 .gain_map_info
                 .push(GainMapInfo { data: vec![] });
         } else if length > 4 {
+            // If there is perhaps useful gain map info
+            // we'll read this until end
+            // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1323
             let data = decoder
                 .stream
                 .peek_at(0, length)?
