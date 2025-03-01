@@ -504,6 +504,9 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
 pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
+    static HDR_META: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
+    static MPF_DATA: &[u8] = b"MPF\0";
+    
     let mut length = usize::from(decoder.stream.get_u16_be());
 
     if length < 2 {
@@ -511,8 +514,6 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     }
     // length bytes
     length -= 2;
-    static HDR_META: &'static [u8] = b"urn:iso:std:iso:ts:21496:-1\0";
-    static MPF_DATA: &'static [u8] = b"MPF\0";
 
     if length > 14 && decoder.stream.peek_at(0, 12)? == *b"ICC_PROFILE\0" {
         trace!("ICC Profile present");
