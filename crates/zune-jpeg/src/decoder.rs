@@ -893,6 +893,9 @@ pub struct ImageInfo {
     /// Gain Map information, useful for
     /// UHDR images
     pub gain_map_info: Vec<GainMapInfo>,
+    /// Multi picture information, useful for 
+    /// UHDR images
+    pub multi_picture_information: Option<Vec<u8>>,
     /// Exif Data
     pub(crate) exif_data: Option<Vec<u8>>,
     /// XMP Data

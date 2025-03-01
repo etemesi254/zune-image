@@ -512,6 +512,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     // length bytes
     length -= 2;
     static HDR_META: &'static [u8] = b"urn:iso:std:iso:ts:21496:-1\0";
+    static MPF_DATA: &'static [u8] = b"MPF\0";
 
     if length > 14 && decoder.stream.peek_at(0, 12)? == *b"ICC_PROFILE\0" {
         trace!("ICC Profile present");
@@ -560,6 +561,16 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
             }
             _ => {}
         }
+    } else if length > MPF_DATA.len() && decoder.stream.peek_at(0, MPF_DATA.len())? == MPF_DATA {
+        trace!("MPF Signature present");
+        length = length.saturating_sub(MPF_DATA.len());
+        decoder.stream.skip(MPF_DATA.len())?;
+        // MPF signature taken from here
+        // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/include/ultrahdr/multipictureformat.h#L50
+        // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/multipictureformat.cpp#L36
+        let data = decoder.stream.peek_at(0, length)?.to_vec();
+        length -= data.len();
+        decoder.info.multi_picture_information = Some(data);
     }
 
     decoder.stream.skip(length)?;
