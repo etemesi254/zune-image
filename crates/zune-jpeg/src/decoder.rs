@@ -868,11 +868,9 @@ where
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub struct GainMapInfo {
-    // Directory from the start of the
-    // file from which gain map is found
-    pub offset: u32,
+    pub data: Vec<u8>,
 }
 /// A struct representing Image Information
 #[derive(Default, Clone, Eq, PartialEq)]
