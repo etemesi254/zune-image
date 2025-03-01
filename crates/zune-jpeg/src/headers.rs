@@ -548,7 +548,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
                 decoder
                     .info
                     .gain_map_info
-                    .push(GainMapInfo { data: vec![] });
+                    .push(GainMapInfo { data: Vec::new() });
             }
             n if n > 4 => {
                 // If there is perhaps useful gain map info
