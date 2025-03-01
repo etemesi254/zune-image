@@ -569,6 +569,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         // MPF signature taken from here
         // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/include/ultrahdr/multipictureformat.h#L50
         // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/multipictureformat.cpp#L36
+        // More info https://www.cipa.jp/std/documents/e/DC-X007-KEY_E.pdf
         let data = decoder.stream.peek_at(0, length)?.to_vec();
         length -= data.len();
         decoder.info.multi_picture_information = Some(data);
