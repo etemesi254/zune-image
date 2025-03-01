@@ -535,29 +535,30 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         length = length.saturating_sub(HDR_META.len());
         decoder.stream.skip(HDR_META.len())?;
         trace!("Gain Map metadata found");
-        if length == 4 {
-            // If gain map metadata length == 4 then here it variables
-            // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1076C1-L1077C35
-            // 2 bytes minimum_version: (00 00)
-            // 2 bytes writer_version: (00 00)
-            // Perhaps nothing to do with it ?
-            let _ = decoder.stream.get_u16_be();
-            let _ = decoder.stream.get_u16_be();
-            length -= 4;
-            decoder
-                .info
-                .gain_map_info
-                .push(GainMapInfo { data: vec![] });
-        } else if length > 4 {
-            // If there is perhaps useful gain map info
-            // we'll read this until end
-            // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1323
-            let data = decoder
-                .stream
-                .peek_at(0, length)?
-                .to_vec();
-            length -= data.len();
-            decoder.info.gain_map_info.push(GainMapInfo { data });
+        match length {
+            4 => {
+                // If gain map metadata length == 4 then here it variables
+                // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1076C1-L1077C35
+                // 2 bytes minimum_version: (00 00)
+                // 2 bytes writer_version: (00 00)
+                // Perhaps nothing to do with it ?
+                let _ = decoder.stream.get_u16_be();
+                let _ = decoder.stream.get_u16_be();
+                length -= 4;
+                decoder
+                    .info
+                    .gain_map_info
+                    .push(GainMapInfo { data: vec![] });
+            }
+            n if n > 4 => {
+                // If there is perhaps useful gain map info
+                // we'll read this until end
+                // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1323
+                let data = decoder.stream.peek_at(0, length)?.to_vec();
+                length -= data.len();
+                decoder.info.gain_map_info.push(GainMapInfo { data });
+            }
+            _ => {}
         }
     }
 
