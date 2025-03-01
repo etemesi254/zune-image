@@ -18,8 +18,7 @@ use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, trace, warn};
 
-use crate::components::Components;
-use crate::decoder::{ICCChunk, JpegDecoder, MAX_COMPONENTS};
+use crate::components::Components;use crate::decoder::{GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::misc::{SOFMarkers, UN_ZIGZAG};
@@ -89,7 +88,7 @@ where
                     &num_symbols,
                     symbols,
                     true,
-                    decoder.is_progressive
+                    decoder.is_progressive,
                 )?);
             }
             _ => {
@@ -97,7 +96,7 @@ where
                     &num_symbols,
                     symbols,
                     false,
-                    decoder.is_progressive
+                    decoder.is_progressive,
                 )?);
             }
         }
@@ -177,7 +176,7 @@ pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result
 /// Section:`B.2.2 Frame header syntax`
 
 pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
-    sof: SOFMarkers, img: &mut JpegDecoder<T>
+    sof: SOFMarkers, img: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     if img.seen_sof {
         return Err(DecodeErrors::SofError(
@@ -465,6 +464,8 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
 pub(crate) fn parse_app1<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
+    const XMP_NAMESPACE_PREFIX: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+
     // contains exif data
     let mut length = usize::from(decoder.stream.get_u16_be());
 
@@ -482,9 +483,15 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
 
         let exif_bytes = decoder.stream.peek_at(0, length)?.to_vec();
 
-        decoder.exif_data = Some(exif_bytes);
+        decoder.info.exif_data = Some(exif_bytes);
+    } else if length > XMP_NAMESPACE_PREFIX.len() && decoder.stream.peek_at(0, XMP_NAMESPACE_PREFIX.len())? == XMP_NAMESPACE_PREFIX {
+        trace!("XMP Data Present");
+        decoder.stream.skip(XMP_NAMESPACE_PREFIX.len())?;
+        length -= XMP_NAMESPACE_PREFIX.len();
+        let xmp_data = decoder.stream.peek_at(0, length)?.to_vec();
+        decoder.info.xmp_data = Some(xmp_data);
     } else {
-        warn!("Wrongly formatted exif tag");
+        warn!("Unknown format for APP1 tag, skipping");
     }
 
     decoder.stream.skip(length)?;
@@ -501,6 +508,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     }
     // length bytes
     length -= 2;
+    static HDR_META: &'static [u8] = b"urn:iso:std:iso:ts:21496:-1\0";
 
     if length > 14 && decoder.stream.peek_at(0, 12)? == *b"ICC_PROFILE\0" {
         trace!("ICC Profile present");
@@ -517,9 +525,22 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         let icc_chunk = ICCChunk {
             seq_no,
             num_markers,
-            data
+            data,
         };
         decoder.icc_data.push(icc_chunk);
+    } else if length > HDR_META.len() && decoder.stream.peek_at(0, HDR_META.len())? == HDR_META {
+        length = length.saturating_sub(HDR_META.len());
+        decoder.stream.skip(length)?;
+        trace!("Gain Map metadata found");
+        for _ in 0..length / 4 {
+            // According to https://www.cipa.jp/std/documents/e/DC-X007-KEY_E.pdf (page 5/6)
+            // MP index gives you offset to the next image, and can be many so
+            // We save offset
+            let offset = decoder.stream.get_u32_be();
+            decoder.info.gain_map_info.push(GainMapInfo { offset });
+
+            length -= 4;
+        }
     }
 
     decoder.stream.skip(length)?;
@@ -532,7 +553,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
 fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
 where
     T: Default + Copy,
-    i32: core::convert::From<T>
+    i32: core::convert::From<T>,
 {
     let mut output = [i32::default(); 64];
 

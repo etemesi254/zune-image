@@ -8,7 +8,7 @@
 
 use core::convert::TryInto;
 
-// Bt.601 Full Range inverse coefficients computed with 14 bits of precision
+// Bt.601 Full Range inverse coefficients computed with 14 bits of precision with MPFR.
 // This is important to keep them in i16.
 // In most cases LLVM will detect what we're doing i16 widening to i32 math and will use
 // appropriate optimizations.
