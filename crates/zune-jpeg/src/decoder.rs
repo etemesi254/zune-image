@@ -22,7 +22,7 @@ use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{
-    parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
+    parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame,
 };
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
@@ -30,7 +30,7 @@ use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
-    upsample_no_op
+    upsample_no_op,
 };
 
 /// Maximum components
@@ -71,58 +71,58 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// An encapsulation of an ICC chunk
 pub(crate) struct ICCChunk {
-    pub(crate) seq_no:      u8,
+    pub(crate) seq_no: u8,
     pub(crate) num_markers: u8,
-    pub(crate) data:        Vec<u8>
+    pub(crate) data: Vec<u8>,
 }
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
 pub struct JpegDecoder<T: ZByteReaderTrait> {
     /// Struct to hold image information from SOI
-    pub(crate) info:              ImageInfo,
+    pub(crate) info: ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
     /// be moved to `components` field
-    pub(crate) qt_tables:         [Option<[i32; 64]>; MAX_COMPONENTS],
+    pub(crate) qt_tables: [Option<[i32; 64]>; MAX_COMPONENTS],
     /// DC Huffman Tables with a maximum of 4 tables for each  component
     pub(crate) dc_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// AC Huffman Tables with a maximum of 4 tables for each component
     pub(crate) ac_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Image components, holds information like DC prediction and quantization
     /// tables of a component
-    pub(crate) components:        Vec<Components>,
+    pub(crate) components: Vec<Components>,
     /// maximum horizontal component of all channels in the image
-    pub(crate) h_max:             usize,
+    pub(crate) h_max: usize,
     // maximum vertical component of all channels in the image
-    pub(crate) v_max:             usize,
+    pub(crate) v_max: usize,
     /// mcu's  width (interleaved scans)
-    pub(crate) mcu_width:         usize,
+    pub(crate) mcu_width: usize,
     /// MCU height(interleaved scans
-    pub(crate) mcu_height:        usize,
+    pub(crate) mcu_height: usize,
     /// Number of MCU's in the x plane
-    pub(crate) mcu_x:             usize,
+    pub(crate) mcu_x: usize,
     /// Number of MCU's in the y plane
-    pub(crate) mcu_y:             usize,
+    pub(crate) mcu_y: usize,
     /// Is the image interleaved?
-    pub(crate) is_interleaved:    bool,
-    pub(crate) sub_sample_ratio:  SampleRatios,
+    pub(crate) is_interleaved: bool,
+    pub(crate) sub_sample_ratio: SampleRatios,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
-    pub(crate) input_colorspace:  ColorSpace,
+    pub(crate) input_colorspace: ColorSpace,
     // Progressive image details
     /// Is the image progressive?
-    pub(crate) is_progressive:    bool,
+    pub(crate) is_progressive: bool,
 
     /// Start of spectral scan
-    pub(crate) spec_start:       u8,
+    pub(crate) spec_start: u8,
     /// End of spectral scan
-    pub(crate) spec_end:         u8,
+    pub(crate) spec_end: u8,
     /// Successive approximation bit position high
-    pub(crate) succ_high:        u8,
+    pub(crate) succ_high: u8,
     /// Successive approximation bit position low
-    pub(crate) succ_low:         u8,
+    pub(crate) succ_low: u8,
     /// Number of components.
-    pub(crate) num_scans:        u8,
+    pub(crate) num_scans: u8,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -132,67 +132,65 @@ pub struct JpegDecoder<T: ZByteReaderTrait> {
     pub(crate) idct_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
-    pub(crate) z_order:          [usize; MAX_COMPONENTS],
+    pub(crate) z_order: [usize; MAX_COMPONENTS],
     /// restart markers
     pub(crate) restart_interval: usize,
-    pub(crate) todo:             usize,
+    pub(crate) todo: usize,
     // decoder options
-    pub(crate) options:          DecoderOptions,
+    pub(crate) options: DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZReader<T>,
+    pub(crate) stream: ZReader<T>,
     // Indicate whether headers have been decoded
-    pub(crate) headers_decoded:  bool,
-    pub(crate) seen_sof:         bool,
+    pub(crate) headers_decoded: bool,
+    pub(crate) seen_sof: bool,
     // exif data, lifted from app2
-    pub(crate) exif_data:        Option<Vec<u8>>,
 
     pub(crate) icc_data: Vec<ICCChunk>,
     pub(crate) is_mjpeg: bool,
-    pub(crate) coeff:    usize // Solves some weird bug :)
+    pub(crate) coeff: usize, // Solves some weird bug :)
 }
 
 impl<T> JpegDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info:              ImageInfo::default(),
-            qt_tables:         [None, None, None, None],
+            info: ImageInfo::default(),
+            qt_tables: [None, None, None, None],
             dc_huffman_tables: [None, None, None, None],
             ac_huffman_tables: [None, None, None, None],
-            components:        vec![],
+            components: vec![],
             // Interleaved information
-            h_max:             1,
-            v_max:             1,
-            mcu_height:        0,
-            mcu_width:         0,
-            mcu_x:             0,
-            mcu_y:             0,
-            is_interleaved:    false,
-            sub_sample_ratio:  SampleRatios::None,
-            is_progressive:    false,
-            spec_start:        0,
-            spec_end:          0,
-            succ_high:         0,
-            succ_low:          0,
-            num_scans:         0,
-            idct_func:         choose_idct_func(&options),
-            color_convert_16:  color_convert,
-            input_colorspace:  ColorSpace::YCbCr,
-            z_order:           [0; MAX_COMPONENTS],
-            restart_interval:  0,
-            todo:              0x7fff_ffff,
-            options:           options,
-            stream:            ZReader::new(buffer),
-            headers_decoded:   false,
-            seen_sof:          false,
-            exif_data:         None,
-            icc_data:          vec![],
-            is_mjpeg:          false,
-            coeff:             1
+            h_max: 1,
+            v_max: 1,
+            mcu_height: 0,
+            mcu_width: 0,
+            mcu_x: 0,
+            mcu_y: 0,
+            is_interleaved: false,
+            sub_sample_ratio: SampleRatios::None,
+            is_progressive: false,
+            spec_start: 0,
+            spec_end: 0,
+            succ_high: 0,
+            succ_low: 0,
+            num_scans: 0,
+            idct_func: choose_idct_func(&options),
+            color_convert_16: color_convert,
+            input_colorspace: ColorSpace::YCbCr,
+            z_order: [0; MAX_COMPONENTS],
+            restart_interval: 0,
+            todo: 0x7fff_ffff,
+            options: options,
+            stream: ZReader::new(buffer),
+            headers_decoded: false,
+            seen_sof: false,
+            icc_data: vec![],
+            is_mjpeg: false,
+            coeff: 1,
         }
     }
     /// Decode a buffer already in memory
@@ -362,9 +360,9 @@ where
         ) {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
                 self.options.jpeg_get_out_colorspace(),
-                &self.options
+                &self.options,
             )
-            .unwrap();
+                .unwrap();
         }
         // First two bytes should be jpeg soi marker
         let magic_bytes = self.stream.get_u16_be_err()?;
@@ -636,7 +634,38 @@ where
     ///    2. The image headers haven't been decoded
     #[must_use]
     pub fn exif(&self) -> Option<&Vec<u8>> {
-        return self.exif_data.as_ref();
+        return self.info.exif_data.as_ref();
+    }
+    /// Return the XMP data for the file
+    ///
+    /// This returns raw XMP data starting at the XML header
+    /// One needs an XML/XMP decoder to extract valuable metadata
+    ///
+    ///
+    /// # Returns
+    ///  - `Some(data)`: Raw xmp data
+    ///  - `None`: May indicate the following
+    ///     1. The image does not have xmp data
+    ///     2. The image headers have not been decoded
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&[]));
+    /// // decode headers to extract xmp metadata if present
+    /// decoder.decode_headers().unwrap();
+    /// if let Some(data) = decoder.xmp(){
+    ///     let stringified = String::from_utf8_lossy(data);
+    ///     println!("XMP")
+    /// } else{
+    ///     println!("No XMP Found")
+    /// }
+    ///
+    /// ```
+    pub fn xmp(&self) -> Option<&Vec<u8>> {
+        return self.info.xmp_data.as_ref();
     }
     /// Get the output colorspace the image pixels will be decoded into
     ///
@@ -839,24 +868,38 @@ where
     }
 }
 
+#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+pub struct GainMapInfo {
+    // Directory from the start of the
+    // file from which gain map is found
+    pub offset: u32,
+}
 /// A struct representing Image Information
 #[derive(Default, Clone, Eq, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ImageInfo {
     /// Width of the image
-    pub width:         u16,
+    pub width: u16,
     /// Height of image
-    pub height:        u16,
+    pub height: u16,
     /// PixelDensity
     pub pixel_density: u8,
     /// Start of frame markers
-    pub sof:           SOFMarkers,
+    pub sof: SOFMarkers,
     /// Horizontal sample
-    pub x_density:     u16,
+    pub x_density: u16,
     /// Vertical sample
-    pub y_density:     u16,
+    pub y_density: u16,
     /// Number of components
-    pub components:    u8
+    pub components: u8,
+    /// Gain Map information, useful for
+    /// UHDR images
+    pub gain_map_info: Vec<GainMapInfo>,
+    /// Exif Data
+    pub(crate) exif_data: Option<Vec<u8>>,
+    /// XMP Data
+    pub(crate) xmp_data: Option<Vec<u8>>,
+
 }
 
 impl ImageInfo {
@@ -908,3 +951,4 @@ impl ImageInfo {
         self.y_density = sample;
     }
 }
+
