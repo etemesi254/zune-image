@@ -532,7 +532,6 @@ where
                 )));
             }
             Marker::DRI => {
-                trace!("DRI marker present");
 
                 if self.stream.get_u16_be_err()? != 4 {
                     return Err(DecodeErrors::Format(
@@ -541,6 +540,8 @@ where
                 }
 
                 self.restart_interval = usize::from(self.stream.get_u16_be_err()?);
+                trace!("DRI marker present ({})",self.restart_interval);
+
                 self.todo = self.restart_interval;
             }
             Marker::APP(14) => {
