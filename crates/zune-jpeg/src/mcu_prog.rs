@@ -26,7 +26,7 @@ use core::cmp::min;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::{debug, error, warn};
+use zune_core::log::{debug, error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
@@ -50,7 +50,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_progressive(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -82,7 +82,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
             && (self.sub_sample_ratio == SampleRatios::V
-                || self.sub_sample_ratio == SampleRatios::HV)
+            || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -118,7 +118,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.succ_high,
             self.succ_low,
             self.spec_start,
-            self.spec_end
+            self.spec_end,
         );
 
         // there are multiple scans in the stream, this should resolve the first scan
@@ -149,9 +149,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_start,
                         self.spec_end
                     );
-
                     // after every SOS, marker, parse data for that scan.
-                    self.parse_entropy_coded_data(&mut stream, &mut block)?;
+                    self.parse_entropy_coded_data(&mut stream, &mut block).unwrap();
                     // extract marker, might either indicate end of image or we continue
                     // scanning(hence the continue statement to determine).
                     match get_marker(&mut self.stream, &mut stream) {
@@ -177,13 +176,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
+                Marker::RST(_)=>{
+                    if self.todo == 0 {
+                        self.handle_rst(&mut stream)?;
+                    }
+                }
                 _ => {
-                    break 'eoi;
+                    self.parse_marker_inner(marker)?;
                 }
             }
 
             match get_marker(&mut self.stream, &mut stream) {
                 Ok(marker_n) => {
+
                     marker = marker_n;
                 }
                 Err(e) => {
@@ -200,7 +205,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data(
-        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
@@ -234,7 +239,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             if self.components[k].component_id == ComponentID::Y
                 && (self.components[k].vertical_sample != 1
-                    || self.components[k].horizontal_sample != 1)
+                || self.components[k].horizontal_sample != 1)
                 || !self.is_interleaved
             {
                 // For Y channel  or non interleaved scans ,
@@ -286,7 +291,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 &mut self.stream,
                                 dc_table,
                                 &mut data[0],
-                                dc_pred
+                                dc_pred,
                             )?;
                         } else {
                             // refining scans for this MCU
@@ -395,7 +400,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                         &mut self.stream,
                                         huff_table,
                                         data,
-                                        &mut component.dc_pred
+                                        &mut component.dc_pred,
                                     )?;
                                 } else {
                                     stream.decode_prog_dc_refine(&mut self.stream, data)?;
@@ -419,7 +424,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
@@ -465,7 +470,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos
+                pos,
             ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
@@ -555,7 +560,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space
+                &mut upsampler_scratch_space,
             )?;
         }
 
@@ -588,7 +593,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 /// This reads until it gets a marker or end of file is encountered
 fn get_marker<T>(reader: &mut ZReader<T>, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     if let Some(marker) = stream.marker {
         stream.marker = None;
