@@ -26,7 +26,7 @@ use core::cmp::min;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::{debug, error, trace, warn};
+use zune_core::log::{debug, error, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
@@ -591,7 +591,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 ///Get a marker from the bit-stream.
 ///
 /// This reads until it gets a marker or end of file is encountered
-fn get_marker<T>(reader: &mut ZReader<T>, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
+pub fn get_marker<T>(reader: &mut ZReader<T>, stream: &mut BitStream) -> Result<Marker, DecodeErrors>
 where
     T: ZByteReaderTrait,
 {

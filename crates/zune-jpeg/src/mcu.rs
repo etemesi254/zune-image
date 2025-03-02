@@ -22,6 +22,7 @@ use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::worker::{color_convert, upsample};
 use crate::JpegDecoder;
+use crate::mcu_prog::get_marker;
 
 /// The size of a DC block for a MCU.
 
@@ -84,7 +85,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -109,7 +110,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
             && (self.sub_sample_ratio == SampleRatios::V
-                || self.sub_sample_ratio == SampleRatios::HV)
+            || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -157,7 +158,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos
+                pos,
             ) == pos
                 || comp_len == 4
             // Special colorspace
@@ -205,7 +206,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space
+                &mut upsampler_scratch_space,
             )?;
             if terminate {
                 warn!("Got terminate signal, will not process further");
@@ -216,12 +217,29 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // so we can't panic in case of that
         // assert_eq!(pixels_written, pixels.len());
 
+        // For UHD usecases that tie two images separating them with EOI and
+        // SOI markers, it may happen that we do not reach this image end of image
+        // So this ensures we reach it
+        // Ensure we read EOI
+        if !stream.seen_eoi {
+            let marker =
+                get_marker(&mut self.stream, &mut stream);
+            match marker {
+                Ok(m) => {
+                    trace!("Found marker {:?}",m);
+                }
+                Err(_) => {
+                    // ignore error
+                }
+            }
+        }
+
         trace!("Finished decoding image");
 
         Ok(())
     }
     fn decode_mcu_width(
-        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
+        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream,
     ) -> Result<bool, DecodeErrors> {
         for j in 0..mcu_width {
             // iterate over components
@@ -252,7 +270,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred
+                            &mut component.dc_pred,
                         )?;
 
                         if component.needed {
@@ -350,7 +368,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(crate) fn post_process(
         &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
-        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16],
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
@@ -391,7 +409,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.options.jpeg_get_out_colorspace(),
                         output,
                         width,
-                        padded_width
+                        padded_width,
                     )?;
                     px += width * out_colorspace_components;
                 }
@@ -420,7 +438,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     mcu_height,
                     i,
                     upsampler_scratch_space,
-                    is_vertically_sampled
+                    is_vertically_sampled,
                 );
             }
 
