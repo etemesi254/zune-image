@@ -868,11 +868,9 @@ where
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub struct GainMapInfo {
-    // Directory from the start of the
-    // file from which gain map is found
-    pub offset: u32,
+    pub data: Vec<u8>,
 }
 /// A struct representing Image Information
 #[derive(Default, Clone, Eq, PartialEq)]
@@ -895,6 +893,9 @@ pub struct ImageInfo {
     /// Gain Map information, useful for
     /// UHDR images
     pub gain_map_info: Vec<GainMapInfo>,
+    /// Multi picture information, useful for 
+    /// UHDR images
+    pub multi_picture_information: Option<Vec<u8>>,
     /// Exif Data
     pub(crate) exif_data: Option<Vec<u8>>,
     /// XMP Data
