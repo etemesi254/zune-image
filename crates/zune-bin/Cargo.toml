@@ -11,7 +11,7 @@ repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-bin"
 log = "0.4.17"
 zune-image = { version = "^0.5.0-rc0", path = "../zune-image", features = ["all"] }
 zune-core = { path = "../zune-core", version = "0.5.0-rc0" }
-zune-imageprocs = { path = "../zune-imageprocs" }
+zune-imageprocs = { path = "../zune-imageprocs",features = ["exif"] }
 #zune-opencl = { path = "../zune-opencl" }
 serde_json = "1.0.93"
 serde = "1.0.152"

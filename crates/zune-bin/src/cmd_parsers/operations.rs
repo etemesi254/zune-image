@@ -13,6 +13,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
 use zune_image::pipelines::Pipeline;
+use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
@@ -179,7 +180,7 @@ pub fn parse_options(
         workflow.chain_operations(Box::new(ColorspaceConv::new(colorspace)));
     } else if argument == "auto-orient" {
         debug!("Add auto orient operation");
-        //workflow.add_operation(Box::new(AutoOrient))
+        workflow.chain_operations(Box::new(AutoOrient));
     } else if argument == "exposure" {
         let exposure = *args.get_one::<f32>(argument).unwrap();
 
