@@ -27,8 +27,10 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
     // Don't check for zeroes inside loop, lift it and check outside
     // we want to accelerate the case with 63 0 ac coeff
     if &in_vector[1..] == &[0_i32; 63] {
-        // okay then if you work, yay, let's write you really quick
-        let coeff = [(((in_vector[0] >> 3) + 128) as i16).clamp(0, 255); 8];
+        // AC terms all zero, idct of the block is ( coeff[0] * qt[0] )/8 + 128 (bias)
+        // (and clamped to 255)
+        // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
+        let coeff = [((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16; 8];
 
         macro_rules! store {
             ($index:tt) => {

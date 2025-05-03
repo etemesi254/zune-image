@@ -115,9 +115,11 @@ pub unsafe fn idct_int_avx2_inner(
     non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw7, zero));
 
     if non_zero == -8 {
-        // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
+        // AC terms all zero, idct of the block is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
-        let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).clamp(0, 255) as i16);
+        // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
+        let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
+        let idct_value = _mm_set1_epi16(coeff);
 
         macro_rules! store {
             ($pos:tt,$value:tt) => {
