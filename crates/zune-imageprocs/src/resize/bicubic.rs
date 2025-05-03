@@ -4,9 +4,9 @@ use crate::traits::NumOps;
 
 #[cfg(feature = "portable-simd")]
 mod std_simd {
-    use std::simd::num::SimdFloat;
-    use std::simd::{f32x4};
     use std::simd::cmp::SimdPartialOrd;
+    use std::simd::f32x4;
+    use std::simd::num::SimdFloat;
 
     #[inline(always)]
     pub fn bicubic_kernel_simd_inner(x: f32x4) -> [f32; 4] {
@@ -16,11 +16,12 @@ mod std_simd {
         let powi2 = x * x;
         let powi3 = powi2 * x;
 
-
         // (A + 2.0) * x.powi(3) - (A + 3.0) * x.powi(2) + 1.0
-        let p1 = ((a + f32x4::splat(2.0)) * powi3) - ((a + f32x4::splat(3.0)) * powi2) + f32x4::splat(1.0);
+        let p1 = ((a + f32x4::splat(2.0)) * powi3) - ((a + f32x4::splat(3.0)) * powi2)
+            + f32x4::splat(1.0);
         // A * x.powi(3) - 5.0 * A * x.powi(2) + 8.0 * A * x - 4.0 * A
-        let p2 = a * powi3 - f32x4::splat(5.0) * a * powi2 + f32x4::splat(8.0) * a * x - f32x4::splat(4.0) * a;
+        let p2 = a * powi3 - f32x4::splat(5.0) * a * powi2 + f32x4::splat(8.0) * a * x
+            - f32x4::splat(4.0) * a;
         // 0
         let p3 = f32x4::splat(0.0);
         // x  < 1
@@ -73,7 +74,6 @@ fn bicubic_kernel(x: f32) -> f32 {
     }
 }
 
-
 #[inline]
 pub fn bicubic_scalar(x: [f32; 4]) -> [f32; 4] {
     let mut out = [0.0; 4];
@@ -88,7 +88,6 @@ fn inline_floor(x: f32) -> f32 {
     let i32_x = x as i32;
 
     return (i32_x - i32::from(x < i32_x as f32)) as f32; // as dgobbi above, needs less than for floor
-
 }
 
 #[allow(unreachable_code)]
@@ -110,10 +109,12 @@ fn bicubic_function(y0: isize, src_y: f32) -> [f32; 4] {
     let dy3 = src_y - yy3 as f32;
     return bicubic_scalar([dy0, dy1, dy2, dy3]);
 }
-pub fn bicubic_resample<T>(input: &[T], output: &mut [T], input_width: usize, input_height: usize, new_width: usize, new_height: usize)
-where
+pub fn bicubic_resample<T>(
+    input: &[T], output: &mut [T], input_width: usize, input_height: usize, new_width: usize,
+    new_height: usize
+) where
     T: Copy + NumOps<T>,
-    f32: std::convert::From<T>,
+    f32: std::convert::From<T>
 {
     let scale_y = input_height as f32 / new_height as f32;
     let scale_x = input_width as f32 / new_width as f32;
@@ -199,12 +200,12 @@ where
                         }
                     }
                 }
-                output_stride[x] = if weight_sum > 0.0 { T::from_f32(sum / weight_sum) } else { T::from_f32(0.0) };
+                output_stride[x] =
+                    if weight_sum > 0.0 { T::from_f32(sum / weight_sum) } else { T::from_f32(0.0) };
             }
         }
     }
 }
-
 
 #[cfg(all(feature = "benchmarks", feature = "portable-simd"))]
 #[cfg(test)]
@@ -213,9 +214,11 @@ mod benchmarks {
 
     use std::hint::black_box;
     use std::simd::f32x4;
+
     use nanorand::{Rng, WyRand};
+
     use crate::resize::bicubic::bicubic_scalar;
-    use crate::resize::bicubic::std_simd::{bicubic_kernel_simd_inner};
+    use crate::resize::bicubic::std_simd::bicubic_kernel_simd_inner;
 
     #[bench]
     fn bench_resize_cubic_simd(b: &mut test::Bencher) {
@@ -226,10 +229,11 @@ mod benchmarks {
 
         let mut in_vec = vec![0_f32; dimensions];
 
-
         // fill with random bytes
         let mut rand = WyRand::new();
-        in_vec.iter_mut().for_each(|entry|  *entry = rand.generate_range(0..25) as f32 / 10.0);
+        in_vec
+            .iter_mut()
+            .for_each(|entry| *entry = rand.generate_range(0..25) as f32 / 10.0);
 
         let simd_exec = |x: &[f32]| {
             let mut out = [0.; 4];
@@ -240,9 +244,7 @@ mod benchmarks {
             }
         };
 
-        b.iter(|| {
-            black_box(simd_exec(&in_vec))
-        });
+        b.iter(|| black_box(simd_exec(&in_vec)));
     }
 
     #[bench]
@@ -256,8 +258,9 @@ mod benchmarks {
 
         // fill with random bytes
         let mut rand = WyRand::new();
-        in_vec.iter_mut().for_each(|entry| *entry = rand.generate_range(0..25) as f32 / 10.0);
-
+        in_vec
+            .iter_mut()
+            .for_each(|entry| *entry = rand.generate_range(0..25) as f32 / 10.0);
 
         let simd_exec = |x: &[f32]| {
             let mut out = [0.; 4];
@@ -267,8 +270,6 @@ mod benchmarks {
             }
         };
 
-        b.iter(|| {
-            black_box(simd_exec(&in_vec))
-        });
+        b.iter(|| black_box(simd_exec(&in_vec)));
     }
 }

@@ -204,9 +204,8 @@ mod benchmarks {
 
     use crate::transpose::transpose_generic;
 
-
     #[bench]
-    #[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 
     fn transpose_sse_u16(b: &mut test::Bencher) {
         use crate::transpose::sse41::transpose_sse41_u16;
@@ -236,7 +235,7 @@ mod benchmarks {
     }
 
     #[bench]
-    #[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     fn transpose_sse_u8(b: &mut test::Bencher) {
         use crate::transpose::sse41::transpose_sse41_u8;
         let width = 800;
@@ -260,7 +259,7 @@ mod benchmarks {
     }
 
     #[bench]
-    #[cfg(any(target_arch = "x86",target_arch = "x86_64"))]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 
     fn transpose_sse_f32(b: &mut test::Bencher) {
         let width = 800;

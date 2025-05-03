@@ -16,7 +16,7 @@ use zune_imageprocs::threshold::ThresholdMethod;
 
 #[pyclass]
 pub struct ZImageErrors {
-    pub(crate) error: zune_image::errors::ImageErrors,
+    pub(crate) error: zune_image::errors::ImageErrors
 }
 
 impl From<ImageErrors> for ZImageErrors {
@@ -39,7 +39,7 @@ pub enum ImageFormat {
     Qoi,
     JPEG_XL,
     HDR,
-    Unknown,
+    Unknown
 }
 
 impl ImageFormat {
@@ -54,7 +54,7 @@ impl ImageFormat {
             ImageFormat::Qoi => ZImageFormat::QOI,
             ImageFormat::JPEG_XL => ZImageFormat::JPEG_XL,
             ImageFormat::HDR => ZImageFormat::HDR,
-            ImageFormat::Unknown => ZImageFormat::Unknown,
+            ImageFormat::Unknown => ZImageFormat::Unknown
         }
     }
     /// Return true if an image format has an encoder
@@ -81,7 +81,7 @@ impl From<ZImageFormat> for ImageFormat {
             ZImageFormat::JPEG_XL => ImageFormat::JPEG_XL,
             ZImageFormat::HDR => ImageFormat::HDR,
             ZImageFormat::BMP => ImageFormat::BMP,
-            _ => ImageFormat::Unknown,
+            _ => ImageFormat::Unknown
         }
     }
 }
@@ -101,7 +101,7 @@ pub enum ColorSpace {
     CMYK,
     Unknown,
     HSL,
-    HSV,
+    HSV
 }
 
 impl ColorSpace {
@@ -117,7 +117,7 @@ impl ColorSpace {
             ColorSpace::CMYK => ZColorSpace::CMYK,
             ColorSpace::HSL => ZColorSpace::HSL,
             ColorSpace::HSV => ZColorSpace::HSV,
-            ColorSpace::Unexposed | ColorSpace::Unknown => ZColorSpace::Unknown,
+            ColorSpace::Unexposed | ColorSpace::Unknown => ZColorSpace::Unknown
         }
     }
 }
@@ -136,7 +136,7 @@ impl From<ZColorSpace> for ColorSpace {
             ZColorSpace::BGRA => ColorSpace::BGRA,
             ZColorSpace::HSL => ColorSpace::HSL,
             ZColorSpace::HSV => ColorSpace::HSV,
-            _ => ColorSpace::Unknown,
+            _ => ColorSpace::Unknown
         }
     }
 }
@@ -147,7 +147,7 @@ pub enum ImageDepth {
     U8,
     U16,
     F32,
-    Unknown,
+    Unknown
 }
 
 impl ImageDepth {
@@ -156,7 +156,7 @@ impl ImageDepth {
             ImageDepth::U8 => BitDepth::Eight,
             ImageDepth::U16 => BitDepth::Sixteen,
             ImageDepth::F32 => BitDepth::Float32,
-            ImageDepth::Unknown => BitDepth::Unknown,
+            ImageDepth::Unknown => BitDepth::Unknown
         }
     }
 }
@@ -167,7 +167,7 @@ impl From<BitDepth> for ImageDepth {
             BitDepth::Eight => ImageDepth::U8,
             BitDepth::Sixteen => ImageDepth::U16,
             BitDepth::Float32 => ImageDepth::F32,
-            _ => ImageDepth::Unknown,
+            _ => ImageDepth::Unknown
         }
     }
 }
@@ -179,7 +179,7 @@ pub enum ImageThresholdType {
     Binary,
     BinaryInv,
     ThreshTrunc,
-    ThreshToZero,
+    ThreshToZero
 }
 
 impl ImageThresholdType {
@@ -188,7 +188,7 @@ impl ImageThresholdType {
             ImageThresholdType::Binary => ThresholdMethod::Binary,
             ImageThresholdType::BinaryInv => ThresholdMethod::BinaryInv,
             ImageThresholdType::ThreshTrunc => ThresholdMethod::ThreshTrunc,
-            ImageThresholdType::ThreshToZero => ThresholdMethod::ThreshToZero,
+            ImageThresholdType::ThreshToZero => ThresholdMethod::ThreshToZero
         }
     }
 }
@@ -197,14 +197,14 @@ impl ImageThresholdType {
 #[derive(Copy, Clone)]
 pub enum ResizeMethod {
     Bilinear,
-    Bicubic,
+    Bicubic
 }
 
 impl ResizeMethod {
     pub(crate) fn to_resizemethod(self) -> ZResizeMethod {
         match self {
             ResizeMethod::Bilinear => ZResizeMethod::Bilinear,
-            ResizeMethod::Bicubic => ZResizeMethod::Bicubic,
+            ResizeMethod::Bicubic => ZResizeMethod::Bicubic
         }
     }
 }
@@ -213,7 +213,7 @@ impl From<ZResizeMethod> for ResizeMethod {
     fn from(value: ZResizeMethod) -> Self {
         match value {
             ZResizeMethod::Bilinear => ResizeMethod::Bilinear,
-            ZResizeMethod::Bicubic => ResizeMethod::Bicubic,
+            ZResizeMethod::Bicubic => ResizeMethod::Bicubic
         }
     }
 }

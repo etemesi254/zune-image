@@ -46,11 +46,10 @@ impl OperationsTrait for AutoOrient {
 
         #[cfg(feature = "exif")]
         {
-
             use exif::{Tag, Value};
 
             if let Some(data) = image.metadata().clone().exif() {
-                'rotator:for field in data {
+                'rotator: for field in data {
                     // look for the orientation tag
                     if field.tag == Tag::Orientation {
                         match &field.value {

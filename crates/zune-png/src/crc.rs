@@ -47,8 +47,8 @@ pub fn _crc32_slice1(data: &[u8], mut crc: u32) -> u32 {
 pub fn calc_crc(data: &[u8]) -> u32 {
     !crc32_slice8(data, u32::MAX)
 }
-pub fn calc_crc_with_bytes(data:&[u8],value:u32)->u32{
-    crc32_slice8(data,value)
+pub fn calc_crc_with_bytes(data: &[u8], value: u32) -> u32 {
+    crc32_slice8(data, value)
 }
 
 #[test]

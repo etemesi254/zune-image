@@ -6,7 +6,7 @@
 
 use alloc::vec::Vec;
 
-use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
 
 use crate::crc::{calc_crc, calc_crc_with_bytes};

@@ -182,7 +182,7 @@ mod benchmarks {
         nanorand::WyRand::new().fill(&mut in_vec);
 
         b.iter(|| {
-            stretch_contrast_f32(&mut in_vec, 0.2,0.9).unwrap();
+            stretch_contrast_f32(&mut in_vec, 0.2, 0.9).unwrap();
         });
     }
 }

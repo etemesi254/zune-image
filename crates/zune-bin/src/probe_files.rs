@@ -34,8 +34,7 @@ pub fn probe_input_files(args: &ArgMatches) {
                             .set_max_height(usize::MAX)
                             .set_max_width(usize::MAX);
 
-                        let mut decoder =
-                            format.decoder_with_options(contents, options).unwrap();
+                        let mut decoder = format.decoder_with_options(contents, options).unwrap();
 
                         if let Ok(Some(metadata)) = decoder.read_headers() {
                             let real_metadata =

@@ -24,7 +24,7 @@ pub fn bilinear_impl<T>(
         let new_y = y as f32 * h_ratio;
         let mut y0 = new_y.floor() as usize;
         let y1 = (y0 + 1).min(in_height - 1);
-        
+
         if smaller_image_to_larger {
             y0 = y0.min(in_height - 1);
         }

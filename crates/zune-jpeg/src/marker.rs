@@ -52,12 +52,12 @@ pub enum Marker {
     /// Comment
     COM,
     /// Unknown markers
-    UNKNOWN(u8),
+    UNKNOWN(u8)
 }
 
 impl Marker {
     pub fn from_u8(n: u8) -> Option<Marker> {
-        use self::Marker::{APP, COM, DAC, DHT, DNL, DQT, DRI, EOI, RST, SOF, SOI, SOS,UNKNOWN};
+        use self::Marker::{APP, COM, DAC, DHT, DNL, DQT, DRI, EOI, RST, SOF, SOI, SOS, UNKNOWN};
 
         match n {
             0xFE => Some(COM),
@@ -84,7 +84,7 @@ impl Marker {
             0xE1 => Some(APP(1)),
             0xE2 => Some(APP(2)),
             0xEE => Some(APP(14)),
-            _ => Some(UNKNOWN(n)),
+            _ => Some(UNKNOWN(n))
         }
     }
 }

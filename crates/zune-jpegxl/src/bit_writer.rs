@@ -11,7 +11,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use zune_core::bytestream::{ZByteIoError, ZWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 
 /// Construct a new bit writer
 /// This bit writer owns it's output and you need to call

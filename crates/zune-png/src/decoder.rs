@@ -632,8 +632,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
         let png_info = self.png_info.clone();
 
-        let image_len = self.inner_buffer_size()
-            .ok_or(PngDecodeErrors::GenericStatic("Output buffer size overflowed a usize (corrupt png?)"))?;
+        let image_len = self
+            .inner_buffer_size()
+            .ok_or(PngDecodeErrors::GenericStatic(
+                "Output buffer size overflowed a usize (corrupt png?)"
+            ))?;
 
         if out.len() < image_len {
             return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
@@ -814,11 +817,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                         let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
                         let out_start = (j * x + i) * out_bytes;
 
-                       if let Some(e) =  out.get_mut(final_start..final_start + out_bytes) {
-e                           .copy_from_slice(&final_out[out_start..out_start + out_bytes]);
-                       } else{
-                           warn!("Malformed image, interlace cannot be placed correctly")
-                       }
+                        if let Some(e) = out.get_mut(final_start..final_start + out_bytes) {
+                            e.copy_from_slice(&final_out[out_start..out_start + out_bytes]);
+                        } else {
+                            warn!("Malformed image, interlace cannot be placed correctly")
+                        }
                     }
                 }
                 image_offset += image_len;

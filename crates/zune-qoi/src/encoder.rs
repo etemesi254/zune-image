@@ -4,7 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use zune_core::bytestream::{ZWriter, ZByteWriterTrait};
+use zune_core::bytestream::{ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 use zune_core::options::EncoderOptions;
 

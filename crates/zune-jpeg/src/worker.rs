@@ -413,7 +413,9 @@ pub(crate) fn upsample(
             //assert_eq!(component.raw_coeff.len() * 2, component.upsample_dest.len());
             // Before it was an assert, but numerous and numerous and numerous
             // bug fixes and ad hoc solutions later, I have now just decided  to keep it as a resize
-            component.upsample_dest.resize(component.raw_coeff.len()*2,0);
+            component
+                .upsample_dest
+                .resize(component.raw_coeff.len() * 2, 0);
 
             let raw_coeff = &component.raw_coeff;
             let dest_coeff = &mut component.upsample_dest;
