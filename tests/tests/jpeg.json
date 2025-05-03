@@ -1,24 +1,24 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 251401188534951286404961362012369211693,
+    "hash": 103923578304616452399649832705367752829,
     "comment": "The image isn't full"
   },
   {
     "name": "weird_components.jpg",
-    "hash": 261174253918394387855126993634653689568
+    "hash": 223177996153815192529284222627282478554
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
-    "hash": 327899417203221693667684823644765405315
+    "hash": 84971450946579797378604439434189621346
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 316907878901837486178181498404689048850
+    "hash": 265057884616497557136207099342036240695
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 72227651583886420023815834092904494086,
+    "hash": 77479027789814554789502572869585467634,
     "comment": "Simple large image"
   },
   {
@@ -39,11 +39,11 @@
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 159317719656836513679680568615931027696
+    "hash": 119184486824181426367290247158275111843
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 279295790094485170156316723198300362939
+    "hash": 147846622968342380926185883965520029640
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
@@ -52,7 +52,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 125683957700914688041687332115454166076
+    "hash": 278558818207049493811023839611592362328
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
@@ -71,20 +71,20 @@
   },
   {
     "name": "four_components.jpg",
-    "hash": 33350711354489254164962650813791563794
+    "hash": 169785391768117460864930756026917226884
   },
   {
     "name": "huge_sof_number.jpg",
-    "hash": 46029048520010428617927201003495890872
+    "hash": 151022272900224859217141785980177940828
   },
   {
     "name": "weid_sampling_factors.jpg",
-    "hash": 122453170552492374445054488824177073161,
+    "hash": 3503674285196750445517055941814306276,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 65786204123200007517796769959944451782
+    "hash": 28817868748997507268707381353489368029
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
@@ -93,23 +93,23 @@
   },
   {
     "name": "weird_sampling_2.jpeg",
-    "hash": 335782763830228804723214395494217878033,
+    "hash": 273787510390071298355665338769231697968,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   },
   {
     "name": "2029.jpg",
-    "hash": 254421589828379257050278164428109290622,
+    "hash": 141772925169929705521688831799118378165,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 309069272274389382301715239622093501038,
+    "hash": 264577059084030243990980357566388204103,
     "comment": "Image needs to be filled with default huffman tables"
   },
   {
     "name": "sampling_factors.jpg",
-    "hash": 133590576700352645999203782976613902199,
+    "hash": 184272500373304553960403913973047840626,
     "comment": "Another weird sampling factor,(when will it end)"
   }
 ]
