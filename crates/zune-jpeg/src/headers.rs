@@ -506,7 +506,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
 ) -> Result<(), DecodeErrors> {
     static HDR_META: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
     static MPF_DATA: &[u8] = b"MPF\0";
-    
+
     let mut length = usize::from(decoder.stream.get_u16_be());
 
     if length < 2 {
@@ -558,6 +558,8 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
                 // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/jpegr.cpp#L1323
                 let data = decoder.stream.peek_at(0, length)?.to_vec();
                 length -= data.len();
+                decoder.stream.skip(data.len())?;
+
                 decoder.info.gain_map_info.push(GainMapInfo { data });
             }
             _ => {}
@@ -572,6 +574,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         // More info https://www.cipa.jp/std/documents/e/DC-X007-KEY_E.pdf
         let data = decoder.stream.peek_at(0, length)?.to_vec();
         length -= data.len();
+        decoder.stream.skip(data.len())?;
         decoder.info.multi_picture_information = Some(data);
     }
 

@@ -46,7 +46,6 @@
 //! (or learn something cool)
 //!
 //! Knock yourself out.
-use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
 
@@ -87,6 +86,7 @@ macro_rules! decode_huff {
                 // We may think, lets fake zeroes, noo
                 // panic, because Huffman codes are sensitive, probably everything
                 // after this will be corrupt, so no need to continue.
+                // panic!("Bad Huffman code length");
                 return Err(DecodeErrors::Format(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",$symbol)))
             }
 
@@ -222,7 +222,15 @@ impl BitStream {
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
-        if self.bits_left < 32 && self.marker.is_none() && !self.seen_eoi {
+        if self.bits_left < 32 && !self.seen_eoi {
+            if self.marker.is_some() {
+                // fill with zeroes
+                self.buffer <<= 32;
+                self.bits_left += 32;
+                self.aligned_buffer = self.buffer << (64 - self.bits_left);
+                return Ok(true);
+            }
+
             // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
             // as it is the common case
             //
@@ -381,7 +389,8 @@ impl BitStream {
     /// Discard the next `N` bits without checking
     #[inline]
     fn drop_bits(&mut self, n: u8) {
-        self.bits_left = self.bits_left.saturating_sub(n);
+        self.bits_left -= n;
+        // self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
     }
 
