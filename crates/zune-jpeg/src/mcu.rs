@@ -401,6 +401,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
                         *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width];
                     }
+
                     color_convert(
                         &raw_samples,
                         self.color_convert_16,

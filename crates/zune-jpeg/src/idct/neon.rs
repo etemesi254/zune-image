@@ -201,17 +201,14 @@ pub unsafe fn idct_int_neon_inner(
         };
     }
 
-    // Process rows
+    // process columns
     dct_pass!(512, 10);
     transpose(
         &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
     );
 
-    // process columns
+    // Process rows
     dct_pass!(SCALE_BITS, 17);
-    transpose(
-        &mut row0, &mut row1, &mut row2, &mut row3, &mut row4, &mut row5, &mut row6, &mut row7
-    );
 
     // Pack i32 to i16's,
     // clamp them to be between 0-255
