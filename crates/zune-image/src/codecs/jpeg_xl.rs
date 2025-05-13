@@ -17,9 +17,9 @@
 //! 16 bit images with no palette support
 //!
 use std::io::Read;
-use std::mem::size_of;
+use core::mem::size_of;
 use std::thread::sleep;
-use std::time::Duration;
+use core::time::Duration;
 
 pub use jxl_oxide;
 use jxl_oxide::{JxlImage, PixelFormat, RenderResult};

@@ -26,7 +26,7 @@ pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_val
         {
             use crate::core_filters::colorspace::grayscale::avx2::convert_rgb_to_grayscale_u8_avx2;
 
-            if is_x86_feature_detected!("avx2") {
+            if std::is_x86_feature_detected!("avx2") {
                 unsafe {
                     return convert_rgb_to_grayscale_u8_avx2(r, g, b, out);
                 }
@@ -37,7 +37,7 @@ pub fn rgb_to_grayscale_u8(r: &[u8], g: &[u8], b: &[u8], out: &mut [u8], max_val
         {
             use crate::core_filters::colorspace::grayscale::sse41::convert_rgb_to_grayscale_u8_sse41;
 
-            if is_x86_feature_detected!("sse4.1") {
+            if std::is_x86_feature_detected!("sse4.1") {
                 unsafe {
                     return convert_rgb_to_grayscale_u8_sse41(r, g, b, out);
                 }

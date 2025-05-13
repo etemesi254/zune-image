@@ -11,7 +11,8 @@
 
 #![allow(dead_code)]
 
-use std::any::TypeId;
+use alloc::vec::Vec;
+use core::any::TypeId;
 
 use bytemuck::Pod;
 use zune_core::colorspace::ColorSpace;
@@ -684,7 +685,7 @@ impl Frame {
 #[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
-    use std::num::{NonZeroU32, NonZeroUsize};
+    use core::num::{NonZeroU32, NonZeroUsize};
 
     use zune_core::colorspace::ColorSpace;
 

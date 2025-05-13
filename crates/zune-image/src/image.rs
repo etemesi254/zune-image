@@ -10,8 +10,10 @@
 //! Fully supported bit depths are 8 and 16 and float 32 which are expected to be in the range between 0.0 and 1.0,
 //! see [channel](crate::channel) documentation for how that happens
 //!
-use std::fmt::Debug;
-use std::mem::size_of;
+
+use alloc::vec::Vec;
+use core::fmt::Debug;
+use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitDepth;

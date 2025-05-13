@@ -7,9 +7,9 @@
  */
 
 //! Errors possible during image processing
-use std::any::TypeId;
-use std::fmt::{Debug, Display, Formatter};
-use std::io::Error;
+use core::any::TypeId;
+use core::fmt::{Debug, Display, Formatter};
+use alloc::string::String;
 
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
@@ -17,10 +17,14 @@ use zune_core::colorspace::ColorSpace;
 use crate::channel::ChannelErrors;
 use crate::codecs::ImageFormat;
 
+#[cfg(feature = "std")]
+use std::io::Error;
+
 /// All possible image errors that can occur.
 ///
 /// This is the grandfather of image errors and contains
 /// all decoding,processing and encoding errors possible
+#[non_exhaustive]
 pub enum ImageErrors {
     ImageDecodeErrors(String),
     DimensionsMisMatch(usize, usize),
@@ -36,6 +40,7 @@ pub enum ImageErrors {
     ChannelErrors(ChannelErrors),
     ImageDecoderNotIncluded(ImageFormat),
     ImageDecoderNotImplemented(ImageFormat),
+    #[cfg(feature = "std")]
     IoError(std::io::Error),
     ImageOperationNotImplemented(&'static str, BitType)
 }
@@ -68,7 +73,7 @@ pub enum ImgEncodeErrors {
 }
 
 impl Debug for ImageErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ImageDecodeErrors(err) => {
                 writeln!(f, "{err}")
@@ -107,6 +112,7 @@ impl Debug for ImageErrors {
                     "Expected type with ID of {expected:?} but found {found:?}"
                 )
             }
+            #[cfg(feature = "std")]
             ImageErrors::IoError(reason) => {
                 writeln!(f, "IO error, {:?}", reason)
             }
@@ -136,6 +142,7 @@ impl Debug for ImageErrors {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for ImageErrors {
     fn from(value: Error) -> Self {
         Self::IoError(value)
@@ -155,7 +162,7 @@ impl From<ImgEncodeErrors> for ImageErrors {
 }
 
 impl Debug for ImageOperationsErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::UnsupportedType(operation, depth) => {
                 writeln!(
@@ -201,7 +208,7 @@ impl From<ChannelErrors> for ImageErrors {
 }
 
 impl Debug for ImgEncodeErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Generic(ref string) => writeln!(f, "{string}"),
             Self::GenericStatic(ref string) => writeln!(f, "{string}"),
@@ -222,9 +229,9 @@ impl Debug for ImgEncodeErrors {
 }
 
 impl Display for ImageErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "{:?}", self)
     }
 }
 
-impl std::error::Error for ImageErrors {}
+impl core::error::Error for ImageErrors {}

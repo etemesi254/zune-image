@@ -8,7 +8,10 @@ license = "MIT OR Apache-2.0 OR Zlib"
 keywords = ["image", "decoder", "encoder", "image-processing"]
 categories = ["multimedia::images"]
 description = "An image library, contiaining necessary capabilities to decode, manipulate and encode images"
+rust-version = "1.81.0"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [features]
 # Single based image decoders and encoders
 log = ["zune-core/log"]
@@ -32,35 +35,37 @@ default = ["all"]
 # Whether to use threads or not for some operations
 threads = ["zune-jpegxl?/threads", "jxl-oxide?/rayon"]
 # Simd support
-simd = ["zune-jpeg?/x86", "zune-png?/sse", "avx2", "sse41"]
+simd = ["zune-jpeg?/x86", "zune-png?/sse", "avx2", "sse41", "jpeg-encoder?/simd"]
 benchmarks = []
 avx2 = []
 sse41 = []
+std = ["zune-core/std", "zune-png?/std", "jpeg-encoder?/std", "zune-hdr?/std"]
+libm = ["zune-hdr?/libm", "zune-png?/libm"]
 
 docs = []
 
-all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
+all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log", "std", "libm"]
 
 [dependencies]
 #zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
-zune-core = { path = "../zune-core", version = "^0.5.0-rc0", features = ["std"] }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 # Images
-zune-png = { path = "../zune-png", version = "^0.5.0-rc0", optional = true, features = ["std"] }
+zune-png = { path = "../zune-png", version = "^0.5.0-rc0", optional = true, default-features = false }
 zune-jpeg = { path = "../zune-jpeg", version = "^0.5.0-rc0", optional = true }
 zune-ppm = { path = "../zune-ppm", version = "^0.5.0-rc0", optional = true }
 zune-psd = { path = "../zune-psd", version = "^0.5.0-rc0", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", version = "^0.5.0-rc0", optional = true }
 zune-qoi = { path = "../zune-qoi", version = "^0.5.0-rc0", optional = true }
 zune-jpegxl = { path = "../zune-jpegxl", version = "^0.5.0-rc0", optional = true }
-zune-hdr = { path = "../zune-hdr", version = "^0.5.0-rc0", optional = true }
+zune-hdr = { path = "../zune-hdr", version = "^0.5.0-rc0", optional = true, default-features = false }
 zune-bmp = { path = "../zune-bmp", version = "^0.5.0-rc0", optional = true }
 # Channel conversions in a safe way
 bytemuck = { version = "1.13", default-features = false }
 # Serializing info
-serde = { version = "1.0.152", optional = true }
+serde = { version = "1.0.152", optional = true, default-features = false }
 # External image APIs
-jpeg-encoder = { version = "0.6.0", optional = true, features = ["simd", "std"] }
+jpeg-encoder = { version = "0.6.0", optional = true, default-features = false }
 jxl-oxide = { version = "0.8.0", optional = true }
 # metadata
 kamadak-exif = { version = "0.5.5", optional = true }

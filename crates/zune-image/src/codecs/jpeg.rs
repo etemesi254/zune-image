@@ -14,6 +14,9 @@
 //!
 //! The decoder and encoder both support metadata extraction and saving.
 //!
+
+use alloc::string::ToString;
+
 use jpeg_encoder::{ColorType, EncodingError, JfifWrite};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZByteWriterTrait, ZWriter};
@@ -35,6 +38,7 @@ struct TempVt<'a, T: ZByteWriterTrait> {
 impl<'a, T: ZByteWriterTrait> JfifWrite for TempVt<'a, T> {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), EncodingError> {
         self.inner.write_all(buf).map_err(|r| match r {
+            #[cfg(feature = "std")]
             ZByteIoError::StdIoError(e) => EncodingError::IoError(e),
             r => EncodingError::Write(format!("{:?}", r))
         })

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use alloc::boxed::Box;
+
 use nanorand::Rng;
 use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;

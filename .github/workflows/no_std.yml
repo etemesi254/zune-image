@@ -36,5 +36,6 @@ jobs:
       - run: cargo build -p zune-gif      --target x86_64-unknown-uefi --no-default-features --features log
       - run: cargo build -p zune-hdr      --target x86_64-unknown-uefi --no-default-features --features log,libm
       - run: cargo build -p zune-jpegxl   --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-image    --target x86_64-unknown-uefi --no-default-features --features log,libm,serde-support,ppm,jpeg,png,psd,farbfeld,qoi,bmp,hdr
 
 

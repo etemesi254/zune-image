@@ -31,8 +31,7 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
-use std::io::Cursor;
-use std::path::Path;
+use alloc::{boxed::Box, vec::Vec};
 
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait, ZCursor, ZReader};
 use zune_core::log::trace;
@@ -43,6 +42,12 @@ use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::traits::{DecoderTrait, EncoderTrait};
+
+#[cfg(feature = "std")]
+use {
+    std::io::Cursor,
+    std::path::Path,
+};
 
 pub mod bmp;
 mod exr;
@@ -434,6 +439,7 @@ impl Image {
     /// // save to jpeg
     /// image.save("hello.jpg").unwrap();
     /// ```
+    #[cfg(feature = "std")]
     pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors> {
         return if let Some(ext) = file.as_ref().extension() {
             if let Some(format) = ImageFormat::encoder_for_extension(ext.to_string_lossy()) {
@@ -484,6 +490,7 @@ impl Image {
     ///     Ok(())
     /// }
     /// ```
+    #[cfg(feature = "std")]
     pub fn save_to<P: AsRef<Path>>(&self, file: P, format: ImageFormat) -> Result<(), ImageErrors> {
         // open a file for which we will write directly to
         let mut file = std::io::BufWriter::new(
@@ -589,6 +596,7 @@ impl Image {
     /// otherwise it's an error to try and decode
     ///
     /// See also [read](Self::read) for reading from memory
+    #[cfg(feature = "std")]
     pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors> {
         Self::open_with_options(file, DecoderOptions::default())
     }
@@ -609,6 +617,7 @@ impl Image {
     /// let options = DecoderOptions::default().set_strict_mode(true).set_max_width(100);
     /// let image = Image::open_with_options("/a/file.jpeg",options).unwrap();
     /// ```
+    #[cfg(feature = "std")]
     pub fn open_with_options<P: AsRef<Path>>(
         file: P, options: DecoderOptions
     ) -> Result<Image, ImageErrors> {

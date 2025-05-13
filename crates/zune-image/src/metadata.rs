@@ -11,6 +11,8 @@
 //! This module provides the ability to store image metadata and transfer it
 //! from one image to another
 
+use alloc::vec::Vec;
+
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
 
