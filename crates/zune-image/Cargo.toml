@@ -52,7 +52,7 @@ all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log", "
 zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 # Images
 zune-png = { path = "../zune-png", version = "^0.5.0-rc0", optional = true, default-features = false }
-zune-jpeg = { path = "../zune-jpeg", version = "^0.5.0-rc0", optional = true }
+zune-jpeg = { path = "../zune-jpeg", version = "^0.5.0-rc0", optional = true, default-features = false }
 zune-ppm = { path = "../zune-ppm", version = "^0.5.0-rc0", optional = true }
 zune-psd = { path = "../zune-psd", version = "^0.5.0-rc0", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", version = "^0.5.0-rc0", optional = true }
