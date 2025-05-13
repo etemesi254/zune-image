@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;

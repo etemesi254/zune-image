@@ -453,6 +453,6 @@ where
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         use std::io::ErrorKind;
         self.read_bytes(buf)
-            .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{:?}", e)))
+            .map_err(|e| std::io::Error::new(ErrorKind::Other, alloc::format!("{:?}", e)))
     }
 }

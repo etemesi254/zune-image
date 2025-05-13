@@ -9,6 +9,7 @@ keywords = ["jpeg-xl", "jpeg-xl-decoder", "decoder", "jxl"]
 categories = ["multimedia::images"]
 exclude = []
 description = "A simple, fast and fully safe modular jxl encoder"
+rust-version = "1.81.0"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,7 +18,7 @@ description = "A simple, fast and fully safe modular jxl encoder"
 zune-core = { version = "^0.5.0-rc0", path = "../zune-core" }
 
 [features]
-threads = []
+threads = ["std"]
 std = []
 log = ["zune-core/log"]
 default = ["threads", "std"]

@@ -450,7 +450,7 @@ impl DecoderOptions {
             // where we can do runtime check if feature is present
             #[cfg(feature = "std")]
             {
-                if is_x86_feature_detected!("sse2") {
+                if std::is_x86_feature_detected!("sse2") {
                     return true;
                 }
             }
@@ -483,7 +483,7 @@ impl DecoderOptions {
             // where we can do runtime check if feature is present
             #[cfg(feature = "std")]
             {
-                if is_x86_feature_detected!("sse3") {
+                if std::is_x86_feature_detected!("sse3") {
                     return true;
                 }
             }
@@ -515,7 +515,7 @@ impl DecoderOptions {
             // where we can do runtime check if feature is present
             #[cfg(feature = "std")]
             {
-                if is_x86_feature_detected!("sse4.1") {
+                if std::is_x86_feature_detected!("sse4.1") {
                     return true;
                 }
             }
@@ -547,7 +547,7 @@ impl DecoderOptions {
             // where we can do runtime check if feature is present
             #[cfg(feature = "std")]
             {
-                if is_x86_feature_detected!("avx") {
+                if std::is_x86_feature_detected!("avx") {
                     return true;
                 }
             }
@@ -579,7 +579,7 @@ impl DecoderOptions {
             // where we can do runtime check if feature is present
             #[cfg(feature = "std")]
             {
-                if is_x86_feature_detected!("avx2") {
+                if std::is_x86_feature_detected!("avx2") {
                     return true;
                 }
             }

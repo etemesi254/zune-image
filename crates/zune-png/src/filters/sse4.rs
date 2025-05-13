@@ -191,7 +191,7 @@ unsafe fn de_filter_sub_generic_sse2<const SIZE: usize>(raw: &[u8], current: &mu
 pub fn de_filter_sub_sse2<const SIZE: usize>(raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse2") {
+        if !std::is_x86_feature_detected!("sse2") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }
@@ -268,7 +268,7 @@ unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
 pub fn de_filter_paeth_sse41<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse4.1") {
+        if !std::is_x86_feature_detected!("sse4.1") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }
@@ -325,7 +325,7 @@ unsafe fn defilter_avg_sse2_inner<const SIZE: usize>(
 pub fn defilter_avg_sse<const SIZE: usize>(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     #[cfg(feature = "std")]
     {
-        if !is_x86_feature_detected!("sse2") {
+        if !std::is_x86_feature_detected!("sse2") {
             panic!("Internal error, calling platform specific function where not supported")
         }
     }

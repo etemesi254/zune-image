@@ -222,11 +222,23 @@ impl SingleFrame {
 ///    i += 1;
 /// }
 /// ```
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "libm"))]
 pub fn post_process_image(
     info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo, current_frame: &[u8],
     prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>
 ) -> Result<(), PngDecodeErrors> {
+    fn powf(base: f32, exp: f32) -> f32 {
+        #[cfg(all(feature = "std", not(feature = "libm")))]
+        {
+            f32::powf(base, exp)
+        }
+
+        #[cfg(feature = "libm")]
+        {
+            libm::powf(base, exp)
+        }
+    }
+
     let nc = colorspace.num_components();
     //
     // check invariants
@@ -344,8 +356,8 @@ pub fn post_process_image(
                     .enumerate()
                 {
                     let gam = (i as f32) / max_sample;
-                    let linfg = f32::powf(gam, gamma_inv);
-                    let inv_fg = f32::powf(gam, gamma_value);
+                    let linfg = powf(gam, gamma_inv);
+                    let inv_fg = powf(gam, gamma_value);
                     *c = inv_fg;
                     *item = linfg;
                 }
@@ -377,7 +389,7 @@ pub fn post_process_image(
                         // NB: (cae): This function becomes quite expensive.
                         // I'm not sure if memoization may help us here.
                         //  Anyone with tricks??
-                        let gamout = f32::powf(commpix, gamma_value);
+                        let gamout = powf(commpix, gamma_value);
                         // scale up and output to b
                         let pix = (gamout * max_sample + 0.5) as u8;
                         *b = pix;

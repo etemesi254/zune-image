@@ -29,18 +29,22 @@
 //! color primaries, exposure,gamma e.t.c,
 //!
 
-// CAE: No std doesn't work because we haven't implemented
-// floor and exp2 for floats, which do not exist in no std land
-// #![no_std]
+#![no_std]
 #![forbid(unsafe_code)]
-#![macro_use]
+
 extern crate alloc;
 extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
+
 pub extern crate zune_core;
 pub use decoder::HdrDecoder;
+#[cfg(any(feature = "std", feature = "libm"))]
 pub use encoder::HdrEncoder;
 pub use errors::{HdrDecodeErrors, HdrEncodeErrors};
 
 mod decoder;
+#[cfg(any(feature = "std", feature = "libm"))]
 mod encoder;
 mod errors;

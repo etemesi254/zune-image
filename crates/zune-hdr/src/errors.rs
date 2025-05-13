@@ -82,7 +82,7 @@ impl Display for HdrDecodeErrors {
         writeln!(f, "{:?}", self)
     }
 }
-impl std::error::Error for HdrDecodeErrors {}
+impl core::error::Error for HdrDecodeErrors {}
 
 impl Display for HdrEncodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -90,7 +90,7 @@ impl Display for HdrEncodeErrors {
     }
 }
 
-impl std::error::Error for HdrEncodeErrors {}
+impl core::error::Error for HdrEncodeErrors {}
 
 /// HDR encoding errrors
 pub enum HdrEncodeErrors {

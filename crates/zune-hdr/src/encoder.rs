@@ -6,8 +6,7 @@
 
 //! Radiance HDR encoder
 
-use alloc::{format, vec};
-use std::collections::HashMap;
+use alloc::{format, vec, string::String, vec::Vec};
 
 use zune_core::bytestream::{ZByteIoError, ZByteWriterTrait, ZWriter};
 use zune_core::colorspace::ColorSpace;
@@ -21,7 +20,7 @@ use crate::errors::HdrEncodeErrors;
 /// `width*height*3`
 pub struct HdrEncoder<'a> {
     data:    &'a [f32],
-    headers: Option<&'a HashMap<String, String>>,
+    headers: Option<Vec<(String, String)>>,
     options: EncoderOptions
 }
 
@@ -45,9 +44,14 @@ impl<'a> HdrEncoder<'a> {
     /// otherwise it will have no effect.
     ///
     /// # Arguments:
-    /// - headers: A hashmap containing keys and values, the values will be encoded as key=value
+    /// - headers: An iterator containing keys and values, the values will be encoded as key=value
     /// in the hdr header before encoding
-    pub fn add_headers(&mut self, headers: &'a HashMap<String, String>) {
+    pub fn add_headers(&mut self, headers: impl IntoIterator<Item = (String, String)>) {
+        let mut headers = headers.into_iter().collect::<Vec<_>>();
+
+        headers.sort_by(|(a, _), (b, _)| a.cmp(b));
+        headers.dedup_by(|(a, _), (b, _)| a.eq(&b));
+
         self.headers = Some(headers)
     }
 
@@ -155,7 +159,7 @@ impl<'a> HdrEncoder<'a> {
         {
             writer.write_all(b"#?RADIANCE\n")?;
             writer.write_all(b"SOFTWARE=zune-hdr\n")?;
-            if let Some(headers) = self.headers {
+            if let Some(headers) = &self.headers {
                 for (k, v) in headers {
                     writer.write_all(format!("{}={}\n", k, v).as_bytes())?;
                 }
@@ -337,12 +341,25 @@ fn frexp(s: f32) -> (f32, i32) {
     } else {
         let lg = fast_log2(abs(s));
         let lg_floor = floor(lg);
-        // Note: This is the only reason we need the standard library
-        // I haven't found a good exp2 function, fast_exp2 doesn't work
-        // and libm/musl exp2 introduces visible color distortions and is slow, so for
-        // now let's stick to whatever the platform provides
-        let x = (lg - lg_floor - 1.0).exp2();
+        let x = exp2(lg - lg_floor - 1.0);
         let exp = lg_floor + 1.0;
         (signum(s) * x, exp as i32)
+    }
+}
+
+fn exp2(x: f32) -> f32 {
+    // Note: This is the only reason we need the standard library
+    // I haven't found a good exp2 function, fast_exp2 doesn't work
+    // and libm/musl exp2 introduces visible color distortions and is slow, so for
+    // now let's stick to whatever the platform provides
+    #[cfg(all(feature = "std", not(feature = "libm")))]
+    {
+        f32::exp2(x)
+    }
+
+    // For `no_std`, we allow users to select `libm`, even if it produces sub-par results.
+    #[cfg(feature = "libm")]
+    {
+        libm::exp2f(x)
     }
 }

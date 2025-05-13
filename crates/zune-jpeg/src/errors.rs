@@ -53,8 +53,7 @@ pub enum DecodeErrors {
     IoErrors(ZByteIoError)
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for DecodeErrors {}
+impl core::error::Error for DecodeErrors {}
 
 impl From<&'static str> for DecodeErrors {
     fn from(data: &'static str) -> Self {

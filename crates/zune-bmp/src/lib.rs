@@ -54,9 +54,6 @@
 //! use zune_bmp::BmpDecoder;
 //! // read from a file
 //! let source = BufReader::new(File::open("./image.bmp").unwrap());
-//! // only run when std is enabled, otherwise zune_core doesn't implement the ZByteReader trait
-//! // on File since it doesn't exist in `no_std` land
-//! #[cfg(feature = "std")]
 //! let decoder = BmpDecoder::new(source);
 //!
 //! ```
@@ -71,9 +68,8 @@
 //! benchmark just in case you think it's slowing you down in any way.
 //!
 #![no_std]
-#![macro_use]
-extern crate alloc;
 
+extern crate alloc;
 extern crate core;
 
 pub use zune_core;
