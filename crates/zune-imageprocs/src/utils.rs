@@ -5,6 +5,9 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+
+use alloc::vec::Vec;
+
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -54,7 +57,7 @@ pub enum Gravity {
     /// Place the image so that it appears from the bottom left of the canvas
     BottomLeft,
     /// Place the image so that it appears from the bottom right of the canvas
-    BottomRight
+    BottomRight,
 }
 
 pub fn calculate_gravity(src_image: &Image, dst_image: &Image, gravity: Gravity) -> (usize, usize) {
@@ -79,13 +82,13 @@ pub fn calculate_gravity(src_image: &Image, dst_image: &Image, gravity: Gravity)
         Gravity::BottomLeft => (0, dst_height.saturating_sub(src_height)),
         Gravity::BottomRight => (
             dst_width.saturating_sub(src_width),
-            dst_height.saturating_sub(src_height)
-        )
+            dst_height.saturating_sub(src_height),
+        ),
     };
 }
 /// A simple helper function to execute on threads
 pub fn execute_on<T: Fn(&mut Channel) -> Result<(), ImageErrors> + Send + Sync>(
-    function: T, image: &mut Image, ignore_alpha: bool
+    function: T, image: &mut Image, ignore_alpha: bool,
 ) -> Result<(), ImageErrors> {
     #[cfg(feature = "threads")]
     {

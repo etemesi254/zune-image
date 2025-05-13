@@ -28,7 +28,7 @@ mod bilinear;
 #[derive(Copy, Clone, Debug)]
 pub enum ResizeMethod {
     Bilinear,
-    Bicubic
+    Bicubic,
 }
 
 // pub enum ResizeDimensions{
@@ -39,9 +39,9 @@ pub enum ResizeMethod {
 /// using the resize method specified
 #[derive(Copy, Clone)]
 pub struct Resize {
-    new_width:  usize,
+    new_width: usize,
     new_height: usize,
-    method:     ResizeMethod
+    method: ResizeMethod,
 }
 
 impl Resize {
@@ -56,7 +56,7 @@ impl Resize {
         Resize {
             new_width,
             new_height,
-            method
+            method,
         }
     }
 }
@@ -83,7 +83,7 @@ impl OperationsTrait for Resize {
                     old_w,
                     old_h,
                     self.new_width,
-                    self.new_height
+                    self.new_height,
                 ),
                 BitType::U16 => resize::<u16>(
                     channel.reinterpret_as()?,
@@ -92,7 +92,7 @@ impl OperationsTrait for Resize {
                     old_w,
                     old_h,
                     self.new_width,
-                    self.new_height
+                    self.new_height,
                 ),
 
                 BitType::F32 => {
@@ -103,10 +103,10 @@ impl OperationsTrait for Resize {
                         old_w,
                         old_h,
                         self.new_width,
-                        self.new_height
+                        self.new_height,
                     );
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d)),
             }
             *channel = new_channel;
             Ok(())
@@ -130,7 +130,7 @@ impl OperationsTrait for Resize {
     clippy::cast_sign_loss
 )]
 pub fn ratio_dimensions_smaller(
-    old_w: usize, old_h: usize, new_w: usize, new_h: usize
+    old_w: usize, old_h: usize, new_w: usize, new_h: usize,
 ) -> (usize, usize) {
     let ratio_w = old_w as f64 / new_w as f64;
     let ratio_h = old_h as f64 / new_h as f64;
@@ -150,7 +150,7 @@ pub fn ratio_dimensions_smaller(
     clippy::cast_sign_loss
 )]
 pub fn ratio_dimensions_larger(
-    old_w: usize, old_h: usize, new_w: usize, new_h: usize
+    old_w: usize, old_h: usize, new_w: usize, new_h: usize,
 ) -> (usize, usize) {
     let ratio_w = old_w as f64 / new_w as f64;
     let ratio_h = old_h as f64 / new_h as f64;
@@ -175,20 +175,20 @@ pub fn ratio_dimensions_larger(
 /// - `out_width*out_height` do not match `out_image.len()`.
 pub fn resize<T>(
     in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
-    out_width: usize, out_height: usize
+    out_width: usize, out_height: usize,
 ) where
     T: Copy + NumOps<T> + Default,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     match method {
         ResizeMethod::Bilinear => {
             bilinear::bilinear_impl(
-                in_image, out_image, in_width, in_height, out_width, out_height
+                in_image, out_image, in_width, in_height, out_width, out_height,
             );
         }
         ResizeMethod::Bicubic => {
             bicubic::bicubic_resample(
-                in_image, out_image, in_width, in_height, out_width, out_height
+                in_image, out_image, in_width, in_height, out_width, out_height,
             );
         }
     }
@@ -224,7 +224,7 @@ mod benchmarks {
                 width,
                 height,
                 new_width,
-                new_height
+                new_height,
             );
         });
     }
@@ -251,7 +251,7 @@ mod benchmarks {
                 width,
                 height,
                 new_width,
-                new_height
+                new_height,
             );
         });
     }
@@ -282,7 +282,7 @@ mod tests {
             width,
             height,
             new_width,
-            new_height
+            new_height,
         );
     }
 }

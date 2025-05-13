@@ -1,7 +1,7 @@
 #![cfg(feature = "portable-simd")]
 
+use core::mem::size_of;
 use core::simd::prelude::*;
-use std::mem::size_of;
 
 use crate::premul_alpha::unpremultiply_f32_scalar;
 
@@ -34,7 +34,7 @@ pub fn unpremultiply_std_simd(input: &mut [f32], alpha: &[f32]) {
     // handle remainder
     unpremultiply_f32_scalar(
         input.chunks_exact_mut(VECTOR_SIZE).into_remainder(),
-        alpha.chunks_exact(VECTOR_SIZE).remainder()
+        alpha.chunks_exact(VECTOR_SIZE).remainder(),
     );
 }
 

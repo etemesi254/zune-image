@@ -51,12 +51,12 @@ pub enum FlipDirection {
     /// │f g h i j│   │e d c b a │
     /// └─────────┘   └──────────┘
     /// ```
-    MirrorXAxis
+    MirrorXAxis,
 }
 
 /// Flip an image to a certain direction
 pub struct Flip {
-    flip_direction: FlipDirection
+    flip_direction: FlipDirection,
 }
 
 impl Flip {
@@ -88,7 +88,7 @@ impl OperationsTrait for Flip {
                     BitType::F32 => {
                         flop(inp.reinterpret_as_mut::<f32>()?, width);
                     }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
                 },
                 FlipDirection::Vertical => match depth.bit_type() {
                     BitType::U8 => {
@@ -100,7 +100,7 @@ impl OperationsTrait for Flip {
                     BitType::F32 => {
                         vertical_flip(inp.reinterpret_as_mut::<f32>()?, width);
                     }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
                 },
                 FlipDirection::MirrorXAxis => match depth.bit_type() {
                     BitType::U8 => {
@@ -112,8 +112,8 @@ impl OperationsTrait for Flip {
                     BitType::F32 => {
                         flip(inp.reinterpret_as_mut::<f32>()?);
                     }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-                }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                },
             }
 
             Ok(())
@@ -155,7 +155,7 @@ pub fn flip<T: Copy>(in_out_image: &mut [T]) {
     let (in_img_top, in_img_bottom) = in_out_image.split_at_mut(length);
 
     for (in_dim, out_dim) in in_img_top.iter_mut().zip(in_img_bottom.iter_mut().rev()) {
-        std::mem::swap(in_dim, out_dim);
+        core::mem::swap(in_dim, out_dim);
     }
 }
 
@@ -213,7 +213,7 @@ pub fn flop<T: Copy>(in_out_image: &mut [T], width: usize) {
 
         // iterate and swap
         for (ltr, rtl) in left_to_right.iter_mut().zip(right_to_left.iter_mut().rev()) {
-            std::mem::swap(ltr, rtl);
+            core::mem::swap(ltr, rtl);
         }
     }
 }

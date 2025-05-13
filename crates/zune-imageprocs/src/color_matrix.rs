@@ -85,7 +85,7 @@ use crate::traits::NumOps;
 /// }
 /// ```
 pub struct ColorMatrix {
-    matrix: [[f32; 5]; 4]
+    matrix: [[f32; 5]; 4],
 }
 
 impl ColorMatrix {
@@ -141,23 +141,23 @@ impl OperationsTrait for ColorMatrix {
                     g[0].reinterpret_as_mut()?,
                     b[0].reinterpret_as_mut()?,
                     a[0].reinterpret_as_mut()?,
-                    &self.matrix
+                    &self.matrix,
                 ),
                 BitType::U16 => color_matrix_component::<u16>(
                     r[0].reinterpret_as_mut()?,
                     g[0].reinterpret_as_mut()?,
                     b[0].reinterpret_as_mut()?,
                     a[0].reinterpret_as_mut()?,
-                    &self.matrix
+                    &self.matrix,
                 ),
                 BitType::F32 => color_matrix_component::<f32>(
                     r[0].reinterpret_as_mut()?,
                     g[0].reinterpret_as_mut()?,
                     b[0].reinterpret_as_mut()?,
                     a[0].reinterpret_as_mut()?,
-                    &self.matrix
+                    &self.matrix,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
         }
         // convert back to original color
@@ -172,9 +172,9 @@ impl OperationsTrait for ColorMatrix {
 }
 
 fn color_matrix_component<T: NumOps<T> + Copy>(
-    c1: &mut [T], c2: &mut [T], c3: &mut [T], alpha: &mut [T], color_matrix: &[[f32; 5]; 4]
+    c1: &mut [T], c2: &mut [T], c3: &mut [T], alpha: &mut [T], color_matrix: &[[f32; 5]; 4],
 ) where
-    f32: From<T>
+    f32: From<T>,
 {
     let max_t = f32::from(T::MAX_VAL);
     // we need to multiply the first channel with the color matrix and then add the new offset only from the first row
@@ -246,7 +246,7 @@ mod benchmarks {
             [0.2, 0.5, 0.3, 0.0, 0.0],
             [0.2, 0.5, 0.3, 0.0, 0.0],
             [0.2, 0.5, 0.3, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 0.0, 1.0, 0.0],
         ]);
 
         b.iter(|| {

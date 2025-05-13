@@ -6,8 +6,11 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 //! Simple spatial operations implemented for images
-use std::fmt::Debug;
-use std::ops::{Add, Div, Sub};
+
+use alloc::string::{String, ToString};
+
+use core::fmt::Debug;
+use core::ops::{Add, Div, Sub};
 
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
@@ -25,7 +28,7 @@ pub enum SpatialOperations {
     /// min
     Minimum,
     /// sum(pix)/len
-    Mean
+    Mean,
 }
 
 impl SpatialOperations {
@@ -57,9 +60,9 @@ fn find_min<T: PartialOrd + Default + Copy + NumOps<T>>(data: &[T]) -> T {
 }
 
 fn find_contrast<
-    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
+    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
 >(
-    data: &[T]
+    data: &[T],
 ) -> T {
     let mut minimum = T::MAX_VAL;
     let mut maximum = T::MIN_VAL;
@@ -79,9 +82,9 @@ fn find_contrast<
 }
 
 fn find_gradient<
-    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
+    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
 >(
-    data: &[T]
+    data: &[T],
 ) -> T {
     let mut minimum = T::max_val();
     let mut maximum = T::min_val();
@@ -114,7 +117,7 @@ fn find_max<T: PartialOrd + Copy + NumOps<T>>(data: &[T]) -> T {
 fn find_mean<T>(data: &[T]) -> T
 where
     T: Default + Copy + NumOps<T> + Add<Output = T> + Div<Output = T>,
-    u32: std::convert::From<T>
+    u32: core::convert::From<T>,
 {
     //https://godbolt.org/z/6Y8ncehd5
     let mut maximum = u32::default();
@@ -140,7 +143,7 @@ where
 ///
 pub fn spatial_ops<T>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
-    operations: SpatialOperations
+    operations: SpatialOperations,
 ) where
     T: PartialOrd
         + Default
@@ -149,7 +152,7 @@ pub fn spatial_ops<T>(
         + Sub<Output = T>
         + Add<Output = T>
         + Div<Output = T>,
-    u32: std::convert::From<T>
+    u32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(
@@ -158,7 +161,7 @@ pub fn spatial_ops<T>(
         height,
         radius,
         radius,
-        PadMethod::Replicate
+        PadMethod::Replicate,
     );
 
     // Note: It's faster to do it like this,
@@ -181,7 +184,7 @@ pub fn spatial_ops<T>(
         SpatialOperations::Maximum => find_max::<T>,
         SpatialOperations::Gradient => find_gradient::<T>,
         SpatialOperations::Minimum => find_min::<T>,
-        SpatialOperations::Mean => find_mean::<T>
+        SpatialOperations::Mean => find_mean::<T>,
     };
 
     spatial(&padded_input, out_channel, radius, width, height, ptr);
@@ -212,7 +215,7 @@ mod benchmarks {
                 radius,
                 width,
                 height,
-                SpatialOperations::Mean
+                SpatialOperations::Mean,
             );
         });
     }
@@ -235,7 +238,7 @@ mod benchmarks {
                 radius,
                 width,
                 height,
-                SpatialOperations::Minimum
+                SpatialOperations::Minimum,
             );
         });
     }

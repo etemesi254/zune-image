@@ -55,7 +55,7 @@ use zune_image::traits::OperationsTrait;
 /// ```
 #[derive(Default)]
 pub struct Contrast {
-    contrast: f32
+    contrast: f32,
 }
 
 impl Contrast {
@@ -76,7 +76,7 @@ impl OperationsTrait for Contrast {
         for channel in image.channels_mut(true) {
             match depth.bit_type() {
                 BitType::U8 => contrast_u8(channel.reinterpret_as_mut::<u8>()?, self.contrast),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
         }
         Ok(())
@@ -86,7 +86,7 @@ impl OperationsTrait for Contrast {
             ColorSpace::RGBA,
             ColorSpace::RGB,
             ColorSpace::LumaA,
-            ColorSpace::Luma
+            ColorSpace::Luma,
         ]
     }
     fn supported_types(&self) -> &'static [BitType] {

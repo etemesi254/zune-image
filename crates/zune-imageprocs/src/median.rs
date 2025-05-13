@@ -54,7 +54,7 @@ use crate::utils::{execute_on, z_prefetch};
 /// for example a radius of R will result in a search window length of 2R+1 for each dimension.
 #[derive(Default)]
 pub struct Median {
-    radius: usize
+    radius: usize,
 }
 
 impl Median {
@@ -86,16 +86,16 @@ impl OperationsTrait for Median {
                     new_channel.reinterpret_as_mut::<u16>()?,
                     self.radius,
                     width,
-                    height
+                    height,
                 ),
                 BitType::U8 => median_u8(
                     channel.reinterpret_as::<u8>()?,
                     new_channel.reinterpret_as_mut::<u8>()?,
                     self.radius,
                     width,
-                    height
+                    height,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             *channel = new_channel;
             Ok(())
@@ -109,7 +109,7 @@ impl OperationsTrait for Median {
 }
 #[allow(clippy::cast_possible_truncation)]
 pub fn median_u16(
-    in_channel: &[u16], out_channel: &mut [u16], radius: usize, width: usize, height: usize
+    in_channel: &[u16], out_channel: &mut [u16], radius: usize, width: usize, height: usize,
 ) {
     /*
      * Okay rico, we run a tight shift here
@@ -195,13 +195,13 @@ pub fn median_u16(
         height,
         radius,
         radius,
-        PadMethod::Replicate
+        PadMethod::Replicate,
     );
     spatial_median(&padded_input, out_channel, radius, width, height, func);
 }
 #[allow(clippy::cast_possible_truncation)]
 pub fn median_u8(
-    in_channel: &[u8], out_channel: &mut [u8], radius: usize, width: usize, height: usize
+    in_channel: &[u8], out_channel: &mut [u8], radius: usize, width: usize, height: usize,
 ) {
     // duplicated from above, but uses array instead of vec, and
 
@@ -277,17 +277,17 @@ pub fn median_u8(
         height,
         radius,
         radius,
-        PadMethod::Replicate
+        PadMethod::Replicate,
     );
     spatial_median(&padded_input, out_channel, radius, width, height, func);
 }
 
 pub fn spatial_median<T, F>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
-    mut function: F
+    mut function: F,
 ) where
     T: Default + Copy,
-    F: FnMut(&[T]) -> T
+    F: FnMut(&[T]) -> T,
 {
     let old_width = width;
     let height = (radius * 2) + height;

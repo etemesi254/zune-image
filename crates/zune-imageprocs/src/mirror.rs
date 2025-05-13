@@ -53,7 +53,7 @@ pub enum MirrorMode {
     ///  │f g h i j│   │j i h i j │
     ///  └─────────┘   └──────────┘
     /// ```
-    West
+    West,
 }
 
 /// Rearrange the pixels along a certain axis.
@@ -62,7 +62,7 @@ pub enum MirrorMode {
 /// see the image [mirror-modes](crate::mirror::MirrorMode) documentation
 /// for each used mode
 pub struct Mirror {
-    mode: MirrorMode
+    mode: MirrorMode,
 }
 
 impl Mirror {
@@ -89,7 +89,7 @@ impl OperationsTrait for Mirror {
                         channel.reinterpret_as_mut::<u8>()?,
                         width,
                         height,
-                        self.mode
+                        self.mode,
                     );
                 }
 
@@ -98,7 +98,7 @@ impl OperationsTrait for Mirror {
                         channel.reinterpret_as_mut::<u16>()?,
                         width,
                         height,
-                        self.mode
+                        self.mode,
                     );
                 }
                 BitType::F32 => {
@@ -106,10 +106,10 @@ impl OperationsTrait for Mirror {
                         channel.reinterpret_as_mut::<f32>()?,
                         width,
                         height,
-                        self.mode
+                        self.mode,
                     );
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };

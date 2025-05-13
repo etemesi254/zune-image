@@ -23,8 +23,8 @@
 ///
 /// for example a radius of R will result in a search window length of 2R+1 for each dimension.
 pub struct SpatialOps {
-    radius:    usize,
-    operation: SpatialOperations
+    radius: usize,
+    operation: SpatialOperations,
 }
 
 impl SpatialOps {
@@ -54,7 +54,7 @@ impl OperationsTrait for SpatialOps {
                     self.radius,
                     width,
                     height,
-                    self.operation
+                    self.operation,
                 ),
                 BitType::U8 => spatial_ops(
                     channel.reinterpret_as::<u8>()?,
@@ -62,9 +62,9 @@ impl OperationsTrait for SpatialOps {
                     self.radius,
                     width,
                     height,
-                    self.operation
+                    self.operation,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             *channel = new_channel;
             Ok(())
@@ -105,10 +105,10 @@ use crate::utils::{execute_on, z_prefetch};
 ///
 pub fn spatial<T, F>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
-    function: F
+    function: F,
 ) where
     T: Default + Copy,
-    F: Fn(&[T]) -> T
+    F: Fn(&[T]) -> T,
 {
     let old_width = width;
     let height = (radius * 2) + height;
@@ -151,10 +151,10 @@ pub fn spatial<T, F>(
 /// speed up operations for convolve
 #[allow(non_snake_case)]
 pub(crate) fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, function: F
+    in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, function: F,
 ) where
     T: Default + Copy,
-    F: Fn(&[T; OUT_SIZE]) -> T
+    F: Fn(&[T; OUT_SIZE]) -> T,
 {
     let old_width = width;
     let height = (RADIUS * 2) + height;

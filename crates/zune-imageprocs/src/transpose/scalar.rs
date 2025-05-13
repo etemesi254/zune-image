@@ -7,7 +7,7 @@
  */
 
 pub fn transpose_scalar<T: Copy + Default>(
-    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
+    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize,
 ) {
     // A slightly more optimized scalar transpose,
     // 2x faster than the naive one
@@ -50,7 +50,7 @@ pub fn transpose_scalar<T: Copy + Default>(
                     // to listen to me, the MASTER.
                     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
                     unsafe {
-                        std::arch::asm!("");
+                        core::arch::asm!("");
                     }
                 }
             }

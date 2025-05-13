@@ -51,7 +51,7 @@ use crate::traits::NumOps;
 ///
 pub struct Blend<'src> {
     image: &'src Image,
-    alpha: f32
+    alpha: f32,
 }
 
 impl<'src> Blend<'src> {
@@ -65,7 +65,7 @@ impl<'src> Blend<'src> {
     pub fn new(image: &'src Image, src_alpha: f32) -> Blend<'src> {
         Blend {
             image,
-            alpha: src_alpha
+            alpha: src_alpha,
         }
     }
 }
@@ -82,18 +82,18 @@ impl<'src> OperationsTrait for Blend<'src> {
         }
         if image.dimensions() != self.image.dimensions() {
             return Err(ImageErrors::GenericStr(
-                "Image dimensions are incompatible for blend"
+                "Image dimensions are incompatible for blend",
             ));
         }
         if image.depth() != self.image.depth() {
             return Err(ImageErrors::GenericStr(
-                "Image depths do not match for blend"
+                "Image depths do not match for blend",
             ));
         }
 
         if image.colorspace() != self.image.colorspace() {
             return Err(ImageErrors::GenericStr(
-                "Image colorspace does not match for blend"
+                "Image colorspace does not match for blend",
             ));
         }
 
@@ -109,17 +109,17 @@ impl<'src> OperationsTrait for Blend<'src> {
                 BitType::U8 => blend_single_channel::<u8>(
                     src_chan.reinterpret_as()?,
                     d_chan.reinterpret_as_mut()?,
-                    self.alpha
+                    self.alpha,
                 ),
                 BitType::U16 => blend_single_channel::<u16>(
                     src_chan.reinterpret_as()?,
                     d_chan.reinterpret_as_mut()?,
-                    self.alpha
+                    self.alpha,
                 ),
                 BitType::F32 => blend_single_channel::<f32>(
                     src_chan.reinterpret_as()?,
                     d_chan.reinterpret_as_mut()?,
-                    self.alpha
+                    self.alpha,
                 ),
 
                 d => {
@@ -137,8 +137,8 @@ impl<'src> OperationsTrait for Blend<'src> {
 
 pub fn blend_single_channel<T>(src: &[T], dest: &mut [T], src_alpha: f32)
 where
-    f32: std::convert::From<T>,
-    T: Copy + NumOps<T>
+    f32: core::convert::From<T>,
+    T: Copy + NumOps<T>,
 {
     if src_alpha <= 0.0 {
         return;

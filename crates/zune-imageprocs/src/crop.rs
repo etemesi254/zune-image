@@ -92,10 +92,10 @@ use crate::utils::execute_on;
 /// }
 /// ```
 pub struct Crop {
-    x:      usize,
-    y:      usize,
-    width:  usize,
-    height: usize
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
 }
 
 impl Crop {
@@ -114,7 +114,7 @@ impl Crop {
             x,
             y,
             width,
-            height
+            height,
         }
     }
 }
@@ -143,7 +143,7 @@ impl OperationsTrait for Crop {
                         self.width,
                         self.height,
                         self.x,
-                        self.y
+                        self.y,
                     );
                 }
                 BitType::U16 => {
@@ -154,7 +154,7 @@ impl OperationsTrait for Crop {
                         self.width,
                         self.height,
                         self.x,
-                        self.y
+                        self.y,
                     );
                 }
                 BitType::F32 => {
@@ -165,10 +165,10 @@ impl OperationsTrait for Crop {
                         self.width,
                         self.height,
                         self.x,
-                        self.y
+                        self.y,
                     );
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             *channel = new_vec;
 
@@ -212,7 +212,7 @@ impl OperationsTrait for Crop {
 /// read->panic
 pub fn crop<T: Copy>(
     in_image: &[T], in_width: usize, out_image: &mut [T], out_width: usize, out_height: usize,
-    x: usize, y: usize
+    x: usize, y: usize,
 ) {
     if in_width == 0 || out_width == 0 {
         // these generate panic paths for chunks_exact so just eliminate them

@@ -47,6 +47,14 @@
     clippy::missing_errors_doc,
     clippy::wildcard_imports
 )]
+#![no_std]
+
+#[macro_use]
+extern crate alloc;
+extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 pub use zune_image;
 

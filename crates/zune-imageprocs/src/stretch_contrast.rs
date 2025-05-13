@@ -12,7 +12,7 @@
 #[derive(Default)]
 pub struct StretchContrast {
     lower: f32,
-    upper: f32
+    upper: f32,
 }
 
 impl StretchContrast {
@@ -46,20 +46,20 @@ impl OperationsTrait for StretchContrast {
                     channel.reinterpret_as_mut::<u8>()?,
                     self.lower as u8,
                     self.upper as u8,
-                    u32::from(depth.max_value())
+                    u32::from(depth.max_value()),
                 )?,
                 BitType::U16 => stretch_contrast(
                     channel.reinterpret_as_mut::<u16>()?,
                     self.lower as _,
                     self.upper as _,
-                    u32::from(depth.max_value())
+                    u32::from(depth.max_value()),
                 )?,
                 BitType::F32 => stretch_contrast_f32(
                     channel.reinterpret_as_mut::<f32>()?,
                     self.lower as _,
-                    self.upper as _
+                    self.upper as _,
                 )?,
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };
@@ -69,7 +69,7 @@ impl OperationsTrait for StretchContrast {
         &[BitType::U8, BitType::U16]
     }
 }
-use std::ops::Sub;
+use core::ops::Sub;
 
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
@@ -97,11 +97,11 @@ use crate::utils::execute_on;
 /// - Modifies array in place
 ///
 pub fn stretch_contrast<T>(
-    image: &mut [T], lower: T, upper: T, maximum: u32
+    image: &mut [T], lower: T, upper: T, maximum: u32,
 ) -> Result<(), &'static str>
 where
     T: Ord + Sub<Output = T> + NumOps<T> + Copy,
-    u32: std::convert::From<T>
+    u32: core::convert::From<T>,
 {
     if upper < lower {
         return Err("upper must be strictly greater than lower");

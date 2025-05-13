@@ -15,7 +15,7 @@
 //! but the main gist is that instead of converting back and forth, use a simple matrix that allows such calculations
 //! this routine adapts that for use
 //!
-use std::f32::consts::PI;
+use core::f32::consts::PI;
 
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
@@ -23,6 +23,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::mathops::{cos_f32, sin_f32};
 use crate::traits::NumOps;
 
 /// Create a new HSV adjust filter that manipulates pixels in RGB space
@@ -50,9 +51,9 @@ use crate::traits::NumOps;
 ///# Ok::<(),ImageErrors>(())
 /// ```
 pub struct HsvAdjust {
-    hue:        f32,
+    hue: f32,
     saturation: f32,
-    lightness:  f32
+    lightness: f32,
 }
 
 impl HsvAdjust {
@@ -73,7 +74,7 @@ impl HsvAdjust {
         HsvAdjust {
             hue,
             saturation,
-            lightness
+            lightness,
         }
     }
 }
@@ -106,7 +107,7 @@ impl OperationsTrait for HsvAdjust {
                         b[0].reinterpret_as_mut()?,
                         self.hue,
                         self.saturation,
-                        self.lightness
+                        self.lightness,
                     );
                 }
                 BitType::U16 => {
@@ -116,7 +117,7 @@ impl OperationsTrait for HsvAdjust {
                         b[0].reinterpret_as_mut()?,
                         self.hue,
                         self.saturation,
-                        self.lightness
+                        self.lightness,
                     );
                 }
                 BitType::F32 => {
@@ -126,10 +127,10 @@ impl OperationsTrait for HsvAdjust {
                         b[0].reinterpret_as_mut()?,
                         self.hue,
                         self.saturation,
-                        self.lightness
+                        self.lightness,
                     );
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
         }
         // convert to original color
@@ -147,13 +148,13 @@ impl OperationsTrait for HsvAdjust {
 fn modulate_hsl<T>(r: &mut [T], g: &mut [T], b: &mut [T], h: f32, s: f32, v: f32)
 where
     f32: From<T>,
-    T: NumOps<T> + Copy
+    T: NumOps<T> + Copy,
 {
     // from https://beesbuzz.biz/code/16-hsv-color-transforms
     // whoever you are, thank you for keeping up the site for 20 years :)
 
-    let vsu = v * s * (h * PI / 180.0).cos();
-    let vsw = v * s * (h * PI / 180.0).sin();
+    let vsu = v * s * cos_f32(h * PI / 180.0);
+    let vsw = v * s * sin_f32(h * PI / 180.0);
 
     let min = T::MIN_VAL.to_f32();
     let max = T::MAX_VAL.to_f32();

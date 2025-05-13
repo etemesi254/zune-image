@@ -6,6 +6,9 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 //! Threshold filter: Binarize an image
+
+use alloc::string::{String, ToString};
+
 use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
 use zune_image::channel::Channel;
@@ -21,7 +24,7 @@ pub enum ThresholdMethod {
     Binary,
     BinaryInv,
     ThreshTrunc,
-    ThreshToZero
+    ThreshToZero,
 }
 
 impl ThresholdMethod {
@@ -51,8 +54,8 @@ impl ThresholdMethod {
 ///           
 ///  See [Wikipedia Article on Thresholding](https://en.wikipedia.org/wiki/Thresholding_(image_processing))
 pub struct Threshold {
-    method:    ThresholdMethod,
-    threshold: f32
+    method: ThresholdMethod,
+    threshold: f32,
 }
 
 impl Threshold {
@@ -90,19 +93,19 @@ impl OperationsTrait for Threshold {
                 BitType::U16 => threshold(
                     channel.reinterpret_as_mut::<u16>()?,
                     self.threshold.clamp(0., 65535.) as u16,
-                    self.method
+                    self.method,
                 ),
                 BitType::U8 => threshold(
                     channel.reinterpret_as_mut::<u8>()?,
                     self.threshold.clamp(0., 255.) as u8,
-                    self.method
+                    self.method,
                 ),
                 BitType::F32 => threshold(
                     channel.reinterpret_as_mut::<f32>()?,
                     self.threshold,
-                    self.method
+                    self.method,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented("threshold", d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented("threshold", d)),
             }
             Ok(())
         };

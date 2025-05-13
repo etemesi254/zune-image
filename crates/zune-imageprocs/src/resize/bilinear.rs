@@ -1,4 +1,4 @@
-use crate::traits::NumOps;
+use crate::{mathops::floor_f32, traits::NumOps};
 
 /// Bilinear interpolation of a single channel, this interpolates a single channel, but not an image
 ///
@@ -10,10 +10,10 @@ use crate::traits::NumOps;
 )]
 pub fn bilinear_impl<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize
+    out_height: usize,
 ) where
     T: Copy + NumOps<T>,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     let w_ratio = 1.0 / out_width as f32 * in_width as f32;
     let h_ratio = 1.0 / out_height as f32 * in_height as f32;
@@ -22,7 +22,7 @@ pub fn bilinear_impl<T>(
 
     for y in 0..out_height {
         let new_y = y as f32 * h_ratio;
-        let mut y0 = new_y.floor() as usize;
+        let mut y0 = floor_f32(new_y) as usize;
         let y1 = (y0 + 1).min(in_height - 1);
 
         if smaller_image_to_larger {
@@ -33,7 +33,7 @@ pub fn bilinear_impl<T>(
         for x in 0..out_width {
             let new_x = x as f32 * w_ratio;
             // floor and truncate are slow due to handling overflow and such, so avoid them here
-            let mut x0 = new_x.floor() as usize;
+            let mut x0 = floor_f32(new_x) as usize;
             let x1 = (x0 + 1).min(in_width - 1);
 
             // PS: I'm not sure about the impact, but it cuts down on code executed
