@@ -8,7 +8,6 @@
 
 use alloc::{format, vec};
 use core::cmp::min;
-
 use zune_core::bytestream::ZReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::colorspace::ColorSpace::Luma;
@@ -22,6 +21,7 @@ use crate::marker::Marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::worker::{color_convert, upsample};
 use crate::JpegDecoder;
+use crate::mcu_prog::get_marker;
 
 /// The size of a DC block for a MCU.
 
@@ -84,7 +84,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -109,7 +109,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
             && (self.sub_sample_ratio == SampleRatios::V
-                || self.sub_sample_ratio == SampleRatios::HV)
+            || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -157,7 +157,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos
+                pos,
             ) == pos
                 || comp_len == 4
             // Special colorspace
@@ -194,10 +194,15 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 error!("Premature end of buffer");
                 break;
             }
+
             // decode a whole MCU width,
             // this takes into account interleaved components.
-            self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
+            let terminate = self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
+            // if i >=7{
+            //     panic!()
+            // }
             // process that width up until it's impossible
+
             self.post_process(
                 pixels,
                 i,
@@ -205,20 +210,40 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space
+                &mut upsampler_scratch_space,
             )?;
+            if terminate {
+                warn!("Got terminate signal, will not process further");
+                return Ok(());
+            }
         }
         // it may happen that some images don't have the whole buffer
         // so we can't panic in case of that
         // assert_eq!(pixels_written, pixels.len());
+
+        // For UHD usecases that tie two images separating them with EOI and
+        // SOI markers, it may happen that we do not reach this image end of image
+        // So this ensures we reach it
+        // Ensure we read EOI
+        if !stream.seen_eoi {
+            let marker = get_marker(&mut self.stream, &mut stream);
+            match marker {
+                Ok(_m) => {
+                    trace!("Found marker {:?}", _m);
+                }
+                Err(_) => {
+                    // ignore error
+                }
+            }
+        }
 
         trace!("Finished decoding image");
 
         Ok(())
     }
     fn decode_mcu_width(
-        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
-    ) -> Result<(), DecodeErrors> {
+        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream,
+    ) -> Result<bool, DecodeErrors> {
         for j in 0..mcu_width {
             // iterate over components
             for component in &mut self.components {
@@ -248,7 +273,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred
+                            &mut component.dc_pred,
                         )?;
 
                         if component.needed {
@@ -268,6 +293,19 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 }
             }
             self.todo = self.todo.saturating_sub(1);
+            if self.todo == 0 && stream.marker.is_none() {
+                // if no marker and we are to reset RST, look for the marker, this matches
+                // libjpeg-turbo behaviour and allows us to decode images in
+                // https://github.com/etemesi254/zune-image/issues/261
+                let _start = self.stream.position()?;
+                // skip bytes until we find marker
+                let marker = get_marker(&mut self.stream, stream)?;
+                let _end = self.stream.position()?;
+                stream.marker = Some(marker);
+                // NB some warnings may be false positives.
+                warn!("{} Extraneous bytes before marker {:?}",_end-_start,marker);
+            }
+
             // After all interleaved components, that's an MCU
             // handle stream markers
             //
@@ -291,6 +329,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     // https://github.com/google/libultrahdr
                     stream.seen_eoi = true;
                 } else if let Marker::RST(_) = m {
+                    //debug_assert_eq!(self.todo, 0);
                     if self.todo == 0 {
                         self.handle_rst(stream)?;
                     }
@@ -304,12 +343,14 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                         "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
                         m
                     );
-
                     self.parse_marker_inner(m)?;
+                    if m == Marker::SOS {
+                        return Ok(true);
+                    }
                 }
             }
         }
-        Ok(())
+        Ok(false)
     }
     // handle RST markers.
     // No-op if not using restarts
@@ -344,7 +385,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(crate) fn post_process(
         &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
-        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16],
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
@@ -376,7 +417,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     // iterate over each line, since color-convert needs only
                     // one line
                     for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
+                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width];
                     }
                     color_convert(
                         &raw_samples,
@@ -385,7 +426,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                         self.options.jpeg_get_out_colorspace(),
                         output,
                         width,
-                        padded_width
+                        padded_width,
                     )?;
                     px += width * out_colorspace_components;
                 }
@@ -414,7 +455,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     mcu_height,
                     i,
                     upsampler_scratch_space,
-                    is_vertically_sampled
+                    is_vertically_sampled,
                 );
             }
 
@@ -429,10 +470,17 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     }
 
                     // ensure length matches for all samples
-                    let first_len = samples[0].len();
-                    for samp in samples.iter().take(comp_len) {
-                        assert_eq!(first_len, samp.len());
-                    }
+                    let _first_len = samples[0].len();
+
+                    // This was a good check, but can be caused to panic, esp on invalid/corrupt images.
+                    // See one in issue https://github.com/etemesi254/zune-image/issues/262, so for now
+                    // we just ignore and generate invalid images at the end.
+
+                    //
+                    //
+                    // for samp in samples.iter().take(comp_len) {
+                    //     assert_eq!(first_len, samp.len());
+                    // }
                     let num_iters = self.coeff * self.v_max;
 
                     color_conv_function(num_iters, samples)?;
