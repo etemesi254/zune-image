@@ -472,9 +472,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                     // ensure length matches for all samples
                     let first_len = samples[0].len();
-                    for samp in samples.iter().take(comp_len) {
-                        assert_eq!(first_len, samp.len());
-                    }
+
+                    // This was a good check, but can be caused to panic, esp on invalid/corrupt images.
+                    // See one in issue https://github.com/etemesi254/zune-image/issues/262, so for now
+                    // we just ignore and generate invalid images at the end.
+
+                    //
+                    //
+                    // for samp in samples.iter().take(comp_len) {
+                    //     assert_eq!(first_len, samp.len());
+                    // }
                     let num_iters = self.coeff * self.v_max;
 
                     color_conv_function(num_iters, samples)?;
@@ -551,7 +558,7 @@ mod tests {
 
     #[test]
     fn im() {
-        let image = std::fs::read("/Users/etemesi/Downloads/PHO00007.JPG").unwrap();
-        JpegDecoder::new(ZCursor::new(&image)).decode().unwrap();
+        let image = std::fs::read("/Users/etemesi/Downloads/panics_zune-jpeg/panic3_zune_image_crates_zune_jpeg_src_mcu_prog_rs_530_56/16a8b5742c23de15d8df345c8e1f4f070deb3715cc1e4f04575cf25644f8841a").unwrap();
+        JpegDecoder::new(ZCursor::new(&image)).decode();
     }
 }

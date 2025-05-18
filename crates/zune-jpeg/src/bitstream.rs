@@ -213,6 +213,15 @@ impl BitStream {
                             }
 
                             self.marker = Marker::from_u8(next_byte as u8);
+                            if next_byte == 0xD9 {
+                                // special handling for eoi, fill some bytes,even if its zero,
+                                // removes some panics
+                                self.buffer <<= 8;
+                                self.bits_left += 8;
+                                self.aligned_buffer = self.buffer << (64 - self.bits_left);
+
+                            }
+
                             return Ok(false);
                         }
                     }
@@ -224,7 +233,7 @@ impl BitStream {
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         // If we have less than 32 bits we refill
         if self.bits_left < 32 && !self.seen_eoi {
-            //  Only fill with zeros if the marker is an RST
+            //  Only fill with zeros if the marker is an RST or EOI
             if let Some(m) = self.marker {
                 match m {
                     Marker::EOI | Marker::RST(_) => {
@@ -237,6 +246,7 @@ impl BitStream {
                     _ => {}
                 }
             }
+
 
             // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
             // as it is the common case
@@ -397,8 +407,8 @@ impl BitStream {
     #[inline]
     fn drop_bits(&mut self, n: u8) {
         debug_assert!(self.bits_left >= n);
-        self.bits_left -= n;
-        // self.bits_left = self.bits_left.saturating_sub(n);
+        //self.bits_left -= n;
+        self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
     }
 
