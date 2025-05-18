@@ -382,8 +382,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 let x2 = j * component.horizontal_sample + h_samp;
                                 let y2 = i * component.vertical_sample + v_samp;
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
+                                let buf_n = &mut buffer[n];
 
-                                let data = &mut buffer[n][position];
+
+                                let Some(data) = &mut buf_n.get_mut(position) else {
+                                    // TODO: (CAE), this is another weird sub-sampling bug, so on fix
+                                    // remove this
+                                    return Err(DecodeErrors::FormatStatic("Invalid image"))
+                                };
 
                                 if self.succ_high == 0 {
                                     stream.decode_prog_dc_first(
@@ -517,7 +523,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         let start = j * 64 + width_stride;
 
                         // See https://github.com/etemesi254/zune-image/issues/262 sample 3.
-                        let Some(qt_slice) = slice.get(start.. start + 64) else{
+                        let Some(qt_slice) = slice.get(start..start + 64) else {
                             return Err(DecodeErrors::FormatStatic("Invalid slice , would panic, invalid image"))
                         };
                         // dequantize

@@ -471,7 +471,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
 
                     // ensure length matches for all samples
-                    let first_len = samples[0].len();
+                    let _first_len = samples[0].len();
 
                     // This was a good check, but can be caused to panic, esp on invalid/corrupt images.
                     // See one in issue https://github.com/etemesi254/zune-image/issues/262, so for now
