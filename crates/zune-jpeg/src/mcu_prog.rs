@@ -32,7 +32,6 @@ use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
 use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
-use crate::errors::DecodeErrors::Format;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
@@ -202,7 +201,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
 
         if usize::from(self.num_scans) > self.input_colorspace.num_components() {
-            return Err(Format(format!(
+            return Err(DecodeErrors::Format(format!(
                 "Number of scans {} cannot be greater than number of components, {}",
                 self.num_scans,
                 self.input_colorspace.num_components()

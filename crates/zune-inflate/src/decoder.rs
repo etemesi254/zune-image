@@ -541,6 +541,7 @@ impl<'a> DeflateDecoder<'a> {
         self.start_deflate_block_inner(&mut out_block)?;
         return Ok(out_block);
     }
+    #[allow(unused_assignments)]
     fn start_deflate_block_inner(
         &mut self, out_block: &mut Vec<u8>
     ) -> Result<(), InflateDecodeErrors> {
