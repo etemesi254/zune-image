@@ -112,10 +112,11 @@ pub unsafe fn idct_int_neon_inner(
     let or_tree = (((row1 | row8) | (row2 | row3)) | ((row4 | row5) | (row6 | row7)));
 
     if or_tree.all_zero() {
-        // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
+        // AC terms all zero, idct of the block is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
-        let clamped_16 = ((in_vector[0] >> 3) + 128).clamp(0, 255) as i16;
-        let idct_value = vdupq_n_s16(clamped_16);
+        // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
+        let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
+        let idct_value = vdupq_n_s16(coeff);
 
         macro_rules! store {
             ($pos:tt,$value:tt) => {
