@@ -15,10 +15,8 @@ rust-version = "1.81.0"
 [features]
 zlib = ["simd-adler32"]
 gzip = []
-std = ["simd-adler32/std"]
 
-
-default = ["zlib", "gzip", "std"]
+default = ["zlib", "gzip"]
 
 [dependencies]
 simd-adler32 = { version = "0.3.4", optional = true, default-features = false }
