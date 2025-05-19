@@ -20,4 +20,4 @@ std = []
 
 [dependencies]
 log = { version = "0.4.17", optional = true }
-serde = { version = "1.0.52", optional = true }
+serde = { version = "1.0.52", optional = true, default-features = false }
