@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0 OR Zlib"
 keywords = ["image", "image-processing"]
 categories = ["multimedia::images"]
 description = "Common image processing routines for zune-image"
-
+rust-version = "1.81.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

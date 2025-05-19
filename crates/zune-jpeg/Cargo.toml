@@ -9,6 +9,7 @@ keywords = ["jpeg", "jpeg-decoder", "decoder"]
 categories = ["multimedia::images"]
 exclude = ["/benches/images/*", "/tests/*", "/.idea/*", "/.gradle/*", "/test-images/*", "fuzz/*"]
 description = "A fast, correct and safe jpeg decoder"
+rust-version = "1.81.0"
 
 [lints.rust]
 # Disable feature checker for fuzzing since it's used and cargo doesn't

@@ -9,7 +9,7 @@ keywords = ["qoi", "qoi-decoder", "decoder", "qoi-encoder", "encoder"]
 categories = ["multimedia::images"]
 exclude = ["fuzz/*"]
 description = "Quite Ok Image (QOI) decoder and encoder part of the zune-image family"
-
+rust-version = "1.81.0"
 
 [features]
 log = ["zune-core/log"]

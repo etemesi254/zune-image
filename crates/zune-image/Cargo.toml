@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0 OR Zlib"
 keywords = ["image", "decoder", "encoder", "image-processing"]
 categories = ["multimedia::images"]
 description = "An image library, contiaining necessary capabilities to decode, manipulate and encode images"
+rust-version = "1.81.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 # Single based image decoders and encoders
