@@ -90,5 +90,4 @@ impl core::fmt::Display for JxlEncodeErrors {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for JxlEncodeErrors {}
+impl core::error::Error for JxlEncodeErrors {}

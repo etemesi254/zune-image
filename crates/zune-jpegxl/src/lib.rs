@@ -81,10 +81,13 @@
 //! ```
 //!
 #![forbid(unsafe_code)]
-#![cfg_attr(not(feature = "std"), no_std)]
-#![macro_use]
+#![no_std]
+
 extern crate alloc;
 extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 pub use encoder::JxlSimpleEncoder;
 pub use errors::JxlEncodeErrors;
