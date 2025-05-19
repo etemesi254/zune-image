@@ -13,8 +13,7 @@ rust-version = "1.81.0"
 
 [features]
 log = ["zune-core/log"]
-std = ["zune-core/std"]
-default = ["std", "log"]
+default = ["log"]
 [dependencies]
 zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 
