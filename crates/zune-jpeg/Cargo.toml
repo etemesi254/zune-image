@@ -21,9 +21,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 [features]
 x86 = []
 neon = []
-std = ["zune-core/std"]
 log = ["zune-core/log"]
-default = ["x86", "neon", "std"]
+default = ["x86", "neon"]
 
 
 [dependencies]
