@@ -49,6 +49,7 @@
 use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
+use alloc::format;
 
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 
