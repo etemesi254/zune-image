@@ -53,7 +53,7 @@ where
             // But traits are hard...
             *lm = c;
         } else{
-            debug_assert!("Conversion failed")
+            debug_assert!(false,"Conversion failed")
         }
     }
 }
