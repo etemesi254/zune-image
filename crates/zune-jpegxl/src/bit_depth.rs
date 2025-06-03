@@ -66,6 +66,7 @@ pub(crate) trait JxlBitEncoder {
         + Sub<Output = Self::Upixel>
         + Add<Output = Self::Upixel>
         + BitXor<Output = Self::Upixel>
+        + From<u16>
         + PartialOrd
         + Into<u32>;
 

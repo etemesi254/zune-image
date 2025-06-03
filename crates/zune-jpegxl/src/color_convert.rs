@@ -17,6 +17,8 @@
 //! For both 8 bit and 16 bit images
 //!
 //! 16 bit images are treated as `&[u8]` bytes in **native endian**
+
+use core::fmt::Debug;
 use core::ops::{Add, Shr, Sub};
 
 fn convert_rgb_to_ycocg<T>(r: T, g: T, b: T, y: &mut T, co: &mut T, cg: &mut T)
@@ -40,11 +42,19 @@ where
 
 pub fn fill_row_g16<T>(pixels: &[u8], oxs: usize, luma: &mut [T])
 where
-    T: From<i16>
+    T: TryFrom<u16>
+
 {
     for (rg, lm) in pixels.chunks_exact(2).zip(luma).take(oxs) {
-        let value = i16::from_ne_bytes([rg[0], rg[1]]);
-        *lm = T::from(value);
+        let value = u16::from_ne_bytes([rg[0], rg[1]]);
+        if let Ok(c) =T::try_from(value) {
+            // ps, this should always be true,
+            // since this is called using i32 Pixel
+            // But traits are hard...
+            *lm = c;
+        } else{
+            debug_assert!("Conversion failed")
+        }
     }
 }
 
