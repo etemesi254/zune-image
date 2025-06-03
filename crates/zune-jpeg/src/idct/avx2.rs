@@ -117,7 +117,8 @@ pub unsafe fn idct_int_avx2_inner(
     if non_zero == -8 {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
-        let idct_value = _mm_set1_epi16(((in_vector[0] >> 3) + 128).clamp(0, 255) as i16);
+        let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
+        let idct_value = _mm_set1_epi16(coeff);
 
         macro_rules! store {
             ($pos:tt,$value:tt) => {

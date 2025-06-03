@@ -114,9 +114,8 @@ pub unsafe fn idct_int_neon_inner(
     if or_tree.all_zero() {
         // AC terms all zero, idct of the block is  is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
-        let clamped_16 = ((in_vector[0] >> 3) + 128).clamp(0, 255) as i16;
-        let idct_value = vdupq_n_s16(clamped_16);
-
+        let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
+        let idct_value = vdupq_n_s16(coeff);
         macro_rules! store {
             ($pos:tt,$value:tt) => {
                 // store
