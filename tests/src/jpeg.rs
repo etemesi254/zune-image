@@ -47,7 +47,7 @@ fn test_jpeg() {
         }
 
         let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&file_contents), options);
-        let pixels = decoder.decode().unwrap();
+        let pixels = decoder.decode().unwrap_or_else(|e|panic!("File could not be decoded {:?} \n {e}", path));
 
         let hash = hash(&pixels);
 

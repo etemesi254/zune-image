@@ -32,7 +32,7 @@ use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
 use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
-use crate::headers::parse_sos;
+use crate::headers::{parse_sos};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};

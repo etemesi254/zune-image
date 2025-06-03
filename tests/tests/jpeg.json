@@ -1,49 +1,49 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 103923578304616452399649832705367752829,
+    "hash": 126839255814149225135854928139070914903,
     "comment": "The image isn't full"
   },
   {
     "name": "weird_components.jpg",
-    "hash": 223177996153815192529284222627282478554
+    "hash": 269579263940830702754196862819706110754
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
-    "hash": 84971450946579797378604439434189621346
+    "hash": 119436015459886331911253274671309338438
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 265057884616497557136207099342036240695
+    "hash": 139709800837432230389966909966135041908
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 77479027789814554789502572869585467634,
+    "hash": 78298921866871824011106248114591715171,
     "comment": "Simple large image"
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 93348528356461250907756341851990389554,
+    "hash": 318693790604007287114582453436534128489 ,
     "colorspace": "ycbcr"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
-    "hash": 273130140778234680792798421363572621515,
+    "hash": 258300549736770413578783049919306336675,
     "colorspace": "luma",
     "comment": "Convert YCbCr to grayscale"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
     "colorspace": "ycbcr",
-    "hash": 192607723684787980167689860133863748259
+    "hash": 178785817929691973693157034546573584867
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 119184486824181426367290247158275111843
+    "hash": 141563893351526192573577009628189544333
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 147846622968342380926185883965520029640
+    "hash": 89362797331434800953047243504429478251
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
@@ -52,7 +52,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 278558818207049493811023839611592362328
+    "hash": 53028507435190255452665888884299223575
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
@@ -61,7 +61,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 289066310719258065604782525085636628338,
+    "hash": 204844316806424632749911849041441976131,
     "colorspace": "ycbcr"
   },
   {
@@ -71,11 +71,11 @@
   },
   {
     "name": "four_components.jpg",
-    "hash": 169785391768117460864930756026917226884
+    "hash": 287906653374850903431781302953270340417
   },
   {
     "name": "huge_sof_number.jpg",
-    "hash": 151022272900224859217141785980177940828
+    "hash": 333739973749682239551179394830479925883
   },
   {
     "name": "weid_sampling_factors.jpg",
@@ -88,7 +88,7 @@
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
-    "hash": 45850175950794944394517639554623141997,
+    "hash": 321227585088401242872835980650724301002,
     "comment": "Down sampled progressive image with only grayscale component"
   },
   {
@@ -104,12 +104,12 @@
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 264577059084030243990980357566388204103,
+    "hash": 213677123590030371031717091024393009904,
     "comment": "Image needs to be filled with default huffman tables"
   },
   {
     "name": "sampling_factors.jpg",
-    "hash": 184272500373304553960403913973047840626,
+    "hash": 284621623123194664498179714486900153633,
     "comment": "Another weird sampling factor,(when will it end)"
   }
 ]

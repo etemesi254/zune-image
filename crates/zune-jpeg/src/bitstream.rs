@@ -232,20 +232,16 @@ impl BitStream {
 
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
-        // If we have less than 32 bits we refill
-        if self.bits_left < 32 && !self.seen_eoi {
-            //  Only fill with zeros if the marker is an RST or EOI
-            if let Some(m) = self.marker {
-                match m {
-                    Marker::EOI | Marker::RST(_) => {
-                        // fill with zeroes
-                        self.buffer <<= 32;
-                        self.bits_left += 32;
-                        self.aligned_buffer = self.buffer << (64 - self.bits_left);
-                        return Ok(true);
-                    }
-                    _ => {}
-                }
+        if self.bits_left < 32 {
+            if self.marker.is_some() || self.overread_by > 0 {
+                // found a marker, but not EOI
+                // also we are in over-reading mode, where we fill it with zeroes
+
+                // fill with zeroes
+                self.buffer <<= 32;
+                self.bits_left += 32;
+                self.aligned_buffer = self.buffer << (64 - self.bits_left);
+                return Ok(true);
             }
 
 
@@ -256,6 +252,7 @@ impl BitStream {
             // guaranteed not to advance in case of failure (is this true), so
             // we revert the read later on (if we have 255), if this fails, we use the normal
             // byte at a time read
+
             if let Ok(bytes) = reader.read_fixed_bytes_or_error::<4>() {
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
