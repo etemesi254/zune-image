@@ -29,7 +29,7 @@ zune-jpeg = { path = "../crates/zune-jpeg" }
 zune-image = { path = "../crates/zune-image", features = ["all"] }
 zune-hdr = { path = "../crates/zune-hdr" }
 image = { version = "0.25.1", default-features = false, features = ["bmp", "hdr", "jpeg"] }
-zune-imageprocs = { path = "../crates/zune-imageprocs",features = ["portable-simd"] }
+zune-imageprocs = { path = "../crates/zune-imageprocs" }
 
 # VIPS
 libvips = "1.7.0"
