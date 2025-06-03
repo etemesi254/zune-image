@@ -550,15 +550,4 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
 }
-#[cfg(test)]
-mod tests {
-    use zune_core::bytestream::ZCursor;
 
-    use crate::JpegDecoder;
-
-    #[test]
-    fn im() {
-        let image = std::fs::read("/Users/etemesi/Downloads/panics_zune-jpeg/panic3_zune_image_crates_zune_jpeg_src_mcu_prog_rs_530_56/16a8b5742c23de15d8df345c8e1f4f070deb3715cc1e4f04575cf25644f8841a").unwrap();
-        JpegDecoder::new(ZCursor::new(&image)).decode();
-    }
-}
