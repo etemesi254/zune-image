@@ -31,7 +31,7 @@ use crate::bitstream::BitStream;
 use crate::components::{ComponentID, SampleRatios};
 use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
-use crate::headers::parse_sos;
+use crate::headers::{parse_sos};
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
@@ -603,14 +603,14 @@ where
 
     // read until we get a marker
 
-    while !reader.eof()? {
-        let marker = reader.read_u8_err()?;
+    while !reader.eof() {
+        let marker = reader.get_u8_err()?;
 
         if marker == 255 {
-            let mut r = reader.read_u8_err()?;
+            let mut r = reader.get_u8_err()?;
             // 0xFF 0XFF(some images may be like that)
             while r == 0xFF {
-                r = reader.read_u8_err()?;
+                r = reader.get_u8_err()?;
             }
 
             if r != 0 {

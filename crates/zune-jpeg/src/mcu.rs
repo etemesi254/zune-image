@@ -297,10 +297,10 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 // if no marker and we are to reset RST, look for the marker, this matches
                 // libjpeg-turbo behaviour and allows us to decode images in
                 // https://github.com/etemesi254/zune-image/issues/261
-                let _start = self.stream.position()?;
+                let _start = self.stream.get_position();
                 // skip bytes until we find marker
                 let marker = get_marker(&mut self.stream, stream)?;
-                let _end = self.stream.position()?;
+                let _end = self.stream.get_position();
                 stream.marker = Some(marker);
                 // NB some warnings may be false positives.
                 warn!("{} Extraneous bytes before marker {:?}",_end-_start,marker);

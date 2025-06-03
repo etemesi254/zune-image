@@ -46,9 +46,9 @@
 //! (or learn something cool)
 //!
 //! Knock yourself out.
-use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
+use alloc::format;
 
 use zune_core::bytestream::{ZByteReader, ZReaderTrait};
 
@@ -87,6 +87,7 @@ macro_rules! decode_huff {
                 // We may think, lets fake zeroes, noo
                 // panic, because Huffman codes are sensitive, probably everything
                 // after this will be corrupt, so no need to continue.
+                // panic!("Bad Huffman code length");
                 return Err(DecodeErrors::Format(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",$symbol)))
             }
 
@@ -105,44 +106,44 @@ macro_rules! decode_huff {
 ///
 pub(crate) struct BitStream {
     /// A MSB type buffer that is used for some certain operations
-    pub buffer:           u64,
+    pub buffer: u64,
     /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
     /// peek_bits and get_bits.
     ///
     /// By top aligned, I mean the top bit (63) represents the top bit in the buffer.
-    aligned_buffer:       u64,
+    aligned_buffer: u64,
     /// Tell us the bits left the two buffer
     pub(crate) bits_left: u8,
     /// Did we find a marker(RST/EOF) during decoding?
-    pub marker:           Option<Marker>,
+    pub marker: Option<Marker>,
 
     /// Progressive decoding
     pub successive_high: u8,
-    pub successive_low:  u8,
-    spec_start:          u8,
-    spec_end:            u8,
-    pub eob_run:         i32,
-    pub overread_by:     usize,
+    pub successive_low: u8,
+    spec_start: u8,
+    spec_end: u8,
+    pub eob_run: i32,
+    pub overread_by: usize,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
-    pub seen_eoi:        bool
+    pub seen_eoi: bool,
 }
 
 impl BitStream {
     /// Create a new BitStream
     pub(crate) const fn new() -> BitStream {
         BitStream {
-            buffer:          0,
-            aligned_buffer:  0,
-            bits_left:       0,
-            marker:          None,
+            buffer: 0,
+            aligned_buffer: 0,
+            bits_left: 0,
+            marker: None,
             successive_high: 0,
-            successive_low:  0,
-            spec_start:      0,
-            spec_end:        0,
-            eob_run:         0,
-            overread_by:     0,
-            seen_eoi:        false
+            successive_low: 0,
+            spec_start: 0,
+            spec_end: 0,
+            eob_run: 0,
+            overread_by: 0,
+            seen_eoi: false,
         }
     }
 
@@ -150,17 +151,17 @@ impl BitStream {
     #[allow(clippy::redundant_field_names)]
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
         BitStream {
-            buffer:          0,
-            aligned_buffer:  0,
-            bits_left:       0,
-            marker:          None,
+            buffer: 0,
+            aligned_buffer: 0,
+            bits_left: 0,
+            marker: None,
             successive_high: ah,
-            successive_low:  al,
-            spec_start:      spec_start,
-            spec_end:        spec_end,
-            eob_run:         0,
-            overread_by:     0,
-            seen_eoi:        false
+            successive_low: al,
+            spec_start: spec_start,
+            spec_end: spec_end,
+            eob_run: 0,
+            overread_by: 0,
+            seen_eoi: false,
         }
     }
 
@@ -212,13 +213,16 @@ impl BitStream {
                                 self.aligned_buffer = $buffer << (64 - $bits_left);
                             }
 
-                            self.marker =
-                                Some(Marker::from_u8(next_byte as u8).ok_or_else(|| {
-                                    DecodeErrors::Format(format!(
-                                        "Unknown marker 0xFF{:X}",
-                                        next_byte
-                                    ))
-                                })?);
+                            self.marker = Marker::from_u8(next_byte as u8);
+                            if next_byte == 0xD9 {
+                                // special handling for eoi, fill some bytes,even if its zero,
+                                // removes some panics
+                                self.buffer <<= 8;
+                                self.bits_left += 8;
+                                self.aligned_buffer = self.buffer << (64 - self.bits_left);
+
+                            }
+
                             return Ok(false);
                         }
                     }
@@ -226,15 +230,33 @@ impl BitStream {
             };
         }
 
-        // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
-        // If we have less than 32 bits we refill
-        if self.bits_left < 32 && self.marker.is_none() && !self.seen_eoi {
-            // So before we do anything, check if we have a 0xFF byte
 
-            if reader.has(4) {
+        // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
+        if self.bits_left < 32 {
+            if self.marker.is_some() || self.overread_by > 0 {
+                // found a marker, but not EOI
+                // also we are in over-reading mode, where we fill it with zeroes
+
+                // fill with zeroes
+                self.buffer <<= 32;
+                self.bits_left += 32;
+                self.aligned_buffer = self.buffer << (64 - self.bits_left);
+                return Ok(true);
+            }
+
+
+            // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
+            // as it is the common case
+            //
+            // so we always read 4 bytes, if read_fixed_bytes errors out, the cursor is
+            // guaranteed not to advance in case of failure (is this true), so
+            // we revert the read later on (if we have 255), if this fails, we use the normal
+            // byte at a time read
+
+            if let Ok(bytes) = reader.get_fixed_bytes_or_err::<4>() {
                 // we have 4 bytes to spare, read the 4 bytes into a temporary buffer
                 // create buffer
-                let msb_buf = reader.get_u32_be();
+                let msb_buf = u32::from_be_bytes(bytes);
                 // check if we have 0xff
                 if !has_byte(msb_buf, 255) {
                     self.bits_left += 32;
@@ -243,14 +265,13 @@ impl BitStream {
                     self.aligned_buffer = self.buffer << (64 - self.bits_left);
                     return Ok(true);
                 }
-                // not there, rewind the read
+
                 reader.rewind(4);
             }
             // This serves two reasons,
             // 1: Make clippy shut up
             // 2: Favour register reuse
             let mut byte;
-
             // 4 refills, if all succeed the stream should contain enough bits to decode a
             // value
             refill!(self.buffer, byte, self.bits_left);
@@ -260,7 +281,6 @@ impl BitStream {
             // Construct an MSB buffer whose top bits are the bitstream we are currently holding.
             self.aligned_buffer = self.buffer << (64 - self.bits_left);
         }
-
         return Ok(true);
     }
     /// Decode the DC coefficient in a MCU block.
@@ -384,6 +404,8 @@ impl BitStream {
     /// Discard the next `N` bits without checking
     #[inline]
     fn drop_bits(&mut self, n: u8) {
+        debug_assert!(self.bits_left >= n);
+        //self.bits_left -= n;
         self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
     }
@@ -655,14 +677,27 @@ fn huff_extend(x: i32, s: i32) -> i32 {
     (x) + ((((x) - (1 << ((s) - 1))) >> 31) & (((-1) << (s)) + 1))
 }
 
-fn has_zero(v: u32) -> bool {
+const fn has_zero(v: u32) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
     return !((((v & 0x7F7F_7F7F) + 0x7F7F_7F7F) | v) | 0x7F7F_7F7F) != 0;
 }
 
-fn has_byte(b: u32, val: u8) -> bool {
+const fn has_byte(b: u32, val: u8) -> bool {
     // Retrieved from Stanford bithacks
     // @ https://graphics.stanford.edu/~seander/bithacks.html#ZeroInWord
-    has_zero(b ^ ((!0_u32 / 255) * u32::from(val)))
+    has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
 }
+
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn test_image() {
+//         let img = "/Users/etemesi/Downloads/PHO00008.JPG";
+//         let data = std::fs::read(img).unwrap();
+//         let mut decoder = JpegDecoder::new(ZCursor::new(&data[..]));
+//         decoder.decode().unwrap();
+//     }
+// }

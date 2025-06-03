@@ -1,44 +1,49 @@
 [
   {
+    "name": "incomplete_image.jpg",
+    "hash": 126839255814149225135854928139070914903,
+    "comment": "The image isn't full"
+  },
+  {
     "name": "weird_components.jpg",
-    "hash": 112456425865248678156223247131152675256
+    "hash": 269579263940830702754196862819706110754
   },
   {
     "name": "Kiara_limited_progressive_four_components.jpg",
-    "hash": 327899417203221693667684823644765405315
+    "hash": 119436015459886331911253274671309338438
   },
   {
     "name": "rebuilt_relax_fill_bytes_before_marker.jpg",
-    "hash": 276193446258615553450600887344416839261
+    "hash": 139709800837432230389966909966135041908
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 72227651583886420023815834092904494086,
+    "hash": 78298921866871824011106248114591715171,
     "comment": "Simple large image"
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 93348528356461250907756341851990389554,
+    "hash": 318693790604007287114582453436534128489 ,
     "colorspace": "ycbcr"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
-    "hash": 273130140778234680792798421363572621515,
+    "hash": 258300549736770413578783049919306336675,
     "colorspace": "luma",
     "comment": "Convert YCbCr to grayscale"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
     "colorspace": "ycbcr",
-    "hash": 192607723684787980167689860133863748259
+    "hash": 178785817929691973693157034546573584867
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 323492540810346221780682098592444605928
+    "hash": 141563893351526192573577009628189544333
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 279295790094485170156316723198300362939
+    "hash": 89362797331434800953047243504429478251
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
@@ -47,7 +52,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 125683957700914688041687332115454166076
+    "hash": 53028507435190255452665888884299223575
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
@@ -56,7 +61,7 @@
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 289066310719258065604782525085636628338,
+    "hash": 204844316806424632749911849041441976131,
     "colorspace": "ycbcr"
   },
   {
@@ -66,44 +71,45 @@
   },
   {
     "name": "four_components.jpg",
-    "hash": 33350711354489254164962650813791563794
+    "hash": 287906653374850903431781302953270340417
   },
   {
     "name": "huge_sof_number.jpg",
-    "hash": 46029048520010428617927201003495890872
-  },
-  {
-    "name": "weird_components.jpg",
-    "hash": 112456425865248678156223247131152675256
+    "hash": 333739973749682239551179394830479925883
   },
   {
     "name": "weid_sampling_factors.jpg",
-    "hash": 290923794124024565485763288568005295883,
+    "hash": 3503674285196750445517055941814306276,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 245564003473572773629988080984890939516
+    "hash": 28817868748997507268707381353489368029
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
-    "hash": 45850175950794944394517639554623141997,
+    "hash": 321227585088401242872835980650724301002,
     "comment": "Down sampled progressive image with only grayscale component"
   },
   {
     "name": "weird_sampling_2.jpeg",
-    "hash": 44023427629692410987754568486276016924,
+    "hash": 273787510390071298355665338769231697968,
     "comment": "Y and Cb not sub-sampled, Cr sub-sampled, jxl effect"
   },
   {
     "name": "2029.jpg",
-    "hash": 145881769686590241353562665580548083291,
+    "hash": 141772925169929705521688831799118378165,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 309069272274389382301715239622093501038,
+    "hash": 213677123590030371031717091024393009904,
     "comment": "Image needs to be filled with default huffman tables"
+  },
+  {
+    "name": "sampling_factors.jpg",
+    "hash": 284621623123194664498179714486900153633,
+    "comment": "Another weird sampling factor,(when will it end)"
   }
 ]
