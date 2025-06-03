@@ -36,7 +36,7 @@ fn test_jpeg() {
         let expected_hash = path.hash;
 
         // load file
-        let file_contents = read(&file_name).unwrap();
+        let file_contents = read(&file_name).unwrap_or_else(|_| panic!("Failed to read {}", file_name.display()));
 
         let mut options = DecoderOptions::default();
 
