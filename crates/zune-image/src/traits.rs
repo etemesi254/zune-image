@@ -257,8 +257,11 @@ pub trait EncoderTrait {
 
     /// Encode and write to a file
     ///
-    /// The file is stored internally by the decoder, e.g
+    /// The image pixels are stored internally by the decoder, e.g
     /// by asking for it during initialization
+    ///
+    /// - Note: Callers should use the [encode] function and not this function
+    /// as that does some necessary conversions for an image to prepare it for encoding
     ///
     /// # Arguments
     /// - image: An image which we are trying to encode.
@@ -269,6 +272,7 @@ pub trait EncoderTrait {
     ///
     /// - Err : An unrecoverable error occurred
     ///
+    /// [encode]: EncoderTrait::encode
     fn encode_inner<T: ZByteWriterTrait>(
         &mut self, image: &Image, sink: T
     ) -> Result<usize, ImageErrors>;
