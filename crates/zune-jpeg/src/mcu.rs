@@ -294,7 +294,8 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             }
             self.todo = self.todo.saturating_sub(1);
             if self.todo == 0 && self.restart_interval != 0 /*Some images may have DRI=0, see  https://github.com/etemesi254/zune-image/issues/266*/
-                && stream.marker.is_none() {
+                && stream.marker.is_none() && !stream.seen_eoi {
+
                 // if no marker and we are to reset RST, look for the marker, this matches
                 // libjpeg-turbo behaviour and allows us to decode images in
                 // https://github.com/etemesi254/zune-image/issues/261
