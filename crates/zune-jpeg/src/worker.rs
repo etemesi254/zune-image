@@ -92,7 +92,7 @@ pub(crate) fn color_convert(
         // For the other components we do nothing(currently)
         _ => {
             let msg = format!(
-                    "Unimplemented colorspace mapping from {input_colorspace:?} to {output_colorspace:?}");
+                "Unimplemented colorspace mapping from {input_colorspace:?} to {output_colorspace:?}");
 
             return Err(DecodeErrors::Format(msg));
         }
@@ -450,6 +450,20 @@ pub(crate) fn upsample(
             for (single_row, output_stride) in raw_coeff
                 .chunks_exact(component.width_stride)
                 .zip(dest_coeff.chunks_exact_mut(component.width_stride * 2))
+            {
+                // upsample using the fn pointer, should only be H, so no need for
+                // row up and row down
+                (component.up_sampler)(single_row, &[], &[], &mut [], output_stride);
+            }
+        }
+        SampleRatios::Generic(h, v) => {
+            let raw_coeff = &component.raw_coeff;
+            let dest_coeff = &mut component.upsample_dest;
+
+
+            for (single_row, output_stride) in raw_coeff
+                .chunks_exact(component.width_stride)
+                .zip(dest_coeff.chunks_exact_mut(component.width_stride * h*v))
             {
                 // upsample using the fn pointer, should only be H, so no need for
                 // row up and row down

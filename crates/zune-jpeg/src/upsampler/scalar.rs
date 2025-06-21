@@ -108,3 +108,17 @@ pub fn upsample_hv(
         &mut output[output_half..]
     );
 }
+
+pub fn upsample_generic(
+    input: &[i16], _in_near: &[i16], _in_far: &[i16], _scratch_space: &mut [i16],
+    output: &mut [i16]
+) {
+    // use nearest sample
+    let difference = output.len() / input.len();
+    if difference > 0 {
+        // nearest neighbour
+        for (input, chunk_output) in input.iter().zip(output.chunks_exact_mut(difference)) {
+            chunk_output.iter_mut().for_each(|x| *x = *input);
+        }
+    }
+}

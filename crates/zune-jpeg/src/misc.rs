@@ -318,6 +318,9 @@ pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> 
             // sends two rows, width can be expanded by up to 15 more bytes
             ((actual_width + 15) / 16) * 16
         }
+        SampleRatios::Generic(h, _) => {
+            ((actual_width + ((h * 8).saturating_sub(1))) / (h * 8)) * (h * 8)
+        }
     }
 }
 

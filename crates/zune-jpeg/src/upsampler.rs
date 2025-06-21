@@ -99,3 +99,7 @@ pub fn upsample_no_op(
     _output: &mut [i16]
 ) {
 }
+
+pub fn generic_sampler() -> UpSampler {
+    scalar::upsample_generic
+}

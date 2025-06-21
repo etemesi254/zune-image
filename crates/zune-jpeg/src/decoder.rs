@@ -30,7 +30,7 @@ use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
-    upsample_no_op
+    generic_sampler, upsample_no_op
 };
 
 /// Maximum components
@@ -797,10 +797,11 @@ where
             (2, 2) => {
                 self.sub_sample_ratio = SampleRatios::HV;
             }
-            _ => {
-                return Err(DecodeErrors::Format(
-                    "Unknown down-sampling method, cannot continue".to_string()
-                ))
+            (hs, vs) => {
+                self.sub_sample_ratio = SampleRatios::Generic(hs, vs)
+                // return Err(DecodeErrors::Format(format!(
+                //     "Unknown down-sampling method ({hs},{vs}), cannot continue")
+                // ))
             }
         }
 
@@ -825,10 +826,10 @@ where
                     comp.sample_ratio = SampleRatios::HV;
                     choose_hv_samp_function(self.options.use_unsafe())
                 }
-                _ => {
-                    return Err(DecodeErrors::Format(
-                        "Unknown down-sampling method, cannot continue".to_string()
-                    ))
+                (hs, vs) => {
+
+                    comp.sample_ratio = SampleRatios::Generic(hs, vs);
+                    generic_sampler()
                 }
             };
             comp.setup_upsample_scanline();
