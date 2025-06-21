@@ -9,7 +9,7 @@ keywords = ["ppm", "ppm-decoder", "decoder"]
 categories = ["multimedia::images"]
 exclude = ["fuzz/*"]
 description = "Portable Pixmap and Portable Floatmap Format Decoder and Encoder"
-
+rust-version = "1.81.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

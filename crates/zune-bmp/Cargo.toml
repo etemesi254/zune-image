@@ -9,15 +9,17 @@ keywords = ["bmp", "bmp-decoder", "decoder"]
 categories = ["multimedia::images"]
 exclude = ["fuzz/*"]
 description = "A fast BMP decoder"
-
+rust-version = "1.81.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 log = ["zune-core/log"]
-std = ["zune-core/std"]
 rgb_inverse = []
 
 [dependencies]
 zune-core = { version = "0.5.0-rc1", path = "../zune-core" }
 log = "0.4.21"
+
+[dev-dependencies]
+zune-core = { version = "0.5.0-rc1", path = "../zune-core", features = ["std"] }

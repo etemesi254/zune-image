@@ -1,5 +1,6 @@
 #![cfg(feature = "std")]
 
+use alloc::vec::Vec;
 use std::io;
 use std::io::SeekFrom;
 

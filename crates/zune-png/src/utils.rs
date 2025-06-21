@@ -36,12 +36,12 @@ fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool) {
     #[cfg(feature = "std")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if _use_sse4 && is_x86_feature_detected!("avx2") {
+        if _use_sse4 && std::is_x86_feature_detected!("avx2") {
             unsafe {
                 return avx::convert_be_to_ne_avx(out);
             };
         }
-        if _use_sse4 && is_x86_feature_detected!("ssse3") {
+        if _use_sse4 && std::is_x86_feature_detected!("ssse3") {
             unsafe {
                 return sse::convert_be_to_ne_sse4(out);
             }

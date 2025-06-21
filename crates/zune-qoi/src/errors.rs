@@ -147,11 +147,9 @@ impl Display for QoiErrors {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for QoiEncodeErrors {}
+impl core::error::Error for QoiEncodeErrors {}
 
-#[cfg(feature = "std")]
-impl std::error::Error for QoiErrors {}
+impl core::error::Error for QoiErrors {}
 
 impl From<ZByteIoError> for QoiEncodeErrors {
     fn from(value: ZByteIoError) -> Self {

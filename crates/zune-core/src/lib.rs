@@ -43,10 +43,13 @@
 //!
 //!  
 //!
-#![cfg_attr(not(feature = "std"), no_std)]
-#![macro_use]
+#![no_std]
+
 extern crate alloc;
 extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(not(feature = "log"))]
 pub mod log;

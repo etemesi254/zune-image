@@ -160,10 +160,14 @@
 //!
 //!
 //!
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
 #![allow(clippy::op_ref, clippy::identity_op)]
+
 extern crate alloc;
 extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[cfg(feature = "std")]
 pub use apng::post_process_image;

@@ -102,8 +102,9 @@
 // no_std compatibility
 #![deny(clippy::std_instead_of_alloc, clippy::alloc_instead_of_core)]
 #![cfg_attr(not(any(feature = "x86", feature = "neon")), forbid(unsafe_code))]
-#![cfg_attr(not(feature = "std"), no_std)]
-#![macro_use]
+#![no_std]
+
+#[macro_use]
 extern crate alloc;
 extern crate core;
 

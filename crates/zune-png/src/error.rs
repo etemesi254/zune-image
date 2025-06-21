@@ -39,8 +39,7 @@ impl Display for PngDecodeErrors {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for PngDecodeErrors {}
+impl core::error::Error for PngDecodeErrors {}
 
 impl Debug for PngDecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
