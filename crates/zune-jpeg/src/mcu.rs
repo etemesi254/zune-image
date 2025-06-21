@@ -85,7 +85,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, pixels: &mut [u8],
+        &mut self, pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -110,7 +110,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
             && (self.sub_sample_ratio == SampleRatios::V
-            || self.sub_sample_ratio == SampleRatios::HV)
+                || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -158,7 +158,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // components.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
+                pos
             ) == pos
                 || comp_len == 4
             // Special colorspace
@@ -211,7 +211,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space,
+                &mut upsampler_scratch_space
             )?;
             if terminate {
                 warn!("Got terminate signal, will not process further");
@@ -243,7 +243,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
     fn decode_mcu_width(
-        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream,
+        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
     ) -> Result<bool, DecodeErrors> {
         for j in 0..mcu_width {
             // iterate over components
@@ -274,7 +274,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred,
+                            &mut component.dc_pred
                         )?;
 
                         if component.needed {
@@ -293,20 +293,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                 }
             }
-            self.todo = self.todo.saturating_sub(1);
-            if self.todo == 0 && self.restart_interval != 0 /*Some images may have DRI=0, see  https://github.com/etemesi254/zune-image/issues/266*/
-                && stream.marker.is_none() && !stream.seen_eoi {
+            self.todo = self.todo.wrapping_sub(1);
 
-                // if no marker and we are to reset RST, look for the marker, this matches
-                // libjpeg-turbo behaviour and allows us to decode images in
-                // https://github.com/etemesi254/zune-image/issues/261
-                let _start = self.stream.position()?;
-                // skip bytes until we find marker
-                let marker = get_marker(&mut self.stream, stream)?;
-                let _end = self.stream.position()?;
-                stream.marker = Some(marker);
-                // NB some warnings may be false positives.
-                warn!("{} Extraneous bytes before marker {:?}",_end-_start,marker);
+            if self.todo == 0 {
+                self.handle_rst_main(stream)?;
             }
 
             // After all interleaved components, that's an MCU
@@ -388,7 +378,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     pub(crate) fn post_process(
         &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
-        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16],
+        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
     ) -> Result<(), DecodeErrors> {
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
 
@@ -429,7 +419,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.options.jpeg_get_out_colorspace(),
                         output,
                         width,
-                        padded_width,
+                        padded_width
                     )?;
                     px += width * out_colorspace_components;
                 }
@@ -458,7 +448,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     mcu_height,
                     i,
                     upsampler_scratch_space,
-                    is_vertically_sampled,
+                    is_vertically_sampled
                 );
             }
 
@@ -552,4 +542,3 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
 }
-

@@ -46,9 +46,9 @@
 //! (or learn something cool)
 //!
 //! Knock yourself out.
+use alloc::format;
 use alloc::string::ToString;
 use core::cmp::min;
-use alloc::format;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
@@ -106,44 +106,44 @@ macro_rules! decode_huff {
 ///
 pub(crate) struct BitStream {
     /// A MSB type buffer that is used for some certain operations
-    pub buffer: u64,
+    pub buffer:           u64,
     /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
     /// peek_bits and get_bits.
     ///
     /// By top aligned, I mean the top bit (63) represents the top bit in the buffer.
-    aligned_buffer: u64,
+    aligned_buffer:       u64,
     /// Tell us the bits left the two buffer
     pub(crate) bits_left: u8,
     /// Did we find a marker(RST/EOF) during decoding?
-    pub marker: Option<Marker>,
+    pub marker:           Option<Marker>,
 
     /// Progressive decoding
     pub successive_high: u8,
-    pub successive_low: u8,
-    spec_start: u8,
-    spec_end: u8,
-    pub eob_run: i32,
-    pub overread_by: usize,
+    pub successive_low:  u8,
+    spec_start:          u8,
+    spec_end:            u8,
+    pub eob_run:         i32,
+    pub overread_by:     usize,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
-    pub seen_eoi: bool,
+    pub seen_eoi:        bool
 }
 
 impl BitStream {
     /// Create a new BitStream
     pub(crate) const fn new() -> BitStream {
         BitStream {
-            buffer: 0,
-            aligned_buffer: 0,
-            bits_left: 0,
-            marker: None,
+            buffer:          0,
+            aligned_buffer:  0,
+            bits_left:       0,
+            marker:          None,
             successive_high: 0,
-            successive_low: 0,
-            spec_start: 0,
-            spec_end: 0,
-            eob_run: 0,
-            overread_by: 0,
-            seen_eoi: false,
+            successive_low:  0,
+            spec_start:      0,
+            spec_end:        0,
+            eob_run:         0,
+            overread_by:     0,
+            seen_eoi:        false
         }
     }
 
@@ -151,17 +151,17 @@ impl BitStream {
     #[allow(clippy::redundant_field_names)]
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
         BitStream {
-            buffer: 0,
-            aligned_buffer: 0,
-            bits_left: 0,
-            marker: None,
+            buffer:          0,
+            aligned_buffer:  0,
+            bits_left:       0,
+            marker:          None,
             successive_high: ah,
-            successive_low: al,
-            spec_start: spec_start,
-            spec_end: spec_end,
-            eob_run: 0,
-            overread_by: 0,
-            seen_eoi: false,
+            successive_low:  al,
+            spec_start:      spec_start,
+            spec_end:        spec_end,
+            eob_run:         0,
+            overread_by:     0,
+            seen_eoi:        false
         }
     }
 
@@ -173,9 +173,9 @@ impl BitStream {
     ///
     /// This function will only refill if `self.count` is less than 32
     #[inline(always)] // to many call sites? ( perf improvement by 4%)
-    fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
+    pub fn refill<T>(&mut self, reader: &mut ZReader<T>) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         /// Macro version of a single byte refill.
         /// Arguments
@@ -220,7 +220,6 @@ impl BitStream {
                                 self.buffer <<= 8;
                                 self.bits_left += 8;
                                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
-
                             }
 
                             return Ok(false);
@@ -229,7 +228,6 @@ impl BitStream {
                 }
             };
         }
-
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         if self.bits_left < 32 {
@@ -243,7 +241,6 @@ impl BitStream {
                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
                 return Ok(true);
             }
-
 
             // we optimize for the case where we don't have 255 in the stream and have 4 bytes left
             // as it is the common case
@@ -294,10 +291,10 @@ impl BitStream {
     )]
     #[inline(always)]
     fn decode_dc<T>(
-        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, dc_prediction: &mut i32
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let (mut symbol, r);
 
@@ -337,10 +334,10 @@ impl BitStream {
     #[inline(never)]
     pub fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
-        qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32,
+        qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -427,10 +424,10 @@ impl BitStream {
     #[inline]
     pub(crate) fn decode_prog_dc_first<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, block: &mut i16,
-        dc_prediction: &mut i32,
+        dc_prediction: &mut i32
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
         *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
@@ -438,10 +435,10 @@ impl BitStream {
     }
     #[inline]
     pub(crate) fn decode_prog_dc_refine<T>(
-        &mut self, reader: &mut ZReader<T>, block: &mut i16,
+        &mut self, reader: &mut ZReader<T>, block: &mut i16
     ) -> Result<(), DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // refinement scan
         if self.bits_left < 1 {
@@ -463,10 +460,10 @@ impl BitStream {
         return k;
     }
     pub(crate) fn decode_mcu_ac_first<T>(
-        &mut self, reader: &mut ZReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, ac_table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let shift = self.successive_low;
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
@@ -520,10 +517,10 @@ impl BitStream {
     }
     #[allow(clippy::too_many_lines, clippy::op_ref)]
     pub(crate) fn decode_mcu_ac_refine<T>(
-        &mut self, reader: &mut ZReader<T>, table: &HuffmanTable, block: &mut [i16; 64],
+        &mut self, reader: &mut ZReader<T>, table: &HuffmanTable, block: &mut [i16; 64]
     ) -> Result<bool, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         let bit = (1 << self.successive_low) as i16;
 
