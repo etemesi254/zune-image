@@ -80,7 +80,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
             && (self.sub_sample_ratio == SampleRatios::V
-            || self.sub_sample_ratio == SampleRatios::HV)
+                || self.sub_sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -109,7 +109,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
             self.succ_high,
             self.succ_low,
             self.spec_start,
-            self.spec_end,
+            self.spec_end
         );
 
         // there are multiple scans in the stream, this should resolve the first scan
@@ -135,7 +135,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                         self.succ_high,
                         self.succ_low,
                         self.spec_start,
-                        self.spec_end,
+                        self.spec_end
                     );
                     // after every SOS, marker, parse data for that scan.
                     self.parse_entropy_coded_data(&mut stream, &mut block)?;
@@ -164,6 +164,9 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
+                Marker::RST(_n) => {
+                    self.handle_rst(&mut stream)?;
+                }
                 _ => {
                     self.parse_marker_inner(marker)?;
                 }
@@ -185,12 +188,20 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
         self.finish_progressive_decoding(&block, mcu_width, pixels)
     }
 
-    #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
-    fn parse_entropy_coded_data(
-        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
-    ) -> Result<(), DecodeErrors> {
+    /// Reset progressive parameters
+    fn reset_prog_params(&mut self, stream: &mut BitStream) {
         stream.reset();
         self.components.iter_mut().for_each(|x| x.dc_pred = 0);
+
+        // Also reset JPEG restart intervals
+        self.todo = if self.restart_interval != 0 { self.restart_interval } else { usize::MAX };
+    }
+
+    #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
+    fn parse_entropy_coded_data(
+        &mut self, stream: &mut BitStream, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
+    ) -> Result<(), DecodeErrors> {
+        self.reset_prog_params(stream);
 
         if usize::from(self.num_scans) > self.input_colorspace.num_components() {
             return Err(DecodeErrors::Format(format!(
@@ -199,7 +210,6 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 self.input_colorspace.num_components()
             )));
         }
-
         if self.num_scans == 1 {
             // Safety checks
             if self.spec_end != 0 && self.spec_start == 0 {
@@ -221,7 +231,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
 
             if self.components[k].component_id == ComponentID::Y
                 && (self.components[k].vertical_sample != 1
-                || self.components[k].horizontal_sample != 1)
+                    || self.components[k].horizontal_sample != 1)
                 || !self.is_interleaved
             {
                 // For Y channel  or non interleaved scans ,
@@ -240,77 +250,76 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     if self.spec_start != 0 && self.succ_high == 0 && stream.eob_run > 0 {
                         // handle EOB runs here.
                         stream.eob_run -= 1;
-                        continue;
-                    }
-                    let start = 64 * (j + i * (self.components[k].width_stride / 8));
-
-                    let data: &mut [i16; 64] = buffer
-                        .get_mut(k)
-                        .unwrap()
-                        .get_mut(start..start + 64)
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-
-                    if self.spec_start == 0 {
-                        let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
-                        let dc_table = self
-                            .dc_huffman_tables
-                            .get(pos)
-                            .ok_or(DecodeErrors::FormatStatic(
-                                "No huffman table for DC component"
-                            ))?
-                            .as_ref()
-                            .ok_or(DecodeErrors::FormatStatic(
-                                "Huffman table at index  {} not initialized"
-                            ))?;
-
-                        let dc_pred = &mut self.components[k].dc_pred;
-
-                        if self.succ_high == 0 {
-                            // first scan for this mcu
-                            stream.decode_prog_dc_first(
-                                &mut self.stream,
-                                dc_table,
-                                &mut data[0],
-                                dc_pred,
-                            )?;
-                        } else {
-                            // refining scans for this MCU
-                            stream.decode_prog_dc_refine(&mut self.stream, &mut data[0])?;
-                        }
                     } else {
-                        let pos = self.components[k].ac_huff_table;
-                        let ac_table = self
-                            .ac_huffman_tables
-                            .get(pos)
-                            .ok_or_else(|| {
-                                DecodeErrors::Format(format!(
-                                    "No huffman table for component:{pos}"
-                                ))
-                            })?
-                            .as_ref()
-                            .ok_or_else(|| {
-                                DecodeErrors::Format(format!(
-                                    "Huffman table at index  {pos} not initialized"
-                                ))
-                            })?;
+                        let start = 64 * (j + i * (self.components[k].width_stride / 8));
 
-                        if self.succ_high == 0 {
-                            debug_assert!(stream.eob_run == 0, "EOB run is not zero");
+                        let data: &mut [i16; 64] = buffer
+                            .get_mut(k)
+                            .unwrap()
+                            .get_mut(start..start + 64)
+                            .unwrap()
+                            .try_into()
+                            .unwrap();
 
-                            stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
+                        if self.spec_start == 0 {
+                            let pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
+                            let dc_table = self
+                                .dc_huffman_tables
+                                .get(pos)
+                                .ok_or(DecodeErrors::FormatStatic(
+                                    "No huffman table for DC component"
+                                ))?
+                                .as_ref()
+                                .ok_or(DecodeErrors::FormatStatic(
+                                    "Huffman table at index  {} not initialized"
+                                ))?;
+
+                            let dc_pred = &mut self.components[k].dc_pred;
+
+                            if self.succ_high == 0 {
+                                // first scan for this mcu
+                                stream.decode_prog_dc_first(
+                                    &mut self.stream,
+                                    dc_table,
+                                    &mut data[0],
+                                    dc_pred
+                                )?;
+                            } else {
+                                // refining scans for this MCU
+                                stream.decode_prog_dc_refine(&mut self.stream, &mut data[0])?;
+                            }
                         } else {
-                            // refinement scan
-                            stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
+                            let pos = self.components[k].ac_huff_table;
+                            let ac_table = self
+                                .ac_huffman_tables
+                                .get(pos)
+                                .ok_or_else(|| {
+                                    DecodeErrors::Format(format!(
+                                        "No huffman table for component:{pos}"
+                                    ))
+                                })?
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    DecodeErrors::Format(format!(
+                                        "Huffman table at index  {pos} not initialized"
+                                    ))
+                                })?;
+
+                            if self.succ_high == 0 {
+                                debug_assert!(stream.eob_run == 0, "EOB run is not zero");
+
+                                stream.decode_mcu_ac_first(&mut self.stream, ac_table, data)?;
+                            } else {
+                                // refinement scan
+                                stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
+                            }
                         }
                     }
+
                     // + EOB and investigate effect.
                     self.todo -= 1;
 
-                    if self.todo == 0 {
-                        self.handle_rst(stream)?;
-                    }
+                    self.handle_rst_main(stream)?;
                 }
             }
         } else {
@@ -376,11 +385,10 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                                 let position = 64 * (x2 + y2 * component.width_stride / 8);
                                 let buf_n = &mut buffer[n];
 
-
                                 let Some(data) = &mut buf_n.get_mut(position) else {
                                     // TODO: (CAE), this is another weird sub-sampling bug, so on fix
                                     // remove this
-                                    return Err(DecodeErrors::FormatStatic("Invalid image"))
+                                    return Err(DecodeErrors::FormatStatic("Invalid image"));
                                 };
 
                                 if self.succ_high == 0 {
@@ -388,7 +396,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                                         &mut self.stream,
                                         huff_table,
                                         data,
-                                        &mut component.dc_pred,
+                                        &mut component.dc_pred
                                     )?;
                                 } else {
                                     stream.decode_prog_dc_refine(&mut self.stream, data)?;
@@ -398,21 +406,49 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                     }
                     // We want wrapping subtraction here because it means
                     // we get a higher number in the case this underflows
-                    self.todo = self.todo.wrapping_sub(1);
+                    self.todo -= 1;
                     // after every scan that's a mcu, count down restart markers.
-                    if self.todo == 0 {
-                        self.handle_rst(stream)?;
-                    }
+                    self.handle_rst_main(stream)?;
                 }
             }
         }
         return Ok(());
     }
 
+    pub(crate) fn handle_rst_main(&mut self, stream: &mut BitStream) -> Result<(), DecodeErrors> {
+        if self.todo == 0 {
+            stream.refill(&mut self.stream)?;
+        }
+
+        if self.todo == 0
+            && self.restart_interval != 0
+            && stream.marker.is_none()
+            && !stream.seen_eoi
+        {
+            // if no marker and we are to reset RST, look for the marker, this matches
+            // libjpeg-turbo behaviour and allows us to decode images in
+            // https://github.com/etemesi254/zune-image/issues/261
+            let _start = self.stream.get_position();
+            // skip bytes until we find marker
+            let marker = get_marker(&mut self.stream, stream)?;
+            let _end = self.stream.get_position();
+            stream.marker = Some(marker);
+            // NB some warnings may be false positives.
+            warn!(
+                "{} Extraneous bytes before marker {:?}",
+                _end - _start,
+                marker
+            );
+        }
+        if self.todo == 0 {
+            self.handle_rst(stream)?
+        }
+        Ok(())
+    }
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
@@ -552,7 +588,7 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space,
+                &mut upsampler_scratch_space
             )?;
         }
 
