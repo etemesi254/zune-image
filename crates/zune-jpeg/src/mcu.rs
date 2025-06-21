@@ -535,7 +535,11 @@ impl<T: ZReaderTrait> JpegDecoder<T> {
                 .enumerate()
                 .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
 
-            color_conv_function(8 * self.coeff, channels_ref)?;
+            if let SampleRatios::Generic(_, v) = self.sub_sample_ratio {
+                color_conv_function(8 * v * self.coeff, channels_ref)?;
+            } else {
+                color_conv_function(8 * self.coeff, channels_ref)?;
+            }
         }
 
         *pixels_written = px;

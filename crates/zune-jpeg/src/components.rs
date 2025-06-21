@@ -197,6 +197,7 @@ pub enum SampleRatios {
     HV,
     V,
     H,
+    Generic(usize, usize),
     None
 }
 
@@ -205,6 +206,7 @@ impl SampleRatios {
         match self {
             SampleRatios::HV => 4,
             SampleRatios::V | SampleRatios::H => 2,
+            SampleRatios::Generic(a, b) => a * b,
             SampleRatios::None => 1
         }
     }
