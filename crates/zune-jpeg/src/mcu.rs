@@ -125,15 +125,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.coeff = 2;
         }
 
-        if self.input_colorspace.num_components() > self.components.len() {
-            let msg = format!(
-                " Expected {} number of components but found {}",
-                self.input_colorspace.num_components(),
-                self.components.len()
-            );
-            return Err(DecodeErrors::Format(msg));
-        }
-
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved {
             warn!("Grayscale image with down-sampled component, resetting component details");
 

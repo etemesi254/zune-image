@@ -15,7 +15,7 @@ use core::fmt;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::trace;
+use zune_core::log::{trace, warn};
 
 use crate::components::{ComponentID, SampleRatios};
 use crate::errors::DecodeErrors;
@@ -292,6 +292,28 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
         );
     }
 
+    // check colorspace matches
+    if img.input_colorspace.num_components() > img.components.len() {
+        if img.input_colorspace == ColorSpace::YCCK {
+            // Some images may have YCCK format (from adobe app14 segment) which is supposed to be 4 components
+            // but only 3 components, see issue https://github.com/etemesi254/zune-image/issues/275
+            // So this is the behaviour of other decoders
+            // - stb_image: Treats it as YCbCr image
+            // - libjpeg_turbo: Does not know how to parse YCCK images (transform 2 app14) so treats
+            // it as YCbCr
+            // So I will match that to match existing ones
+            warn!("Treating YCCK colorspace as YCbCr as component length does not match");
+            img.input_colorspace = ColorSpace::YCbCr
+        } else {
+            let msg = format!(
+                " Expected {} number of components but found {}",
+                img.input_colorspace.num_components(),
+                img.components.len()
+            );
+
+            return Err(DecodeErrors::Format(msg));
+        }
+    }
     Ok(())
 }
 
