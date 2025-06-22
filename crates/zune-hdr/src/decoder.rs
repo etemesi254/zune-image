@@ -305,6 +305,9 @@ where
                 buffer.len()
             ));
         }
+        if self.width == 0 {
+           return Err(HdrDecodeErrors::Generic("Width cannot be 0"));
+        }
 
         // single width scanline
         let mut scanline = vec![0_u8; self.width * 4]; // R,G,B,E
