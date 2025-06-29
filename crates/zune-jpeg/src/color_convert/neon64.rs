@@ -10,7 +10,7 @@
 //! NEON is mandatory on aarch64.
 
 #![cfg(all(feature = "neon", target_arch = "aarch64"))]
-use std::arch::aarch64::*;
+use core::arch::aarch64::*;
 
 use crate::color_convert::scalar::{CB_CF, CR_CF, C_G_CB_COEF_2, C_G_CR_COEF_1, YUV_RND, Y_CF};
 
