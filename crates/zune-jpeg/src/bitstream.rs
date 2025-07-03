@@ -233,8 +233,8 @@ impl BitStream {
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         if self.bits_left < 32 {
-            if self.marker.is_some() || self.overread_by > 0 {
-                // found a marker, but not EOI
+            if self.marker.is_some() || self.overread_by > 0  || self.seen_eoi{
+                // found a marker, or we are in EOI
                 // also we are in over-reading mode, where we fill it with zeroes
 
                 // fill with zeroes
