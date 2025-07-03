@@ -233,6 +233,10 @@ impl<T: ZByteReaderTrait> ZReader<T> {
             // skip position bytes from start
             self.skip(position)?;
         }
+        if num_bytes > 20 * 1024 * 1024 {
+            // resize of 20 MBs, skipping too much, so panic
+            return Err(ZByteIoError::Generic("Too many bytes skipped"));
+        }
         // resize buffer
         self.temp_buffer.resize(num_bytes, 0);
         // read bytes
