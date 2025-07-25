@@ -424,6 +424,8 @@ where
 
                     self.parse_marker_inner(n)?;
 
+                    // break after reading the start of scan.
+                    // what follows is the image data
                     if n == Marker::SOS {
                         self.headers_decoded = true;
                         trace!("Input colorspace {:?}", self.input_colorspace);
@@ -519,10 +521,6 @@ where
             // Start of Scan Data
             Marker::SOS => {
                 parse_sos(self)?;
-
-                // break after reading the start of scan.
-                // what follows is the image data
-                return Ok(());
             }
             Marker::EOI => return Err(DecodeErrors::FormatStatic("Premature End of image")),
 

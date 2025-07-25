@@ -104,64 +104,68 @@ macro_rules! decode_huff {
 
 /// A `BitStream` struct, a bit by bit reader with super powers
 ///
+#[rustfmt::skip]
 pub(crate) struct BitStream {
     /// A MSB type buffer that is used for some certain operations
-    pub buffer:           u64,
+    pub buffer:              u64,
     /// A TOP  aligned MSB type buffer that is used to accelerate some operations like
     /// peek_bits and get_bits.
     ///
     /// By top aligned, I mean the top bit (63) represents the top bit in the buffer.
-    aligned_buffer:       u64,
+    aligned_buffer:          u64,
     /// Tell us the bits left the two buffer
-    pub(crate) bits_left: u8,
+    pub(crate) bits_left:    u8,
     /// Did we find a marker(RST/EOF) during decoding?
-    pub marker:           Option<Marker>,
+    pub marker:              Option<Marker>,
 
     /// Progressive decoding
-    pub successive_high: u8,
-    pub successive_low:  u8,
-    spec_start:          u8,
-    spec_end:            u8,
-    pub eob_run:         i32,
-    pub overread_by:     usize,
+    pub successive_high:     u8,
+    /// An i16 with the bit corresponding to successive_low set to 1, others 0.
+    pub successive_low_mask: i16,
+    spec_start:              u8,
+    spec_end:                u8,
+    pub eob_run:             i32,
+    pub overread_by:         usize,
     /// True if we have seen end of image marker.
     /// Don't read anything after that.
-    pub seen_eoi:        bool
+    pub seen_eoi:            bool,
 }
 
 impl BitStream {
     /// Create a new BitStream
+    #[rustfmt::skip]
     pub(crate) const fn new() -> BitStream {
         BitStream {
-            buffer:          0,
-            aligned_buffer:  0,
-            bits_left:       0,
-            marker:          None,
-            successive_high: 0,
-            successive_low:  0,
-            spec_start:      0,
-            spec_end:        0,
-            eob_run:         0,
-            overread_by:     0,
-            seen_eoi:        false
+            buffer:              0,
+            aligned_buffer:      0,
+            bits_left:           0,
+            marker:              None,
+            successive_high:     0,
+            successive_low_mask: 1,
+            spec_start:          0,
+            spec_end:            0,
+            eob_run:             0,
+            overread_by:         0,
+            seen_eoi:            false,
         }
     }
 
     /// Create a new Bitstream for progressive decoding
     #[allow(clippy::redundant_field_names)]
+    #[rustfmt::skip]
     pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
         BitStream {
-            buffer:          0,
-            aligned_buffer:  0,
-            bits_left:       0,
-            marker:          None,
-            successive_high: ah,
-            successive_low:  al,
-            spec_start:      spec_start,
-            spec_end:        spec_end,
-            eob_run:         0,
-            overread_by:     0,
-            seen_eoi:        false
+            buffer:              0,
+            aligned_buffer:      0,
+            bits_left:           0,
+            marker:              None,
+            successive_high:     ah,
+            successive_low_mask: 1i16 << al,
+            spec_start:          spec_start,
+            spec_end:            spec_end,
+            eob_run:             0,
+            overread_by:         0,
+            seen_eoi:            false,
         }
     }
 
@@ -430,7 +434,7 @@ impl BitStream {
         T: ZByteReaderTrait
     {
         self.decode_dc(reader, dc_table, dc_prediction)?;
-        *block = (*dc_prediction as i16).wrapping_mul(1_i16 << self.successive_low);
+        *block = (*dc_prediction as i16).wrapping_mul(self.successive_low_mask);
         return Ok(());
     }
     #[inline]
@@ -446,7 +450,7 @@ impl BitStream {
         }
 
         if self.get_bit() == 1 {
-            *block = block.wrapping_add(1 << self.successive_low);
+            *block = block.wrapping_add(self.successive_low_mask);
         }
 
         Ok(())
@@ -465,8 +469,8 @@ impl BitStream {
     where
         T: ZByteReaderTrait
     {
-        let shift = self.successive_low;
         let fast_ac = ac_table.ac_lookup.as_ref().unwrap();
+        let bit = self.successive_low_mask;
 
         let mut k = self.spec_start as usize;
         let (mut symbol, mut r, mut fac);
@@ -482,7 +486,7 @@ impl BitStream {
             if fac != 0 {
                 // fast ac path
                 k += ((fac >> 4) & 15) as usize; // run
-                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(1 << shift); // value
+                block[UN_ZIGZAG[min(k, 63)] & 63] = (fac >> 8).wrapping_mul(bit); // value
                 self.drop_bits((fac & 15) as u8);
                 k += 1;
             } else {
@@ -495,7 +499,7 @@ impl BitStream {
                     k += r as usize;
                     r = self.get_bits(symbol as u8);
                     symbol = huff_extend(r, symbol);
-                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(1 << shift);
+                    block[UN_ZIGZAG[k & 63] & 63] = (symbol as i16).wrapping_mul(bit);
                     k += 1;
                 } else {
                     if r != 15 {
@@ -522,7 +526,7 @@ impl BitStream {
     where
         T: ZByteReaderTrait
     {
-        let bit = (1 << self.successive_low) as i16;
+        let bit = self.successive_low_mask;
 
         let mut k = self.spec_start;
         let (mut symbol, mut r);
@@ -648,7 +652,7 @@ impl BitStream {
 
     pub fn update_progressive_params(&mut self, ah: u8, al: u8, spec_start: u8, spec_end: u8) {
         self.successive_high = ah;
-        self.successive_low = al;
+        self.successive_low_mask = 1i16 << al;
         self.spec_start = spec_start;
         self.spec_end = spec_end;
     }
