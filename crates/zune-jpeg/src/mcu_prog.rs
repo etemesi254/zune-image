@@ -237,8 +237,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             {
                 // For Y channel  or non interleaved scans ,
                 // mcu's is the image dimensions divided by 8
-                mcu_width = ((self.info.width + 7) / 8) as usize;
-                mcu_height = ((self.info.height + 7) / 8) as usize;
+                mcu_width = self.info.width.div_ceil(8) as usize;
+                mcu_height = self.info.height.div_ceil(8) as usize;
             } else {
                 // For other channels, in an interleaved mcu, number of MCU's
                 // are determined by some weird maths done in headers.rs->parse_sos()
@@ -475,7 +475,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         } else {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided by 8.
-            ((self.info.height + 7) / 8) as usize
+            self.info.height.div_ceil(8) as usize
         };
 
         // Size of our output image(width*height)

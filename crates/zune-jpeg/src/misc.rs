@@ -218,9 +218,9 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
         img.mcu_width = img.h_max * 8;
         img.mcu_height = img.v_max * 8;
         // Number of MCU's per width
-        img.mcu_x = (usize::from(img.info.width) + img.mcu_width - 1) / img.mcu_width;
+        img.mcu_x = usize::from(img.info.width).div_ceil(img.mcu_width);
         // Number of MCU's per height
-        img.mcu_y = (usize::from(img.info.height) + img.mcu_height - 1) / img.mcu_height;
+        img.mcu_y = usize::from(img.info.height).div_ceil(img.mcu_height);
 
         if img.h_max != 1 || img.v_max != 1 {
             // interleaved images have horizontal and vertical sampling factors
