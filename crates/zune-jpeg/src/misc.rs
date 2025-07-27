@@ -51,6 +51,8 @@ pub const START_OF_FRAME_PROG_DCT_AR: u16 = 0xffca;
 pub const START_OF_FRAME_LOS_SEQ_AR: u16 = 0xffcb;
 
 /// Undo run length encoding of coefficients by placing them in natural order
+///
+/// This is an index from position-in-bitstream to position-in-row-major-order.
 #[rustfmt::skip]
 pub const UN_ZIGZAG: [usize; 64 + 16] = [
      0,  1,  8, 16,  9,  2,  3, 10,

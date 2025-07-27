@@ -281,14 +281,14 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
 
 /// Parse a start of scan data
 pub(crate) fn parse_sos<T: ZByteReaderTrait>(
-    image: &mut JpegDecoder<T>
+    image: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     // Scan header length
     let ls = image.stream.get_u16_be_err()?;
     // Number of image components in scan
     let ns = image.stream.read_u8_err()?;
 
-    let mut seen = [-1; { MAX_COMPONENTS + 1 }];
+    let mut seen: [_; 5] = [-1; { MAX_COMPONENTS + 1 }];
 
     image.num_scans = ns;
 
@@ -301,7 +301,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     // Check number of components.
     if !(1..5).contains(&ns) {
         return Err(DecodeErrors::SosError(format!(
-            "Number of components in start of scan should be less than 3 but more than 0. Found {ns}"
+            "Invalid number of components in start of scan {ns}, expected in range 1..5"
         )));
     }
 
@@ -340,9 +340,9 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
 
         if j == image.info.components {
             return Err(DecodeErrors::SofError(format!(
-                "Invalid component id {}, expected a value between 0 and {}",
+                "Invalid component id {}, expected one one of {:?}",
                 id,
-                image.components.len()
+                image.components.iter().map(|c| c.id).collect::<Vec<_>>()
             )));
         }
 
