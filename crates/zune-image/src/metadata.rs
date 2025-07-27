@@ -46,7 +46,8 @@ pub struct ImageMetadata {
     pub(crate) alpha:         AlphaState,
     #[cfg(feature = "metadata")]
     pub(crate) exif:          Option<Vec<::exif::Field>>,
-    pub(crate) icc_chunk:     Option<Vec<u8>>
+    pub(crate) icc_chunk:     Option<Vec<u8>>,
+
 }
 
 impl Default for ImageMetadata {

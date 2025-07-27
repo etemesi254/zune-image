@@ -328,9 +328,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         m
                     );
                     self.parse_marker_inner(m)?;
-                    if m == Marker::SOS {
-                        return Ok(true);
-                    }
+                    // if m == Marker::SOS {
+                    //     return Ok(true);
+                    // }
                 }
             }
         }
@@ -382,7 +382,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let mut comp_len = self.components.len();
 
-        // If we are moving from YCbCr-> Luma, we do not allocate storage for other components, so we
+        // If we are moving from YCbCr -> Luma, we do not allocate storage for other components, so we
         // will panic when we are trying to read samples, so for that case,
         // hardcode it so that we  don't panic when doing
         //   *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]

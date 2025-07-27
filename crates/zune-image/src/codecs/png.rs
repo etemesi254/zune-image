@@ -19,7 +19,7 @@ use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
 use zune_png::error::PngDecodeErrors;
-pub use zune_png::*;
+use zune_png::*;
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
