@@ -117,9 +117,6 @@ pub(crate) struct BitStream {
     pub(crate) bits_left:    u8,
     /// Did we find a marker(RST/EOF) during decoding?
     pub marker:              Option<Marker>,
-
-    /// Progressive decoding
-    pub successive_high:     u8,
     /// An i16 with the bit corresponding to successive_low set to 1, others 0.
     pub successive_low_mask: i16,
     spec_start:              u8,
@@ -140,7 +137,6 @@ impl BitStream {
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
-            successive_high:     0,
             successive_low_mask: 1,
             spec_start:          0,
             spec_end:            0,
@@ -153,13 +149,12 @@ impl BitStream {
     /// Create a new Bitstream for progressive decoding
     #[allow(clippy::redundant_field_names)]
     #[rustfmt::skip]
-    pub(crate) fn new_progressive(ah: u8, al: u8, spec_start: u8, spec_end: u8) -> BitStream {
+    pub(crate) fn new_progressive(al: u8, spec_start: u8, spec_end: u8) -> BitStream {
         BitStream {
             buffer:              0,
             aligned_buffer:      0,
             bits_left:           0,
             marker:              None,
-            successive_high:     ah,
             successive_low_mask: 1i16 << al,
             spec_start:          spec_start,
             spec_end:            spec_end,
@@ -651,7 +646,6 @@ impl BitStream {
     }
 
     pub fn update_progressive_params(&mut self, ah: u8, al: u8, spec_start: u8, spec_end: u8) {
-        self.successive_high = ah;
         self.successive_low_mask = 1i16 << al;
         self.spec_start = spec_start;
         self.spec_end = spec_end;

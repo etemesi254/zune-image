@@ -107,7 +107,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut stream = BitStream::new_progressive(
-            self.succ_high,
             self.succ_low,
             self.spec_start,
             self.spec_end
