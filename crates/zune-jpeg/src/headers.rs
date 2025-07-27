@@ -284,15 +284,16 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     image: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     // Scan header length
-    let ls = image.stream.get_u16_be_err()?;
+    let ls = usize::from(image.stream.get_u16_be_err()?);
     // Number of image components in scan
     let ns = image.stream.read_u8_err()?;
 
     let mut seen: [_; 5] = [-1; { MAX_COMPONENTS + 1 }];
 
     image.num_scans = ns;
+    let smallest_size = 6 + 2 * usize::from(ns);
 
-    if ls != 6 + 2 * u16::from(ns) {
+    if ls < smallest_size {
         return Err(DecodeErrors::SosError(format!(
             "Bad SOS length {ls},corrupt jpeg"
         )));
@@ -396,6 +397,8 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             image.succ_low
         )));
     }
+    // skip any bytes not read
+    image.stream.skip(smallest_size.saturating_sub(ls))?;
 
     trace!(
         "Ss={}, Se={} Ah={} Al={}",

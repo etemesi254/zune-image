@@ -117,11 +117,11 @@ impl Components {
             )));
         }
 
-        if !vertical_sample.is_power_of_two() {
-            return Err(DecodeErrors::Format(format!(
-                "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
-            )));
-        }
+        // if !vertical_sample.is_power_of_two() {
+        //     return Err(DecodeErrors::Format(format!(
+        //         "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
+        //     )));
+        // }
 
         trace!(
             "Component ID:{:?} \tHS:{} VS:{} QT:{}",
