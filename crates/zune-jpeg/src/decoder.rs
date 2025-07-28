@@ -897,9 +897,9 @@ pub struct ImageInfo {
     /// UHDR images
     pub multi_picture_information: Option<Vec<u8>>,
     /// Exif Data
-    pub(crate) exif_data: Option<Vec<u8>>,
+    pub exif_data: Option<Vec<u8>>,
     /// XMP Data
-    pub(crate) xmp_data: Option<Vec<u8>>
+    pub xmp_data: Option<Vec<u8>>
 }
 
 impl ImageInfo {
