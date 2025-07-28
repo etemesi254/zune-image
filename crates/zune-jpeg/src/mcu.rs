@@ -166,49 +166,108 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        // If all components are contained in the first scan of MCUs, then we can process into
+        // (upsampled) pixels immediately after each MCU, for convenience we use each row of MCUS.
+        // Otherwise, we must first wait until following SOS provide the remaining components.
+        let all_components_in_first_scan = usize::from(self.num_scans) == self.components.len();
+        let mut progressive_mcus: [Vec<i16>; 4] = core::array::from_fn(|_| vec![]);
+
+        if !all_components_in_first_scan {
+            for (component, mcu) in self.components.iter().zip(&mut progressive_mcus) {
+                let len = mcu_width
+                    * component.vertical_sample
+                    * component.horizontal_sample
+                    * mcu_height
+                    * 64;
+                *mcu = vec![0; len];
+            }
+        }
+
         let mut pixels_written = 0;
 
         let is_hv = usize::from(self.is_interleaved);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
-        for i in 0..mcu_height {
-            // Report if we have no more bytes
-            // This may generate false negatives since we over-read bytes
-            // hence that why 37 is chosen(we assume if we over-read more than 37 bytes, we have a problem)
-            if stream.overread_by > 37
-            // favourite number :)
-            {
-                if self.options.strict_mode() {
-                    return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
+        'sos: loop {
+            trace!(
+                "Baseline decoding of components: {:?}",
+                &self.z_order[..usize::from(self.num_scans)]
+            );
+            trace!("Decoding MCU width: {mcu_width}, height: {mcu_height}");
+
+            for i in 0..mcu_height {
+                // Report if we have no more bytes
+                // This may generate false negatives since we over-read bytes
+                // hence that why 37 is chosen(we assume if we over-read more than 37 bytes, we have a problem)
+                if stream.overread_by > 37
+                // favourite number :)
+                {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
+                    };
+
+                    error!("Premature end of buffer");
+                    break;
+                }
+
+                // decode a whole MCU width,
+                // this takes into account interleaved components.
+                let terminate = if all_components_in_first_scan {
+                    self.decode_mcu_width::<false>(
+                        mcu_width,
+                        i,
+                        &mut tmp,
+                        &mut stream,
+                        &mut progressive_mcus,
+                    )?
+                } else {
+                    self.decode_mcu_width::<true>(
+                        mcu_width,
+                        i,
+                        &mut tmp,
+                        &mut stream,
+                        &mut progressive_mcus,
+                    )?
                 };
 
-                error!("Premature end of buffer");
-                break;
+                // process that width up until it's impossible. This is faster than allocation the
+                // full components, which we skipped earlier.
+                if all_components_in_first_scan {
+                    self.post_process(
+                        pixels,
+                        i,
+                        mcu_height,
+                        width,
+                        padded_width,
+                        &mut pixels_written,
+                        &mut upsampler_scratch_space,
+                    )?;
+                }
+
+                match terminate {
+                    McuContinuation::Ok => {}
+                    McuContinuation::AnotherSos if all_components_in_first_scan => {
+                        warn!("More than one SOS despite already having all components");
+                        return Ok(());
+                    }
+                    McuContinuation::AnotherSos => continue 'sos,
+                    McuContinuation::Terminate => {
+                        warn!("Got terminate signal, will not process further");
+                        return Ok(());
+                    }
+                }
             }
 
-            // decode a whole MCU width,
-            // this takes into account interleaved components.
-            let terminate = self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
-            // if i >=7{
-            //     panic!()
-            // }
-            // process that width up until it's impossible
-
-            self.post_process(
-                pixels,
-                i,
-                mcu_height,
-                width,
-                padded_width,
-                &mut pixels_written,
-                &mut upsampler_scratch_space
-            )?;
-            if terminate {
-                warn!("Got terminate signal, will not process further");
-                return Ok(());
-            }
+            // Breaks if we get here, looping only if we have restarted, i.e. found another SOS and
+            // continued at `'sos'.
+            break;
         }
+
+        if !all_components_in_first_scan {
+            self.finish_baseline_decoding(&progressive_mcus, mcu_width, pixels)?;
+        }
+
         // it may happen that some images don't have the whole buffer
         // so we can't panic in case of that
         // assert_eq!(pixels_written, pixels.len());
@@ -233,12 +292,93 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         Ok(())
     }
-    fn decode_mcu_width(
-        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream
-    ) -> Result<bool, DecodeErrors> {
+
+    /// Process all MCUs when baseline decoding has been processing them component-after-component.
+    /// For simplicity this assembles the dequantized blocks in the order that the post processing
+    /// of an interleaved baseline decoding would use.
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cast_sign_loss)]
+    pub(crate) fn finish_baseline_decoding(
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
+    ) -> Result<(), DecodeErrors> {
+        let mcu_height = self.mcu_y;
+
+        // Size of our output image(width*height)
+        let is_hv = usize::from(self.is_interleaved);
+        let upsampler_scratch_size = is_hv * self.components[0].width_stride;
+        let width = usize::from(self.info.width);
+        let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
+
+        let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
+
+        for (pos, comp) in self.components.iter_mut().enumerate() {
+            // Mark only needed components for computing output colors.
+            if min(
+                self.options.jpeg_get_out_colorspace().num_components() - 1,
+                pos,
+            ) == pos
+                || self.input_colorspace == ColorSpace::YCCK
+                || self.input_colorspace == ColorSpace::CMYK
+            {
+                comp.needed = true;
+            } else {
+                comp.needed = false;
+            }
+        }
+
+        let mut pixels_written = 0;
+
+        // dequantize and idct have been performed, only color convert.
+        for i in 0..mcu_height {
+            // All the data is already in the right order, we just need to be able to pass it to
+            // the post_process & upsample method. That expects all the data to be stored as one
+            // row of MCUs in each component's `raw_coeff`.
+            'component: for (position, component) in &mut self.components.iter_mut().enumerate() {
+                if !component.needed {
+                    continue 'component;
+                }
+
+                // step is the number of pixels this iteration wil be handling
+                // Given by the number of mcu's height and the length of the component block
+                // Since the component block contains the whole channel as raw pixels
+                // we this evenly divides the pixels into MCU blocks
+                //
+                // For interleaved images, this gives us the exact pixels comprising a whole MCU
+                // block
+                let step = block[position].len() / mcu_height;
+
+                // where we will be reading our pixels from.
+                let slice = &block[position][i * step..][..step];
+                let temp_channel = &mut component.raw_coeff;
+                temp_channel[..step].copy_from_slice(slice);
+            }
+
+            // process that whole stripe of MCUs
+            self.post_process(
+                pixels,
+                i,
+                mcu_height,
+                width,
+                padded_width,
+                &mut pixels_written,
+                &mut upsampler_scratch_space,
+            )?;
+        }
+
+        return Ok(());
+    }
+
+    fn decode_mcu_width<const PROGRESSIVE: bool>(
+        &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+    ) -> Result<McuContinuation, DecodeErrors> {
+        let z_order = self.z_order;
+
         for j in 0..mcu_width {
             // iterate over components
-            for component in &mut self.components {
+            for &k in &z_order[..usize::from(self.num_scans)] {
+                let component = &mut self.components[k];
+
                 let dc_table = self.dc_huffman_tables[component.dc_huff_table % MAX_COMPONENTS]
                     .as_ref()
                     .unwrap();
@@ -248,7 +388,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     .unwrap();
 
                 let qt_table = &component.quantization_table;
-                let channel = &mut component.raw_coeff;
+                let channel = if PROGRESSIVE {
+                    let offset =
+                        mcu_height * component.width_stride * 8 * component.vertical_sample;
+                    &mut progressive[k][offset..]
+                } else {
+                    &mut component.raw_coeff
+                };
 
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
@@ -265,7 +411,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred
+                            &mut component.dc_pred,
                         )?;
 
                         if component.needed {
@@ -284,57 +430,71 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                 }
             }
+
             self.todo = self.todo.wrapping_sub(1);
 
             if self.todo == 0 {
                 self.handle_rst_main(stream)?;
+                continue;
             }
 
-            // After all interleaved components, that's an MCU
-            // handle stream markers
-            //
-            // In some corrupt images, it may occur that header markers occur in the stream.
-            // The spec EXPLICITLY FORBIDS this, specifically, in
-            // routine F.2.2.5  it says
-            // `The only valid marker which may occur within the Huffman coded data is the RSTm marker.`
-            //
-            // But libjpeg-turbo allows it because of some weird reason. so I'll also
-            // allow it because of some weird reason.
-            if let Some(m) = stream.marker {
-                if m == Marker::EOI {
-                    // acknowledge and ignore EOI marker.
-                    stream.marker.take();
-                    trace!("Found EOI marker");
-                    // Google Introduced the Ultra-HD image format which is basically
-                    // stitching two images into one container.
-                    // They basically separate two images via a EOI and SOI marker
-                    // so let's just ensure if we ever see EOI, we never read past that
-                    // ever.
-                    // https://github.com/google/libultrahdr
-                    stream.seen_eoi = true;
-                } else if let Marker::RST(_) = m {
-                    //debug_assert_eq!(self.todo, 0);
-                    if self.todo == 0 {
-                        self.handle_rst(stream)?;
-                    }
-                } else {
-                    if self.options.strict_mode() {
-                        return Err(DecodeErrors::Format(format!(
-                            "Marker {m:?} found where not expected"
-                        )));
-                    }
-                    error!(
-                        "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
-                        m
-                    );
-                    self.parse_marker_inner(m)?;
-                    // if m == Marker::SOS {
-                    //     return Ok(true);
-                    // }
-                }
+            if stream.marker.is_some() && stream.bits_left == 0 {
+                break;
             }
         }
-        Ok(false)
+
+        // After all interleaved components, that's an MCU
+        // handle stream markers
+        //
+        // In some corrupt images, it may occur that header markers occur in the stream.
+        // The spec EXPLICITLY FORBIDS this, specifically, in
+        // routine F.2.2.5  it says
+        // `The only valid marker which may occur within the Huffman coded data is the RSTm marker.`
+        //
+        // But libjpeg-turbo allows it because of some weird reason. so I'll also
+        // allow it because of some weird reason.
+        if let Some(m) = stream.marker {
+            if m == Marker::EOI {
+                // acknowledge and ignore EOI marker.
+                stream.marker.take();
+                trace!("Found EOI marker");
+                // Google Introduced the Ultra-HD image format which is basically
+                // stitching two images into one container.
+                // They basically separate two images via a EOI and SOI marker
+                // so let's just ensure if we ever see EOI, we never read past that
+                // ever.
+                // https://github.com/google/libultrahdr
+                stream.seen_eoi = true;
+            } else if let Marker::RST(_) = m {
+                //debug_assert_eq!(self.todo, 0);
+                if self.todo == 0 {
+                    self.handle_rst(stream)?;
+                }
+            } else if let Marker::SOS = m {
+                self.parse_marker_inner(m)?;
+                stream.marker.take();
+                stream.reset();
+                trace!("Found SOS marker");
+                return Ok(McuContinuation::AnotherSos);
+            } else {
+                if self.options.strict_mode() {
+                    return Err(DecodeErrors::Format(format!(
+                        "Marker {m:?} found where not expected"
+                    )));
+                }
+                error!(
+                    "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
+                    m
+                );
+
+                self.parse_marker_inner(m)?;
+                stream.marker.take();
+                stream.reset();
+                return Ok(McuContinuation::Terminate);
+            }
+        }
+
+        Ok(McuContinuation::Ok)
     }
     // handle RST markers.
     // No-op if not using restarts
@@ -536,4 +696,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         *pixels_written = px;
         Ok(())
     }
+}
+
+enum McuContinuation {
+    Ok,
+    AnotherSos,
+    Terminate,
 }

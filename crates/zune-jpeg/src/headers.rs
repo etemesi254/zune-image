@@ -168,6 +168,7 @@ pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result
             )));
         }
 
+        trace!("Assigning qt table {table_position} with precision {precision}");
         img.qt_tables[table_position] = Some(dct_table);
     }
 
@@ -314,7 +315,6 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
 
     // consume spec parameters
     for i in 0..ns {
-        // CS_i parameter, I don't need it so I might as well delete it
         let id = image.stream.read_u8_err()?;
 
         if seen.contains(&i32::from(id)) {
@@ -350,6 +350,13 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
         image.components[usize::from(j)].dc_huff_table = usize::from((y >> 4) & 0xF);
         image.components[usize::from(j)].ac_huff_table = usize::from(y & 0xF);
         image.z_order[i as usize] = j as usize;
+
+        trace!(
+            "Assigned huffman tables {}/{} to component {j}, id={}",
+            image.components[usize::from(j)].dc_huff_table,
+            image.components[usize::from(j)].ac_huff_table,
+            image.components[usize::from(j)].id,
+        );
     }
 
     // Collect the component spec parameters
