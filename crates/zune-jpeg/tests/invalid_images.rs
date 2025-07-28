@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+use zune_core::bytestream::ZByteReader;
 use zune_jpeg::JpegDecoder;
 
 #[test]
@@ -131,6 +131,6 @@ fn test_panic_on_slice() {
         240, 33, 115, 98, 89, 80, 173, 192, 8, 92, 216, 150, 84, 43, 112, 133, 205, 137, 101, 66, 183,
         0, 33, 115, 98, 89, 80, 173, 192, 2, 84, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 255, 217, 0,
     ];
-    let  _ = JpegDecoder::new(ZCursor::new(JPEG_DATA)).decode();
+    let  _ = JpegDecoder::new(JPEG_DATA).decode();
 }
 
