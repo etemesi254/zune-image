@@ -71,6 +71,10 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     return idct_int;
 }
 
+pub fn choose_idct_4x4_func(_: &DecoderOptions) -> IDCTPtr {
+    scalar::idct4x4
+}
+
 #[cfg(test)]
 #[allow(unreachable_code)]
 #[allow(dead_code)]

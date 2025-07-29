@@ -212,3 +212,106 @@ fn fsh(x: i32) -> i32 {
 fn clamp(a: i32) -> i16 {
     a.clamp(0, 255) as i16
 }
+
+/// IDCT assuming only the upper 4x4 is filled.
+///
+/// This is equivalent, play here: <https://play.rust-lang.org/?version=stable&mode=debug&edition=2024&gist=b5fb991fe5c86fd0749c34a37cc785d3>
+pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
+    let mut pos = 0;
+
+    for ptr in 0..4 {
+        let i0 = fsh(in_vector[ptr]) + 512;
+        let i2 = in_vector[ptr + 16];
+
+        let p1 = i2 * 2217;
+        let p3 = i2 * 5352;
+
+        let x0 = i0 + p3;
+        let x1 = i0 + p1;
+        let x2 = i0 - p1;
+        let x3 = i0 - p3;
+
+        // odd part
+        let i4 = in_vector[ptr + 24];
+        let i3 = in_vector[ptr + 8];
+
+        let p5 = (i4 + i3) * 4816;
+
+        let p1 = p5 + i3 * -3685;
+        let p2 = p5 + i4 * -10497;
+
+        let t3 = p5 + i3 * 867;
+        let t2 = p5 + i4 * -5945;
+
+        let t1 = p2 + i3 * -1597;
+        let t0 = p1 + i4 * -8034;
+
+        // constants scaled things up by 1<<12; let's bring them back
+        // down, but keep 2 extra bits of precision
+        in_vector[ptr] = (x0 + t3) >> 10;
+        in_vector[ptr + 8] = (x1 + t2) >> 10;
+        in_vector[ptr + 16] = (x2 + t1) >> 10;
+        in_vector[ptr + 24] = (x3 + t0) >> 10;
+        in_vector[ptr + 32] = (x3 - t0) >> 10;
+        in_vector[ptr + 40] = (x2 - t1) >> 10;
+        in_vector[ptr + 48] = (x1 - t2) >> 10;
+        in_vector[ptr + 56] = (x0 - t3) >> 10;
+    }
+
+    // This is vectorised in architectures supporting SSE 4.1
+    for i in (0..8).map(|i| 8 * i) {
+        // Even part
+        let i2 = in_vector[i + 2];
+        let i0 = in_vector[i];
+
+        let t0 = fsh(i0) + SCALE_BITS;
+        let t2 = i2 * 2217;
+        let t3 = i2 * 5352;
+
+        // constants scaled things up by 1<<12, plus we had 1<<2 from first
+        // loop, plus horizontal and vertical each scale by sqrt(8) so together
+        // we've got an extra 1<<3, so 1<<17 total we need to remove.
+        // so we want to round that, which means adding 0.5 * 1<<17,
+        // aka 65536. Also, we'll end up with -128 to 127 that we want
+        // to encode as 0..255 by adding 128, so we'll add that before the shift
+        // Rounding constant is already added into `t0`
+        let x0 = t0 + t3;
+        let x3 = t0 - t3;
+        let x1 = t0 + t2;
+        let x2 = t0 - t2;
+
+        // odd part
+        let i3 = in_vector[i + 3];
+        let i1 = in_vector[i + 1];
+
+        let p5 = (i3 + i1) * f2f(1.175875602);
+
+        let p1 = p5 + i1 * -3685;
+        let p2 = p5 + i3 * -10497;
+
+        let t3 = p5 + i1 * 867;
+        let t2 = p5 + i3 * -5945;
+
+        let t1 = p2 + i1 * -1597;
+        let t0 = p1 + i3 * -8034;
+
+        let out: &mut [i16; 8] = out_vector
+            .get_mut(pos..pos + 8)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        out[0..8].copy_from_slice(&[
+            clamp((x0 + t3) >> 17),
+            clamp((x1 + t2) >> 17),
+            clamp((x2 + t1) >> 17),
+            clamp((x3 + t0) >> 17),
+            clamp((x3 - t0) >> 17),
+            clamp((x2 - t1) >> 17),
+            clamp((x1 - t2) >> 17),
+            clamp((x0 - t3) >> 17),
+        ]);
+
+        pos += stride;
+    }
+}

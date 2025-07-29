@@ -432,6 +432,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             tmp,
                             &mut component.dc_pred,
                         );
+
                         // If an error occurs we can either propagate it
                         // as an error or print it and call terminate.
                         //
@@ -439,14 +440,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         // even if its bad, matching browsers.
                         //
                         // See example in https://github.com/etemesi254/zune-image/issues/293
-                        if result.is_err() {
+                        let len = if let Ok(len) = result {
+                            len
+                        } else { // result.is_err()
                             return if self.options.strict_mode() {
                                 Err(result.err().unwrap())
                             } else {
                                 error!("{}", result.err().unwrap());
                                 Ok(McuContinuation::Terminate)
                             };
-                        }
+                        };
 
                         if component.needed {
                             let idct_position = {
@@ -458,8 +461,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             };
 
                             let idct_pos = channel.get_mut(idct_position..).unwrap();
-                            //  call idct.
-                            (self.idct_func)(tmp, idct_pos, component.width_stride);
+
+                            if 1 < len && len <= 10 {
+                                (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
+                            } else {
+                                //  call idct.
+                                (self.idct_func)(tmp, idct_pos, component.width_stride);
+                            }
                         }
                     }
                 }

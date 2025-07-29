@@ -131,6 +131,7 @@ pub struct JpegDecoder<T: ZByteReaderTrait> {
     // of this struct, we check if we can switch to a faster one which
     // depend on certain CPU extensions.
     pub(crate) idct_func: IDCTPtr,
+    pub(crate) idct_4x4_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
     pub(crate) z_order:          [usize; MAX_COMPONENTS],
@@ -180,6 +181,7 @@ where
             succ_low:          0,
             num_scans:         0,
             idct_func:         choose_idct_func(&options),
+            idct_4x4_func:     choose_idct_4x4_func(&options),
             color_convert_16:  color_convert,
             input_colorspace:  ColorSpace::YCbCr,
             z_order:           [0; MAX_COMPONENTS],
