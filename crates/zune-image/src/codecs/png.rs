@@ -21,6 +21,7 @@ use zune_core::result::DecodingResult;
 use zune_png::error::PngDecodeErrors;
 use zune_png::*;
 
+pub use zune_png::PngDecoder;
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
 use crate::errors::ImageErrors::ImageDecodeErrors;
