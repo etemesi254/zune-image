@@ -645,7 +645,7 @@ impl BitStream {
         return Ok(true);
     }
 
-    pub fn update_progressive_params(&mut self, ah: u8, al: u8, spec_start: u8, spec_end: u8) {
+    pub fn update_progressive_params(&mut self, _ah: u8, al: u8, spec_start: u8, spec_end: u8) {
         self.successive_low_mask = 1i16 << al;
         self.spec_start = spec_start;
         self.spec_end = spec_end;
