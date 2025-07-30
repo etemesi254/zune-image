@@ -7,6 +7,7 @@
  */
 
 use std::fs::read;
+use std::io::Cursor;
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
@@ -14,13 +15,13 @@ use spng::DecodeFlags;
 use zune_benches::sample_path;
 
 fn decode_ref(data: &[u8]) -> Vec<u8> {
-    let mut decoder = png::Decoder::new(data);
+    let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.set_transformations(png::Transformations::EXPAND);
 
     let mut reader = decoder.read_info().unwrap();
 
     // Allocate the output buffer.
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
     // Read the next frame. An APNG might contain multiple frames.
     let _ = reader.next_frame(&mut buf).unwrap();
 
