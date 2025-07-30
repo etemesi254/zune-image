@@ -651,17 +651,17 @@ where
     return Err(DecodeErrors::ExhaustedData);
 }
 
-#[cfg(test)]
-mod tests{
-    use zune_core::bytestream::ZCursor;
-    use crate::JpegDecoder;
-
-    #[test]
-    fn make_test(){
-        let img = "/Users/etemesi/Downloads/wrong_sampling.jpeg";
-        let data = ZCursor::new(std::fs::read(img).unwrap());
-        let mut decoder = JpegDecoder::new(data);
-        decoder.decode().unwrap();
-
-    }
-}
+// #[cfg(test)]
+// mod tests{
+//     use zune_core::bytestream::ZCursor;
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn make_test(){
+//         let img = "/Users/etemesi/Downloads/wrong_sampling.jpeg";
+//         let data = ZCursor::new(std::fs::read(img).unwrap());
+//         let mut decoder = JpegDecoder::new(data);
+//         decoder.decode().unwrap();
+//
+//     }
+// }
