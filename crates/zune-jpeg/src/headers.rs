@@ -294,7 +294,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     image.num_scans = ns;
     let smallest_size = 6 + 2 * usize::from(ns);
 
-    if ls < smallest_size {
+    if ls != smallest_size {
         return Err(DecodeErrors::SosError(format!(
             "Bad SOS length {ls},corrupt jpeg"
         )));
