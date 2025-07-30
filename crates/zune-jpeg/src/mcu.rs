@@ -6,6 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
+use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
 
@@ -194,7 +195,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 "Baseline decoding of components: {:?}",
                 &self.z_order[..usize::from(self.num_scans)]
             );
-            trace!("Decoding MCU width: {mcu_width}, height: {mcu_height}");
 
             for i in 0..mcu_height {
                 // Report if we have no more bytes
@@ -219,15 +219,32 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 } else {
+                    /* NB: (cae). This code was added due to the issue at https://github.com/etemesi254/zune-image/issues/277
+                     *
+                     * There is a particular set of images that interleave the start of scan (SOS) with the MCU,
+                     * E.g if it's a three component image, we have SOS->MCU ->SOS->MCU ->SOS->MCU
+                     * which presents a problem on decoding, we need to buffer the whole image before continuing since
+                     * we won't have a row containing all the component data which will be needed e.g for color conversion.
+                     *
+                     * The mechanisms is that we decode the whole image upfront, which goes against the normal
+                     * routine of decoding MCU width , so this requires more memory upfront than initial routines
+                     * but it is a single image out of the many corpuses that exist, so its fine.
+                     * (image in test-images/jpeg/sos_news.jpeg)
+
+                     * Code contributed by  Aurelia Molzer (https://github.com/197g)
+
+                     *
+                     */
+
                     self.decode_mcu_width::<true>(
                         mcu_width,
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 };
 
@@ -241,7 +258,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         width,
                         padded_width,
                         &mut pixels_written,
-                        &mut upsampler_scratch_space,
+                        &mut upsampler_scratch_space
                     )?;
                 }
 
@@ -299,7 +316,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn finish_baseline_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         let mcu_height = self.mcu_y;
 
@@ -315,7 +332,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // Mark only needed components for computing output colors.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
+                pos
             ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
@@ -361,7 +378,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space,
+                &mut upsampler_scratch_space
             )?;
         }
 
@@ -370,7 +387,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_mcu_width<const PROGRESSIVE: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
 
@@ -411,7 +428,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred,
+                            &mut component.dc_pred
                         )?;
 
                         if component.needed {
@@ -701,5 +718,5 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 enum McuContinuation {
     Ok,
     AnotherSos,
-    Terminate,
+    Terminate
 }
