@@ -111,5 +111,10 @@
     "name": "sampling_factors.jpg",
     "hash": 284621623123194664498179714486900153633,
     "comment": "Another weird sampling factor,(when will it end)"
+  },
+  {
+    "name": "sos_news.jpeg",
+    "hash": 125076749956488097552385675695536257187,
+    "comment": "SOS interleaved with markers"
   }
 ]
