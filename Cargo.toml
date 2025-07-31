@@ -19,7 +19,7 @@ members = [
     "tests",
     "benchmarks"
 ]
-exclude = ["crates/zune-opencl"]
+exclude = ["crates/zune-python"]
 
 [dependencies]
 zune-bin = { path = "./crates/zune-bin" }
