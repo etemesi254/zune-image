@@ -1,11 +1,10 @@
 [package]
 name = "zune"
-version = "0.1.0"
+version = "0.5.0-rc4"
 edition = "2021"
 license = "MIT OR Apache-2.0 OR Zlib"
 repository = "https://github.com/etemesi254/zune-image.git"
 authors = ["Caleb Etemesi"]
-
 [package.metadata.wix]
 upgrade-guid = "D9787DDA-210F-402A-B935-CBF19F974A23"
 path-guid = "A0995AC9-B8F5-44CC-B6D9-FDCD5C7CDE17"
