@@ -22,7 +22,8 @@ use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{
-    parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
+    parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
+    parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
@@ -545,6 +546,9 @@ where
             Marker::APP(14) => {
                 parse_app14(self)?;
             }
+            Marker::APP(13) => {
+                parse_app13(self)?;
+            }
             _ => {
                 warn!(
                     "Capabilities for processing marker \"{:?}\" not implemented",
@@ -665,6 +669,20 @@ where
     /// ```
     pub fn xmp(&self) -> Option<&Vec<u8>> {
         return self.info.xmp_data.as_ref();
+    }
+    /// Return the IPTC data for the file
+    ///
+    /// This returns the raw IPTC data.
+    ///
+    /// # Returns
+    /// -`Some(data)`: The raw IPTC data, if present in the image
+    /// - None: May indicate the following
+    ///
+    ///    1. The image doesn't have IPTC data
+    ///    2. The image headers haven't been decoded
+    #[must_use]
+    pub fn iptc(&self) -> Option<&Vec<u8>> {
+        return self.info.iptc_data.as_ref();
     }
     /// Get the output colorspace the image pixels will be decoded into
     ///
@@ -899,7 +917,9 @@ pub struct ImageInfo {
     /// Exif Data
     pub exif_data: Option<Vec<u8>>,
     /// XMP Data
-    pub xmp_data: Option<Vec<u8>>
+    pub xmp_data: Option<Vec<u8>>,
+    /// IPTC Data
+    pub iptc_data: Option<Vec<u8>>,
 }
 
 impl ImageInfo {
