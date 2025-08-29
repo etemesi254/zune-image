@@ -83,6 +83,7 @@ impl Marker {
             0xE0 => Some(APP(0)),
             0xE1 => Some(APP(1)),
             0xE2 => Some(APP(2)),
+            0xED => Some(APP(13)),
             0xEE => Some(APP(14)),
             _ => Some(UNKNOWN(n))
         }

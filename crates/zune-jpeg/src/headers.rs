@@ -413,6 +413,34 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     Ok(())
 }
 
+/// Parse the APP13 (IPTC) segment.
+pub(crate) fn parse_app13<T: ZByteReaderTrait>(
+    decoder: &mut JpegDecoder<T>,
+) -> Result<(), DecodeErrors> {
+    const IPTC_PREFIX: &[u8] = b"Photoshop 3.0";
+    // skip length.
+    let mut length = usize::from(decoder.stream.get_u16_be());
+
+    if length < 2 {
+        return Err(DecodeErrors::FormatStatic("Too small APP13 length"));
+    }
+    // length bytes.
+    length -= 2;
+
+    if length > IPTC_PREFIX.len() && decoder.stream.peek_at(0, IPTC_PREFIX.len())? == IPTC_PREFIX {
+        // skip bytes we read above.
+        decoder.stream.skip(IPTC_PREFIX.len())?;
+        length -= IPTC_PREFIX.len();
+
+        let iptc_bytes = decoder.stream.peek_at(0, length)?.to_vec();
+
+        decoder.info.iptc_data = Some(iptc_bytes);
+    }
+
+    decoder.stream.skip(length)?;
+    Ok(())
+}
+
 /// Parse Adobe App14 segment
 pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
