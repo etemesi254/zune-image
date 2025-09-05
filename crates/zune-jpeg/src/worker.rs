@@ -15,7 +15,6 @@ use crate::color_convert::ycbcr_to_grayscale;
 use crate::components::{Components, SampleRatios};
 use crate::decoder::{ColorConvert16Ptr, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
-use crate::misc::calculate_padded_width;
 
 /// fast 0..255 * 0..255 => 0..255 rounded multiplication
 ///
@@ -461,7 +460,7 @@ pub(crate) fn upsample(
             let raw_coeff = &component.raw_coeff;
             let dest_coeff = &mut component.upsample_dest;
 
-            let size =  component.width_stride.div_ceil(v);
+            //let size =  component.width_stride.div_ceil(v);
 
             // for (single_row, output_stride) in raw_coeff
             //     .chunks_exact(size)
