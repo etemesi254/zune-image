@@ -18,6 +18,8 @@
 //!The latter representation makes it easier for processing and it allows multi-threaded
 //! post-processing for scenarios where processing is slow.
 
+use alloc::vec::Vec;
+
 use bytemuck::{Pod, Zeroable};
 use zune_core::colorspace::ColorSpace;
 
@@ -279,8 +281,8 @@ pub fn deinterleave_f32(
 
 #[cfg(test)]
 mod tests {
-    use std::array;
-    use std::num::NonZeroU32;
+    use core::array;
+    use core::num::NonZeroU32;
 
     use zune_core::colorspace::ColorSpace;
 

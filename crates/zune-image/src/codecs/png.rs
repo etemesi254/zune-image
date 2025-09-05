@@ -10,7 +10,8 @@
 #![allow(unused_variables)]
 
 //! Represents an png image decoder and encoder
-use std::io::Cursor;
+
+use alloc::{borrow::ToOwned, string::ToString, vec::Vec};
 
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
@@ -30,6 +31,9 @@ use crate::frame::Frame;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
+
+#[cfg(feature = "std")]
+use std::io::Cursor;
 
 impl<T> DecoderTrait for PngDecoder<T>
 where
@@ -62,6 +66,7 @@ where
                 }
                 let pix = self.decode()?;
                 match pix {
+                    #[cfg(any(feature = "std", feature = "libm"))]
                     DecodingResult::U8(pix) => {
                         post_process_image(
                             &info,
@@ -77,7 +82,11 @@ where
                         let im_frame = Frame::from_u8(&output, colorspace, usize::from(frame.delay_num),usize::from(frame.delay_denom));
                         output_frames.push(im_frame);
                     }
-                    _ => return Err(ImageDecodeErrors("The current image is an  Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
+                    #[cfg(not(any(feature = "std", feature = "libm")))]
+                    DecodingResult::U8(pix) => {
+                        return Err(ImageDecodeErrors("The current image requires post-processing to decode, but that feature is only supported with `std` or `libm` enabled".to_string()))
+                    }
+                    _ => return Err(ImageDecodeErrors("The current image is an Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
                 }
             }
             let mut image = Image::new_frames(output_frames, depth, width, height, colorspace);
@@ -183,7 +192,8 @@ impl EncoderTrait for PngEncoder {
 
         let mut encoder = zune_png::PngEncoder::new(frame, options);
 
-        #[allow(unused_mut)]
+        #[cfg(feature = "std")]
+        #[cfg_attr(not(feature = "metadata"), expect(unused_mut))]
         let mut buf: Cursor<Vec<u8>> = std::io::Cursor::new(vec![]);
 
         #[cfg(feature = "metadata")]
@@ -263,6 +273,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use zune_core::bytestream::ZCursor;
     use zune_core::colorspace::ColorSpace;
     use zune_png::PngDecoder;

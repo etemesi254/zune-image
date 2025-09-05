@@ -6,12 +6,16 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 //! Scharr derivative filter
+
+use alloc::vec::Vec;
+
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::mathops::{sqrt_f32, sqrt_f64};
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
@@ -67,21 +71,21 @@ impl OperationsTrait for Scharr {
                         channel.reinterpret_as()?,
                         out_channel.reinterpret_as_mut()?,
                         width,
-                        height
+                        height,
                     ),
                     BitType::U16 => scharr_int::<u16>(
                         channel.reinterpret_as()?,
                         out_channel.reinterpret_as_mut()?,
                         width,
-                        height
+                        height,
                     ),
                     BitType::F32 => scharr_float::<f32>(
                         channel.reinterpret_as()?,
                         out_channel.reinterpret_as_mut()?,
                         width,
-                        height
+                        height,
                     ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
                 }
                 *channel = out_channel;
             }
@@ -98,24 +102,24 @@ impl OperationsTrait for Scharr {
                                 channel.reinterpret_as()?,
                                 out_channel.reinterpret_as_mut()?,
                                 width,
-                                height
+                                height,
                             ),
                             BitType::U16 => scharr_int::<u16>(
                                 channel.reinterpret_as()?,
                                 out_channel.reinterpret_as_mut()?,
                                 width,
-                                height
+                                height,
                             ),
                             BitType::F32 => scharr_float::<f32>(
                                 channel.reinterpret_as()?,
                                 out_channel.reinterpret_as_mut()?,
                                 width,
-                                height
+                                height,
                             ),
                             d => {
                                 return Err(ImageErrors::ImageOperationNotImplemented(
                                     self.name(),
-                                    d
+                                    d,
                                 ))
                             }
                         }
@@ -148,7 +152,7 @@ impl OperationsTrait for Scharr {
 fn scharr_inner_f32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        f32: std::convert::From<T>
+        f32: core::convert::From<T>
 {
     // matrix
     //   -3, 0,  3,
@@ -169,7 +173,7 @@ fn scharr_inner_f32<T>(c: &[T; 9]) -> T
     sum_b += (f32::from(c[2]) * -03.) + (f32::from(c[6]) * 03.);
     sum_b += (f32::from(c[7])  * 10.) + (f32::from(c[8]) * 03.);
 
-    T::from_f32(((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f32(sqrt_f32((sum_a * sum_a) + (sum_b * sum_b)))
 }
 
 /// Calculate scharr for int  images
@@ -182,7 +186,7 @@ fn scharr_inner_f32<T>(c: &[T; 9]) -> T
 fn scharr_inner_i32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        i32: std::convert::From<T>
+        i32: core::convert::From<T>
 {
     // Gx matrix
     //   -3, 0,  3,
@@ -203,7 +207,7 @@ fn scharr_inner_i32<T>(c: &[T; 9]) -> T
     sum_b += (i32::from(c[2]) * -03) + (i32::from(c[6]) * 03);
     sum_b += (i32::from(c[7])  * 10) + (i32::from(c[8]) * 03);
 
-    T::from_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f64(sqrt_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b))))
 }
 
 /// Carry out the scharr filter for a float channel
@@ -218,7 +222,7 @@ fn scharr_inner_i32<T>(c: &[T; 9]) -> T
 pub fn scharr_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
@@ -238,7 +242,7 @@ where
 pub fn scharr_int<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    i32: std::convert::From<T>
+    i32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);

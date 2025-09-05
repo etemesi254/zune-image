@@ -1,5 +1,5 @@
 use core::fmt::Debug;
-use std::fmt::Formatter;
+use core::fmt::Formatter;
 
 use zune_core::bytestream::ZByteIoError;
 
@@ -18,7 +18,7 @@ pub enum GifDecoderErrors {
     TooSmallSize(usize, usize)
 }
 impl Debug for GifDecoderErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             GifDecoderErrors::NotAGif => {
                 writeln!(f, "Not a gif, magic bytes didn't match")

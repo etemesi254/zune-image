@@ -53,7 +53,7 @@ use crate::utils::execute_on;
 ///
 pub struct Exposure {
     exposure: f32,
-    black:    f32
+    black: f32,
 }
 
 impl Exposure {
@@ -109,7 +109,7 @@ impl OperationsTrait for Exposure {
                         .iter_mut()
                         .for_each(|x| *x = (*x - black) * self.exposure);
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };

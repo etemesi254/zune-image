@@ -29,6 +29,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::mathops::powf_f32;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
@@ -38,7 +39,7 @@ use crate::utils::execute_on;
 /// This operation is internally multithreaded, where supported
 #[derive(Default)]
 pub struct Gamma {
-    value: f32
+    value: f32,
 }
 
 impl Gamma {
@@ -74,7 +75,7 @@ impl OperationsTrait for Gamma {
                         .reinterpret_as_mut::<f32>()?
                         .iter_mut()
                         .for_each(|x| {
-                            *x = value_inv * x.powf(self.value);
+                            *x = value_inv * powf_f32(*x, self.value);
                         });
                 }
 
@@ -100,7 +101,7 @@ impl OperationsTrait for Gamma {
 )]
 pub fn gamma<T>(pixels: &mut [T], value: f32, max_value: u16)
 where
-    T: Copy + NumOps<T> + Default
+    T: Copy + NumOps<T> + Default,
 {
     // build a lookup table which we use for gamma correction in the next stage
     // it is faster to do it this way as calling pow in the inner loop is slow
@@ -118,7 +119,7 @@ where
 
     for x in 0..=max_usize {
         let pixel_f32 = (x as f32) * value_inv;
-        let mut new_pix_val = max_value * pixel_f32.powf(value);
+        let mut new_pix_val = max_value * powf_f32(pixel_f32, value);
 
         if new_pix_val > max_value {
             new_pix_val = max_value;

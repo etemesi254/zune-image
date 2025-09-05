@@ -8,7 +8,8 @@
 
 #![cfg(feature = "serde-support")]
 
-use std::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::collections::BTreeMap;
 
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};

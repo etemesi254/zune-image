@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use crate::traits::NumOps;
+use crate::{
+    mathops::{powi_f32, trunc_f32},
+    traits::NumOps,
+};
 
 #[cfg(feature = "portable-simd")]
 mod std_simd {
@@ -66,9 +69,9 @@ const A: f32 = -0.5;
 fn bicubic_kernel(x: f32) -> f32 {
     let x = x.abs();
     if x <= 1.0 {
-        (A + 2.0) * x.powi(3) - (A + 3.0) * x.powi(2) + 1.0
+        (A + 2.0) * powi_f32(x, 3) - (A + 3.0) * powi_f32(x, 2) + 1.0
     } else if x < 2.0 {
-        A * x.powi(3) - 5.0 * A * x.powi(2) + 8.0 * A * x - 4.0 * A
+        A * powi_f32(x, 3) - 5.0 * A * powi_f32(x, 2) + 8.0 * A * x - 4.0 * A
     } else {
         0.0
     }
@@ -111,10 +114,10 @@ fn bicubic_function(y0: isize, src_y: f32) -> [f32; 4] {
 }
 pub fn bicubic_resample<T>(
     input: &[T], output: &mut [T], input_width: usize, input_height: usize, new_width: usize,
-    new_height: usize
+    new_height: usize,
 ) where
     T: Copy + NumOps<T>,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     let scale_y = input_height as f32 / new_height as f32;
     let scale_x = input_width as f32 / new_width as f32;
@@ -140,13 +143,13 @@ pub fn bicubic_resample<T>(
         // the ideal one is src_y.floor(), but
         // trunk == floor for +ve values and
         // src_y can't be negative.
-        let y0 = src_y.trunc() as isize;
+        let y0 = trunc_f32(src_y) as isize;
 
         let y_coeffs = bicubic_function(y0, src_y);
 
         for (x, x_coeffs) in (0..new_width).zip(x_mega_coeffs.iter()) {
             let src_x = x as f32 * scale_x;
-            let x0 = src_x.trunc() as usize;
+            let x0 = trunc_f32(src_x) as usize;
             let mut sum = 0.0;
             let mut weight_sum = 0.0;
 
@@ -212,7 +215,7 @@ pub fn bicubic_resample<T>(
 mod benchmarks {
     extern crate test;
 
-    use std::hint::black_box;
+    use core::hint::black_box;
     use std::simd::f32x4;
 
     use nanorand::{Rng, WyRand};

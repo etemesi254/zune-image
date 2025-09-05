@@ -13,6 +13,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::mathops::{sqrt_f32, sqrt_f64};
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
@@ -66,21 +67,21 @@ impl OperationsTrait for Sobel {
                     channel.reinterpret_as()?,
                     out_channel.reinterpret_as_mut()?,
                     width,
-                    height
+                    height,
                 ),
                 BitType::U16 => sobel_int::<u16>(
                     channel.reinterpret_as()?,
                     out_channel.reinterpret_as_mut()?,
                     width,
-                    height
+                    height,
                 ),
                 BitType::F32 => sobel_float::<f32>(
                     channel.reinterpret_as()?,
                     out_channel.reinterpret_as_mut()?,
                     width,
-                    height
+                    height,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             *channel = out_channel;
             Ok(())
@@ -102,7 +103,7 @@ impl OperationsTrait for Sobel {
 fn sobel_inner_f32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        f32: std::convert::From<T>
+        f32: core::convert::From<T>
 {
     // matrix
     //  -1, 0, 1,
@@ -123,7 +124,7 @@ fn sobel_inner_f32<T>(c: &[T; 9]) -> T
     sum_b += (f32::from(c[2]) * -1.) + (f32::from(c[6]) * 1.);
     sum_b += (f32::from(c[7]) * 2.) + (f32::from(c[8]) * 1.);
 
-    T::from_f32(((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f32(sqrt_f32((sum_a * sum_a) + (sum_b * sum_b)))
 }
 
 /// Calculate sobel for int  images
@@ -136,7 +137,7 @@ fn sobel_inner_f32<T>(c: &[T; 9]) -> T
 fn sobel_inner_i32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        i32: std::convert::From<T>
+        i32: core::convert::From<T>
 {
     // matrix
     //  -1, 0, 1,
@@ -157,7 +158,7 @@ fn sobel_inner_i32<T>(c: &[T; 9]) -> T
     sum_b += (i32::from(c[2]) * -1) + (i32::from(c[6]) * 1);
     sum_b += (i32::from(c[7]) * 2) + (i32::from(c[8]) * 1);
 
-    T::from_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f64(sqrt_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b))))
 }
 
 /// Carry out the sobel filter for a float channel
@@ -172,7 +173,7 @@ fn sobel_inner_i32<T>(c: &[T; 9]) -> T
 pub fn sobel_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
@@ -192,7 +193,7 @@ where
 pub fn sobel_int<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    i32: std::convert::From<T>
+    i32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);

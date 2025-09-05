@@ -114,5 +114,4 @@ impl Display for InflateDecodeErrors {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for InflateDecodeErrors {}
+impl core::error::Error for InflateDecodeErrors {}

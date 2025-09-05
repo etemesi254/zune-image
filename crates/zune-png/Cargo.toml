@@ -21,6 +21,7 @@ portable-simd = []
 default = ["sse", "std"]
 
 [dependencies]
+libm = { version = "0.2.15", optional = true }
 zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
 zune-inflate = { path = "../zune-inflate", version = "0.2", default-features = false, features = ["zlib"] }
 

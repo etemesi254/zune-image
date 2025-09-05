@@ -53,3 +53,157 @@ fn test_u8_div() {
         assert_eq!(13459 / i, u64::from(divisor));
     }
 }
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn round_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::roundf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::round(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn round_f64(x: f64) -> f64 {
+    #[cfg(feature = "libm")]
+    {
+        libm::round(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f64::round(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn exp_f64(x: f64) -> f64 {
+    #[cfg(feature = "libm")]
+    {
+        libm::exp(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f64::exp(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn sqrt_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::sqrtf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::sqrt(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn sqrt_f64(x: f64) -> f64 {
+    #[cfg(feature = "libm")]
+    {
+        libm::sqrt(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f64::sqrt(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn powf_f32(base: f32, exp: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::powf(base, exp)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::powf(base, exp)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn sin_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::sinf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::sin(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn cos_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::cosf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::cos(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn powi_f32(base: f32, exp: i32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        powf_f32(base, exp as f32)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::powi(base, exp)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn trunc_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::truncf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::trunc(x)
+    }
+}
+
+#[inline(always)]
+#[must_use]
+pub(crate) fn floor_f32(x: f32) -> f32 {
+    #[cfg(feature = "libm")]
+    {
+        libm::floorf(x)
+    }
+
+    #[cfg(all(not(feature = "libm"), feature = "std"))]
+    {
+        f32::floor(x)
+    }
+}

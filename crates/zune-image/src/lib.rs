@@ -95,7 +95,14 @@
 )]
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![cfg_attr(feature = "docs", feature(doc_cfg))]
+#![no_std]
+
+#[macro_use]
+extern crate alloc;
 extern crate core;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 pub mod channel;
 pub mod codecs;

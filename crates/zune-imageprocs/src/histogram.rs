@@ -9,8 +9,8 @@
 // //! way too many colors to properly histogram
 // //!
 // //!
-// use std::cell::{BorrowError, Ref, RefCell};
-// use std::usize;
+// use core::cell::{BorrowError, Ref, RefCell};
+// use core::usize;
 //
 // use zune_core::bit_depth::BitType;
 // use zune_image::errors::ImageErrors;

@@ -1,5 +1,7 @@
 //! A set of miscellaneous functions that are good to have
-use std::cmp::min;
+
+use core::cmp::min;
+use alloc::vec::Vec;
 
 use zune_core::bytestream::ZByteReaderTrait;
 
@@ -8,11 +10,12 @@ use crate::metadata::ImageMetadata;
 
 /// Swizzle three channels optionally using simd intrinsics where possible
 fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
+    #[cfg(feature = "std")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Note that this `unsafe` block is safe because we're testing
         // that the `avx2` feature is indeed available on our CPU.
-        if is_x86_feature_detected!("avx2") {
+        if std::is_x86_feature_detected!("avx2") {
             return unsafe { swizzle_three_channels_avx(r, y) };
         }
     }
@@ -43,11 +46,12 @@ fn swizzle_three_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 }
 
 fn swizzle_four_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
+    #[cfg(feature = "std")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         // Note that this `unsafe` block is safe because we're testing
         // that the `avx2` feature is indeed available on our CPU.
-        if is_x86_feature_detected!("avx2") {
+        if std::is_x86_feature_detected!("avx2") {
             return unsafe { swizzle_four_channels_avx(r, y) };
         }
     }

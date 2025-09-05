@@ -8,10 +8,14 @@ homepage = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-hdr"
 keywords = ["image"]
 categories = ["multimedia::images", "multimedia::encoding", ]
 license = "MIT OR Apache-2.0 OR Zlib"
+rust-version = "1.81.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 log = ["zune-core/log"]
+std = []
+default = ["std"]
 
 [dependencies]
-zune-core = { version = "0.5.0-rc0", path = "../zune-core", default-features = false, features = ["std"] }
+zune-core = { version = "0.5.0-rc0", path = "../zune-core", default-features = false }
+libm = { version = "0.2", optional = true }

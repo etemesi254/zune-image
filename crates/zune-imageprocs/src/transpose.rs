@@ -8,7 +8,8 @@
 
 //!  Interchange row and columns in an image
 //!
-use std::sync::Once;
+
+use core::sync::atomic::AtomicBool;
 
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
@@ -24,7 +25,17 @@ pub(crate) mod scalar;
 pub(crate) mod sse41;
 mod tests;
 
-static START: Once = Once::new();
+static START: AtomicBool = AtomicBool::new(true);
+
+fn once<T>(f: impl FnOnce() -> T) -> Option<T> {
+    use core::sync::atomic::Ordering;
+
+    if let Ok(true) = START.compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed) {
+        Some(f())
+    } else {
+        None
+    }
+}
 
 /// Transpose an image
 ///
@@ -62,7 +73,7 @@ impl OperationsTrait for Transpose {
                         channel.reinterpret_as::<u8>()?,
                         out_channel.reinterpret_as_mut::<u8>()?,
                         width,
-                        height
+                        height,
                     );
                 }
                 BitType::U16 => {
@@ -70,7 +81,7 @@ impl OperationsTrait for Transpose {
                         channel.reinterpret_as::<u16>()?,
                         out_channel.reinterpret_as_mut::<u16>()?,
                         width,
-                        height
+                        height,
                     );
                 }
                 BitType::F32 => {
@@ -78,7 +89,7 @@ impl OperationsTrait for Transpose {
                         channel.reinterpret_as()?,
                         out_channel.reinterpret_as_mut()?,
                         width,
-                        height
+                        height,
                     );
                 }
                 d => {
@@ -106,8 +117,9 @@ pub fn transpose_u16(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, he
         {
             use crate::transpose::sse41::transpose_sse41_u16;
 
-            if is_x86_feature_detected!("sse4.1") {
-                START.call_once(|| {
+            #[cfg(feature = "std")]
+            if std::is_x86_feature_detected!("sse4.1") {
+                once(|| {
                     trace!("Using SSE4.1 transpose_u16 algorithm");
                 });
                 unsafe {
@@ -116,7 +128,7 @@ pub fn transpose_u16(in_matrix: &[u16], out_matrix: &mut [u16], width: usize, he
             }
         }
     }
-    START.call_once(|| {
+    once(|| {
         trace!("Using scalar transpose_u16 algorithm");
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
@@ -129,8 +141,9 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
         {
             use crate::transpose::sse41::transpose_sse41_u8;
 
-            if is_x86_feature_detected!("sse4.1") {
-                START.call_once(|| {
+            #[cfg(feature = "std")]
+            if std::is_x86_feature_detected!("sse4.1") {
+                once(|| {
                     trace!("Using SSE4.1 transpose u8 algorithm");
                 });
                 unsafe {
@@ -139,7 +152,7 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
             }
         }
     }
-    START.call_once(|| {
+    once(|| {
         trace!("Using scalar transpose u8 algorithm");
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
@@ -152,8 +165,9 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
         {
             use crate::transpose::sse41::transpose_sse_float;
 
-            if is_x86_feature_detected!("sse4.1") {
-                START.call_once(|| {
+            #[cfg(feature = "std")]
+            if std::is_x86_feature_detected!("sse4.1") {
+                once(|| {
                     trace!("Using SSE4.1 transpose u8 algorithm");
                 });
                 unsafe {
@@ -162,7 +176,7 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
             }
         }
     }
-    START.call_once(|| {
+    once(|| {
         trace!("Using scalar transpose u8 algorithm");
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
@@ -175,8 +189,9 @@ pub fn transpose_u32(in_matrix: &[u32], out_matrix: &mut [u32], width: usize, he
         {
             use crate::transpose::sse41::transpose_sse_u32;
 
-            if is_x86_feature_detected!("sse") {
-                START.call_once(|| {
+            #[cfg(feature = "std")]
+            if std::is_x86_feature_detected!("sse") {
+                once(|| {
                     trace!("Using SSE4.1 transpose u8 algorithm");
                 });
                 unsafe {
@@ -185,14 +200,14 @@ pub fn transpose_u32(in_matrix: &[u32], out_matrix: &mut [u32], width: usize, he
             }
         }
     }
-    START.call_once(|| {
+    once(|| {
         trace!("Using scalar transpose u8 algorithm");
     });
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
 
 pub fn transpose_generic<T: Default + Copy>(
-    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
+    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize,
 ) {
     transpose_scalar(in_matrix, out_matrix, width, height);
 }

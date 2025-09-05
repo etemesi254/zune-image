@@ -14,7 +14,7 @@
 //!
 //! pixel = max_value-pixel
 //! ```
-use std::ops::Sub;
+use core::ops::Sub;
 
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
@@ -55,7 +55,7 @@ impl OperationsTrait for Invert {
                 BitType::U8 => invert(channel.reinterpret_as_mut::<u8>()?),
                 BitType::U16 => invert(channel.reinterpret_as_mut::<u16>()?),
                 BitType::F32 => invert(channel.reinterpret_as_mut::<f32>()?),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };
@@ -68,7 +68,7 @@ impl OperationsTrait for Invert {
             ColorSpace::RGB,
             ColorSpace::RGBA,
             ColorSpace::LumaA,
-            ColorSpace::Luma
+            ColorSpace::Luma,
         ]
     }
     fn supported_types(&self) -> &'static [BitType] {
@@ -82,7 +82,7 @@ impl OperationsTrait for Invert {
 ///  is `pixel[x,y] = 255-pixel[x,y]`
 pub fn invert<T>(in_image: &mut [T])
 where
-    T: NumOps<T> + Sub<Output = T> + Copy
+    T: NumOps<T> + Sub<Output = T> + Copy,
 {
     for pixel in in_image.iter_mut() {
         *pixel = T::MAX_VAL - *pixel;
@@ -91,7 +91,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
+    use core::num::NonZeroU32;
 
     use zune_core::colorspace::ColorSpace;
     use zune_image::image::Image;
@@ -105,7 +105,7 @@ mod tests {
             0_u8,
             ColorSpace::MultiBand(NonZeroU32::new(6).unwrap()),
             100,
-            100
+            100,
         );
         Invert::new().execute(&mut image).unwrap();
     }

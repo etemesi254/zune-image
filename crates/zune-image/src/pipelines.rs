@@ -6,7 +6,8 @@
 //! Pipelines, Batch image processing support
 //!
 #![allow(unused_variables)]
-use std::time::Instant;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 use zune_core::log::Level::Trace;
 use zune_core::log::{log_enabled, trace};
@@ -15,6 +16,9 @@ use crate::codecs::ImageFormat;
 use crate::errors::ImageErrors;
 use crate::image::Image;
 use crate::traits::{IntoImage, OperationsTrait};
+
+#[cfg(feature = "std")]
+use std::time::Instant;
 
 #[derive(Copy, Clone, Debug)]
 enum PipelineState {
@@ -156,6 +160,7 @@ impl Pipeline {
         if let Some(state) = self.state {
             match state {
                 PipelineState::Decode => {
+                    #[cfg(feature = "std")]
                     let start = Instant::now();
                     // do the actual decode
                     if self.decode.is_none() {
@@ -171,7 +176,8 @@ impl Pipeline {
                     }
 
                     if log_enabled!(Trace) {
-                        println!();
+                        #[cfg(feature = "std")]
+                        std::println!();
                         trace!("Current state: {:?}\n", state);
                     }
 
@@ -181,11 +187,16 @@ impl Pipeline {
 
                     self.image.push(img);
 
+                    #[cfg(feature = "std")]
                     let stop = Instant::now();
 
                     self.state = state.next();
 
+                    #[cfg(feature = "std")]
                     trace!("Finished decoding in {} ms", (stop - start).as_millis());
+
+                    #[cfg(not(feature = "std"))]
+                    trace!("Finished decoding");
                 }
                 PipelineState::Operations => {
                     if self.image.is_empty() {
@@ -193,7 +204,8 @@ impl Pipeline {
                     }
 
                     if log_enabled!(Trace) && !self.operations.is_empty() {
-                        println!();
+                        #[cfg(feature = "std")]
+                        std::println!();
                         trace!("Current state: {:?}\n", state);
                     }
 
@@ -203,15 +215,23 @@ impl Pipeline {
 
                             trace!("Running {}", operation_name);
 
+                            #[cfg(feature = "std")]
                             let start = Instant::now();
 
                             operation.execute(image)?;
 
+                            #[cfg(feature = "std")]
                             let stop = Instant::now();
 
+                            #[cfg(feature = "std")]
                             trace!(
                                 "Finished running `{operation_name}` in {} ms",
                                 (stop - start).as_millis()
+                            );
+
+                            #[cfg(not(feature = "std"))]
+                            trace!(
+                                "Finished running `{operation_name}`"
                             );
                         }
                         self.state = state.next();

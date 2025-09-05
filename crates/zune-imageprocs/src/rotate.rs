@@ -22,7 +22,7 @@ use zune_image::traits::OperationsTrait;
 use crate::utils::execute_on;
 
 pub struct Rotate {
-    angle: f32
+    angle: f32,
 }
 
 impl Rotate {
@@ -55,7 +55,7 @@ impl OperationsTrait for Rotate {
                         width,
                         height,
                         channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?
+                        new_channel.reinterpret_as_mut()?,
                     );
                 }
                 BitType::U16 => {
@@ -64,7 +64,7 @@ impl OperationsTrait for Rotate {
                         width,
                         height,
                         channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?
+                        new_channel.reinterpret_as_mut()?,
                     );
                 }
                 BitType::F32 => rotate::<f32>(
@@ -72,9 +72,9 @@ impl OperationsTrait for Rotate {
                     width,
                     height,
                     channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?
+                    new_channel.reinterpret_as_mut()?,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             };
             *channel = new_channel;
             Ok(())
@@ -104,7 +104,7 @@ fn change_image_dims(image: &mut Image, angle: f32) {
 }
 
 pub fn rotate<T: Copy>(
-    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T]
+    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T],
 ) {
     let angle = angle % 360.0;
 

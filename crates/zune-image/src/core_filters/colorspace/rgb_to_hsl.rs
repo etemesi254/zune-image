@@ -10,11 +10,23 @@ const ONE_SIXTH: f32 = 1.0 / 6.0;
 const TWO_THIRD: f32 = 2.0 / 3.0;
 
 #[inline]
+fn floor(x: f32) -> f32 {
+    let f = x % 1.;
+    if f.is_nan() || f == 0. || f == -0. {
+        x
+    } else if x < 0. {
+        x - f - 1.
+    } else {
+        x - f
+    }
+}
+
+#[inline]
 fn python_mod(n: f32, base: f32) -> f32 {
     // we based our code on python, we have to match it's mod
     // function
     // see https://stackoverflow.com/questions/3883004/how-does-the-modulo-operator-work-on-negative-numbers-in-python
-    n - (n / base).floor() * base
+    n - floor(n / base) * base
 }
 #[inline(always)]
 fn rgb_to_hsl_inner(r: f32, g: f32, b: f32) -> [f32; 3] {

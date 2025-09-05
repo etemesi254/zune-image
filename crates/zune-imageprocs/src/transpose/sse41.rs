@@ -32,7 +32,7 @@
 //! less operations
 //!
 //! Also fyi you can have in place transposition, it's a simple
-//! std::mem::swap, but not the subject today
+//! core::mem::swap, but not the subject today
 //!
 //! So optimizing for this operation is simple, transposing using SIMD intrinsics
 //!
@@ -67,9 +67,9 @@
 //!
 //!
 #[cfg(target_arch = "x86")]
-use std::arch::x86::*;
+use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
 
 #[allow(clippy::erasing_op, clippy::identity_op)]
 #[rustfmt::skip]
@@ -132,7 +132,7 @@ unsafe fn transpose_8_by_8_u16(
 
 #[target_feature(enable = "sse4.1")]
 unsafe fn transpose_8_by_8_u8(
-    in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize
+    in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize,
 ) {
     // Godbolt :https://godbolt.org/z/axoorxT8o
     // Stack overflow: https://stackoverflow.com/a/42316675
@@ -223,7 +223,7 @@ unsafe fn transpose_8_by_8_u8(
 }
 
 pub unsafe fn transpose_sse41_u16(
-    in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize
+    in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize,
 ) {
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
@@ -267,7 +267,7 @@ pub unsafe fn transpose_sse41_u16(
                 &in_width_stride[(j * 8)..],
                 out_height_stride,
                 width,
-                height
+                height,
             );
         }
     }
@@ -300,7 +300,7 @@ pub unsafe fn transpose_sse41_u16(
 }
 
 pub unsafe fn transpose_sse41_u8(
-    in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize
+    in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize,
 ) {
     const SMALL_WIDTH_THRESHOLD: usize = 8;
 
@@ -344,7 +344,7 @@ pub unsafe fn transpose_sse41_u8(
                 &in_width_stride[(j * 8)..],
                 out_height_stride,
                 width,
-                height
+                height,
             );
         }
     }
@@ -377,7 +377,7 @@ pub unsafe fn transpose_sse41_u8(
 }
 
 unsafe fn transpose_sse_float_4x4_inner(
-    in_matrix: &[f32], out: &mut [f32], in_stride: usize, out_stride: usize
+    in_matrix: &[f32], out: &mut [f32], in_stride: usize, out_stride: usize,
 ) {
     assert!((3 * out_stride) <= out.len());
 
@@ -393,20 +393,20 @@ unsafe fn transpose_sse_float_4x4_inner(
     _mm_storeu_ps(out.as_mut_ptr().cast(), row0);
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride..).as_mut_ptr().cast(),
-        row1
+        row1,
     );
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(),
-        row2
+        row2,
     );
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(),
-        row3
+        row3,
     );
 }
 
 pub unsafe fn transpose_sse_float(
-    in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize
+    in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize,
 ) {
     const SMALL_WIDTH_THRESHOLD: usize = 4;
 
@@ -441,7 +441,7 @@ pub unsafe fn transpose_sse_float(
                 &in_width_stride[(j * 4)..],
                 out_height_stride,
                 width,
-                height
+                height,
             );
         }
     }
@@ -474,7 +474,7 @@ pub unsafe fn transpose_sse_float(
 }
 
 pub unsafe fn transpose_sse_u32_inner(
-    in_matrix: &[u32], out: &mut [u32], in_stride: usize, out_stride: usize
+    in_matrix: &[u32], out: &mut [u32], in_stride: usize, out_stride: usize,
 ) {
     assert!((3 * out_stride) <= out.len());
 
@@ -490,20 +490,20 @@ pub unsafe fn transpose_sse_u32_inner(
     _mm_storeu_ps(out.as_mut_ptr().cast(), row0);
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride..).as_mut_ptr().cast(),
-        row1
+        row1,
     );
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride * 2..).as_mut_ptr().cast(),
-        row2
+        row2,
     );
     _mm_storeu_ps(
         out.get_unchecked_mut(out_stride * 3..).as_mut_ptr().cast(),
-        row3
+        row3,
     );
 }
 
 pub unsafe fn transpose_sse_u32(
-    in_matrix: &[u32], out_matrix: &mut [u32], width: usize, height: usize
+    in_matrix: &[u32], out_matrix: &mut [u32], width: usize, height: usize,
 ) {
     const SMALL_WIDTH_THRESHOLD: usize = 4;
 
@@ -538,7 +538,7 @@ pub unsafe fn transpose_sse_u32(
                 &in_width_stride[(j * 4)..],
                 out_height_stride,
                 width,
-                height
+                height,
             );
         }
     }

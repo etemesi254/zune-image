@@ -19,10 +19,10 @@
 //! as separate bit depths.
 //! All are seen as u8 to it with the only difference being the latter is twice as big as the former.
 //!
-use std::alloc::{alloc_zeroed, dealloc, realloc, Layout};
-use std::any::TypeId;
-use std::fmt::{Debug, Formatter};
-use std::mem::size_of;
+use alloc::alloc::{alloc_zeroed, dealloc, realloc, Layout};
+use core::any::TypeId;
+use core::fmt::{Debug, Formatter};
+use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use zune_core::bit_depth::BitType;
@@ -54,7 +54,7 @@ pub enum ChannelErrors {
 }
 
 impl Debug for ChannelErrors {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             ChannelErrors::UnalignedPointer(expected, found) => {
                 writeln!(f, "Channel pointer {expected} is not aligned to {found}")
@@ -148,11 +148,11 @@ impl PartialEq for Channel {
 }
 
 impl Debug for Channel {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         // safety.
         // all types can alias u8,
         // length points to the length spanning the ptr
-        let slice = unsafe { std::slice::from_raw_parts(self.ptr, self.length) };
+        let slice = unsafe { core::slice::from_raw_parts(self.ptr, self.length) };
         writeln!(f, "raw_bytes: {slice:?}")
     }
 }
@@ -210,7 +210,7 @@ impl Channel {
     unsafe fn alloc(size: usize) -> (*mut u8, Layout) {
         let layout = Layout::from_size_align(size, MIN_ALIGNMENT).unwrap();
         // Safety
-        //  alloc zeroed == alloc + std::mem::zeroed()
+        //  alloc zeroed == alloc + core::mem::zeroed()
         // and we are bound by the zeroed trait, hence we are sure that
         // for whatever type we are going to allocate for,
         // it can be represented with a bit-representation of zero.
@@ -302,7 +302,7 @@ impl Channel {
     ///
     /// # Example
     /// ```
-    /// use std::any::{Any, TypeId};
+    /// use core::any::{Any, TypeId};
     /// use zune_image::channel::Channel;
     /// let channel = Channel::new::<u8>();
     ///
@@ -446,7 +446,7 @@ impl Channel {
     /// Reinterpret a slice of `&[u8]` to another type
     ///
     ///  # Safety
-    /// - Invariants for [`std::slice::from_raw_parts`] should be upheld
+    /// - Invariants for [`core::slice::from_raw_parts`] should be upheld
     /// - There should be no sloppy bytes at the end of the memory location
     ///
     /// # Returns
@@ -457,7 +457,7 @@ impl Channel {
         //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
         // of alignment is a byte and u8==1 byte
         //
-        let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
+        let new_slice = unsafe { core::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
         let (a, b, c) = new_slice.align_to();
 
@@ -476,7 +476,7 @@ impl Channel {
         //  validity: We own the data
         //  well aligned: You cannot have u8 having bad alignment
         //
-        let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
+        let new_slice = unsafe { core::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
 
         let (a, b, c) = bytemuck::pod_align_to_mut(new_slice);
 
@@ -592,7 +592,7 @@ impl Channel {
     /// This is unsafe just as a remainder that the memory is just
     /// a bag of bytes and may not be just `&[u8]`.
     pub unsafe fn alias(&self) -> &[u8] {
-        std::slice::from_raw_parts(self.ptr, self.length)
+        core::slice::from_raw_parts(self.ptr, self.length)
     }
 
     /// Return the raw memory layout of the channel as `mut &[u8]`
@@ -601,7 +601,7 @@ impl Channel {
     /// This is unsafe just as a remainder that the memory is just
     /// a bag of bytes and may not be just `mut &[u8]`.
     pub unsafe fn alias_mut(&mut self) -> &mut [u8] {
-        std::slice::from_raw_parts_mut(self.ptr, self.length)
+        core::slice::from_raw_parts_mut(self.ptr, self.length)
     }
 }
 

@@ -9,6 +9,7 @@ keywords = ["jpeg", "jpeg-decoder", "decoder"]
 categories = ["multimedia::images"]
 exclude = ["/benches/images/*", "/tests/*", "/.idea/*", "/.gradle/*", "/test-images/*", "fuzz/*"]
 description = "A fast, correct and safe jpeg decoder"
+rust-version = "1.81.0"
 
 [lints.rust]
 # Disable feature checker for fuzzing since it's used and cargo doesn't
@@ -20,9 +21,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 [features]
 x86 = []
 neon = []
-std = ["zune-core/std"]
 log = ["zune-core/log"]
-default = ["x86", "neon", "std"]
+default = ["x86", "neon"]
 
 
 [dependencies]

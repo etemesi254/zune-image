@@ -4,6 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 #![allow(dead_code)]
+use crate::mathops::{sqrt_f32, sqrt_f64};
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial_NxN;
 use crate::traits::NumOps;
@@ -17,7 +18,7 @@ use crate::traits::NumOps;
 fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        f32: std::convert::From<T>
+        f32: core::convert::From<T>
 {
     // matrix
     //   +1, 0, -1,
@@ -38,7 +39,7 @@ fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
     sum_b += (f32::from(c[2]) * 1.) + (f32::from(c[6]) * -1.);
     sum_b += (f32::from(c[7]) * -1.) + (f32::from(c[8]) * -1.);
 
-    T::from_f32(((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f32(sqrt_f32((sum_a * sum_a) + (sum_b * sum_b)))
 }
 
 /// Calculate prewitt for int  images
@@ -51,7 +52,7 @@ fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
 fn prewitt_inner_i32<T>(c: &[T; 9]) -> T
     where
         T: NumOps<T> + Copy + Default,
-        i32: std::convert::From<T>
+        i32: core::convert::From<T>
 {
     // Gx matrix
     //   -3, 0,  3,
@@ -72,7 +73,7 @@ fn prewitt_inner_i32<T>(c: &[T; 9]) -> T
     sum_b += (i32::from(c[2]) * 1) + (i32::from(c[6]) * -1);
     sum_b += (i32::from(c[7]) * -1) + (i32::from(c[8]) * -1);
 
-    T::from_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
+    T::from_f64(sqrt_f64(f64::from((sum_a * sum_a) + (sum_b * sum_b))))
 }
 
 /// Carry out the prewitt filter for a float channel
@@ -87,7 +88,7 @@ fn prewitt_inner_i32<T>(c: &[T; 9]) -> T
 pub fn prewitt_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    f32: std::convert::From<T>
+    f32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);
@@ -107,7 +108,7 @@ where
 pub fn prewitt_int<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
     T: Default + NumOps<T> + Copy,
-    i32: std::convert::From<T>
+    i32: core::convert::From<T>,
 {
     //pad here
     let padded_input = pad(in_channel, width, height, 1, 1, PadMethod::Replicate);

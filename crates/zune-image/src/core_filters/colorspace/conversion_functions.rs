@@ -1,3 +1,5 @@
+use alloc::borrow::ToOwned;
+
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;

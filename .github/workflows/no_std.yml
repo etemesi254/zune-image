@@ -24,15 +24,19 @@ jobs:
         # Target below does not have a standard library
       - run: rustup target add x86_64-unknown-uefi
         # Below targets run in no-std environments
-      - run: cargo build -p zune-core     --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-inflate  --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-jpeg     --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-png      --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-ppm      --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-qoi      --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-farbfeld --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-psd      --target x86_64-unknown-uefi --no-default-features
-      - run: cargo build -p zune-bmp      --target x86_64-unknown-uefi --no-default-features
-
+      - run: cargo build -p zune-core       --target x86_64-unknown-uefi --no-default-features --features log,serde
+      - run: cargo build -p zune-inflate    --target x86_64-unknown-uefi --no-default-features --features zlib,gzip
+      - run: cargo build -p zune-jpeg       --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-png        --target x86_64-unknown-uefi --no-default-features --features log,libm
+      - run: cargo build -p zune-ppm        --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-qoi        --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-farbfeld   --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-psd        --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-bmp        --target x86_64-unknown-uefi --no-default-features --features log,rgb_inverse
+      - run: cargo build -p zune-gif        --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-hdr        --target x86_64-unknown-uefi --no-default-features --features log,libm
+      - run: cargo build -p zune-jpegxl     --target x86_64-unknown-uefi --no-default-features --features log
+      - run: cargo build -p zune-image      --target x86_64-unknown-uefi --no-default-features --features log,libm,serde-support,ppm,jpeg,png,psd,farbfeld,qoi,bmp,hdr
+      - run: cargo build -p zune-imageprocs --target x86_64-unknown-uefi --no-default-features --features log,libm
 
 

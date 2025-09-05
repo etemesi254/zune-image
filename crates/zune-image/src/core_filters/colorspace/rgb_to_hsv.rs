@@ -1,5 +1,17 @@
+#[inline]
+fn floor(x: f32) -> f32 {
+    let f = x % 1.;
+    if f.is_nan() || f == 0. || f == -0. {
+        x
+    } else if x < 0. {
+        x - f - 1.
+    } else {
+        x - f
+    }
+}
+
 fn python_mod(n: f32, base: f32) -> f32 {
-    n - (n / base).floor() * base
+    n - floor(n / base) * base
 }
 #[inline(always)]
 pub fn rgb_to_hsv_inner(r: f32, g: f32, b: f32) -> [f32; 3] {

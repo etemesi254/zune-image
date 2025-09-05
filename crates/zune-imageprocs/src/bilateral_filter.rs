@@ -10,12 +10,16 @@
 //!
 //!  A description can be found [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
 //!
+
+use alloc::vec::Vec;
+
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::mathops::{exp_f64, round_f32, round_f64, sqrt_f64};
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
 use crate::traits::NumOps;
@@ -42,9 +46,9 @@ use crate::utils::execute_on;
 /// # Ok::<(),ImageErrors>(())
 /// ```
 pub struct BilateralFilter {
-    d:           i32,
+    d: i32,
     sigma_color: f32,
-    sigma_space: f32
+    sigma_space: f32,
 }
 
 impl BilateralFilter {
@@ -65,7 +69,7 @@ impl BilateralFilter {
         BilateralFilter {
             d,
             sigma_color,
-            sigma_space
+            sigma_space,
         }
     }
 }
@@ -87,7 +91,7 @@ impl OperationsTrait for BilateralFilter {
             self.d,
             self.sigma_color,
             self.sigma_space,
-            usize::from(depth.max_value()) + 1
+            usize::from(depth.max_value()) + 1,
         );
 
         let bilateral_fn = |channel: &mut Channel| {
@@ -99,14 +103,14 @@ impl OperationsTrait for BilateralFilter {
                     new_channel.reinterpret_as_mut()?,
                     w,
                     h,
-                    &coeffs
+                    &coeffs,
                 ),
                 BitType::U16 => bilateral_filter_int::<u16>(
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
                     w,
                     h,
-                    &coeffs
+                    &coeffs,
                 ),
 
                 d => {
@@ -128,13 +132,13 @@ impl OperationsTrait for BilateralFilter {
 struct BilateralCoeffs {
     color_weight: Vec<f64>,
     space_weight: Vec<f64>,
-    radius:       usize,
-    makx:         usize
+    radius: usize,
+    makx: usize,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 fn init_bilateral(
-    d: i32, sigma_color: f32, mut sigma_space: f32, color_range: usize
+    d: i32, sigma_color: f32, mut sigma_space: f32, color_range: usize,
 ) -> BilateralCoeffs {
     let gauss_color_coeff = f64::from(-0.5 / (sigma_color * sigma_color));
     let gauss_space_coeff = f64::from(-0.5 / (sigma_space * sigma_space));
@@ -147,7 +151,7 @@ fn init_bilateral(
         sigma_space = 1.0;
     }
 
-    let radius: i32 = if d <= 0 { (sigma_space * 1.5).round() as _ } else { d / 2 };
+    let radius: i32 = if d <= 0 { round_f32(sigma_space * 1.5) as _ } else { d / 2 };
 
     let mut color_weight = vec![0.0_f64; cn * color_range];
     let mut space_weight = vec![0.0_f64; (d * d).unsigned_abs() as usize];
@@ -155,17 +159,17 @@ fn init_bilateral(
     // initialize color-related bilateral filter coeffs
     for (i, item) in color_weight.iter_mut().enumerate().take(color_range) {
         let c = i as f64;
-        *item = (c * c * gauss_color_coeff).exp();
+        *item = exp_f64(c * c * gauss_color_coeff);
     }
     let mut makx = 0;
     // initialize space-related bilateral coeffs
     for i in -radius..=radius {
         for j in -radius..=radius {
-            let r = f64::from((i * i) + (j * j)).sqrt();
+            let r = sqrt_f64(f64::from((i * i) + (j * j)));
             if r > f64::from(radius) {
                 continue;
             }
-            space_weight[makx] = (r * r * gauss_space_coeff).exp();
+            space_weight[makx] = exp_f64(r * r * gauss_space_coeff);
             makx += 1;
         }
     }
@@ -173,15 +177,15 @@ fn init_bilateral(
         color_weight,
         space_weight,
         radius: usize::try_from(radius).unwrap_or_default(),
-        makx
+        makx,
     };
 }
 
 fn bilateral_filter_int<T>(
-    src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs
+    src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs,
 ) where
     T: Copy + NumOps<T> + Default,
-    i32: std::convert::From<T>
+    i32: core::convert::From<T>,
 {
     let radius = coeffs.radius;
 
@@ -216,7 +220,7 @@ fn bilateral_filter_int<T>(
             sum += f64::from(val) * w;
             wsum += w;
         }
-        return T::from_f64((sum / wsum).round());
+        return T::from_f64(round_f64(sum / wsum));
     };
 
     spatial(&padded_input, dest, radius, width, height, bilateral_func);

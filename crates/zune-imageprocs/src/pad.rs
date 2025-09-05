@@ -12,6 +12,8 @@
 //! or replicating values across the border
 //!
 
+use alloc::vec::Vec;
+
 /// Padding method to use
 #[derive(Copy, Clone)]
 pub enum PadMethod {
@@ -31,7 +33,7 @@ pub enum PadMethod {
     /// d d,e,f f
     ///   d,e,f
     /// ```
-    Replicate
+    Replicate,
 }
 
 /// Pad pixels creating a buffer around actual pixels
@@ -76,16 +78,16 @@ pub enum PadMethod {
 /// # Returns:
 ///  - A vec containing padded pixels.
 pub fn pad<T: Copy + Default>(
-    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize, method: PadMethod
+    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize, method: PadMethod,
 ) -> Vec<T> {
     match method {
         PadMethod::Constant => no_fill(pixels, width, height, pad_x, pad_y),
-        PadMethod::Replicate => replicate(pixels, width, height, pad_x, pad_y)
+        PadMethod::Replicate => replicate(pixels, width, height, pad_x, pad_y),
     }
 }
 
 fn no_fill<T: Copy + Default>(
-    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize
+    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize,
 ) -> Vec<T> {
     let padded_w = width + pad_x * 2;
     let padded_h = height + pad_y * 2;
@@ -108,7 +110,7 @@ fn no_fill<T: Copy + Default>(
 }
 
 fn replicate<T: Copy + Default>(
-    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize
+    pixels: &[T], width: usize, height: usize, pad_x: usize, pad_y: usize,
 ) -> Vec<T> {
     let padded_w = width + pad_x * 2;
     let padded_h = height + pad_y * 2;
@@ -193,7 +195,7 @@ mod benchmarks {
                 height,
                 new_width,
                 new_height,
-                PadMethod::Replicate
+                PadMethod::Replicate,
             )
         });
     }
@@ -213,7 +215,7 @@ mod benchmarks {
                 height,
                 new_width,
                 new_height,
-                PadMethod::Constant
+                PadMethod::Constant,
             )
         });
     }
