@@ -415,7 +415,7 @@ pub(crate) fn parse_sos<T: ZReaderTrait>(image: &mut JpegDecoder<T>) -> Result<(
 }
 
 /// Parse the APP13 (IPTC) segment.
-pub(crate) fn parse_app13<T: ZByteReaderTrait>(
+pub(crate) fn parse_app13<T: ZReaderTrait>(
     decoder: &mut JpegDecoder<T>,
 ) -> Result<(), DecodeErrors> {
     const IPTC_PREFIX: &[u8] = b"Photoshop 3.0";
@@ -430,7 +430,7 @@ pub(crate) fn parse_app13<T: ZByteReaderTrait>(
 
     if length > IPTC_PREFIX.len() && decoder.stream.peek_at(0, IPTC_PREFIX.len())? == IPTC_PREFIX {
         // skip bytes we read above.
-        decoder.stream.skip(IPTC_PREFIX.len())?;
+        decoder.stream.skip(IPTC_PREFIX.len());
         length -= IPTC_PREFIX.len();
 
         let iptc_bytes = decoder.stream.peek_at(0, length)?.to_vec();
@@ -438,7 +438,7 @@ pub(crate) fn parse_app13<T: ZByteReaderTrait>(
         decoder.info.iptc_data = Some(iptc_bytes);
     }
 
-    decoder.stream.skip(length)?;
+    decoder.stream.skip(length);
     Ok(())
 }
 

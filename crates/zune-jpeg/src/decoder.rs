@@ -22,7 +22,8 @@ use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::{
-    parse_app1, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos, parse_start_of_frame
+    parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
+    parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
 use crate::idct::choose_idct_func;
@@ -542,6 +543,9 @@ where
                 self.restart_interval = usize::from(self.stream.get_u16_be_err()?);
                 self.todo = self.restart_interval;
             }
+            Marker::APP(13) => {
+                parse_app13(self)?;
+            }
             Marker::APP(14) => {
                 parse_app14(self)?;
             }
@@ -792,7 +796,6 @@ where
                     choose_hv_samp_function(self.options.get_use_unsafe())
                 }
                 (hs, vs) => {
-
                     comp.sample_ratio = SampleRatios::Generic(hs, vs);
                     generic_sampler()
                 }
@@ -852,7 +855,8 @@ pub struct ImageInfo {
     /// Vertical sample
     pub y_density:     u16,
     /// Number of components
-    pub components:    u8
+    pub components:    u8,
+    pub iptc_data:     Option<Vec<u8>>
 }
 
 impl ImageInfo {
