@@ -19,7 +19,7 @@ pub struct Metadata<'a> {
 }
 
 impl<'a> Metadata<'a> {
-    pub fn new(file: OsString, size: u64, metadata: &ImageMetadata) -> Metadata {
+    pub fn new(file: OsString, size: u64, metadata: &'a ImageMetadata) -> Metadata<'a> {
         Metadata {
             file,
             size,
