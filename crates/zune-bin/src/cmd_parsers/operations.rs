@@ -114,7 +114,7 @@ pub fn parse_options(
             "Added threshold operation with mode {:?}  and value {:?}",
             thresh_mode, radius
         )
-    } else if argument == "stretch_contrast" {
+    } else if argument == "stretch-contrast" {
         let values = args
             .get_many::<f32>(argument)
             .unwrap()
