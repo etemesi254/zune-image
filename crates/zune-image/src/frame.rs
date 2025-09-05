@@ -679,6 +679,13 @@ impl Frame {
 
         Some((src_color_channels, src_alpha_channel))
     }
+
+    pub const fn numerator(&self) -> usize {
+        self.numerator
+    }
+    pub const fn denominator(&self) -> usize {
+        self.denominator
+    }
 }
 
 #[allow(unused_imports)]
