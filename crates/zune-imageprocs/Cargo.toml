@@ -12,13 +12,15 @@ description = "Common image processing routines for zune-image"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
+zune-core = { path = "../zune-core", version = "^0.5.0-rc2" }
 kamadak-exif = { version = "0.5.5", optional = true }
+moxcms = { version = "0.7.2", optional = true }
 
 [dependencies.zune-image]
 version = "^0.5.0-rc0"
 path = "../zune-image"
 default-features = false
+features = ["jpeg"]
 #features = ["all"]
 
 [features]
@@ -30,10 +32,11 @@ sse41 = []
 benchmarks = []
 ## Portable simd, disabled by default
 portable-simd = []
-log = ["zune-core/log"]
+log = ["zune-core/log","zune-image/log"]
 exif = ["zune-image/metadata", "kamadak-exif"]
 threads = []
-default = ["avx2", "sse2", "sse3", "sse41", "threads"]
+default = ["avx2", "sse2", "sse3", "sse41", "threads", "cms"]
+cms = ["moxcms"]
 
 
 [dev-dependencies]
