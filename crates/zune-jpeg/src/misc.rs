@@ -12,7 +12,7 @@
 use alloc::format;
 use core::cmp::max;
 use core::fmt;
-use std::num::NonZeroU32;
+use core::num::NonZeroU32;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
