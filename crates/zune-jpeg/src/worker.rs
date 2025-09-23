@@ -89,6 +89,20 @@ pub(crate) fn color_convert(
         (ColorSpace::CMYK, ColorSpace::RGBA) => {
             color_convert_cymk_to_rgb::<4>(unprocessed, width, padded_width, output);
         }
+        (ColorSpace::MultiBand(n), _) => {
+            if n.get() != 2 {
+                return Err(DecodeErrors::Format(format!(
+                    "Unknown multiband sample ({n}), please share sample on Github issues"
+                )));
+            }
+            copy_removing_padding_generic(
+                unprocessed,
+                width,
+                padded_width,
+                output,
+                n.get() as usize
+            );
+        }
         // For the other components we do nothing(currently)
         _ => {
             let msg = format!(
@@ -125,6 +139,49 @@ fn copy_removing_padding_4x(
 ) {
     for ((((pix_w, c_w), m_w), y_w), k_w) in output
         .chunks_exact_mut(width * 4)
+        .zip(mcu_block[0].chunks_exact(padded_width))
+        .zip(mcu_block[1].chunks_exact(padded_width))
+        .zip(mcu_block[2].chunks_exact(padded_width))
+        .zip(mcu_block[3].chunks_exact(padded_width))
+    {
+        for ((((pix, c), y), m), k) in pix_w
+            .chunks_exact_mut(4)
+            .zip(c_w)
+            .zip(m_w)
+            .zip(y_w)
+            .zip(k_w)
+        {
+            pix[0] = *c as u8;
+            pix[1] = *y as u8;
+            pix[2] = *m as u8;
+            pix[3] = *k as u8;
+        }
+    }
+}
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn copy_removing_padding_generic(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8],
+    channels: usize
+) {
+    match channels {
+        // just do 2 for now
+        // support
+        2 => {
+            for ((pix_w, y_w), k_w) in output
+                .chunks_exact_mut(width * channels)
+                .zip(mcu_block[0].chunks_exact(padded_width))
+                .zip(mcu_block[1].chunks_exact(padded_width))
+            {
+                for ((pix, c), k) in pix_w.chunks_exact_mut(2).zip(y_w).zip(k_w) {
+                    pix[0] = *c as u8;
+                    pix[1] = *k as u8;
+                }
+            }
+        }
+        _ => unreachable!()
+    }
+    for ((((pix_w, c_w), m_w), y_w), k_w) in output
+        .chunks_exact_mut(width * channels)
         .zip(mcu_block[0].chunks_exact(padded_width))
         .zip(mcu_block[1].chunks_exact(padded_width))
         .zip(mcu_block[2].chunks_exact(padded_width))
@@ -481,3 +538,4 @@ pub(crate) fn upsample(
         SampleRatios::None => {}
     };
 }
+

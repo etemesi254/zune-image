@@ -198,6 +198,7 @@ pub fn transpose_generic<T: Default + Copy>(
 }
 
 #[cfg(all(feature = "benchmarks", feature = "sse41"))]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(test)]
 mod benchmarks {
     extern crate test;

@@ -10,6 +10,7 @@
 #![cfg(feature = "sse41")]
 
 #[test]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn test_transpose_sse_scalar_identical() {
     use nanorand::Rng;
 
@@ -38,6 +39,7 @@ fn test_transpose_sse_scalar_identical() {
 }
 
 #[test]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 fn test_transpose_sse_float_scalar_identical() {
     use nanorand::Rng;
 

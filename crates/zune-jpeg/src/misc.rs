@@ -12,6 +12,7 @@
 use alloc::format;
 use core::cmp::max;
 use core::fmt;
+use std::num::NonZeroU32;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
@@ -307,13 +308,39 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             warn!("Treating YCCK colorspace as YCbCr as component length does not match");
             img.input_colorspace = ColorSpace::YCbCr
         } else {
-            let msg = format!(
-                " Expected {} number of components but found {}",
-                img.input_colorspace.num_components(),
-                img.components.len()
-            );
+            // Note, translated this to a warning to handle valid images of the sort
+            // See https://github.com/etemesi254/zune-image/issues/288 where there
+            // was a CMYK image with two components which would be decoded to 4 components
+            // by the decoder.
+            // So with a warning that becomes supported.
+            //
+            // djpeg fails to render an image from that also probably because it does not
+            // understand the expected format.
+            if !img.options.strict_mode() {
+                warn!(
+                    "Expected {} number of components but found {}",
+                    img.input_colorspace.num_components(),
+                    img.components.len()
+                );
+                warn!("Defaulting to multisample to decode");
 
-            return Err(DecodeErrors::Format(msg));
+                // N/B: We do not post process the color of such, treating it as multiband
+                // is the best option since I am not aware of grayscale+alpha which is the most common
+                // two band format in jpeg.
+                if img.components.len() > 0 {
+                    img.input_colorspace = ColorSpace::MultiBand(
+                        NonZeroU32::new(img.components.len() as u32).unwrap()
+                    );
+                }
+            } else {
+                let msg = format!(
+                    "Expected {} number of components but found {}",
+                    img.input_colorspace.num_components(),
+                    img.components.len()
+                );
+
+                return Err(DecodeErrors::Format(msg));
+            }
         }
     }
     Ok(())
