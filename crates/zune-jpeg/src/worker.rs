@@ -92,7 +92,7 @@ pub(crate) fn color_convert(
         (ColorSpace::MultiBand(n), _) => {
             if n.get() != 2 {
                 return Err(DecodeErrors::Format(format!(
-                    "Unknown multiband sample ({n}), please share sample on Github issues"
+                    "Unknown multiband sample ({n}), please share sample"
                 )));
             }
             copy_removing_padding_generic(
@@ -179,26 +179,6 @@ fn copy_removing_padding_generic(
             }
         }
         _ => unreachable!()
-    }
-    for ((((pix_w, c_w), m_w), y_w), k_w) in output
-        .chunks_exact_mut(width * channels)
-        .zip(mcu_block[0].chunks_exact(padded_width))
-        .zip(mcu_block[1].chunks_exact(padded_width))
-        .zip(mcu_block[2].chunks_exact(padded_width))
-        .zip(mcu_block[3].chunks_exact(padded_width))
-    {
-        for ((((pix, c), y), m), k) in pix_w
-            .chunks_exact_mut(4)
-            .zip(c_w)
-            .zip(m_w)
-            .zip(y_w)
-            .zip(k_w)
-        {
-            pix[0] = *c as u8;
-            pix[1] = *y as u8;
-            pix[2] = *m as u8;
-            pix[3] = *k as u8;
-        }
     }
 }
 /// Convert YCCK image to rgb
@@ -539,3 +519,18 @@ pub(crate) fn upsample(
     };
 }
 
+#[cfg(test)]
+mod tests {
+    use std::fs::read;
+
+    use zune_core::bytestream::ZCursor;
+
+    use crate::JpegDecoder;
+
+    #[test]
+    pub fn get_test() {
+        let data = read("/Users/etemesi/Downloads/out.jpg").unwrap();
+        let mut wrapped = JpegDecoder::new(ZCursor::new(data));
+        wrapped.decode().unwrap();
+    }
+}
