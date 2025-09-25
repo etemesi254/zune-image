@@ -198,7 +198,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///
     /// # Arguments
     ///
-    /// * `data`: Raw encoded jpeg file contents
+    /// * `data`: Raw encoded png file contents
     /// * `options`:  The custom options for this decoder
     ///
     /// returns: PngDecoder
