@@ -103,6 +103,15 @@ pub(crate) fn color_convert(
                 n.get() as usize
             );
         }
+        (ColorSpace::Luma, ColorSpace::RGB) => {
+            // duplicate the luma channel  three times to form RGB
+            // Note, this may assume the direct conversion
+            // from luma to RGB is by duplicating
+            //
+            // There may be a bit more complex ways
+            // of doing it but won't get onto it
+            convert_luma_to_rgb(unprocessed, width, padded_width, output)
+        }
         // For the other components we do nothing(currently)
         _ => {
             let msg = format!(
@@ -112,6 +121,21 @@ pub(crate) fn color_convert(
         }
     }
     Ok(())
+}
+
+fn convert_luma_to_rgb(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
+) {
+    for (pix_w, y_w) in output
+        .chunks_exact_mut(width * 3)
+        .zip(mcu_block[0].chunks_exact(padded_width))
+    {
+        for (pix, c) in pix_w.chunks_exact_mut(3).zip(y_w) {
+            pix[0] = *c as u8;
+            pix[1] = *c as u8;
+            pix[2] = *c as u8;
+        }
+    }
 }
 
 /// Copy a block to output removing padding bytes from input
@@ -165,7 +189,6 @@ fn copy_removing_padding_generic(
 ) {
     match channels {
         // just do 2 for now
-        // support
         2 => {
             for ((pix_w, y_w), k_w) in output
                 .chunks_exact_mut(width * channels)
@@ -517,20 +540,4 @@ pub(crate) fn upsample(
         }
         SampleRatios::None => {}
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs::read;
-
-    use zune_core::bytestream::ZCursor;
-
-    use crate::JpegDecoder;
-
-    #[test]
-    pub fn get_test() {
-        let data = read("/Users/etemesi/Downloads/out.jpg").unwrap();
-        let mut wrapped = JpegDecoder::new(ZCursor::new(data));
-        wrapped.decode().unwrap();
-    }
 }
