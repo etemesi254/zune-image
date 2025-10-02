@@ -1,7 +1,7 @@
 #![cfg(feature = "cms")]
 
 use moxcms::{ColorProfile, Layout, TransformOptions};
-use zune_core::bit_depth::{BitDepth, BitType};
+use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{info, trace};
 use zune_image::errors::ImageErrors;
@@ -10,6 +10,7 @@ use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
 #[derive(Debug, Clone, Copy)]
+#[allow(non_camel_case_types)]
 pub enum ColorProfiles {
     sRGB,
     AdobeRgb,
@@ -25,7 +26,7 @@ pub enum ColorProfiles {
 /// profile
 #[derive(Debug, Clone, Copy)]
 pub struct ColorTransform {
-    color: ColorProfiles,
+    color: ColorProfiles
 }
 
 impl ColorTransform {
@@ -130,7 +131,8 @@ impl OperationsTrait for ColorTransform {
                         // flatten the buffer
                         let bytes_written = frame.flatten_into(&mut input_interleaved)?;
 
-                        transform.transform(
+                        transform
+                            .transform(
                                 &input_interleaved[..bytes_written],
                                 &mut output_interleaved[..bytes_written]
                             )
@@ -207,6 +209,5 @@ mod tests {
     #[test]
     fn test_cms() {
         // TODO: Add a valid test case
-
     }
 }
