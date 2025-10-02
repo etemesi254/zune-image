@@ -37,6 +37,65 @@
 //! let mut pixels = decoder.decode().unwrap();
 //! ```
 //!
+//! ## Migrating from version 0.4--
+//!
+//! ### Motivation
+//! zune v 0.5 reworks mainly the internal architecture of how we perform I/O
+//! ,before the decoder accepted byte slices that represent the whole data as contiguous
+//! but that was not ideal for all use cases, increasing memory e.g on massive files that had
+//! to be read to memory.
+//!
+//! With v 0.5 a new I/O system is introduced, which generally introduces mechanisms to process
+//! `std::io::Read + std::io::Seek` type of data feeds, (but which works in no-std), which means...
+//!
+//! ### What changes
+//!
+//! I/O code that looked like this
+//!
+//!```ignore
+//! use zune_core::colorspace::ColorSpace;
+//! use zune_jpeg::JpegDecoder;
+//! // Read file into memory
+//! let image = std::fs::read("image.jpg").unwrap();
+//! // Make a decoder from the slice
+//! let mut decoder = JpegDecoder::new(&image);
+//! // decode
+//! decoder.decode().unwrap();
+//! ```
+//!
+//! Now can be rewritten in two ways.
+//!
+//! 1. File I/O (Using bufreader)
+//!
+//!```no_run
+//! use std::io::BufReader;
+//! use zune_core::colorspace::ColorSpace;
+//! use zune_jpeg::JpegDecoder;
+//!
+//! let image = BufReader::new(std::fs::File::open("image.jpg").unwrap());
+//! let mut decoder = JpegDecoder::new(image);
+//! // decode
+//! decoder.decode().unwrap();
+//! ```
+//!
+//! 2. Reading to memory (but wrapping it in a Cursor like object)
+//!```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_jpeg::JpegDecoder;
+//!
+//! let image_data =std::fs::read("image.jpg");
+//! // Alternatively, you can use std::io::Cursor,
+//! // but it is better speed wise to use ZCursor, and it also works in
+//! // no-std environments
+//! let mut cursor = ZCursor::new(image_data);
+//! // use the wrapped item
+//! let mut decoder = JpegDecoder::new(cursor);
+//! // decode
+//! decoder.decode().unwrap()
+//! ```
+//!
+//! 3. Anything that implements [ZByteReaderTrait](zune_core::bytestream::traits::ZByteReaderTrait)
+//!
 //! ## Decode a JPEG file to RGBA format
 //!
 //! - Other (limited) supported formats are and  BGR, BGRA
@@ -53,7 +112,7 @@
 //! let pixels = decoder.decode().unwrap();
 //! ```
 //!
-//! ## Decode an image and get it's width and height.
+//! ## Decode an image and get its width and height.
 //!```no_run
 //! use zune_core::bytestream::ZCursor;
 //! use zune_jpeg::JpegDecoder;
@@ -79,7 +138,7 @@
 //! , this means a lot of images may  get silent warnings and wrong output, but if you are sure you will be handling
 //! images that follow the spec, set `ZuneJpegOptions::set_strict` to true.
 //!
-//![`DecoderOptions::set_use_unsafe(false)`]:  https://docs.rs/zune-core/0.2.1/zune_core/options/struct.DecoderOptions.html#method.set_use_unsafe
+//![`DecoderOptions::set_use_unsafe(false)`]:  https://docs.rs/zune-core/latest/zune_core/options/struct.DecoderOptions.html#method.set_use_unsafe
 
 #![warn(
     clippy::correctness,
