@@ -83,7 +83,7 @@
 //! use zune_core::bytestream::ZCursor;
 //! use zune_jpeg::JpegDecoder;
 //!
-//! let image_data =std::fs::read("image.jpg");
+//! let image_data =std::fs::read("image.jpg").unwrap();
 //! // Alternatively, you can use std::io::Cursor,
 //! // but it is better speed wise to use ZCursor, and it also works in
 //! // no-std environments
@@ -91,7 +91,7 @@
 //! // use the wrapped item
 //! let mut decoder = JpegDecoder::new(cursor);
 //! // decode
-//! decoder.decode().unwrap()
+//! decoder.decode().unwrap();
 //! ```
 //!
 //! 3. Anything that implements [ZByteReaderTrait](zune_core::bytestream::traits::ZByteReaderTrait)
