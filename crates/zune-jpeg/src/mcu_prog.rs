@@ -23,12 +23,13 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
+
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, warn};
 
 use crate::bitstream::BitStream;
-use crate::components::{ComponentID, SampleRatios};
+use crate::components::SampleRatios;
 use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
@@ -97,7 +98,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         mcu_width *= 64;
 
-
         for i in 0..self.input_colorspace.num_components() {
             let comp = &self.components[i];
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
@@ -105,11 +105,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             block[i] = vec![0; len];
         }
 
-        let mut stream = BitStream::new_progressive(
-            self.succ_low,
-            self.spec_start,
-            self.spec_end
-        );
+        let mut stream = BitStream::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
         // there are multiple scans in the stream, this should resolve the first scan
         self.parse_entropy_coded_data(&mut stream, &mut block)?;
@@ -184,7 +180,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-        self.finish_progressive_decoding(&block, mcu_width, pixels)
+        self.finish_progressive_decoding(&block, pixels)
     }
 
     /// Reset progressive parameters
@@ -228,12 +224,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             let (mcu_width, mcu_height);
 
-            if self.components[k].component_id == ComponentID::Y
-                && (self.components[k].vertical_sample != 1
-                    || self.components[k].horizontal_sample != 1)
+            if self.components[k].vertical_sample != 1
+                || self.components[k].horizontal_sample != 1
                 || !self.is_interleaved
             {
-                // For Y channel  or non interleaved scans ,
+                // For non interleaved scans
                 // mcu's is the image dimensions divided by 8
                 mcu_width = self.info.width.div_ceil(8) as usize;
                 mcu_height = self.info.height.div_ceil(8) as usize;
@@ -446,7 +441,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     _end - _start,
                     marker
                 );
-            } else{
+            } else {
                 warn!("RST marker was not found, where expected, image may be garbled")
             }
         }
@@ -458,7 +453,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
@@ -493,7 +488,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let width = usize::from(self.info.width);
         let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
 
-        //let mut pixels = vec![0; capacity * out_colorspace_components];
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
