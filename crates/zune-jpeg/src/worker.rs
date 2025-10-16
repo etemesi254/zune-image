@@ -31,9 +31,8 @@ pub(crate) fn color_convert(
     unprocessed: &[&[i16]; MAX_COMPONENTS], color_convert_16: ColorConvert16Ptr,
     input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
     padded_width: usize
-) -> Result<(), DecodeErrors> // so many parameters..
+) -> Result<(), DecodeErrors>
 {
-    // maximum sampling factors are in Y-channel, no need to pass them.
 
     if input_colorspace.num_components() == 3 && input_colorspace == output_colorspace {
         // sort things like RGB to RGB conversion
