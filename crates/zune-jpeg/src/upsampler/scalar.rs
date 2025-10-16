@@ -77,7 +77,9 @@ pub fn upsample_vertical(
 pub fn upsample_hv(
     input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
 ) {
+
     assert_eq!(input.len() * 4, output.len());
+    assert_eq!(input.len() * 2, scratch_space.len());
 
     let mut t = [0];
     upsample_vertical(input, in_near, in_far, &mut t, scratch_space);
