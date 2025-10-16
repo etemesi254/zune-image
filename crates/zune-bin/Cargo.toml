@@ -1,6 +1,6 @@
 [package]
 name = "zune-bin"
-version = "0.5.0-rc0"
+version = "0.5.0-rc1"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-bin"
 
@@ -17,11 +17,11 @@ serde_json = "1.0.93"
 serde = "1.0.152"
 
 [dependencies.simple_logger]
-version = "4.0.0"
+version = "5.1.0"
 default-features = false
 features = ["colors"]
 
 [dependencies.clap]
-version = "4.4.11"
+version = "4.5.49"
 default-features = false
 features = ["color", "suggestions", "std", "help"]

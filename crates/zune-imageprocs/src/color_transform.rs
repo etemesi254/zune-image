@@ -38,7 +38,7 @@ impl ColorTransform {
 }
 impl OperationsTrait for ColorTransform {
     fn name(&self) -> &'static str {
-        "hdr to sdr"
+        "Color Transform"
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
@@ -55,7 +55,8 @@ impl OperationsTrait for ColorTransform {
                 ColorProfiles::sRGB => ColorProfile::new_srgb(),
                 ColorProfiles::AdobeRgb => ColorProfile::new_adobe_rgb(),
                 ColorProfiles::DisplayP3 => ColorProfile::new_display_p3(),
-                ColorProfiles::Bt2020 => ColorProfile::new_bt2020()
+                ColorProfiles::Bt2020 => ColorProfile::new_bt2020(),
+
             };
             let img_depth = image.depth();
 
@@ -209,5 +210,6 @@ mod tests {
     #[test]
     fn test_cms() {
         // TODO: Add a valid test case
+
     }
 }

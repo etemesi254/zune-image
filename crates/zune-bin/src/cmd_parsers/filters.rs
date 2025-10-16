@@ -10,6 +10,7 @@ use clap::ArgMatches;
 use log::debug;
 use zune_image::pipelines::Pipeline;
 use zune_imageprocs::box_blur::BoxBlur;
+use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::median::Median;
@@ -78,6 +79,20 @@ pub fn parse_options(
         let blur = Median::new(radius);
         debug!("Added median blur with  radius of {radius}");
         workflow.chain_operations(Box::new(blur));
+    } else if argument == "color-transform" {
+        let value = args.get_one::<String>(argument).unwrap();
+
+        let color_profile = match value.to_lowercase().as_str() {
+            "rgb" => ColorProfiles::sRGB,
+            "adobe-rgb" => ColorProfiles::AdobeRgb,
+            "display-p3" => ColorProfiles::DisplayP3,
+            "bt-2020" => ColorProfiles::DisplayP3,
+            _ => Err(format!("Unknown color profile: {}", value))?
+        };
+        debug!("Added color transform operation");
+
+        let transform = ColorTransform::new(color_profile);
+        workflow.chain_operations(Box::new(transform));
     }
 
     Ok(())

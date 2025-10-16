@@ -8,7 +8,7 @@
 
 use std::ffi::OsString;
 
-use clap::builder::PossibleValue;
+use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
@@ -480,6 +480,14 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .value_name("radius")
             .help_heading(GROUP)
             .value_parser(value_parser!(usize))
+            .group(GROUP),
+        Arg::new("color-transform")
+            .long("color-transform")
+            .help("Parse the ICC chunk of an image and perform a color transform")
+            .default_missing_value("rgb")
+            .value_parser(PossibleValuesParser::new(["rgb","adobe-rgb","display-p3","bt-2020"]))
+            .value_name("color-transform")
+            .help_heading(GROUP)
             .group(GROUP)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
