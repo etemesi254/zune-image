@@ -430,6 +430,30 @@ where
                     if n == Marker::SOS {
                         self.headers_decoded = true;
                         trace!("Input colorspace {:?}", self.input_colorspace);
+
+                        // Check if image is RGB
+                        // The check is weird, we need to check if ID
+                        // represents R, G and B in ascii,
+                        //
+                        // I am not sure if this is even specified in any standard,
+                        // but jpegli https://github.com/google/jpegli does encode
+                        // its images that way, so this will check for that. and handle it appropriately
+                        // It is spefified here so that on a successful header decode,we can at least
+                        // try to attribute image colorspace  correctly.
+                        //
+                        // It was first the issue in https://github.com/etemesi254/zune-image/issues/291
+                        // that brought it to light
+                        //
+                        let mut is_rgb = self.components.len() == 3;
+                        let chars = ['R', 'G', 'B'];
+                        for (comp, single_char) in self.components.iter().zip(chars.iter()) {
+                            is_rgb &= comp.id == (*single_char) as u8
+                        }
+                        // Image is RGB, change colorspace
+                        if is_rgb {
+                            self.input_colorspace = ColorSpace::RGB;
+                        }
+
                         return Ok(());
                     }
                 } else {
@@ -452,6 +476,7 @@ where
             last_byte = m;
             bytes_before_marker += 1;
         }
+        // Check if image is RGB
     }
     #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
@@ -843,7 +868,6 @@ where
                     choose_hv_samp_function(self.options.use_unsafe())
                 }
                 (hs, vs) => {
-
                     comp.sample_ratio = SampleRatios::Generic(hs, vs);
                     generic_sampler()
                 }
@@ -919,7 +943,7 @@ pub struct ImageInfo {
     /// XMP Data
     pub xmp_data: Option<Vec<u8>>,
     /// IPTC Data
-    pub iptc_data: Option<Vec<u8>>,
+    pub iptc_data: Option<Vec<u8>>
 }
 
 impl ImageInfo {
