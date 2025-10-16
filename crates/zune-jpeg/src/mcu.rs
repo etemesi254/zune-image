@@ -597,19 +597,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let comps = &mut self.components[..];
 
         if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
-            {
-                // duplicated so that we can check that samples match
-                // Fixes bug https://github.com/etemesi254/zune-image/issues/151
-                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-                for (samp, component) in samples.iter_mut().zip(comps.iter()) {
-                    *samp = if component.sample_ratio == SampleRatios::None {
-                        &component.raw_coeff
-                    } else {
-                        &component.upsample_dest
-                    };
-                }
-            }
             for comp in comps.iter_mut() {
                 upsample(
                     comp,
@@ -721,17 +708,3 @@ enum McuContinuation {
     Terminate
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use zune_core::bytestream::ZCursor;
-//
-//     use crate::JpegDecoder;
-//
-//     #[test]
-//     fn test_bad_ite() {
-//         let file = std::fs::read("/Users/etemesi/Downloads/bad.jpg").unwrap();
-//         let buf = ZCursor::new(&file);
-//         let mut decoder = JpegDecoder::new(buf);
-//         decoder.decode().unwrap();
-//     }
-// }
