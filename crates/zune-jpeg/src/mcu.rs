@@ -720,3 +720,18 @@ enum McuContinuation {
     AnotherSos,
     Terminate
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn test_bad_ite() {
+//         let file = std::fs::read("/Users/etemesi/Downloads/bad.jpg").unwrap();
+//         let buf = ZCursor::new(&file);
+//         let mut decoder = JpegDecoder::new(buf);
+//         decoder.decode().unwrap();
+//     }
+// }

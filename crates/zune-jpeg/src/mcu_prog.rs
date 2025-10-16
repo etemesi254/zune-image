@@ -23,7 +23,6 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::cmp::min;
-
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, warn};
@@ -430,15 +429,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // https://github.com/etemesi254/zune-image/issues/261
             let _start = self.stream.position()?;
             // skip bytes until we find marker
-            let marker = get_marker(&mut self.stream, stream)?;
-            let _end = self.stream.position()?;
-            stream.marker = Some(marker);
-            // NB some warnings may be false positives.
-            warn!(
-                "{} Extraneous bytes before marker {:?}",
-                _end - _start,
-                marker
-            );
+            let marker = get_marker(&mut self.stream, stream);
+
+            // In some images, the RST marker on the last section may not be available
+            // as it is maybe stopped by an EOI marker, see in the case of https://github.com/etemesi254/zune-image/issues/292
+            // what happened was that we would go looking for the RST marker exhausting all the data
+            // in the image and this would return an error, so for now
+            // translate it to a warning, but return the image decoded up
+            // until that point
+            if let Ok(marker) = marker {
+                let _end = self.stream.position()?;
+                stream.marker = Some(marker);
+                // NB some warnings may be false positives.
+                warn!(
+                    "{} Extraneous bytes before marker {:?}",
+                    _end - _start,
+                    marker
+                );
+            } else{
+                warn!("RST marker was not found, where expected, image may be garbled")
+            }
         }
         if self.todo == 0 {
             self.handle_rst(stream)?
