@@ -64,7 +64,7 @@ pub mod exposure;
 pub mod flip;
 pub mod gamma;
 pub mod gaussian_blur;
-pub mod hdr_to_sdr;
+pub mod color_transform;
 pub mod histogram;
 pub mod hsv_adjust;
 pub mod invert;
