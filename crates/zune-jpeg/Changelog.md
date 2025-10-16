@@ -1,3 +1,11 @@
+## Version 0.5.1
+
+- Fix decoding of particular images with a non-standard subsample, (
+  see https://github.com/etemesi254/zune-image/issues/291)
+- Add better RGB color detection of images to match libjpeg and stb_image formats
+
+-----
+
 ## Version 0.3.17
 
 - Fix no-std compilation
@@ -36,29 +44,36 @@
 - Removed dependency on `num_cpu`
 
 ### Version 0.1.5
+
 - Allow user to set memory limits in during decoding explicitly via `set_limits`
 - Fixed some bugs discovered by fuzzing
 - Correctly handle small images less than 16 pixels
 - Gracefully handle incorrectly sampled images.
 
 ### Version 0.1.4
+
 - Remove all `unsafe` instances except platform dependent intrinsics.
 - Numerous bug fixes identified by fuzzing.
 - Expose `ImageInfo` to the crate root.
 
 ### Version 0.1.3
+
 - Fix numerous panics found by fuzzing(thanks to @[Shnatsel] for the corpus)
 - Add new method `set_num_threads` that allows one to explicitly set the number of threads to use to decode the image.
 
 ### Version 0.1.2
+
 - Add more sub checks, contributed by @[5225225]
 - Privatize some modules.
 
 ### Version 0.1.1
+
 - Fix rgba/rgbx decoding when avx optimized functions were used
-- Initial support for fuzzing 
+- Initial support for fuzzing
 - Remove `align_alloc` method which was unsound (Thanks to @[HeroicKatora] for pointing that out)
 
 [Shnatsel]:https://github.com/Shnatsel
+
 [HeroicKatora]:https://github.com/HeroicKatora
+
 [5225225]:https://github.com/5225225
