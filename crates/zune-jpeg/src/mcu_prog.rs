@@ -176,6 +176,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Err(e);
                     }
                     error!("{}", e);
+                    // If we can't get the marker, just break away
+                    // allows us to decode some corrupt images
+                    // e.g https://github.com/etemesi254/zune-image/issues/294
+                    break 'eoi;
                 }
             }
         }
