@@ -133,7 +133,18 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_end
                     );
                     // after every SOS, marker, parse data for that scan.
-                    self.parse_entropy_coded_data(&mut stream, &mut block)?;
+                    let result = self.parse_entropy_coded_data(&mut stream, &mut block);
+                    
+                    // Do not error out too fast, allows the decoder to continue as much as possible
+                    // even after errors 
+                    if result.is_err() {
+                        return if self.options.strict_mode() {
+                            Err(result.err().unwrap())
+                        } else {
+                            error!("{}", result.err().unwrap());
+                            break 'eoi;
+                        };
+                    }
                     // extract marker, might either indicate end of image or we continue
                     // scanning(hence the continue statement to determine).
                     match get_marker(&mut self.stream, &mut stream) {

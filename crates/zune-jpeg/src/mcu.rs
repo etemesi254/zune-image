@@ -223,21 +223,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     )?
                 } else {
                     /* NB: (cae). This code was added due to the issue at https://github.com/etemesi254/zune-image/issues/277
-                     *
-                     * There is a particular set of images that interleave the start of scan (SOS) with the MCU,
-                     * E.g if it's a three component image, we have SOS->MCU ->SOS->MCU ->SOS->MCU
-                     * which presents a problem on decoding, we need to buffer the whole image before continuing since
-                     * we won't have a row containing all the component data which will be needed e.g for color conversion.
-                     *
-                     * The mechanisms is that we decode the whole image upfront, which goes against the normal
-                     * routine of decoding MCU width , so this requires more memory upfront than initial routines
-                     * but it is a single image out of the many corpuses that exist, so its fine.
-                     * (image in test-images/jpeg/sos_news.jpeg)
+                    *
+                    * There is a particular set of images that interleave the start of scan (SOS) with the MCU,
+                    * E.g if it's a three component image, we have SOS->MCU ->SOS->MCU ->SOS->MCU
+                    * which presents a problem on decoding, we need to buffer the whole image before continuing since
+                    * we won't have a row containing all the component data which will be needed e.g for color conversion.
+                    *
+                    * The mechanisms is that we decode the whole image upfront, which goes against the normal
+                    * routine of decoding MCU width , so this requires more memory upfront than initial routines
+                    * but it is a single image out of the many corpuses that exist, so its fine.
+                    * (image in test-images/jpeg/sos_news.jpeg)
 
-                     * Code contributed by  Aurelia Molzer (https://github.com/197g)
+                    * Code contributed by  Aurelia Molzer (https://github.com/197g)
 
-                     *
-                     */
+                    *
+                    */
 
                     self.decode_mcu_width::<true>(
                         mcu_width,
@@ -422,14 +422,29 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         // a zero based array.
                         tmp.fill(0);
 
-                        stream.decode_mcu_block(
+                        let result = stream.decode_mcu_block(
                             &mut self.stream,
                             dc_table,
                             ac_table,
                             qt_table,
                             tmp,
                             &mut component.dc_pred
-                        )?;
+                        );
+                        // If an error occurs we can either propagate it
+                        // as an error or print it and call terminate.
+                        //
+                        // This allows even corrupt images to render something,
+                        // even if its bad, matching browsers.
+                        //
+                        // See example in https://github.com/etemesi254/zune-image/issues/293
+                        if result.is_err() {
+                            return if self.options.strict_mode() {
+                                Err(result.err().unwrap())
+                            } else {
+                                error!("{}", result.err().unwrap());
+                                Ok(McuContinuation::Terminate)
+                            };
+                        }
 
                         if component.needed {
                             let idct_position = {
@@ -707,4 +722,3 @@ enum McuContinuation {
     AnotherSos,
     Terminate
 }
-
