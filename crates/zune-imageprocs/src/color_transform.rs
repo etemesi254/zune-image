@@ -15,7 +15,9 @@ pub enum ColorProfiles {
     sRGB,
     AdobeRgb,
     DisplayP3,
-    Bt2020
+    Bt2020,
+    DciP3
+
 }
 
 /// ColorTransform
@@ -56,6 +58,8 @@ impl OperationsTrait for ColorTransform {
                 ColorProfiles::AdobeRgb => ColorProfile::new_adobe_rgb(),
                 ColorProfiles::DisplayP3 => ColorProfile::new_display_p3(),
                 ColorProfiles::Bt2020 => ColorProfile::new_bt2020(),
+                ColorProfiles::DciP3 => ColorProfile::new_dci_p3(),
+
 
             };
             let img_depth = image.depth();
