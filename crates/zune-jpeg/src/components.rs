@@ -122,7 +122,10 @@ impl Components {
         //         "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
         //     )));
         // }
-
+        if vertical_sample==0{
+            // Check for invalid vertical sample
+            return Err(DecodeErrors::Format("Vertical sample is zero".to_string()));
+        }
         trace!(
             "Component ID:{:?} \tHS:{} VS:{} QT:{}",
             id,
