@@ -13,6 +13,7 @@
 
 use alloc::vec::Vec;
 use alloc::{format, vec};
+use crate::alloc::string::ToString;
 
 use zune_core::log::trace;
 
