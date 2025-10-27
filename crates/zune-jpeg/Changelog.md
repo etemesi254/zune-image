@@ -1,3 +1,5 @@
+## Version 0.5.5
+- Support direct conversion of Luma to RGBA
 ## Version 0.5.4
 - Fix overriding color space when decoding Luma colorspace
 ## Version 0.5.3
