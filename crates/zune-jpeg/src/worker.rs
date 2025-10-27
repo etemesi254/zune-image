@@ -111,7 +111,7 @@ pub(crate) fn color_convert(
         }
         (ColorSpace::Luma, ColorSpace::RGBA) => {
             // duplicate the luma channel  three times to form RGB
-            // add 255 as alpha 
+            // add 255 as alpha
             // Note, this may assume the direct conversion
             // from luma to RGB is by duplicating
             //
@@ -149,7 +149,7 @@ fn convert_luma_to_rgba(
     mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
 ) {
     for (pix_w, y_w) in output
-        .chunks_exact_mut(width * 43)
+        .chunks_exact_mut(width * 4)
         .zip(mcu_block[0].chunks_exact(padded_width))
     {
         for (pix, c) in pix_w.chunks_exact_mut(4).zip(y_w) {
