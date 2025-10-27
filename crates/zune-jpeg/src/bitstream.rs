@@ -689,15 +689,15 @@ const fn has_byte(b: u32, val: u8) -> bool {
     has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
 }
 
-mod tests {
-    use zune_core::bytestream::ZCursor;
-    use crate::JpegDecoder;
-
-    #[test]
-    fn test_image() {
-        let img = "/Users/etemesi/Downloads/issue256.jpg";
-        let data = std::fs::read(img).unwrap();
-        let mut decoder = JpegDecoder::new(ZCursor::new(&data[..]));
-        decoder.decode().unwrap();
-    }
-}
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn test_image() {
+//         let img = "/Users/etemesi/Downloads/issue256.jpg";
+//         let data = std::fs::read(img).unwrap();
+//         let mut decoder = JpegDecoder::new(ZCursor::new(&data[..]));
+//         decoder.decode().unwrap();
+//     }
+// }
