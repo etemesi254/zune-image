@@ -37,7 +37,7 @@ use zune_core::log::debug;
 use zune_core::options::DecoderOptions;
 
 use crate::decoder::IDCTPtr;
-use crate::idct::scalar::idct_int;
+use crate::idct::scalar::{idct_int, idct_int_1x1};
 
 #[cfg(feature = "x86")]
 pub mod avx2;
@@ -83,6 +83,11 @@ pub fn choose_idct_4x4_func(options: &DecoderOptions) -> IDCTPtr {
     }
 
     scalar::idct4x4
+}
+
+pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
+    // These are simple stores, no alternative implementation for now
+    idct_int_1x1
 }
 
 #[cfg(test)]

@@ -462,7 +462,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                             let idct_pos = channel.get_mut(idct_position..).unwrap();
 
-                            if 1 < len && len <= 10 {
+                            if len <= 1 {
+                                (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
+                            } else if len <= 10 {
                                 (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
                             } else {
                                 //  call idct.

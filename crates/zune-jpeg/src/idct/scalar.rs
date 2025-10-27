@@ -12,6 +12,17 @@
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
+#[inline]
+pub fn idct_int_1x1(in_vector: &mut [i32; 64], mut out_vector: &mut [i16], stride: usize) {
+    let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
+
+    out_vector[..8].fill(coeff);
+    for _ in 0..7 {
+        out_vector = &mut out_vector[stride..];
+        out_vector[..8].fill(coeff);
+    }
+}
+
 #[allow(unused_assignments)]
 #[allow(
     clippy::too_many_lines,
@@ -27,35 +38,7 @@ pub fn idct_int(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
     // Don't check for zeroes inside loop, lift it and check outside
     // we want to accelerate the case with 63 0 ac coeff
     if &in_vector[1..] == &[0_i32; 63] {
-        // AC terms all zero, idct of the block is ( coeff[0] * qt[0] )/8 + 128 (bias)
-        // (and clamped to 255)
-        // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
-        let coeff = [((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16; 8];
-
-        macro_rules! store {
-            ($index:tt) => {
-                // position of the MCU
-                let mcu_stride: &mut [i16; 8] = out_vector
-                    .get_mut($index..$index + 8)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                // copy coefficients
-                mcu_stride.copy_from_slice(&coeff);
-                // increment index
-                $index += stride;
-            };
-        }
-        // write to four positions
-        store!(pos);
-        store!(pos);
-        store!(pos);
-        store!(pos);
-
-        store!(pos);
-        store!(pos);
-        store!(pos);
-        store!(pos);
+        return idct_int_1x1(in_vector, out_vector, stride);
     } else {
         // because the compiler fails to see that it can be auto_vectorised so i'll
         // leave it here check out [idct_int_slow, and idct_int_1D to get what i mean ] https://godbolt.org/z/8hqW9z9j9

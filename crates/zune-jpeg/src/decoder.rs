@@ -26,7 +26,7 @@ use crate::headers::{
     parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
-use crate::idct::{choose_idct_func, choose_idct_4x4_func};
+use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
@@ -132,6 +132,7 @@ pub struct JpegDecoder<T: ZByteReaderTrait> {
     // depend on certain CPU extensions.
     pub(crate) idct_func: IDCTPtr,
     pub(crate) idct_4x4_func: IDCTPtr,
+    pub(crate) idct_1x1_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
     pub(crate) z_order:          [usize; MAX_COMPONENTS],
@@ -182,6 +183,7 @@ where
             num_scans:         0,
             idct_func:         choose_idct_func(&options),
             idct_4x4_func:     choose_idct_4x4_func(&options),
+            idct_1x1_func:     choose_idct_1x1_func(&options),
             color_convert_16:  color_convert,
             input_colorspace:  ColorSpace::YCbCr,
             z_order:           [0; MAX_COMPONENTS],
