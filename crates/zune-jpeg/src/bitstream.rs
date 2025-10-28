@@ -334,7 +334,7 @@ impl BitStream {
     pub fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
         qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64], dc_prediction: &mut i32
-    ) -> Result<(), DecodeErrors>
+    ) -> Result<u16, DecodeErrors>
     where
         T: ZByteReaderTrait
     {
@@ -381,13 +381,14 @@ impl BitStream {
 
                     pos += 1;
                 } else if r != 15 {
-                    return Ok(());
+                    return Ok(pos as u16);
                 } else {
                     pos += 16;
                 }
             }
         }
-        return Ok(());
+
+        return Ok(64);
     }
 
     /// Peek `look_ahead` bits ahead without discarding them from the buffer

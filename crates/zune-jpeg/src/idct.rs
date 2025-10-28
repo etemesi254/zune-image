@@ -37,7 +37,7 @@ use zune_core::log::debug;
 use zune_core::options::DecoderOptions;
 
 use crate::decoder::IDCTPtr;
-use crate::idct::scalar::idct_int;
+use crate::idct::scalar::{idct_int, idct_int_1x1};
 
 #[cfg(feature = "x86")]
 pub mod avx2;
@@ -69,6 +69,25 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     debug!("Using scalar integer IDCT");
     // use generic one
     return idct_int;
+}
+
+pub fn choose_idct_4x4_func(options: &DecoderOptions) -> IDCTPtr {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
+    {
+        if options.use_avx2() {
+            debug!("Using vector integer IDCT");
+            // use avx one
+            return crate::idct::avx2::idct_avx2_4x4;
+        }
+    }
+
+    scalar::idct4x4
+}
+
+pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
+    // These are simple stores, no alternative implementation for now
+    idct_int_1x1
 }
 
 #[cfg(test)]
@@ -143,5 +162,54 @@ mod tests {
         }
 
         idct_int
+    }
+
+    #[test]
+    fn idct_4x4() {
+        #[rustfmt::skip]
+        const A: [i32; 32] = [
+            -254, -7, 0, 0, 0, 0, 0, 0,
+            7, 0, -30, 32,  0, 0, 0, 0,
+            7, 0, -30, 32,  0, 0, 0, 0,
+            7, 0, -30, 32,  0, 0, 0, 0,
+        ];
+
+        let mut v: Vec<IDCTPtr> = vec![crate::idct::scalar::idct_int];
+        let mut dct_names = vec![];
+
+        v.push(crate::idct::scalar::idct4x4);
+        dct_names.push("scalar::idct4x4");
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(feature = "x86")]
+        {
+            // The default choice.
+            let options = DecoderOptions::new_fast();
+            v.push(choose_idct_4x4_func(&options));
+            dct_names.push("x86_auto::idct4x4");
+
+            // Any special choice we're making
+            if options.use_avx2() {
+                v.push(crate::idct::avx2::idct_avx2_4x4);
+                dct_names.push("x86_avx2::idct4x4");
+            }
+        }
+
+        let mut color = vec![];
+
+        for idct in v {
+            let mut a = [0i32; 64];
+            a[..32].copy_from_slice(&A);
+            let mut b = [0i16; 64];
+
+            idct(&mut a, &mut b, 8);
+
+            color.push(b);
+        }
+
+        for (wnd, name) in color.windows(2).zip(&dct_names) {
+            let [a, b] = wnd else { unreachable!() };
+            assert_eq!(a, b, "{name}");
+        }
     }
 }
