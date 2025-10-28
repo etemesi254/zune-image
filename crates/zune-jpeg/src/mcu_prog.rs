@@ -635,7 +635,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         a non-sampled image to ensure decoding works
         */
         self.h_max = 1;
-        self.options = self.options.jpeg_set_out_colorspace(ColorSpace::Luma);
         self.v_max = 1;
         self.sub_sample_ratio = SampleRatios::None;
         self.is_interleaved = false;
