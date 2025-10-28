@@ -43,11 +43,6 @@ fn decode_jpeg_mozjpeg(buf: &[u8]) -> Vec<[u8; 3]> {
     p
 }
 
-fn decode_jpeg_image_rs(buf: &[u8]) -> Vec<u8> {
-    let mut decoder = jpeg_decoder::Decoder::new(buf);
-
-    decoder.decode().unwrap()
-}
 
 fn decode_no_samp(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
@@ -65,9 +60,7 @@ fn decode_no_samp(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
-    });
+
 }
 
 fn decode_h_samp(c: &mut Criterion) {
@@ -86,9 +79,7 @@ fn decode_h_samp(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
-    });
+
 }
 
 fn decode_v_samp(c: &mut Criterion) {
@@ -107,9 +98,7 @@ fn decode_v_samp(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
-    });
+
 }
 
 fn decode_hv_samp(c: &mut Criterion) {
@@ -127,9 +116,7 @@ fn decode_hv_samp(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
-    });
+
 }
 
 fn decode_jpeg_grayscale(buf: &[u8]) -> Vec<u8> {
@@ -193,9 +180,7 @@ fn decode_no_samp_prog(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(data.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(data.as_slice())))
-    });
+
 }
 
 fn decode_h_samp_prog(c: &mut Criterion) {
@@ -210,9 +195,7 @@ fn decode_h_samp_prog(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice())))
-    });
+
 }
 
 fn decode_v_samp_prog(c: &mut Criterion) {
@@ -229,9 +212,7 @@ fn decode_v_samp_prog(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice())))
-    });
+
 }
 
 fn decode_hv_samp_prog(c: &mut Criterion) {
@@ -247,9 +228,7 @@ fn decode_hv_samp_prog(c: &mut Criterion) {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
 
-    group.bench_function("imagers/jpeg-decoder", |b| {
-        b.iter(|| black_box(decode_jpeg_image_rs(x.as_slice())))
-    });
+
 }
 
 fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8> {
