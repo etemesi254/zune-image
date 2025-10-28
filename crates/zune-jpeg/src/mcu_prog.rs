@@ -108,7 +108,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut stream = BitStream::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
         // there are multiple scans in the stream, this should resolve the first scan
-        self.parse_entropy_coded_data(&mut stream, &mut block)?;
+        let result = self.parse_entropy_coded_data(&mut stream, &mut block);
+
+        if result.is_err() {
+            return if self.options.strict_mode() {
+                Err(result.err().unwrap())
+            } else {
+                error!("{}", result.err().unwrap());
+                // Go process it and return as much as we can, exiting here
+                return self.finish_progressive_decoding(&block, pixels);
+            };
+        }
 
         // extract marker
         let mut marker = stream
@@ -134,9 +144,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     );
                     // after every SOS, marker, parse data for that scan.
                     let result = self.parse_entropy_coded_data(&mut stream, &mut block);
-                    
+
                     // Do not error out too fast, allows the decoder to continue as much as possible
-                    // even after errors 
+                    // even after errors
                     if result.is_err() {
                         return if self.options.strict_mode() {
                             Err(result.err().unwrap())

@@ -1,3 +1,9 @@
+## Version 0.5.5
+- Support direct conversion of Luma to RGBA
+## Version 0.5.4
+- Fix overriding color space when decoding Luma colorspace
+## Version 0.5.3
+- Fix some decoding of some images with markers in progressive segments, see https://github.com/etemesi254/zune-image/issues/295
 ## Version 0.5.1
 
 - Fix decoding of particular images with a non-standard subsample, (

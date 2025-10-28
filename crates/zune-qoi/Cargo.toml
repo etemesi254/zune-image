@@ -1,6 +1,6 @@
 [package]
 name = "zune-qoi"
-version = "0.5.0-rc0"
+version = "0.5.1"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-qoi"
@@ -16,5 +16,5 @@ log = ["zune-core/log"]
 std = ["zune-core/std"]
 default = ["std", "log"]
 [dependencies]
-zune-core = { path = "../zune-core", version = "^0.5.0-rc0" }
+zune-core = { path = "../zune-core", version = "^0.5" }
 

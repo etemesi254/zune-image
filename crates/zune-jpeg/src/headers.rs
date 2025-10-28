@@ -247,7 +247,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         // and that to us translates to setting input and output
         // colorspaces to zero
         img.input_colorspace = ColorSpace::Luma;
-        img.options = img.options.jpeg_set_out_colorspace(ColorSpace::Luma);
+        //img.options = img.options.jpeg_set_out_colorspace(ColorSpace::Luma);
         debug!("Overriding default colorspace set to Luma");
     }
     if num_components == 4 && img.input_colorspace == ColorSpace::YCbCr {
@@ -282,7 +282,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
 
 /// Parse a start of scan data
 pub(crate) fn parse_sos<T: ZByteReaderTrait>(
-    image: &mut JpegDecoder<T>,
+    image: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // Scan header length
     let ls = usize::from(image.stream.get_u16_be_err()?);
@@ -420,7 +420,7 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
 
 /// Parse the APP13 (IPTC) segment.
 pub(crate) fn parse_app13<T: ZByteReaderTrait>(
-    decoder: &mut JpegDecoder<T>,
+    decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     const IPTC_PREFIX: &[u8] = b"Photoshop 3.0";
     // skip length.

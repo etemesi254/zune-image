@@ -31,9 +31,7 @@ pub(crate) fn color_convert(
     unprocessed: &[&[i16]; MAX_COMPONENTS], color_convert_16: ColorConvert16Ptr,
     input_colorspace: ColorSpace, output_colorspace: ColorSpace, output: &mut [u8], width: usize,
     padded_width: usize
-) -> Result<(), DecodeErrors>
-{
-
+) -> Result<(), DecodeErrors> {
     if input_colorspace.num_components() == 3 && input_colorspace == output_colorspace {
         // sort things like RGB to RGB conversion
         copy_removing_padding(unprocessed, width, padded_width, output);
@@ -111,6 +109,17 @@ pub(crate) fn color_convert(
             // of doing it but won't get onto it
             convert_luma_to_rgb(unprocessed, width, padded_width, output)
         }
+        (ColorSpace::Luma, ColorSpace::RGBA) => {
+            // duplicate the luma channel  three times to form RGB
+            // add 255 as alpha
+            // Note, this may assume the direct conversion
+            // from luma to RGB is by duplicating
+            //
+            // There may be a bit more complex ways
+            // of doing it but won't get onto it
+            convert_luma_to_rgba(unprocessed, width, padded_width, output)
+        }
+
         // For the other components we do nothing(currently)
         _ => {
             let msg = format!(
@@ -136,7 +145,21 @@ fn convert_luma_to_rgb(
         }
     }
 }
-
+fn convert_luma_to_rgba(
+    mcu_block: &[&[i16]; MAX_COMPONENTS], width: usize, padded_width: usize, output: &mut [u8]
+) {
+    for (pix_w, y_w) in output
+        .chunks_exact_mut(width * 4)
+        .zip(mcu_block[0].chunks_exact(padded_width))
+    {
+        for (pix, c) in pix_w.chunks_exact_mut(4).zip(y_w) {
+            pix[0] = *c as u8;
+            pix[1] = *c as u8;
+            pix[2] = *c as u8;
+            pix[3] = 255;
+        }
+    }
+}
 /// Copy a block to output removing padding bytes from input
 /// if necessary
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]

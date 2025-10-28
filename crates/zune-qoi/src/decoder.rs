@@ -150,6 +150,12 @@ where
             );
             return Err(QoiErrors::Generic(msg));
         }
+        if width == 0 {
+            return Err(QoiErrors::GenericStatic("Image Width is zero"));
+        }
+        if height == 0 {
+            return Err(QoiErrors::GenericStatic("Image Height is zero"));
+        }
 
         self.colorspace = match colorspace {
             3 => ColorSpace::RGB,

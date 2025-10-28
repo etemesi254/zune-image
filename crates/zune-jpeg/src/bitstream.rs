@@ -443,6 +443,13 @@ impl BitStream {
         // refinement scan
         if self.bits_left < 1 {
             self.refill(reader)?;
+            // if we find a marker, it may happens we don't refill.
+            // So let's confirm again that refill worked
+            if self.bits_left < 1 {
+                return Err(DecodeErrors::Format(
+                    "Marker found where not expected in refine bit".to_string()
+                ));
+            }
         }
 
         if self.get_bit() == 1 {
@@ -687,13 +694,21 @@ const fn has_byte(b: u32, val: u8) -> bool {
 
 // mod tests {
 //     use zune_core::bytestream::ZCursor;
+//     use zune_core::colorspace::ColorSpace;
+//     use zune_core::options::DecoderOptions;
+//
+//     use crate::errors::DecodeErrors;
 //     use crate::JpegDecoder;
 //
 //     #[test]
 //     fn test_image() {
-//         let img = "/Users/etemesi/Downloads/PHO00008.JPG";
+//         let img = "/Users/etemesi/Downloads/nepo.jpg";
 //         let data = std::fs::read(img).unwrap();
-//         let mut decoder = JpegDecoder::new(ZCursor::new(&data[..]));
+//         let options = DecoderOptions::new_cmd().jpeg_set_out_colorspace(ColorSpace::RGB);
+//         let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data[..]), options);
+//
 //         decoder.decode().unwrap();
+//         println!("{:?}",decoder.options.jpeg_get_out_colorspace())
+//
 //     }
 // }
