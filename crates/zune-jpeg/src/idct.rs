@@ -71,11 +71,11 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     return idct_int;
 }
 
-pub fn choose_idct_4x4_func(options: &DecoderOptions) -> IDCTPtr {
+pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if options.use_avx2() {
+        if _options.use_avx2() {
             debug!("Using vector integer IDCT");
             // use avx one
             return crate::idct::avx2::idct_avx2_4x4;
