@@ -221,7 +221,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 } else {
                     /* NB: (cae). This code was added due to the issue at https://github.com/etemesi254/zune-image/issues/277
@@ -246,7 +246,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 };
 
@@ -260,7 +260,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         width,
                         padded_width,
                         &mut pixels_written,
-                        &mut upsampler_scratch_space,
+                        &mut upsampler_scratch_space
                     )?;
                 }
 
@@ -318,7 +318,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn finish_baseline_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         let mcu_height = self.mcu_y;
 
@@ -334,7 +334,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // Mark only needed components for computing output colors.
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
+                pos
             ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
@@ -380,7 +380,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space,
+                &mut upsampler_scratch_space
             )?;
         }
 
@@ -389,7 +389,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_mcu_width<const PROGRESSIVE: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
 
@@ -430,7 +430,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             ac_table,
                             qt_table,
                             tmp,
-                            &mut component.dc_pred,
+                            &mut component.dc_pred
                         );
 
                         // If an error occurs we can either propagate it
@@ -442,7 +442,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         // See example in https://github.com/etemesi254/zune-image/issues/293
                         let len = if let Ok(len) = result {
                             len
-                        } else { // result.is_err()
+                        } else {
+                            // result.is_err()
                             return if self.options.strict_mode() {
                                 Err(result.err().unwrap())
                             } else {
@@ -732,5 +733,5 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 enum McuContinuation {
     Ok,
     AnotherSos,
-    Terminate,
+    Terminate
 }

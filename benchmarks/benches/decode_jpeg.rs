@@ -227,8 +227,6 @@ fn decode_hv_samp_prog(c: &mut Criterion) {
     group.bench_function("mozjpeg", |b| {
         b.iter(|| black_box(decode_jpeg_mozjpeg(x.as_slice())))
     });
-
-
 }
 
 fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8> {
