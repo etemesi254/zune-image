@@ -332,6 +332,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 // refinement scan
                                 stream.decode_mcu_ac_refine(&mut self.stream, ac_table, data)?;
                             }
+                            // Check for a marker.
+                            // It can appear in stream CC https://github.com/etemesi254/zune-image/issues/300
+                            if let Some(marker) = stream.marker.take() {
+                                self.parse_marker_inner(marker)?;
+                            }
                         }
                     }
 
