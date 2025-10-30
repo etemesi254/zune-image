@@ -13,13 +13,14 @@
 
 use alloc::vec::Vec;
 use alloc::{format, vec};
-use crate::alloc::string::ToString;
 
 use zune_core::log::trace;
 
+use crate::alloc::string::ToString;
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::upsampler::upsample_no_op;
+const MAX_SAMP_FACTOR: usize = 4;
 
 /// Represents an up-sampler function, this function will be called to upsample
 /// a down-sampled image
@@ -103,6 +104,19 @@ impl Components {
 
         let horizontal_sample = (a[1] >> 4) as usize;
         let vertical_sample = (a[1] & 0x0f) as usize;
+        // Match libjpeg turbo on checking for sampling factors
+        // Reject anything above 4
+        if horizontal_sample > MAX_SAMP_FACTOR {
+            return Err(DecodeErrors::Format(format!(
+                "Bogus Horizontal Sampling Factor {horizontal_sample}"
+            )));
+        }
+        if vertical_sample > MAX_SAMP_FACTOR {
+            return Err(DecodeErrors::Format(format!(
+                "Bogus Vertical Sampling Factor {vertical_sample}"
+            )));
+        }
+
         let quantization_table_number = a[2];
         // confirm quantization number is between 0 and MAX_COMPONENTS
         if usize::from(quantization_table_number) >= MAX_COMPONENTS {
@@ -123,7 +137,7 @@ impl Components {
         //         "Vertical sub-sample is not power of two({vertical_sample}) cannot decode"
         //     )));
         // }
-        if vertical_sample==0{
+        if vertical_sample == 0 {
             // Check for invalid vertical sample
             return Err(DecodeErrors::Format("Vertical sample is zero".to_string()));
         }
