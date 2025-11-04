@@ -456,12 +456,13 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     if length < 2 {
         return Err(DecodeErrors::FormatStatic("Too small APP14 length"));
     }
-    if length < 14 {
-        return Err(DecodeErrors::FormatStatic(
-            "Too short of a length for App14 segment"
-        ));
-    }
+
     if decoder.stream.peek_at(0, 5)? == b"Adobe" {
+        if length < 14 {
+            return Err(DecodeErrors::FormatStatic(
+                "Too short of a length for App14 segment"
+            ));
+        }
         // move stream 6 bytes to remove adobe id
         decoder.stream.skip(6)?;
         // skip version, flags0 and flags1
@@ -484,11 +485,8 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // version =  5
         // transform = 1
         length = length.saturating_sub(14);
-    } else if decoder.options.strict_mode() {
-        return Err(DecodeErrors::FormatStatic("Corrupt Adobe App14 segment"));
-    } else {
-        length = length.saturating_sub(2);
-        error!("Not a valid Adobe APP14 Segment");
+    }  else {
+        warn!("Not a valid Adobe APP14 Segment, skipping");
     }
     // skip any proceeding lengths.
     // we do not need them
