@@ -334,9 +334,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             }
                             // Check for a marker.
                             // It can appear in stream CC https://github.com/etemesi254/zune-image/issues/300
-                            if let Some(marker) = stream.marker.take() {
-                                self.parse_marker_inner(marker)?;
-                            }
+                            // if let Some(marker) = stream.marker.take() {
+                            //     self.parse_marker_inner(marker)?;
+                            // }
                         }
                     }
 
