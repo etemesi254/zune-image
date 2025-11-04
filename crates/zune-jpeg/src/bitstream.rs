@@ -482,9 +482,6 @@ impl BitStream {
         'block: loop {
             self.refill(reader)?;
             // Check for marker in the stream
-            if self.marker.is_some(){
-               return Ok(false);
-            }
 
             symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
             fac = fast_ac[symbol as usize];
