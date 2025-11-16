@@ -392,6 +392,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
+        // How much of the head of `tmp` was written by the last MCU decoding?
+        let mut clobber_more_than_4x4 = true;
 
         for j in 0..mcu_width {
             // iterate over components
@@ -424,8 +426,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     for h_samp in 0..component.horizontal_sample {
                         let result = if needed {
                             // Fill the array with zeroes, decode_mcu_block expects
-                            // a zero based array.
-                            tmp.fill(0);
+                            // a zero based array. Clobber is in zig-zag order though.
+                            let clobber_len = if !clobber_more_than_4x4 {
+                                32
+                            } else {
+                                64
+                            };
+
+                            tmp[..clobber_len].fill(0);
 
                             stream.decode_mcu_block(
                                 &mut self.stream,
@@ -464,6 +472,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         };
 
                         if needed {
+                            // tmp was only written when needed.
+                            clobber_more_than_4x4 = len > 10;
+
                             let idct_position = {
                                 // derived from stb and rewritten for my tastes
                                 let c2 = v_samp * 8;
