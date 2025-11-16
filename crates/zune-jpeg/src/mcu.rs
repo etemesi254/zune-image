@@ -415,23 +415,34 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     &mut component.raw_coeff
                 };
 
+                let needed = component.needed;
+
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
                 for v_samp in 0..component.vertical_sample {
                     for h_samp in 0..component.horizontal_sample {
-                        // Fill the array with zeroes, decode_mcu_block expects
-                        // a zero based array.
-                        tmp.fill(0);
+                        let result = if needed {
+                            // Fill the array with zeroes, decode_mcu_block expects
+                            // a zero based array.
+                            tmp.fill(0);
 
-                        let result = stream.decode_mcu_block(
-                            &mut self.stream,
-                            dc_table,
-                            ac_table,
-                            qt_table,
-                            tmp,
-                            &mut component.dc_pred
-                        );
+                            stream.decode_mcu_block(
+                                &mut self.stream,
+                                dc_table,
+                                ac_table,
+                                qt_table,
+                                tmp,
+                                &mut component.dc_pred,
+                            )
+                        } else {
+                            stream.discard_mcu_block(
+                                &mut self.stream,
+                                dc_table,
+                                ac_table,
+                                &mut component.dc_pred,
+                            )
+                        };
 
                         // If an error occurs we can either propagate it
                         // as an error or print it and call terminate.
@@ -452,7 +463,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             };
                         };
 
-                        if component.needed {
+                        if needed {
                             let idct_position = {
                                 // derived from stb and rewritten for my tastes
                                 let c2 = v_samp * 8;
