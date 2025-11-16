@@ -389,9 +389,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_mcu_width<const PROGRESSIVE: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
+
+        let is_equally_sampled = z_order[..usize::from(self.num_scans)].iter().all(|&k| {
+            let component = &mut self.components[k];
+            component.vertical_sample == 1 && component.horizontal_sample == 1
+        });
+
+        if self.num_scans == 1 && is_equally_sampled {
+            return self.decode_mcu_width_for_one::<PROGRESSIVE>(
+                mcu_width,
+                mcu_height,
+                tmp,
+                stream,
+                progressive,
+            );
+        }
+
         // How much of the head of `tmp` was written by the last MCU decoding?
         let mut clobber_more_than_4x4 = true;
 
@@ -419,6 +435,78 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let needed = component.needed;
 
+                if is_equally_sampled {
+                    let result = if needed {
+                        // Fill the array with zeroes, decode_mcu_block expects
+                        // a zero based array. Clobber is in zig-zag order though.
+                        let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
+
+                        tmp[..clobber_len].fill(0);
+
+                        stream.decode_mcu_block(
+                            &mut self.stream,
+                            dc_table,
+                            ac_table,
+                            qt_table,
+                            tmp,
+                            &mut component.dc_pred,
+                        )
+                    } else {
+                        // We do not touch tmp so there is no need to reset it.
+                        stream.discard_mcu_block(
+                            &mut self.stream,
+                            dc_table,
+                            ac_table,
+                            &mut component.dc_pred,
+                        )
+                    };
+
+                    // If an error occurs we can either propagate it
+                    // as an error or print it and call terminate.
+                    //
+                    // This allows even corrupt images to render something,
+                    // even if its bad, matching browsers.
+                    //
+                    // See example in https://github.com/etemesi254/zune-image/issues/293
+                    let len = if let Ok(len) = result {
+                        len
+                    } else {
+                        // result.is_err()
+                        return if self.options.strict_mode() {
+                            Err(result.err().unwrap())
+                        } else {
+                            error!("{}", result.err().unwrap());
+                            Ok(McuContinuation::Terminate)
+                        };
+                    };
+
+                    if needed {
+                        // tmp was only written when needed.
+                        clobber_more_than_4x4 = len > 10;
+
+                        let idct_position = {
+                            // derived from stb and rewritten for my tastes
+                            let c2 = 0 * 8;
+                            let c3 = ((j * 1) + 0) * 8;
+
+                            component.width_stride * c2 + c3
+                        };
+
+                        let idct_pos = channel.get_mut(idct_position..).unwrap();
+
+                        if len <= 1 {
+                            (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
+                        } else if len <= 10 {
+                            (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
+                        } else {
+                            //  call idct.
+                            (self.idct_func)(tmp, idct_pos, component.width_stride);
+                        }
+                    }
+
+                    continue;
+                }
+
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
@@ -427,11 +515,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         let result = if needed {
                             // Fill the array with zeroes, decode_mcu_block expects
                             // a zero based array. Clobber is in zig-zag order though.
-                            let clobber_len = if !clobber_more_than_4x4 {
-                                32
-                            } else {
-                                64
-                            };
+                            let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
 
                             tmp[..clobber_len].fill(0);
 
@@ -444,6 +528,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 &mut component.dc_pred,
                             )
                         } else {
+                            // We do not touch tmp so there is no need to reset it.
                             stream.discard_mcu_block(
                                 &mut self.stream,
                                 dc_table,
@@ -510,6 +595,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
+        self.check_stream_marker_after_mcu_width(stream)
+    }
+
+    fn check_stream_marker_after_mcu_width(
+        &mut self, stream: &mut BitStream,
+    ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
         // handle stream markers
         //
@@ -563,6 +654,126 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         Ok(McuContinuation::Ok)
     }
+
+    fn decode_mcu_width_for_one<const PROGRESSIVE: bool>(
+        &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+    ) -> Result<McuContinuation, DecodeErrors> {
+        let k = self.z_order[0];
+        let mut clobber_more_than_4x4 = true;
+
+        // We do not want to keep the borrow itself but the data in here does not change. Only the
+        // dc_pred is reset on a restart interval.
+        let component = &mut self.components[k];
+        let needed = component.needed;
+        let dc_huff_table = component.dc_huff_table % MAX_COMPONENTS;
+        let ac_huff_table = component.ac_huff_table % MAX_COMPONENTS;
+
+        let width_stride = component.width_stride;
+
+        assert_eq!(component.vertical_sample, 1);
+        assert_eq!(component.horizontal_sample, 1);
+
+        for j in 0..mcu_width {
+            let component = &mut self.components[k];
+
+            // iterate over components
+            let channel = if PROGRESSIVE {
+                let offset = mcu_height * width_stride * 8;
+                &mut progressive[k][offset..]
+            } else {
+                &mut component.raw_coeff
+            };
+
+            let dc_table = self.dc_huffman_tables[dc_huff_table].as_ref().unwrap();
+            let ac_table = self.ac_huffman_tables[ac_huff_table].as_ref().unwrap();
+            let qt_table = &component.quantization_table;
+
+            // There should be no
+
+            let result = if needed {
+                // Fill the array with zeroes, decode_mcu_block expects
+                // a zero based array. Clobber is in zig-zag order though.
+                let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
+
+                tmp[..clobber_len].fill(0);
+
+                stream.decode_mcu_block(
+                    &mut self.stream,
+                    dc_table,
+                    ac_table,
+                    qt_table,
+                    tmp,
+                    &mut component.dc_pred,
+                )
+            } else {
+                // We do not touch tmp so there is no need to reset it.
+                stream.discard_mcu_block(
+                    &mut self.stream,
+                    dc_table,
+                    ac_table,
+                    &mut component.dc_pred,
+                )
+            };
+
+            // If an error occurs we can either propagate it
+            // as an error or print it and call terminate.
+            //
+            // This allows even corrupt images to render something,
+            // even if its bad, matching browsers.
+            //
+            // See example in https://github.com/etemesi254/zune-image/issues/293
+            let len = if let Ok(len) = result {
+                len
+            } else {
+                // result.is_err()
+                return if self.options.strict_mode() {
+                    Err(result.err().unwrap())
+                } else {
+                    error!("{}", result.err().unwrap());
+                    Ok(McuContinuation::Terminate)
+                };
+            };
+
+            if needed {
+                // tmp was only written when needed.
+                clobber_more_than_4x4 = len > 10;
+
+                let idct_position = {
+                    // derived from stb and rewritten for my tastes
+                    let c2 = 0 * 8;
+                    let c3 = ((j * 1) + 0) * 8;
+
+                    width_stride * c2 + c3
+                };
+
+                let idct_pos = channel.get_mut(idct_position..).unwrap();
+
+                if len <= 1 {
+                    (self.idct_1x1_func)(tmp, idct_pos, width_stride);
+                } else if len <= 10 {
+                    (self.idct_4x4_func)(tmp, idct_pos, width_stride);
+                } else {
+                    //  call idct.
+                    (self.idct_func)(tmp, idct_pos, width_stride);
+                }
+            }
+
+            self.todo = self.todo.wrapping_sub(1);
+
+            if self.todo == 0 {
+                self.handle_rst_main(stream)?;
+                continue;
+            }
+
+            if stream.marker.is_some() && stream.bits_left == 0 {
+                break;
+            }
+        }
+
+        self.check_stream_marker_after_mcu_width(stream)
+    }
+
     // handle RST markers.
     // No-op if not using restarts
     // this routine is shared with mcu_prog
