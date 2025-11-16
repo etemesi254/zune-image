@@ -316,6 +316,32 @@ impl BitStream {
         return Ok(true);
     }
 
+    /// Like `decode_dc` but we do not need the result of the component, we only want to remove it
+    /// from the bitstream of the MCU.
+    fn discard_dc<T>(
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable
+    ) -> Result<bool, DecodeErrors>
+    where
+        T: ZByteReaderTrait
+    {
+        let mut symbol;
+
+        if self.bits_left < 32 {
+            self.refill(reader)?;
+        };
+        // look a head HUFF_LOOKAHEAD bits into the bitstream
+        symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
+        symbol = dc_table.lookup[symbol as usize];
+
+        decode_huff!(self, symbol, dc_table);
+
+        if symbol != 0 {
+            let _ = self.get_bits(symbol as u8);
+        }
+
+        return Ok(true);
+    }
+
     /// Decode a Minimum Code Unit(MCU) as quickly as possible
     ///
     /// # Arguments
@@ -397,7 +423,6 @@ impl BitStream {
     /// either. Still returns the index of the last component read.
     pub fn discard_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
-        dc_prediction: &mut i32,
     ) -> Result<u16, DecodeErrors>
     where
         T: ZByteReaderTrait,
@@ -410,7 +435,7 @@ impl BitStream {
         let mut pos: usize = 1;
 
         // decode DC, dc prediction will contain the value
-        self.decode_dc(reader, dc_table, dc_prediction)?;
+        self.discard_dc(reader, dc_table)?;
 
         while pos < 64 {
             self.refill(reader)?;

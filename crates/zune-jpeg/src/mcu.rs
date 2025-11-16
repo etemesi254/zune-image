@@ -391,13 +391,41 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
         stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
     ) -> Result<McuContinuation, DecodeErrors> {
-        let z_order = self.z_order;
-        let z_scans = &z_order[..usize::from(self.num_scans)];
-
-        let is_equally_sampled = z_order[..usize::from(self.num_scans)].iter().all(|&k| {
+        let is_equally_sampled = self.z_order[..usize::from(self.num_scans)].iter().all(|&k| {
             let component = &mut self.components[k];
             component.vertical_sample == 1 && component.horizontal_sample == 1
         });
+
+        // The definition of MCU depends on the sampling factor of involved scans. When components
+        // have different factors then each Minimal-Coding-Unit is the least common multiple such
+        // that we have an integer number of blocks from each component. But the decoding of these
+        // components differs from it otherwise, we need an inner loop with a dynamic amount of
+        // coefficients per component, whereas otherwise we have exactly one block of coefficients
+        // encoded for each component in the bitstream order.
+        //
+        // We statically specialize on this to improve code generation of the common case a little
+        // bit. We could also special case common sub-sampling cases but be mindful of code bloat.
+        if is_equally_sampled {
+            self.inner_decode_mcu_width::<PROGRESSIVE, false>(mcu_width, mcu_height, tmp,
+                stream, progressive)
+        } else {
+            self.inner_decode_mcu_width::<PROGRESSIVE, true>(mcu_width, mcu_height, tmp,
+                stream, progressive)
+        }
+    }
+
+    // Inline-never ensures we do get this function optimize on its own, into two different
+    // versions, without the optimizer tripping up over the complexity that comes with the
+    // constant folding. And constant folding is quite important for performance here as
+    // when `not SAMPLED` then the inner loop has exactly one iteration per component in
+    // the scan. The difference was ~1% or a bit more.
+    #[inline(never)]
+    fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool>(
+        &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+    ) -> Result<McuContinuation, DecodeErrors> {
+        let z_order = self.z_order;
+        let z_scans = &z_order[..usize::from(self.num_scans)];
 
         // How much of the head of `tmp` was written by the last MCU decoding?
         let mut clobber_more_than_4x4 = true;
@@ -431,81 +459,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let component_samples_needed = component.needed;
 
-                // We need no inner loop, there is one 1x1 per component in the MCU of this scan
-                if is_equally_sampled {
-                    let result = if component_samples_needed {
-                        // Fill the array with zeroes, decode_mcu_block expects
-                        // a zero based array. Clobber is in zig-zag order though.
-                        let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
-
-                        tmp[..clobber_len].fill(0);
-
-                        stream.decode_mcu_block(
-                            &mut self.stream,
-                            dc_table,
-                            ac_table,
-                            qt_table,
-                            tmp,
-                            &mut component.dc_pred,
-                        )
-                    } else {
-                        // We do not touch tmp so there is no need to reset it.
-                        stream.discard_mcu_block(
-                            &mut self.stream,
-                            dc_table,
-                            ac_table,
-                            &mut component.dc_pred,
-                        )
-                    };
-
-                    // If an error occurs we can either propagate it
-                    // as an error or print it and call terminate.
-                    //
-                    // This allows even corrupt images to render something,
-                    // even if its bad, matching browsers.
-                    //
-                    // See example in https://github.com/etemesi254/zune-image/issues/293
-                    let len = if let Ok(len) = result {
-                        len
-                    } else {
-                        // result.is_err()
-                        return if self.options.strict_mode() {
-                            Err(result.err().unwrap())
-                        } else {
-                            error!("{}", result.err().unwrap());
-                            Ok(McuContinuation::Terminate)
-                        };
-                    };
-
-                    if component_samples_needed {
-                        // tmp was only written when needed.
-                        clobber_more_than_4x4 = len > 10;
-
-                        // simplified from stb where an MCU is a 1x1 for everything
-                        let idct_position = j * 8;
-                        let idct_pos = channel.get_mut(idct_position..).unwrap();
-
-                        if len <= 1 {
-                            (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
-                        } else if len <= 10 {
-                            (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
-                        } else {
-                            //  call idct.
-                            (self.idct_func)(tmp, idct_pos, component.width_stride);
-                        }
-                    }
-
-                    continue;
-                }
-
-                // getting here implies !is_equally_sampled
-
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
+                let v_step = if SAMPLED { 0..component.vertical_sample } else { 0..1 };
 
-                for v_samp in 0..component.vertical_sample {
-                    for h_samp in 0..component.horizontal_sample {
+                for v_samp in v_step {
+                    let h_step = if SAMPLED { 0..component.horizontal_sample } else { 0..1 };
+
+                    for h_samp in h_step {
                         let result = if component_samples_needed {
                             // Fill the array with zeroes, decode_mcu_block expects
                             // a zero based array. Clobber is in zig-zag order though.
@@ -527,7 +489,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 &mut self.stream,
                                 dc_table,
                                 ac_table,
-                                &mut component.dc_pred,
                             )
                         };
 
