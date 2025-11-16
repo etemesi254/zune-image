@@ -391,6 +391,62 @@ impl BitStream {
         return Ok(64);
     }
 
+    /// Advance the bitstream over a block but ignore the data contained.
+    ///
+    /// This updates DC prediction but we never dequantize and we never do any Zig-Zag translation
+    /// either. Still returns the index of the last component read.
+    pub fn discard_mcu_block<T>(
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+        dc_prediction: &mut i32,
+    ) -> Result<u16, DecodeErrors>
+    where
+        T: ZByteReaderTrait,
+    {
+        // Get fast AC table as a reference before we enter the hot path
+        let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
+
+        let (mut symbol, mut r, mut fast_ac);
+        // Decode AC coefficients
+        let mut pos: usize = 1;
+
+        // decode DC, dc prediction will contain the value
+        self.decode_dc(reader, dc_table, dc_prediction)?;
+
+        while pos < 64 {
+            self.refill(reader)?;
+            symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
+            fast_ac = ac_lookup[symbol as usize];
+            symbol = ac_table.lookup[symbol as usize];
+
+            if fast_ac != 0 {
+                //  FAST AC path
+                pos += ((fast_ac >> 4) & 15) as usize; // run
+
+                self.drop_bits((fast_ac & 15) as u8);
+                pos += 1;
+            } else {
+                decode_huff!(self, symbol, ac_table);
+
+                r = symbol >> 4;
+                symbol &= 15;
+
+                if symbol != 0 {
+                    pos += r as usize;
+                    // Advance over bits but ignore.
+                    let _ = self.get_bits(symbol as u8);
+
+                    pos += 1;
+                } else if r != 15 {
+                    return Ok(pos as u16);
+                } else {
+                    pos += 16;
+                }
+            }
+        }
+
+        return Ok(64);
+    }
+
     /// Peek `look_ahead` bits ahead without discarding them from the buffer
     #[inline(always)]
     #[allow(clippy::cast_possible_truncation)]
