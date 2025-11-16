@@ -391,10 +391,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
         stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
     ) -> Result<McuContinuation, DecodeErrors> {
-        let is_equally_sampled = self.z_order[..usize::from(self.num_scans)].iter().all(|&k| {
-            let component = &mut self.components[k];
-            component.vertical_sample == 1 && component.horizontal_sample == 1
-        });
+        let is_one_by_one = self.z_order[..usize::from(self.num_scans)]
+            .iter()
+            .all(|&k| {
+                let component = &mut self.components[k];
+                component.vertical_sample == 1 && component.horizontal_sample == 1
+            });
 
         // The definition of MCU depends on the sampling factor of involved scans. When components
         // have different factors then each Minimal-Coding-Unit is the least common multiple such
@@ -405,12 +407,22 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         //
         // We statically specialize on this to improve code generation of the common case a little
         // bit. We could also special case common sub-sampling cases but be mindful of code bloat.
-        if is_equally_sampled {
-            self.inner_decode_mcu_width::<PROGRESSIVE, false>(mcu_width, mcu_height, tmp,
-                stream, progressive)
+        if is_one_by_one {
+            self.inner_decode_mcu_width::<PROGRESSIVE, false>(
+                mcu_width,
+                mcu_height,
+                tmp,
+                stream,
+                progressive,
+            )
         } else {
-            self.inner_decode_mcu_width::<PROGRESSIVE, true>(mcu_width, mcu_height, tmp,
-                stream, progressive)
+            self.inner_decode_mcu_width::<PROGRESSIVE, true>(
+                mcu_width,
+                mcu_height,
+                tmp,
+                stream,
+                progressive,
+            )
         }
     }
 
@@ -427,7 +439,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
 
-        // How much of the head of `tmp` was written by the last MCU decoding?
+        // How much of the head of `tmp` was written by the last MCU decoding? We only check for
+        // two different cases and not all possible outcomes as this is only used to optimize the
+        // bytes written in `fill`. Since the clobber happens in UNZIGZAG order we'd be straddling
+        // most cache lines anyways even if we did a partial write with the exact length of the
+        // coefficient data which was written into `tmp`.
         let mut clobber_more_than_4x4 = true;
 
         for j in 0..mcu_width {
@@ -462,6 +478,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // If image is interleaved iterate over scan components,
                 // otherwise if it-s non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
+                //
+                // Turn the bounds into a compile time constant for a common special case. This
+                // allows the compiler to unroll the loop and then do a bunch of interleaving.
                 let v_step = if SAMPLED { 0..component.vertical_sample } else { 0..1 };
 
                 for v_samp in v_step {
@@ -471,7 +490,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         let result = if component_samples_needed {
                             // Fill the array with zeroes, decode_mcu_block expects
                             // a zero based array. Clobber is in zig-zag order though.
-                            let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
+                            // Writing consecutive entries is basically free in terms
+                            // of memory throughput so we opt for a larger power of
+                            // two which lets the compiler turn this into a repeated
+                            // write of a zeroed vector register, which does not have
+                            // any branches, instead of a more difficult pattern where
+                            // we attempt to overwrite exactly one coefficient.
+                            let clobber_len = if !clobber_more_than_4x4 {
+                                32
+                            } else {
+                                64
+                            };
 
                             tmp[..clobber_len].fill(0);
 
@@ -485,11 +514,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             )
                         } else {
                             // We do not touch tmp so there is no need to reset it.
-                            stream.discard_mcu_block(
-                                &mut self.stream,
-                                dc_table,
-                                ac_table,
-                            )
+                            stream.discard_mcu_block(&mut self.stream, dc_table, ac_table)
                         };
 
                         // If an error occurs we can either propagate it
@@ -512,7 +537,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         };
 
                         if component_samples_needed {
-                            // tmp was only written when needed.
+                            // tmp was only written partially, note that len is in ZigZag order.
                             clobber_more_than_4x4 = len > 10;
 
                             let idct_position = {
