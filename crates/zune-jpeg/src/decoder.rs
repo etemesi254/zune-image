@@ -124,6 +124,8 @@ pub struct JpegDecoder<T: ZByteReaderTrait> {
     pub(crate) succ_low:         u8,
     /// Number of components.
     pub(crate) num_scans:        u8,
+    /// For a scan, check if any component has vertical/horizontal sampling.
+    pub(crate) scan_subsampled:  bool,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -181,6 +183,7 @@ where
             succ_high:         0,
             succ_low:          0,
             num_scans:         0,
+            scan_subsampled:   false, 
             idct_func:         choose_idct_func(&options),
             idct_4x4_func:     choose_idct_4x4_func(&options),
             idct_1x1_func:     choose_idct_1x1_func(&options),
