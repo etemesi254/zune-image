@@ -391,12 +391,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
         stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
     ) -> Result<McuContinuation, DecodeErrors> {
-        let is_one_by_one = self.z_order[..usize::from(self.num_scans)]
-            .iter()
-            .all(|&k| {
-                let component = &mut self.components[k];
-                component.vertical_sample == 1 && component.horizontal_sample == 1
-            });
+        let is_one_by_one = !self.scan_subsampled;
 
         // The definition of MCU depends on the sampling factor of involved scans. When components
         // have different factors then each Minimal-Coding-Unit is the least common multiple such
@@ -431,7 +426,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     // constant folding. And constant folding is quite important for performance here as
     // when `not SAMPLED` then the inner loop has exactly one iteration per component in
     // the scan. The difference was ~1% or a bit more.
-    #[inline(never)]
     fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
         stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],

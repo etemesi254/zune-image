@@ -314,6 +314,8 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
     }
 
     // consume spec parameters
+    image.scan_subsampled = false;
+
     for i in 0..ns {
         let id = image.stream.read_u8_err()?;
 
@@ -347,9 +349,14 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             )));
         }
 
-        image.components[usize::from(j)].dc_huff_table = usize::from((y >> 4) & 0xF);
-        image.components[usize::from(j)].ac_huff_table = usize::from(y & 0xF);
+        let component = &mut image.components[usize::from(j)];
+        component.dc_huff_table = usize::from((y >> 4) & 0xF);
+        component.ac_huff_table = usize::from(y & 0xF);
         image.z_order[i as usize] = j as usize;
+
+        if component.vertical_sample != 1 || component.horizontal_sample != 1 {
+            image.scan_subsampled = true;
+        }
 
         trace!(
             "Assigned huffman tables {}/{} to component {j}, id={}",
