@@ -27,5 +27,5 @@ jobs:
       - name: Test jpeg
         run: cargo test --verbose --package=zune-jpeg
       - name: Fuzz jpeg
-        run: cargo +nightly fuzz run --fuzz-dir crates/zune-jpg/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=120  fuzz-corpus/jpeg
+        run: cargo +nightly fuzz run --fuzz-dir crates/zune-jpeg/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=120  fuzz-corpus/jpeg
 
