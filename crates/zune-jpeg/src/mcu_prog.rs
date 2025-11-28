@@ -276,7 +276,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             .get_mut(k)
                             .unwrap()
                             .get_mut(start..start + 64)
-                            .unwrap()
+                            .ok_or(DecodeErrors::FormatStatic("Slice to Small"))?
                             .try_into()
                             .unwrap();
 
