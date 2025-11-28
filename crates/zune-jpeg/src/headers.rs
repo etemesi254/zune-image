@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::{debug, error, trace, warn};
+use zune_core::log::{debug, trace, warn};
 
 use crate::components::Components;
 use crate::decoder::{GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
@@ -492,7 +492,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // version =  5
         // transform = 1
         length = length.saturating_sub(14);
-    }  else {
+    } else {
         warn!("Not a valid Adobe APP14 Segment, skipping");
     }
     // skip any proceeding lengths.

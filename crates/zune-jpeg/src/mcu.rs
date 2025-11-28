@@ -389,7 +389,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_mcu_width<const PROGRESSIVE: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let is_one_by_one = !self.scan_subsampled;
 
@@ -408,7 +408,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 mcu_height,
                 tmp,
                 stream,
-                progressive,
+                progressive
             )
         } else {
             self.inner_decode_mcu_width::<PROGRESSIVE, true>(
@@ -416,7 +416,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 mcu_height,
                 tmp,
                 stream,
-                progressive,
+                progressive
             )
         }
     }
@@ -428,7 +428,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     // the scan. The difference was ~1% or a bit more.
     fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
@@ -490,11 +490,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // write of a zeroed vector register, which does not have
                             // any branches, instead of a more difficult pattern where
                             // we attempt to overwrite exactly one coefficient.
-                            let clobber_len = if !clobber_more_than_4x4 {
-                                32
-                            } else {
-                                64
-                            };
+                            let clobber_len = if !clobber_more_than_4x4 { 32 } else { 64 };
 
                             tmp[..clobber_len].fill(0);
 
@@ -504,7 +500,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 ac_table,
                                 qt_table,
                                 tmp,
-                                &mut component.dc_pred,
+                                &mut component.dc_pred
                             )
                         } else {
                             // We do not touch tmp so there is no need to reset it.
@@ -573,7 +569,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn check_stream_marker_after_mcu_width(
-        &mut self, stream: &mut BitStream,
+        &mut self, stream: &mut BitStream
     ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
         // handle stream markers
@@ -694,7 +690,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // iterate over each line, since color-convert needs only
                     // one line
                     for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                        *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width];
+                        let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
+                        if temp.is_none() {
+                            return Err(DecodeErrors::Format("Missing samples".to_string()));
+                        }
+                        *samp = temp.unwrap();
                     }
                     color_convert(
                         &raw_samples,
