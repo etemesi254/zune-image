@@ -555,9 +555,9 @@ pub(crate) fn upsample(
                 .chunks_exact(component.width_stride)
                 .zip(dest_coeff.chunks_exact_mut(component.width_stride * h * v))
             {
-                // upsample using the fn pointer, should only be H, so no need for
-                // row up and row down
-                (component.up_sampler)(single_row, &[], &[], &mut [], output_stride);
+                for row in output_stride.chunks_exact_mut(component.width_stride * h) {
+                    (component.up_sampler)(single_row, &[], &[], &mut [], row);
+                }
             }
         }
         SampleRatios::None => {}

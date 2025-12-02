@@ -113,6 +113,11 @@
     "comment": "Another weird sampling factor,(when will it end)"
   },
   {
+    "name": "fox410.jpg",
+    "hash": 31442107016347398716020146443366879014,
+    "comment": "4:1:0 chroma subsampling"
+  },
+  {
     "name": "sos_news.jpeg",
     "hash": 125076749956488097552385675695536257187,
     "comment": "SOS interleaved with markers"
