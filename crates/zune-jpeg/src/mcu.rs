@@ -199,12 +199,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             trace!("Decoding MCU width: {mcu_width}, height: {mcu_height}");
 
             for i in 0..mcu_height {
-                // Report if we have no more bytes
-                // This may generate false negatives since we over-read bytes
-                // hence that why 37 is chosen(we assume if we over-read more than 37 bytes, we have a problem)
-                if stream.overread_by > 37
-                // favourite number :)
-                {
+                if stream.overread_by > 0 {
+                    pixels.get_mut(pixels_written..).map(|v| v.fill(128));
                     if self.options.strict_mode() {
                         return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
                     };
@@ -273,6 +269,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     McuContinuation::AnotherSos => continue 'sos,
                     McuContinuation::Terminate => {
                         warn!("Got terminate signal, will not process further");
+                        pixels.get_mut(pixels_written..).map(|v| v.fill(128));
                         return Ok(());
                     }
                 }
