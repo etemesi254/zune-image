@@ -692,7 +692,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
                         let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
                         if temp.is_none() {
-                            return Err(DecodeErrors::Format("Missing samples".to_string()));
+                            return Err(DecodeErrors::FormatStatic("Missing samples"));
                         }
                         *samp = temp.unwrap();
                     }
