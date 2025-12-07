@@ -54,8 +54,10 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     {
         if options.use_avx2() {
             debug!("Using vector integer IDCT");
-            // use avx one
-            return crate::idct::avx2::idct_avx2;
+            return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
+                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+                unsafe { avx2::idct_avx2(a,b,c) }
+            };
         }
     }
     #[cfg(target_arch = "aarch64")]
@@ -63,7 +65,10 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     {
         if options.use_neon() {
             debug!("Using vector integer IDCT");
-            return crate::idct::neon::idct_neon;
+            return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
+                // SAFETY: `options.use_neon()` only returns true if neon is supported.
+                unsafe { neon::idct_neon(a,b,c) }
+            };
         }
     }
     debug!("Using scalar integer IDCT");
@@ -77,8 +82,10 @@ pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
     {
         if _options.use_avx2() {
             debug!("Using vector integer IDCT");
-            // use avx one
-            return crate::idct::avx2::idct_avx2_4x4;
+            return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
+                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+                unsafe { avx2::idct_avx2_4x4(a,b,c) }
+            };
         }
     }
 
@@ -103,7 +110,8 @@ mod tests {
         let mut coeff2 = [10; 64];
         let mut output_scalar = [0; 64];
         let mut output_vector = [0; 64];
-        idct_fnc()(&mut coeff, &mut output_vector, stride);
+        let idct_func = choose_idct_func(&DecoderOptions::new_fast());
+        idct_func(&mut coeff, &mut output_vector, stride);
         idct_int(&mut coeff2, &mut output_scalar, stride);
         assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
     }
@@ -115,7 +123,8 @@ mod tests {
         let mut coeff2 = [14; 64];
         let mut output_scalar = [0; 64];
         let mut output_vector = [0; 64];
-        idct_fnc()(&mut coeff, &mut output_vector, stride);
+        let idct_func = choose_idct_func(&DecoderOptions::new_fast());
+        idct_func(&mut coeff, &mut output_vector, stride);
         idct_int(&mut coeff2, &mut output_scalar, stride);
         assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
     }
@@ -129,7 +138,8 @@ mod tests {
         let mut coeff2 = coeff;
         let mut output_scalar = [0; 64];
         let mut output_vector = [0; 64];
-        idct_fnc()(&mut coeff, &mut output_vector, stride);
+        let idct_func = choose_idct_func(&DecoderOptions::new_fast());
+        idct_func(&mut coeff, &mut output_vector, stride);
         idct_int(&mut coeff2, &mut output_scalar, stride);
         assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
     }
@@ -141,27 +151,10 @@ mod tests {
         let mut coeff2 = [0; 64];
         let mut output_scalar = [0; 64];
         let mut output_vector = [0; 64];
-        idct_fnc()(&mut coeff, &mut output_vector, stride);
+        let idct_func = choose_idct_func(&DecoderOptions::new_fast());
+        idct_func(&mut coeff, &mut output_vector, stride);
         idct_int(&mut coeff2, &mut output_scalar, stride);
         assert_eq!(output_scalar, output_vector, "IDCT and scalar do not match");
-    }
-
-    fn idct_fnc() -> IDCTPtr {
-        #[cfg(feature = "neon")]
-        #[cfg(target_arch = "aarch64")]
-        {
-            use crate::idct::neon::idct_neon;
-            return idct_neon;
-        }
-
-        #[cfg(feature = "x86")]
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            use crate::idct::avx2::idct_avx2;
-            return idct_avx2;
-        }
-
-        idct_int
     }
 
     #[test]
@@ -174,26 +167,18 @@ mod tests {
             7, 0, -30, 32,  0, 0, 0, 0,
         ];
 
-        let mut v: Vec<IDCTPtr> = vec![crate::idct::scalar::idct_int];
-        let mut dct_names = vec![];
-
-        v.push(crate::idct::scalar::idct4x4);
-        dct_names.push("scalar::idct4x4");
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        #[cfg(feature = "x86")]
-        {
-            // The default choice.
-            let options = DecoderOptions::new_fast();
-            v.push(choose_idct_4x4_func(&options));
-            dct_names.push("x86_auto::idct4x4");
-
-            // Any special choice we're making
-            if options.use_avx2() {
-                v.push(crate::idct::avx2::idct_avx2_4x4);
-                dct_names.push("x86_avx2::idct4x4");
-            }
-        }
+        let v: Vec<IDCTPtr> = vec![
+            choose_idct_func(&DecoderOptions::new_safe()),
+            choose_idct_4x4_func(&DecoderOptions::new_safe()),
+            choose_idct_func(&DecoderOptions::new_fast()),
+            choose_idct_4x4_func(&DecoderOptions::new_fast()),
+        ];
+        let dct_names = vec![
+            "safe idct",
+            "safe idct 4x4",
+            "fast idct",
+            "fast idct 4x4",
+        ];
 
         let mut color = vec![];
 

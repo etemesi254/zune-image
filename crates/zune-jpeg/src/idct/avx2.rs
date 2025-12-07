@@ -40,24 +40,6 @@ use crate::unsafe_utils::{transpose, YmmRegister};
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
-/// SAFETY
-/// ------
-///
-/// It is the responsibility of the CALLER to ensure that  this function is
-/// called in contexts where the CPU supports it
-///
-///
-/// For documentation see module docs.
-
-pub fn idct_avx2(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
-    unsafe {
-        // We don't call this method directly because we need to flag the code function
-        // with #[target_feature] so that the compiler does do weird stuff with
-        // it
-        idct_int_avx2_inner(in_vector, out_vector, stride);
-    }
-}
-
 // Pack i32 to i16's,
 // clamp them to be between 0-255
 // Undo shuffling
@@ -104,7 +86,7 @@ macro_rules! permute_store {
     unused_assignments,
     clippy::zero_prefixed_literal
 )]
-pub unsafe fn idct_int_avx2_inner(
+pub unsafe fn idct_avx2(
     in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize,
 ) {
     let mut pos = 0;
@@ -271,14 +253,6 @@ pub unsafe fn idct_int_avx2_inner(
     permute_store!((row6.mm256), (row7.mm256), pos, out_vector, stride);
 }
 
-pub fn idct_avx2_4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
-    unsafe {
-        // We don't call this method directly because we need to flag the code function
-        // with #[target_feature] so that the compiler does do weird stuff with
-        // it
-        idct_int_avx2_4x4_inner(in_vector, out_vector, stride);
-    }
-}
 
 #[target_feature(enable = "avx2")]
 #[allow(
@@ -289,7 +263,7 @@ pub fn idct_avx2_4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: 
     unused_assignments,
     clippy::zero_prefixed_literal
 )]
-pub unsafe fn idct_int_avx2_4x4_inner(
+pub unsafe fn idct_avx2_4x4(
     in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize,
 ) {
     let rw0 = _mm256_loadu_si256(in_vector[00..].as_ptr().cast());

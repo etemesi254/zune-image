@@ -36,23 +36,6 @@ use crate::unsafe_utils::{transpose, YmmRegister};
 
 const SCALE_BITS: i32 = 512 + 65536 + (128 << 17);
 
-/// SAFETY
-/// ------
-///
-/// It is the responsibility of the CALLER to ensure that  this function is
-/// called in contexts where the CPU supports it
-///
-///
-/// For documentation see module docs.
-
-pub fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
-    unsafe {
-        // We don't call this method directly because we need to flag the code function
-        // with #[target_feature] so that the compiler does do weird stuff with
-        // it
-        idct_int_neon_inner(in_vector, out_vector, stride);
-    }
-}
 
 #[inline]
 #[target_feature(enable = "neon")]
@@ -75,7 +58,7 @@ unsafe fn condense_bottom_16(a: int32x4x2_t, b: int32x4x2_t) -> int16x8x2_t {
     unused_assignments,
     clippy::zero_prefixed_literal
 )]
-pub unsafe fn idct_int_neon_inner(
+pub unsafe fn idct_neon(
     in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize
 ) {
     let mut pos = 0;
