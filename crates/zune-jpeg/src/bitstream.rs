@@ -97,6 +97,9 @@ macro_rules! decode_huff {
                     [(($symbol + ($table).offset[code_length as usize]) & 0xFF) as usize],
             );
         }
+        if code_length> i32::from(($stream).bits_left){
+            return Err(DecodeErrors::Format(format!("Code length {code_length}  more than bits left {}",($stream).bits_left)))
+        }
         // drop bits read
         ($stream).drop_bits(code_length as u8);
     };
@@ -212,7 +215,12 @@ impl BitStream {
                                 self.aligned_buffer = $buffer << (64 - $bits_left);
                             }
 
-                            self.marker = Marker::from_u8(next_byte as u8);
+                            let marker = Marker::from_u8(next_byte as u8);
+                            self.marker = marker;
+
+                            if let Some(Marker::UNKNOWN(_)) = marker{
+                                return Err(DecodeErrors::Format("Unknown marker in bit stream".to_string()));
+                            }
                             if next_byte == 0xD9 {
                                 // special handling for eoi, fill some bytes,even if its zero,
                                 // removes some panics
@@ -230,7 +238,7 @@ impl BitStream {
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         if self.bits_left < 32 {
-            if self.marker.is_some() || self.overread_by > 0  || self.seen_eoi{
+            if self.marker.is_some() || self.overread_by > 0 || self.seen_eoi {
                 // found a marker, or we are in EOI
                 // also we are in over-reading mode, where we fill it with zeroes
 
@@ -370,7 +378,11 @@ impl BitStream {
         let (mut symbol, mut r, mut fast_ac);
         // Decode AC coefficients
         let mut pos: usize = 1;
-
+        if  self.bits_left < 1 && self.marker.is_some() {
+            return Err(DecodeErrors::Format(
+                "No more bytes left in stream before marker".to_string()
+            ));
+        }
         // decode DC, dc prediction will contain the value
         self.decode_dc(reader, dc_table, dc_prediction)?;
 
@@ -422,10 +434,10 @@ impl BitStream {
     /// This updates DC prediction but we never dequantize and we never do any Zig-Zag translation
     /// either. Still returns the index of the last component read.
     pub fn discard_mcu_block<T>(
-        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable,
+        &mut self, reader: &mut ZReader<T>, dc_table: &HuffmanTable, ac_table: &HuffmanTable
     ) -> Result<u16, DecodeErrors>
     where
-        T: ZByteReaderTrait,
+        T: ZByteReaderTrait
     {
         // Get fast AC table as a reference before we enter the hot path
         let ac_lookup = ac_table.ac_lookup.as_ref().unwrap();
@@ -662,16 +674,20 @@ impl BitStream {
                         let coefficient = &mut block[UN_ZIGZAG[k as usize & 63] & 63];
 
                         if *coefficient != 0 {
+                            if self.bits_left < 1 {
+                                self.refill(reader)?;
+                                if self.bits_left < 1 && self.marker.is_some() {
+                                    return Err(DecodeErrors::Format(
+                                        "Marker found where not expected in refine bit".to_string()
+                                    ));
+                                }
+                            }
                             if self.get_bit() == 1 && (*coefficient & bit) == 0 {
                                 if *coefficient >= 0 {
                                     *coefficient += bit;
                                 } else {
                                     *coefficient -= bit;
                                 }
-                            }
-
-                            if self.bits_left < 1 {
-                                self.refill(reader)?;
                             }
                         } else {
                             r -= 1;
@@ -774,23 +790,21 @@ const fn has_byte(b: u32, val: u8) -> bool {
     has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
 }
 
-// mod tests {
-//     use zune_core::bytestream::ZCursor;
-//     use zune_core::colorspace::ColorSpace;
-//     use zune_core::options::DecoderOptions;
-//
-//     use crate::errors::DecodeErrors;
-//     use crate::JpegDecoder;
-//
-//     #[test]
-//     fn test_image() {
-//         let img = "/Users/etemesi/Downloads/nepo.jpg";
-//         let data = std::fs::read(img).unwrap();
-//         let options = DecoderOptions::new_cmd().jpeg_set_out_colorspace(ColorSpace::RGB);
-//         let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data[..]), options);
-//
-//         decoder.decode().unwrap();
-//         println!("{:?}",decoder.options.jpeg_get_out_colorspace())
-//
-//     }
-// }
+mod tests {
+    use zune_core::bytestream::ZCursor;
+    use zune_core::colorspace::ColorSpace;
+    use zune_core::options::DecoderOptions;
+
+    use crate::JpegDecoder;
+
+    #[test]
+    fn test_image() {
+        let img = "/Users/etemesi/Downloads/test_IDX_45_RAND_168601280367171438891916_minimized_837.jpg";
+        let data = std::fs::read(img).unwrap();
+        let options = DecoderOptions::new_cmd().jpeg_set_out_colorspace(ColorSpace::RGB);
+        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data[..]), options);
+
+        decoder.decode().unwrap();
+        println!("{:?}", decoder.options.jpeg_get_out_colorspace())
+    }
+}

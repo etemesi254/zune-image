@@ -14,7 +14,7 @@
 //!
 //! Useful for a lot of image readers and writers, it's put
 //! here to minimize code reuse
-pub use reader::ZReader;
+pub use reader::{ZReader, ZSeekFrom};
 pub use traits::*;
 pub use writer::ZWriter;
 
