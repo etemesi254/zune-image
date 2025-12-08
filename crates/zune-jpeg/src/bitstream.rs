@@ -790,21 +790,21 @@ const fn has_byte(b: u32, val: u8) -> bool {
     has_zero(b ^ ((!0_u32 / 255) * (val as u32)))
 }
 
-mod tests {
-    use zune_core::bytestream::ZCursor;
-    use zune_core::colorspace::ColorSpace;
-    use zune_core::options::DecoderOptions;
-
-    use crate::JpegDecoder;
-
-    #[test]
-    fn test_image() {
-        let img = "/Users/etemesi/Downloads/test_IDX_45_RAND_168601280367171438891916_minimized_837.jpg";
-        let data = std::fs::read(img).unwrap();
-        let options = DecoderOptions::new_cmd().jpeg_set_out_colorspace(ColorSpace::RGB);
-        let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data[..]), options);
-
-        decoder.decode().unwrap();
-        println!("{:?}", decoder.options.jpeg_get_out_colorspace())
-    }
-}
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//     use zune_core::colorspace::ColorSpace;
+//     use zune_core::options::DecoderOptions;
+//
+//     use crate::JpegDecoder;
+//
+//     #[test]
+//     fn test_image() {
+//         let img = "/Users/etemesi/Downloads/test_IDX_45_RAND_168601280367171438891916_minimized_837.jpg";
+//         let data = std::fs::read(img).unwrap();
+//         let options = DecoderOptions::new_cmd().jpeg_set_out_colorspace(ColorSpace::RGB);
+//         let mut decoder = JpegDecoder::new_with_options(ZCursor::new(&data[..]), options);
+//
+//         decoder.decode().unwrap();
+//         println!("{:?}", decoder.options.jpeg_get_out_colorspace())
+//     }
+// }
