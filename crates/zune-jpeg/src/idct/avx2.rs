@@ -119,21 +119,15 @@ pub unsafe fn idct_avx2(
     // we only care about AC terms
     let rw8 = _mm256_loadu_si256(in_vector[1..].as_ptr().cast());
 
-    let zero = _mm256_setzero_si256();
+    let mut bitmap = _mm256_or_si256(rw1, rw2);
+    bitmap = _mm256_or_si256(bitmap, rw3);
+    bitmap = _mm256_or_si256(bitmap, rw4);
+    bitmap = _mm256_or_si256(bitmap, rw5);
+    bitmap = _mm256_or_si256(bitmap, rw6);
+    bitmap = _mm256_or_si256(bitmap, rw7);
+    bitmap = _mm256_or_si256(bitmap, rw8);
 
-    let mut non_zero = 0;
-
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw8, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw1, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi32(rw2, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw3, zero));
-
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw4, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw5, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw6, zero));
-    non_zero += _mm256_movemask_epi8(_mm256_cmpeq_epi64(rw7, zero));
-
-    if non_zero == -8 {
+    if _mm256_testz_si256(bitmap, bitmap) == 1 {
         // AC terms all zero, idct of the block is ( coeff[0] * qt[0] )/8 + 128 (bias)
         // (and clamped to 255)
         // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
