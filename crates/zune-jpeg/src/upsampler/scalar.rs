@@ -50,7 +50,7 @@ pub fn upsample_horizontal(
     let i_last = &input[input_len..];
 
     // write out manually..
-    f_out[0] = (3 * i_last[0] + i_last[1] + 2) >> 2;
+    f_out[0] = (3 * i_last[1] + i_last[0] + 2) >> 2;
     f_out[1] = i_last[1];
 }
 pub fn upsample_vertical(
