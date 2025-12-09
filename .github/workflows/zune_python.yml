@@ -3,7 +3,7 @@
 #
 #    maturin generate-ci github
 #
-name: Zune Python
+name: Python
 
 on:
   push:

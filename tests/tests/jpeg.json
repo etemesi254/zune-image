@@ -1,7 +1,7 @@
 [
   {
     "name": "incomplete_image.jpg",
-    "hash": 51782287092072314780434157192853749743,
+    "hash": 314210745439162713480815683453340498658,
     "comment": "The image isn't full"
   },
   {
@@ -18,50 +18,50 @@
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 68690449169470299881778358990890686720,
+    "hash": 78298921866871824011106248114591715171,
     "comment": "Simple large image"
   },
   {
     "name": "large_no_samp_7680_4320.jpg",
-    "hash": 184908019880646239984904396425080137153 ,
+    "hash": 318693790604007287114582453436534128489 ,
     "colorspace": "ycbcr"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
-    "hash": 10782036713408549259752319215585399717,
+    "hash": 258300549736770413578783049919306336675,
     "colorspace": "luma",
     "comment": "Convert YCbCr to grayscale"
   },
   {
     "name": "large_horiz_samp_7680_4320.jpg",
     "colorspace": "ycbcr",
-    "hash": 95877032504825345071104554658767855314
+    "hash": 187089797650285117366052796829496644013
   },
   {
     "name": "large_vertical_samp_7680_4320.jpg",
-    "hash": 31692453110727773620689186925292313136
+    "hash": 141563893351526192573577009628189544333
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 195510528650165113752662102461894772578
+    "hash": 89362797331434800953047243504429478251
   },
   {
     "name": "medium_no_samp_2500x1786.jpg",
-    "hash": 69153879099620089658013132101190899423,
+    "hash": 291874786663895286460461230469345392126,
     "colorspace": "luma"
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 185648702660957705059086072505630236127
+    "hash": 53028507435190255452665888884299223575
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 69153879099620089658013132101190899423,
+    "hash": 291874786663895286460461230469345392126,
     "colorspace": "luma"
   },
   {
     "name": "medium_horiz_samp_2500x1786.jpg",
-    "hash": 14142306740122083437279242728471529913,
+    "hash": 204844316806424632749911849041441976131,
     "colorspace": "ycbcr"
   },
   {
@@ -71,20 +71,20 @@
   },
   {
     "name": "four_components.jpg",
-    "hash": 269246565655070616069119894054112419074
+    "hash": 287906653374850903431781302953270340417
   },
   {
     "name": "huge_sof_number.jpg",
-    "hash": 26000116706119179998982019551433090407
+    "hash": 333739973749682239551179394830479925883
   },
   {
     "name": "weid_sampling_factors.jpg",
-    "hash": 182489554109047340807839184134682685790,
+    "hash": 3503674285196750445517055941814306276,
     "comment": "Non normal sampling factors, h2v1 for all components"
   },
   {
     "name": "2029.jpg",
-    "hash": 306483713001243446292489753630394525881
+    "hash": 28817868748997507268707381353489368029
   },
   {
     "name": "down_sampled_grayscale_prog.jpg",
@@ -98,28 +98,28 @@
   },
   {
     "name": "2029.jpg",
-    "hash": 309386941612441312477520685382829485103,
+    "hash": 141772925169929705521688831799118378165,
     "comment": "testing-bgr support",
     "colorspace": "bgr"
   },
   {
     "name": "mjpeg_huffman.jpg",
-    "hash": 295377626204158838634455295605510149832,
+    "hash": 18012888231835939384638618897799869133,
     "comment": "Image needs to be filled with default huffman tables"
   },
   {
     "name": "sampling_factors.jpg",
-    "hash": 328545092438309410099945545749249382373,
+    "hash": 284621623123194664498179714486900153633,
     "comment": "Another weird sampling factor,(when will it end)"
   },
   {
     "name": "fox410.jpg",
-    "hash": 313983937175422589646672186453920240705,
+    "hash": 31442107016347398716020146443366879014,
     "comment": "4:1:0 chroma subsampling"
   },
   {
     "name": "sos_news.jpeg",
-    "hash": 225786825946767884366261330545687534824,
+    "hash": 109677255988131284084676849366241145140,
     "comment": "SOS interleaved with markers"
   }
 ]

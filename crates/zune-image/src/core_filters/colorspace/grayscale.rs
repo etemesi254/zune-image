@@ -11,8 +11,10 @@ use crate::core_filters::colorspace::grayscale::scalar::{
     convert_rgb_to_grayscale_scalar_u16
 };
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod avx2;
 mod scalar;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod sse41;
 
 pub fn rgb_to_grayscale_u16(r: &[u16], g: &[u16], b: &[u16], out: &mut [u16], max_value: u16) {
@@ -58,6 +60,7 @@ mod benchmarks {
 
     use crate::core_filters::colorspace::grayscale::scalar::convert_rgb_to_grayscale_scalar_u16;
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "sse41")]
     #[bench]
     fn convert_rgb_to_grayscale_sse41_bench(b: &mut test::Bencher) {
@@ -78,6 +81,7 @@ mod benchmarks {
         });
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "avx2")]
     #[bench]
     fn convert_rgb_to_grayscale_avx2_bench(b: &mut test::Bencher) {

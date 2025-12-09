@@ -600,14 +600,10 @@ pub(crate) fn checked_mul(
 mod benchmarks {
 
     extern crate test;
-
-    use zune_core::colorspace::ColorSpace;
-
-    use crate::image::Image;
-
+    
     #[bench]
     fn bench_flatten_image(b: &mut test::Bencher) {
-        let image = Image::fill(0_u8, ColorSpace::RGB, 2000, 2000);
+        let image = crate::image::Image::fill(0_u8, zune_core::colorspace::ColorSpace::RGB, 2000, 2000);
 
         b.iter(|| {
             let _ = image.flatten_to_u8();
