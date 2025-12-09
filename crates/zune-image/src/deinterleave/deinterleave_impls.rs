@@ -151,6 +151,7 @@ pub fn de_interleave_four_channels_f32(
 mod benchmarks {
     extern crate test;
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "sse41")]
     #[bench]
     fn de_interleave_3_channels_sse2_bench(b: &mut test::Bencher) {
@@ -188,6 +189,7 @@ mod benchmarks {
         });
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "sse41")]
     #[bench]
     fn de_interleave_3_channels_sse41_bench(b: &mut test::Bencher) {
@@ -208,6 +210,7 @@ mod benchmarks {
         });
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "avx2")]
     #[bench]
     fn de_interleave_3_channels_avx2_bench(b: &mut test::Bencher) {
@@ -228,6 +231,7 @@ mod benchmarks {
         });
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "sse41")]
     #[bench]
     fn de_interleave_4_channels_sse41_bench(b: &mut test::Bencher) {
@@ -267,6 +271,8 @@ mod benchmarks {
         });
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "avx2")]
     #[bench]
     fn de_interleave_4_channels_avx2_bench(b: &mut test::Bencher) {
         use crate::deinterleave::avx2::de_interleave_four_channels_avx2;

@@ -261,8 +261,8 @@ mod benchmarks {
 
     #[bench]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-
     fn transpose_sse_f32(b: &mut test::Bencher) {
+        use crate::transpose::sse41::transpose_sse_float;
         let width = 800;
         let height = 800;
         let dimensions = width * height;

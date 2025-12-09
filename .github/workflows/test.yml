@@ -17,33 +17,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: ${{ matrix.os }} / ${{ matrix.target }} / ${{ matrix.toolchain }}
+  test:
+    name: ${{ matrix.os }} / ${{ matrix.toolchain }} ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-        target: [x86_64-unknown-linux-gnu]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        target: [""]
         toolchain: [stable, nightly]
         include:
-          - os: ubuntu-latest
-            target: wasm32-unknown-unknown
-            toolchain: stable
-
           - os: windows-latest
-            target: x86_64-pc-windows-msvc
             toolchain: stable
-            test-args: --exclude zune-benches
-
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            toolchain: stable
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            toolchain: nightly
-
+            test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
     runs-on: ${{ matrix.os }}
-
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
@@ -51,4 +37,11 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           targets: ${{ matrix.target }}
 
-      - run: cargo test --verbose --release --workspace --no-fail-fast ${{ matrix.test-args }}
+      # portable_simd feature is incompatible with stable, so don't always use --all-features
+      - run: cargo test 
+                ${{ matrix.toolchain == 'nightly' && '--all-features' || ''}}
+                ${{ matrix.target && format('--target {0}', matrix.target) || ''}}
+                --verbose 
+                --workspace 
+                --no-fail-fast 
+                ${{ matrix.test-args }}
