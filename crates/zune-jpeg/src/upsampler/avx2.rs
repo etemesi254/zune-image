@@ -68,17 +68,17 @@ pub fn upsample_horizontal_avx2(
     };
 
     for (input, output) in input
-        .array_windows::<18>()
+        .windows(18)
         .step_by(16)
         .zip(output[2..].chunks_exact_mut(32))
     {
-        upsample16(input, output.try_into().unwrap());
+        upsample16(input.try_into().unwrap(), output.try_into().unwrap());
     }
 
     // Upsample the remainder. This may have some overlap, but that's fine.
     if let Some(rest_input) = input.last_chunk::<18>() {
         let end = output.len() - 2;
-        if let Some(mut rest_output) = output[..end].last_chunk_mut::<32>() {
+        if let Some(rest_output) = output[..end].last_chunk_mut::<32>() {
             upsample16(rest_input, rest_output);
         }
     }
@@ -140,18 +140,17 @@ pub fn upsample_vertical_avx2(
     };
 
     let chunks = input
-        .array_windows::<16>()
-        .step_by(16)
-        .zip(in_near.array_windows::<16>().step_by(16))
-        .zip(in_far.array_windows::<16>().step_by(16))
+        .chunks_exact(16)
+        .zip(in_near.chunks_exact(16))
+        .zip(in_far.chunks_exact(16))
         .zip(out_top.chunks_exact_mut(16))
         .zip(out_bottom.chunks_exact_mut(16));
 
     for ((((input, in_near), in_far), out_top), out_bottom) in chunks {
         upsample16(
-            input,
-            in_near,
-            in_far,
+            input.try_into().unwrap(),
+            in_near.try_into().unwrap(),
+            in_far.try_into().unwrap(),
             out_top.try_into().unwrap(),
             out_bottom.try_into().unwrap(),
         );
@@ -160,8 +159,8 @@ pub fn upsample_vertical_avx2(
     // Upsample the remainder. This may have some overlap, but that's fine.
     // Edition upgrade will fix this nested awfulness.
     if let Some(rest) = input.last_chunk::<16>() {
-        if let Some(mut rest_near) = in_near.last_chunk::<16>() {
-            if let Some(mut rest_far) = in_far.last_chunk::<16>() {
+        if let Some(rest_near) = in_near.last_chunk::<16>() {
+            if let Some(rest_far) = in_far.last_chunk::<16>() {
                 if let Some(mut rest_top) = out_top.last_chunk_mut::<16>() {
                     if let Some(mut rest_bottom) = out_bottom.last_chunk_mut::<16>() {
                         upsample16(rest, rest_near, rest_far, &mut rest_top, &mut rest_bottom);
