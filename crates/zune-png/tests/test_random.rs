@@ -67,7 +67,7 @@ fn test_animation() {
     let mut output =
         vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 
-    let mut i = 0;
+    // let mut i = 0;
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
         let frame = decoder.frame_info().unwrap();
@@ -93,7 +93,7 @@ fn test_animation() {
         //         .open(format!("./{i}.png"))
         //         .unwrap()
         // );
-        i += 1;
+        // i += 1;
         //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(c);
         // std::fs::write(format!("./{i}.png"), bytes).unwrap();
         background = Some(pix);
