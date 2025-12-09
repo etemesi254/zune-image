@@ -1,0 +1,32 @@
+name: Fuzz JPEG
+
+on:
+  push:
+    branches: [ "main","dev" ]
+    paths:
+      - 'crates/zune-jpeg/**'
+  schedule:
+    - cron: '0 0 * * *'
+  pull_request:
+    branches: [ "main" ,"dev" ]
+    paths:
+      - 'crates/zune-jpeg/**'
+
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install
+        run: cargo install cargo-fuzz
+
+      - name: JPEG Fuzz testing.
+        run: cargo +nightly fuzz run --fuzz-dir crates/zune-jpeg/fuzz decode_buffer -j2 -- -timeout=10s -max_total_time=120  fuzz-corpus/jpeg
