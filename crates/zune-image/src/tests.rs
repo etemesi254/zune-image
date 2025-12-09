@@ -44,5 +44,5 @@ fn test_fractal() {
             *px[1] = i as u8;
         })
         .unwrap();
-    image.save_to("a.ppm", ImageFormat::PPM).unwrap()
+    image.write_to_vec(ImageFormat::PPM).unwrap();
 }
