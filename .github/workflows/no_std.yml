@@ -19,7 +19,7 @@ jobs:
           - beta
           - nightly
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
         # Target below does not have a standard library
       - run: rustup target add x86_64-unknown-uefi
