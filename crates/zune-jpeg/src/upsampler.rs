@@ -83,6 +83,8 @@ use crate::components::UpSampler;
 #[cfg(feature = "x86")]
 mod avx2;
 mod scalar;
+#[cfg(feature = "portable_simd")]
+mod portable_simd;
 
 // choose best possible implementation for this platform
 #[allow(unused_variables)]
@@ -96,6 +98,10 @@ pub fn choose_horizontal_samp_function(options: &DecoderOptions) -> UpSampler {
                 unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
             };
         }
+    }
+    #[cfg(feature = "portable_simd")]
+    {
+        return portable_simd::upsample_horizontal_simd;
     }
     return scalar::upsample_horizontal;
 }
@@ -112,6 +118,10 @@ pub fn choose_hv_samp_function(options: &DecoderOptions) -> UpSampler {
             };
         }
     }
+    #[cfg(feature = "portable_simd")]
+    {
+        return portable_simd::upsample_hv_simd;
+    }
     return scalar::upsample_hv;
 }
 
@@ -126,6 +136,10 @@ pub fn choose_v_samp_function(options: &DecoderOptions) -> UpSampler {
                 unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
             };
         }
+    }
+    #[cfg(feature = "portable_simd")]
+    {
+        return portable_simd::upsample_vertical_simd;
     }
     return scalar::upsample_vertical;
 }
