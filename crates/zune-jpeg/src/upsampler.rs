@@ -75,31 +75,165 @@
 //! # Horizontal vertical downsampling/chroma quartering.
 //!
 //! Carry out a vertical filter in the first pass, then a horizontal filter in the second pass.
+use zune_core::options::DecoderOptions;
+
 use crate::components::UpSampler;
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(feature = "x86")]
+mod avx2;
 mod scalar;
 
 // choose best possible implementation for this platform
-pub fn choose_horizontal_samp_function(_use_unsafe: bool) -> UpSampler {
+#[allow(unused_variables)]
+pub fn choose_horizontal_samp_function(options: &DecoderOptions) -> UpSampler {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
+    {
+        if options.use_avx2() {
+            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+                unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
+            };
+        }
+    }
     return scalar::upsample_horizontal;
 }
 
-pub fn choose_hv_samp_function(_use_unsafe: bool) -> UpSampler {
+#[allow(unused_variables)]
+pub fn choose_hv_samp_function(options: &DecoderOptions) -> UpSampler {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
+    {
+        if options.use_avx2() {
+            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+                unsafe { avx2::upsample_hv_avx2(a, b, c, d, e) }
+            };
+        }
+    }
     return scalar::upsample_hv;
 }
 
-pub fn choose_v_samp_function(_use_unsafe: bool) -> UpSampler {
+#[allow(unused_variables)]
+pub fn choose_v_samp_function(options: &DecoderOptions) -> UpSampler {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
+    {
+        if options.use_avx2() {
+            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+                unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
+            };
+        }
+    }
     return scalar::upsample_vertical;
 }
 
 /// Upsample nothing
 
 pub fn upsample_no_op(
-    _input: &[i16], _in_ref: &[i16], _in_near: &[i16], _scratch_space: &mut [i16],
-    _output: &mut [i16]
+    _input: &[i16],
+    _in_ref: &[i16],
+    _in_near: &[i16],
+    _scratch_space: &mut [i16],
+    _output: &mut [i16],
 ) {
 }
 
 pub fn generic_sampler() -> UpSampler {
     scalar::upsample_generic
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zune_core::options::DecoderOptions;
+
+    #[test]
+    fn test_vertical_fast_vs_scalar() {
+        let width = 1024;
+        let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
+        let in_near: Vec<i16> = (0..width).map(|x| ((x + 20) % 256) as i16).collect();
+        let in_far: Vec<i16> = (0..width).map(|x| ((x + 30) % 256) as i16).collect();
+        let mut scratch = vec![0i16; width];
+
+        let mut output_scalar = vec![0i16; width * 2];
+        let mut output_fast = vec![0i16; width * 2];
+
+        scalar::upsample_vertical(&input, &in_near, &in_far, &mut scratch, &mut output_scalar);
+
+        let upsampler = choose_v_samp_function(&DecoderOptions::new_fast());
+        upsampler(&input, &in_near, &in_far, &mut scratch, &mut output_fast);
+
+        assert_eq!(output_scalar, output_fast);
+    }
+
+    #[test]
+    fn test_horizontal_fast_vs_scalar() {
+        let width = 1024;
+        let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
+
+        let mut scratch = vec![0i16; width];
+
+        let mut output_scalar = vec![0i16; width * 2];
+        let mut output_fast = vec![0i16; width * 2];
+
+        scalar::upsample_horizontal(&input, &[], &[], &mut scratch, &mut output_scalar);
+
+        let fast_upsampler = choose_horizontal_samp_function(&DecoderOptions::new_fast());
+        fast_upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
+
+        assert_eq!(output_scalar, output_fast);
+    }
+
+    #[test]
+    fn test_horizontal_fast_odd_width() {
+        let width = 33;
+        let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
+        let mut scratch = vec![0i16; width];
+        let mut output_scalar = vec![0i16; width * 2];
+        let mut output_fast = vec![0i16; width * 2];
+
+        scalar::upsample_horizontal(&input, &[], &[], &mut scratch, &mut output_scalar);
+
+        let fast_upsampler = choose_horizontal_samp_function(&DecoderOptions::new_fast());
+        fast_upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
+
+        assert_eq!(output_scalar, output_fast);
+    }
+
+    #[test]
+    fn test_hv_fast_vs_scalar() {
+        let width = 512;
+        let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
+        let in_near: Vec<i16> = (0..width).map(|x| ((x + 20) % 256) as i16).collect();
+        let in_far: Vec<i16> = (0..width).map(|x| ((x + 30) % 256) as i16).collect();
+
+        // Output len is width * 4 for HV (vertical * 2, then horizontal * 2 for each row)
+        // scratch is width * 2
+        let mut scratch_scalar = vec![0i16; width * 2];
+        let mut scratch_fast = vec![0i16; width * 2];
+        let mut output_scalar = vec![0i16; width * 4];
+        let mut output_fast = vec![0i16; width * 4];
+
+        scalar::upsample_hv(
+            &input,
+            &in_near,
+            &in_far,
+            &mut scratch_scalar,
+            &mut output_scalar,
+        );
+
+        let fast_upsampler = choose_hv_samp_function(&DecoderOptions::new_fast());
+        fast_upsampler(
+            &input,
+            &in_near,
+            &in_far,
+            &mut scratch_fast,
+            &mut output_fast,
+        );
+
+        assert_eq!(output_scalar, output_fast);
+    }
 }
