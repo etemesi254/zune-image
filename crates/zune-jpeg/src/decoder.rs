@@ -867,15 +867,15 @@ where
                 }
                 (2, 1) => {
                     comp.sample_ratio = SampleRatios::H;
-                    choose_horizontal_samp_function(&self.options)
+                    choose_horizontal_samp_function(self.options.use_unsafe())
                 }
                 (1, 2) => {
                     comp.sample_ratio = SampleRatios::V;
-                    choose_v_samp_function(&self.options)
+                    choose_v_samp_function(self.options.use_unsafe())
                 }
                 (2, 2) => {
                     comp.sample_ratio = SampleRatios::HV;
-                    choose_hv_samp_function(&self.options)
+                    choose_hv_samp_function(self.options.use_unsafe())
                 }
                 (hs, vs) => {
                     comp.sample_ratio = SampleRatios::Generic(hs, vs);
