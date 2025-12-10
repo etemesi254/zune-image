@@ -21,7 +21,6 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 x86 = []
 neon = []
 std = ["zune-core/std"]
-portable_simd = []
 log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
 

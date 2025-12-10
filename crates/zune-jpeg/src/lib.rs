@@ -162,7 +162,6 @@
 #![deny(clippy::std_instead_of_alloc, clippy::alloc_instead_of_core)]
 #![cfg_attr(not(any(feature = "x86", feature = "neon")), forbid(unsafe_code))]
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(feature = "portable_simd", feature(portable_simd))]
 #![macro_use]
 extern crate alloc;
 extern crate core;
