@@ -133,6 +133,9 @@ pub struct JpegDecoder<T: ZByteReaderTrait> {
     // of this struct, we check if we can switch to a faster one which
     // depend on certain CPU extensions.
     pub(crate) idct_func: IDCTPtr,
+    /// Specialized IDCT when we can guarantee only few coefficients are non-zero.
+    ///
+    /// **The callee must uphold a contract**. See [`choose_idct_4x4_func`].
     pub(crate) idct_4x4_func: IDCTPtr,
     pub(crate) idct_1x1_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values

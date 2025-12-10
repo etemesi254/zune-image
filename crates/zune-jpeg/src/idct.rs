@@ -76,11 +76,17 @@ pub fn choose_idct_func(options: &DecoderOptions) -> IDCTPtr {
     return idct_int;
 }
 
+/// Choose a function to implement 4x4 IDCT.
+///
+/// These functions get the same input but have an extra contract: Only the first 4x4 block of
+/// coefficients are non-zero. All other entries are zeroed.
+///
+/// **The callee must uphold that contract on return**
 pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if _options.use_avx2() {
+        if false && _options.use_avx2() {
             debug!("Using vector integer IDCT");
             return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
                 // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
