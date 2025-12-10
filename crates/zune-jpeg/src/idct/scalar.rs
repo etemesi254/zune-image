@@ -297,4 +297,9 @@ pub fn idct4x4(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize)
 
         pos += stride;
     }
+
+    in_vector[32..36].fill(0);
+    in_vector[40..44].fill(0);
+    in_vector[48..52].fill(0);
+    in_vector[56..60].fill(0);
 }
