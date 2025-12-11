@@ -86,7 +86,7 @@ pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
     {
-        if false && _options.use_avx2() {
+        if _options.use_avx2() {
             debug!("Using vector integer IDCT");
             return |a: &mut [i32; 64], b: &mut [i16], c: usize| {
                 // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
