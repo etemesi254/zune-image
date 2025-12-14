@@ -717,7 +717,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     i,
                     upsampler_scratch_space,
                     is_vertically_sampled
-                );
+                )?;
             }
 
             if is_vertically_sampled {

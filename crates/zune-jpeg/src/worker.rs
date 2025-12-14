@@ -371,7 +371,7 @@ fn color_convert_ycbcr(
 pub(crate) fn upsample(
     component: &mut Components, mcu_height: usize, i: usize, upsampler_scratch_space: &mut [i16],
     has_vertical_sample: bool
-) {
+) -> Result<(), DecodeErrors> {
     match component.sample_ratio {
         SampleRatios::V | SampleRatios::HV => {
             /*
@@ -427,6 +427,13 @@ pub(crate) fn upsample(
 
             let stride = component.width_stride * component.vertical_sample;
             let stop_offset = component.raw_coeff.len() / component.width_stride;
+
+            if component.raw_coeff.len() != stop_offset * stride {
+                // slice would panic below
+                return Err(DecodeErrors::FormatStatic(
+                    "Invalid component dimensions, would panic"
+                ));
+            }
             for (pos, curr_row) in component
                 .raw_coeff
                 .chunks_exact(component.width_stride)
@@ -562,4 +569,5 @@ pub(crate) fn upsample(
         }
         SampleRatios::None => {}
     };
+    Ok(())
 }
