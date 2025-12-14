@@ -23,7 +23,7 @@ zune-png = { path = "../crates/zune-png" }
 # JPEG benchmarks
 mozjpeg = "0.10.5"
 jpeg-decoder = "0.3.0"
-zune-jpeg = { path = "../crates/zune-jpeg" }
+zune-jpeg = { path = "../crates/zune-jpeg" ,features = ["portable_simd"]}
 
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
