@@ -449,11 +449,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let dc_table = self.dc_huffman_tables[component.dc_huff_table % MAX_COMPONENTS]
                     .as_ref()
-                    .unwrap();
+                    .ok_or(DecodeErrors::FormatStatic("DC table not found"))?;
 
                 let ac_table = self.ac_huffman_tables[component.ac_huff_table % MAX_COMPONENTS]
                     .as_ref()
-                    .unwrap();
+                    .ok_or(DecodeErrors::FormatStatic("AC table not found"))?;
 
                 let qt_table = &component.quantization_table;
                 let channel = if PROGRESSIVE {
