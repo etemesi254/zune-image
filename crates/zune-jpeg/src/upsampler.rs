@@ -75,6 +75,7 @@
 //! # Horizontal vertical downsampling/chroma quartering.
 //!
 //! Carry out a vertical filter in the first pass, then a horizontal filter in the second pass.
+#![allow(unreachable_code)]
 use zune_core::options::DecoderOptions;
 
 use crate::components::UpSampler;
@@ -85,7 +86,6 @@ mod avx2;
 mod scalar;
 #[cfg(feature = "portable_simd")]
 mod portable_simd;
-
 // choose best possible implementation for this platform
 #[allow(unused_variables)]
 pub fn choose_horizontal_samp_function(options: &DecoderOptions) -> UpSampler {

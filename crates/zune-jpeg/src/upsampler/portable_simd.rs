@@ -61,7 +61,7 @@ pub fn upsample_horizontal_simd(
     // Upsample the remainder. This may have some overlap, but that's fine.
     if let Some(rest_input) = input.last_chunk::<18>() {
         let end = output.len() - 2;
-        if let Some(mut rest_output) = output[..end].last_chunk_mut::<32>() {
+        if let Some(rest_output) = output[..end].last_chunk_mut::<32>() {
             upsample16(rest_input, rest_output);
         }
     }
@@ -132,11 +132,11 @@ pub fn upsample_vertical_simd(
     // Upsample the remainder. This may have some overlap, but that's fine.
     // Edition upgrade will fix this nested awfulness.
     if let Some(rest) = input.last_chunk::<16>() {
-        if let Some(mut rest_near) = in_near.last_chunk::<16>() {
-            if let Some(mut rest_far) = in_far.last_chunk::<16>() {
-                if let Some(mut rest_top) = out_top.last_chunk_mut::<16>() {
-                    if let Some(mut rest_bottom) = out_bottom.last_chunk_mut::<16>() {
-                        upsample16(rest, rest_near, rest_far, &mut rest_top, &mut rest_bottom);
+        if let Some( rest_near) = in_near.last_chunk::<16>() {
+            if let Some( rest_far) = in_far.last_chunk::<16>() {
+                if let Some( rest_top) = out_top.last_chunk_mut::<16>() {
+                    if let Some(  rest_bottom) = out_bottom.last_chunk_mut::<16>() {
+                        upsample16(rest, rest_near, rest_far, rest_top, rest_bottom);
                     }
                 }
             }
