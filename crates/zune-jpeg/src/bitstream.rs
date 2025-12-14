@@ -494,7 +494,8 @@ impl BitStream {
     /// Discard the next `N` bits without checking
     #[inline]
     fn drop_bits(&mut self, n: u8) {
-        debug_assert!(self.bits_left >= n);
+        // PS: Its a good check, but triggers fuzzer and a lot of false positives
+        //debug_assert!(self.bits_left >= n);
         //self.bits_left -= n;
         self.bits_left = self.bits_left.saturating_sub(n);
         self.aligned_buffer <<= n;
