@@ -83,26 +83,34 @@ use crate::components::UpSampler;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[cfg(feature = "x86")]
 mod avx2;
-mod scalar;
+#[cfg(target_arch = "aarch64")]
+#[cfg(feature = "neon")]
+mod neon;
 #[cfg(feature = "portable_simd")]
 mod portable_simd;
-// choose best possible implementation for this platform
+mod scalar;
+
+// choose the best possible implementation for this platform
 #[allow(unused_variables)]
 pub fn choose_horizontal_samp_function(options: &DecoderOptions) -> UpSampler {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
-    {
-        if options.use_avx2() {
-            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
-                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
-                unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
-            };
-        }
+    if options.use_avx2() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+            unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
+        };
+    }
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    if options.use_neon() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_neon()` only returns true if neon is supported.
+            unsafe { neon::upsample_horizontal_neon(a, b, c, d, e) }
+        };
     }
     #[cfg(feature = "portable_simd")]
-    {
-        return portable_simd::upsample_horizontal_simd;
-    }
+    return portable_simd::upsample_horizontal_simd;
     return scalar::upsample_horizontal;
 }
 
@@ -110,18 +118,22 @@ pub fn choose_horizontal_samp_function(options: &DecoderOptions) -> UpSampler {
 pub fn choose_hv_samp_function(options: &DecoderOptions) -> UpSampler {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
-    {
-        if options.use_avx2() {
-            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
-                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
-                unsafe { avx2::upsample_hv_avx2(a, b, c, d, e) }
-            };
-        }
+    if options.use_avx2() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+            unsafe { avx2::upsample_hv_avx2(a, b, c, d, e) }
+        };
+    }
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    if options.use_neon() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_neon()` only returns true if neon is supported.
+            unsafe { neon::upsample_hv_neon(a, b, c, d, e) }
+        };
     }
     #[cfg(feature = "portable_simd")]
-    {
-        return portable_simd::upsample_hv_simd;
-    }
+    return portable_simd::upsample_hv_simd;
     return scalar::upsample_hv;
 }
 
@@ -129,18 +141,22 @@ pub fn choose_hv_samp_function(options: &DecoderOptions) -> UpSampler {
 pub fn choose_v_samp_function(options: &DecoderOptions) -> UpSampler {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[cfg(feature = "x86")]
-    {
-        if options.use_avx2() {
-            return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
-                // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
-                unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
-            };
-        }
+    if options.use_avx2() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_avx2()` only returns true if avx2 is supported.
+            unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
+        };
+    }
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    if options.use_neon() {
+        return |a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            // SAFETY: `options.use_neon()` only returns true if neon is supported.
+            unsafe { neon::upsample_vertical_neon(a, b, c, d, e) }
+        };
     }
     #[cfg(feature = "portable_simd")]
-    {
-        return portable_simd::upsample_vertical_simd;
-    }
+    return portable_simd::upsample_vertical_simd;
     return scalar::upsample_vertical;
 }
 
@@ -162,10 +178,90 @@ pub fn generic_sampler() -> UpSampler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zune_core::options::DecoderOptions;
 
-    #[test]
-    fn test_vertical_fast_vs_scalar() {
+    #[cfg(feature = "portable_simd")]
+    mod portable_simd_impl {
+        use super::*;
+
+        #[test]
+        fn portable_simd_vertical() {
+            _test_vertical(portable_simd::upsample_vertical_simd)
+        }
+
+        #[test]
+        fn portable_simd_horizontal() {
+            _test_horizontal(portable_simd::upsample_horizontal_simd)
+        }
+
+        #[test]
+        fn portable_simd_hv() {
+            _test_vertical(portable_simd::upsample_hv_simd)
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(feature = "x86")]
+    #[cfg(target_feature = "avx2")]
+    mod avx2_impl {
+        use super::*;
+
+        #[test]
+        fn avx2_vertical() {
+            _test_vertical(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { avx2::upsample_vertical_avx2(a, b, c, d, e) }
+            })
+        }
+
+        #[test]
+        fn avx2_horizontal() {
+            _test_vertical(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
+            })
+        }
+
+        #[test]
+        fn avx2_hv() {
+            _test_hv(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { avx2::upsample_hv_avx2(a, b, c, d, e) }
+            })
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(feature = "neon")]
+    #[cfg(target_feature = "neon")]
+    mod neon_impl {
+        use super::*;
+
+        #[test]
+        fn neon_vertical() {
+            _test_vertical(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { neon::upsample_vertical_neon(a, b, c, d, e) }
+            })
+        }
+
+        #[test]
+        fn neon_horizontal() {
+            _test_horizontal(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { neon::upsample_horizontal_neon(a, b, c, d, e) }
+            })
+        }
+
+        #[test]
+        fn neon_hv() {
+            _test_hv(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+                // SAFETY: Test guarded behind `target_feature`
+                unsafe { neon::upsample_hv_neon(a, b, c, d, e) }
+            })
+        }
+    }
+
+    fn _test_vertical(upsampler: UpSampler) {
         let width = 1024;
         let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
         let in_near: Vec<i16> = (0..width).map(|x| ((x + 20) % 256) as i16).collect();
@@ -176,15 +272,17 @@ mod tests {
         let mut output_fast = vec![0i16; width * 2];
 
         scalar::upsample_vertical(&input, &in_near, &in_far, &mut scratch, &mut output_scalar);
-
-        let upsampler = choose_v_samp_function(&DecoderOptions::new_fast());
         upsampler(&input, &in_near, &in_far, &mut scratch, &mut output_fast);
 
         assert_eq!(output_scalar, output_fast);
     }
 
-    #[test]
-    fn test_horizontal_fast_vs_scalar() {
+    fn _test_horizontal(upsampler: UpSampler) {
+        _test_horizontal_even_width(upsampler);
+        _test_horizontal_odd_width(upsampler);
+    }
+
+    fn _test_horizontal_even_width(upsampler: UpSampler) {
         let width = 1024;
         let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
 
@@ -194,15 +292,12 @@ mod tests {
         let mut output_fast = vec![0i16; width * 2];
 
         scalar::upsample_horizontal(&input, &[], &[], &mut scratch, &mut output_scalar);
-
-        let fast_upsampler = choose_horizontal_samp_function(&DecoderOptions::new_fast());
-        fast_upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
+        upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
 
         assert_eq!(output_scalar, output_fast);
     }
 
-    #[test]
-    fn test_horizontal_fast_odd_width() {
+    fn _test_horizontal_odd_width(upsampler: UpSampler) {
         let width = 33;
         let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
         let mut scratch = vec![0i16; width];
@@ -210,15 +305,12 @@ mod tests {
         let mut output_fast = vec![0i16; width * 2];
 
         scalar::upsample_horizontal(&input, &[], &[], &mut scratch, &mut output_scalar);
-
-        let fast_upsampler = choose_horizontal_samp_function(&DecoderOptions::new_fast());
-        fast_upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
+        upsampler(&input, &[], &[], &mut scratch, &mut output_fast);
 
         assert_eq!(output_scalar, output_fast);
     }
 
-    #[test]
-    fn test_hv_fast_vs_scalar() {
+    fn _test_hv(upsampler: UpSampler) {
         let width = 512;
         let input: Vec<i16> = (0..width).map(|x| ((x + 10) % 256) as i16).collect();
         let in_near: Vec<i16> = (0..width).map(|x| ((x + 20) % 256) as i16).collect();
@@ -238,9 +330,7 @@ mod tests {
             &mut scratch_scalar,
             &mut output_scalar,
         );
-
-        let fast_upsampler = choose_hv_samp_function(&DecoderOptions::new_fast());
-        fast_upsampler(
+        upsampler(
             &input,
             &in_near,
             &in_far,
