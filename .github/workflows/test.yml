@@ -26,6 +26,8 @@ jobs:
         target: [""]
         toolchain: [stable, nightly]
         include:
+          - os: ubuntu-latest
+            toolchain: 1.87  # MSRV
           - os: windows-latest
             toolchain: stable
             test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
