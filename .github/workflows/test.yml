@@ -45,3 +45,5 @@ jobs:
                 --workspace 
                 --no-fail-fast 
                 ${{ matrix.test-args }}
+        env:
+          RUSTFLAGS: "-C target-cpu=native"
