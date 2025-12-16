@@ -195,7 +195,7 @@ mod tests {
 
         #[test]
         fn portable_simd_hv() {
-            _test_vertical(portable_simd::upsample_hv_simd)
+            _test_hv(portable_simd::upsample_hv_simd)
         }
     }
 
@@ -215,7 +215,7 @@ mod tests {
 
         #[test]
         fn avx2_horizontal() {
-            _test_vertical(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
+            _test_horizontal(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                 // SAFETY: Test guarded behind `target_feature`
                 unsafe { avx2::upsample_horizontal_avx2(a, b, c, d, e) }
             })
