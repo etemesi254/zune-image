@@ -104,7 +104,7 @@ pub fn upsample_vertical_avx2(
     let len = input.len();
 
     if len < 16 {
-        return super::scalar::upsample_horizontal(input, in_near, in_far, scratch, output);
+        return super::scalar::upsample_vertical(input, in_near, in_far, scratch, output);
     }
 
     let middle = output.len() / 2;
