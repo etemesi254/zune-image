@@ -1,6 +1,7 @@
 [package]
 name = "zune-gif"
 version = "0.5.0-rc0"
+rust-version = "1.87.0"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-gif"
 

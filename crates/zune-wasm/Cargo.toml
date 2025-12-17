@@ -2,6 +2,7 @@
 name = "zune-wasm"
 description = "Zune image libraries (rust) webassembly version"
 version = "0.0.14"
+rust-version = "1.87.0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0 OR Zlib"
