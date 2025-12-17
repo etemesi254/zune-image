@@ -380,7 +380,7 @@ dependencies = [
  "moxcms",
  "num-traits",
  "zune-core 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "zune-jpeg 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zune-jpeg 0.5.6",
 ]
 
 [[package]]
@@ -1403,7 +1403,7 @@ dependencies = [
  "zune-image",
  "zune-imageprocs",
  "zune-inflate",
- "zune-jpeg 0.5.6",
+ "zune-jpeg 0.5.7",
  "zune-png",
  "zune-qoi",
 ]
@@ -1490,7 +1490,7 @@ dependencies = [
  "zune-core 0.5.0",
  "zune-farbfeld",
  "zune-hdr",
- "zune-jpeg 0.5.6",
+ "zune-jpeg 0.5.7",
  "zune-jpegxl",
  "zune-png",
  "zune-ppm",
@@ -1519,18 +1519,18 @@ dependencies = [
 [[package]]
 name = "zune-jpeg"
 version = "0.5.6"
-dependencies = [
- "zune-core 0.5.0",
- "zune-ppm",
-]
-
-[[package]]
-name = "zune-jpeg"
-version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f520eebad972262a1dde0ec455bce4f8b298b1e5154513de58c114c4c54303e8"
 dependencies = [
  "zune-core 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "zune-jpeg"
+version = "0.5.7"
+dependencies = [
+ "zune-core 0.5.0",
+ "zune-ppm",
 ]
 
 [[package]]
@@ -1582,7 +1582,7 @@ dependencies = [
  "zune-bmp",
  "zune-core 0.5.0",
  "zune-inflate",
- "zune-jpeg 0.5.6",
+ "zune-jpeg 0.5.7",
  "zune-png",
  "zune-psd",
 ]

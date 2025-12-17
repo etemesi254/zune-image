@@ -1,6 +1,7 @@
 [package]
 name = "zune-python"
 version = "0.4.0"
+rust-version = "1.87.0"
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-python"
 
