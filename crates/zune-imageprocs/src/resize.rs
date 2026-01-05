@@ -22,13 +22,20 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
-mod bicubic;
 mod bilinear;
+mod seperable_kernel;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ResizeMethod {
-    Bilinear,
-    Bicubic
+    Lanczos3,      // Lanczos with a=3 (highest quality, slowest)
+    Lanczos2,      // Lanczos with a=2
+    Bicubic,       // Bicubic interpolation (Mitchell-Netravali, B=1/3, C=1/3)
+    CatmullRom,    // Catmull-Rom spline (B=0, C=0.5)
+    Mitchell,      // Mitchell filter (B=1/3, C=1/3) - same as Bicubic but explicit
+    BSpline,       // B-Spline (B=1, C=0)
+    Hermite,       // Hermite filter (B=0, C=0)
+    Sinc,          // Sinc with window radius 3
+    Bilinear,      // Bilinear (for completeness, 2x2 kernel)
 }
 
 // pub enum ResizeDimensions{
@@ -186,9 +193,11 @@ pub fn resize<T>(
                 in_image, out_image, in_width, in_height, out_width, out_height
             );
         }
-        ResizeMethod::Bicubic => {
-            bicubic::bicubic_resample(
-                in_image, out_image, in_width, in_height, out_width, out_height
+
+        _ => {
+            seperable_kernel::resample_separable(
+                in_image, out_image, in_width, in_height, out_width, out_height,
+                method
             );
         }
     }
@@ -255,6 +264,33 @@ mod benchmarks {
             );
         });
     }
+    #[bench]
+    fn bench_resize_lancazos(b: &mut test::Bencher) {
+        let width = 4000;
+        let height = 2000;
+
+        let new_width = 1500;
+        let new_height = 1000;
+
+        let dimensions = width * height;
+
+        let new_dimensions = new_width * new_height;
+
+        let in_vec = vec![255_u16; dimensions];
+        let mut out_vec = vec![255_u16; new_dimensions];
+
+        b.iter(|| {
+            resize(
+                &in_vec,
+                &mut out_vec,
+                ResizeMethod::Lancazos,
+                width,
+                height,
+                new_width,
+                new_height
+            );
+        });
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -279,6 +315,31 @@ mod tests {
             &in_vec,
             &mut out_vec,
             ResizeMethod::Bicubic,
+            width,
+            height,
+            new_width,
+            new_height
+        );
+    }
+    #[test]
+    fn test_resize_lancazos() {
+        let width = 400;
+        let height = 200;
+
+        let new_width = 1500;
+        let new_height = 1500;
+
+        let dimensions = width * height;
+
+        let new_dimensions = new_width * new_height;
+
+        let in_vec = vec![255_u16; dimensions];
+        let mut out_vec = vec![255_u16; new_dimensions];
+
+        resize(
+            &in_vec,
+            &mut out_vec,
+            ResizeMethod::Lanczos3,
             width,
             height,
             new_width,
