@@ -31,7 +31,7 @@ use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 use zune_imageprocs::transpose::Transpose;
 
-use crate::cmd_args::arg_parsers::IColorSpace;
+use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
 
 pub fn parse_options(
     workflow: &mut Pipeline, argument: &str, args: &ArgMatches
@@ -139,22 +139,26 @@ pub fn parse_options(
         debug!("Added contrast filter with value {},", value);
         workflow.chain_operations(Box::new(Contrast::new(value)));
     } else if argument == "resize" {
-        let values = args
-            .get_many::<usize>(argument)
-            .unwrap()
-            .collect::<Vec<&usize>>();
+        let values = args.get_one::<String>("resize").unwrap();
+        let resizing_method = args
+            .get_one::<IResizeMethod>("resize-method")
+            .map(|c| c.to_resize_method())
+            .unwrap_or(ResizeMethod::Bicubic);
 
-        let width = *values[0];
+        // split on width x height
+        if values.contains("x") {
+            let split: Vec<&str> = values.split('x').collect();
 
-        let height = *values[1];
+            let width = str::parse::<usize>(split[0]).map_err(|x| x.to_string())?;
+            let height = str::parse::<usize>(split[1]).map_err(|x| x.to_string())?;
 
-        let func = Resize::new(width, height, ResizeMethod::Bicubic);
-
-        debug!(
-            "Added resize operation with width:{}, height:{}",
-            width, height
-        );
-        workflow.chain_operations(Box::new(func));
+            let func = Resize::new(width, height, resizing_method);
+            debug!(
+                "Added resize operation with width:{}, height:{},using resizing method=>{:?}",
+                width, height, resizing_method,
+            );
+            workflow.chain_operations(Box::new(func));
+        }
     } else if argument == "depth" {
         let value = *args.get_one::<u8>(argument).unwrap();
         let depth = match value {

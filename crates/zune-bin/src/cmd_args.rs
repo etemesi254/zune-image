@@ -12,7 +12,7 @@ use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
-use crate::cmd_args::arg_parsers::IColorSpace;
+use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
 use crate::cmd_args::help_strings::{
     AFTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, CROP_HELP, GAUSSIAN_BLUR_HELP,
     THRESHOLD_HELP, TRANSPOSE_HELP
@@ -310,10 +310,15 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .group(GROUP),
         Arg::new("resize")
             .long("resize")
-            .value_names(["width", "height"])
+            .value_names(["value"])
             .help_heading(HELP_HEADING)
-            .value_parser(value_parser!(usize))
             .help("Resize an image")
+            .group(GROUP),
+        Arg::new("resize-method")
+            .long("resize-method")
+            .help_heading(HELP_HEADING)
+            .value_parser(value_parser!(IResizeMethod))
+            .help("Resizing method to use")
             .group(GROUP),
         Arg::new("depth")
             .long("depth")
