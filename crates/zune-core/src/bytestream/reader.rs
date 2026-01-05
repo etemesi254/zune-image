@@ -123,7 +123,7 @@ impl From<&'static str> for ZByteIoError {
 /// utilities like endian aware byte functions.
 ///
 /// This prevents each implementation from providing its own
-pub struct ZReader<T: ZByteReaderTrait> {
+pub struct ZReader<T> {
     inner:       T,
     temp_buffer: Vec<u8>
 }
