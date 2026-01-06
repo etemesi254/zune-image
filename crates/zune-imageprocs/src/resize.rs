@@ -16,15 +16,17 @@
 
 use std::time::Instant;
 
-use zune_core::bit_depth::BitType;
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorCharacteristics;
 use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
 
 use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
+use crate::premul_alpha::PremultiplyAlpha;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
@@ -107,6 +109,19 @@ impl OperationsTrait for Resize {
                 duration
             );
         }
+        // if alpha is present premultiply
+        let is_premultiplied = image.metadata().is_premultiplied_alpha();
+        let has_alpha = image.colorspace().has_alpha();
+        let original_depth = image.depth();
+        if  !is_premultiplied && has_alpha {
+            // pre multiply looses color if its in u8
+            image.convert_depth(BitDepth::Float32)?;
+            trace!("Premultiplying alpha along resize method");
+            let start = Instant::now();
+            PremultiplyAlpha::new(AlphaState::PreMultiplied).execute_impl(image)?;
+            let duration = start.elapsed();
+            trace!("Premultiply successfully completed in {:.2?}", duration);
+        }
         let (old_w, old_h) = image.dimensions();
         let depth = image.depth().bit_type();
 
@@ -152,6 +167,18 @@ impl OperationsTrait for Resize {
         };
         execute_on(resize_fn, image, false)?;
         image.set_dimensions(self.new_width, self.new_height);
+
+        // convert back from premultiplied if we did not get the
+        // image as premultiplied
+        if !is_premultiplied && has_alpha {
+            trace!("Un-premultiplying alpha along resize method");
+            let start = Instant::now();
+            PremultiplyAlpha::new(AlphaState::NonPreMultiplied).execute_impl(image)?;
+            // return the depth originally there
+            image.convert_depth(original_depth)?;
+            let duration = start.elapsed();
+            trace!("Un-premultiply successfully completed in {:.2?}", duration);
+        }
         // convert back again to gamma
         if !is_image_linear {
             let start = Instant::now();
