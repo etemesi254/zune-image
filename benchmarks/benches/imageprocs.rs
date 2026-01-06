@@ -1,7 +1,8 @@
 use std::fs::read;
+use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{ criterion_group, criterion_main, Criterion, Throughput};
 use image::imageops::FilterType;
 use image::DynamicImage;
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};

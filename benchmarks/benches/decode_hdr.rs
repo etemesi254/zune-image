@@ -7,10 +7,11 @@
  */
 
 use std::fs::{read, File};
+use std::hint::black_box;
 use std::io::{BufReader, Cursor};
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{ criterion_group, criterion_main, Criterion, Throughput};
 use image::ImageFormat;
 use zune_benches::sample_path;
 use zune_hdr::zune_core::bytestream::ZCursor;

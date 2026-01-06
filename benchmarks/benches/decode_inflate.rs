@@ -7,10 +7,11 @@
  */
 
 use std::fs::read;
+use std::hint::black_box;
 use std::io::{Cursor, Read};
 use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{ criterion_group, criterion_main, Criterion, Throughput};
 use zune_benches::sample_path;
 
 fn decode_writer_flate(bytes: &[u8]) -> Vec<u8> {
