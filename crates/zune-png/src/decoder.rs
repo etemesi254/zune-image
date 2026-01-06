@@ -157,10 +157,7 @@ pub struct PngInfo {
 ///
 /// To get extra details such as exif data and ICC profile if present, use [`get_info`](PngDecoder::info)
 /// and access the relevant fields exposed
-pub struct PngDecoder<T>
-where
-    T: ZByteReaderTrait
-{
+pub struct PngDecoder<T> {
     pub(crate) stream:                  ZReader<T>,
     pub(crate) options:                 DecoderOptions,
     pub(crate) png_info:                PngInfo,
