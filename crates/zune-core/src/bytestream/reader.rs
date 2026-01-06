@@ -5,6 +5,8 @@ use core::fmt::Formatter;
 
 pub(crate) mod no_std_readers;
 pub(crate) mod std_readers;
+pub(crate) mod zcursor_no_std;
+
 use crate::bytestream::ZByteReaderTrait;
 
 /// Enumeration of possible methods to seek within an I/O object.

@@ -4,7 +4,7 @@ use std::io;
 use std::io::SeekFrom;
 
 use crate::bytestream::reader::{ZByteIoError, ZSeekFrom};
-use crate::bytestream::ZByteReaderTrait;
+use crate::bytestream::{ZByteReaderTrait, ZCursor};
 // note (cae): If Rust ever stabilizes trait specialization, specialize this for Cursor
 impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
     #[inline(always)]
@@ -96,5 +96,45 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
     #[inline(always)]
     fn read_remaining(&mut self, sink: &mut Vec<u8>) -> Result<usize, ZByteIoError> {
         self.read_to_end(sink).map_err(ZByteIoError::from)
+    }
+}
+
+impl<T: AsRef<[u8]>> std::io::Read for ZCursor<T> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.read_bytes_impl(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e)))
+    }
+}
+
+impl<T: AsRef<[u8]>> std::io::BufRead for ZCursor<T> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        Ok(ZCursor::split(self).1)
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.position += amount;
+    }
+}
+
+impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let (base_pos, offset) = match pos {
+            std::io::SeekFrom::Start(n) => {
+                self.position = n as usize;
+                return Ok(n);
+            }
+            std::io::SeekFrom::End(n) => (self.stream.as_ref().len(), n as isize),
+            std::io::SeekFrom::Current(n) => (self.position, n as isize)
+        };
+        match base_pos.checked_add_signed(offset) {
+            Some(n) => {
+                self.position = n;
+                Ok(self.position as u64)
+            }
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Negative seek"
+            ))
+        }
     }
 }
