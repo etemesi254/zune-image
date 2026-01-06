@@ -512,7 +512,7 @@ where
                     return Err(ImageErrors::GenericStr("Buffer misalignment"));
                 }
 
-                let im_plannar = render.image();
+                let im_plannar = render.image_all_channels();
                 let buf_len = im_plannar.buf().len();
 
                 if buf_len > f32_buf.len() {
