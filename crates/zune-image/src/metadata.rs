@@ -35,7 +35,7 @@ pub enum AlphaState {
 #[derive(Clone, Debug)]
 pub struct ImageMetadata {
     // REMEMBER: If you add a field here add it's serialization
-    // to mod file
+    // to src/serde
     pub(crate) color_trc:     Option<ColorCharacteristics>,
     pub(crate) default_gamma: Option<f32>,
     pub(crate) width:         usize,
@@ -47,7 +47,9 @@ pub struct ImageMetadata {
     #[cfg(feature = "metadata")]
     pub(crate) exif:          Option<Vec<::exif::Field>>,
     pub(crate) icc_chunk:     Option<Vec<u8>>,
-
+    // whether or not the image is in linear colorspace or
+    // rgb
+    pub(crate) is_linear:     bool
 }
 
 impl Default for ImageMetadata {
@@ -64,7 +66,8 @@ impl Default for ImageMetadata {
             #[cfg(feature = "metadata")]
             exif: None,
 
-            icc_chunk: None
+            icc_chunk: None,
+            is_linear: false
         }
     }
 }
@@ -193,5 +196,21 @@ impl ImageMetadata {
     /// Return the icc chunk of the image
     pub fn icc_chunk(&self) -> Option<&Vec<u8>> {
         self.icc_chunk.as_ref()
+    }
+
+    /// Return whether the image is in linear colorspace or not
+    ///
+    /// if `true` -> Image in linear colorspace
+    /// if `false` -> Image in gamma colorspace
+    pub fn is_linear(&self) -> bool {
+        self.is_linear
+    }
+
+    /// Set whether the image is in linear colorspace or not
+    ///
+    /// if `true` -> Image in linear colorspace
+    /// if `false` -> Image in gamma colorspace
+    pub fn set_linear(&mut self, linear: bool) {
+        self.is_linear = linear;
     }
 }

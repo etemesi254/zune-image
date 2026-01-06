@@ -31,6 +31,7 @@ impl Serialize for ImageMetadata {
         state.serialize_field("format", &self.format)?;
         state.serialize_field("color_transfer_characteristics", &self.color_trc)?;
         state.serialize_field("gamma_value", &self.default_gamma)?;
+        (state).serialize_field("is_linear", &self.is_linear)?;
 
         #[cfg(feature = "metadata")]
         {
