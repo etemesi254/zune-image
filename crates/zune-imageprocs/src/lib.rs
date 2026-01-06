@@ -86,3 +86,4 @@ pub mod traits;
 pub mod transpose;
 pub mod unsharpen;
 mod utils;
+mod image_transfer;
