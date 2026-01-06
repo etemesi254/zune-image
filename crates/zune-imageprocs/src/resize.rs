@@ -13,12 +13,18 @@
 //! more complicated resizers implemented.
 //!
 //!
+
+use std::time::Instant;
+
 use zune_core::bit_depth::BitType;
+use zune_core::colorspace::ColorCharacteristics;
+use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
@@ -27,15 +33,15 @@ mod seperable_kernel;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ResizeMethod {
-    Lanczos3,      // Lanczos with a=3 (highest quality, slowest)
-    Lanczos2,      // Lanczos with a=2
-    Bicubic,       // Bicubic interpolation (Mitchell-Netravali, B=1/3, C=1/3)
-    CatmullRom,    // Catmull-Rom spline (B=0, C=0.5)
-    Mitchell,      // Mitchell filter (B=1/3, C=1/3) - same as Bicubic but explicit
-    BSpline,       // B-Spline (B=1, C=0)
-    Hermite,       // Hermite filter (B=0, C=0)
-    Sinc,          // Sinc with window radius 3
-    Bilinear,      // Bilinear (for completeness, 2x2 kernel)
+    Lanczos3,   // Lanczos with a=3 (highest quality, slowest)
+    Lanczos2,   // Lanczos with a=2
+    Bicubic,    // Bicubic interpolation (Mitchell-Netravali, B=1/3, C=1/3)
+    CatmullRom, // Catmull-Rom spline (B=0, C=0.5)
+    Mitchell,   // Mitchell filter (B=1/3, C=1/3) - same as Bicubic but explicit
+    BSpline,    // B-Spline (B=1, C=0)
+    Hermite,    // Hermite filter (B=0, C=0)
+    Sinc,       // Sinc with window radius 3
+    Bilinear    // Bilinear (for completeness, 2x2 kernel)
 }
 
 // pub enum ResizeDimensions{
@@ -58,6 +64,9 @@ impl Resize {
     /// - new_width: The new image width
     /// - new_height: The new image height.
     /// - method: The resize method to use
+    /// - linearize: Whether or not to convert the image to linear colorspace , resizing is better
+    /// in linear colorspace as it has less artefacts
+    ///
     #[must_use]
     pub fn new(new_width: usize, new_height: usize, method: ResizeMethod) -> Resize {
         Resize {
@@ -75,6 +84,29 @@ impl OperationsTrait for Resize {
 
     #[allow(clippy::too_many_lines)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        // For any resize always convert gamma to linear.
+        // But check if that is the current image format
+        let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
+
+        let transfer_function = image
+            .metadata()
+            .color_trc()
+            .unwrap_or(ColorCharacteristics::sRGB);
+
+        if !is_image_linear {
+            let start = Instant::now();
+            trace!("Converting image to linear along resize method");
+            let transfers = ImageTransfer::new(
+                TransferFunction::from(transfer_function),
+                ConversionType::GammaToLinear
+            );
+            transfers.execute_impl(image)?;
+            let duration = start.elapsed();
+            trace!(
+                "Image conversion to linear successfully completed in {:.2?}",
+                duration
+            );
+        }
         let (old_w, old_h) = image.dimensions();
         let depth = image.depth().bit_type();
 
@@ -120,6 +152,21 @@ impl OperationsTrait for Resize {
         };
         execute_on(resize_fn, image, false)?;
         image.set_dimensions(self.new_width, self.new_height);
+        // convert back again to gamma
+        if !is_image_linear {
+            let start = Instant::now();
+            trace!("Converting image back to gamma along resize method");
+            let transfers = ImageTransfer::new(
+                TransferFunction::from(transfer_function),
+                ConversionType::LinearToGamma
+            );
+            transfers.execute_impl(image)?;
+            let duration = start.elapsed();
+            trace!(
+                "Image conversion to linear successfully completed in {:.2?}",
+                duration
+            );
+        }
 
         Ok(())
     }
@@ -196,8 +243,7 @@ pub fn resize<T>(
 
         _ => {
             seperable_kernel::resample_separable(
-                in_image, out_image, in_width, in_height, out_width, out_height,
-                method
+                in_image, out_image, in_width, in_height, out_width, out_height, method
             );
         }
     }
