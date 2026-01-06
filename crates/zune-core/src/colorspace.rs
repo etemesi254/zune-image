@@ -127,15 +127,27 @@ pub static ALL_COLORSPACES: [ColorSpace; 12] = [
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ColorCharacteristics {
-    /// Normal default gamma setting
-    /// The float contains gamma present
-    ///
-    /// The default gamma value is 2.2 but for
-    /// decoders that allow specifying gamma values,e.g PNG,
-    /// the gamma value becomes the specified value by the decoder
+    /// sRGB Transfer function
     sRGB,
-    /// Linear transfer characteristics
-    /// The image is in linear colorspace
+    /// Rec.709 Transfer function
+    Rec709,
+    /// Pure gamma 2.2 Transfer function, ITU-R 470M
+    Gamma2p2,
+    /// Pure gamma 2.8 Transfer function, ITU-R 470BG
+    Gamma2p8,
+    /// Smpte 428 Transfer function
+    Smpte428,
+    /// Log100 Transfer function
+    Log100,
+    /// Log100Sqrt10 Transfer function
+    Log100Sqrt10,
+    /// Bt1361 Transfer function
+    Bt1361,
+    /// Smpte 240 Transfer function
+    Smpte240,
+    /// IEC 61966 Transfer function
+    Iec61966,
+    /// Linear transfer function
     Linear
 }
 /// Represents a single channel color primary.
