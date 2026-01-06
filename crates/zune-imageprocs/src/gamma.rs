@@ -157,23 +157,4 @@ where
     }
 }
 
-#[cfg(feature = "benchmarks")]
-#[cfg(test)]
-mod benchmarks {
-    extern crate test;
 
-    use crate::gamma::gamma;
-
-    #[bench]
-    fn gamma_bench(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let dimensions = width * height;
-
-        let mut c1 = vec![0_u16; dimensions];
-
-        b.iter(|| {
-            gamma(&mut c1, 2.3, 255);
-        });
-    }
-}
