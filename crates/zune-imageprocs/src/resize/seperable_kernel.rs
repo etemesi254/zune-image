@@ -116,13 +116,7 @@ fn resample_impl<T, const A: i32>(
 
     // Case 2: Only horizontal resizing needed
     if need_horizontal && !need_vertical {
-        resample_horizontal_only::<T, A>(
-            in_channel,
-            out_channel,
-            in_width,
-            out_width,
-            kernel_fn
-        );
+        resample_horizontal_only::<T, A>(in_channel, out_channel, in_width, out_width, kernel_fn);
         return;
     }
 
@@ -142,8 +136,11 @@ fn resample_impl<T, const A: i32>(
 
             // Iterate over the kernel range
             for idx in kernel.start_idx..=kernel.end_idx {
+                let idx = idx as usize;
+                let start_idx = kernel.start_idx as usize;
+
                 let pixel = f32::from(in_row[idx]);
-                sum += pixel * kernel.weights[idx - kernel.start_idx];
+                sum += pixel * kernel.weights[idx - start_idx];
             }
 
             *out_pixel = sum;
@@ -163,8 +160,10 @@ fn resample_impl<T, const A: i32>(
 
             // Iterate directly over row indices
             for in_y in kernel.start_idx..=kernel.end_idx {
+                let in_y = in_y as usize;
+                let start_idx = kernel.start_idx as usize;
                 let pixel = temp_buffer[in_y * out_width + out_x];
-                sum += pixel * kernel.weights[in_y - kernel.start_idx];
+                sum += pixel * kernel.weights[in_y - start_idx];
             }
 
             out_channel[out_row_offset + out_x] = T::from_f32(sum);
@@ -190,8 +189,10 @@ fn resample_vertical_only<T, const A: i32>(
             let mut sum = 0.0;
 
             for in_y in kernel.start_idx..=kernel.end_idx {
+                let in_y = in_y as usize;
+                let start_idx = kernel.start_idx as usize;
                 let pixel = f32::from(in_channel[in_y * width + x]);
-                sum += pixel * kernel.weights[in_y - kernel.start_idx];
+                sum += pixel * kernel.weights[in_y - start_idx];
             }
 
             out_channel[out_row_offset + x] = T::from_f32(sum);
@@ -217,8 +218,11 @@ fn resample_horizontal_only<T, const A: i32>(
             let mut sum = 0.0;
 
             for idx in kernel.start_idx..=kernel.end_idx {
+                let idx = idx as usize;
+                let start_idx = kernel.start_idx as usize;
+                
                 let pixel = f32::from(in_row[idx]);
-                sum += pixel * kernel.weights[idx - kernel.start_idx];
+                sum += pixel * kernel.weights[idx - start_idx];
             }
 
             *out_pixel = T::from_f32(sum);
@@ -231,8 +235,8 @@ const MAX_KERNEL_SIZE: usize = 6;
 
 struct ConvKernel {
     weights:   [f32; MAX_KERNEL_SIZE],
-    start_idx: usize,
-    end_idx:   usize
+    start_idx: u32,
+    end_idx:   u32
 }
 
 fn precompute_kernels(
@@ -275,8 +279,8 @@ fn precompute_kernels(
 
         kernels.push(ConvKernel {
             weights,
-            start_idx,
-            end_idx
+            start_idx: start_idx as u32,
+            end_idx: end_idx as u32
         });
     }
 
@@ -368,3 +372,4 @@ fn bilinear_kernel(x: f32) -> f32 {
         0.0
     }
 }
+
