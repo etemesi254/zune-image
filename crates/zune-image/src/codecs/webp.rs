@@ -72,6 +72,7 @@ impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
             depth:         BitDepth::Eight,
             format:        Some(ImageFormat::WEBP),
             alpha:         AlphaState::NonPreMultiplied,
+            #[cfg(feature = "metadata")]
             exif:          None,
             icc_chunk:     None,
             is_linear:     false
