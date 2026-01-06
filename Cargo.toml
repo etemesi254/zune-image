@@ -1,7 +1,7 @@
 [package]
 name = "zune"
 version = "0.5.3"
-rust-version = "1.87.0"
+rust-version = "1.88.0"
 edition = "2021"
 license = "MIT OR Apache-2.0 OR Zlib"
 repository = "https://github.com/etemesi254/zune-image.git"
