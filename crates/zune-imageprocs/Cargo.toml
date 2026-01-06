@@ -14,7 +14,7 @@ description = "Common image processing routines for zune-image"
 
 [dependencies]
 zune-core = { path = "../zune-core", version = "^0.5.0-rc2" }
-kamadak-exif = { version = "0.5.5", optional = true }
+kamadak-exif = { version = "0.6.1", optional = true }
 moxcms = { version = "0.7.2", optional = true }
 
 [dependencies.zune-image]
