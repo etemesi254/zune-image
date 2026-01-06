@@ -7,9 +7,7 @@
  */
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::BufReader;
-
-use zune_core::bytestream::ZCursor;
+use std::io::{BufReader, Cursor};
 use zune_core::options::DecoderOptions;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -46,6 +44,6 @@ impl<T: AsRef<[u8]>> ZuneMem<T> {
 }
 impl<T: AsRef<[u8]>> IntoImage for ZuneMem<T> {
     fn into_image(&mut self) -> Result<Image, ImageErrors> {
-        Image::read(ZCursor::new(self.source.as_ref()), self.options)
+        Image::read(Cursor::new(self.source.as_ref()), self.options)
     }
 }

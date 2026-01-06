@@ -31,7 +31,7 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
-use std::io::Cursor;
+use std::io::{BufRead, Cursor, Seek};
 use std::path::Path;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait, ZCursor, ZReader};
@@ -54,6 +54,8 @@ pub mod png;
 pub mod ppm;
 pub mod psd;
 pub mod qoi;
+
+pub mod webp;
 pub(crate) fn create_options_for_encoder(
     options: Option<EncoderOptions>, image: &Image
 ) -> EncoderOptions {
@@ -96,6 +98,8 @@ pub enum ImageFormat {
     HDR,
     /// Windows Bitmap Files
     BMP,
+    ///
+    WEBP,
     /// Any unknown format
     Unknown
 }
@@ -113,11 +117,16 @@ impl ImageFormat {
                 return true;
             }
         }
-        return self.decoder(ZCursor::new(&[])).is_ok();
+        #[cfg(feature = "webp")]{
+            if self == ImageFormat::WEBP {
+                return true;
+            }
+        }
+        return self.decoder(Cursor::new(&[])).is_ok();
     }
     pub fn decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteReaderTrait + 'a
+        T: ZByteReaderTrait + 'a + BufRead + Seek
     {
         self.decoder_with_options(data, DecoderOptions::default())
     }
@@ -126,7 +135,7 @@ impl ImageFormat {
         &self, data: T, options: DecoderOptions
     ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteReaderTrait + 'a
+        T: ZByteReaderTrait + 'a + BufRead + Seek
     {
         match self {
             ImageFormat::JPEG => {
@@ -240,6 +249,16 @@ impl ImageFormat {
                     )?))
                 }
                 #[cfg(not(feature = "jpeg-xl"))]
+                {
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
+            }
+            ImageFormat::WEBP => {
+                #[cfg(feature = "webp")]
+                {
+                    Ok(Box::new(codecs::webp::ZuneWebpDecoder::new(data)?))
+                }
+                #[cfg(not(feature = "webp"))]
                 {
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
@@ -632,15 +651,15 @@ impl Image {
     ///```
     pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
     where
-        T: ZByteReaderTrait
+        T: ZByteReaderTrait + Seek + BufRead
     {
         let decoder = ImageFormat::guess_format(src);
 
-        if let Some(format) = decoder {
-            let mut image_decoder = format.0.decoder_with_options(format.1, options)?;
+        if let Some((format, data)) = decoder {
+            let mut image_decoder = format.decoder_with_options(data, options)?;
             // save format
             let mut image = image_decoder.decode()?;
-            image.metadata.format = Some(format.0);
+            image.metadata.format = Some(format);
             Ok(image)
         } else {
             Err(ImageErrors::ImageDecoderNotImplemented(
@@ -758,6 +777,22 @@ where
             return Some((ImageFormat::BMP, reader.consume()));
         }
     }
+    #[cfg(feature = "webp")]
+    {
+        let reference = reader.peek_at(0, 12).ok()?;
+        if is_webp(reference) {
+            return Some((ImageFormat::WEBP, reader.consume()));
+        }
+    }
 
     None
+}
+
+pub fn is_webp(data: &[u8]) -> bool {
+    // WebP files are at least 12 bytes long
+    if data.len() < 12 {
+        return false;
+    }
+
+    &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP"
 }
