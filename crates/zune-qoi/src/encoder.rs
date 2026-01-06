@@ -44,7 +44,6 @@ pub struct QoiEncoder<'a> {
     // raw pixels, in RGB or RBGA
     pixel_data:            &'a [u8],
     options:               EncoderOptions,
-    color_characteristics: ColorCharacteristics
 }
 
 impl<'a> QoiEncoder<'a> {
@@ -58,11 +57,10 @@ impl<'a> QoiEncoder<'a> {
         QoiEncoder {
             pixel_data:            data,
             options:               options,
-            color_characteristics: ColorCharacteristics::sRGB
         }
     }
-    pub fn set_color_characteristics(&mut self, characteristics: ColorCharacteristics) {
-        self.color_characteristics = characteristics;
+    pub fn set_color_characteristics(&mut self, _characteristics: ColorCharacteristics) {
+        //self.color_characteristics = characteristics;
     }
 
     /// Return the maximum size for which the encoder can safely
@@ -119,8 +117,8 @@ impl<'a> QoiEncoder<'a> {
         };
 
         writer.write_u8_err(channel)?;
-        // colorspace
-        let xtic = u8::from(self.color_characteristics == ColorCharacteristics::Linear);
+        // colorspace, gamma
+        let xtic = u8::from(0);
         writer.write_u8_err(xtic)?;
 
         Ok(())
