@@ -329,7 +329,7 @@ mod benchmarks {
             resize(
                 &in_vec,
                 &mut out_vec,
-                ResizeMethod::Lancazos,
+                ResizeMethod::Lanczos3,
                 width,
                 height,
                 new_width,
