@@ -32,6 +32,30 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
+fn build_gamma_lut<T: Default + NumOps<T> + Copy>(value: f32, max_value: u16) -> Vec<T> {
+    let mut lut = vec![T::default(); usize::from(max_value) + 1];
+
+    let max_usize = usize::from(max_value);
+    let max_value = max_value as f32;
+    let value_inv = 1.0 / max_value;
+    // optimizer hint to remove bounds check, these values should be
+    // powers of two, currently we support 255 and 65535
+    assert!(lut.len().is_power_of_two());
+    let lut_mask = lut.len() - 1;
+
+    for x in 0..=max_usize {
+        let pixel_f32 = (x as f32) * value_inv;
+        let mut new_pix_val = max_value * pixel_f32.powf(value);
+
+        if new_pix_val > max_value {
+            new_pix_val = max_value;
+        }
+
+        lut[x & lut_mask] = T::from_f32(new_pix_val);
+    }
+    return lut;
+}
+
 /// Gamma adjust an image
 ///
 ///
@@ -62,10 +86,33 @@ impl OperationsTrait for Gamma {
 
         let depth = image.depth();
 
+        let gamma_u8 = if depth.bit_type() == BitType::U8 {
+            Some(build_gamma_lut::<u8>(self.value, max_value))
+        } else {
+            None
+        };
+        let gamma_u16 = if depth.bit_type() == BitType::U16 {
+            Some(build_gamma_lut::<u16>(self.value, max_value))
+        } else {
+            None
+        };
+
         let gamma_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             match depth.bit_type() {
-                BitType::U16 => gamma(channel.reinterpret_as_mut::<u16>()?, self.value, max_value),
-                BitType::U8 => gamma(channel.reinterpret_as_mut::<u8>()?, self.value, max_value),
+                BitType::U16 => {
+                    if let Some(lut_u16) = gamma_u16.as_ref() {
+                        gamma(channel.reinterpret_as_mut::<u16>()?, lut_u16)
+                    } else {
+                        panic!("LUT not built")
+                    };
+                }
+                BitType::U8 => {
+                    if let Some(lut_u8) = gamma_u8.as_ref() {
+                        gamma(channel.reinterpret_as_mut::<u8>()?, lut_u8)
+                    } else {
+                        panic!("LUT not built")
+                    }
+                }
                 BitType::F32 => {
                     // for floats, we can't use LUT tables, the scope is too big
                     let value_inv = 1.0 / max_value as f32;
@@ -98,37 +145,15 @@ impl OperationsTrait for Gamma {
     clippy::needless_range_loop,
     clippy::cast_precision_loss
 )]
-pub fn gamma<T>(pixels: &mut [T], value: f32, max_value: u16)
+pub fn gamma<T>(pixels: &mut [T], lut: &[T])
 where
     T: Copy + NumOps<T> + Default
 {
-    // build a lookup table which we use for gamma correction in the next stage
-    // it is faster to do it this way as calling pow in the inner loop is slow
-
-    // must be inclusive so that 65535 and 255 are covered
-    let mut lut = vec![T::default(); usize::from(max_value) + 1];
-
-    let max_usize = usize::from(max_value);
-    let max_value = max_value as f32;
-    let value_inv = 1.0 / max_value;
-    // optimizer hint to remove bounds check, these values should be
-    // powers of two, currently we support 255 and 65535
-    assert!(lut.len().is_power_of_two());
-    let lut_mask = lut.len() - 1;
-
-    for x in 0..=max_usize {
-        let pixel_f32 = (x as f32) * value_inv;
-        let mut new_pix_val = max_value * pixel_f32.powf(value);
-
-        if new_pix_val > max_value {
-            new_pix_val = max_value;
-        }
-
-        lut[x & lut_mask] = T::from_f32(new_pix_val);
-    }
     // now do gamma correction
     for px in pixels {
-        *px = lut[(*px).to_usize() & lut_mask];
+        // T::one better optimizes than T::default, i think due to inline problems
+        // so its better here
+        *px = *lut.get((*px).to_usize()).unwrap_or(&T::one());
     }
 }
 
