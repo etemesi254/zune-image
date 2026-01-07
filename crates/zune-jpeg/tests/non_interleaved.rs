@@ -88,15 +88,13 @@ fn decode_non_interleaved_64x64() {
     );
 }
 
-/// Test that 4:2:0 non-interleaved images decode without panicking.
+/// Test decoding a 4:2:0 non-interleaved JPEG with gamma-aware upsampling.
 ///
-/// Note: 4:2:0 non-interleaved requires upsampling the chroma components
-/// from 32x32 to 64x64. This is currently not fully implemented, so the
-/// output may have color issues (black regions in lower half).
-///
-/// This test only verifies that decoding completes successfully.
+/// 4:2:0 images have Cb and Cr at half resolution in both dimensions.
+/// This tests that chroma upsampling works correctly, producing color
+/// throughout the entire image (not just the top portion).
 #[test]
-fn decode_non_interleaved_420_64x64_no_panic() {
+fn decode_non_interleaved_420_64x64() {
     let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_64x64.jpg");
 
     let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
@@ -107,7 +105,23 @@ fn decode_non_interleaved_420_64x64_no_panic() {
     assert_eq!(info.height, 64);
     assert_eq!(pixels.len(), 64 * 64 * 3);
 
-    // Just verify we got some non-black pixels (at least the top rows should have color)
+    // All pixels should have color (no black regions from failed upsampling)
     let non_black = pixels.chunks(3).filter(|c| c[0] > 0 || c[1] > 0 || c[2] > 0).count();
-    assert!(non_black > 0, "Expected some non-black pixels");
+    let total_pixels = pixels.len() / 3;
+    let non_black_ratio = non_black as f64 / total_pixels as f64;
+    assert!(
+        non_black_ratio > 0.95,
+        "Expected >95% non-black pixels, got {:.1}%",
+        non_black_ratio * 100.0
+    );
+
+    // Verify middle row has color (proves upsampling works for entire image)
+    let middle_row = 32;
+    let row_offset = middle_row * 64 * 3;
+    let middle_pixel = &pixels[row_offset..row_offset + 3];
+    assert!(
+        middle_pixel[0] > 0 || middle_pixel[1] > 0 || middle_pixel[2] > 0,
+        "Middle row should have color, not be black: {:?}",
+        middle_pixel
+    );
 }

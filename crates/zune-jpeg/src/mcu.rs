@@ -303,12 +303,23 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
             }
 
+            // Upsample chroma components if needed (e.g., 4:2:0)
+            // This must happen before post-processing so that all components
+            // have the same dimensions for color conversion.
+            self.upsample_non_interleaved(mcu_height)?;
+
+            // Calculate actual MCU row count from Y component's buffer
+            // (may differ from mcu_height for subsampled non-interleaved images)
+            let y_width_stride = self.components[0].width_stride;
+            let y_buffer_size = self.components[0].raw_coeff.len();
+            let actual_mcu_height = y_buffer_size / (y_width_stride * 8);
+
             // Now post-process all rows
-            for i in 0..mcu_height {
+            for i in 0..actual_mcu_height {
                 self.post_process_non_interleaved(
                     pixels,
                     i,
-                    mcu_height,
+                    actual_mcu_height,
                     width,
                     padded_width,
                     &mut pixels_written,
@@ -736,11 +747,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     /// Post-process a single MCU row for non-interleaved images.
     /// Similar to post_process but reads from the correct offset in the larger buffer.
+    /// Uses upsampled data for chroma components that have been upsampled.
     #[allow(clippy::too_many_arguments)]
     fn post_process_non_interleaved(
         &mut self, pixels: &mut [u8], mcu_row: usize, mcu_height: usize, width: usize,
         padded_width: usize, pixels_written: &mut usize,
     ) -> Result<(), DecodeErrors> {
+        use crate::components::SampleRatios;
+
         let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
         let mut px = *pixels_written;
 
@@ -751,16 +765,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             comp_len = out_colorspace_components;
         }
 
-        // Each MCU row has width_stride * 8 elements per component
+        // Each MCU row has width_stride * 8 elements (using Y component's stride)
         let row_stride = self.components[0].width_stride * 8;
 
-        // Get slices for each component at the current MCU row offset
+        // Get slices for each component at the current MCU row offset.
+        // For upsampled components, use upsample_dest instead of raw_coeff.
         let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
         for (pos, comp) in self.components.iter().enumerate().take(comp_len) {
             let start = mcu_row * row_stride;
             let end = start + row_stride;
-            if end <= comp.raw_coeff.len() {
-                channels_ref[pos] = &comp.raw_coeff[start..end];
+
+            // Use upsampled data if available, otherwise raw coefficients
+            let data = if comp.sample_ratio != SampleRatios::None && !comp.upsample_dest.is_empty() {
+                &comp.upsample_dest
+            } else {
+                &comp.raw_coeff
+            };
+
+            if end <= data.len() {
+                channels_ref[pos] = &data[start..end];
             }
         }
 
@@ -800,6 +823,250 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         *pixels_written = px;
         Ok(())
+    }
+
+    /// Upsample chroma components for non-interleaved images.
+    ///
+    /// For 4:2:0, Cb and Cr are half the size of Y in both dimensions.
+    /// This function upsamples them to match Y's dimensions using
+    /// gamma-aware bilinear interpolation (3:1 weighted average).
+    ///
+    /// The upsampled data is stored in each component's `upsample_dest` buffer.
+    fn upsample_non_interleaved(&mut self, _mcu_height: usize) -> Result<(), DecodeErrors> {
+        use crate::components::SampleRatios;
+
+        // Use Y component's actual buffer size to determine target dimensions
+        let y_width_stride = self.components[0].width_stride;
+        let y_buffer_size = self.components[0].raw_coeff.len();
+        let y_height = y_buffer_size / y_width_stride;
+
+        for comp in self.components.iter_mut() {
+            match comp.sample_ratio {
+                SampleRatios::None => {
+                    // No upsampling needed (e.g., Y component or 4:4:4)
+                    continue;
+                }
+                SampleRatios::HV => {
+                    // 2x upsampling in both dimensions (4:2:0)
+                    let src_width = comp.width_stride;
+                    let src_height = comp.raw_coeff.len() / src_width;
+                    let dst_width = y_width_stride;
+                    let dst_height = y_height;
+
+                    // Allocate destination buffer
+                    comp.upsample_dest.resize(dst_width * dst_height, 0);
+
+                    // Triangle filter (3:1 weighted) upsampling - matches mozjpeg "fancy"
+                    upsample_h2v2_fancy(
+                        &comp.raw_coeff,
+                        src_width,
+                        src_height,
+                        &mut comp.upsample_dest,
+                        dst_width,
+                        dst_height,
+                    );
+                }
+                SampleRatios::H => {
+                    // 2x horizontal upsampling only (4:2:2)
+                    let src_width = comp.width_stride;
+                    let src_height = comp.raw_coeff.len() / src_width;
+                    let dst_width = y_width_stride;
+
+                    comp.upsample_dest.resize(dst_width * src_height, 0);
+
+                    // Triangle filter (3:1 weighted) upsampling - matches mozjpeg "fancy"
+                    upsample_h2v1_fancy(
+                        &comp.raw_coeff,
+                        src_width,
+                        src_height,
+                        &mut comp.upsample_dest,
+                        dst_width,
+                    );
+                }
+                SampleRatios::V => {
+                    // 2x vertical upsampling only (4:4:0)
+                    let src_width = comp.width_stride;
+                    let src_height = comp.raw_coeff.len() / src_width;
+                    let dst_height = y_height;
+
+                    comp.upsample_dest.resize(src_width * dst_height, 0);
+
+                    // Triangle filter (3:1 weighted) upsampling - matches mozjpeg "fancy"
+                    upsample_h1v2_fancy(
+                        &comp.raw_coeff,
+                        src_width,
+                        src_height,
+                        &mut comp.upsample_dest,
+                        dst_height,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Triangle filter upsampling for 2:1 in both dimensions (4:2:0).
+/// Uses the exact same 3:1 weighted average as libjpeg/mozjpeg "fancy" upsampling.
+///
+/// For each source pixel, output pixels are at 1/4 and 3/4 positions.
+/// Weight is 3/4 for nearest source pixel, 1/4 for next-nearest.
+/// Combined: 9/16, 3/16, 3/16, 1/16 for the four source neighbors.
+fn upsample_h2v2_fancy(
+    src: &[i16],
+    src_width: usize,
+    src_height: usize,
+    dst: &mut [i16],
+    dst_width: usize,
+    _dst_height: usize,
+) {
+    // Process each source row, producing 2 output rows per source row
+    for sy in 0..src_height {
+        // Determine vertical neighbors (clamped at edges)
+        let row_above = if sy > 0 { sy - 1 } else { 0 };
+        let row_below = if sy + 1 < src_height { sy + 1 } else { src_height - 1 };
+
+        // For v=0: output row closer to current, blend with row above
+        // For v=1: output row closer to current, blend with row below
+        for v in 0..2 {
+            let neighbor_row = if v == 0 { row_above } else { row_below };
+            let out_row = sy * 2 + v;
+            let out_offset = out_row * dst_width;
+
+            // Get row pointers
+            let row_cur = &src[sy * src_width..(sy + 1) * src_width];
+            let row_neighbor = &src[neighbor_row * src_width..(neighbor_row + 1) * src_width];
+
+            if src_width == 0 {
+                continue;
+            }
+
+            // Compute vertical 3:1 weighted sums for columns
+            // colsum[i] = row_cur[i] * 3 + row_neighbor[i]
+            // We'll compute these on the fly
+
+            // First column: special case
+            let thiscolsum = (row_cur[0] as i32) * 3 + (row_neighbor[0] as i32);
+            let nextcolsum = if src_width > 1 {
+                (row_cur[1] as i32) * 3 + (row_neighbor[1] as i32)
+            } else {
+                thiscolsum
+            };
+
+            // Output: (colsum * 4 + 8) >> 4 = (colsum + 2) >> 2 for first pixel
+            dst[out_offset] = ((thiscolsum + 2) >> 2) as i16;
+            // Second pixel: 3:1 blend between this and next column
+            // Bias alternates: +7 for right-leaning pixels
+            dst[out_offset + 1] = ((thiscolsum * 3 + nextcolsum + 7) >> 4) as i16;
+
+            // General case: middle columns
+            let mut lastcolsum = thiscolsum;
+            let mut thiscolsum = nextcolsum;
+
+            for sx in 1..src_width.saturating_sub(1) {
+                let nextcolsum = (row_cur[sx + 1] as i32) * 3 + (row_neighbor[sx + 1] as i32);
+                let dx = sx * 2;
+
+                // Left pixel of pair: blend with previous column (+8 bias)
+                dst[out_offset + dx] = ((thiscolsum * 3 + lastcolsum + 8) >> 4) as i16;
+                // Right pixel of pair: blend with next column (+7 bias)
+                dst[out_offset + dx + 1] = ((thiscolsum * 3 + nextcolsum + 7) >> 4) as i16;
+
+                lastcolsum = thiscolsum;
+                thiscolsum = nextcolsum;
+            }
+
+            // Last column: special case
+            if src_width > 1 {
+                let dx = (src_width - 1) * 2;
+                // Left pixel: blend with previous
+                dst[out_offset + dx] = ((thiscolsum * 3 + lastcolsum + 8) >> 4) as i16;
+                // Right pixel: just the column sum (no next neighbor)
+                dst[out_offset + dx + 1] = ((thiscolsum + 2) >> 2) as i16;
+            }
+        }
+    }
+}
+
+/// Triangle filter upsampling for 2:1 horizontal only (4:2:2).
+/// Uses the exact same 3:1 weighted average as libjpeg/mozjpeg "fancy" upsampling.
+fn upsample_h2v1_fancy(
+    src: &[i16],
+    src_width: usize,
+    src_height: usize,
+    dst: &mut [i16],
+    dst_width: usize,
+) {
+    for y in 0..src_height {
+        let row = &src[y * src_width..(y + 1) * src_width];
+        let out_offset = y * dst_width;
+
+        if src_width == 0 {
+            continue;
+        }
+
+        // First pixel pair
+        let cur = row[0] as i32;
+        let next = if src_width > 1 { row[1] as i32 } else { cur };
+
+        dst[out_offset] = cur as i16;
+        dst[out_offset + 1] = ((cur * 3 + next + 2) >> 2) as i16;
+
+        // Middle pixels
+        for sx in 1..src_width.saturating_sub(1) {
+            let prev = row[sx - 1] as i32;
+            let cur = row[sx] as i32;
+            let next = row[sx + 1] as i32;
+            let sample = cur * 3 + 2;
+
+            dst[out_offset + sx * 2] = ((sample + prev) >> 2) as i16;
+            dst[out_offset + sx * 2 + 1] = ((sample + next) >> 2) as i16;
+        }
+
+        // Last pixel pair
+        if src_width > 1 {
+            let prev = row[src_width - 2] as i32;
+            let cur = row[src_width - 1] as i32;
+
+            dst[out_offset + (src_width - 1) * 2] = ((cur * 3 + prev + 2) >> 2) as i16;
+            dst[out_offset + (src_width - 1) * 2 + 1] = cur as i16;
+        }
+    }
+}
+
+/// Triangle filter upsampling for 2:1 vertical only (4:4:0).
+/// Uses the exact same 3:1 weighted average as libjpeg/mozjpeg "fancy" upsampling.
+fn upsample_h1v2_fancy(
+    src: &[i16],
+    src_width: usize,
+    src_height: usize,
+    dst: &mut [i16],
+    _dst_height: usize,
+) {
+    for sy in 0..src_height {
+        // Determine vertical neighbors (clamped at edges)
+        let row_above = if sy > 0 { sy - 1 } else { 0 };
+        let row_below = if sy + 1 < src_height { sy + 1 } else { src_height - 1 };
+
+        let row_cur = &src[sy * src_width..(sy + 1) * src_width];
+        let row_above_data = &src[row_above * src_width..(row_above + 1) * src_width];
+        let row_below_data = &src[row_below * src_width..(row_below + 1) * src_width];
+
+        // Output row 0: blend current (weight 3) with row above (weight 1)
+        let out_row0 = sy * 2;
+        for x in 0..src_width {
+            let cur = row_cur[x] as i32;
+            let neighbor = row_above_data[x] as i32;
+            dst[out_row0 * src_width + x] = ((cur * 3 + neighbor + 2) >> 2) as i16;
+        }
+
+        // Output row 1: blend current (weight 3) with row below (weight 1)
+        let out_row1 = sy * 2 + 1;
+        for x in 0..src_width {
+            let cur = row_cur[x] as i32;
+            let neighbor = row_below_data[x] as i32;
+            dst[out_row1 * src_width + x] = ((cur * 3 + neighbor + 2) >> 2) as i16;
+        }
     }
 }
 // #[cfg(test)]

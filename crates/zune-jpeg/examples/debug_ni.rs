@@ -10,8 +10,8 @@ fn main() {
     println!("Interleaved: {}x{}, first pixel: [{}, {}, {}]",
         info1.width, info1.height, pixels1[0], pixels1[1], pixels1[2]);
 
-    // Non-interleaved 4:4:4 (simpler case - all components same size)
-    let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg");
+    // Non-interleaved 4:2:0 (tests upsampling)
+    let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_64x64.jpg");
     let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
     let pixels = decoder.decode().expect("Failed to decode");
 
