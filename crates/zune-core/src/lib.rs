@@ -21,10 +21,10 @@
 //!
 //!
 //! # Features
-//!  - `no_std`: Enables `#[no_std]` compilation support.
+//! - `no_std`: Enables `#[no_std]` compilation support.
 //!
-//!  - `serde`: Enables serializing of some of the data structures
-//!     present in the crate
+//! - `serde`: Enables serializing of some of the data structures
+//!   present in the crate
 //!
 //!
 //! # Input/Output

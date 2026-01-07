@@ -15,7 +15,7 @@
 ///
 /// This allows us to comfortably support a wide variety of images
 /// e.g 10 bit av1, 16 bit png and ppm.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 #[non_exhaustive]
 pub enum BitDepth {
     /// U8 bit depth.
@@ -41,6 +41,7 @@ pub enum BitDepth {
     /// Uses f32 to store data
     Float32,
     /// Bit depth information is unknown
+    #[default]
     Unknown
 }
 
@@ -71,12 +72,6 @@ impl BitType {
             BitType::U16 => BitDepth::Sixteen,
             BitType::F32 => BitDepth::Float32
         }
-    }
-}
-
-impl Default for BitDepth {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

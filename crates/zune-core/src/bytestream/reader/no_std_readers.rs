@@ -177,10 +177,7 @@ impl<T: AsRef<[u8]>> std::io::Seek for ZCursor<T> {
                 self.position = n;
                 Ok(self.position as u64)
             }
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Negative seek"
-            ))
+            None => Err(std::io::Error::other("Negative seek"))
         }
     }
 }
