@@ -149,6 +149,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut stream = BitStream::new();
         let mut tmp = [0_i32; DCT_BLOCK];
 
+        // Determine if this is a multi-scan (non-interleaved) image.
+        // num_scans is the number of components in the FIRST SOS marker.
+        // If it's less than total components, we have multiple SOS markers.
+        let total_components = self.input_colorspace.num_components();
+        let is_multi_scan = (self.num_scans as usize) < total_components;
+
         let comp_len = self.components.len();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
@@ -166,7 +172,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // allocate enough space to hold a whole MCU width
                 // this means we should take into account sampling ratios
                 // `*8` is because each MCU spans 8 widths.
-                let len = comp.width_stride * comp.vertical_sample * 8;
+                //
+                // For multi-scan images, we need to store all MCU rows
+                // because each component's data comes separately before post-processing.
+                let height_mult = if is_multi_scan { mcu_height } else { 1 };
+                let len = comp.width_stride * comp.vertical_sample * 8 * height_mult;
 
                 comp.needed = true;
                 comp.raw_coeff = vec![0; len];
@@ -181,36 +191,128 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
-        for i in 0..mcu_height {
-            // Report if we have no more bytes
-            // This may generate false negatives since we over-read bytes
-            // hence that why 37 is chosen(we assume if we over-read more than 37 bytes, we have a problem)
-            if stream.overread_by > 37
-            // favourite number :)
-            {
-                if self.options.strict_mode() {
-                    return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
-                };
-
-                error!("Premature end of buffer");
-                break;
+        if !is_multi_scan {
+            // Interleaved: decode and post-process one MCU row at a time
+            for i in 0..mcu_height {
+                // Report if we have no more bytes
+                if stream.overread_by > 37 {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
+                    };
+                    error!("Premature end of buffer");
+                    break;
+                }
+                let terminate = self.decode_mcu_width(mcu_width, i, is_multi_scan, &mut tmp, &mut stream)?;
+                self.post_process(
+                    pixels,
+                    i,
+                    mcu_height,
+                    width,
+                    padded_width,
+                    &mut pixels_written,
+                    &mut upsampler_scratch_space,
+                )?;
+                if terminate {
+                    warn!("Got terminate signal, will not process further");
+                    return Ok(());
+                }
             }
-            // decode a whole MCU width,
-            // this takes into account interleaved components.
-            let terminate = self.decode_mcu_width(mcu_width, &mut tmp, &mut stream)?;
-            // process that width up until it's impossible
-            self.post_process(
-                pixels,
-                i,
-                mcu_height,
-                width,
-                padded_width,
-                &mut pixels_written,
-                &mut upsampler_scratch_space,
-            )?;
-            if terminate {
-                warn!("Got terminate signal, will not process further");
-                return Ok(());
+        } else {
+            // Non-interleaved: decode all scans first, then post-process.
+            // Each SOS marker contains data for only one component.
+            let total_components = self.input_colorspace.num_components();
+
+            for scan_idx in 0..total_components {
+                // For non-interleaved scans, each scan contains only one component.
+                // Calculate MCU dimensions based on that component's dimensions,
+                // which may differ from Y due to subsampling.
+                let comp_idx = self.z_order[0];
+                let component = &self.components[comp_idx];
+
+                // Component dimensions in samples (accounts for subsampling)
+                let comp_width = (usize::from(self.info.width) * component.horizontal_sample
+                    + self.h_max - 1)
+                    / self.h_max;
+                let comp_height = (usize::from(self.info.height) * component.vertical_sample
+                    + self.v_max - 1)
+                    / self.v_max;
+
+                // MCU dimensions for this component
+                let scan_mcu_width = (comp_width + 7) / 8;
+                let scan_mcu_height = (comp_height + 7) / 8;
+
+                // Decode all MCU rows for the current scan's component
+                let mut found_marker_in_scan = false;
+                for i in 0..scan_mcu_height {
+                    if stream.overread_by > 37 {
+                        if self.options.strict_mode() {
+                            return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
+                        };
+                        error!("Premature end of buffer");
+                        break;
+                    }
+                    let terminate = self.decode_mcu_width_scan(
+                        scan_mcu_width,
+                        i,
+                        scan_mcu_height,
+                        &mut tmp,
+                        &mut stream,
+                    )?;
+                    if terminate {
+                        // New SOS marker encountered mid-scan
+                        // The SOS was already parsed by parse_marker_inner
+                        found_marker_in_scan = true;
+                        stream.reset();
+                        for comp in self.components.iter_mut() {
+                            comp.dc_pred = 0;
+                        }
+                        break;
+                    }
+                }
+
+                // If we completed the scan without hitting a marker mid-stream,
+                // we need to read the next SOS marker for the next component
+                if !found_marker_in_scan && scan_idx < total_components - 1 {
+                    // Reset bitstream before reading next marker
+                    stream.reset();
+                    // Read markers until we find SOS for next component
+                    // There might be DHT markers between scans
+                    loop {
+                        match get_marker(&mut self.stream, &mut stream) {
+                            Ok(marker) => {
+                                if marker == Marker::SOS {
+                                    self.parse_marker_inner(marker)?;
+                                    break; // Found SOS, exit loop
+                                } else if marker == Marker::EOI {
+                                    // End of image, done
+                                    break;
+                                } else {
+                                    // Handle other markers (DHT, DQT, etc.)
+                                    self.parse_marker_inner(marker)?;
+                                }
+                            }
+                            Err(_) => {
+                                break;
+                            }
+                        }
+                    }
+                    stream.reset();
+                    for comp in self.components.iter_mut() {
+                        comp.dc_pred = 0;
+                    }
+                }
+            }
+
+            // Now post-process all rows
+            for i in 0..mcu_height {
+                self.post_process_non_interleaved(
+                    pixels,
+                    i,
+                    mcu_height,
+                    width,
+                    padded_width,
+                    &mut pixels_written,
+                )?;
             }
         }
         // it may happen that some images don't have the whole buffer
@@ -225,8 +327,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let marker =
                 get_marker(&mut self.stream, &mut stream);
             match marker {
-                Ok(m) => {
-                    trace!("Found marker {:?}",m);
+                Ok(_marker) => {
+                    trace!("Found marker {:?}", _marker);
                 }
                 Err(_) => {
                     // ignore error
@@ -239,11 +341,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
     fn decode_mcu_width(
-        &mut self, mcu_width: usize, tmp: &mut [i32; 64], stream: &mut BitStream,
+        &mut self, mcu_width: usize, mcu_row: usize, is_multi_scan: bool, tmp: &mut [i32; 64], stream: &mut BitStream,
     ) -> Result<bool, DecodeErrors> {
         for j in 0..mcu_width {
-            // iterate over components
-            for component in &mut self.components {
+            // Iterate only over components in the current scan.
+            // For interleaved images, num_scans == number of components.
+            // For non-interleaved images, num_scans == 1 and z_order[0] identifies the component.
+            for k in 0..self.num_scans {
+                let comp_idx = self.z_order[k as usize];
+                let component = &mut self.components[comp_idx];
+
                 let dc_table = self.dc_huffman_tables[component.dc_huff_table % MAX_COMPONENTS]
                     .as_ref()
                     .unwrap();
@@ -256,7 +363,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let channel = &mut component.raw_coeff;
 
                 // If image is interleaved iterate over scan components,
-                // otherwise if it-s non-interleaved, these routines iterate in
+                // otherwise if it's non-interleaved, these routines iterate in
                 // trivial scanline order(Y,Cb,Cr)
                 for v_samp in 0..component.vertical_sample {
                     for h_samp in 0..component.horizontal_sample {
@@ -278,8 +385,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 // derived from stb and rewritten for my tastes
                                 let c2 = v_samp * 8;
                                 let c3 = ((j * component.horizontal_sample) + h_samp) * 8;
+                                // For multi-scan images, we need to offset by MCU row
+                                // to write to the correct position in the larger buffer
+                                let row_offset = if is_multi_scan {
+                                    mcu_row * 8 * component.width_stride
+                                } else {
+                                    0
+                                };
 
-                                component.width_stride * c2 + c3
+                                row_offset + component.width_stride * c2 + c3
                             };
 
                             let idct_pos = channel.get_mut(idct_position..).unwrap();
@@ -335,6 +449,101 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
         Ok(false)
     }
+
+    /// Decode MCU blocks for a single-component (non-interleaved) scan.
+    ///
+    /// For non-interleaved JPEGs, each SOS marker contains data for only one component.
+    /// This function decodes one row of MCUs for that component, writing to the
+    /// appropriate position in the component's buffer.
+    fn decode_mcu_width_scan(
+        &mut self,
+        scan_mcu_width: usize,
+        scan_mcu_row: usize,
+        _scan_mcu_height: usize,
+        tmp: &mut [i32; 64],
+        stream: &mut BitStream,
+    ) -> Result<bool, DecodeErrors> {
+        // For non-interleaved scans, z_order[0] is the component being decoded
+        let comp_idx = self.z_order[0];
+
+        // For non-interleaved scans, each MCU is a single 8x8 block
+        // (no subsampling multiplication within the scan)
+        for j in 0..scan_mcu_width {
+            // Get table indices before borrowing component
+            let dc_huff_table = self.components[comp_idx].dc_huff_table;
+            let ac_huff_table = self.components[comp_idx].ac_huff_table;
+
+            let dc_table = self.dc_huffman_tables[dc_huff_table % MAX_COMPONENTS]
+                .as_ref()
+                .unwrap();
+            let ac_table = self.ac_huffman_tables[ac_huff_table % MAX_COMPONENTS]
+                .as_ref()
+                .unwrap();
+
+            // Copy quantization table to avoid borrow conflict with dc_pred
+            let qt_table = self.components[comp_idx].quantization_table;
+
+            tmp.fill(0);
+
+            stream.decode_mcu_block(
+                &mut self.stream,
+                dc_table,
+                ac_table,
+                &qt_table,
+                tmp,
+                &mut self.components[comp_idx].dc_pred,
+            )?;
+
+            // IDCT in separate scope
+            let component = &mut self.components[comp_idx];
+            if component.needed {
+                // Calculate position in the component's buffer
+                // For non-interleaved, we store the full component data
+                let idct_position = {
+                    // Row offset: which MCU row within the scan
+                    let row_offset = scan_mcu_row * 8 * component.width_stride;
+                    // Column offset: which MCU column
+                    let col_offset = j * 8;
+                    row_offset + col_offset
+                };
+
+                if let Some(idct_pos) = component.raw_coeff.get_mut(idct_position..) {
+                    (self.idct_func)(tmp, idct_pos, component.width_stride);
+                }
+            }
+
+            self.todo = self.todo.saturating_sub(1);
+
+            // Handle markers (no borrows held at this point)
+            if let Some(m) = stream.marker {
+                if m == Marker::EOI {
+                    stream.marker.take();
+                    trace!("Found EOI marker in scan");
+                    stream.seen_eoi = true;
+                } else if let Marker::RST(_) = m {
+                    if self.todo == 0 {
+                        self.handle_rst(stream)?;
+                    }
+                } else {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Marker {m:?} found where not expected in scan"
+                        )));
+                    }
+                    error!(
+                        "Marker `{:?}` Found within Huffman Stream in scan",
+                        m
+                    );
+                    self.parse_marker_inner(m)?;
+                    if m == Marker::SOS {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
     // handle RST markers.
     // No-op if not using restarts
     // this routine is shared with mcu_prog
@@ -520,6 +729,74 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             color_conv_function(8 * self.coeff, channels_ref)?;
         }
+
+        *pixels_written = px;
+        Ok(())
+    }
+
+    /// Post-process a single MCU row for non-interleaved images.
+    /// Similar to post_process but reads from the correct offset in the larger buffer.
+    #[allow(clippy::too_many_arguments)]
+    fn post_process_non_interleaved(
+        &mut self, pixels: &mut [u8], mcu_row: usize, mcu_height: usize, width: usize,
+        padded_width: usize, pixels_written: &mut usize,
+    ) -> Result<(), DecodeErrors> {
+        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
+        let mut px = *pixels_written;
+
+        let mut comp_len = self.components.len();
+        if out_colorspace_components < comp_len
+            && self.options.jpeg_get_out_colorspace() == ColorSpace::Luma
+        {
+            comp_len = out_colorspace_components;
+        }
+
+        // Each MCU row has width_stride * 8 elements per component
+        let row_stride = self.components[0].width_stride * 8;
+
+        // Get slices for each component at the current MCU row offset
+        let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
+        for (pos, comp) in self.components.iter().enumerate().take(comp_len) {
+            let start = mcu_row * row_stride;
+            let end = start + row_stride;
+            if end <= comp.raw_coeff.len() {
+                channels_ref[pos] = &comp.raw_coeff[start..end];
+            }
+        }
+
+        // Color convert 8 rows (one MCU height)
+        let num_iters = 8 * self.coeff;
+        for pos in 0..num_iters {
+            let output_start = px;
+            let output_end = px + width * out_colorspace_components;
+            if output_end > pixels.len() {
+                break;
+            }
+            let output = &mut pixels[output_start..output_end];
+
+            let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+            for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                let sample_start = pos * padded_width;
+                let sample_end = sample_start + padded_width;
+                if sample_end <= channels_ref[j].len() {
+                    *samp = &channels_ref[j][sample_start..sample_end];
+                }
+            }
+
+            color_convert(
+                &raw_samples,
+                self.color_convert_16,
+                self.input_colorspace,
+                self.options.jpeg_get_out_colorspace(),
+                output,
+                width,
+                padded_width,
+            )?;
+            px += width * out_colorspace_components;
+        }
+
+        // Handle last MCU row edge case
+        let _ = mcu_height; // suppress unused warning, may be needed for edge handling
 
         *pixels_written = px;
         Ok(())
