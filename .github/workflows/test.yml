@@ -31,21 +31,37 @@ jobs:
           - os: windows-latest
             toolchain: stable
             test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
+          - os: windows-11-arm
+            toolchain: stable
+            test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
+          # 32-bit testing to catch overflow bugs (e.g., BMP RLE allocation)
+          - os: ubuntu-latest
+            toolchain: stable
+            target: i686-unknown-linux-gnu
+            # Exclude crates that need C compilation (spng via libz-sys) or linking
+            test-args: --exclude zune-benches --exclude zune-wasm --exclude zune-capi --exclude zune-png
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+
+      # Install 32-bit libraries for i686 cross-compilation
+      - name: Install i686 dependencies
+        if: matrix.target == 'i686-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
           targets: ${{ matrix.target }}
 
       # portable_simd feature is incompatible with stable, so don't always use --all-features
-      - run: cargo test 
+      - run: cargo test
                 ${{ matrix.toolchain == 'nightly' && '--all-features' || ''}}
                 ${{ matrix.target && format('--target {0}', matrix.target) || ''}}
-                --verbose 
-                --workspace 
-                --no-fail-fast 
+                --verbose
+                --workspace
+                --no-fail-fast
                 ${{ matrix.test-args }}
         env:
-          RUSTFLAGS: "-C target-cpu=native"
+          # Skip target-cpu=native for cross-compilation targets
+          RUSTFLAGS: ${{ matrix.target && '' || '-C target-cpu=native' }}
