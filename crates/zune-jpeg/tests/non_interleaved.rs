@@ -125,3 +125,76 @@ fn decode_non_interleaved_420_64x64() {
         middle_pixel
     );
 }
+
+/// Test decoding a 4:2:2 non-interleaved JPEG with horizontal-only upsampling.
+///
+/// 4:2:2 (sampling 2x1,1x1,1x1) has Cb and Cr at half horizontal resolution.
+/// This tests that h2v1 (horizontal-only) upsampling works correctly.
+#[test]
+fn decode_non_interleaved_422_64x64() {
+    let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg");
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode 4:2:2 non-interleaved JPEG");
+
+    let info = decoder.info().expect("Failed to get image info");
+    assert_eq!(info.width, 64);
+    assert_eq!(info.height, 64);
+    assert_eq!(pixels.len(), 64 * 64 * 3);
+
+    // Verify we got colorful output
+    let non_black = pixels.chunks(3).filter(|c| c[0] > 0 || c[1] > 0 || c[2] > 0).count();
+    let total_pixels = pixels.len() / 3;
+    let non_black_ratio = non_black as f64 / total_pixels as f64;
+    assert!(
+        non_black_ratio > 0.95,
+        "Expected >95% non-black pixels for 4:2:2, got {:.1}%",
+        non_black_ratio * 100.0
+    );
+
+    // Verify rightmost column has color (proves horizontal upsampling works)
+    let right_col = 63;
+    let right_pixel = &pixels[right_col * 3..right_col * 3 + 3];
+    assert!(
+        right_pixel[0] > 0 || right_pixel[1] > 0 || right_pixel[2] > 0,
+        "Rightmost column should have color: {:?}",
+        right_pixel
+    );
+}
+
+/// Test decoding a 4:4:0 non-interleaved JPEG with vertical-only upsampling.
+///
+/// 4:4:0 (sampling 1x2,1x1,1x1) has Cb and Cr at half vertical resolution.
+/// This tests that h1v2 (vertical-only) upsampling works correctly.
+#[test]
+fn decode_non_interleaved_440_64x64() {
+    let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg");
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode 4:4:0 non-interleaved JPEG");
+
+    let info = decoder.info().expect("Failed to get image info");
+    assert_eq!(info.width, 64);
+    assert_eq!(info.height, 64);
+    assert_eq!(pixels.len(), 64 * 64 * 3);
+
+    // Verify we got colorful output
+    let non_black = pixels.chunks(3).filter(|c| c[0] > 0 || c[1] > 0 || c[2] > 0).count();
+    let total_pixels = pixels.len() / 3;
+    let non_black_ratio = non_black as f64 / total_pixels as f64;
+    assert!(
+        non_black_ratio > 0.95,
+        "Expected >95% non-black pixels for 4:4:0, got {:.1}%",
+        non_black_ratio * 100.0
+    );
+
+    // Verify bottom row has color (proves vertical upsampling works)
+    let bottom_row = 63;
+    let row_offset = bottom_row * 64 * 3;
+    let bottom_pixel = &pixels[row_offset..row_offset + 3];
+    assert!(
+        bottom_pixel[0] > 0 || bottom_pixel[1] > 0 || bottom_pixel[2] > 0,
+        "Bottom row should have color: {:?}",
+        bottom_pixel
+    );
+}
