@@ -601,6 +601,59 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 stream.reset();
                 trace!("Found SOS marker");
                 return Ok(McuContinuation::AnotherSos);
+            } else if matches!(m, Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM)
+                || matches!(m, Marker::APP(_))
+            {
+                // For non-interleaved images, markers like DHT/DQT can appear between scans.
+                // But in interleaved images (all components in first scan), this is invalid.
+                let all_components_in_first_scan =
+                    usize::from(self.num_scans) == self.components.len();
+                if all_components_in_first_scan && self.options.strict_mode() {
+                    return Err(DecodeErrors::Format(format!(
+                        "Marker {:?} found mid-stream in interleaved image (invalid per ITU-T.81)",
+                        m
+                    )));
+                }
+                // Parse them and look for the next SOS marker.
+                trace!("Found inter-scan marker {:?}, parsing and continuing", m);
+                self.parse_marker_inner(m)?;
+                stream.marker.take();
+                stream.reset();
+
+                // After parsing setup markers, we need to find the next SOS marker.
+                // Keep reading markers until we find SOS.
+                loop {
+                    let next_marker = get_marker(&mut self.stream, stream)?;
+                    match next_marker {
+                        Marker::SOS => {
+                            self.parse_marker_inner(Marker::SOS)?;
+                            stream.reset();
+                            return Ok(McuContinuation::AnotherSos);
+                        }
+                        Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
+                            self.parse_marker_inner(next_marker)?;
+                            // Continue looking for SOS
+                        }
+                        Marker::APP(_) => {
+                            self.parse_marker_inner(next_marker)?;
+                            // Continue looking for SOS
+                        }
+                        Marker::EOI => {
+                            stream.seen_eoi = true;
+                            return Ok(McuContinuation::Ok);
+                        }
+                        other => {
+                            if self.options.strict_mode() {
+                                return Err(DecodeErrors::Format(format!(
+                                    "Expected SOS marker after inter-scan markers, got {:?}",
+                                    other
+                                )));
+                            }
+                            // In non-strict mode, try to continue
+                            return Ok(McuContinuation::Terminate);
+                        }
+                    }
+                }
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
