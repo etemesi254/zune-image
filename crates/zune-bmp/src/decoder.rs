@@ -1139,7 +1139,20 @@ where
 
         // for depths less than 8(4 only), allocate full space for the expanded bits
         let depth = if self.depth < 8 { 8 } else { self.depth };
-        let mut pixels = vec![0; ((self.width * self.height * usize::from(depth)) + 7) >> 3];
+
+        // Use checked arithmetic to prevent overflow on 32-bit platforms
+        let pixel_bits = self
+            .width
+            .checked_mul(self.height)
+            .and_then(|v| v.checked_mul(usize::from(depth)))
+            .ok_or(BmpDecoderErrors::OverFlowOccurred)?;
+
+        let alloc_size = pixel_bits
+            .checked_add(7)
+            .ok_or(BmpDecoderErrors::OverFlowOccurred)?
+            >> 3;
+
+        let mut pixels = vec![0; alloc_size];
 
         //let rt = temp_scanline.len();
         let mut line = (self.height - 1) as i32;
