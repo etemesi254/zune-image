@@ -267,6 +267,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return Ok(());
                     }
                     McuContinuation::AnotherSos => continue 'sos,
+                    McuContinuation::InterScanMarker(marker) => {
+                        // Handle inter-scan markers (DHT/DQT/etc) uniformly here.
+                        // This keeps all marker handling in the outer loop.
+                        if self.advance_to_next_sos(marker, &mut stream)? {
+                            continue 'sos;
+                        } else {
+                            // Hit EOI
+                            break;
+                        }
+                    }
                     McuContinuation::Terminate => {
                         warn!("Got terminate signal, will not process further");
                         pixels.get_mut(pixels_written..).map(|v| v.fill(128));
@@ -601,6 +611,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 stream.reset();
                 trace!("Found SOS marker");
                 return Ok(McuContinuation::AnotherSos);
+            } else if matches!(m, Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM)
+                || matches!(m, Marker::APP(_))
+            {
+                // For non-interleaved images, setup markers can appear between scans.
+                // Signal the caller to handle this marker and find the next SOS.
+                // This keeps all marker parsing in the caller's loop.
+                stream.marker.take();
+                trace!("Found inter-scan marker {:?}", m);
+                return Ok(McuContinuation::InterScanMarker(m));
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
@@ -620,6 +639,77 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         Ok(McuContinuation::Ok)
+    }
+
+    /// Scan for the next SOS marker, parsing setup markers along the way.
+    ///
+    /// This is the unified marker scanning function used after encountering an
+    /// inter-scan marker. It handles DHT, DQT, DRI, COM, and APP markers that
+    /// can appear between scans in non-interleaved images.
+    ///
+    /// # Arguments
+    /// * `first_marker` - The first marker that was already detected (not yet parsed)
+    /// * `stream` - The bitstream state
+    ///
+    /// # Returns
+    /// * `Ok(true)` - Found SOS, ready to continue decoding
+    /// * `Ok(false)` - Found EOI, decoding complete
+    /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, etc.)
+    fn advance_to_next_sos(
+        &mut self,
+        first_marker: Marker,
+        stream: &mut BitStream
+    ) -> Result<bool, DecodeErrors> {
+        // Limit iterations to prevent DoS from malicious files.
+        const MAX_INTER_SCAN_MARKERS: usize = 64;
+
+        // Parse the first marker that triggered this call
+        self.parse_marker_inner(first_marker)?;
+        stream.reset();
+
+        for _ in 0..MAX_INTER_SCAN_MARKERS {
+            let marker = get_marker(&mut self.stream, stream)?;
+
+            match marker {
+                Marker::SOS => {
+                    self.parse_marker_inner(Marker::SOS)?;
+                    stream.reset();
+                    trace!("Found SOS marker, continuing decode");
+                    return Ok(true);
+                }
+                Marker::EOI => {
+                    stream.seen_eoi = true;
+                    trace!("Found EOI marker");
+                    return Ok(false);
+                }
+                Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
+                    trace!("Parsing inter-scan marker {:?}", marker);
+                    self.parse_marker_inner(marker)?;
+                }
+                Marker::APP(_) => {
+                    trace!("Parsing inter-scan APP marker {:?}", marker);
+                    self.parse_marker_inner(marker)?;
+                }
+                other => {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Unexpected marker {:?} while scanning for SOS between scans",
+                            other
+                        )));
+                    }
+                    // Non-strict: skip unknown marker
+                    warn!("Skipping unexpected marker {:?} between scans", other);
+                    let length = self.stream.get_u16_be_err()?;
+                    if length >= 2 {
+                        self.stream.skip((length - 2) as usize)?;
+                    }
+                }
+            }
+        }
+
+        Err(DecodeErrors::FormatStatic(
+            "Too many markers between scans (exceeded limit of 64)"
+        ))
     }
 
     // handle RST markers.
@@ -818,5 +908,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 enum McuContinuation {
     Ok,
     AnotherSos,
+    /// Found an inter-scan marker (DHT/DQT/DRI/COM/APP) that needs handling.
+    /// The caller should parse it and scan for the next SOS.
+    InterScanMarker(Marker),
     Terminate
 }
