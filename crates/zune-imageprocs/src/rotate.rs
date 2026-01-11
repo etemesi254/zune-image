@@ -22,6 +22,28 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
+pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize, usize) {
+    let angle = angle % 360.0;
+
+    // Handle special cases for 90-degree rotations
+    if (angle - 90.0).abs() < f32::EPSILON || (angle - 270.0).abs() < f32::EPSILON {
+        return (height, width); // Dimensions swap
+    }
+    if (angle - 180.0).abs() < f32::EPSILON || angle.abs() < f32::EPSILON {
+        return (width, height); // Dimensions stay the same
+    }
+
+    // For arbitrary angles, calculate bounding box
+    let angle_rad = angle.to_radians();
+    let cos_a = angle_rad.cos().abs();
+    let sin_a = angle_rad.sin().abs();
+
+    let new_width = (width as f32 * cos_a + height as f32 * sin_a).ceil() as usize;
+    let new_height = (width as f32 * sin_a + height as f32 * cos_a).ceil() as usize;
+
+    (new_width, new_height)
+}
+
 pub struct Rotate {
     angle: f32
 }
@@ -46,8 +68,10 @@ impl OperationsTrait for Rotate {
         let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let (new_width, new_height) = get_rotated_dimensions(width, height, self.angle);
+
             let mut new_channel =
-                Channel::new_with_length_and_type(channel.len(), channel.type_id());
+                Channel::new_with_length_and_type(new_width * new_height, channel.type_id());
 
             match im_type {
                 BitType::U8 => {
@@ -55,6 +79,8 @@ impl OperationsTrait for Rotate {
                         self.angle,
                         width,
                         height,
+                        new_width,
+                        new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?
                     );
@@ -64,6 +90,8 @@ impl OperationsTrait for Rotate {
                         self.angle,
                         width,
                         height,
+                        new_width,
+                        new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?
                     );
@@ -72,6 +100,8 @@ impl OperationsTrait for Rotate {
                     self.angle,
                     width,
                     height,
+                    new_width,
+                    new_height,
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?
                 ),
@@ -102,10 +132,20 @@ fn change_image_dims(image: &mut Image, angle: f32) {
     if (angle - 270.0).abs() < f32::EPSILON {
         image.set_dimensions(oh, ow);
     }
+    // For arbitrary angles, calculate bounding box
+    let angle_rad = angle.to_radians();
+    let cos_a = angle_rad.cos().abs();
+    let sin_a = angle_rad.sin().abs();
+
+    let new_width = (ow as f32 * cos_a + oh as f32 * sin_a).ceil() as usize;
+    let new_height = (ow as f32 * sin_a + oh as f32 * cos_a).ceil() as usize;
+
+    image.set_dimensions(new_width, new_height)
 }
 
 pub fn rotate<T: Copy + NumOps<T> + Default>(
-    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T]
+    angle: f32, width: usize, height: usize, out_width: usize, out_height: usize, in_image: &[T],
+    out_image: &mut [T]
 ) {
     let angle = angle % 360.0;
 
@@ -118,7 +158,9 @@ pub fn rotate<T: Copy + NumOps<T> + Default>(
     } else if (angle - 270.0).abs() < f32::EPSILON {
         rotate_270(in_image, out_image, width, height);
     } else {
-        rotate_arbitrary(in_image, out_image, width, height, angle)
+        rotate_arbitrary(
+            in_image, out_image, width, height, out_width, out_height, angle
+        )
     }
 }
 
@@ -137,58 +179,56 @@ fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
 }
 
 fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
-    in_image: &[T], out_image: &mut [T], width: usize, height: usize, angle: f32
-)
-{
+    in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
+    out_height: usize, angle: f32
+) {
     let angle_rad = angle.to_radians();
     let cos_a = angle_rad.cos();
     let sin_a = angle_rad.sin();
 
-    // Center of rotation
-    let cx = width as f32 / 2.0;
-    let cy = height as f32 / 2.0;
+    // Centers
+    let in_cx = in_width as f32 / 2.0;
+    let in_cy = in_height as f32 / 2.0;
+    let out_cx = out_width as f32 / 2.0;
+    let out_cy = out_height as f32 / 2.0;
 
-    out_image.fill(T::default());
+    out_image.fill(T::max_val());
 
-    for out_y in 0..height {
-        for out_x in 0..width {
-            // Translate to origin
-            let x = out_x as f32 - cx;
-            let y = out_y as f32 - cy;
+    for out_y in 0..out_height {
+        for out_x in 0..out_width {
+            // Translate output position to centered coordinates
+            let x = out_x as f32 - out_cx;
+            let y = out_y as f32 - out_cy;
 
-            // Rotate backwards (to find source position)
-            let src_x = x * cos_a + y * sin_a + cx;
-            let src_y = -x * sin_a + y * cos_a + cy;
+            // Rotate backwards to find source position
+            let src_x = x * cos_a + y * sin_a + in_cx;
+            let src_y = -x * sin_a + y * cos_a + in_cy;
 
-            // Check bounds
+            // Check bounds and interpolate
             if src_x >= 0.0
-                && src_x < (width - 1) as f32
+                && src_x < (in_width - 1) as f32
                 && src_y >= 0.0
-                && src_y < (height - 1) as f32
+                && src_y < (in_height - 1) as f32
             {
                 let x0 = src_x.floor() as usize;
                 let y0 = src_y.floor() as usize;
                 let x1 = x0 + 1;
                 let y1 = y0 + 1;
 
-                // Bilinear interpolation weights
                 let fx = src_x - x0 as f32;
                 let fy = src_y - y0 as f32;
 
-                let w00 = (1.0 - fx) * (1.0 - fy);
-                let w10 = fx * (1.0 - fy);
-                let w01 = (1.0 - fx) * fy;
-                let w11 = fx * fy;
+                let p00 = in_image[y0 * in_width + x0].to_f32();
+                let p10 = in_image[y0 * in_width + x1].to_f32();
+                let p01 = in_image[y1 * in_width + x0].to_f32();
+                let p11 = in_image[y1 * in_width + x1].to_f32();
 
-                // Get source pixels
-                let p00 = in_image[y0 * width + x0].to_f32();
-                let p10 = in_image[y0 * width + x1].to_f32();
-                let p01 = in_image[y1 * width + x0].to_f32();
-                let p11 = in_image[y1 * width + x1].to_f32();
+                let result = p00 * (1.0 - fx) * (1.0 - fy)
+                    + p10 * fx * (1.0 - fy)
+                    + p01 * (1.0 - fx) * fy
+                    + p11 * fx * fy;
 
-                // Interpolate
-                let result = p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11;
-                out_image[out_y * width + out_x] = T::from_f32(result);
+                out_image[out_y * out_width + out_x] = T::from_f32(result);
             }
         }
     }
