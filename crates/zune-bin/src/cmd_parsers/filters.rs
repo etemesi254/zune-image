@@ -7,8 +7,9 @@
  */
 
 use clap::ArgMatches;
-use log::debug;
+use log::{debug, trace};
 use zune_image::pipelines::Pipeline;
+use zune_imageprocs::affine::AffineTransform;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
@@ -89,9 +90,22 @@ pub fn parse_options(
             "bt-2020" => ColorProfiles::DisplayP3,
             _ => Err(format!("Unknown color profile: {}", value))?
         };
-        debug!("Added color transform operation");
+        trace!("Added color transform operation");
 
         let transform = ColorTransform::new(color_profile);
+        workflow.chain_operations(Box::new(transform));
+    } else if argument == "affine-transform" {
+        let value = args
+            .get_many::<f32>(argument)
+            .unwrap()
+            .collect::<Vec<&f32>>();
+        trace!("Added affine transform operation");
+        if value.len() != 6 {
+            return Err(format!("Invalid transform length: {}", value.len()));
+        }
+        let transform = AffineTransform::new(
+            *value[0], *value[1], *value[2], *value[3], *value[4], *value[5]
+        );
         workflow.chain_operations(Box::new(transform));
     }
 

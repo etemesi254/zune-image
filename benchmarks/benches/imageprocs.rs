@@ -2,7 +2,7 @@ use std::fs::read;
 use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{ criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use image::imageops::FilterType;
 use image::DynamicImage;
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
@@ -13,6 +13,7 @@ use zune_hdr::zune_core::options::DecoderOptions;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
+use zune_imageprocs::affine::AffineTransform;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
@@ -181,6 +182,19 @@ fn zune_image_flip_vertical_bench(input: &Image) {
     im.flatten_frames::<u8>();
     black_box(im);
 }
+fn zune_affine_transform_bench(input: &Image) {
+    // hyperfine './zune --affine-transform 0.7071 -0.7071 0.7071 0.7071  0 0  -i "/Users/etemesi/Downloads/wallhaven-3qqdg6_3840x2160.png"  -o h.jpg' 'vips affine "/Users/etemesi/Downloads/wallhaven-3qqdg6_3840x2160.png"  output.jpg "0.707107 -0.707107 0.707107 0.707107"'
+    let im = AffineTransform::new(0.707107, -0.707107, 0.707107, 0.707107, 0.0, 0.0)
+        .clone_and_execute(input)
+        .unwrap();
+    im.flatten_frames::<u8>();
+    black_box(im);
+}
+fn vips_affine_transform_bench(input: &VipsImage) {
+    let im = libvips::ops::affine(input, 0.707107, -0.707107, 0.707107, 0.707107).unwrap();
+    im.image_write_to_memory();
+    black_box(im);
+}
 fn bench_inner_zune_vips<T, U>(c: &mut Criterion, name: &str, zune_fn: T, vips_fn: U)
 where
     T: Fn(&Image),
@@ -338,11 +352,19 @@ fn bench_flip_vertical(c: &mut Criterion) {
         vips_flip_vertical_bench
     );
 }
+fn bench_affine_transform(c: &mut Criterion) {
+    bench_inner_zune_vips(
+        c,
+        "imageprocs: affine-transform (45 degrees rotation)",
+        zune_affine_transform_bench,
+        vips_affine_transform_bench
+    )
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical);
+    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical);
 
 criterion_main!(benches);

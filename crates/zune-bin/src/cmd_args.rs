@@ -493,7 +493,15 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .value_parser(PossibleValuesParser::new(["rgb","adobe-rgb","display-p3","bt-2020"]))
             .value_name("color-transform")
             .help_heading(GROUP)
-            .group(GROUP)
+            .group(GROUP),
+    Arg::new("affine-transform")
+        .long("affine-transform")
+        .help_heading(GROUP)
+        .allow_hyphen_values(true)
+        .value_names(["a","b","c","d","tx","ty"])
+        .value_parser(value_parser!(f32))
+        .help("Affine transform an image")
+        .group(GROUP),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     let arg_group = ArgGroup::new(GROUP)
