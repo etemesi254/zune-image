@@ -19,6 +19,7 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+use crate::traits::NumOps;
 use crate::utils::execute_on;
 
 pub struct Rotate {
@@ -103,7 +104,7 @@ fn change_image_dims(image: &mut Image, angle: f32) {
     }
 }
 
-pub fn rotate<T: Copy>(
+pub fn rotate<T: Copy + NumOps<T> + Default>(
     angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T]
 ) {
     let angle = angle % 360.0;
@@ -112,12 +113,12 @@ pub fn rotate<T: Copy>(
         // copy in image to out image
         out_image.copy_from_slice(in_image);
         rotate_180(out_image, width);
-    }
-    if (angle - 90.0).abs() < f32::EPSILON {
+    } else if (angle - 90.0).abs() < f32::EPSILON {
         rotate_90(in_image, out_image, width, height);
-    }
-    if (angle - 270.0).abs() < f32::EPSILON {
+    } else if (angle - 270.0).abs() < f32::EPSILON {
         rotate_270(in_image, out_image, width, height);
+    } else {
+        rotate_arbitrary(in_image, out_image, width, height, angle)
     }
 }
 
@@ -135,6 +136,63 @@ fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
     }
 }
 
+fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
+    in_image: &[T], out_image: &mut [T], width: usize, height: usize, angle: f32
+)
+{
+    let angle_rad = angle.to_radians();
+    let cos_a = angle_rad.cos();
+    let sin_a = angle_rad.sin();
+
+    // Center of rotation
+    let cx = width as f32 / 2.0;
+    let cy = height as f32 / 2.0;
+
+    out_image.fill(T::default());
+
+    for out_y in 0..height {
+        for out_x in 0..width {
+            // Translate to origin
+            let x = out_x as f32 - cx;
+            let y = out_y as f32 - cy;
+
+            // Rotate backwards (to find source position)
+            let src_x = x * cos_a + y * sin_a + cx;
+            let src_y = -x * sin_a + y * cos_a + cy;
+
+            // Check bounds
+            if src_x >= 0.0
+                && src_x < (width - 1) as f32
+                && src_y >= 0.0
+                && src_y < (height - 1) as f32
+            {
+                let x0 = src_x.floor() as usize;
+                let y0 = src_y.floor() as usize;
+                let x1 = x0 + 1;
+                let y1 = y0 + 1;
+
+                // Bilinear interpolation weights
+                let fx = src_x - x0 as f32;
+                let fy = src_y - y0 as f32;
+
+                let w00 = (1.0 - fx) * (1.0 - fy);
+                let w10 = fx * (1.0 - fy);
+                let w01 = (1.0 - fx) * fy;
+                let w11 = fx * fy;
+
+                // Get source pixels
+                let p00 = in_image[y0 * width + x0].to_f32();
+                let p10 = in_image[y0 * width + x1].to_f32();
+                let p01 = in_image[y1 * width + x0].to_f32();
+                let p11 = in_image[y1 * width + x1].to_f32();
+
+                // Interpolate
+                let result = p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11;
+                out_image[out_y * width + out_x] = T::from_f32(result);
+            }
+        }
+    }
+}
 fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
     // TODO: [cae]: Use loop tiling.
     // Does not matter that it is already good enough, we need it fast.
