@@ -601,6 +601,22 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 stream.reset();
                 trace!("Found SOS marker");
                 return Ok(McuContinuation::AnotherSos);
+            } else if matches!(m, Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM)
+                || matches!(m, Marker::APP(_))
+            {
+                // For non-interleaved images, setup markers (DHT/DQT/etc) can appear
+                // between scans. Parse this marker and scan for the next SOS.
+                // See ITU-T.81 Section B.2.3 for non-interleaved scan structure.
+                stream.marker.take();
+                self.parse_marker_inner(m)?;
+                stream.reset();
+                trace!("Found inter-scan marker {:?}, scanning for next SOS", m);
+
+                if self.scan_to_next_sos(stream)? {
+                    return Ok(McuContinuation::AnotherSos);
+                } else {
+                    return Ok(McuContinuation::Ok); // Hit EOI
+                }
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
@@ -620,6 +636,64 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         Ok(McuContinuation::Ok)
+    }
+
+    /// Scan for the next SOS marker, parsing setup markers (DHT/DQT/DRI/COM/APP) along the way.
+    ///
+    /// This is used for non-interleaved images where markers can appear between scans.
+    /// Returns `Ok(true)` if SOS was found, `Ok(false)` if EOI was found.
+    ///
+    /// # Errors
+    /// Returns an error if too many markers are encountered (DoS protection) or
+    /// an unexpected marker is found in strict mode.
+    fn scan_to_next_sos(&mut self, stream: &mut BitStream) -> Result<bool, DecodeErrors> {
+        // Limit iterations to prevent DoS from malicious files with many markers.
+        // 64 is generous - a legitimate JPEG rarely has more than ~20 markers total.
+        const MAX_INTER_SCAN_MARKERS: usize = 64;
+
+        for _ in 0..MAX_INTER_SCAN_MARKERS {
+            let marker = get_marker(&mut self.stream, stream)?;
+
+            match marker {
+                Marker::SOS => {
+                    self.parse_marker_inner(Marker::SOS)?;
+                    stream.reset();
+                    trace!("Found SOS marker after inter-scan markers");
+                    return Ok(true);
+                }
+                Marker::EOI => {
+                    stream.seen_eoi = true;
+                    trace!("Found EOI marker while scanning for SOS");
+                    return Ok(false);
+                }
+                Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
+                    trace!("Parsing inter-scan marker {:?}", marker);
+                    self.parse_marker_inner(marker)?;
+                }
+                Marker::APP(_) => {
+                    trace!("Parsing inter-scan APP marker {:?}", marker);
+                    self.parse_marker_inner(marker)?;
+                }
+                other => {
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Unexpected marker {:?} while scanning for SOS between scans",
+                            other
+                        )));
+                    }
+                    // Non-strict: skip unknown marker and continue
+                    warn!("Skipping unexpected marker {:?} between scans", other);
+                    let length = self.stream.get_u16_be_err()?;
+                    if length >= 2 {
+                        self.stream.skip((length - 2) as usize)?;
+                    }
+                }
+            }
+        }
+
+        Err(DecodeErrors::FormatStatic(
+            "Too many markers between scans (exceeded limit of 64)"
+        ))
     }
 
     // handle RST markers.
