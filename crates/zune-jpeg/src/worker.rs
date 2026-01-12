@@ -8,7 +8,7 @@
 
 use alloc::format;
 use core::convert::TryInto;
-use std::cmp::min;
+use core::cmp::min;
 
 use zune_core::colorspace::ColorSpace;
 
