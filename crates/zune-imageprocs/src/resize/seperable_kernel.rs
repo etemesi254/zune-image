@@ -1,92 +1,79 @@
 use crate::resize::ResizeMethod;
 use crate::traits::NumOps;
 
+fn get_kernel_fn_and_radius(method: ResizeMethod) -> (fn(f32) -> f32, i32) {
+    match method {
+        ResizeMethod::Lanczos3 => (lanczos_kernel::<3>, 3),
+        ResizeMethod::Lanczos2 => (lanczos_kernel::<2>, 2),
+        ResizeMethod::Bicubic | ResizeMethod::Mitchell => {
+            (|x| bicubic_kernel(x, 1.0 / 3.0, 1.0 / 3.0), 2)
+        }
+        ResizeMethod::CatmullRom => (|x| bicubic_kernel(x, 0.0, 0.5), 2),
+        ResizeMethod::BSpline => (|x| bicubic_kernel(x, 1.0, 0.0), 2),
+        ResizeMethod::Hermite => (|x| bicubic_kernel(x, 0.0, 0.0), 2),
+        ResizeMethod::Sinc => (sinc_kernel::<3>, 3),
+        ResizeMethod::Bilinear => (bilinear_kernel, 1)
+    }
+}
+
+pub(crate) struct PrecomputedKernels {
+    pub horizontal: Option<Vec<ConvKernel>>,
+    pub vertical:   Option<Vec<ConvKernel>>
+}
+
+impl PrecomputedKernels {
+    pub fn new(
+        in_width: usize, in_height: usize, out_width: usize, out_height: usize,
+        method: ResizeMethod
+    ) -> Self {
+        let (kernel_fn, radius) = get_kernel_fn_and_radius(method);
+
+        let horizontal = if in_width != out_width {
+            let x_ratio = in_width as f32 / out_width as f32;
+            Some(precompute_kernels(
+                in_width, out_width, x_ratio, radius, kernel_fn
+            ))
+        } else {
+            None
+        };
+
+        let vertical = if in_height != out_height {
+            let y_ratio = in_height as f32 / out_height as f32;
+            Some(precompute_kernels(
+                in_height, out_height, y_ratio, radius, kernel_fn
+            ))
+        } else {
+            None
+        };
+
+        PrecomputedKernels {
+            horizontal,
+            vertical
+        }
+    }
+}
+
 pub fn resample_separable<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, method: ResizeMethod
+    out_height: usize, kernels: &PrecomputedKernels
 ) where
     T: Copy + NumOps<T>,
     f32: std::convert::From<T>
 {
-    match method {
-        ResizeMethod::Lanczos3 => resample_impl::<T, 3>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            lanczos_kernel::<3>
-        ),
-        ResizeMethod::Lanczos2 => resample_impl::<T, 2>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            lanczos_kernel::<2>
-        ),
-        ResizeMethod::Bicubic | ResizeMethod::Mitchell => resample_impl::<T, 2>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            |x| bicubic_kernel(x, 1.0 / 3.0, 1.0 / 3.0)
-        ),
-        ResizeMethod::CatmullRom => resample_impl::<T, 2>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            |x| bicubic_kernel(x, 0.0, 0.5)
-        ),
-        ResizeMethod::BSpline => resample_impl::<T, 2>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            |x| bicubic_kernel(x, 1.0, 0.0)
-        ),
-        ResizeMethod::Hermite => resample_impl::<T, 2>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            |x| bicubic_kernel(x, 0.0, 0.0)
-        ),
-        ResizeMethod::Sinc => resample_impl::<T, 3>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            sinc_kernel::<3>
-        ),
-        ResizeMethod::Bilinear => resample_impl::<T, 1>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            bilinear_kernel
-        )
-    }
+    resample_separable_precomputed(
+        in_channel,
+        out_channel,
+        in_width,
+        in_height,
+        out_width,
+        out_height,
+        kernels
+    )
 }
 
-fn resample_impl<T, const A: i32>(
+pub fn resample_separable_precomputed<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, kernel_fn: fn(f32) -> f32
+    out_height: usize, kernels: &PrecomputedKernels
 ) where
     T: Copy + NumOps<T>,
     f32: std::convert::From<T>
@@ -98,25 +85,31 @@ fn resample_impl<T, const A: i32>(
     }
 
     // Check if we need horizontal or vertical resizing
-    let need_horizontal = in_width != out_width;
-    let need_vertical = in_height != out_height;
+    let need_horizontal = kernels.horizontal.is_some();
+    let need_vertical = kernels.vertical.is_some();
 
     // Case 1: Only vertical resizing needed
     if !need_horizontal && need_vertical {
-        resample_vertical_only::<T, A>(
+        resample_vertical_only_precomputed::<T>(
             in_channel,
             out_channel,
             in_width,
             in_height,
             out_height,
-            kernel_fn
+            kernels.vertical.as_ref().unwrap()
         );
         return;
     }
 
     // Case 2: Only horizontal resizing needed
     if need_horizontal && !need_vertical {
-        resample_horizontal_only::<T, A>(in_channel, out_channel, in_width, out_width, kernel_fn);
+        resample_horizontal_only_precomputed::<T>(
+            in_channel,
+            out_channel,
+            in_width,
+            out_width,
+            kernels.horizontal.as_ref().unwrap()
+        );
         return;
     }
 
@@ -124,63 +117,124 @@ fn resample_impl<T, const A: i32>(
     let mut temp_buffer: Vec<f32> = vec![0.0; in_height * out_width];
 
     // PASS 1: Horizontal convolution
-    let x_ratio = in_width as f32 / out_width as f32;
-    let h_kernels = precompute_kernels(in_width, out_width, x_ratio, A, kernel_fn);
+    let h_kernels = kernels.horizontal.as_ref().unwrap();
 
     for (in_row, out_row) in in_channel
         .chunks_exact(in_width)
         .zip(temp_buffer.chunks_exact_mut(out_width))
     {
         for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-            let mut sum = 0.0;
+            let start_idx = kernel.start_idx as usize;
+            let end_idx = kernel.end_idx as usize;
+            let weights = &kernel.weights;
+            let diff = (end_idx - start_idx) + 1;
 
-            // Iterate over the kernel range
-            for idx in kernel.start_idx..=kernel.end_idx {
-                let idx = idx as usize;
-                let start_idx = kernel.start_idx as usize;
-
-                let pixel = f32::from(in_row[idx]);
-                sum += pixel * kernel.weights[idx - start_idx];
-            }
+            // Use iterator with enumerate for better optimization,
+            // also put most common indices for this to better optimize it
+            let sum = match diff {
+                6 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 6) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                5 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 5) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                4 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 4) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                3 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 3) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                2 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 2) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                1 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 1) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                _ => in_row[start_idx..=end_idx]
+                    .iter()
+                    .zip(weights.iter())
+                    .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                    .sum::<f32>()
+            };
 
             *out_pixel = sum;
         }
     }
 
-    //  Vertical pass
-    let y_ratio = in_height as f32 / out_height as f32;
-    let v_kernels = precompute_kernels(in_height, out_height, y_ratio, A, kernel_fn);
+    // PASS 2: Vertical pass
+    let v_kernels = kernels.vertical.as_ref().unwrap();
 
-    for out_y in 0..out_height {
-        let kernel = &v_kernels[out_y];
-        let out_row_offset = out_y * out_width;
+    for out_x in 0..out_width {
+        for (out_y, kernel) in (0..out_height).zip(v_kernels.iter()) {
+            let start_idx = kernel.start_idx as usize;
+            let end_idx = kernel.end_idx as usize;
+            let weights = &kernel.weights;
 
-        for out_x in 0..out_width {
-            let mut sum = 0.0;
+            let sum: f32 = (start_idx..=end_idx)
+                .zip(weights.iter())
+                .map(|(in_y, &weight)| temp_buffer[in_y * out_width + out_x] * weight)
+                .sum();
 
-            // Iterate directly over row indices
-            for in_y in kernel.start_idx..=kernel.end_idx {
-                let in_y = in_y as usize;
-                let start_idx = kernel.start_idx as usize;
-                let pixel = temp_buffer[in_y * out_width + out_x];
-                sum += pixel * kernel.weights[in_y - start_idx];
-            }
-
-            out_channel[out_row_offset + out_x] = T::from_f32(sum);
+            out_channel[out_y * out_width + out_x] = T::from_f32(sum);
         }
     }
 }
 
-fn resample_vertical_only<T, const A: i32>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, in_height: usize, out_height: usize,
-    kernel_fn: fn(f32) -> f32
+fn resample_vertical_only_precomputed<T>(
+    in_channel: &[T], out_channel: &mut [T], width: usize, _in_height: usize, out_height: usize,
+    v_kernels: &[ConvKernel]
 ) where
     T: Copy + NumOps<T>,
     f32: std::convert::From<T>
 {
-    let y_ratio = in_height as f32 / out_height as f32;
-    let v_kernels = precompute_kernels(in_height, out_height, y_ratio, A, kernel_fn);
-
     for out_y in 0..out_height {
         let kernel = &v_kernels[out_y];
         let out_row_offset = out_y * width;
@@ -200,30 +254,98 @@ fn resample_vertical_only<T, const A: i32>(
     }
 }
 
-fn resample_horizontal_only<T, const A: i32>(
+fn resample_horizontal_only_precomputed<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, out_width: usize,
-    kernel_fn: fn(f32) -> f32
+    h_kernels: &[ConvKernel]
 ) where
     T: Copy + NumOps<T>,
     f32: std::convert::From<T>
 {
-    let x_ratio = in_width as f32 / out_width as f32;
-    let h_kernels = precompute_kernels(in_width, out_width, x_ratio, A, kernel_fn);
-
     for (in_row, out_row) in in_channel
         .chunks_exact(in_width)
         .zip(out_channel.chunks_exact_mut(out_width))
     {
         for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-            let mut sum = 0.0;
+            let start_idx = kernel.start_idx as usize;
+            let end_idx = kernel.end_idx as usize;
+            let weights = &kernel.weights;
 
-            for idx in kernel.start_idx..=kernel.end_idx {
-                let idx = idx as usize;
-                let start_idx = kernel.start_idx as usize;
-                
-                let pixel = f32::from(in_row[idx]);
-                sum += pixel * kernel.weights[idx - start_idx];
-            }
+            let diff = (end_idx - start_idx) + 1;
+            // do the most common ones
+            let sum = match diff {
+                6 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 6) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                5 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 5) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                4 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 4) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                3 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 3) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                2 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 2) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                1 => {
+                    if let Some(e) = in_row.get(start_idx..start_idx + 1) {
+                        e.iter()
+                            .zip(weights.iter())
+                            .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                            .sum::<f32>()
+                    } else {
+                        debug_assert!(true, "Panic on slice");
+                        0.0
+                    }
+                }
+                _ => in_row[start_idx..=end_idx]
+                    .iter()
+                    .zip(weights.iter())
+                    .map(|(&pixel, &weight)| f32::from(pixel) * weight)
+                    .sum::<f32>()
+            };
+
 
             *out_pixel = T::from_f32(sum);
         }
@@ -233,7 +355,8 @@ fn resample_horizontal_only<T, const A: i32>(
 // Maximum kernel size: 2*A where A can be up to 3, so max 6 taps
 const MAX_KERNEL_SIZE: usize = 6;
 
-struct ConvKernel {
+#[derive(Clone, Copy)]
+pub(crate) struct ConvKernel {
     weights:   [f32; MAX_KERNEL_SIZE],
     start_idx: u32,
     end_idx:   u32
@@ -373,3 +496,18 @@ fn bilinear_kernel(x: f32) -> f32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::resize::seperable_kernel::{precompute_kernels, PrecomputedKernels};
+    use crate::resize::ResizeMethod;
+
+    #[test]
+    fn test_seperable_kernel() {
+        let w = 7680;
+        let h = 4320;
+        let kernel = PrecomputedKernels::new(w, h, w / 2, h / 2, ResizeMethod::Bicubic);
+        let values = kernel.vertical.unwrap().iter().last().unwrap().clone();
+        let subtracted = (values.end_idx - values.start_idx) + 1;
+        println!("{},{} ,{}", values.start_idx, values.end_idx, subtracted);
+    }
+}

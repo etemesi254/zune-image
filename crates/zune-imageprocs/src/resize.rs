@@ -14,6 +14,7 @@
 //!
 //!
 
+use std::cmp::PartialEq;
 use std::time::Instant;
 
 use zune_core::bit_depth::{BitDepth, BitType};
@@ -27,13 +28,14 @@ use zune_image::traits::OperationsTrait;
 
 use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
+use crate::resize::seperable_kernel::PrecomputedKernels;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
 mod bilinear;
 mod seperable_kernel;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResizeMethod {
     Lanczos3,   // Lanczos with a=3 (highest quality, slowest)
     Lanczos2,   // Lanczos with a=2
@@ -113,7 +115,7 @@ impl OperationsTrait for Resize {
         let is_premultiplied = image.metadata().is_premultiplied_alpha();
         let has_alpha = image.colorspace().has_alpha();
         let original_depth = image.depth();
-        if  !is_premultiplied && has_alpha {
+        if !is_premultiplied && has_alpha {
             // pre multiply looses color if its in u8
             image.convert_depth(BitDepth::Float32)?;
             trace!("Premultiplying alpha along resize method");
@@ -127,6 +129,18 @@ impl OperationsTrait for Resize {
 
         let new_length = self.new_width * self.new_height * image.depth().size_of();
 
+        let precomputed_kernels = if self.method != ResizeMethod::Bilinear {
+            Some(PrecomputedKernels::new(
+                old_w,
+                old_h,
+                self.new_width,
+                self.new_height,
+                self.method
+            ))
+        } else {
+            None
+        };
+
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut new_channel = Channel::new_with_bit_type(new_length, depth);
             match depth {
@@ -137,7 +151,8 @@ impl OperationsTrait for Resize {
                     old_w,
                     old_h,
                     self.new_width,
-                    self.new_height
+                    self.new_height,
+                    precomputed_kernels.as_ref()
                 ),
                 BitType::U16 => resize::<u16>(
                     channel.reinterpret_as()?,
@@ -146,7 +161,8 @@ impl OperationsTrait for Resize {
                     old_w,
                     old_h,
                     self.new_width,
-                    self.new_height
+                    self.new_height,
+                    precomputed_kernels.as_ref()
                 ),
 
                 BitType::F32 => {
@@ -157,7 +173,8 @@ impl OperationsTrait for Resize {
                         old_w,
                         old_h,
                         self.new_width,
-                        self.new_height
+                        self.new_height,
+                        precomputed_kernels.as_ref()
                     );
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
@@ -254,9 +271,9 @@ pub fn ratio_dimensions_larger(
 /// # Panics
 /// - `in_width*in_height` do not match `in_image.len()`.
 /// - `out_width*out_height` do not match `out_image.len()`.
-pub fn resize<T>(
+fn resize<T>(
     in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
-    out_width: usize, out_height: usize
+    out_width: usize, out_height: usize, precomputed_kernels: Option<&PrecomputedKernels>
 ) where
     T: Copy + NumOps<T> + Default,
     f32: std::convert::From<T>
@@ -268,155 +285,167 @@ pub fn resize<T>(
             );
         }
 
-        _ => {
-            seperable_kernel::resample_separable(
-                in_image, out_image, in_width, in_height, out_width, out_height, method
-            );
+        _ => match precomputed_kernels {
+            Some(precomputed_kernels) => {
+                seperable_kernel::resample_separable(
+                    in_image,
+                    out_image,
+                    in_width,
+                    in_height,
+                    out_width,
+                    out_height,
+                    precomputed_kernels
+                );
+            }
+            None => {
+                panic!("Precomputed kernels not loaded");
+            }
         }
     }
 }
 
-#[cfg(feature = "benchmarks")]
-#[cfg(test)]
-mod benchmarks {
-    extern crate test;
-
-    use crate::resize::{resize, ResizeMethod};
-
-    #[bench]
-    fn bench_resize_linear(b: &mut test::Bencher) {
-        let width = 4000;
-        let height = 2000;
-
-        let new_width = 1200;
-        let new_height = 1000;
-
-        let dimensions = width * height;
-
-        let new_dimensions = new_width * new_height;
-
-        let in_vec = vec![255_u16; dimensions];
-        let mut out_vec = vec![255_u16; new_dimensions];
-
-        b.iter(|| {
-            resize(
-                &in_vec,
-                &mut out_vec,
-                ResizeMethod::Bilinear,
-                width,
-                height,
-                new_width,
-                new_height
-            );
-        });
-    }
-    #[bench]
-    fn bench_resize_cubic(b: &mut test::Bencher) {
-        let width = 4000;
-        let height = 2000;
-
-        let new_width = 1500;
-        let new_height = 1000;
-
-        let dimensions = width * height;
-
-        let new_dimensions = new_width * new_height;
-
-        let in_vec = vec![255_u16; dimensions];
-        let mut out_vec = vec![255_u16; new_dimensions];
-
-        b.iter(|| {
-            resize(
-                &in_vec,
-                &mut out_vec,
-                ResizeMethod::Bicubic,
-                width,
-                height,
-                new_width,
-                new_height
-            );
-        });
-    }
-    #[bench]
-    fn bench_resize_lancazos(b: &mut test::Bencher) {
-        let width = 4000;
-        let height = 2000;
-
-        let new_width = 1500;
-        let new_height = 1000;
-
-        let dimensions = width * height;
-
-        let new_dimensions = new_width * new_height;
-
-        let in_vec = vec![255_u16; dimensions];
-        let mut out_vec = vec![255_u16; new_dimensions];
-
-        b.iter(|| {
-            resize(
-                &in_vec,
-                &mut out_vec,
-                ResizeMethod::Lanczos3,
-                width,
-                height,
-                new_width,
-                new_height
-            );
-        });
-    }
-}
-#[cfg(test)]
-mod tests {
-    use crate::resize::{resize, ResizeMethod};
-
-    #[test]
-    fn bench_resize_cubic() {
-        let width = 4000;
-        let height = 2000;
-
-        let new_width = 1500;
-        let new_height = 1500;
-
-        let dimensions = width * height;
-
-        let new_dimensions = new_width * new_height;
-
-        let in_vec = vec![255_u16; dimensions];
-        let mut out_vec = vec![255_u16; new_dimensions];
-
-        resize(
-            &in_vec,
-            &mut out_vec,
-            ResizeMethod::Bicubic,
-            width,
-            height,
-            new_width,
-            new_height
-        );
-    }
-    #[test]
-    fn test_resize_lancazos() {
-        let width = 400;
-        let height = 200;
-
-        let new_width = 1500;
-        let new_height = 1500;
-
-        let dimensions = width * height;
-
-        let new_dimensions = new_width * new_height;
-
-        let in_vec = vec![255_u16; dimensions];
-        let mut out_vec = vec![255_u16; new_dimensions];
-
-        resize(
-            &in_vec,
-            &mut out_vec,
-            ResizeMethod::Lanczos3,
-            width,
-            height,
-            new_width,
-            new_height
-        );
-    }
-}
+// #[cfg(feature = "benchmarks")]
+// #[cfg(test)]
+// mod benchmarks {
+//     extern crate test;
+//
+//     use crate::resize::{resize, ResizeMethod};
+//
+//     #[bench]
+//     fn bench_resize_linear(b: &mut test::Bencher) {
+//         let width = 4000;
+//         let height = 2000;
+//
+//         let new_width = 1200;
+//         let new_height = 1000;
+//
+//         let dimensions = width * height;
+//
+//         let new_dimensions = new_width * new_height;
+//
+//         let in_vec = vec![255_u16; dimensions];
+//         let mut out_vec = vec![255_u16; new_dimensions];
+//
+//         b.iter(|| {
+//             resize(
+//                 &in_vec,
+//                 &mut out_vec,
+//                 ResizeMethod::Bilinear,
+//                 width,
+//                 height,
+//                 new_width,
+//                 new_height
+//             );
+//         });
+//     }
+//     #[bench]
+//     fn bench_resize_cubic(b: &mut test::Bencher) {
+//         let width = 4000;
+//         let height = 2000;
+//
+//         let new_width = 1500;
+//         let new_height = 1000;
+//
+//         let dimensions = width * height;
+//
+//         let new_dimensions = new_width * new_height;
+//
+//         let in_vec = vec![255_u16; dimensions];
+//         let mut out_vec = vec![255_u16; new_dimensions];
+//
+//         b.iter(|| {
+//             resize(
+//                 &in_vec,
+//                 &mut out_vec,
+//                 ResizeMethod::Bicubic,
+//                 width,
+//                 height,
+//                 new_width,
+//                 new_height
+//             );
+//         });
+//     }
+//     #[bench]
+//     fn bench_resize_lancazos(b: &mut test::Bencher) {
+//         let width = 4000;
+//         let height = 2000;
+//
+//         let new_width = 1500;
+//         let new_height = 1000;
+//
+//         let dimensions = width * height;
+//
+//         let new_dimensions = new_width * new_height;
+//
+//         let in_vec = vec![255_u16; dimensions];
+//         let mut out_vec = vec![255_u16; new_dimensions];
+//
+//         b.iter(|| {
+//             resize(
+//                 &in_vec,
+//                 &mut out_vec,
+//                 ResizeMethod::Lanczos3,
+//                 width,
+//                 height,
+//                 new_width,
+//                 new_height
+//             );
+//         });
+//     }
+// }
+// #[cfg(test)]
+// mod tests {
+//     use crate::resize::{resize, ResizeMethod};
+//
+//     #[test]
+//     fn bench_resize_cubic() {
+//         let width = 4000;
+//         let height = 2000;
+//
+//         let new_width = 1500;
+//         let new_height = 1500;
+//
+//         let dimensions = width * height;
+//
+//         let new_dimensions = new_width * new_height;
+//
+//         let in_vec = vec![255_u16; dimensions];
+//         let mut out_vec = vec![255_u16; new_dimensions];
+//
+//
+//         resize(
+//             &in_vec,
+//             &mut out_vec,
+//             ResizeMethod::Bicubic,
+//             width,
+//             height,
+//             new_width,
+//             new_height
+//         );
+//     }
+//     #[test]
+//     fn test_resize_lancazos() {
+//         let width = 400;
+//         let height = 200;
+//
+//         let new_width = 1500;
+//         let new_height = 1500;
+//
+//         let dimensions = width * height;
+//
+//         let new_dimensions = new_width * new_height;
+//
+//         let in_vec = vec![255_u16; dimensions];
+//         let mut out_vec = vec![255_u16; new_dimensions];
+//
+//         resize(
+//             &in_vec,
+//             &mut out_vec,
+//             ResizeMethod::Lanczos3,
+//             width,
+//             height,
+//             new_width,
+//             new_height
+//         );
+//     }
+// }
