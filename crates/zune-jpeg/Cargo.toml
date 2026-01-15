@@ -29,7 +29,7 @@ default = ["x86", "neon", "std"]
 
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "^0.5" }
+zune-core = { path = "../zune-core", version = "0.5.1" }
 
 
 [dev-dependencies]
