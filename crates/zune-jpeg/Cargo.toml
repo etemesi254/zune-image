@@ -1,7 +1,7 @@
 [package]
 name = "zune-jpeg"
-version = "0.5.8"
-rust-version = "1.87.0"
+version = "0.5.9"
+rust-version = "1.75.0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg"
@@ -22,6 +22,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 x86 = []
 neon = []
 std = ["zune-core/std"]
+# NOTE: portable_simd requires Rust 1.87+
 portable_simd = []
 log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
