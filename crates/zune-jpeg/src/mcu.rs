@@ -447,7 +447,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // coefficient data which was written into `tmp`.
         let mut clobber_more_than_4x4 = true;
 
-        for j in 0..mcu_width {
+        // For non-interleaved scans (PROGRESSIVE=true), each scan contains a single component
+        // and we iterate over that component's actual data unit count, not the interleaved MCU
+        // width multiplied by sampling factor.
+        let scan_du_width = if PROGRESSIVE {
+            let k = z_scans[0];
+            let comp = &self.components[k];
+            // Calculate actual data units for this component: ceil(width / (8 * subsampling_ratio))
+            (self.info.width as usize * comp.horizontal_sample + self.h_max * 8 - 1)
+                / (self.h_max * 8)
+        } else {
+            mcu_width
+        };
+
+        for j in 0..scan_du_width {
             // iterate over components
             for &k in z_scans {
                 // we made this loop body massive due to several different paths that depend on
@@ -482,10 +495,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 //
                 // Turn the bounds into a compile time constant for a common special case. This
                 // allows the compiler to unroll the loop and then do a bunch of interleaving.
-                let v_step = if SAMPLED { 0..component.vertical_sample } else { 0..1 };
+                //
+                // For PROGRESSIVE (non-interleaved), we iterate data units directly so
+                // h_samp/v_samp loops run exactly once.
+                let v_step =
+                    if SAMPLED && !PROGRESSIVE { 0..component.vertical_sample } else { 0..1 };
 
                 for v_samp in v_step {
-                    let h_step = if SAMPLED { 0..component.horizontal_sample } else { 0..1 };
+                    let h_step =
+                        if SAMPLED && !PROGRESSIVE { 0..component.horizontal_sample } else { 0..1 };
 
                     for h_samp in h_step {
                         let result = if component_samples_needed {
@@ -537,7 +555,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // tmp was only written partially, note that len is in ZigZag order.
                             clobber_more_than_4x4 = len > 10;
 
-                            let idct_position = {
+                            let idct_position = if PROGRESSIVE {
+                                // For non-interleaved, j indexes data units directly
+                                j * 8
+                            } else {
                                 // derived from stb and rewritten for my tastes
                                 let c2 = v_samp * 8;
                                 let c3 = ((j * component.horizontal_sample) + h_samp) * 8;
