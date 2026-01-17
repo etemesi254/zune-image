@@ -138,3 +138,27 @@ fn decode_sos_news_non_interleaved() {
     assert!(info.height > 0);
     assert_eq!(pixels.len(), info.width as usize * info.height as usize * 3);
 }
+
+/// Test decoding a 4:2:2 non-interleaved JPEG with non-MCU-aligned width (65x65).
+#[test]
+fn decode_non_interleaved_422_65x65() {
+    let test_data = include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg");
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    let pixels = decoder.decode().expect("Failed to decode 4:2:2 non-interleaved JPEG");
+
+    let info = decoder.info().expect("Failed to get image info");
+    assert_eq!(info.width, 65);
+    assert_eq!(info.height, 65);
+    assert_eq!(pixels.len(), 65 * 65 * 3);
+
+    // Test image has pattern R=x*3, G=y*3, B=(x+y)*2. Check center pixel (32,32)
+    // is approximately (96,96,128) and has not been shifted.
+    let idx = (32 * 65 + 32) * 3;
+    let (r, g, b) = (pixels[idx] as i16, pixels[idx + 1] as i16, pixels[idx + 2] as i16);
+    assert!(
+        (r - 96).abs() <= 20 && (g - 96).abs() <= 20 && (b - 128).abs() <= 20,
+        "Center pixel wrong: expected ~(96,96,128), got ({},{},{})",
+        r, g, b
+    );
+}
