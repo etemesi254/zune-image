@@ -494,10 +494,11 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         length = length.saturating_sub(14);
     } else {
         warn!("Not a valid Adobe APP14 Segment, skipping {} bytes", length);
+        length = length.saturating_sub(2);
     }
     // skip any proceeding lengths.
     // we do not need them
-    decoder.stream.skip(length.saturating_sub(2))?;
+    decoder.stream.skip(length)?;
 
     Ok(())
 }
