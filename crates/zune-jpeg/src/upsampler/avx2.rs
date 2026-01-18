@@ -13,7 +13,7 @@ use core::arch::x86_64::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-pub fn upsample_horizontal_avx2(
+pub unsafe fn upsample_horizontal_avx2(
     input: &[i16],
     in_near: &[i16],
     in_far: &[i16],
@@ -90,7 +90,7 @@ pub fn upsample_horizontal_avx2(
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-pub fn upsample_vertical_avx2(
+pub unsafe fn upsample_vertical_avx2(
     input: &[i16],
     in_near: &[i16],
     in_far: &[i16],
@@ -173,7 +173,7 @@ pub fn upsample_vertical_avx2(
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-pub fn upsample_hv_avx2(
+pub unsafe fn upsample_hv_avx2(
     input: &[i16],
     in_near: &[i16],
     in_far: &[i16],
