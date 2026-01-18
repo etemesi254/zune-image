@@ -497,7 +497,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     }
     // skip any proceeding lengths.
     // we do not need them
-    decoder.stream.skip(length - 2)?;
+    decoder.stream.skip(length.saturating_sub(2))?;
 
     Ok(())
 }
