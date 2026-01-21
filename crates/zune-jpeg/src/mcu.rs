@@ -110,8 +110,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if self.is_interleaved
             && self.input_colorspace.num_components() > 1
             && self.options.jpeg_get_out_colorspace().num_components() == 1
-            && (self.sub_sample_ratio == SampleRatios::V
-                || self.sub_sample_ratio == SampleRatios::HV)
+            && (self.info.sample_ratio == SampleRatios::V
+                || self.info.sample_ratio == SampleRatios::HV)
         {
             // For a specific set of images, e.g interleaved,
             // when converting from YcbCr to grayscale, we need to
@@ -136,7 +136,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
         let width = usize::from(self.info.width);
 
-        let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
+        let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
         let mut stream = BitStream::new();
         let mut tmp = [0_i32; DCT_BLOCK];
@@ -333,7 +333,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let is_hv = usize::from(self.is_interleaved);
         let upsampler_scratch_size = is_hv * self.components[0].width_stride;
         let width = usize::from(self.info.width);
-        let padded_width = calculate_padded_width(width, self.sub_sample_ratio);
+        let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
@@ -914,7 +914,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 .enumerate()
                 .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
 
-            if let SampleRatios::Generic(_, v) = self.sub_sample_ratio {
+            if let SampleRatios::Generic(_, v) = self.info.sample_ratio {
                 color_conv_function(8 * v * self.coeff, channels_ref)?;
             } else {
                 color_conv_function(8 * self.coeff, channels_ref)?;

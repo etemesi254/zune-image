@@ -18,7 +18,9 @@ use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, trace, warn};
 
-use crate::components::Components;
+use core::cmp::max;
+
+use crate::components::{Components, SampleRatios};
 use crate::decoder::{GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
@@ -276,6 +278,22 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     img.info.set_sof_marker(sof);
 
     img.components = components;
+
+    let mut h_max = 1;
+    let mut v_max = 1;
+
+    for comp in &img.components {
+        h_max = max(h_max, comp.horizontal_sample);
+        v_max = max(v_max, comp.vertical_sample);
+    }
+
+    img.info.sample_ratio = match (h_max, v_max) {
+        (1, 1) => SampleRatios::None,
+        (1, 2) => SampleRatios::V,
+        (2, 1) => SampleRatios::H,
+        (2, 2) => SampleRatios::HV,
+        (hs, vs) => SampleRatios::Generic(hs, vs)
+    };
 
     Ok(())
 }
