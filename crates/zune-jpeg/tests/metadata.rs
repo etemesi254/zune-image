@@ -18,3 +18,39 @@ fn iptc_metadata() {
     decoder.decode_headers().unwrap();
     assert_eq!(decoder.iptc(), Some(&EXPECTED_DATA.to_vec()))
 }
+
+#[test]
+fn test_sample_ratios() {
+    use zune_jpeg::SampleRatios;
+
+    let images = [
+        (
+            include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg").as_slice(),
+            SampleRatios::None,
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg").as_slice(),
+            SampleRatios::HV,
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg").as_slice(),
+            SampleRatios::H,
+        ),
+        (
+            include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg").as_slice(),
+            SampleRatios::V,
+        ),
+    ];
+
+    for (data, expected) in images {
+        let mut decoder = JpegDecoder::new(Cursor::new(data));
+        decoder.decode_headers().unwrap();
+
+        let info = decoder.info().unwrap();
+        assert_eq!(
+            info.sample_ratio, expected,
+            "Expected sample ratio {:?} for image",
+            expected
+        );
+    }
+}

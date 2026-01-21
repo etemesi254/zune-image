@@ -106,7 +106,6 @@ pub struct JpegDecoder<T> {
     pub(crate) mcu_y:             usize,
     /// Is the image interleaved?
     pub(crate) is_interleaved:    bool,
-    pub(crate) sub_sample_ratio:  SampleRatios,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
     pub(crate) input_colorspace:  ColorSpace,
@@ -179,7 +178,6 @@ where
             mcu_x:             0,
             mcu_y:             0,
             is_interleaved:    false,
-            sub_sample_ratio:  SampleRatios::None,
             is_progressive:    false,
             spec_start:        0,
             spec_end:          0,
@@ -835,26 +833,6 @@ where
         if self.h_max == self.v_max && self.h_max == 1 {
             return Ok(());
         }
-        match (self.h_max, self.v_max) {
-            (1, 1) => {
-                self.sub_sample_ratio = SampleRatios::None;
-            }
-            (1, 2) => {
-                self.sub_sample_ratio = SampleRatios::V;
-            }
-            (2, 1) => {
-                self.sub_sample_ratio = SampleRatios::H;
-            }
-            (2, 2) => {
-                self.sub_sample_ratio = SampleRatios::HV;
-            }
-            (hs, vs) => {
-                self.sub_sample_ratio = SampleRatios::Generic(hs, vs)
-                // return Err(DecodeErrors::Format(format!(
-                //     "Unknown down-sampling method ({hs},{vs}), cannot continue")
-                // ))
-            }
-        }
 
         for comp in &mut self.components {
             let hs = self.h_max / comp.horizontal_sample;
@@ -953,7 +931,9 @@ pub struct ImageInfo {
     /// XMP Data
     pub xmp_data: Option<Vec<u8>>,
     /// IPTC Data
-    pub iptc_data: Option<Vec<u8>>
+    pub iptc_data: Option<Vec<u8>>,
+    /// Image sub-sampling ratio
+    pub sample_ratio: SampleRatios
 }
 
 impl ImageInfo {
