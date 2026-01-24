@@ -249,20 +249,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             let (mcu_width, mcu_height);
 
-            if self.components[k].vertical_sample != 1
-                || self.components[k].horizontal_sample != 1
-                || !self.is_interleaved
-            {
-                // For non interleaved scans
-                // mcu's is the image dimensions divided by 8
-                mcu_width = self.info.width.div_ceil(8) as usize;
-                mcu_height = self.info.height.div_ceil(8) as usize;
-            } else {
-                // For other channels, in an interleaved mcu, number of MCU's
-                // are determined by some weird maths done in headers.rs->parse_sos()
-                mcu_width = self.mcu_x;
-                mcu_height = self.mcu_y;
-            }
+            // For non-interleaved scans, iterate over the component's actual data-unit grid.
+            let component = &self.components[k];
+            mcu_width = (self.info.width as usize * component.horizontal_sample + self.h_max * 8
+                - 1)
+                / (self.h_max * 8);
+            mcu_height = (self.info.height as usize * component.vertical_sample + self.v_max * 8
+                - 1)
+                / (self.v_max * 8);
 
             for i in 0..mcu_height {
                 for j in 0..mcu_width {
