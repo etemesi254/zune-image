@@ -87,6 +87,7 @@ impl OperationsTrait for Resize {
     }
 
     #[allow(clippy::too_many_lines)]
+    #[allow(unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // For any resize always convert gamma to linear.
         // But check if that is the current image format

@@ -45,7 +45,8 @@
     clippy::module_name_repetitions,
     clippy::missing_panics_doc,
     clippy::missing_errors_doc,
-    clippy::wildcard_imports
+    clippy::wildcard_imports,
+    unexpected_cfgs
 )]
 
 pub use zune_image;
