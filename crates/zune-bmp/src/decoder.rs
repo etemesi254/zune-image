@@ -282,6 +282,7 @@ where
     /// # Returns
     /// - Ok(()) Indicates everything was okay during header parsing
     /// - Err: Error that occurred when decoding headers
+    #[allow(unused_assignments,unused_variables)]
     pub fn decode_headers(&mut self) -> Result<(), BmpDecoderErrors> {
         if self.decoded_headers {
             return Ok(());
