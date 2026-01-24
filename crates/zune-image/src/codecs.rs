@@ -117,7 +117,8 @@ impl ImageFormat {
                 return true;
             }
         }
-        #[cfg(feature = "webp")]{
+        #[cfg(feature = "webp")]
+        {
             if self == ImageFormat::WEBP {
                 return true;
             }
@@ -279,6 +280,7 @@ impl ImageFormat {
             ImageFormat::QOI => cfg!(feature = "qoi"),
             ImageFormat::JPEG_XL => cfg!(feature = "jpeg-xl"),
             ImageFormat::HDR => cfg!(feature = "hdr"),
+            ImageFormat::WEBP => cfg!(feature = "webp"),
             _ => false
         }
     }
@@ -337,6 +339,13 @@ impl ImageFormat {
                     return encoder.encode(image, sink);
                 }
             }
+            ImageFormat::WEBP => {
+                #[cfg(feature = "webp")]
+                {
+                    let mut encoder = codecs::webp::ZuneWebpImageEncoder::new();
+                    return encoder.encode(image, sink);
+                }
+            }
             _ => {}
         }
         Err(ImageErrors::EncodeErrors(
@@ -351,79 +360,72 @@ impl ImageFormat {
         guess_format(bytes)
     }
 
+    #[allow(unreachable_code)]
     pub fn encoder_for_extension<P: AsRef<str>>(extension: P) -> Option<ImageFormat> {
         match extension.as_ref() {
             "qoi" => {
                 #[cfg(feature = "qoi")]
                 {
-                    Some(ImageFormat::QOI)
+                   return Some(ImageFormat::QOI)
                 }
-                #[cfg(not(feature = "qoi"))]
-                {
-                    None
-                }
+                return None
             }
             "ppm" | "pam" | "pgm" | "pbm" | "pfm" => {
                 #[cfg(feature = "ppm")]
                 {
-                    Some(ImageFormat::PPM)
+                  return  Some(ImageFormat::PPM)
                 }
-                #[cfg(not(feature = "ppm"))]
-                {
-                    None
-                }
+                return None
             }
             "jpeg" | "jpg" => {
                 #[cfg(feature = "jpeg")]
                 {
-                    Some(ImageFormat::JPEG)
+                 return  Some(ImageFormat::JPEG)
                 }
-                #[cfg(not(feature = "jpeg"))]
-                {
-                    None
-                }
+                return None
+
             }
             "jxl" => {
                 #[cfg(feature = "jpeg-xl")]
                 {
-                    Some(ImageFormat::JPEG_XL)
+                   return Some(ImageFormat::JPEG_XL)
                 }
-                #[cfg(not(feature = "jpeg-xl"))]
-                {
-                    None
-                }
+                return None
+
             }
             "ff" => {
                 #[cfg(feature = "farbfeld")]
                 {
-                    Some(ImageFormat::Farbfeld)
+                    return Some(ImageFormat::Farbfeld)
                 }
-                #[cfg(not(feature = "farbfeld"))]
-                {
-                    None
-                }
+                return None
+
             }
             "hdr" => {
                 #[cfg(feature = "hdr")]
                 {
-                    Some(ImageFormat::HDR)
+                   return Some(ImageFormat::HDR)
                 }
-                #[cfg(not(feature = "hdr"))]
-                {
-                    None
-                }
+                return None
+
             }
             "png" => {
                 #[cfg(feature = "png")]
                 {
-                    Some(ImageFormat::PNG)
+                  return  Some(ImageFormat::PNG)
                 }
-                #[cfg(not(feature = "png"))]
-                {
-                    None
-                }
+                return None
+
             }
-            _ => None
+            "webp" => {
+                #[cfg(feature = "webp")]
+                {
+                  return  Some(ImageFormat::WEBP)
+                }
+                return None
+
+            }
+            _ => return None
         }
     }
 }
