@@ -7,7 +7,7 @@ use jxl_oxide::color::WhitePoint::E;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::warn;
+use zune_core::log::{trace, warn};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
@@ -97,6 +97,7 @@ impl EncoderTrait for ZuneWebpImageEncoder {
     fn encode_inner<T: ZByteWriterTrait>(
         &mut self, image: &Image, mut sink: T
     ) -> Result<usize, ImageErrors> {
+        trace!("Starting webp encoder");
         // First make options
         let options = create_options_for_encoder(None, image);
         let data = &image.to_u8()[0];
@@ -110,6 +111,7 @@ impl EncoderTrait for ZuneWebpImageEncoder {
 
             let mut inner_buff = std::io::Cursor::new(Vec::with_capacity(300));
             if !options.strip_metadata() {
+                trace!("Writing exif data");
                 if let Some(fields) = &image.metadata.exif {
                     let mut writer = Writer::new();
 
