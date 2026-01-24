@@ -22,7 +22,7 @@ portable-simd = []
 default = ["sse", "std"]
 
 [dependencies]
-zune-core = { path = "../zune-core", version = "^0.5" }
+zune-core = { path = "../zune-core", version = "^0.5.1" }
 zune-inflate = { path = "../zune-inflate", version = "^0.2", default-features = false, features = ["zlib"] }
 
 [dev-dependencies]

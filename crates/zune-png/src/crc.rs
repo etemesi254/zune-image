@@ -57,7 +57,7 @@ fn test_crc_same() {
 
     use nanorand::Rng;
 
-    let mut rng = nanorand::WyRand::new();
+    let mut rng = nanorand::WyRand::new_seed(8966548);
 
     let mut data = vec![0_u8; 1000];
     rng.fill(&mut data);

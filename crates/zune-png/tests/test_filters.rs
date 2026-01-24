@@ -7,6 +7,7 @@
  */
 
 use std::fs::read;
+use std::io::Cursor;
 use std::path::Path;
 
 use zune_core::bytestream::ZCursor;
@@ -16,11 +17,11 @@ fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
 }
 
 fn decode_ref(data: &[u8]) -> Vec<u8> {
-    let decoder = png::Decoder::new(data);
+    let decoder = png::Decoder::new(Cursor::new(data));
     let mut reader = decoder.read_info().unwrap();
 
     // Allocate the output buffer.
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
     // Read the next frame. An APNG might contain multiple frames.
     let _ = reader.next_frame(&mut buf).unwrap();
 
