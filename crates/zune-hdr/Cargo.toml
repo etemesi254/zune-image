@@ -1,6 +1,6 @@
 [package]
 name = "zune-hdr"
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.77.0"
 edition = "2021"
 description = "Radiance/HDR image decoder and encoder"
@@ -15,4 +15,4 @@ license = "MIT OR Apache-2.0 OR Zlib"
 log = ["zune-core/log"]
 
 [dependencies]
-zune-core = { version = "^0.5", path = "../zune-core", default-features = false, features = ["std"] }
+zune-core = { version = "^0.5.1", path = "../zune-core", default-features = false, features = ["std"] }

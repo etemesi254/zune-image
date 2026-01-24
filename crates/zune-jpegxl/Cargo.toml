@@ -1,6 +1,6 @@
 [package]
 name = "zune-jpegxl"
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.80.0"
 authors = ["caleb <etemesicaleb@gmail.com>"]
 edition = "2021"
@@ -15,7 +15,7 @@ description = "A simple, fast and fully safe modular jxl encoder"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-zune-core = { version = "^0.5", path = "../zune-core" }
+zune-core = { version = "^0.5.1", path = "../zune-core" }
 
 [features]
 threads = []

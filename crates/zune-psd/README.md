@@ -15,7 +15,7 @@ cargo add zune-psd
 or include it directory in your `Cargo.toml`
 ```toml
 [dependencies]
-zune-psd="0.4"
+zune-psd="0.5"
 ```
 Then use either one of the `decode_` variants to get pixel data
 `decode_raw` will always return `Vec<u8>` while `decode` distinguishes return type via image

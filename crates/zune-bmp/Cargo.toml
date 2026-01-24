@@ -1,6 +1,6 @@
 [package]
 name = "zune-bmp"
-version = "0.5.1"
+version = "0.5.2"
 rust-version = "1.87.0"
 edition = "2021"
 authors = ["caleb <etemesicaleb@gmail.com>"]
@@ -20,5 +20,5 @@ std = ["zune-core/std"]
 rgb_inverse = []
 
 [dependencies]
-zune-core = { version = "^0.5", path = "../zune-core" }
+zune-core = { version = "^0.5.1", path = "../zune-core" }
 log = "0.4"
