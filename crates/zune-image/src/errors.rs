@@ -12,6 +12,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::Error;
 
 use zune_core::bit_depth::BitType;
+use zune_core::bytestream::ZByteIoError;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::ChannelErrors;
@@ -197,6 +198,11 @@ impl From<&'static str> for ImageErrors {
 impl From<ChannelErrors> for ImageErrors {
     fn from(value: ChannelErrors) -> Self {
         ImageErrors::ChannelErrors(value)
+    }
+}
+impl From<ZByteIoError> for ImageErrors {
+    fn from(value: ZByteIoError) -> Self {
+        Self::GenericString(format!("{:?}", value))
     }
 }
 
