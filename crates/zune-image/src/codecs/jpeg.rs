@@ -190,7 +190,7 @@ impl EncoderTrait for JpegEncoder {
                     let result = writer.write(&mut buf, false);
                     if result.is_ok() {
                         // add the exif tag to APP1 segment
-                        encoder.add_app_segment(1, buf.get_ref())?;
+                        encoder.add_app_segment(1, buf.into_inner())?;
                     } else {
                         warn!("Writing exif failed {:?}", result);
                     }
