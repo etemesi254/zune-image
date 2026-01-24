@@ -177,7 +177,7 @@ impl OperationsTrait for AffineTransform {
                     new_h,
                     self
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d))
             }
             *channel = new_channel;
             Ok(())
