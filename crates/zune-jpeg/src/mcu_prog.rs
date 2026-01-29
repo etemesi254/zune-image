@@ -246,17 +246,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     "Cannot find component {k}, corrupt image"
                 )));
             }
-
-            let (mcu_width, mcu_height);
-
             // For non-interleaved scans, iterate over the component's actual data-unit grid.
             let component = &self.components[k];
-            mcu_width = (self.info.width as usize * component.horizontal_sample + self.h_max * 8
-                - 1)
-                / (self.h_max * 8);
-            mcu_height = (self.info.height as usize * component.vertical_sample + self.v_max * 8
-                - 1)
-                / (self.v_max * 8);
+
+            let mcu_width = (self.info.width as usize * component.horizontal_sample).div_ceil(self.h_max * 8);
+            let mcu_height = (self.info.height as usize * component.vertical_sample).div_ceil(self.v_max * 8);
 
             for i in 0..mcu_height {
                 for j in 0..mcu_width {
