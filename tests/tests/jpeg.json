@@ -121,5 +121,8 @@
     "name": "sos_news.jpeg",
     "hash": 109677255988131284084676849366241145140,
     "comment": "SOS interleaved with markers"
-  }
+  },
+  {"name": "synthetic_image.jpg",
+  "hash": 227404429493772307321352105035704751995,
+  "comment": "Tripped up MCU decoding, see https://github.com/etemesi254/zune-image/pull/346"}
 ]
