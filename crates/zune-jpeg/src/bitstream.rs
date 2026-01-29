@@ -684,7 +684,7 @@ impl BitStream {
                                 }
                             }
                             if self.get_bit() == 1 && (*coefficient & bit) == 0 {
-                                if *coefficient >= 0 {
+                                if *coefficient > 0 {
                                     *coefficient += bit;
                                 } else {
                                     *coefficient -= bit;
