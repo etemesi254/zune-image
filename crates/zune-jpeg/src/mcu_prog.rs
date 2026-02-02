@@ -332,6 +332,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     self.todo -= 1;
 
                     self.handle_rst_main(stream)?;
+                    if stream.seen_eoi {
+                        return Ok(());
+                    }
                 }
             }
         } else {
@@ -421,6 +424,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     self.todo -= 1;
                     // after every scan that's a mcu, count down restart markers.
                     self.handle_rst_main(stream)?;
+                    if stream.seen_eoi {
+                        return Ok(());
+                    }
                 }
             }
         }

@@ -187,8 +187,17 @@ impl BitStream {
         macro_rules! refill {
             ($buffer:expr,$byte:expr,$bits_left:expr) => {
                 // read a byte from the stream
-                $byte = u64::from(reader.read_u8());
-                self.overread_by += usize::from(reader.eof()?);
+                match reader.read_u8_err() {
+                    Ok(b) => {
+                        $byte = u64::from(b);
+                    }
+                    Err(_) => {
+                        // Premature EOF: mark EOI and pad with zero bits (libjpeg-style concealment).
+                        self.seen_eoi = true;
+                        self.marker = Some(Marker::EOI);
+                        $byte = 0;
+                    }
+                }
                 // append to the buffer
                 // JPEG is a MSB type buffer so that means we append this
                 // to the lower end (0..8) of the buffer and push the rest bits above..
