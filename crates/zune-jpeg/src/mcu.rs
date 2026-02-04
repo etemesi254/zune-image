@@ -450,7 +450,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // For non-interleaved scans (PROGRESSIVE=true), each scan contains a single component
         // and we iterate over that component's actual data unit count, not the interleaved MCU
         // width multiplied by sampling factor.
-        let scan_du_width = if PROGRESSIVE {
+        let mut scan_du_width = if PROGRESSIVE {
             let k = z_scans[0];
             let comp = &self.components[k];
             // Calculate actual data units for this component: ceil(width / (8 * subsampling_ratio))
@@ -459,6 +459,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         } else {
             mcu_width
         };
+        // In malformed scans that list multiple components, clamp to the smallest row capacity
+        // to avoid writing past the row buffer.
+        if PROGRESSIVE && z_scans.len() > 1 {
+            let min_du = z_scans
+                .iter()
+                .map(|&k| self.components[k].width_stride / 8)
+                .min()
+                .unwrap_or(0);
+            scan_du_width = scan_du_width.min(min_du);
+        }
 
         for j in 0..scan_du_width {
             // iterate over components
