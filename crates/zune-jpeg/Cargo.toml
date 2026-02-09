@@ -29,8 +29,10 @@ default = ["x86", "neon", "std"]
 
 
 [dependencies]
+bytemuck = "1.25.0"
 zune-core = { path = "../zune-core", version = "0.5.1" }
 
 
 [dev-dependencies]
 zune-ppm = { path = "../zune-ppm" }
+dicom = { version = "0.9.0", default-features = false}

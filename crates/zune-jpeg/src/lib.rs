@@ -185,6 +185,7 @@ mod idct;
 pub mod idct;
 mod marker;
 mod mcu;
+mod mcu_ext;
 mod mcu_prog;
 mod misc;
 mod unsafe_utils;

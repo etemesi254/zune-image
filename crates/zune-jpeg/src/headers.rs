@@ -193,13 +193,11 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     // so sorry about that 12 bit images
     let dt_precision = img.stream.read_u8_err()?;
 
-    if dt_precision != 8 {
-        return Err(DecodeErrors::SofError(format!(
-            "The library can only parse 8-bit images, the image has {dt_precision} bits of precision"
-        )));
-    }
-
     img.info.set_density(dt_precision);
+    if dt_precision != 8 {
+        img.is_extended = true;
+        debug!("Found extended image with precision {dt_precision} bits per sample");
+    }
 
     // read  and set the image height.
     let img_height = img.stream.get_u16_be_err()?;

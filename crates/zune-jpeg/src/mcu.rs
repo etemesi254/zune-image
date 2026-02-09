@@ -936,7 +936,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 }
 
-enum McuContinuation {
+pub(super) enum McuContinuation {
     Ok,
     AnotherSos,
     /// Found an inter-scan marker (DHT/DQT/DRI/COM/APP) that needs handling.
