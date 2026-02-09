@@ -404,7 +404,7 @@ checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
- "moxcms",
+ "moxcms 0.7.10",
  "num-traits",
  "zune-core 0.5.0",
  "zune-jpeg 0.5.6",
@@ -462,9 +462,9 @@ dependencies = [
 
 [[package]]
 name = "jpeg-encoder"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b454d911ac55068f53495488d8ccd0646eaa540c033a28ee15b07838afafb01f"
+checksum = "0b0b36cbb4e6704f12f5b5d7b01dac593982c6550859ebd5a66fb15c9ea27fd5"
 
 [[package]]
 name = "js-sys"
@@ -767,6 +767,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "moxcms"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04e5f643aebb3c117fa77e268557e3bf19e250769062820fcaf3ff33ea560adf"
+dependencies = [
+ "num-traits",
+ "pxfm",
+]
+
+[[package]]
 name = "mozjpeg"
 version = "0.10.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -802,6 +812,12 @@ name = "nanorand"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
+
+[[package]]
+name = "nanorand"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e3d189da485332e96ba8a5ef646a311871abd7915bf06ac848a9117f19cf6e4"
 
 [[package]]
 name = "nasm-rs"
@@ -891,19 +907,6 @@ name = "pkg-config"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
-
-[[package]]
-name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
 
 [[package]]
 name = "png"
@@ -1506,14 +1509,14 @@ dependencies = [
  "libdeflater",
  "libvips",
  "mozjpeg",
- "png 0.18.0",
+ "png",
  "rapid-qoi",
  "spng",
  "zune-hdr",
  "zune-image",
  "zune-imageprocs",
  "zune-inflate",
- "zune-jpeg 0.5.11",
+ "zune-jpeg 0.5.12",
  "zune-png",
  "zune-qoi",
 ]
@@ -1534,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "zune-bmp"
-version = "0.5.0-rc4"
+version = "0.5.2"
 dependencies = [
  "log",
  "zune-core 0.5.1",
@@ -1566,7 +1569,7 @@ dependencies = [
 
 [[package]]
 name = "zune-farbfeld"
-version = "0.5.0-rc0"
+version = "0.5.2"
 dependencies = [
  "zune-core 0.5.1",
 ]
@@ -1580,28 +1583,28 @@ dependencies = [
 
 [[package]]
 name = "zune-hdr"
-version = "0.5.0-rc0"
+version = "0.5.2"
 dependencies = [
  "zune-core 0.5.1",
 ]
 
 [[package]]
 name = "zune-image"
-version = "0.5.0-rc0"
+version = "0.5.0"
 dependencies = [
  "bytemuck",
  "image-webp",
  "jpeg-encoder",
  "jxl-oxide",
  "kamadak-exif",
- "nanorand",
+ "nanorand 0.7.0",
  "num-complex",
  "serde",
  "zune-bmp",
  "zune-core 0.5.1",
  "zune-farbfeld",
  "zune-hdr",
- "zune-jpeg 0.5.11",
+ "zune-jpeg 0.5.12",
  "zune-jpegxl",
  "zune-png",
  "zune-ppm",
@@ -1611,11 +1614,11 @@ dependencies = [
 
 [[package]]
 name = "zune-imageprocs"
-version = "0.5.0-rc0"
+version = "0.5.1"
 dependencies = [
  "kamadak-exif",
- "moxcms",
- "nanorand",
+ "moxcms 0.8.0",
+ "nanorand 0.7.0",
  "zune-core 0.5.1",
  "zune-image",
 ]
@@ -1638,7 +1641,7 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "zune-core 0.5.1",
  "zune-ppm",
@@ -1646,39 +1649,38 @@ dependencies = [
 
 [[package]]
 name = "zune-jpegxl"
-version = "0.5.0-rc1"
+version = "0.5.2"
 dependencies = [
  "zune-core 0.5.1",
 ]
 
 [[package]]
 name = "zune-png"
-version = "0.5.0-rc1"
+version = "0.5.1"
 dependencies = [
- "nanorand",
- "png 0.17.16",
- "spng",
+ "nanorand 0.8.0",
+ "png",
  "zune-core 0.5.1",
  "zune-inflate",
 ]
 
 [[package]]
 name = "zune-ppm"
-version = "0.5.0-rc0"
+version = "0.5.1"
 dependencies = [
  "zune-core 0.5.1",
 ]
 
 [[package]]
 name = "zune-psd"
-version = "0.5.0-rc0"
+version = "0.5.1"
 dependencies = [
  "zune-core 0.5.1",
 ]
 
 [[package]]
 name = "zune-qoi"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "zune-core 0.5.1",
 ]
@@ -1693,7 +1695,7 @@ dependencies = [
  "zune-bmp",
  "zune-core 0.5.1",
  "zune-inflate",
- "zune-jpeg 0.5.11",
+ "zune-jpeg 0.5.12",
  "zune-png",
  "zune-psd",
 ]
