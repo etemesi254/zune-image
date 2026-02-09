@@ -41,7 +41,15 @@ pub enum BitDepth {
     /// Uses f32 to store data
     Float32,
     /// Bit depth information is unknown
-    Unknown
+    Unknown,
+    /// Custom integer bit depth, with the number of bits specified in the variant
+    ///
+    /// This is used for images with bit depths that do not fit into the standard 8 or 16 bit categories, such as 10-bit images.
+    /// The number of bits is specified in the variant.
+    ///
+    /// Data is stored in the next higher byte size, e.g. a 10-bit image
+    /// would be stored in a u16, and the valid range of values would be 0 to 1023.
+    Custom(u8)
 }
 
 /// The underlying bit representation of the image
@@ -96,6 +104,7 @@ impl BitDepth {
             Self::Sixteen => u16::MAX,
             Self::Float32 => 1,
             Self::Unknown => 0,
+            Self::Custom(bits) => (1 << bits) - 1
         }
     }
 
@@ -124,7 +133,12 @@ impl BitDepth {
             Self::Eight => BitType::U8,
             Self::Sixteen => BitType::U16,
             Self::Float32 => BitType::F32,
-            Self::Unknown => panic!("Unknown bit type")
+            Self::Unknown => panic!("Unknown bit type"),
+            Self::Custom(bits) => match bits {
+                0..=8 => BitType::U8,
+                9..=16 => BitType::U16,
+                _ => panic!("Unsupported custom bit depth")
+            }
         }
     }
     /// Get the number of bytes needed to store a specific bit depth
@@ -147,7 +161,12 @@ impl BitDepth {
             Self::Eight => core::mem::size_of::<u8>(),
             Self::Sixteen => core::mem::size_of::<u16>(),
             Self::Float32 => core::mem::size_of::<f32>(),
-            Self::Unknown => panic!("Unknown bit type")
+            Self::Unknown => panic!("Unknown bit type"),
+            Self::Custom(bits) => match bits {
+                0..=8 => core::mem::size_of::<u8>(),
+                9..=16 => core::mem::size_of::<u16>(),
+                _ => panic!("Unsupported custom bit depth")
+            }
         }
     }
     pub const fn bit_size(&self) -> usize {
