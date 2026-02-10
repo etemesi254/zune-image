@@ -33,17 +33,10 @@ use crate::components::SampleRatios;
 use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::idct::scalar::{idct_int_1x1_extended, idct_int_4x4_extended, idct_int_extended};
-use crate::marker::Marker;
 use crate::mcu::{McuContinuation, DCT_BLOCK};
 use crate::mcu_prog::get_marker;
 use crate::misc::{calculate_padded_width, setup_component_params};
 use crate::JpegDecoder;
-
-/// Extended JPEG IDCT function prototype for 16-bit output.
-///
-/// Similar to IDCTPtr but the clamp range is determined by the bit depth.
-#[allow(dead_code)]
-pub type IDCTExtPtr = fn(&mut [i32; 64], &mut [i16], usize, u8);
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode MCUs for extended JPEG (9-16 bit precision) images.
@@ -57,7 +50,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_extended<const PREC: u8>(
-        &mut self, pixels: &mut [u16],
+        &mut self, pixels: &mut [u16]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -110,7 +103,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         for (pos, comp) in self.components.iter_mut().enumerate() {
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
+                pos
             ) == pos
                 || comp_len == 4
             {
@@ -177,7 +170,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 } else {
                     self.decode_mcu_width_extended::<true, PREC>(
@@ -185,7 +178,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         i,
                         &mut tmp,
                         &mut stream,
-                        &mut progressive_mcus,
+                        &mut progressive_mcus
                     )?
                 };
 
@@ -197,7 +190,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         width,
                         padded_width,
                         &mut pixels_written,
-                        &mut upsampler_scratch_space,
+                        &mut upsampler_scratch_space
                     )?;
                 }
 
@@ -209,7 +202,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     McuContinuation::AnotherSos => continue 'sos,
                     McuContinuation::InterScanMarker(marker) => {
-                        if self.advance_to_next_sos_extended(marker, &mut stream)? {
+                        if self.advance_to_next_sos(marker, &mut stream)? {
                             continue 'sos;
                         } else {
                             break;
@@ -250,7 +243,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn finish_extended_decoding<const PREC: u8>(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u16],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u16]
     ) -> Result<(), DecodeErrors> {
         let mcu_height = self.mcu_y;
 
@@ -264,7 +257,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         for (pos, comp) in self.components.iter_mut().enumerate() {
             if min(
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
+                pos
             ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
@@ -296,7 +289,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 width,
                 padded_width,
                 &mut pixels_written,
-                &mut upsampler_scratch_space,
+                &mut upsampler_scratch_space
             )?;
         }
 
@@ -305,7 +298,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_mcu_width_extended<const PROGRESSIVE: bool, const PREC: u8>(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let is_one_by_one = !self.scan_subsampled;
 
@@ -315,7 +308,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 mcu_height,
                 tmp,
                 stream,
-                progressive,
+                progressive
             )
         } else {
             self.inner_decode_mcu_width_extended::<PROGRESSIVE, true, PREC>(
@@ -323,7 +316,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 mcu_height,
                 tmp,
                 stream,
-                progressive,
+                progressive
             )
         }
     }
@@ -332,10 +325,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn inner_decode_mcu_width_extended<
         const PROGRESSIVE: bool,
         const SAMPLED: bool,
-        const PREC: u8,
+        const PREC: u8
     >(
         &mut self, mcu_width: usize, mcu_height: usize, tmp: &mut [i32; 64],
-        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4],
+        stream: &mut BitStream, progressive: &mut [Vec<i16>; 4]
     ) -> Result<McuContinuation, DecodeErrors> {
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
@@ -393,7 +386,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 ac_table,
                                 qt_table,
                                 tmp,
-                                &mut component.dc_pred,
+                                &mut component.dc_pred
                             )
                         } else {
                             stream.discard_mcu_block(&mut self.stream, dc_table, ac_table)
@@ -429,13 +422,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 idct_int_1x1_extended::<PREC>(
                                     tmp,
                                     idct_pos,
-                                    component.width_stride,
+                                    component.width_stride
                                 );
                             } else if len <= 10 {
                                 idct_int_4x4_extended::<PREC>(
                                     tmp,
                                     idct_pos,
-                                    component.width_stride,
+                                    component.width_stride
                                 );
                             } else {
                                 idct_int_extended::<PREC>(tmp, idct_pos, component.width_stride);
@@ -448,7 +441,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.todo = self.todo.wrapping_sub(1);
 
             if self.todo == 0 {
-                self.handle_rst(stream)?;
+                self.handle_rst_main(stream)?;
                 continue;
             }
 
@@ -457,109 +450,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-        self.check_stream_marker_after_mcu_width_extended(stream)
-    }
-
-    fn check_stream_marker_after_mcu_width_extended(
-        &mut self, stream: &mut BitStream,
-    ) -> Result<McuContinuation, DecodeErrors> {
-        if let Some(m) = stream.marker {
-            if m == Marker::EOI {
-                stream.marker.take();
-                trace!("Found EOI marker");
-                stream.seen_eoi = true;
-            } else if let Marker::RST(_) = m {
-                if self.todo == 0 {
-                    self.handle_rst(stream)?;
-                }
-            } else if let Marker::SOS = m {
-                self.parse_marker_inner(m)?;
-                stream.marker.take();
-                stream.reset();
-                trace!("Found SOS marker");
-                return Ok(McuContinuation::AnotherSos);
-            } else if matches!(m, Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM)
-                || matches!(m, Marker::APP(_))
-            {
-                stream.marker.take();
-                trace!("Found inter-scan marker {:?}", m);
-                return Ok(McuContinuation::InterScanMarker(m));
-            } else {
-                if self.options.strict_mode() {
-                    return Err(DecodeErrors::Format(format!(
-                        "Marker {m:?} found where not expected"
-                    )));
-                }
-                error!(
-                    "Marker `{:?}` Found within Huffman Stream, possibly corrupt jpeg",
-                    m
-                );
-
-                self.parse_marker_inner(m)?;
-                stream.marker.take();
-                stream.reset();
-                return Ok(McuContinuation::Terminate);
-            }
-        }
-
-        Ok(McuContinuation::Ok)
-    }
-
-    fn advance_to_next_sos_extended(
-        &mut self, first_marker: Marker, stream: &mut BitStream,
-    ) -> Result<bool, DecodeErrors> {
-        const MAX_INTER_SCAN_MARKERS: usize = 64;
-
-        self.parse_marker_inner(first_marker)?;
-        stream.reset();
-
-        for _ in 0..MAX_INTER_SCAN_MARKERS {
-            let marker = get_marker(&mut self.stream, stream)?;
-
-            match marker {
-                Marker::SOS => {
-                    self.parse_marker_inner(Marker::SOS)?;
-                    stream.reset();
-                    trace!("Found SOS marker, continuing decode");
-                    return Ok(true);
-                }
-                Marker::EOI => {
-                    stream.seen_eoi = true;
-                    trace!("Found EOI marker");
-                    return Ok(false);
-                }
-                Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
-                    trace!("Parsing inter-scan marker {:?}", marker);
-                    self.parse_marker_inner(marker)?;
-                }
-                Marker::APP(_) => {
-                    trace!("Parsing inter-scan APP marker {:?}", marker);
-                    self.parse_marker_inner(marker)?;
-                }
-                other => {
-                    if self.options.strict_mode() {
-                        return Err(DecodeErrors::Format(format!(
-                            "Unexpected marker {:?} while scanning for SOS between scans",
-                            other
-                        )));
-                    }
-                    warn!("Skipping unexpected marker {:?} between scans", other);
-                    let length = self.stream.get_u16_be_err()?;
-                    if length >= 2 {
-                        self.stream.skip((length - 2) as usize)?;
-                    }
-                }
-            }
-        }
-
-        Err(DecodeErrors::FormatStatic(
-            "Too many markers between scans (exceeded limit of 64)",
-        ))
+        self.check_stream_marker_after_mcu_width(stream)
     }
 
     /// Post-process MCU data for extended JPEG, outputting 16-bit samples.
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    pub(crate) fn post_process_extended<const PREC : u8>(
+    pub(crate) fn post_process_extended<const PREC: u8>(
         &mut self, pixels: &mut [u16], i: usize, mcu_height: usize, width: usize,
         padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
     ) -> Result<(), DecodeErrors> {
@@ -620,7 +516,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     mcu_height,
                     i,
                     upsampler_scratch_space,
-                    is_vertically_sampled,
+                    is_vertically_sampled
                 )?;
             }
 
@@ -654,7 +550,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     output,
                     width,
                     padded_width,
-                    pos,
+                    pos
                 )?;
                 px += width * out_colorspace_components;
             }
@@ -676,7 +572,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 #[allow(clippy::too_many_arguments)]
 fn color_convert_extended<const PREC: u8>(
     samples: &[&[i16]; 4], input_colorspace: ColorSpace, output_colorspace: ColorSpace,
-    output: &mut [u16], width: usize, padded_width: usize, row: usize,
+    output: &mut [u16], width: usize, padded_width: usize, row: usize
 ) -> Result<(), DecodeErrors> {
     match (input_colorspace, output_colorspace) {
         (ColorSpace::Luma, ColorSpace::Luma) | (ColorSpace::YCbCr, ColorSpace::Luma) => {

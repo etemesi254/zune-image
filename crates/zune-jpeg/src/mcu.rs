@@ -606,7 +606,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.check_stream_marker_after_mcu_width(stream)
     }
 
-    fn check_stream_marker_after_mcu_width(
+    pub(super) fn check_stream_marker_after_mcu_width(
         &mut self, stream: &mut BitStream
     ) -> Result<McuContinuation, DecodeErrors> {
         // After all interleaved components, that's an MCU
@@ -686,7 +686,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// * `Ok(true)` - Found SOS, ready to continue decoding
     /// * `Ok(false)` - Found EOI, decoding complete
     /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, etc.)
-    fn advance_to_next_sos(
+    pub(super) fn advance_to_next_sos(
         &mut self,
         first_marker: Marker,
         stream: &mut BitStream
