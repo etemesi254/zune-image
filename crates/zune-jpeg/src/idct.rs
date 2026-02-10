@@ -95,7 +95,7 @@ pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
         }
     }
 
-    scalar::idct4x4
+    scalar::idct4x4_int
 }
 
 pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
