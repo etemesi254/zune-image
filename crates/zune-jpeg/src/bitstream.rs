@@ -238,7 +238,7 @@ impl BitStream {
 
         // 32 bits is enough for a decode(16 bits) and receive_extend(max 16 bits)
         if self.bits_left < 32 {
-            if self.marker.is_some() || self.overread_by > 0 || self.seen_eoi {
+            if self.marker.is_some() || self.seen_eoi {
                 // found a marker, or we are in EOI
                 // also we are in over-reading mode, where we fill it with zeroes
 
@@ -246,6 +246,15 @@ impl BitStream {
                 self.buffer <<= 32;
                 self.bits_left += 32;
                 self.aligned_buffer = self.buffer << (64 - self.bits_left);
+                return Ok(true);
+            }
+
+            if self.overread_by > 0 {
+                if self.bits_left == 0 {
+                    return Err(DecodeErrors::ExhaustedData);
+                }
+                // We already hit EOF while refilling. Continue consuming the buffered bits
+                // but don't synthesize additional bytes from zero-fill.
                 return Ok(true);
             }
 
