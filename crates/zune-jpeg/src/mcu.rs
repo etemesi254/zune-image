@@ -104,8 +104,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         } else {
             // For non-interleaved images( (1*1) subsampling)
             // number of MCU's are the widths (+7 to account for paddings) divided bu 8.
-            mcu_width = ((self.info.width + 7) / 8) as usize;
-            mcu_height = ((self.info.height + 7) / 8) as usize;
+            mcu_width = (self.info.width as usize + 7) / 8;
+            mcu_height = (self.info.height as usize + 7) / 8;
         }
         if self.is_interleaved
             && self.input_colorspace.num_components() > 1
