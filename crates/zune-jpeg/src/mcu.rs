@@ -764,10 +764,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 Marker::EOI => {
                     // silent pass
                 }
+                // Valid markers that can appear between scans at a restart boundary
+                // (restart interval aligns with end of scan). Leave for caller.
+                Marker::SOS | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM
+                | Marker::APP(_) => {}
                 _ => {
-                    return Err(DecodeErrors::MCUError(format!(
-                        "Marker {marker:?} found in bitstream, possibly corrupt jpeg"
-                    )));
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::MCUError(format!(
+                            "Unexpected marker {marker:?} at restart boundary"
+                        )));
+                    }
+                    warn!("Unexpected marker {:?} at restart boundary", marker);
                 }
             }
         }
