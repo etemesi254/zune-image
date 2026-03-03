@@ -21,7 +21,7 @@ use zune_core::log::{debug, trace, warn};
 use core::cmp::max;
 
 use crate::components::{Components, SampleRatios};
-use crate::decoder::{GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
+use crate::decoder::{ExtendedXmpSegment, GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::misc::{SOFMarkers, UN_ZIGZAG};
@@ -528,6 +528,12 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     const XMP_NAMESPACE_PREFIX: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+    const EXTENDED_XMP_NAMESPACE_PREFIX: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
+    const EXTENDED_XMP_GUID_SIZE: usize = 32;
+    const EXTENDED_XMP_TOTAL_SIZE_SIZE: usize = 4;
+    const EXTENDED_XMP_OFFSET_SIZE: usize = 4;
+    const EXTENDED_XMP_HEADER_SIZE: usize =
+        EXTENDED_XMP_GUID_SIZE + EXTENDED_XMP_TOTAL_SIZE_SIZE + EXTENDED_XMP_OFFSET_SIZE;
 
     // contains exif data
     let mut length = usize::from(decoder.stream.get_u16_be());
@@ -555,6 +561,36 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
         length -= XMP_NAMESPACE_PREFIX.len();
         let xmp_data = decoder.stream.peek_at(0, length)?.to_vec();
         decoder.info.xmp_data = Some(xmp_data);
+    } else if length > EXTENDED_XMP_NAMESPACE_PREFIX.len()
+        && decoder.stream.peek_at(0, EXTENDED_XMP_NAMESPACE_PREFIX.len())?
+            == EXTENDED_XMP_NAMESPACE_PREFIX
+    {
+        trace!("Extended XMP Data Present");
+        decoder.stream.skip(EXTENDED_XMP_NAMESPACE_PREFIX.len())?;
+        length -= EXTENDED_XMP_NAMESPACE_PREFIX.len();
+
+        if length < EXTENDED_XMP_HEADER_SIZE {
+            return Err(DecodeErrors::FormatStatic("Too small Extended XMP segment"));
+        }
+
+        let header = decoder.stream.peek_at(0, EXTENDED_XMP_HEADER_SIZE)?;
+        let guid = header[0..EXTENDED_XMP_GUID_SIZE].to_vec();
+
+        let total_size_start = EXTENDED_XMP_GUID_SIZE;
+        let total_size_end = total_size_start + EXTENDED_XMP_TOTAL_SIZE_SIZE;
+        let total_size =
+            u32::from_be_bytes(header[total_size_start..total_size_end].try_into().unwrap());
+
+        let offset_start = total_size_end;
+        let offset_end = offset_start + EXTENDED_XMP_OFFSET_SIZE;
+        let offset = u32::from_be_bytes(header[offset_start..offset_end].try_into().unwrap());
+
+        let data = decoder
+            .stream
+            .peek_at(EXTENDED_XMP_HEADER_SIZE, length - EXTENDED_XMP_HEADER_SIZE)?
+            .to_vec();
+
+        decoder.extended_xmp_segments.push(ExtendedXmpSegment { offset, total_size, guid, data });
     } else {
         warn!("Unknown format for APP1 tag, skipping");
     }
