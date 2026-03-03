@@ -154,7 +154,9 @@ pub struct JpegDecoder<T> {
     // exif data, lifted from app2
     pub(crate) icc_data: Vec<ICCChunk>,
     pub(crate) is_mjpeg: bool,
-    pub(crate) coeff:    usize // Solves some weird bug :)
+    pub(crate) coeff:    usize, // Solves some weird bug :)
+    /// Extended XMP segments
+    pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
 }
 
 impl<T> JpegDecoder<T>
@@ -199,7 +201,8 @@ where
             seen_sof:          false,
             icc_data:          vec![],
             is_mjpeg:          false,
-            coeff:             1
+            coeff:             1,
+            extended_xmp_segments: vec![],
         }
     }
     /// Decode a buffer already in memory
@@ -335,6 +338,52 @@ where
     pub fn set_options(&mut self, options: DecoderOptions) {
         self.options = options;
     }
+    fn reassemble_extended_xmp(&mut self) {
+        if self.extended_xmp_segments.is_empty() {
+            return;
+        }
+
+        // Sort by offset
+        self.extended_xmp_segments.sort_by(|a, b| a.offset.cmp(&b.offset));
+
+        let guid = &self.extended_xmp_segments[0].guid;
+        let total_size = self.extended_xmp_segments[0].total_size;
+
+        // Check for consistency
+        for segment in &self.extended_xmp_segments {
+            if &segment.guid != guid || segment.total_size != total_size {
+                error!("Inconsistent Extended XMP segments");
+                self.extended_xmp_segments.clear();
+                return;
+            }
+        }
+
+        let mut rolling_offset = 0;
+        let mut complete = true;
+
+        for segment in &self.extended_xmp_segments {
+            if segment.offset != rolling_offset {
+                // Gap or overlap
+                complete = false;
+                break;
+            }
+            rolling_offset += segment.data.len() as u32;
+        }
+
+        if complete && rolling_offset == total_size {
+            let mut result = Vec::with_capacity(total_size as usize);
+            for segment in &self.extended_xmp_segments {
+                result.extend_from_slice(&segment.data);
+            }
+            self.info.extended_xmp = Some(result);
+            self.info.extended_xmp_guid = Some(guid.clone());
+            self.extended_xmp_segments.clear();
+        } else if rolling_offset > total_size {
+            error!("Extended XMP overflow");
+            self.extended_xmp_segments.clear();
+        }
+        // Else: Incomplete, wait for more.
+    }
     /// Decode Decoder headers
     ///
     /// This routine takes care of parsing supported headers from a Decoder
@@ -432,6 +481,10 @@ where
                     bytes_before_marker = 0;
 
                     self.parse_marker_inner(n)?;
+
+                    if !self.extended_xmp_segments.is_empty() {
+                        self.reassemble_extended_xmp();
+                    }
 
                     // break after reading the start of scan.
                     // what follows is the image data
@@ -902,6 +955,15 @@ where
 pub struct GainMapInfo {
     pub data: Vec<u8>
 }
+
+#[derive(Default, Clone, Eq, PartialEq, Debug)]
+pub(crate) struct ExtendedXmpSegment {
+    pub(crate) offset: u32,
+    pub(crate) total_size: u32,
+    pub(crate) guid: Vec<u8>,
+    pub(crate) data: Vec<u8>,
+}
+
 /// A struct representing Image Information
 #[derive(Default, Clone, Eq, PartialEq)]
 #[allow(clippy::module_name_repetitions)]
@@ -932,6 +994,10 @@ pub struct ImageInfo {
     pub xmp_data: Option<Vec<u8>>,
     /// IPTC Data
     pub iptc_data: Option<Vec<u8>>,
+    /// Extended XMP Data
+    pub extended_xmp: Option<Vec<u8>>,
+    /// Extended XMP Guid
+    pub extended_xmp_guid: Option<Vec<u8>>,
     /// Image sub-sampling ratio
     pub sample_ratio: SampleRatios
 }

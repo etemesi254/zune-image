@@ -20,6 +20,24 @@ fn iptc_metadata() {
 }
 
 #[test]
+fn extended_xmp() {
+    const EXPECTED_GUID: &[u8] = &[
+        50, 67, 69, 57, 54, 51, 49, 68, 57, 48, 69, 52, 57, 67, 52, 50, 67, 70, 48, 54, 49, 52, 52,
+        51, 48, 49, 68, 52, 53, 56, 48, 57
+    ];
+
+    let image: &[u8] = include_bytes!("../../../test-images/jpeg/2029_extended_xmp.jpg").as_slice();
+    let mut decoder = JpegDecoder::new(Cursor::new(image));
+    decoder.decode_headers().unwrap();
+
+    assert_eq!(
+        decoder.info().unwrap().extended_xmp_guid,
+        Some(EXPECTED_GUID.to_vec())
+    );
+    assert_eq!(decoder.info().unwrap().extended_xmp.unwrap().len(), 75718);
+}
+
+#[test]
 fn test_sample_ratios() {
     use zune_jpeg::SampleRatios;
 
