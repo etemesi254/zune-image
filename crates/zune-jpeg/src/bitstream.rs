@@ -48,6 +48,7 @@
 //! Knock yourself out.
 use alloc::format;
 use alloc::string::ToString;
+use zune_core::log::warn;
 use core::cmp::min;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
@@ -651,10 +652,9 @@ impl BitStream {
                         break 'no_eob;
                     }
                 } else {
+                    // libjpeg-turbo also doesn't return an error here, so let's also warn.
                     if symbol != 1 {
-                        return Err(DecodeErrors::HuffmanDecode(
-                            "Bad Huffman code, corrupt JPEG?".to_string()
-                        ));
+                        warn!("Bad Huffman code, corrupt JPEG?");
                     }
                     // get sign bit
                     // We assume we have enough bits, which should be correct for sane images
@@ -685,9 +685,9 @@ impl BitStream {
                             }
                             if self.get_bit() == 1 && (*coefficient & bit) == 0 {
                                 if *coefficient > 0 {
-                                    *coefficient += bit;
+                                    *coefficient = coefficient.wrapping_add(bit);
                                 } else {
-                                    *coefficient -= bit;
+                                    *coefficient = coefficient.wrapping_sub(bit);
                                 }
                             }
                         } else {
