@@ -5,6 +5,7 @@ on:
     branches: [ "main","dev" ]
   pull_request:
     branches: [ "main","dev" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,6 +29,9 @@ jobs:
         include:
           - os: ubuntu-latest
             toolchain: 1.88 # MSRV
+          - os: ubuntu-24.04-arm
+            toolchain: 1.88 # MSRV (aarch64 — catches NEON compilation issues)
+            extra_rustflags: -D unsafe_op_in_unsafe_fn
           - os: windows-latest
             toolchain: stable
             test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
@@ -64,4 +68,4 @@ jobs:
                 ${{ matrix.test-args }}
         env:
           # Skip target-cpu=native for cross-compilation targets
-          RUSTFLAGS: ${{ matrix.target && '' || '-C target-cpu=native' }}
+          RUSTFLAGS: ${{ matrix.target && '' || '-C target-cpu=native' }} ${{ matrix.extra_rustflags }}
