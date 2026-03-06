@@ -104,23 +104,24 @@ pub extern "C" fn zil_status_ok(status: *const ZStatus) -> bool {
 /// Remember to free it with `zil_status_free`
 #[no_mangle]
 pub unsafe extern "C" fn zil_status_new() -> *mut ZStatus {
-    let ptr = zil_malloc(size_of::<ZStatus>());
-
-    let msg = CString::new("").unwrap();
-    let mem = unsafe { zil_malloc(msg.as_bytes_with_nul().len()) };
-    if mem.is_null() {
-        return ptr::null_mut();
-    }
-    // copy to memory
     unsafe {
+        let ptr = zil_malloc(size_of::<ZStatus>());
+
+        let msg = CString::new("").unwrap();
+        let mem = zil_malloc(msg.as_bytes_with_nul().len());
+        if mem.is_null() {
+            return ptr::null_mut();
+        }
+        // copy to memory
         libc::strcpy(mem.cast(), msg.as_ptr());
+
+        if !ptr.is_null() {
+            (*ptr.cast::<ZStatus>()).message = mem.cast();
+            (*ptr.cast::<ZStatus>()).status = ZStatusType::ZilOk;
+        }
+        // make pointer
+        ptr.cast()
     }
-    if !ptr.is_null() {
-        (*ptr.cast::<ZStatus>()).message = mem.cast();
-        (*ptr.cast::<ZStatus>()).status = ZStatusType::ZilOk;
-    }
-    // make pointer
-    ptr.cast()
 }
 
 /// Return the status code contained in the ZImStatus

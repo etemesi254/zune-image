@@ -214,12 +214,12 @@ impl Channel {
         // and we are bound by the zeroed trait, hence we are sure that
         // for whatever type we are going to allocate for,
         // it can be represented with a bit-representation of zero.
-        (alloc_zeroed(layout), layout)
+        unsafe { (alloc_zeroed(layout), layout) }
     }
     /// Reallocate the pointer in place increasing
     /// it's capacity
     pub unsafe fn realloc(&mut self, new_size: usize) {
-        self.ptr = realloc(self.ptr, self.layout, new_size);
+        self.ptr = unsafe { realloc(self.ptr, self.layout, new_size) };
         // set capacity to be new size
         self.capacity = new_size;
     }
@@ -230,7 +230,7 @@ impl Channel {
         // safety
         // - The same layout alignment we used for alloc is the same we are using for
         //  dealloc
-        dealloc(self.ptr, layout);
+        unsafe { dealloc(self.ptr, layout) };
     }
 
     /// Create a new channel
@@ -408,7 +408,7 @@ impl Channel {
             // reallocate to handle enough of the length.
             // realloc will set the new capacity
             // but as callers we have to set the new length
-            self.realloc(self.capacity.saturating_add(items).saturating_add(10));
+            unsafe { self.realloc(self.capacity.saturating_add(items).saturating_add(10)) };
         }
         // now we have enough space, extend
 
@@ -416,10 +416,12 @@ impl Channel {
         // - self.ptr+length cannot overflow, since it's usize
         // -  data is valid for data size
         //
-        self.ptr.wrapping_add(self.length).copy_from(
-            data.as_ptr().cast::<u8>(),
-            data.len().saturating_mul(data_size)
-        );
+        unsafe {
+            self.ptr.wrapping_add(self.length).copy_from(
+                data.as_ptr().cast::<u8>(),
+                data.len().saturating_mul(data_size)
+            );
+        }
 
         // new length becomes old length + items added
         self.length = self.length.checked_add(items).unwrap();
@@ -452,19 +454,21 @@ impl Channel {
     /// # Returns
     /// - `Some(&[T])`: THe re-interpreted bits
     unsafe fn reinterpret_as_unchecked<T: Default + 'static>(&self) -> &[T] {
-        // Safety:
-        //  validity: We own the data
-        //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
-        // of alignment is a byte and u8==1 byte
-        //
-        let new_slice = unsafe { std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length) };
+        unsafe {
+            // Safety:
+            //  validity: We own the data
+            //  well aligned: You cannot have u8 having bad alignment as the least bit denomination
+            // of alignment is a byte and u8==1 byte
+            //
+            let new_slice = std::slice::from_raw_parts_mut::<u8>(self.ptr, self.length);
 
-        let (a, b, c) = new_slice.align_to();
+            let (a, b, c) = new_slice.align_to();
 
-        assert!(a.is_empty(), "extra sloppy bytes");
-        assert!(c.is_empty(), "extra sloppy bytes");
+            assert!(a.is_empty(), "extra sloppy bytes");
+            assert!(c.is_empty(), "extra sloppy bytes");
 
-        b
+            b
+        }
     }
     /// Reinterpret a slice of `&[u8]` into another type
     pub fn reinterpret_as_mut<T: 'static + Pod>(&mut self) -> Result<&mut [T], ChannelErrors> {
@@ -592,7 +596,7 @@ impl Channel {
     /// This is unsafe just as a remainder that the memory is just
     /// a bag of bytes and may not be just `&[u8]`.
     pub unsafe fn alias(&self) -> &[u8] {
-        std::slice::from_raw_parts(self.ptr, self.length)
+        unsafe { std::slice::from_raw_parts(self.ptr, self.length) }
     }
 
     /// Return the raw memory layout of the channel as `mut &[u8]`
@@ -601,7 +605,7 @@ impl Channel {
     /// This is unsafe just as a remainder that the memory is just
     /// a bag of bytes and may not be just `mut &[u8]`.
     pub unsafe fn alias_mut(&mut self) -> &mut [u8] {
-        std::slice::from_raw_parts_mut(self.ptr, self.length)
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.length) }
     }
 }
 
