@@ -20,7 +20,7 @@ use crate::enums::ZImageFormat;
 ///
 #[no_mangle]
 pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZImageFormat {
-    let slice = std::slice::from_raw_parts(bytes, size);
+    let slice = unsafe { std::slice::from_raw_parts(bytes, size) };
 
     match zune_image::codecs::guess_format(ZCursor::new(slice)) {
         None => ZImageFormat::ZilUnknownFormat,
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn zil_guess_format(bytes: *const u8, size: usize) -> ZIma
 /// \param size: Memory size
 #[no_mangle]
 pub unsafe extern "C" fn zil_malloc(size: size_t) -> *mut c_void {
-    libc::malloc(size)
+    unsafe { libc::malloc(size) }
 }
 
 /// Free a memory region that was allocated by zil_malloc or internally by the library
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn zil_malloc(size: size_t) -> *mut c_void {
 pub unsafe extern "C" fn zil_free(ptr: *mut c_void) {
     assert!(!ptr.is_null(), "Trying to free a null ptr!!");
     if !ptr.is_null() {
-        libc::free(ptr);
+        unsafe { libc::free(ptr) };
         // set it to be null
     }
 }
@@ -60,8 +60,10 @@ pub unsafe extern "C" fn zil_free(ptr: *mut c_void) {
 #[no_mangle]
 pub unsafe extern "C" fn zil_free_and_null(ptr: *mut *mut c_void) {
     if !ptr.is_null() {
-        let deref_ptr = *ptr;
-        zil_free(deref_ptr);
-        *ptr = null_mut()
+        unsafe {
+            let deref_ptr = *ptr;
+            zil_free(deref_ptr);
+            *ptr = null_mut()
+        }
     }
 }
