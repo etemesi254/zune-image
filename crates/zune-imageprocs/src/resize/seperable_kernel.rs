@@ -498,7 +498,7 @@ fn bilinear_kernel(x: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::resize::seperable_kernel::{precompute_kernels, PrecomputedKernels};
+    use crate::resize::seperable_kernel::{ PrecomputedKernels};
     use crate::resize::ResizeMethod;
 
     #[test]
