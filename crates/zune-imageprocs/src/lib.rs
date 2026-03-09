@@ -89,3 +89,4 @@ pub mod unsharpen;
 mod utils;
 mod image_transfer;
 pub mod affine;
+mod clahe;
