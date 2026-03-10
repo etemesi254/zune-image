@@ -26,7 +26,7 @@ use crate::headers::{
     parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
-use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
+use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
@@ -112,19 +112,20 @@ pub struct JpegDecoder<T> {
     // Progressive image details
     /// Is the image progressive?
     pub(crate) is_progressive:    bool,
-
+    /// Is the image extended
+    pub(crate) is_extended:       bool,
     /// Start of spectral scan
-    pub(crate) spec_start:       u8,
+    pub(crate) spec_start:        u8,
     /// End of spectral scan
-    pub(crate) spec_end:         u8,
+    pub(crate) spec_end:          u8,
     /// Successive approximation bit position high
-    pub(crate) succ_high:        u8,
+    pub(crate) succ_high:         u8,
     /// Successive approximation bit position low
-    pub(crate) succ_low:         u8,
+    pub(crate) succ_low:          u8,
     /// Number of components.
-    pub(crate) num_scans:        u8,
+    pub(crate) num_scans:         u8,
     /// For a scan, check if any component has vertical/horizontal sampling.
-    pub(crate) scan_subsampled:  bool,
+    pub(crate) scan_subsampled:   bool,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -135,21 +136,21 @@ pub struct JpegDecoder<T> {
     /// Specialized IDCT when we can guarantee only few coefficients are non-zero.
     ///
     /// **The callee must uphold a contract**. See [`choose_idct_4x4_func`].
-    pub(crate) idct_4x4_func: IDCTPtr,
-    pub(crate) idct_1x1_func: IDCTPtr,
+    pub(crate) idct_4x4_func:     IDCTPtr,
+    pub(crate) idct_1x1_func:     IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
-    pub(crate) color_convert_16: ColorConvert16Ptr,
-    pub(crate) z_order:          [usize; MAX_COMPONENTS],
+    pub(crate) color_convert_16:  ColorConvert16Ptr,
+    pub(crate) z_order:           [usize; MAX_COMPONENTS],
     /// restart markers
-    pub(crate) restart_interval: usize,
-    pub(crate) todo:             usize,
+    pub(crate) restart_interval:  usize,
+    pub(crate) todo:              usize,
     // decoder options
-    pub(crate) options:          DecoderOptions,
+    pub(crate) options:           DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZReader<T>,
+    pub(crate) stream:            ZReader<T>,
     // Indicate whether headers have been decoded
-    pub(crate) headers_decoded:  bool,
-    pub(crate) seen_sof:         bool,
+    pub(crate) headers_decoded:   bool,
+    pub(crate) seen_sof:          bool,
 
     // exif data, lifted from app2
     pub(crate) icc_data: Vec<ICCChunk>,
@@ -186,7 +187,7 @@ where
             succ_high:         0,
             succ_low:          0,
             num_scans:         0,
-            scan_subsampled:   false, 
+            scan_subsampled:   false,
             idct_func:         choose_idct_func(&options),
             idct_4x4_func:     choose_idct_4x4_func(&options),
             idct_1x1_func:     choose_idct_1x1_func(&options),
@@ -200,6 +201,7 @@ where
             headers_decoded:   false,
             seen_sof:          false,
             icc_data:          vec![],
+            is_extended:       false,
             is_mjpeg:          false,
             coeff:             1,
             extended_xmp_segments: vec![],
@@ -264,10 +266,12 @@ where
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
         return if self.headers_decoded {
+            let density_size = if self.info.pixel_density > 8 { 2usize } else { 1usize };
             Some(
                 usize::from(self.width())
                     .checked_mul(usize::from(self.height()))?
                     .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
+                    .checked_mul(density_size)?
             )
         } else {
             None
@@ -838,7 +842,19 @@ where
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
 
-        if self.is_progressive {
+        if self.is_extended {
+            let out_u16 = unsafe {
+                core::slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u16, out.len() / 2)
+            };
+            match self.info.pixel_density {
+                12 => self.decode_mcu_ycbcr_extended::<12>(out_u16),
+                _ => {
+                    return Err(DecodeErrors::FormatStatic(
+                        "Unsupported extended precision bit depth",
+                    ))
+                }
+            }
+        } else if self.is_progressive {
             self.decode_mcu_ycbcr_progressive(out)
         } else {
             self.decode_mcu_ycbcr_baseline(out)
