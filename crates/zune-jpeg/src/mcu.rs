@@ -492,6 +492,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let channel = if PROGRESSIVE {
                     let offset =
                         mcu_height * component.width_stride * 8 * component.vertical_sample;
+                    // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
+                    if offset >= progressive[k].len(){
+                        return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"))
+                    }
                     &mut progressive[k][offset..]
                 } else {
                     &mut component.raw_coeff

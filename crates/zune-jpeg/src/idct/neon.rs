@@ -98,14 +98,18 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
             // Round by adding 0.5 * (1 << 3) and offset by adding (128 << 3) before scaling
             let coeff = ((in_vector[0] + 4 + 1024) >> 3).clamp(0, 255) as i16;
             let idct_value = vdupq_n_s16(coeff);
+            // to prevent some bad images from crashing
+
 
             macro_rules! store {
                 ($pos:tt,$value:tt) => {
+                    let mut tmp = [0; 8];
+
                     // store
                     vst1q_s16(
                         out_vector
                             .get_mut($pos..$pos + 8)
-                            .unwrap()
+                            .unwrap_or(&mut tmp)
                             .as_mut_ptr()
                             .cast(),
                         $value,
@@ -205,6 +209,8 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
             ($x:tt,$y:tt,$index:tt,$out:tt) => {
                 let a = condense_bottom_16($x, $y);
 
+                let mut tmp = [0;8];
+
                 // Clamp the values after packing, we can clamp more values at once
                 let b = clamp256_neon(a);
 
@@ -212,7 +218,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                 vst1q_s16(
                     ($out)
                         .get_mut($index..$index + 8)
-                        .unwrap()
+                        .unwrap_or(&mut tmp)
                         .as_mut_ptr()
                         .cast(),
                     b.0,
@@ -222,7 +228,7 @@ pub unsafe fn idct_neon(in_vector: &mut [i32; 64], out_vector: &mut [i16], strid
                 vst1q_s16(
                     ($out)
                         .get_mut($index..$index + 8)
-                        .unwrap()
+                        .unwrap_or(&mut tmp)
                         .as_mut_ptr()
                         .cast(),
                     b.1,
