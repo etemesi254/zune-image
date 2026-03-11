@@ -28,14 +28,14 @@ fn wm(a: i32, b: i32) -> i32 {
 }
 
 #[inline]
-pub fn idct_int_1x1(in_vector: &mut [i32; 64], out_vector: &mut [i16], stride: usize) {
+pub fn idct_int_1x1(in_vector: &mut [i32; 64], mut out_vector: &mut [i16], stride: usize) {
     let coeff = ((wa(wa(in_vector[0], 4), 1024) >> 3).clamp(0, 255)) as i16;
 
     out_vector[..8].fill(coeff);
     for _ in 0..7 {
-        if let Some(e) = out_vector.get_mut(stride..stride + 8) {
-            e.fill(coeff)
-        }
+        out_vector = &mut out_vector[stride..];
+        out_vector[..8].fill(coeff);
+
     }
 }
 
