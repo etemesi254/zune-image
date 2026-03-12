@@ -66,6 +66,7 @@ in order of importance
 |---------|-----|---------------------------------------------------------------------------------------------|
 | `x86`   | yes | Enables `x86` specific instructions, specifically `avx` and `sse` for accelerated decoding. |
 | `std`   | yes | Enable linking to the `std` crate                                                           |
+| `arith` | no  | Enable decoding of images using arithmetic coding for coefficients                          |
 
 Note that the `x86` features are automatically disabled on platforms that aren't x86 during compile
 time hence there is no need to disable them explicitly if you are targeting such a platform.

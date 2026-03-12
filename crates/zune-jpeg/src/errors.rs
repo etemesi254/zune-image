@@ -31,6 +31,8 @@ pub enum DecodeErrors {
     IllegalMagicBytes(u16),
     /// problems with the Huffman Tables in a Decoder file
     HuffmanDecode(String),
+    /// problems with the Arithmetic coding parameters in a Decoder file
+    ArithmeticDecode(String),
     /// Image has zero width
     ZeroError,
     /// Discrete Quantization Tables error
@@ -77,6 +79,10 @@ impl Debug for DecodeErrors {
             Self::HuffmanDecode(ref reason) =>
             {
                 write!(f, "Error decoding huffman values: {reason}")
+            }
+            Self::ArithmeticDecode(ref reason) =>
+            {
+                write!(f, "Error decoding arithmetic coding conditioning values: {reason}")
             }
             Self::ZeroError => write!(f, "Image width or height is set to zero, cannot continue"),
             Self::DqtError(ref reason) => write!(f, "Error parsing DQT segment. Reason:{reason}"),

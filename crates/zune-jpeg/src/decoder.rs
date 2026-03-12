@@ -18,9 +18,14 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
 
+use crate::bitstream::BitStreamHuffman;
+#[cfg(feature = "arith")]
+use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
 use crate::components::{Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
+#[cfg(feature = "arith")]
+use crate::headers::parse_dac;
 use crate::headers::{
     parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
     parse_start_of_frame
@@ -77,41 +82,55 @@ pub(crate) struct ICCChunk {
     pub(crate) data:        Vec<u8>
 }
 
+// A separate struct to allow &borrowing tables while &mut borrowing components
+pub(crate) struct EntropyTables {
+    /// DC Huffman Tables with a maximum of 4 tables for each  component
+    pub(crate) dc_huffman_tables:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    /// AC Huffman Tables with a maximum of 4 tables for each component
+    pub(crate) ac_huffman_tables:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    /// Arithmetic coding initial conditioning parameters and statistics (has a default value)
+    #[cfg(feature = "arith")]
+    pub(crate) dc_arithmetic_tables: [ArithDCTables; MAX_COMPONENTS],
+    /// Arithmetic coding initial conditioning parameters and statistics  (has a default value)
+    #[cfg(feature = "arith")]
+    pub(crate) ac_arithmetic_tables: [ArithACTables; MAX_COMPONENTS]
+}
+
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
 pub struct JpegDecoder<T> {
     /// Struct to hold image information from SOI
-    pub(crate) info:              ImageInfo,
+    pub(crate) info:             ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
     /// be moved to `components` field
-    pub(crate) qt_tables:         [Option<[i32; 64]>; MAX_COMPONENTS],
-    /// DC Huffman Tables with a maximum of 4 tables for each  component
-    pub(crate) dc_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
-    /// AC Huffman Tables with a maximum of 4 tables for each component
-    pub(crate) ac_huffman_tables: [Option<HuffmanTable>; MAX_COMPONENTS],
+    pub(crate) qt_tables:        [Option<[i32; 64]>; MAX_COMPONENTS],
+    // Entropy coding tables
+    pub(crate) entropy_tables:   EntropyTables,
     /// Image components, holds information like DC prediction and quantization
     /// tables of a component
-    pub(crate) components:        Vec<Components>,
+    pub(crate) components:       Vec<Components>,
     /// maximum horizontal component of all channels in the image
-    pub(crate) h_max:             usize,
+    pub(crate) h_max:            usize,
     // maximum vertical component of all channels in the image
-    pub(crate) v_max:             usize,
+    pub(crate) v_max:            usize,
     /// mcu's  width (interleaved scans)
-    pub(crate) mcu_width:         usize,
+    pub(crate) mcu_width:        usize,
     /// MCU height(interleaved scans
-    pub(crate) mcu_height:        usize,
+    pub(crate) mcu_height:       usize,
     /// Number of MCU's in the x plane
-    pub(crate) mcu_x:             usize,
+    pub(crate) mcu_x:            usize,
     /// Number of MCU's in the y plane
-    pub(crate) mcu_y:             usize,
+    pub(crate) mcu_y:            usize,
     /// Is the image interleaved?
-    pub(crate) is_interleaved:    bool,
+    pub(crate) is_interleaved:   bool,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
-    pub(crate) input_colorspace:  ColorSpace,
+    pub(crate) input_colorspace: ColorSpace,
+    // Is the image using arithmetic coding?
+    pub(crate) is_arithmetic:    bool,
     // Progressive image details
     /// Is the image progressive?
-    pub(crate) is_progressive:    bool,
+    pub(crate) is_progressive:   bool,
 
     /// Start of spectral scan
     pub(crate) spec_start:       u8,
@@ -167,10 +186,26 @@ where
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info:              ImageInfo::default(),
-            qt_tables:         [None, None, None, None],
-            dc_huffman_tables: [None, None, None, None],
-            ac_huffman_tables: [None, None, None, None],
+            info:                  ImageInfo::default(),
+            qt_tables:             [None, None, None, None],
+            entropy_tables:        EntropyTables {
+                dc_huffman_tables: [None, None, None, None],
+                ac_huffman_tables: [None, None, None, None],
+                #[cfg(feature = "arith")]
+                dc_arithmetic_tables: [
+                    ArithDCTables::default(),
+                    ArithDCTables::default(),
+                    ArithDCTables::default(),
+                    ArithDCTables::default()
+                ],
+                #[cfg(feature = "arith")]
+                ac_arithmetic_tables: [
+                    ArithACTables::default(),
+                    ArithACTables::default(),
+                    ArithACTables::default(),
+                    ArithACTables::default()
+                ]
+            },
             components:        vec![],
             // Interleaved information
             h_max:             1,
@@ -180,6 +215,7 @@ where
             mcu_x:             0,
             mcu_y:             0,
             is_interleaved:    false,
+            is_arithmetic:     false,
             is_progressive:    false,
             spec_start:        0,
             spec_end:          0,
@@ -543,14 +579,34 @@ where
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
         match m {
             Marker::SOF(0..=2) => {
-                let marker = {
-                    // choose marker
-                    if m == Marker::SOF(0) || m == Marker::SOF(1) {
-                        SOFMarkers::BaselineDct
-                    } else {
+                // choose marker
+                let marker =
+                    match m {
+                        Marker::SOF(0) | Marker::SOF(1) =>
+                            SOFMarkers::BaselineDct,
+                        Marker::SOF(2) => {
+                            self.is_progressive = true;
+                            SOFMarkers::ProgressiveDctHuffman
+                        }
+                        _ => unreachable!(),
+                    };
+
+                trace!("Image encoding scheme =`{:?}`", marker);
+                // get components
+                parse_start_of_frame(marker, self)?;
+            }
+            #[cfg(feature = "arith")]
+            Marker::SOF(9..=10) => {
+                // choose marker
+                self.is_arithmetic = true;
+                let marker = match m {
+                    Marker::SOF(9) => SOFMarkers::ExtendedSequentialDctArithmetic,
+                    Marker::SOF(10) => {
                         self.is_progressive = true;
-                        SOFMarkers::ProgressiveDctHuffman
+                        self.is_arithmetic = true;
+                        SOFMarkers::ProgressiveDctArithmetic
                     }
+                    _ => unreachable!()
                 };
 
                 trace!("Image encoding scheme =`{marker:?}`");
@@ -565,7 +621,9 @@ where
                     return Err(DecodeErrors::Unsupported(feature));
                 }
 
-                return Err(DecodeErrors::Format("Unsupported image format".to_string()));
+                return Err(DecodeErrors::Format(format!(
+                    "Unsupported image format (SOF_{v})"
+                )));
             }
             //APP(0) segment
             Marker::APP(0) => {
@@ -611,7 +669,12 @@ where
             }
             Marker::EOI => return Err(DecodeErrors::FormatStatic("Premature End of image")),
 
-            Marker::DAC | Marker::DNL => {
+            #[cfg(feature = "arith")]
+            Marker::DAC => {
+                parse_dac(self)?;
+            }
+
+            Marker::DNL => {
                 return Err(DecodeErrors::Format(format!(
                     "Parsing of the following header `{m:?}` is not supported,\
                                 cannot continue"
@@ -837,10 +900,23 @@ where
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
 
-        if self.is_progressive {
-            self.decode_mcu_ycbcr_progressive(out)
+        if self.is_arithmetic {
+            #[cfg(feature = "arith")]
+            {
+                if self.is_progressive {
+                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(out)
+                } else {
+                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(out)
+                }
+            }
+            #[cfg(not(feature = "arith"))]
+            unreachable!();
         } else {
-            self.decode_mcu_ycbcr_baseline(out)
+            if self.is_progressive {
+                self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out)
+            } else {
+                self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out)
+            }
         }
     }
 

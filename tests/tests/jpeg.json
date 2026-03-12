@@ -131,5 +131,25 @@
     "name": "weird_sampling_3.jpg",
     "hash": 26455814955148065345062877821233328526,
     "comment": "First two components 4x2 subsampled, last not subsampled"
+  },
+  {
+    "name": "arith/seq.jpg",
+    "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "arith/seq-restart.jpg",
+    "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "arith/seq-restart-block.jpg",
+    "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "arith/prog.jpg",
+    "hash": 308699570423173762598813957121638158295
+  },
+  {
+    "name": "arith/prog-restart.jpg",
+    "hash": 308699570423173762598813957121638158295
   }
 ]

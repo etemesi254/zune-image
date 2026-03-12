@@ -294,8 +294,8 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     if img.is_mjpeg {
         fill_default_mjpeg_tables(
             img.is_progressive,
-            &mut img.dc_huffman_tables,
-            &mut img.ac_huffman_tables
+            &mut img.entropy_tables.dc_huffman_tables,
+            &mut img.entropy_tables.ac_huffman_tables
         );
     }
 
