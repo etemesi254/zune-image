@@ -24,6 +24,7 @@ neon = []
 std = ["zune-core/std"]
 # NOTE: portable_simd requires Rust 1.87+
 portable_simd = []
+arith = []
 log = ["zune-core/log"]
 default = ["x86", "neon", "std"]
 

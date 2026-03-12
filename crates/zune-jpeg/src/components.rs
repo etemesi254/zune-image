@@ -52,6 +52,8 @@ pub(crate) struct Components {
     pub quantization_table: [i32; 64],
     /// dc prediction for the component
     pub dc_pred: i32,
+    /// most recent difference in dc prediction for the component
+    pub dc_diff: i32,
     /// An up-sampling function, can be basic or SSE, depending
     /// on the platform
     pub up_sampler: UpSampler,
@@ -156,6 +158,7 @@ impl Components {
             ac_huff_table: 0,
             quantization_table: [0; 64],
             dc_pred: 0,
+            dc_diff: 0,
             up_sampler: upsample_no_op,
             // set later
             width_stride: horizontal_sample,

@@ -173,6 +173,8 @@ pub use crate::components::SampleRatios;
 pub use crate::decoder::{ImageInfo, JpegDecoder};
 pub use crate::marker::Marker;
 mod bitstream;
+#[cfg(feature = "arith")]
+mod bitstream_arith;
 mod color_convert;
 mod components;
 mod decoder;
