@@ -999,7 +999,9 @@ pub struct ImageInfo {
     /// Extended XMP Guid
     pub extended_xmp_guid: Option<Vec<u8>>,
     /// Image sub-sampling ratio
-    pub sample_ratio: SampleRatios
+    pub sample_ratio: SampleRatios,
+    /// The offset at which Multi picture information was found
+    pub multi_picture_information_offset: Option<u64>,
 }
 
 impl ImageInfo {
