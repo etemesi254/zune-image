@@ -666,6 +666,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         trace!("MPF Signature present");
         length = length.saturating_sub(MPF_DATA.len());
         decoder.stream.skip(MPF_DATA.len())?;
+        decoder.info.multi_picture_information_offset = Some(decoder.stream.position()?);
         // MPF signature taken from here
         // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/include/ultrahdr/multipictureformat.h#L50
         // https://github.com/google/libultrahdr/blob/bf2aa439eea9ad5da483003fa44182f990f74091/lib/src/multipictureformat.cpp#L36
