@@ -128,9 +128,11 @@ fn change_image_dims(image: &mut Image, angle: f32) {
     let (ow, oh) = image.dimensions();
     if (angle - 90.0).abs() < f32::EPSILON {
         image.set_dimensions(oh, ow);
+        return;
     }
     if (angle - 270.0).abs() < f32::EPSILON {
         image.set_dimensions(oh, ow);
+        return;
     }
     // For arbitrary angles, calculate bounding box
     let angle_rad = angle.to_radians();
