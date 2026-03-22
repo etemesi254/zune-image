@@ -5,7 +5,7 @@ use std::io::{BufRead, Seek, Write};
 use image_webp::{ColorType, DecodingError, WebPEncoder};
 use jxl_oxide::color::WhitePoint::E;
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::ZByteWriterTrait;
+use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{trace, warn};
 
@@ -13,7 +13,7 @@ use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
 use crate::metadata::{AlphaState, ImageMetadata};
-use crate::traits::{DecoderTrait, EncoderTrait};
+use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
 pub struct ZuneWebpDecoder<T: BufRead + Seek> {
     inner: image_webp::WebPDecoder<T>
@@ -170,5 +170,27 @@ impl EncoderTrait for ZuneWebpImageEncoder {
     }
     fn default_depth(&self, depth: BitDepth) -> BitDepth {
         BitDepth::Eight
+    }
+}
+
+impl<T> DecodeInto for ZuneWebpDecoder<T>
+where
+    T: BufRead + Seek
+{
+    type BufferType = u8;
+
+    fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
+        self.inner
+            .read_image(buffer)
+            .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
+        Ok(self
+            .inner
+            .output_buffer_size()
+            .expect("Max output size greater than usize max"))
     }
 }
