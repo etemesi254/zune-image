@@ -24,12 +24,17 @@ where
     T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
+        let metadata = self.read_headers()?.unwrap();
+
         let pixels = self.decode()?;
         let w = self.width().unwrap();
         let h = self.height().unwrap();
         let colorspace = self.colorspace().unwrap();
 
-        Ok(Image::from_u8(&pixels, w, h, colorspace))
+        let mut image = Image::from_u8(&pixels, w, h, colorspace);
+        image.metadata = metadata;
+
+        Ok(image)
     }
     fn dimensions(&self) -> Option<(usize, usize)> {
         Some((self.width().unwrap(), self.height().unwrap()))
@@ -45,7 +50,7 @@ where
         let (w, h) = self.dimensions().unwrap();
         let depth = BitDepth::Eight;
 
-        let metadata = ImageMetadata {
+        let mut metadata = ImageMetadata {
             format: Some(ImageFormat::HEIC),
             colorspace: self.colorspace().expect("Impossible"),
             depth: depth,
@@ -53,6 +58,16 @@ where
             height: h,
             ..Default::default()
         };
+        #[cfg(feature = "metadata")]
+        {
+            // see if we have an exif chunk
+            if let Some(exif) = self.exif_data() {
+                metadata.parse_raw_exif(exif)
+            }
+        }
+        if let Some(icc) = self.icc_data() {
+            metadata.set_icc_chunk(icc.to_vec());
+        }
         Ok(Some(metadata))
     }
 }
@@ -62,4 +77,3 @@ impl From<BmfErrors> for ImageErrors {
         Self::ImageDecodeErrors(format!("heif: {:?}", value))
     }
 }
-

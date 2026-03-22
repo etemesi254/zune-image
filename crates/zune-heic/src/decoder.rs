@@ -5,7 +5,9 @@ use zune_core::options::DecoderOptions;
 
 use crate::bmf_reader::{BoxHeader, BoxSize};
 use crate::errors::BmfErrors;
-use crate::header_structs::{FtypHeader, ItemProperty, MDatSection, MetaSection};
+use crate::header_structs::{
+    ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection
+};
 use crate::headers::{decode_ftyp, decode_meta};
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
@@ -22,6 +24,7 @@ pub struct HeifDecoder<T> {
     pub(crate) mirror:           Option<u8>,
     pub(crate) read_headers:     bool,
     pub(crate) exif_data:        Option<Vec<u8>>,
+    pub(crate) icc_data:         Option<Vec<u8>>,
     pub(crate) ordered_tile_ids: Vec<u32>,
     pub(crate) rows:             u32,
     pub(crate) cols:             u32,
@@ -59,6 +62,7 @@ where
             mirror:           None,
             colorspace:       None,
             exif_data:        None,
+            icc_data:         None,
             ordered_tile_ids: Vec::new(),
             read_headers:     false,
             rows:             0,
@@ -148,6 +152,8 @@ where
         self.internal_colorspace()?;
         // Load exif if present
         self.load_exif_data()?;
+        // ICC too
+        let _ = self.extract_icc_profile_inner();
 
         self.read_headers = true;
 
@@ -231,7 +237,7 @@ where
                 self.width.unwrap(),
                 self.height.unwrap()
             );
-        } else{
+        } else {
             self.rows = 1;
             self.cols = 1;
             self.ordered_tile_ids = vec![pitm.item_id];
@@ -311,7 +317,10 @@ where
         self.width = Some(final_width);
         self.height = Some(final_height);
 
-        trace!("Width and height from ispe {}x{}", final_width, final_height);
+        trace!(
+            "Width and height from ispe {}x{}",
+            final_width, final_height
+        );
         Ok(())
     }
 
@@ -506,6 +515,7 @@ where
             .saturating_sub(tiff_header_offset);
 
         if exif_data_length > 0 {
+            trace!("Exif data length: ({} bytes)", exif_data_length);
             let mut exif_bytes = vec![0; exif_data_length];
             for i in 0..exif_data_length {
                 exif_bytes[i] = self.stream.read_fixed_bytes_or_error::<1>()?[0];
@@ -527,6 +537,31 @@ where
     /// Return the image exif data if present
     pub fn exif_data(&self) -> Option<&Vec<u8>> {
         self.exif_data.as_ref()
+    }
+    pub fn icc_data(&self) -> Option<&Vec<u8>> {
+        self.icc_data.as_ref()
+    }
+    fn extract_icc_profile_inner(&mut self) -> Option<()> {
+        let iprp = self.meta_section.as_ref()?.iprp.as_ref()?;
+
+        // 2. Iterate through the properties in 'ipco'
+        for item in iprp.ipco.as_ref().unwrap().properties.iter() {
+            if let ItemProperty::Colr(c) = item {
+                match c {
+                    ColourInformation::Nclx { .. } => {}
+                    ColourInformation::IccProfile {
+                        profile_type: _,
+                        profile_data
+                    } => {
+                        trace!("Icc profile ({} bytes)",profile_data.len());
+                        self.icc_data = Some(profile_data.to_vec());
+                        break;
+                    }
+                    ColourInformation::Unknown { .. } => {}
+                }
+            }
+        }
+        Some(())
     }
 }
 
