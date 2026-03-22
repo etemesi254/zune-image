@@ -177,7 +177,12 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     ///  - `Error` If something went wrong
     #[inline(always)]
     pub fn skip(&mut self, num: usize) -> Result<u64, ZByteIoError> {
-        self.inner.z_seek(ZSeekFrom::Current(num as i64))
+        //check for zero
+        if num != 0 {
+            self.inner.z_seek(ZSeekFrom::Current(num as i64))
+        } else {
+            Ok(0)
+        }
     }
     /// Move back from current position to a previous
     /// position
@@ -364,6 +369,16 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     /// - An error if something went wrong
     pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
         self.inner.read_bytes(buf)
+    }
+    /// Read all bytes remaining in this input to sink until we hit eof
+    ///
+    /// # Returns
+    /// 
+    /// - `Ok(usize)`:  The actual number of bytes added to the sink
+    /// - `Err()` An error that occurred when reading bytes 
+    pub fn read_all(&mut self, buf: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError> {
+         self.inner.read_remaining(buf)
+        
     }
 }
 
