@@ -184,54 +184,6 @@ pub struct IdatSection {
     pub position: u64
 }
 
-// ── grid — Derived Image Grid (ISO 23008-12 §6.6.2) ──────────────────
-//
-// The `grid` item type is how HEIC stores large images: it tiles them
-// into a rows×columns grid of equal-sized HEVC tiles.  The grid payload
-// is stored in the item's data (via iloc extents) — NOT in a box header.
-//
-//  version(1) flags(1) rows_minus_one(1) columns_minus_one(1)
-//  output_width (2 or 4 bytes depending on flags bit 0)
-//  output_height(2 or 4 bytes)
-//
-// `flags & 1` == 0 → widths are u16; == 1 → widths are u32.
-
-#[derive(Debug, Clone)]
-pub struct GridBox {
-    /// Number of tile columns (columns_minus_one + 1)
-    pub columns:       u32,
-    /// Number of tile rows (rows_minus_one + 1)
-    pub rows:          u32,
-    /// Final composited output width in pixels
-    pub output_width:  u32,
-    /// Final composited output height in pixels
-    pub output_height: u32
-}
-
-impl GridBox {
-    /// Parse from the raw item data bytes (not a box payload — no size/type header).
-    pub fn parse<T: ZByteReaderTrait>(data: &mut ZReader<T>) -> Result<Self, BmfErrors> {
-        // skip one byte
-        data.skip(1)?;
-        // version = data[0] (must be 0)
-        let flags = data.read_u8();
-        let rows_minus_one = data.read_u8();
-        let cols_minus_one = data.read_u8();
-        let large = flags & 1 != 0;
-        let (output_width, output_height) = if large {
-            (data.get_u32_be_err()?, data.get_u32_be_err()?)
-        } else {
-            (data.get_u16_be_err()? as u32, data.get_u16_be_err()? as u32)
-        };
-        Ok(GridBox {
-            columns: cols_minus_one as u32 + 1,
-            rows: rows_minus_one as u32 + 1,
-            output_width,
-            output_height
-        })
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum ColourInformation {
     Nclx {

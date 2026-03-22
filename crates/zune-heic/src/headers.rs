@@ -12,13 +12,13 @@ use crate::utils::read_sized_int;
 
 #[inline]
 fn subtract_value(value: usize, subtract: usize) -> Result<usize, BmfErrors> {
-    return match value.checked_sub(subtract) {
+    match value.checked_sub(subtract) {
         None => Err(BmfErrors::WouldUnderflow {
             a: value,
             b: subtract
         }),
         Some(e) => Ok(e)
-    };
+    }
 }
 #[track_caller]
 #[inline]
@@ -961,15 +961,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
         });
     }
 
-    let mut bytes_left = match box_header.total_size {
-        BoxSize::Absolute(size) => (size).saturating_sub(box_header.header_size) as usize,
-        _ => {
-            return Err(BmfErrors::ParseError {
-                box_type: box_header.box_type.clone(),
-                msg:      "META needs absolute size".into()
-            });
-        }
-    };
+    let mut bytes_left = get_length(box_header)?;
 
     if bytes_left < 4 {
         return Err(BmfErrors::PayloadTooShort {
@@ -989,15 +981,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
 
     while bytes_left >= 8 {
         let child_header = BoxHeader::read(reader)?;
-        let child_size = match child_header.total_size {
-            BoxSize::Absolute(s) => s as usize,
-            _ => {
-                return Err(BmfErrors::ParseError {
-                    box_type: child_header.box_type,
-                    msg:      "Meta child needs absolute size".into()
-                });
-            }
-        };
+        let child_size = get_abs_length(&child_header)?;
 
         if child_size > bytes_left {
             return Err(BmfErrors::ParseError {
