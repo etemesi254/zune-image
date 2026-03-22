@@ -55,6 +55,7 @@ pub mod ppm;
 pub mod psd;
 pub mod qoi;
 
+pub mod heic;
 pub mod webp;
 pub(crate) fn create_options_for_encoder(
     options: Option<EncoderOptions>, image: &Image
@@ -98,8 +99,10 @@ pub enum ImageFormat {
     HDR,
     /// Windows Bitmap Files
     BMP,
-    ///
+    /// Google WEBP file
     WEBP,
+    /// Apple HEIC/HEIF file
+    HEIC,
     /// Any unknown format
     Unknown
 }
@@ -264,6 +267,14 @@ impl ImageFormat {
                     Err(ImageErrors::ImageDecoderNotIncluded(*self))
                 }
             }
+            ImageFormat::HEIC => {
+                #[cfg(feature = "heic")]
+                {
+                    Ok(Box::new(codecs::heic::HeifDecoder::new_with_options(
+                        data, options
+                    )))
+                }
+            }
             ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
         }
     }
@@ -366,64 +377,58 @@ impl ImageFormat {
             "qoi" => {
                 #[cfg(feature = "qoi")]
                 {
-                   return Some(ImageFormat::QOI)
+                    return Some(ImageFormat::QOI);
                 }
-                return None
+                return None;
             }
             "ppm" | "pam" | "pgm" | "pbm" | "pfm" => {
                 #[cfg(feature = "ppm")]
                 {
-                  return  Some(ImageFormat::PPM)
+                    return Some(ImageFormat::PPM);
                 }
-                return None
+                return None;
             }
             "jpeg" | "jpg" => {
                 #[cfg(feature = "jpeg")]
                 {
-                 return  Some(ImageFormat::JPEG)
+                    return Some(ImageFormat::JPEG);
                 }
-                return None
-
+                return None;
             }
             "jxl" => {
                 #[cfg(feature = "jpeg-xl")]
                 {
-                   return Some(ImageFormat::JPEG_XL)
+                    return Some(ImageFormat::JPEG_XL);
                 }
-                return None
-
+                return None;
             }
             "ff" => {
                 #[cfg(feature = "farbfeld")]
                 {
-                    return Some(ImageFormat::Farbfeld)
+                    return Some(ImageFormat::Farbfeld);
                 }
-                return None
-
+                return None;
             }
             "hdr" => {
                 #[cfg(feature = "hdr")]
                 {
-                   return Some(ImageFormat::HDR)
+                    return Some(ImageFormat::HDR);
                 }
-                return None
-
+                return None;
             }
             "png" => {
                 #[cfg(feature = "png")]
                 {
-                  return  Some(ImageFormat::PNG)
+                    return Some(ImageFormat::PNG);
                 }
-                return None
-
+                return None;
             }
             "webp" => {
                 #[cfg(feature = "webp")]
                 {
-                  return  Some(ImageFormat::WEBP)
+                    return Some(ImageFormat::WEBP);
                 }
-                return None
-
+                return None;
             }
             _ => return None
         }
@@ -787,6 +792,14 @@ where
         }
     }
 
+    #[cfg(feature = "heic")]
+    {
+        let reference = reader.peek_at(0, 16).ok()?;
+        if is_heif(reference) {
+            return Some((ImageFormat::HEIC, reader.consume()));
+        }
+    }
+
     None
 }
 
@@ -797,4 +810,52 @@ pub fn is_webp(data: &[u8]) -> bool {
     }
 
     &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP"
+}
+
+/// Returns true if the provided bytes represent a valid HEIF/HEIC image.
+/// This checks the 'ftyp' box at the beginning of the file.
+pub fn is_heif(bytes: &[u8]) -> bool {
+    // A valid ISOBMFF file must be at least 12 bytes to have a basic ftyp box
+    // [4 bytes size][4 bytes 'ftyp'][4 bytes major_brand]
+    if bytes.len() < 12 {
+        return false;
+    }
+
+    // Check if the second 4 bytes are "ftyp"
+    if &bytes[4..8] != b"ftyp" {
+        return false;
+    }
+
+    // List of common HEIF/HEIC brands
+    let heif_brands = [
+        b"heic", // Apple's standard HEVC
+        b"heix", // 10-bit/High Efficiency
+        b"mif1", // Multi-image (standard HEIF)
+        b"msf1", // Multi-image sequence
+        b"hevc", // Generic HEVC
+        b"hevx"  // Generic HEVC
+    ];
+
+    // Check Major Brand (bytes 8..12)
+    let major_brand = &bytes[8..12];
+    if heif_brands.iter().any(|&b| b == major_brand) {
+        return true;
+    }
+
+    // If major brand didn't match, check compatible brands (if they exist)
+    // These start at byte 16 and go until the end of the ftyp box size.
+    let ftyp_size = u32::from_be_bytes(bytes[0..4].try_into().unwrap_or([0; 4])) as usize;
+
+    // Ensure we don't read past the provided slice or the box size
+    let limit = std::cmp::min(ftyp_size, bytes.len());
+    let mut cursor = 16;
+    while cursor + 4 <= limit {
+        let brand = &bytes[cursor..cursor + 4];
+        if heif_brands.iter().any(|&b| b == brand) {
+            return true;
+        }
+        cursor += 4;
+    }
+
+    false
 }

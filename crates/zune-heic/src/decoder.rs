@@ -38,7 +38,7 @@ where
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new(stream: T) -> Self {
-        Self::with_options(DecoderOptions::default(), stream)
+        Self::new_with_options(stream, DecoderOptions::default())
     }
     /// Create a new decoder instance with the ability to define decode options
     ///
@@ -46,7 +46,7 @@ where
     ///  - `options`: Decoding options
     ///  - `stream`: The actual data stream with raw heif/heic file
     #[allow(clippy::redundant_field_names)]
-    pub fn with_options(options: DecoderOptions, stream: T) -> Self {
+    pub fn new_with_options(stream: T, options: DecoderOptions) -> Self {
         Self {
             stream:           ZReader::new(stream),
             options:          options,
@@ -66,7 +66,7 @@ where
         }
     }
 
-    pub fn read_headers(&mut self) -> Result<(), BmfErrors> {
+    pub fn decode_headers(&mut self) -> Result<(), BmfErrors> {
         if self.read_headers {
             warn!("Headers already read");
             return Ok(());
@@ -294,7 +294,7 @@ where
     }
 
     pub fn decode(&mut self) -> Result<Vec<u8>, BmfErrors> {
-        self.read_headers()?;
+        self.decode_headers()?;
 
         #[cfg(target_os = "macos")]
         {
@@ -303,7 +303,7 @@ where
                 let tile_map = self.decode_hardware_videotoolbox()?;
                 let w = self.width.unwrap() as usize;
                 let h = self.height.unwrap() as usize;
-                let colors = 3;
+                let colors = self.colorspace().unwrap().num_components();
 
                 let mut output = vec![0; w * h * colors];
                 self.stitch(tile_map, &mut output);
@@ -508,38 +508,38 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::fs::{File, read};
-//     use std::io::Write;
-//
-//     use zune_core::bytestream::{ZCursor, ZReader};
-//
-//     use crate::decoder::HeifDecoder;
-//
-//     #[test]
-//     fn test_decoding() {
-//         let file = read("/Users/etemesi/Downloads/chef-with-trumpet.heic").unwrap();
-//         let data = ZCursor::new(file);
-//         let mut decoder = HeifDecoder::new(data);
-//         decoder.read_headers().unwrap();
-//         let colorspace = decoder.colorspace().unwrap();
-//         println!("{:?}", colorspace);
-//         println!("{:?}", decoder.width().unwrap());
-//         println!("{:?}", decoder.height().unwrap());
-//         let data = decoder.decode().unwrap();
-//
-//         // 4. Final Write
-//         let mut file = File::create("final_stitched_2.ppm").unwrap();
-//         file.write_all(
-//             format!(
-//                 "P6\n{} {}\n255\n",
-//                 decoder.width().unwrap(),
-//                 decoder.height.unwrap()
-//             )
-//             .as_bytes()
-//         )
-//         .unwrap();
-//         file.write_all(&data).unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use std::fs::{File, read};
+    use std::io::Write;
+
+    use zune_core::bytestream::{ZCursor, ZReader};
+
+    use crate::decoder::HeifDecoder;
+
+    #[test]
+    fn test_decoding() {
+        let file = read("/Users/etemesi/Downloads/chef-with-trumpet.heic").unwrap();
+        let data = ZCursor::new(file);
+        let mut decoder = HeifDecoder::new(data);
+        decoder.decode_headers().unwrap();
+        let colorspace = decoder.colorspace().unwrap();
+        println!("{:?}", colorspace);
+        println!("{:?}", decoder.width().unwrap());
+        println!("{:?}", decoder.height().unwrap());
+        let data = decoder.decode().unwrap();
+
+        // 4. Final Write
+        let mut file = File::create("final_stitched_2.ppm").unwrap();
+        file.write_all(
+            format!(
+                "P6\n{} {}\n255\n",
+                decoder.width().unwrap(),
+                decoder.height.unwrap()
+            )
+            .as_bytes()
+        )
+        .unwrap();
+        file.write_all(&data).unwrap();
+    }
+}
