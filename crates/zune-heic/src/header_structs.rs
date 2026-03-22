@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
 use crate::bmf_reader::FourCC;
