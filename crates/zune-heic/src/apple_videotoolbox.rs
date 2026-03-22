@@ -1,8 +1,44 @@
 #![cfg(target_os = "macos")]
+//! # Apple Hardware HEVC Decoder (VideoToolbox)
+//!
+//! This module provides a hardware-accelerated HEVC (H.265) decoder using
+//! Apple's VideoToolbox framework.
+//!
+//! ## Overview
+//!
+//! The decoding pipeline works as follows:
+//!
+//! 1. VPS/SPS/PPS parameter sets are used to create a `CMVideoFormatDescription`.
+//! 2. A `VTDecompressionSession` is created (hardware-accelerated when available).
+//! 3. Encoded HEVC samples are wrapped into `CMSampleBuffer`s.
+//! 4. Samples are submitted asynchronously to VideoToolbox.
+//! 5. Decoded frames are delivered via a C callback (`decode_callback`).
+//! 6. Frames are converted from NV12 (YUV) → RGB and stored in a shared `TileMap`.
+//!
+//! ## Threading Model
+//!
+//! - Decoding is asynchronous.
+//! - The callback is invoked on a VideoToolbox-managed background thread.
+//! - Output is stored in a `Arc<Mutex<HashMap<u32, Vec<u8>>>>` (`TileMap`).
+//!
+//! ## Safety
+//!
+//! This module uses extensive `unsafe` code due to FFI with CoreMedia and
+//! VideoToolbox. Key invariants:
+//!
+//! - Input buffers must remain valid for the duration of decoding.
+//! - `kCFAllocatorNull` is used to prevent CoreMedia from freeing Rust-owned memory.
+//! - The callback receives raw pointers which must remain valid.
+//!
+//! ## Platform
+//!
+//! Only available on **macOS**.
+
+
+use core::ffi::c_void;
+use core::{ptr, slice};
 use std::collections::HashMap;
-use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
-use std::{ptr, slice};
 
 use core_foundation_sys::base::{CFAllocatorRef, CFRelease, OSStatus, kCFAllocatorNull};
 use core_media_sys::{
@@ -20,6 +56,11 @@ use zune_core::bytestream::ZByteReaderTrait;
 use crate::decoder::HeifDecoder;
 use crate::errors::BmfErrors;
 use crate::processor::HevcSample;
+
+/// Thread-safe storage for decoded tiles.
+///
+/// Key: `item_id` (HEVC sample identifier)
+/// Value: RGB pixel buffer (`Vec<u8>`, 3 bytes per pixel)
 pub type TileMap = Arc<Mutex<HashMap<u32, Vec<u8>>>>;
 
 unsafe extern "C" {
@@ -62,13 +103,40 @@ unsafe extern "C" {
     ) -> usize;
 }
 // ---------------------------------------------------------------------------
-
+/// Hardware HEVC decoder backed by VideoToolbox.
+///
+/// This struct owns:
+/// - A `VTDecompressionSession`
+/// - A `CMVideoFormatDescription`
+///
+/// It is responsible for submitting encoded samples and receiving decoded frames
+/// via a callback.
 pub struct AppleHardwareDecoder {
     session:     VTDecompressionSessionRef,
     format_desc: CMVideoFormatDescriptionRef
 }
 
 impl AppleHardwareDecoder {
+    /// Create a new hardware decoder instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `vps` - Video Parameter Set
+    /// * `sps` - Sequence Parameter Set
+    /// * `pps` - Picture Parameter Set
+    /// * `context` - Opaque pointer passed to the decode callback
+    ///
+    /// Typically, `context` is a pointer to a `TileMap`.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Self)` if initialization succeeds
+    /// - `Err(OSStatus)` if VideoToolbox/CoreMedia fails
+    ///
+    /// # Safety
+    ///
+    /// - `context` must remain valid for the lifetime of the decoder.
+    /// - Parameter sets must follow HEVC spec.
     pub fn new(vps: &[u8], sps: &[u8], pps: &[u8], context: *mut c_void) -> Result<Self, OSStatus> {
         unsafe {
             let mut format_desc: CMVideoFormatDescriptionRef = ptr::null_mut();
@@ -120,14 +188,30 @@ impl AppleHardwareDecoder {
             })
         }
     }
-
-    /// Block until all in-flight async frames have been delivered to the callback.
+    /// Wait for all queued frames to finish decoding.
+    ///
+    /// This blocks until all asynchronous decode operations complete
+    /// and their callbacks have been invoked.
     pub fn flush(&self) {
         unsafe {
             VTDecompressionSessionWaitForAsynchronousFrames(self.session);
         }
     }
 
+
+    /// Submit an HEVC sample for decoding.
+    ///
+    /// # Behavior
+    ///
+    /// - Each extent is wrapped in a `CMBlockBuffer` (zero-copy).
+    /// - Then wrapped in a `CMSampleBuffer`.
+    /// - Submitted asynchronously to VideoToolbox.
+    ///
+    /// The decoded result is delivered via `decode_callback`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `OSStatus` if any CoreMedia or VideoToolbox call fails.
     pub fn decode_sample(&self, sample: &HevcSample<'_>) -> Result<(), OSStatus> {
         unsafe {
             for extent in &sample.extents {
@@ -179,7 +263,7 @@ impl AppleHardwareDecoder {
                 let status = VTDecompressionSessionDecodeFrame(
                     self.session,
                     sample_buffer,
-                    1,            // Enable Asynchronous
+                    1, // Enable Asynchronous
                     frame_id_ptr,
                     ptr::null_mut()
                 );
@@ -211,7 +295,6 @@ impl Drop for AppleHardwareDecoder {
     }
 }
 
-
 pub(crate) const Y_CF: i16 = 16384;
 pub(crate) const CR_CF: i16 = 22970;
 pub(crate) const CB_CF: i16 = 29032;
@@ -221,10 +304,23 @@ pub(crate) const YUV_PREC: i16 = 14;
 // Rounding const for YUV -> RGB conversion: floating equivalent 0.499(9).
 pub(crate) const YUV_RND: i16 = (1 << (YUV_PREC - 1)) - 1;
 
-
 fn clamp(a: i32) -> u8 {
     a.clamp(0, 255) as u8
 }
+/// Convert a batch of 16 YCbCr pixels to RGB.
+///
+/// This is a scalar fallback implementation used during pixel conversion.
+///
+/// # Parameters
+///
+/// - `BGRA`: If true, output is written as BGRA order instead of RGB.
+/// - `y`, `cb`, `cr`: Input YUV components (16 pixels)
+/// - `output`: Destination buffer
+/// - `pos`: Current write offset (updated after writing)
+///
+/// # Panics
+///
+/// Panics if output buffer is too small.
 
 pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
@@ -269,18 +365,27 @@ pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     // Increment pos
     *pos += 48;
 }
+/// VideoToolbox decode callback.
+///
+/// This function is invoked asynchronously when a frame is decoded.
+///
+/// # Responsibilities
+///
+/// - Extract NV12 planes (Y + interleaved UV)
+/// - Convert to RGB
+/// - Store in `TileMap` using `item_id`
+///
+/// # Safety
+///
+/// - `decompression_output_ref_con` must point to a valid `Mutex<HashMap<...>>`.
+/// - `source_frame_ref_con` must be a valid encoded `item_id`.
 extern "C" fn decode_callback(
-    decompression_output_ref_con: *mut c_void,
-    source_frame_ref_con: *mut c_void,
-    status: OSStatus,
-    _info_flags: VTDecodeInfoFlags,
-    image_buffer: CVImageBufferRef,
-    _presentation_time_stamp: CMTime,
-    _presentation_duration: CMTime
+    decompression_output_ref_con: *mut c_void, source_frame_ref_con: *mut c_void, status: OSStatus,
+    _info_flags: VTDecodeInfoFlags, image_buffer: CVImageBufferRef,
+    _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
     let tile_map_ptr = decompression_output_ref_con as *const Mutex<HashMap<u32, Vec<u8>>>;
     let item_id = source_frame_ref_con as usize;
-
 
     if status != 0 || image_buffer.is_null() {
         eprintln!("Hardware decode failed. Status: {}", status);
@@ -290,28 +395,28 @@ extern "C" fn decode_callback(
     unsafe {
         CVPixelBufferLockBaseAddress(image_buffer, 1);
 
-        let width  = CVPixelBufferGetWidth(image_buffer);
+        let width = CVPixelBufferGetWidth(image_buffer);
         let height = CVPixelBufferGetHeight(image_buffer);
 
-        let y_ptr     = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0) as *const u8;
-        let y_stride  = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 0);
-        let uv_ptr    = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1) as *const u8;
+        let y_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0) as *const u8;
+        let y_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 0);
+        let uv_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1) as *const u8;
         let uv_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 1);
 
-        let y_plane  = slice::from_raw_parts(y_ptr,  height * y_stride);
+        let y_plane = slice::from_raw_parts(y_ptr, height * y_stride);
         let uv_plane = slice::from_raw_parts(uv_ptr, (height / 2) * uv_stride);
 
         let mut rgb_data = vec![0u8; width * height * 3];
-        let mut out_pos  = 0usize;
+        let mut out_pos = 0usize;
 
         let chunks_of_16 = width / 16;
-        let remainder    = width % 16;
+        let remainder = width % 16;
 
         let mut cb_chunk = [0i16; 16];
         let mut cr_chunk = [0i16; 16];
 
         for row in 0..height {
-            let y_row_base  = row * y_stride;
+            let y_row_base = row * y_stride;
             let uv_row_base = (row / 2) * uv_stride;
 
             for chunk in 0..chunks_of_16 {
@@ -323,20 +428,23 @@ extern "C" fn decode_callback(
 
                 // UV: one 16-byte slice read, deinterleave into cb/cr in 8 iterations
                 let uv_base = uv_row_base + (x_base / 2) * 2;
-                let uv_src  = &uv_plane[uv_base..][..16];
+                let uv_src = &uv_plane[uv_base..][..16];
 
                 for i in 0..8 {
-                    let cb = uv_src[i * 2]     as i16;
+                    let cb = uv_src[i * 2] as i16;
                     let cr = uv_src[i * 2 + 1] as i16;
-                    cb_chunk[i * 2]     = cb;
+                    cb_chunk[i * 2] = cb;
                     cb_chunk[i * 2 + 1] = cb;
-                    cr_chunk[i * 2]     = cr;
+                    cr_chunk[i * 2] = cr;
                     cr_chunk[i * 2 + 1] = cr;
                 }
 
                 ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk, &cb_chunk, &cr_chunk,
-                    &mut rgb_data, &mut out_pos
+                    &y_chunk,
+                    &cb_chunk,
+                    &cr_chunk,
+                    &mut rgb_data,
+                    &mut out_pos
                 );
             }
 
@@ -356,26 +464,28 @@ extern "C" fn decode_callback(
                     // x0 is always even after the min clamp, but guard with & !1
                     let uv_off0 = uv_row_base + (x0 & !1);
                     let uv_off1 = uv_row_base + (x1 & !1);
-                    let cb0 = uv_plane[uv_off0]     as i16;
+                    let cb0 = uv_plane[uv_off0] as i16;
                     let cr0 = uv_plane[uv_off0 + 1] as i16;
-                    let cb1 = uv_plane[uv_off1]     as i16;
+                    let cb1 = uv_plane[uv_off1] as i16;
                     let cr1 = uv_plane[uv_off1 + 1] as i16;
-                    cb_chunk[i * 2]     = cb0;
+                    cb_chunk[i * 2] = cb0;
                     cb_chunk[i * 2 + 1] = cb1;
-                    cr_chunk[i * 2]     = cr0;
+                    cr_chunk[i * 2] = cr0;
                     cr_chunk[i * 2 + 1] = cr1;
                 }
 
                 let mut temp = [0u8; 48];
                 let mut temp_pos = 0usize;
                 ycbcr_to_rgb_inner_16_scalar::<false>(
-                    &y_chunk, &cb_chunk, &cr_chunk,
-                    &mut temp, &mut temp_pos
+                    &y_chunk,
+                    &cb_chunk,
+                    &cr_chunk,
+                    &mut temp,
+                    &mut temp_pos
                 );
 
                 let valid_bytes = remainder * 3;
-                rgb_data[out_pos..out_pos + valid_bytes]
-                    .copy_from_slice(&temp[..valid_bytes]);
+                rgb_data[out_pos..out_pos + valid_bytes].copy_from_slice(&temp[..valid_bytes]);
                 out_pos += valid_bytes;
             }
         }
@@ -389,6 +499,24 @@ extern "C" fn decode_callback(
 }
 
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
+
+    /// Decode HEVC tiles using Apple VideoToolbox hardware acceleration.
+    ///
+    /// # Returns
+    ///
+    /// A `TileMap` containing all decoded tiles indexed by `item_id`.
+    ///
+    /// # Workflow
+    ///
+    /// 1. Lazily initializes `AppleHardwareDecoder`
+    /// 2. Feeds HEVC samples into VideoToolbox
+    /// 3. Waits for all frames via `flush()`
+    /// 4. Returns collected RGB tiles
+    ///
+    /// # Notes
+    ///
+    /// - Decoding is asynchronous internally.
+    /// - Final `flush()` is required to guarantee completion.
     pub(crate) fn decode_hardware_videotoolbox(&mut self) -> Result<TileMap, BmfErrors> {
         // 1. Thread-safe tile storage
         let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
