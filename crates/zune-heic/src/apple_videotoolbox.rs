@@ -211,79 +211,175 @@ impl Drop for AppleHardwareDecoder {
     }
 }
 
+
+pub(crate) const Y_CF: i16 = 16384;
+pub(crate) const CR_CF: i16 = 22970;
+pub(crate) const CB_CF: i16 = 29032;
+pub(crate) const C_G_CR_COEF_1: i16 = -11700;
+pub(crate) const C_G_CB_COEF_2: i16 = -5638;
+pub(crate) const YUV_PREC: i16 = 14;
+// Rounding const for YUV -> RGB conversion: floating equivalent 0.499(9).
+pub(crate) const YUV_RND: i16 = (1 << (YUV_PREC - 1)) - 1;
+
+
+fn clamp(a: i32) -> u8 {
+    a.clamp(0, 255) as u8
+}
+
+pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
+    y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
+) {
+    let (_, output_position) = output.split_at_mut(*pos);
+
+    // Convert into a slice with 48 elements
+    let opt: &mut [u8; 48] = output_position
+        .get_mut(0..48)
+        .expect("Slice to small cannot write")
+        .try_into()
+        .unwrap();
+
+    for ((&y, (cb, cr)), out) in y
+        .iter()
+        .zip(cb.iter().zip(cr.iter()))
+        .zip(opt.chunks_exact_mut(3))
+    {
+        let cr = cr - 128;
+        let cb = cb - 128;
+
+        let y0 = i32::from(y) * i32::from(Y_CF) + i32::from(YUV_RND);
+
+        let r = (y0 + i32::from(cr) * i32::from(CR_CF)) >> YUV_PREC;
+        let g = (y0
+            + i32::from(cr) * i32::from(C_G_CR_COEF_1)
+            + i32::from(cb) * i32::from(C_G_CB_COEF_2))
+            >> YUV_PREC;
+        let b = (y0 + i32::from(cb) * i32::from(CB_CF)) >> YUV_PREC;
+
+        if BGRA {
+            out[0] = clamp(b);
+            out[1] = clamp(g);
+            out[2] = clamp(r);
+        } else {
+            out[0] = clamp(r);
+            out[1] = clamp(g);
+            out[2] = clamp(b);
+        }
+    }
+
+    // Increment pos
+    *pos += 48;
+}
 extern "C" fn decode_callback(
     decompression_output_ref_con: *mut c_void,
-    source_frame_ref_con: *mut c_void, // Removed underscore so we can use it!
+    source_frame_ref_con: *mut c_void,
     status: OSStatus,
     _info_flags: VTDecodeInfoFlags,
-    image_buffer: CVImageBufferRef, // This is our typed pixel buffer
+    image_buffer: CVImageBufferRef,
     _presentation_time_stamp: CMTime,
     _presentation_duration: CMTime
 ) {
-    // 0 = kCVReturnSuccess
     if status != 0 || image_buffer.is_null() {
         eprintln!("Hardware decode failed. Status: {}", status);
         return;
     }
     let tile_map_ptr = decompression_output_ref_con as *const Mutex<HashMap<u32, Vec<u8>>>;
-
-    // Recover our item_id from the C pointer (Passed during VTDecompressionSessionDecodeFrame)
     let item_id = source_frame_ref_con as usize;
 
     unsafe {
-        // 1. Lock the hardware memory (1 = kCVPixelBufferLock_ReadOnly)
         CVPixelBufferLockBaseAddress(image_buffer, 1);
 
-        // CoreVideo returns dimensions as usize
-        let width = CVPixelBufferGetWidth(image_buffer);
+        let width  = CVPixelBufferGetWidth(image_buffer);
         let height = CVPixelBufferGetHeight(image_buffer);
 
-        // Plane 0: The Y (Luma/Grayscale) channel. Full resolution.
-        let y_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0) as *const u8;
-        let y_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 0);
-
-        // Plane 1: The UV (Chroma/Color) channel. Interleaved (U,V,U,V). Half resolution.
-        let uv_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1) as *const u8;
+        let y_ptr     = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0) as *const u8;
+        let y_stride  = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 0);
+        let uv_ptr    = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1) as *const u8;
         let uv_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 1);
 
-        // Create safe Rust slices over the Apple hardware memory
-        let y_plane = slice::from_raw_parts(y_ptr, height * y_stride);
+        let y_plane  = slice::from_raw_parts(y_ptr,  height * y_stride);
         let uv_plane = slice::from_raw_parts(uv_ptr, (height / 2) * uv_stride);
 
-        // Allocate our RGB output buffer
         let mut rgb_data = vec![0u8; width * height * 3];
-        let mut rgb_idx = 0;
+        let mut out_pos  = 0usize;
 
-        // 2. The YCbCr 4:2:0 to RGB Math Loop
-        for y in 0..height {
-            for x in 0..width {
-                // Get Luma
-                let y_val = y_plane[y * y_stride + x] as f32;
+        let chunks_of_16 = width / 16;
+        let remainder    = width % 16;
 
-                // Get Chroma (Divided by 2 because UV is subsampled in 4:2:0)
-                let uv_x = x / 2;
-                let uv_y = y / 2;
+        let mut cb_chunk = [0i16; 16];
+        let mut cr_chunk = [0i16; 16];
 
-                // UV plane is interleaved: U is at index 0, V is at index 1
-                let uv_offset = (uv_y * uv_stride) + (uv_x * 2);
-                let u_val = uv_plane[uv_offset] as f32 - 128.0;
-                let v_val = uv_plane[uv_offset + 1] as f32 - 128.0;
+        for row in 0..height {
+            let y_row_base  = row * y_stride;
+            let uv_row_base = (row / 2) * uv_stride;
 
-                // Standard Full-Range BT.709 YCbCr to RGB Conversion
-                let r = (y_val + 1.402 * v_val).clamp(0.0, 255.0) as u8;
-                let g = (y_val - 0.344136 * u_val - 0.714136 * v_val).clamp(0.0, 255.0) as u8;
-                let b = (y_val + 1.772 * u_val).clamp(0.0, 255.0) as u8;
+            for chunk in 0..chunks_of_16 {
+                let x_base = chunk * 16;
 
-                rgb_data[rgb_idx] = r;
-                rgb_data[rgb_idx + 1] = g;
-                rgb_data[rgb_idx + 2] = b;
-                rgb_idx += 3;
+                // Y: one contiguous slice read
+                let y_src = &y_plane[y_row_base + x_base..][..16];
+                let y_chunk: [i16; 16] = std::array::from_fn(|i| y_src[i] as i16);
+
+                // UV: one 16-byte slice read, deinterleave into cb/cr in 8 iterations
+                let uv_base = uv_row_base + (x_base / 2) * 2;
+                let uv_src  = &uv_plane[uv_base..][..16];
+
+                for i in 0..8 {
+                    let cb = uv_src[i * 2]     as i16;
+                    let cr = uv_src[i * 2 + 1] as i16;
+                    cb_chunk[i * 2]     = cb;
+                    cb_chunk[i * 2 + 1] = cb;
+                    cr_chunk[i * 2]     = cr;
+                    cr_chunk[i * 2 + 1] = cr;
+                }
+
+                ycbcr_to_rgb_inner_16_scalar::<false>(
+                    &y_chunk, &cb_chunk, &cr_chunk,
+                    &mut rgb_data, &mut out_pos
+                );
+            }
+
+            // Remainder: same idea but clamp to avoid OOB
+            if remainder > 0 {
+                let x_base = chunks_of_16 * 16;
+
+                let y_chunk: [i16; 16] = std::array::from_fn(|i| {
+                    y_plane[y_row_base + (x_base + i).min(width - 1)] as i16
+                });
+
+                let mut cb_chunk = [0i16; 16];
+                let mut cr_chunk = [0i16; 16];
+                for i in 0..8 {
+                    let x0 = (x_base + i * 2).min(width - 1);
+                    let x1 = (x_base + i * 2 + 1).min(width - 1);
+                    // x0 is always even after the min clamp, but guard with & !1
+                    let uv_off0 = uv_row_base + (x0 & !1);
+                    let uv_off1 = uv_row_base + (x1 & !1);
+                    let cb0 = uv_plane[uv_off0]     as i16;
+                    let cr0 = uv_plane[uv_off0 + 1] as i16;
+                    let cb1 = uv_plane[uv_off1]     as i16;
+                    let cr1 = uv_plane[uv_off1 + 1] as i16;
+                    cb_chunk[i * 2]     = cb0;
+                    cb_chunk[i * 2 + 1] = cb1;
+                    cr_chunk[i * 2]     = cr0;
+                    cr_chunk[i * 2 + 1] = cr1;
+                }
+
+                let mut temp = [0u8; 48];
+                let mut temp_pos = 0usize;
+                ycbcr_to_rgb_inner_16_scalar::<false>(
+                    &y_chunk, &cb_chunk, &cr_chunk,
+                    &mut temp, &mut temp_pos
+                );
+
+                let valid_bytes = remainder * 3;
+                rgb_data[out_pos..out_pos + valid_bytes]
+                    .copy_from_slice(&temp[..valid_bytes]);
+                out_pos += valid_bytes;
             }
         }
 
-        // 3. Unlock the memory immediately so Apple can reuse the buffer for the next tile
         CVPixelBufferUnlockBaseAddress(image_buffer, 1);
-        // Store in memory
+
         if let Ok(mut map) = (*tile_map_ptr).lock() {
             map.insert(item_id as u32, rgb_data);
         }
