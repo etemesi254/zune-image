@@ -180,7 +180,7 @@ impl AppleHardwareDecoder {
                     self.session,
                     sample_buffer,
                     1,            // Enable Asynchronous
-                    frame_id_ptr, // <-- NEW: Pass the ID here!
+                    frame_id_ptr,
                     ptr::null_mut()
                 );
 
@@ -278,12 +278,14 @@ extern "C" fn decode_callback(
     _presentation_time_stamp: CMTime,
     _presentation_duration: CMTime
 ) {
+    let tile_map_ptr = decompression_output_ref_con as *const Mutex<HashMap<u32, Vec<u8>>>;
+    let item_id = source_frame_ref_con as usize;
+
+
     if status != 0 || image_buffer.is_null() {
         eprintln!("Hardware decode failed. Status: {}", status);
         return;
     }
-    let tile_map_ptr = decompression_output_ref_con as *const Mutex<HashMap<u32, Vec<u8>>>;
-    let item_id = source_frame_ref_con as usize;
 
     unsafe {
         CVPixelBufferLockBaseAddress(image_buffer, 1);

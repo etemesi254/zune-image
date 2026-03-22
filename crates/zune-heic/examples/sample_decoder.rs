@@ -2102,7 +2102,7 @@ fn main() {
     let path = if args.len() == 2 {
         args[1].clone()
     } else {
-        String::from("/Users/etemesi/Downloads/chef-with-trumpet.heic")
+        String::from("/Users/etemesi/Downloads/heif-bitcoin-color.heif")
     };
 
     let file = File::open(&path).unwrap_or_else(|e| {

@@ -195,32 +195,38 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         let canvas = &mut output[0..(final_w * final_h * channels) as usize];
         let tiles = tile_map.lock().unwrap();
 
-        for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-            if let Some(tile_data) = tiles.get(&item_id) {
-                let col = (index as u32) % self.cols;
-                let row = (index as u32) / self.cols;
+        if self.ordered_tile_ids.len() == 1 {
+            // no grid stitching needed. so copy to output directly
+            if let Some(tile) = tiles.get(&self.ordered_tile_ids[0]) {
+                canvas.copy_from_slice(tile.as_slice());
+            }
+        } else {
+            for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
+                if let Some(tile_data) = tiles.get(&item_id) {
+                    let col = (index as u32) % self.cols;
+                    let row = (index as u32) / self.cols;
 
-                let base_x = col * tile_w;
-                let base_y = row * tile_h;
+                    let base_x = col * tile_w;
+                    let base_y = row * tile_h;
 
-                for ty in 0..tile_h {
-                    let canvas_y = base_y + ty;
-                    if canvas_y >= final_h {
-                        break;
+                    for ty in 0..tile_h {
+                        let canvas_y = base_y + ty;
+                        if canvas_y >= final_h {
+                            break;
+                        }
+
+                        if base_x >= final_w {
+                            continue;
+                        }
+
+                        let copy_width = tile_w.min(final_w - base_x);
+                        let len = (copy_width * channels) as usize;
+
+                        let src = (ty * tile_stride) as usize;
+                        let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
+
+                        canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
                     }
-
-                    if base_x >= final_w {
-                        continue;
-                    }
-
-                    let copy_width = tile_w.min(final_w - base_x);
-                    let len = (copy_width * channels) as usize;
-
-                    let src = (ty * tile_stride) as usize;
-                    let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
-
-                    canvas[dst..dst + len]
-                        .copy_from_slice(&tile_data[src..src + len]);
                 }
             }
         }

@@ -143,7 +143,7 @@ where
         // load extra items
         self.handle_grid_items()?;
         // Calc width and height
-        self.calc_internal_dims()?;
+        self.calc_internal_dims_via_ispe()?;
         // Calc colorspace
         self.internal_colorspace()?;
         // Load exif if present
@@ -154,9 +154,22 @@ where
         Ok(())
     }
 
+    pub fn get_item_type(&self, item_id: u32) -> [u8; 4] {
+        self.meta_section
+            .as_ref()
+            .and_then(|meta| meta.iinf.as_ref())
+            .and_then(|iinf| {
+                iinf.entries
+                    .iter()
+                    .find(|entry| entry.item_id == item_id)
+                    .map(|entry| entry.item_type.0) // .0 because it's usually a FourCC wrapper
+            })
+            .unwrap_or([0, 0, 0, 0]) // Return null if not found
+    }
     fn handle_grid_items(&mut self) -> Result<(), BmfErrors> {
         let pitm = self.meta_section.as_ref().unwrap().pitm.as_ref().unwrap();
         let meta = self.meta_section.as_ref().unwrap();
+
         if let Some(iref) = &meta.iref {
             for rel in &iref.references {
                 // 'dimg' links the Grid item to its constituent Tiles
@@ -177,45 +190,52 @@ where
                 msg: "Grid item location not found".into()
             })?;
 
-        let extent = &grid_item.extents[0];
-        let mut final_offset = grid_item.base_offset + extent.extent_offset;
+        let item_type = self.get_item_type(pitm.item_id);
+        if &item_type == b"grid" {
+            let extent = &grid_item.extents[0];
+            let mut final_offset = grid_item.base_offset + extent.extent_offset;
 
-        // Construction Method 1 means the offset is relative to the 'idat' box
-        if grid_item.construction_method == 1 {
-            let idat_offset = meta.idat.as_ref().ok_or(BmfErrors::Generic {
-                msg: "Item uses idat construction but idat box not found".into()
-            })?;
-            final_offset += idat_offset.position;
+            // Construction Method 1 means the offset is relative to the 'idat' box
+            if grid_item.construction_method == 1 {
+                let idat_offset = meta.idat.as_ref().ok_or(BmfErrors::Generic {
+                    msg: "Item uses idat construction but idat box not found".into()
+                })?;
+                final_offset += idat_offset.position;
+            }
+
+            self.stream.seek(ZSeekFrom::Start(final_offset))?;
+
+            // 3. Parse the 8-byte Grid Descriptor
+            self.stream.skip(1)?;
+            let flags = self.stream.read_u8_err()?;
+
+            // The next two bytes are rows and columns (stored as N-1)
+            self.rows = (self.stream.read_u8_err()? as u32) + 1;
+            self.cols = (self.stream.read_u8_err()? as u32) + 1;
+
+            // 4. Parse output width and height
+            if (flags & 1) == 1 {
+                // 32-bit dimensions
+                self.width = Some(self.stream.get_u32_be_err()?);
+                self.height = Some(self.stream.get_u32_be_err()?);
+            } else {
+                // 16-bit dimensions (most common)
+                self.width = Some(self.stream.get_u16_be_err()? as u32);
+                self.height = Some(self.stream.get_u16_be_err()? as u32);
+            }
+
+            trace!(
+                "Grid initialized: {}x{} tiles, target resolution: {}x{}",
+                self.cols,
+                self.rows,
+                self.width.unwrap(),
+                self.height.unwrap()
+            );
+        } else{
+            self.rows = 1;
+            self.cols = 1;
+            self.ordered_tile_ids = vec![pitm.item_id];
         }
-
-        self.stream.seek(ZSeekFrom::Start(final_offset))?;
-
-        // 3. Parse the 8-byte Grid Descriptor
-        self.stream.skip(1)?;
-        let flags = self.stream.read_u8_err()?;
-
-        // The next two bytes are rows and columns (stored as N-1)
-        self.rows = (self.stream.read_u8_err()? as u32) + 1;
-        self.cols = (self.stream.read_u8_err()? as u32) + 1;
-
-        // 4. Parse output width and height
-        if (flags & 1) == 1 {
-            // 32-bit dimensions
-            self.width = Some(self.stream.get_u32_be_err()?);
-            self.height = Some(self.stream.get_u32_be_err()?);
-        } else {
-            // 16-bit dimensions (most common)
-            self.width = Some(self.stream.get_u16_be_err()? as u32);
-            self.height = Some(self.stream.get_u16_be_err()? as u32);
-        }
-
-        trace!(
-            "Grid initialized: {}x{} tiles, target resolution: {}x{}",
-            self.cols,
-            self.rows,
-            self.width.unwrap(),
-            self.height.unwrap()
-        );
         Ok(())
     }
     /// Return the width of the image
@@ -228,7 +248,7 @@ where
         self.height.map(|x| x as usize)
     }
 
-    pub(crate) fn calc_internal_dims(&mut self) -> Result<(), BmfErrors> {
+    pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), BmfErrors> {
         let meta = self.meta_section.as_ref().ok_or(BmfErrors::Generic {
             msg: "No meta section parsed".to_string()
         })?;
@@ -290,6 +310,8 @@ where
 
         self.width = Some(final_width);
         self.height = Some(final_height);
+
+        trace!("Width and height from ispe {}x{}", final_width, final_height);
         Ok(())
     }
 
@@ -508,38 +530,38 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs::{File, read};
-    use std::io::Write;
-
-    use zune_core::bytestream::{ZCursor, ZReader};
-
-    use crate::decoder::HeifDecoder;
-
-    #[test]
-    fn test_decoding() {
-        let file = read("/Users/etemesi/Downloads/chef-with-trumpet.heic").unwrap();
-        let data = ZCursor::new(file);
-        let mut decoder = HeifDecoder::new(data);
-        decoder.decode_headers().unwrap();
-        let colorspace = decoder.colorspace().unwrap();
-        println!("{:?}", colorspace);
-        println!("{:?}", decoder.width().unwrap());
-        println!("{:?}", decoder.height().unwrap());
-        let data = decoder.decode().unwrap();
-
-        // 4. Final Write
-        let mut file = File::create("final_stitched_2.ppm").unwrap();
-        file.write_all(
-            format!(
-                "P6\n{} {}\n255\n",
-                decoder.width().unwrap(),
-                decoder.height.unwrap()
-            )
-            .as_bytes()
-        )
-        .unwrap();
-        file.write_all(&data).unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use std::fs::{File, read};
+//     use std::io::Write;
+//
+//     use zune_core::bytestream::{ZCursor, ZReader};
+//
+//     use crate::decoder::HeifDecoder;
+//
+//     #[test]
+//     fn test_decoding() {
+//         let file = read("/Users/etemesi/Downloads/heif-lines.heif").unwrap();
+//         let data = ZCursor::new(file);
+//         let mut decoder = HeifDecoder::new(data);
+//         decoder.decode_headers().unwrap();
+//         let colorspace = decoder.colorspace().unwrap();
+//         println!("{:?}", colorspace);
+//         println!("{:?}", decoder.width().unwrap());
+//         println!("{:?}", decoder.height().unwrap());
+//         let data = decoder.decode().unwrap();
+//
+//         // 4. Final Write
+//         let mut file = File::create("final_stitched_2.ppm").unwrap();
+//         file.write_all(
+//             format!(
+//                 "P6\n{} {}\n255\n",
+//                 decoder.width().unwrap(),
+//                 decoder.height.unwrap()
+//             )
+//             .as_bytes()
+//         )
+//         .unwrap();
+//         file.write_all(&data).unwrap();
+//     }
+// }
