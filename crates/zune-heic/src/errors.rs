@@ -1,0 +1,155 @@
+// isobmff/src/error.rs
+
+use core::fmt;
+
+use zune_core::bytestream::ZByteIoError;
+
+use crate::bmf_reader::FourCC;
+
+pub enum BmfErrors {
+    /// Wraps an underlying I/O failure.
+    Io(ZByteIoError),
+
+    /// A box header reported a size that is inconsistent with its position
+    /// or the surrounding container.
+    InvalidBoxSize {
+        offset: u64,
+        size:   u64
+    },
+
+    /// The parser needed more bytes than were available.
+    UnexpectedEof {
+        offset: u64,
+        needed: u64
+    },
+
+    /// The four-byte box-type field contained non-printable bytes.
+    InvalidBoxType([u8; 4]),
+
+    /// A FullBox carried a `version` value the parser does not handle.
+    UnsupportedVersion {
+        offset:  u64,
+        version: u8
+    },
+
+    /// A box payload was shorter than the minimum required by its spec.
+    PayloadTooShort {
+        box_type: FourCC,
+        needed:   usize,
+        have:     usize
+    },
+
+    /// Any other structural problem found while parsing a specific box.
+    ParseError {
+        box_type: FourCC,
+        msg:      String
+    },
+    WouldUnderflow {
+        a: usize,
+        b: usize
+    },
+    Generic {
+        msg: String
+    }
+}
+impl fmt::Display for BmfErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BmfErrors::Io(e) => {
+                write!(f, "I/O error: {:?}", e)
+            }
+            BmfErrors::InvalidBoxSize { offset, size } => {
+                write!(f, "Box at offset {} has invalid size {}", offset, size)
+            }
+            BmfErrors::UnexpectedEof { offset, needed } => {
+                write!(
+                    f,
+                    "Unexpected end of data: need {} bytes at offset {}",
+                    needed, offset
+                )
+            }
+            BmfErrors::InvalidBoxType(bytes) => {
+                write!(f, "Box type contains non-ASCII bytes: {:?}", bytes)
+            }
+            BmfErrors::UnsupportedVersion { offset, version } => {
+                write!(
+                    f,
+                    "FullBox at offset {} has unsupported version {}",
+                    offset, version
+                )
+            }
+            BmfErrors::PayloadTooShort {
+                box_type,
+                needed,
+                have
+            } => {
+                write!(
+                    f,
+                    "Payload too short for box '{}': need {}, have {}",
+                    box_type, needed, have
+                )
+            }
+            BmfErrors::ParseError { box_type, msg } => {
+                write!(f, "Parse error in box '{}': {}", box_type, msg)
+            }
+            BmfErrors::WouldUnderflow { a, b } => {
+                write!(f, "Would underflow ({}-{}) ", a, b)
+            }
+            BmfErrors::Generic { msg } => {
+                write!(f, "{}", msg)
+            }
+        }
+    }
+}
+impl fmt::Debug for BmfErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BmfErrors::Io(e) => f.debug_tuple("Io").field(e).finish(),
+            BmfErrors::InvalidBoxSize { offset, size } => f
+                .debug_struct("InvalidBoxSize")
+                .field("offset", offset)
+                .field("size", size)
+                .finish(),
+            BmfErrors::UnexpectedEof { offset, needed } => f
+                .debug_struct("UnexpectedEof")
+                .field("offset", offset)
+                .field("needed", needed)
+                .finish(),
+            BmfErrors::InvalidBoxType(bytes) => {
+                f.debug_tuple("InvalidBoxType").field(bytes).finish()
+            }
+            BmfErrors::UnsupportedVersion { offset, version } => f
+                .debug_struct("UnsupportedVersion")
+                .field("offset", offset)
+                .field("version", version)
+                .finish(),
+            BmfErrors::PayloadTooShort {
+                box_type,
+                needed,
+                have
+            } => f
+                .debug_struct("PayloadTooShort")
+                .field("box_type", box_type)
+                .field("needed", needed)
+                .field("have", have)
+                .finish(),
+            BmfErrors::ParseError { box_type, msg } => f
+                .debug_struct("ParseError")
+                .field("box_type", box_type)
+                .field("msg", msg)
+                .finish(),
+
+            BmfErrors::WouldUnderflow { a, b } => {
+                write!(f, "Would underflow ({}-{}) ", a, b)
+            }
+            BmfErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish()
+        }
+    }
+}
+impl core::error::Error for BmfErrors {}
+
+impl From<ZByteIoError> for BmfErrors {
+    fn from(e: ZByteIoError) -> Self {
+        BmfErrors::Io(e)
+    }
+}
