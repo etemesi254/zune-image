@@ -39,7 +39,8 @@ fn fast_options() -> DecoderFlags {
         png_add_alpha_channel:     false,
         png_strip_16_bit_to_8_bit: false,
         png_decode_animated:       true,
-        jxl_decode_animated:       true
+        jxl_decode_animated:       true,
+        hvec_use_videotoolbox:     true
     }
 }
 
@@ -66,8 +67,9 @@ fn cmd_options() -> DecoderFlags {
         png_add_alpha_channel:     false,
         png_strip_16_bit_to_8_bit: false,
 
-        png_decode_animated: true,
-        jxl_decode_animated: true
+        png_decode_animated:   true,
+        jxl_decode_animated:   true,
+        hvec_use_videotoolbox: true
     }
 }
 
@@ -108,7 +110,9 @@ pub struct DecoderFlags {
     png_strip_16_bit_to_8_bit:    bool,
     /// Decode all frames for an animated images
     png_decode_animated:          bool,
-    jxl_decode_animated:          bool
+    jxl_decode_animated:          bool,
+    /// Use apple hardware accelerated videotoolbox to decode hvec
+    hvec_use_videotoolbox:        bool
 }
 
 /// Decoder options
@@ -624,6 +628,21 @@ impl DecoderOptions {
     /// whether we should just decode the first frame only
     pub const fn jxl_set_decode_animated(mut self, yes: bool) -> Self {
         self.flags.jxl_decode_animated = yes;
+        self
+    }
+}
+/// HVEC decoding options
+impl DecoderOptions {
+    /// Whether the decoder should use apple hardware decoding
+    /// (videotoolbox) to decode heif/heic images.
+    pub const fn hvec_use_apple_videotoolbox(&self) -> bool {
+        self.flags.hvec_use_videotoolbox
+    }
+    /// Set whether to use hardware decoding in heif/heic on apple devices
+    ///
+    /// NB: This only affects decoding in macos its not considered for other os
+    pub const fn hvec_set_use_videotoolbox(mut self, yes: bool) -> Self {
+        self.flags.hvec_use_videotoolbox = yes;
         self
     }
 }
