@@ -328,7 +328,7 @@ where
                 let colors = self.colorspace().unwrap().num_components();
 
                 let mut output = vec![0; w * h * colors];
-                self.stitch(tile_map, &mut output);
+                self.stitch(tile_map, &mut output)?;
                 return Ok(output);
             }
         }

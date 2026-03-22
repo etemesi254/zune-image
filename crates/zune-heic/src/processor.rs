@@ -1,5 +1,6 @@
 use zune_core::bytestream::ZByteReaderTrait;
 
+use crate::BmfErrors::Generic;
 use crate::apple_videotoolbox::TileMap;
 use crate::decoder::HeifDecoder;
 use crate::errors::BmfErrors;
@@ -182,7 +183,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         Ok(())
     }
 
-    pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) {
+    pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), BmfErrors> {
         let final_w = self.width.unwrap();
         let final_h = self.height.unwrap();
 
@@ -198,38 +199,56 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         if self.ordered_tile_ids.len() == 1 {
             // no grid stitching needed. so copy to output directly
             if let Some(tile) = tiles.get(&self.ordered_tile_ids[0]) {
-                canvas.copy_from_slice(tile.as_slice());
+                return match tile {
+                    Ok(tile) => {
+                        canvas.copy_from_slice(tile);
+                        Ok(())
+                    }
+                    Err(e) => return Err(Generic { msg: e.to_string() })
+                };
             }
+            return Err(BmfErrors::Generic {
+                msg: "No tile found for ordered tile".into()
+            });
         } else {
             for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
                 if let Some(tile_data) = tiles.get(&item_id) {
-                    let col = (index as u32) % self.cols;
-                    let row = (index as u32) / self.cols;
 
-                    let base_x = col * tile_w;
-                    let base_y = row * tile_h;
+                     match tile_data {
+                        Ok(tile_data) => {
+                            let col = (index as u32) % self.cols;
+                            let row = (index as u32) / self.cols;
 
-                    for ty in 0..tile_h {
-                        let canvas_y = base_y + ty;
-                        if canvas_y >= final_h {
-                            break;
+                            let base_x = col * tile_w;
+                            let base_y = row * tile_h;
+
+                            for ty in 0..tile_h {
+                                let canvas_y = base_y + ty;
+                                if canvas_y >= final_h {
+                                    break;
+                                }
+
+                                if base_x >= final_w {
+                                    continue;
+                                }
+
+                                let copy_width = tile_w.min(final_w - base_x);
+                                let len = (copy_width * channels) as usize;
+
+                                let src = (ty * tile_stride) as usize;
+                                let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
+
+                                canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
+                            }
                         }
-
-                        if base_x >= final_w {
-                            continue;
-                        }
-
-                        let copy_width = tile_w.min(final_w - base_x);
-                        let len = (copy_width * channels) as usize;
-
-                        let src = (ty * tile_stride) as usize;
-                        let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
-
-                        canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
-                    }
+                        Err(e) => return Err(BmfErrors::Generic { msg: e.to_string() })
+                    };
+                } else {
+                    panic!("No tile found for ordered tile {} {}", index, item_id);
                 }
             }
         }
+        Ok(())
     }
 }
 /// Extracts the raw VPS, SPS, and PPS NAL units from an HEVC Configuration Record.

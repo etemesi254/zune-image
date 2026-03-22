@@ -1,8 +1,6 @@
 #![allow(dead_code)]
-use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
 use crate::bmf_reader::FourCC;
-use crate::errors::BmfErrors;
 
 #[derive(Debug, Clone)]
 pub struct FtypHeader {

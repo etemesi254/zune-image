@@ -34,7 +34,6 @@
 //!
 //! Only available on **macOS**.
 
-
 use core::ffi::c_void;
 use core::{ptr, slice};
 use std::collections::HashMap;
@@ -61,7 +60,7 @@ use crate::processor::HevcSample;
 ///
 /// Key: `item_id` (HEVC sample identifier)
 /// Value: RGB pixel buffer (`Vec<u8>`, 3 bytes per pixel)
-pub type TileMap = Arc<Mutex<HashMap<u32, Vec<u8>>>>;
+pub type TileMap = Arc<Mutex<HashMap<u32, Result<Vec<u8>, BmfErrors>>>>;
 
 unsafe extern "C" {
     /// Creates a CMVideoFormatDescription from HEVC (H.265) parameter-set NAL units.
@@ -197,7 +196,6 @@ impl AppleHardwareDecoder {
             VTDecompressionSessionWaitForAsynchronousFrames(self.session);
         }
     }
-
 
     /// Submit an HEVC sample for decoding.
     ///
@@ -384,12 +382,18 @@ extern "C" fn decode_callback(
     _info_flags: VTDecodeInfoFlags, image_buffer: CVImageBufferRef,
     _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
-    let tile_map_ptr = decompression_output_ref_con as *const Mutex<HashMap<u32, Vec<u8>>>;
+    let tile_map_ptr =
+        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<Vec<u8>, BmfErrors>>>;
     let item_id = source_frame_ref_con as usize;
 
     if status != 0 || image_buffer.is_null() {
-        eprintln!("Hardware decode failed. Status: {}", status);
-        return;
+        let msg = format!("Hardware decode failed. Status: {}", status);
+        unsafe {
+            if let Ok(mut map) = (*tile_map_ptr).lock() {
+                map.insert(item_id as u32, Err(BmfErrors::Generic { msg }));
+            }
+            return;
+        }
     }
 
     unsafe {
@@ -493,13 +497,12 @@ extern "C" fn decode_callback(
         CVPixelBufferUnlockBaseAddress(image_buffer, 1);
 
         if let Ok(mut map) = (*tile_map_ptr).lock() {
-            map.insert(item_id as u32, rgb_data);
+            map.insert(item_id as u32, Ok(rgb_data));
         }
     }
 }
 
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
-
     /// Decode HEVC tiles using Apple VideoToolbox hardware acceleration.
     ///
     /// # Returns
