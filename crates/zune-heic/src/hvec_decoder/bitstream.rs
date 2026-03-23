@@ -1,0 +1,407 @@
+// ============================================================
+//  HEVC Bitstream Reader — MSB-first, 64-bit barrel buffer
+// ============================================================
+
+pub struct BitReader<'src> {
+    src:        &'src [u8],
+    position:   usize,
+    bits_left:  u8,
+    buffer:     u64,
+    // Track consecutive zeros seen so far (0, 1, or 2)
+    zero_count: u8
+}
+
+impl<'src> BitReader<'src> {
+    #[inline]
+    pub fn new(src: &'src [u8]) -> Self {
+        Self {
+            src,
+            position: 0,
+            bits_left: 0,
+            buffer: 0,
+            zero_count: 0
+        }
+    }
+
+    // ── Refill ────────────────────────────────────────────────────────────
+
+    #[inline(always)]
+    pub fn refill(&mut self) {
+        if self.bits_left > 56 {
+            return;
+        }
+
+        // Attempt a fast-path 4-byte load
+        if let Some(bytes) = self.src.get(self.position..self.position + 4) {
+            let chunk = u32::from_be_bytes(bytes.try_into().unwrap());
+
+            // Check for 0x03 AND ensure we aren't in a 00 00 state.
+            // A simple "has_byte(chunk, 3)" is a good hint, but we must be precise.
+            if !self.has_emulation_prevention(chunk) && self.zero_count < 2 {
+                // Fast Path: No EPB in sight
+                let bytes_to_load = (64 - self.bits_left) >> 3;
+                // Note: Simplified for clarity; usually you'd load exactly 4 bytes
+                self.load_4_bytes(chunk);
+                return;
+            }
+        }
+
+        // Slow Path: Load one byte at a time and skip 0x03
+        self.refill_one_byte_at_a_time();
+    }
+    #[inline(always)]
+    fn load_4_bytes(&mut self, chunk: u32) {
+        // We are appending 32 bits to the buffer.
+        // In a left-aligned buffer, the 'empty' space starts at self.bits_left.
+        // We shift the 32-bit chunk so its MSB aligns with the next available slot.
+
+        let shift = 64 - 32 - self.bits_left;
+        self.buffer |= (chunk as u64) << shift;
+
+        self.bits_left += 32;
+        self.position += 4;
+
+        // After loading a chunk, we must update the zero_count state
+        // based on the last two bytes of that chunk so the NEXT refill
+        // knows if it's starting mid-sequence.
+        self.update_zero_count_from_chunk(chunk);
+    }
+
+    #[inline(always)]
+    fn update_zero_count_from_chunk(&mut self, chunk: u32) {
+        // Check the last two bytes of the 32-bit word (Big Endian)
+        let byte3 = (chunk & 0xFF) as u8;
+        let byte2 = ((chunk >> 8) & 0xFF) as u8;
+
+        if byte3 == 0x00 {
+            if byte2 == 0x00 {
+                self.zero_count = 2;
+            } else {
+                self.zero_count = 1;
+            }
+        } else {
+            self.zero_count = 0;
+        }
+    }
+
+    #[inline(always)]
+    fn has_emulation_prevention(&self, chunk: u32) -> bool {
+        // SWAR check for 0x03 bytes.
+        // This is a heuristic; if true, we go to the slow path.
+        let m = chunk ^ 0x03030303;
+        ((m.wrapping_sub(0x01010101)) & !m & 0x80808080) != 0
+    }
+
+    fn refill_one_byte_at_a_time(&mut self) {
+        while self.bits_left <= 56 && self.position < self.src.len() {
+            let mut byte = self.src[self.position];
+
+            // HEVC Emulation Prevention: 00 00 03 -> 00 00
+            if self.zero_count == 2 && byte == 0x03 {
+                self.position += 1;
+                self.zero_count = 0; // Reset after skipping
+                if self.position >= self.src.len() {
+                    break;
+                }
+                byte = self.src[self.position];
+            }
+
+            // Standard MSB buffer append
+            self.buffer |= (u64::from(byte)) << (56 - self.bits_left);
+            self.bits_left += 8;
+            self.position += 1;
+
+            // Update zero state
+            if byte == 0x00 {
+                self.zero_count = (self.zero_count + 1).min(2);
+            } else {
+                self.zero_count = 0;
+            }
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn refill_slow(&mut self) {
+        let mut buf = [0u8; 8];
+        let tail = &self.src[self.position.min(self.src.len())..];
+        let n = tail.len().min(8);
+        buf[..n].copy_from_slice(&tail[..n]);
+
+        let word = u64::from_be_bytes(buf);
+        let bytes_to_load = (64 - self.bits_left) >> 3;
+        self.position += bytes_to_load as usize;
+        self.buffer |= word >> self.bits_left;
+        self.bits_left |= 56;
+    }
+
+    // ── Peek ─────────────────────────────────────────────────────────────
+
+    /// Return the next `N` bits right-aligned without consuming them.
+    #[inline(always)]
+    pub fn peek_bits<const N: u8>(&self) -> u64 {
+        debug_assert!(N > 0 && N <= 56);
+        debug_assert!(self.bits_left >= N);
+        self.buffer >> (64 - N as u64)
+    }
+
+    // ── Consume ───────────────────────────────────────────────────────────
+
+    #[inline(always)]
+    pub fn drop_bits(&mut self, n: u8) {
+        debug_assert!(self.bits_left >= n);
+        self.buffer <<= n;
+        self.bits_left -= n;
+    }
+    pub fn skip_bits(&mut self, n: u8) {
+        self.get_bits(n);
+    }
+
+    // ── Read ──────────────────────────────────────────────────────────────
+
+    /// Read and consume `n` bits, returned right-aligned in a u64.
+    #[inline(always)]
+    pub fn get_bits(&mut self, n: u8) -> u64 {
+        debug_assert!(n > 0 && n <= 56);
+        if self.bits_left < n {
+            self.refill()
+        }
+
+        debug_assert!(self.bits_left >= n);
+        let val = self.buffer >> (64 - n as u64);
+        self.buffer <<= n;
+        self.bits_left -= n;
+        val
+    }
+
+    /// Read a single bit as a bool.
+    #[inline(always)]
+    pub fn read_flag(&mut self) -> bool {
+        if self.bits_left < 1 {
+            self.refill();
+        }
+        debug_assert!(self.bits_left >= 1);
+        let v = self.buffer >> 63;
+        self.buffer <<= 1;
+        self.bits_left -= 1;
+        v == 1
+    }
+
+    // ── HEVC Exp-Golomb ───────────────────────────────────────────────────
+
+    /// Decode one unsigned Exp-Golomb codeword `ue(v)`.
+    ///
+    ///
+    #[inline(always)]
+    pub fn read_ue(&mut self) -> u64 {
+        if self.bits_left < 32 {
+            self.refill()
+        }
+
+        let num_zeros = self.buffer.leading_zeros() as u8;
+
+        // Consume prefix zeros + stop bit.
+        self.buffer <<= num_zeros + 1;
+        self.bits_left -= num_zeros + 1;
+
+        // HEVC (ITU-T H.265, E.3.3) allows ue(v) values up to 2^32-2 (e.g. bit_rate_value_minus1),
+        // which requires 31 leading zeros in the exp-Golomb code. 32 leading zeros would give a
+        // minimum codeNum of 2^32-1, which exceeds every syntax element's valid range.
+        debug_assert!(num_zeros <= 32);
+
+        if num_zeros == 0 {
+            return 0;
+        }
+        if self.bits_left < 32 {
+            self.refill()
+        }
+
+        let suffix = self.buffer >> (64 - num_zeros as u64);
+        self.buffer <<= num_zeros;
+        self.bits_left -= num_zeros;
+
+        (1 << num_zeros) - 1 + suffix
+    }
+
+    /// Decode one signed Exp-Golomb codeword `se(v)`.
+    #[inline(always)]
+    pub fn read_se(&mut self) -> i64 {
+        let k = self.read_ue();
+        match k {
+            0 => 0,
+            k if k & 1 == 1 => ((k + 1) / 2) as i64,
+            k => -((k / 2) as i64)
+        }
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────
+
+    #[inline(always)]
+    pub fn bits_left(&self) -> u8 {
+        self.bits_left
+    }
+    #[inline(always)]
+    pub fn has(&self, n: u8) -> bool {
+        self.bits_left >= n
+    }
+    #[inline(always)]
+    pub fn is_byte_aligned(&self) -> bool {
+        self.bits_left % 8 == 0
+    }
+
+    #[inline(always)]
+    pub fn byte_align(&mut self) {
+        let rem = self.bits_left % 8;
+        if rem != 0 {
+            self.buffer <<= rem;
+            self.bits_left -= rem;
+        }
+    }
+
+    #[inline(always)]
+    pub fn reset(&mut self) {
+        self.buffer = 0;
+        self.bits_left = 0;
+        self.position = 0;
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn padded(mut v: Vec<u8>) -> Vec<u8> {
+        v.extend([0u8; 8]);
+        v
+    }
+
+    #[test]
+    fn nibbles() {
+        let src = padded(vec![0xAB]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.get_bits(4), 0xA);
+        assert_eq!(r.get_bits(4), 0xB);
+    }
+
+    #[test]
+    fn two_full_bytes() {
+        let src = padded(vec![0xFF, 0x00]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.get_bits(8), 0xFF);
+        assert_eq!(r.get_bits(8), 0x00);
+    }
+
+    #[test]
+    fn bits_spanning_byte_boundary() {
+        // 0xAA 0xF0 → top 12 bits = 1010_1010_1111 = 0xAAF
+        let src = padded(vec![0xAA, 0xF0]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.get_bits(12), 0xAAF);
+    }
+
+    #[test]
+    fn peek_does_not_consume() {
+        let src = padded(vec![0xC0]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.peek_bits::<4>(), 0xC);
+        assert_eq!(r.peek_bits::<4>(), 0xC);
+        r.drop_bits(4);
+        assert_eq!(r.get_bits(4), 0x0);
+    }
+
+    #[test]
+    fn flags() {
+        let src = padded(vec![0b1010_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_flag(), true);
+        assert_eq!(r.read_flag(), false);
+        assert_eq!(r.read_flag(), true);
+        assert_eq!(r.read_flag(), false);
+    }
+
+    #[test]
+    fn ue_zero() {
+        let src = padded(vec![0b1000_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 0);
+    }
+
+    #[test]
+    fn ue_one() {
+        let src = padded(vec![0b0100_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 1);
+    }
+
+    #[test]
+    fn ue_two() {
+        let src = padded(vec![0b0110_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 2);
+    }
+
+    #[test]
+    fn ue_four() {
+        let src = padded(vec![0b0010_1000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 4);
+    }
+
+    #[test]
+    fn ue_seven() {
+        let src = padded(vec![0b0001_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 7);
+    }
+
+    #[test]
+    fn ue_sequential() {
+        // "1"(0) ++ "010"(1) ++ "011"(2) → 0b1010_0110
+        let src = padded(vec![0b1010_0110]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_ue(), 0);
+        assert_eq!(r.read_ue(), 1);
+        assert_eq!(r.read_ue(), 2);
+    }
+
+    #[test]
+    fn se_pos_and_neg() {
+        // ue=1→+1, ue=2→-1  packed: "010"+"011" = 0b0100_1100
+        let src = padded(vec![0b0100_1100]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_se(), 1);
+        assert_eq!(r.read_se(), -1);
+    }
+
+    #[test]
+    fn se_zero() {
+        let src = padded(vec![0b1000_0000]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        assert_eq!(r.read_se(), 0);
+    }
+
+    #[test]
+    fn byte_align_drops_remainder() {
+        let src = padded(vec![0xFF]);
+        let mut r = BitReader::new(&src);
+        r.refill();
+        r.get_bits(3);
+        r.byte_align();
+        assert!(r.is_byte_aligned());
+    }
+}
