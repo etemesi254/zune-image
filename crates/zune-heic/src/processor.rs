@@ -1,9 +1,9 @@
 use zune_core::bytestream::ZByteReaderTrait;
 
-use crate::BmfErrors::Generic;
+use crate::HeicErrors::Generic;
 use crate::apple_videotoolbox::TileMap;
 use crate::decoder::HeifDecoder;
-use crate::errors::BmfErrors;
+use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
 pub struct HevcSample<'a> {
@@ -22,33 +22,33 @@ pub struct HevcSample<'a> {
 }
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
     /// Iterates over HEVC items and passes zero-copy slices to a provided closure.
-    pub fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), BmfErrors>
+    pub fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), HeicErrors>
     where
-        F: FnMut(HevcSample<'_>) -> Result<(), BmfErrors>
+        F: FnMut(HevcSample<'_>) -> Result<(), HeicErrors>
     {
-        let meta = self.meta_section.as_ref().ok_or(BmfErrors::Generic {
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No meta".into()
         })?;
-        let pitm = meta.pitm.as_ref().ok_or(BmfErrors::Generic {
+        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
             msg: "No pitm".into()
         })?;
-        let iinf = meta.iinf.as_ref().ok_or(BmfErrors::Generic {
+        let iinf = meta.iinf.as_ref().ok_or(HeicErrors::Generic {
             msg: "No iinf".into()
         })?;
-        let iloc = meta.iloc.as_ref().ok_or(BmfErrors::Generic {
+        let iloc = meta.iloc.as_ref().ok_or(HeicErrors::Generic {
             msg: "No iloc".into()
         })?;
-        let mdat = self.mdat_section.as_ref().ok_or(BmfErrors::Generic {
+        let mdat = self.mdat_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No mdat loaded".into()
         })?;
 
-        let iprp = meta.iprp.as_ref().ok_or(BmfErrors::Generic {
+        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
             msg: "Missing iprp".into()
         })?;
-        let ipma = iprp.ipma.as_ref().ok_or(BmfErrors::Generic {
+        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
             msg: "Missing ipma".into()
         })?;
-        let ipco = iprp.ipco.as_ref().ok_or(BmfErrors::Generic {
+        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
             msg: "Missing ipco".into()
         })?;
 
@@ -59,19 +59,19 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             .entries
             .iter()
             .find(|e| e.item_id == pitm.item_id)
-            .ok_or(BmfErrors::Generic {
+            .ok_or(HeicErrors::Generic {
                 msg: "Primary item not in iinf".into()
             })?;
 
         if &primary_infe.item_type.0 == b"grid" {
-            let iref = meta.iref.as_ref().ok_or(BmfErrors::Generic {
+            let iref = meta.iref.as_ref().ok_or(HeicErrors::Generic {
                 msg: "Grid missing iref links".into()
             })?;
             let dimg_ref = iref
                 .references
                 .iter()
                 .find(|r| &r.reference_type.0 == b"dimg" && r.from_item_id == pitm.item_id)
-                .ok_or(BmfErrors::Generic {
+                .ok_or(HeicErrors::Generic {
                     msg: "Grid missing 'dimg' relationship".into()
                 })?;
 
@@ -79,7 +79,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         } else if &primary_infe.item_type.0 == b"hvc1" {
             target_item_ids.push(pitm.item_id);
         } else {
-            return Err(BmfErrors::Generic {
+            return Err(HeicErrors::Generic {
                 msg: format!(
                     "Primary item is an unsupported type: {:?}",
                     primary_infe.item_type.0
@@ -125,7 +125,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 iloc.items
                     .iter()
                     .find(|i| i.item_id == item_id)
-                    .ok_or(BmfErrors::Generic {
+                    .ok_or(HeicErrors::Generic {
                         msg: format!("Item {} missing in iloc", item_id)
                     })?;
 
@@ -136,20 +136,20 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 let absolute_offset = match item_iloc.construction_method {
                     0 => item_iloc.base_offset + extent.extent_offset,
                     1 => {
-                        let idat_off = meta.idat.as_ref().ok_or(BmfErrors::Generic {
+                        let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
                             msg: "Missing idat offset".into()
                         })?;
                         idat_off.position + item_iloc.base_offset + extent.extent_offset
                     }
                     _ => {
-                        return Err(BmfErrors::Generic {
+                        return Err(HeicErrors::Generic {
                             msg: "Unsupported construction method".into()
                         });
                     }
                 };
 
                 if absolute_offset < mdat.start_offset {
-                    return Err(BmfErrors::Generic {
+                    return Err(HeicErrors::Generic {
                         msg: "Data offset points to before MDAT payload".into()
                     });
                 }
@@ -158,7 +158,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 let length = extent.extent_length as usize;
 
                 if buffer_index + length > mdat.raw_data.len() {
-                    return Err(BmfErrors::Generic {
+                    return Err(HeicErrors::Generic {
                         msg: "Extent goes out of MDAT bounds!".into()
                     });
                 }
@@ -183,7 +183,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         Ok(())
     }
 
-    pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), BmfErrors> {
+    pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
         let final_w = self.width.unwrap();
         let final_h = self.height.unwrap();
 
@@ -207,14 +207,13 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                     Err(e) => return Err(Generic { msg: e.to_string() })
                 };
             }
-            return Err(BmfErrors::Generic {
+            return Err(HeicErrors::Generic {
                 msg: "No tile found for ordered tile".into()
             });
         } else {
             for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
                 if let Some(tile_data) = tiles.get(&item_id) {
-
-                     match tile_data {
+                    match tile_data {
                         Ok(tile_data) => {
                             let col = (index as u32) % self.cols;
                             let row = (index as u32) / self.cols;
@@ -241,10 +240,12 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                                 canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
                             }
                         }
-                        Err(e) => return Err(BmfErrors::Generic { msg: e.to_string() })
+                        Err(e) => return Err(HeicErrors::Generic { msg: e.to_string() })
                     };
                 } else {
-                    panic!("No tile found for ordered tile {} {}", index, item_id);
+                    return Err(HeicErrors::Generic {
+                        msg: format!("No tile found for ordered tile {} {}", index, item_id)
+                    });
                 }
             }
         }

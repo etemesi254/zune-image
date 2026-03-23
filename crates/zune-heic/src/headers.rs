@@ -2,7 +2,7 @@ use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::trace;
 
 use crate::bmf_reader::{BoxHeader, BoxSize, FourCC};
-use crate::errors::BmfErrors;
+use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, HdlrSection, IdatSection, IinfSection, IlocExtent, IlocItem,
     IlocSection, InfeSection, IpcoSection, IpmaAssociation, IpmaEntry, IpmaSection, IprpSection,
@@ -11,9 +11,9 @@ use crate::header_structs::{
 use crate::utils::read_sized_int;
 
 #[inline]
-fn subtract_value(value: usize, subtract: usize) -> Result<usize, BmfErrors> {
+fn subtract_value(value: usize, subtract: usize) -> Result<usize, HeicErrors> {
     match value.checked_sub(subtract) {
-        None => Err(BmfErrors::WouldUnderflow {
+        None => Err(HeicErrors::WouldUnderflow {
             a: value,
             b: subtract
         }),
@@ -22,20 +22,20 @@ fn subtract_value(value: usize, subtract: usize) -> Result<usize, BmfErrors> {
 }
 #[track_caller]
 #[inline]
-fn get_length(box_header: &BoxHeader) -> Result<usize, BmfErrors> {
+fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.header_size) as usize),
-        _ => Err(BmfErrors::ParseError {
+        _ => Err(HeicErrors::ParseError {
             box_type: box_header.box_type.clone(),
             msg:      "Needs absolute size".into()
         })
     }
 }
 #[inline]
-fn get_abs_length(box_header: &BoxHeader) -> Result<usize, BmfErrors> {
+fn get_abs_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s as usize),
-        _ => Err(BmfErrors::ParseError {
+        _ => Err(HeicErrors::ParseError {
             box_type: box_header.box_type.clone(),
             msg:      "Needs absolute size".into()
         })
@@ -43,11 +43,11 @@ fn get_abs_length(box_header: &BoxHeader) -> Result<usize, BmfErrors> {
 }
 pub fn decode_ftyp<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<FtypHeader, BmfErrors> {
+) -> Result<FtypHeader, HeicErrors> {
     let mut full_size = get_length(box_header)?;
 
     if full_size < 8 {
-        return Err(BmfErrors::PayloadTooShort {
+        return Err(HeicErrors::PayloadTooShort {
             box_type: box_header.box_type,
             needed:   8,
             have:     8 - full_size
@@ -78,6 +78,7 @@ pub fn decode_ftyp<R: ZByteReaderTrait>(
     })
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 hdlr (Handler Reference Box)                │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -109,9 +110,10 @@ pub fn decode_ftyp<R: ZByteReaderTrait>(
 ///  │         │         │                   │ UTF-8 String        │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_hdlr<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<HdlrSection, BmfErrors> {
+) -> Result<HdlrSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
     trace!("Decoding hdlr length: {}", bytes_left);
 
@@ -158,6 +160,7 @@ pub fn decode_hdlr<R: ZByteReaderTrait>(
     })
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 pitm (Primary Item Box)                     │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -178,10 +181,11 @@ pub fn decode_hdlr<R: ZByteReaderTrait>(
 ///  │         │ bytes   │                   │ photo (e.g., #49)   │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 ///
 pub fn decode_pitm<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<PitmSection, BmfErrors> {
+) -> Result<PitmSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     trace!("Decoding pitm length: {}", bytes_left);
@@ -211,6 +215,7 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
         item_id
     })
 }
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 iinf (Item Information Box)                 │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -237,9 +242,10 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
 ///  │         │         │                   │ boxes.              │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_iinf<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IinfSection, BmfErrors> {
+) -> Result<IinfSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     trace!("Decoding iinf length: {}", bytes_left);
@@ -288,6 +294,7 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
     Ok(iinf)
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 iloc (Item Location Box)                    │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -321,9 +328,10 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
 ///  │Variable │Variable │ items[]           │ The actual map loop │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_iloc<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IlocSection, BmfErrors> {
+) -> Result<IlocSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     let version_and_flags = reader.get_u32_be_err()?;
@@ -451,6 +459,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
     })
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 iref (Item Reference Box)                   │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -471,9 +480,10 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
 ///  │         │         │                   │ reference boxes     │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_iref<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IrefSection, BmfErrors> {
+) -> Result<IrefSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     let version_and_flags = reader.get_u32_be_err()?;
@@ -559,6 +569,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         references
     })
 }
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 infe (Item Info Entry Box)                  │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -571,9 +582,10 @@ pub fn decode_iref<R: ZByteReaderTrait>(
 ///  │  0x10/12│ 4 bytes │ item_type         │ e.g., 'grid'/'hvc1' │
 ///  │  0x14/16│ Variable│ item_name         │ Null-term string    │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_infe<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<InfeSection, BmfErrors> {
+) -> Result<InfeSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     let version_and_flags = reader.get_u32_be_err()?;
@@ -644,6 +656,7 @@ pub fn decode_infe<R: ZByteReaderTrait>(
     Ok(infe)
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │                 iprp (Item Properties Box)                  │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -655,9 +668,10 @@ pub fn decode_infe<R: ZByteReaderTrait>(
 ///  │Variable │Variable │ child_boxes       │ Contains exactly 1  │
 ///  │         │         │                   │ 'ipco' and 1 'ipma' │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+///```
 pub fn decode_iprp<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IprpSection, BmfErrors> {
+) -> Result<IprpSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     trace!("Decoding IPRP section length {:?}", bytes_left);
@@ -691,6 +705,7 @@ pub fn decode_iprp<R: ZByteReaderTrait>(
     Ok(iprp)
 }
 
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │             ipco (Item Property Container Box)              │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -703,9 +718,10 @@ pub fn decode_iprp<R: ZByteReaderTrait>(
 ///  │         │         │                   │ boxes (ispe, hvcC,  │
 ///  │         │         │                   │ colr, irot, etc.)   │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_ipco<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IpcoSection, BmfErrors> {
+) -> Result<IpcoSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     let mut ipco = IpcoSection::default();
@@ -868,6 +884,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
     }
     Ok(ipco)
 }
+///```text
 ///  ┌─────────────────────────────────────────────────────────────┐
 ///  │             ipma (Item Property Association Box)            │
 ///  ├─────────┬─────────┬───────────────────┬─────────────────────┤
@@ -885,9 +902,10 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 ///  │Variable │Variable │ entries[]         │ The mapping loop    │
 ///  │         │         │                   │                     │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
+/// ```
 pub fn decode_ipma<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<IpmaSection, BmfErrors> {
+) -> Result<IpmaSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
     let version_and_flags = reader.get_u32_be_err()?;
@@ -953,9 +971,9 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
 #[track_caller]
 pub fn decode_meta<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
-) -> Result<MetaSection, BmfErrors> {
+) -> Result<MetaSection, HeicErrors> {
     if &box_header.box_type.0 != b"meta" {
-        return Err(BmfErrors::ParseError {
+        return Err(HeicErrors::ParseError {
             box_type: box_header.box_type.clone(),
             msg:      "Expected META".into()
         });
@@ -964,7 +982,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
     let mut bytes_left = get_length(box_header)?;
 
     if bytes_left < 4 {
-        return Err(BmfErrors::PayloadTooShort {
+        return Err(HeicErrors::PayloadTooShort {
             box_type: box_header.box_type.clone(),
             needed:   4,
             have:     bytes_left
@@ -984,7 +1002,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
         let child_size = get_abs_length(&child_header)?;
 
         if child_size > bytes_left {
-            return Err(BmfErrors::ParseError {
+            return Err(HeicErrors::ParseError {
                 box_type: child_header.box_type,
                 msg:      "Child box exceeds meta bounds".into()
             });
@@ -1004,7 +1022,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
                 reader.skip(size)?;
             }
             _ => {
-                println!(
+                trace!(
                     "Unknown meta child type: {:?} skipping",
                     child_header.box_type.as_str()
                 );

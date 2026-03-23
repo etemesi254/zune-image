@@ -53,14 +53,14 @@ use video_toolbox_sys::decompression::{
 use zune_core::bytestream::ZByteReaderTrait;
 
 use crate::decoder::HeifDecoder;
-use crate::errors::BmfErrors;
+use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
 
 /// Thread-safe storage for decoded tiles.
 ///
 /// Key: `item_id` (HEVC sample identifier)
 /// Value: RGB pixel buffer (`Vec<u8>`, 3 bytes per pixel)
-pub type TileMap = Arc<Mutex<HashMap<u32, Result<Vec<u8>, BmfErrors>>>>;
+pub type TileMap = Arc<Mutex<HashMap<u32, Result<Vec<u8>, HeicErrors>>>>;
 
 unsafe extern "C" {
     /// Creates a CMVideoFormatDescription from HEVC (H.265) parameter-set NAL units.
@@ -383,14 +383,14 @@ extern "C" fn decode_callback(
     _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
     let tile_map_ptr =
-        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<Vec<u8>, BmfErrors>>>;
+        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<Vec<u8>, HeicErrors>>>;
     let item_id = source_frame_ref_con as usize;
 
     if status != 0 || image_buffer.is_null() {
         let msg = format!("Hardware decode failed. Status: {}", status);
         unsafe {
             if let Ok(mut map) = (*tile_map_ptr).lock() {
-                map.insert(item_id as u32, Err(BmfErrors::Generic { msg }));
+                map.insert(item_id as u32, Err(HeicErrors::Generic { msg }));
             }
             return;
         }
@@ -520,13 +520,13 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     ///
     /// - Decoding is asynchronous internally.
     /// - Final `flush()` is required to guarantee completion.
-    pub(crate) fn decode_hardware_videotoolbox(&mut self) -> Result<TileMap, BmfErrors> {
+    pub(crate) fn decode_hardware_videotoolbox(&mut self) -> Result<TileMap, HeicErrors> {
         // 1. Thread-safe tile storage
         let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
         let mut hardware_decoder: Option<AppleHardwareDecoder> = None;
 
         // 2. The Loop
-        let mut processor = |sample: HevcSample| -> Result<(), BmfErrors> {
+        let mut processor = |sample: HevcSample| -> Result<(), HeicErrors> {
             if hardware_decoder.is_none() {
                 // Initialize with a pointer to our tile_map
                 let vps = sample.vps.as_deref().unwrap();

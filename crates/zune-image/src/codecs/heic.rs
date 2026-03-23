@@ -72,8 +72,8 @@ where
     }
 }
 
-impl From<BmfErrors> for ImageErrors {
-    fn from(value: BmfErrors) -> Self {
+impl From<HeicErrors> for ImageErrors {
+    fn from(value: HeicErrors) -> Self {
         Self::ImageDecodeErrors(format!("heif: {:?}", value))
     }
 }

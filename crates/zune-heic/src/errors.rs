@@ -6,7 +6,7 @@ use zune_core::bytestream::ZByteIoError;
 
 use crate::bmf_reader::FourCC;
 
-pub enum BmfErrors {
+pub enum HeicErrors {
     /// Wraps an underlying I/O failure.
     Io(ZByteIoError),
 
@@ -52,33 +52,33 @@ pub enum BmfErrors {
         msg: String
     }
 }
-impl fmt::Display for BmfErrors {
+impl fmt::Display for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BmfErrors::Io(e) => {
+            HeicErrors::Io(e) => {
                 write!(f, "I/O error: {:?}", e)
             }
-            BmfErrors::InvalidBoxSize { offset, size } => {
+            HeicErrors::InvalidBoxSize { offset, size } => {
                 write!(f, "Box at offset {} has invalid size {}", offset, size)
             }
-            BmfErrors::UnexpectedEof { offset, needed } => {
+            HeicErrors::UnexpectedEof { offset, needed } => {
                 write!(
                     f,
                     "Unexpected end of data: need {} bytes at offset {}",
                     needed, offset
                 )
             }
-            BmfErrors::InvalidBoxType(bytes) => {
+            HeicErrors::InvalidBoxType(bytes) => {
                 write!(f, "Box type contains non-ASCII bytes: {:?}", bytes)
             }
-            BmfErrors::UnsupportedVersion { offset, version } => {
+            HeicErrors::UnsupportedVersion { offset, version } => {
                 write!(
                     f,
                     "FullBox at offset {} has unsupported version {}",
                     offset, version
                 )
             }
-            BmfErrors::PayloadTooShort {
+            HeicErrors::PayloadTooShort {
                 box_type,
                 needed,
                 have
@@ -89,41 +89,41 @@ impl fmt::Display for BmfErrors {
                     box_type, needed, have
                 )
             }
-            BmfErrors::ParseError { box_type, msg } => {
+            HeicErrors::ParseError { box_type, msg } => {
                 write!(f, "Parse error in box '{}': {}", box_type, msg)
             }
-            BmfErrors::WouldUnderflow { a, b } => {
+            HeicErrors::WouldUnderflow { a, b } => {
                 write!(f, "Would underflow ({}-{}) ", a, b)
             }
-            BmfErrors::Generic { msg } => {
+            HeicErrors::Generic { msg } => {
                 write!(f, "{}", msg)
             }
         }
     }
 }
-impl fmt::Debug for BmfErrors {
+impl fmt::Debug for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BmfErrors::Io(e) => f.debug_tuple("Io").field(e).finish(),
-            BmfErrors::InvalidBoxSize { offset, size } => f
+            HeicErrors::Io(e) => f.debug_tuple("Io").field(e).finish(),
+            HeicErrors::InvalidBoxSize { offset, size } => f
                 .debug_struct("InvalidBoxSize")
                 .field("offset", offset)
                 .field("size", size)
                 .finish(),
-            BmfErrors::UnexpectedEof { offset, needed } => f
+            HeicErrors::UnexpectedEof { offset, needed } => f
                 .debug_struct("UnexpectedEof")
                 .field("offset", offset)
                 .field("needed", needed)
                 .finish(),
-            BmfErrors::InvalidBoxType(bytes) => {
+            HeicErrors::InvalidBoxType(bytes) => {
                 f.debug_tuple("InvalidBoxType").field(bytes).finish()
             }
-            BmfErrors::UnsupportedVersion { offset, version } => f
+            HeicErrors::UnsupportedVersion { offset, version } => f
                 .debug_struct("UnsupportedVersion")
                 .field("offset", offset)
                 .field("version", version)
                 .finish(),
-            BmfErrors::PayloadTooShort {
+            HeicErrors::PayloadTooShort {
                 box_type,
                 needed,
                 have
@@ -133,23 +133,23 @@ impl fmt::Debug for BmfErrors {
                 .field("needed", needed)
                 .field("have", have)
                 .finish(),
-            BmfErrors::ParseError { box_type, msg } => f
+            HeicErrors::ParseError { box_type, msg } => f
                 .debug_struct("ParseError")
                 .field("box_type", box_type)
                 .field("msg", msg)
                 .finish(),
 
-            BmfErrors::WouldUnderflow { a, b } => {
+            HeicErrors::WouldUnderflow { a, b } => {
                 write!(f, "Would underflow ({}-{}) ", a, b)
             }
-            BmfErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish()
+            HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish()
         }
     }
 }
-impl core::error::Error for BmfErrors {}
+impl core::error::Error for HeicErrors {}
 
-impl From<ZByteIoError> for BmfErrors {
+impl From<ZByteIoError> for HeicErrors {
     fn from(e: ZByteIoError) -> Self {
-        BmfErrors::Io(e)
+        HeicErrors::Io(e)
     }
 }

@@ -4,7 +4,7 @@ use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 
 use crate::bmf_reader::{BoxHeader, BoxSize};
-use crate::errors::BmfErrors;
+use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection
 };
@@ -70,7 +70,7 @@ where
         }
     }
 
-    pub fn decode_headers(&mut self) -> Result<(), BmfErrors> {
+    pub fn decode_headers(&mut self) -> Result<(), HeicErrors> {
         if self.read_headers {
             warn!("Headers already read");
             return Ok(());
@@ -134,12 +134,12 @@ where
         // at these point we expect some fields to be present otherwise its an
         // invalid file
         if self.meta_section.is_none() {
-            return Err(BmfErrors::Generic {
+            return Err(HeicErrors::Generic {
                 msg: "no meta section".to_string()
             });
         }
         if self.mdat_section.is_none() {
-            return Err(BmfErrors::Generic {
+            return Err(HeicErrors::Generic {
                 msg: "no mdat section".to_string()
             });
         }
@@ -172,7 +172,7 @@ where
             })
             .unwrap_or([0, 0, 0, 0]) // Return null if not found
     }
-    fn handle_grid_items(&mut self) -> Result<(), BmfErrors> {
+    fn handle_grid_items(&mut self) -> Result<(), HeicErrors> {
         let pitm = self.meta_section.as_ref().unwrap().pitm.as_ref().unwrap();
         let meta = self.meta_section.as_ref().unwrap();
 
@@ -192,7 +192,7 @@ where
             .items
             .iter()
             .find(|item| item.item_id == pitm.item_id)
-            .ok_or(BmfErrors::Generic {
+            .ok_or(HeicErrors::Generic {
                 msg: "Grid item location not found".into()
             })?;
 
@@ -203,7 +203,7 @@ where
 
             // Construction Method 1 means the offset is relative to the 'idat' box
             if grid_item.construction_method == 1 {
-                let idat_offset = meta.idat.as_ref().ok_or(BmfErrors::Generic {
+                let idat_offset = meta.idat.as_ref().ok_or(HeicErrors::Generic {
                     msg: "Item uses idat construction but idat box not found".into()
                 })?;
                 final_offset += idat_offset.position;
@@ -254,22 +254,22 @@ where
         self.height.map(|x| x as usize)
     }
 
-    pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), BmfErrors> {
-        let meta = self.meta_section.as_ref().ok_or(BmfErrors::Generic {
+    pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), HeicErrors> {
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No meta section parsed".to_string()
         })?;
         // now try extracting width and height.
         // 1. Ensure the properties sections exist
-        let iprp = meta.iprp.as_ref().ok_or(BmfErrors::Generic {
+        let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
             msg: "no iprp section found".to_string()
         })?;
-        let ipma = iprp.ipma.as_ref().ok_or(BmfErrors::Generic {
+        let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
             msg: "no ipma section found".to_string()
         })?;
-        let ipco = iprp.ipco.as_ref().ok_or(BmfErrors::Generic {
+        let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
             msg: "no ipco section found".to_string()
         })?;
-        let pitm = meta.pitm.as_ref().ok_or(BmfErrors::Generic {
+        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
             msg: "no pitm section found".to_string()
         })?;
 
@@ -324,7 +324,7 @@ where
         Ok(())
     }
 
-    pub fn decode(&mut self) -> Result<Vec<u8>, BmfErrors> {
+    pub fn decode(&mut self) -> Result<Vec<u8>, HeicErrors> {
         self.decode_headers()?;
 
         #[cfg(target_os = "macos")]
@@ -345,7 +345,7 @@ where
         #[cfg(not(target_os = "macos"))]
         {
             // --- FALLBACK PATH ---
-            return Err(BmfErrors::Generic {
+            return Err(HeicErrors::Generic {
                 msg: "Hardware acceleration only supported on macOS".into()
             });
         }
@@ -355,12 +355,12 @@ where
 
     /// Determines the final output color space of the primary image,
     /// accounting for grayscale encoded images and separate Alpha mask channels.
-    pub(crate) fn internal_colorspace(&mut self) -> Result<(), BmfErrors> {
-        let meta = self.meta_section.as_ref().ok_or(BmfErrors::Generic {
+    pub(crate) fn internal_colorspace(&mut self) -> Result<(), HeicErrors> {
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
             msg: "No meta section parsed".to_string()
         })?;
 
-        let pitm = meta.pitm.as_ref().ok_or(BmfErrors::Generic {
+        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
             msg: "No primary item (pitm) found".to_string()
         })?;
 
@@ -450,7 +450,7 @@ where
 
     /// Internal method to find and load EXIF data into the struct.
     /// Should be called immediately after the main headers are parsed.
-    pub(crate) fn load_exif_data(&mut self) -> Result<(), BmfErrors> {
+    pub(crate) fn load_exif_data(&mut self) -> Result<(), HeicErrors> {
         let meta = match &self.meta_section {
             Some(m) => m,
             None => return Ok(()) // No meta, so no EXIF. Fail silently.
@@ -487,13 +487,13 @@ where
         let absolute_offset = match exif_iloc.construction_method {
             0 => exif_iloc.base_offset + position.extent_offset,
             1 => {
-                let idat_off = meta.idat.as_ref().ok_or(BmfErrors::Generic {
+                let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
                     msg: "idat offset required for EXIF but not found".into()
                 })?;
                 idat_off.position + exif_iloc.base_offset + position.extent_offset
             }
             _ => {
-                return Err(BmfErrors::Generic {
+                return Err(HeicErrors::Generic {
                     msg: "Unsupported construction method".into()
                 });
             }

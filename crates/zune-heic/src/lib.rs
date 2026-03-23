@@ -10,4 +10,4 @@ mod processor;
 mod utils;
 
 pub use decoder::HeifDecoder;
-pub use errors::BmfErrors;
+pub use errors::HeicErrors;

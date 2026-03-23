@@ -11,7 +11,7 @@ use core::fmt;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 
-use crate::errors::BmfErrors;
+use crate::errors::HeicErrors;
 
 /// Four-character code identifying the box type.
 #[derive(Clone, PartialEq, Eq, Hash, Copy)]
@@ -74,7 +74,7 @@ pub struct BoxHeader {
 
 impl BoxHeader {
     /// Try to parse a BoxHeader from the current reader position.
-    pub fn read<T: ZByteReaderTrait>(reader: &mut ZReader<T>) -> Result<Self, BmfErrors> {
+    pub fn read<T: ZByteReaderTrait>(reader: &mut ZReader<T>) -> Result<Self, HeicErrors> {
         let offset = reader.position()?;
 
         let size32 = reader.get_u32_be_err()?;
