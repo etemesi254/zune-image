@@ -1,8 +1,13 @@
 use zune_core::log::trace;
-
+use crate::hvec_decoder::binarizer::Binarizer;
 use crate::hvec_decoder::bitstream::BitReader;
+use crate::hvec_decoder::cabac::CabacEngine;
+use crate::hvec_decoder::context_model::NeighborTracker;
+use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
-use crate::hvec_decoder::nal_unit_headers::{ChromaFormat, Pps, ProfileIdc, ProfileTierLevel, SliceHeader, Sps, Vps, Vui, VuiVideoFormat};
+use crate::hvec_decoder::nal_unit_headers::{ChromaFormat, Pps, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType, Sps, Vps, Vui, VuiVideoFormat};
+use crate::hvec_decoder::quadtree_vb::{decode_coding_quadtree, decode_sao};
+use crate::hvec_decoder::utils::extract_rbsp;
 
 pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
     const VPS_MAX_LAYERS_LIMIT: u64 = 64;
@@ -66,6 +71,9 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
         max_dec_pic_buffering,
         max_num_reorder_pics
     };
+    if (DEBUG_MORE){
+        println!("vps: {:#?}", vps);
+    }
     trace!("vps: {:?}", vps);
 
     return Ok(vps);
@@ -99,7 +107,11 @@ fn decode_profile_data(
     let non_packed_constraint_flag = r.get_bits(1) as u8;
     let frame_only_constraint_flag = r.get_bits(1) as u8;
 
-    r.skip_bits(44);
+    // a lot of bits to skip, so skip in parts
+    // we are to skip 44 bits but the bit-reader can refill 32 bits at a time
+    // so break it down into modest skips
+    r.skip_bits(22);
+    r.skip_bits(22);
 
     let level_idc = if level_present { r.get_bits(8) as u8 } else { 0 };
 
@@ -171,9 +183,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     };
 
     sps.separate_color_plane_flag = if sps.chroma_format_idc == ChromaFormat::Yuv444 {
-        r.read_flag() as u64
+        r.read_flag()
     } else {
-        0
+        false
     };
 
     // --- Picture Size ---
@@ -291,21 +303,29 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- Reference Picture Sets ---
-    let num_short_term_ref_pic_sets = r.read_ue() as usize;
+    sps.num_short_term_ref_pic_sets = r.read_ue();
+
     // Track POC deltas across loop iterations for inter-RPS prediction
     let mut num_delta_pocs = [0usize; 65];
 
-    for i in 0..num_short_term_ref_pic_sets {
-        parse_short_term_ref_pic_set(&mut r, i, num_short_term_ref_pic_sets, &mut num_delta_pocs)?;
+    for i in 0..(sps.num_short_term_ref_pic_sets as usize) {
+        parse_short_term_ref_pic_set(
+            &mut r,
+            i,
+            sps.num_short_term_ref_pic_sets as usize,
+            &mut num_delta_pocs
+        )?;
     }
 
     let long_term_ref_pics_present_flag = r.read_flag();
     if long_term_ref_pics_present_flag {
-        let num_long_term_ref_pics_sps = r.read_ue();
-        for _ in 0..num_long_term_ref_pics_sps {
+        sps.num_long_term_ref_pics_sps = r.read_ue();
+        for _ in 0..(sps.num_long_term_ref_pics_sps) {
             r.get_bits(sps.log2_max_pic_order_cnt_lsb as u8);
             r.read_flag(); // used_by_curr_pic_lt_sps_flag
         }
+    } else {
+        sps.num_long_term_ref_pics_sps = 0;
     }
 
     sps.sps_temporal_mvp_enabled_flag = r.read_flag();
@@ -331,7 +351,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.pic_height_in_ctbs_y =
         (sps.pic_height_in_luma_samples + sps.ctb_size_y - 1) / sps.ctb_size_y;
 
-    if (true) {
+    if DEBUG_MORE {
         println!("{:#?}", sps);
     }
 
@@ -672,62 +692,289 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         .as_ref()
         .ok_or_else(|| NalError::Generic(format!("PPS references missing SPS {}", pps.sps_id)))?;
 
-
-    let log2_ctb_size_y = sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
+    let log2_ctb_size_y =
+        sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
     pps.log2_min_cu_qp_delta_size = log2_ctb_size_y - pps.diff_cu_qp_delta_depth;
 
-    if true {
+    if DEBUG_MORE {
         println!("{:#?}", pps)
     }
 
     Ok(pps)
 }
+pub fn decode_slice_vb(
+    nal: &NalUnit,
+    pps_storage: &[Option<Pps>],
+    sps_storage: &[Option<Sps>],
+)->Result<(), NalError> {
 
+    // 1. Clean the entire NAL unit first! Skip the 2-byte NAL header.
+    let clean_rbsp = extract_rbsp(&nal.payload[..]);
 
+    // 2. Pass the clean bytes to the slice header parser
+    //let _slice_header = _decode_slice_header(&clean_rbsp)?;
+    let slice_header = decode_slice_header(
+        &nal,
+        &pps_storage,
+        &sps_storage,
+        &clean_rbsp
+    )?;
 
+    // 1. Resolve Active Parameter Sets
+    let pps = pps_storage
+        [slice_header.slice_pic_parameter_set_id as usize]
+        .as_ref()
+        .expect("Stream error: PPS missing!");
+    let sps = sps_storage[pps.sps_id as usize]
+        .as_ref()
+        .expect("Stream error: SPS missing!");
 
+    // 2. Extract the raw CABAC payload
+    let payload_start = slice_header.cabac_start_position;
+
+    // 3. Calculate Slice QP for Context Initialization
+    let slice_qp = 26 + pps.init_qp_minus26 + slice_header.slice_qp_delta;
+
+    // 4. Boot up the Entropy Pipeline
+    let mut cabac =
+        CabacEngine::new(&clean_rbsp[payload_start..], slice_header.slice_type, slice_qp);
+    let mut binarizer = Binarizer::new(&mut cabac);
+
+    let pic_width = sps.pic_width_in_luma_samples as usize;
+    let mut tracker = NeighborTracker::new(pic_width);
+
+    // 5. The CTU Raster Scan Loop
+    let ctu_size = sps.ctb_size_y as usize;
+    let width_in_ctus = sps.pic_width_in_ctbs_y as usize;
+    let height_in_ctus = sps.pic_height_in_ctbs_y as usize;
+    let total_ctus = width_in_ctus * height_in_ctus;
+
+    for ctu_idx in 0..total_ctus {
+        // 1. Calculate our grid coordinates using the ctu_idx
+        let ctu_x = ctu_idx % width_in_ctus;
+        let ctu_y = ctu_idx / width_in_ctus;
+
+        // 2. Convert grid coordinates to actual pixel coordinates
+        let x_ctu = ctu_x * ctu_size;
+        let y_ctu = ctu_y * ctu_size;
+
+        // Eat the SAO bits so CABAC stays aligned!
+        if sps.sample_adaptive_offset_enabled_flag {
+            if slice_header.slice_sao_luma_flag
+                || slice_header.slice_sao_chroma_flag
+            {
+                decode_sao(
+                    &mut binarizer,
+                    ctu_x,
+                    ctu_y,
+                    slice_header.slice_sao_luma_flag,
+                    slice_header.slice_sao_chroma_flag
+                );
+            }
+        }
+
+        // Start the recursive Z-Scan decode for this CTU
+        decode_coding_quadtree(
+            &mut binarizer,
+            &mut tracker,
+            sps,
+            pps,
+            slice_header.slice_type,
+            x_ctu,
+            y_ctu,
+            ctu_size,
+            0 // Starting Depth
+        );
+
+        // Terminate the slice if HEVC signals it
+        if binarizer.engine.decode_terminate() == 1 {
+            binarizer.engine.align_to_byte();
+            break; // Slice is finished!
+        }
+    }
+    Ok(())
+}
 pub fn decode_slice_header(
     nal: &NalUnit,
     pps_storage: &[Option<Pps>],
-    sps_storage: &[Option<Sps>]
+    sps_storage: &[Option<Sps>],
+    clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
-    let mut r = BitReader::new(nal.payload);
-    r.refill();
+    // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
+    let mut r = BitReader::new(&clean_payload);
 
     let mut sh = SliceHeader::default();
 
-    let first_slice_segment_in_pic_flag = r.read_flag();
+    // 2. Initial Flags
+    sh.first_slice_segment_in_pic_flag = r.read_flag();
 
-    // In HEVC, NAL types 16 through 23 are Intra Random Access Point (IRAP) pictures (e.g., IDR)
-    let nal_type_u8 = nal.nal_type as u8;
-    let is_irap = nal_type_u8 >= 16 && nal_type_u8 <= 23;
+    let nal_unit_type = nal.nal_type as u8;
+    let is_irap = nal_unit_type >= 16 && nal_unit_type <= 23;
+    let is_idr = nal_unit_type == 19 || nal_unit_type == 20;
 
     if is_irap {
         let _no_output_of_prior_pics_flag = r.read_flag();
     }
 
+    // 3. PPS/SPS Lookup (The most critical part for bit-alignment)
     sh.slice_pic_parameter_set_id = r.read_ue();
 
-    // --- CRITICAL CONTEXT LOOKUP ---
     let pps = pps_storage[sh.slice_pic_parameter_set_id as usize]
         .as_ref()
-        .ok_or_else(|| NalError::Generic("Slice references missing PPS".into()))?;
+        .ok_or_else(|| NalError::Generic("PPS not found".into()))?;
 
     let sps = sps_storage[pps.sps_id as usize]
         .as_ref()
-        .ok_or_else(|| NalError::Generic("Slice references missing SPS".into()))?;
+        .ok_or_else(|| NalError::Generic("SPS not found".into()))?;
 
-    // --- MAINTAINING BITSTREAM SYNC ---
-    // If the PPS defined extra header bits, we MUST skip them now.
-    if pps.num_extra_slice_header_bits > 0 {
-        trace!("Skipping extra header bits. {}",pps.num_extra_slice_header_bits);
-        r.get_bits(pps.num_extra_slice_header_bits as u8);
+    // 4. Dependent Slice Logic
+    if !sh.first_slice_segment_in_pic_flag {
+        if pps.dependent_slice_segments_enabled_flag {
+            sh.dependent_slice_segment_flag = r.read_flag();
+        }
+        let pic_size_in_ctbs_y = sps.pic_width_in_ctbs_y * sps.pic_height_in_ctbs_y;
+        let address_length = (pic_size_in_ctbs_y as f64).log2().ceil() as u8;
+        sh.slice_segment_address = r.get_bits(address_length);
     }
 
-    // 0 = B (Bi-directional), 1 = P (Predictive), 2 = I (Intra)
-    sh.slice_type = r.read_ue();
+    if !sh.dependent_slice_segment_flag {
+        if pps.num_extra_slice_header_bits > 0 {
+            r.get_bits(pps.num_extra_slice_header_bits as u8);
+        }
 
-    // ... The rest of the slice header ...
+        sh.slice_type = SliceType::try_from(r.read_ue())?;
 
+        if pps.output_flag_present_flag {
+            let _pic_output_flag = r.read_flag();
+        }
+
+        if sps.separate_color_plane_flag {
+            let _colour_plane_id = r.get_bits(2);
+        }
+
+        // 5. POC LSB (Skipped for IDR, present for CRA/Trailing)
+        if !is_idr {
+            sh.slice_pic_order_cnt_lsb = r.get_bits(sps.log2_max_pic_order_cnt_lsb as u8);
+
+            let short_term_ref_pic_set_sps_flag = r.read_flag();
+            if !short_term_ref_pic_set_sps_flag {
+                // Inline RPS parsing would go here
+            } else if sps.num_short_term_ref_pic_sets > 1 {
+                let num_bits = (sps.num_short_term_ref_pic_sets as f64).log2().ceil() as u8;
+                r.get_bits(num_bits);
+            }
+
+            if sps.sps_temporal_mvp_enabled_flag {
+                let _slice_temporal_mvp_enabled_flag = r.read_flag();
+            }
+        }
+
+        // 6. SAO Flags
+        if sps.sample_adaptive_offset_enabled_flag {
+            sh.slice_sao_luma_flag = r.read_flag();
+            sh.slice_sao_chroma_flag = r.read_flag();
+        }
+
+        // 7. Temporal/Inter Logic (Skipped for I-Slices)
+        if sh.slice_type == SliceType::P || sh.slice_type == SliceType::B {
+            let num_ref_idx_active_override_flag = r.read_flag();
+            if num_ref_idx_active_override_flag {
+                r.read_ue(); // l0
+                if sh.slice_type == SliceType::B {
+                    r.read_ue(); // l1
+                }
+            }
+        }
+
+        // 8. QP Delta (se(v))
+        sh.slice_qp_delta = r.read_se();
+
+        // 9. Deblocking Filter
+        if pps.deblocking_filter_control_present_flag {
+            if pps.deblocking_filter_override_enabled_flag {
+                let deblocking_filter_override_flag = r.read_flag();
+                if deblocking_filter_override_flag {
+                    let _slice_deblocking_filter_disabled_flag = r.read_flag();
+                    if !_slice_deblocking_filter_disabled_flag {
+                        r.read_se(); // beta_offset_div2
+                        r.read_se(); // tc_offset_div2
+                    }
+                }
+            }
+        }
+
+        // 10. Loop Filter Across Slices (The 1-bit drift culprit)
+        let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag &&
+            (sh.slice_sao_luma_flag || sh.slice_sao_chroma_flag);
+        let is_dbf_enabled = !pps.deblocking_filter_disabled_flag;
+
+        if pps.loop_filter_across_slices_enabled_flag && (is_sao_enabled || is_dbf_enabled) {
+            let _slice_loop_filter_across_slices_enabled_flag = r.read_flag();
+        }
+    }
+
+    // 11. WPP Entry Point Offsets (The "28 Bytes" Culprit)
+    if pps.tiles_enabled_flag || pps.entropy_coding_sync_enabled_flag {
+        let num_entry_point_offsets = r.read_ue();
+        if num_entry_point_offsets > 0 {
+            let offset_len_minus1 = r.read_ue();
+            for _ in 0..num_entry_point_offsets {
+                r.get_bits((offset_len_minus1 + 1) as u8);
+            }
+        }
+    }
+
+    // 12. Final Alignment
+    r.byte_align();
+
+
+    // sh.cabac_start_position = (r.position * 8 - r.bits_left) / 8
+    sh.cabac_start_position = r.byte_position();
+
+
+    if DEBUG_MORE {
+        println!("{:#?}",sh)
+    }
     Ok(sh)
+}
+
+// Context offsets for Intra Prediction
+const BASE_CTX_IPRED_LUMA: usize = 0;   // prev_intra_luma_pred_flag
+const BASE_CTX_IPRED_CHROMA: usize = 64; // intra_chroma_pred_mode
+
+pub fn decode_pu_intra(binarizer: &mut Binarizer) -> (u8, u8) {
+    // 1. Luma Prediction Mode
+    // prev_intra_luma_pred_flag
+    let prev_intra_luma_pred_flag = binarizer.engine.decode_decision(BASE_CTX_IPRED_LUMA);
+
+    if prev_intra_luma_pred_flag == 1 {
+        // mpm_idx (Truncated Rice/Unary)
+        let _mpm_idx = binarizer.engine.decode_bypass(); // Simplified for trace alignment
+        if _mpm_idx == 1 {
+            let _extra = binarizer.engine.decode_bypass();
+        }
+    } else {
+        // rem_intra_luma_pred_mode (Fixed length 5 bits)
+        let _rem_mode = binarizer.engine.decode_bypass_n(5);
+    }
+
+    // 2. Chroma Prediction Mode
+    // intra_chroma_pred_mode
+    let mut chroma_mode = 0;
+    if binarizer.engine.decode_decision(BASE_CTX_IPRED_CHROMA) == 1 {
+        // It's not the derived mode, so read the bypass bits for the specific mode
+        chroma_mode = binarizer.engine.decode_bypass_n(2) + 1;
+    }
+
+    (0, chroma_mode as u8)
+}
+fn ceil_log2(mut n: u64) -> u8 {
+    if n <= 1 { return 0; }
+    let mut bits = 0;
+    n -= 1;
+    while n > 0 {
+        bits += 1;
+        n >>= 1;
+    }
+    bits
 }

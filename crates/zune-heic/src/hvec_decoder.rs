@@ -1,17 +1,23 @@
 use zune_core::log::trace;
 
-use crate::hvec_decoder::bitstream::BitReader;
-use crate::hvec_decoder::nal_parser::{NalError, NalFraming, NalParser, NalUnit, NalUnitType};
+use crate::hvec_decoder::nal_parser::{NalParser, NalUnitType};
 use crate::hvec_decoder::nal_unit_headers::{Pps, Sps, Vps};
-use crate::hvec_decoder::nal_unit_parsers::{
-    decode_pps, decode_slice_header, decode_sps, decode_vps
-};
+use crate::hvec_decoder::nal_unit_parsers::{decode_pps, decode_slice_vb, decode_sps, decode_vps};
+use crate::hvec_decoder::quadtree::decode_slice;
 use crate::processor::HevcSample;
 
+pub const DEBUG_MORE: bool = true;
+mod binarizer;
 mod bitstream;
+mod cabac;
+mod cabac_tables;
+mod context_model;
 mod nal_parser;
 mod nal_unit_headers;
 mod nal_unit_parsers;
+mod quadtree_vb;
+mod quadtree;
+mod utils;
 
 struct HVecDecoder<'a> {
     hevc_sample: HevcSample<'a>,
@@ -37,17 +43,19 @@ impl<'a> HVecDecoder<'a> {
                 match nal.nal_type {
                     // --- Metadata NALs ---
                     NalUnitType::VpsNut => {
+                        trace!("Decoding vps nal unit");
                         let vps = decode_vps(&nal)?;
                         let vps_id = vps.vps_id as usize;
                         self.vps_storage[vps_id] = Some(vps);
                     }
                     NalUnitType::SpsNut => {
+                        trace!("Decoding sps nal unit");
                         let sps = decode_sps(&nal)?;
                         let sps_id = sps.sps_id as usize;
                         self.sps_storage[sps_id] = Some(sps);
                     }
                     NalUnitType::PpsNut => {
-                        // Pass the sps_storage so decode_pps can look up the referenced SPS
+                        trace!("Decoding pps nal unit");
                         let pps = decode_pps(&nal, &self.sps_storage)?;
                         let pps_id = pps.pps_id as usize;
                         self.pps_storage[pps_id] = Some(pps);
@@ -56,16 +64,8 @@ impl<'a> HVecDecoder<'a> {
                     // --- Video Coding Layer (VCL) NALs (The actual frames) ---
                     // HEVC VCL NAL types are 0 to 31. We can catch all of them here.
                     nal_type if (nal_type as u8) <= 31 => {
-                        // Pass the storages so the slice header can resolve its context
-                        let slice_header =
-                            decode_slice_header(&nal, &self.pps_storage, &self.sps_storage)?;
-
-                        // The BitReader inside decode_slice_header stopped exactly
-                        // where the CABAC entropy data begins!
-                        println!(
-                            "Successfully parsed slice! Type: {}, POC: {}",
-                            slice_header.slice_type, slice_header.slice_pic_order_cnt_lsb
-                        );
+                        trace!("Decoding NAL {:?}", nal_type);
+                        decode_slice(&nal, &self.pps_storage, &self.sps_storage)?;
                     }
 
                     // --- SEI, AUD, and everything else ---

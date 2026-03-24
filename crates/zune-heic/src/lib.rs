@@ -1,4 +1,5 @@
 extern crate core;
+extern crate alloc;
 
 mod apple_videotoolbox;
 mod bmf_reader;

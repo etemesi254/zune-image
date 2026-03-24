@@ -1,3 +1,5 @@
+use crate::hvec_decoder::nal_parser::NalError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ProfileIdc {
@@ -61,7 +63,7 @@ pub struct Sps {
     pub sps_id:                    u64,
     pub max_sub_layers:            u64,
     pub chroma_format_idc:         ChromaFormat,
-    pub separate_color_plane_flag: u64,
+    pub separate_color_plane_flag: bool,
 
     // Dimensions
     pub pic_width_in_luma_samples:  u64,
@@ -106,6 +108,10 @@ pub struct Sps {
     pub ctb_size_y:           u64,
     pub pic_width_in_ctbs_y:  u64,
     pub pic_height_in_ctbs_y: u64,
+
+    // Reference Picture Sets
+    pub num_short_term_ref_pic_sets: u64,
+    pub num_long_term_ref_pics_sps: u64,
 
     // optional ptl (generally present)
     pub ptl: Option<ProfileTierLevel>,
@@ -206,10 +212,50 @@ pub struct Pps {
     pub log2_min_cu_qp_delta_size: u64
 }
 
-
 #[derive(Debug, Default)]
 pub struct SliceHeader {
+    pub first_slice_segment_in_pic_flag: bool,
+    pub dependent_slice_segment_flag: bool,
+    pub slice_segment_address: u64,
     pub slice_pic_parameter_set_id: u64,
-    pub slice_type: u64,
+    pub slice_type: SliceType,
     pub slice_pic_order_cnt_lsb: u64,
+    pub cabac_start_position: usize,
+    pub slice_qp_delta: i64,
+    pub slice_sao_luma_flag: bool,
+    pub slice_sao_chroma_flag: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SliceType {
+    B = 0,
+    P = 1,
+    I = 2
+}
+
+impl TryFrom<u64> for SliceType {
+    type Error = NalError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::B),
+            1 => Ok(Self::P),
+            2 => Ok(Self::I),
+            _ => Err(NalError::Generic(format!("Invalid slice_type: {}", value)))
+        }
+    }
+}
+
+impl Default for SliceType {
+    fn default() -> Self {
+        Self::I // Defaulting to I-slice is safest for initialization
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug)]
+pub struct BlockState {
+    pub available: bool,    // False if off-screen, in another slice, or not yet decoded
+    pub skip_flag: bool,    // Was this block skipped?
+    pub cqt_depth: u8,      // How deeply was the CTU split here? (0 = 64x64, 3 = 8x8)
+    pub is_intra: bool,     // Intra (spatial) or Inter (temporal) prediction?
 }

@@ -31,22 +31,21 @@ impl<'src> BitReader<'src> {
             return;
         }
 
-        // Attempt a fast-path 4-byte load
         if let Some(bytes) = self.src.get(self.position..self.position + 4) {
             let chunk = u32::from_be_bytes(bytes.try_into().unwrap());
 
-            // Check for 0x03 AND ensure we aren't in a 00 00 state.
-            // A simple "has_byte(chunk, 3)" is a good hint, but we must be precise.
-            if !self.has_emulation_prevention(chunk) && self.zero_count < 2 {
-                // Fast Path: No EPB in sight
-                let bytes_to_load = (64 - self.bits_left) >> 3;
-                // Note: Simplified for clarity; usually you'd load exactly 4 bytes
+            // 1. Check if the chunk itself has 0x03
+            // 2. CRITICAL: Check if the previous state (zero_count) combined with
+            //    the start of this chunk creates a 00 00 03 sequence.
+            let first_byte = (chunk >> 24) as u8;
+            let creates_boundary_epb = self.zero_count == 2 && first_byte == 0x03;
+
+            if !self.has_emulation_prevention(chunk) && !creates_boundary_epb {
                 self.load_4_bytes(chunk);
                 return;
             }
         }
 
-        // Slow Path: Load one byte at a time and skip 0x03
         self.refill_one_byte_at_a_time();
     }
     #[inline(always)]
@@ -118,21 +117,6 @@ impl<'src> BitReader<'src> {
                 self.zero_count = 0;
             }
         }
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn refill_slow(&mut self) {
-        let mut buf = [0u8; 8];
-        let tail = &self.src[self.position.min(self.src.len())..];
-        let n = tail.len().min(8);
-        buf[..n].copy_from_slice(&tail[..n]);
-
-        let word = u64::from_be_bytes(buf);
-        let bytes_to_load = (64 - self.bits_left) >> 3;
-        self.position += bytes_to_load as usize;
-        self.buffer |= word >> self.bits_left;
-        self.bits_left |= 56;
     }
 
     // ── Peek ─────────────────────────────────────────────────────────────
@@ -249,15 +233,34 @@ impl<'src> BitReader<'src> {
         self.bits_left % 8 == 0
     }
 
-    #[inline(always)]
     pub fn byte_align(&mut self) {
-        let rem = self.bits_left % 8;
-        if rem != 0 {
-            self.buffer <<= rem;
-            self.bits_left -= rem;
+        // Read the "1" bit and then all "0" bits until alignment
+        let bit = self.read_flag();
+        if bit { // Only align if we actually found the stop bit
+            let rem = self.bits_left % 8;
+            self.drop_bits(rem);
         }
     }
 
+    /// Returns the absolute bit position in the stream.
+    /// This is the equivalent of HM's m_pcBitstream->getNumBitsRead().
+    #[inline(always)]
+    pub fn tell(&self) -> usize {
+        // (Total bytes touched * 8) minus (bits still sitting in the buffer)
+        (self.position * 8) - self.bits_left as usize
+    }
+
+    /// Returns the logical byte position.
+    /// If we are mid-byte, this usually returns the start of that byte.
+    #[inline(always)]
+    pub fn byte_position(&self) -> usize {
+        self.tell() / 8
+    }
+
+    /// Update your existing position to return the bit-count
+    pub fn position(&self) -> usize {
+        self.tell()
+    }
     #[inline(always)]
     pub fn reset(&mut self) {
         self.buffer = 0;
