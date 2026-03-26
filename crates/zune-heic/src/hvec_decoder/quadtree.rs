@@ -1,7 +1,7 @@
 use std::cmp::min;
 
 use zune_core::log::trace;
-
+use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::cabac::CabacEngine;
 use crate::hvec_decoder::cabac_tables::{CABAC_INIT_VALUES, CONTEXT_MODEL_SPLIT_CU_FLAG};
@@ -93,9 +93,7 @@ pub fn decode_slice(
     let mut decode_slice_context =
         DecodeSliceContext::new(&sps, &pps, &slice_header, cabac, neighbor_tracker);
 
-    if DEBUG_MORE {
-        println!("decode slice POC={}", slice_header.slice_pic_order_cnt_lsb);
-    }
+    debug_more!("decode slice POC={}", slice_header.slice_pic_order_cnt_lsb);
     //let output = vec![];
 
     for ctu_idx in 0..total_ctus {
@@ -103,9 +101,7 @@ pub fn decode_slice(
         let ctu_x = ctu_idx % width_in_ctus;
         let ctu_y = ctu_idx / width_in_ctus;
 
-        if DEBUG_MORE {
-            println!("ctbX -> {ctu_x}, ctbY -> {ctu_y}");
-        }
+        debug_more!("ctbX -> {ctu_x}, ctbY -> {ctu_y}");
         read_coding_tree_unit(&mut decode_slice_context, ctu_x, ctu_y)
     }
     Ok(())
@@ -114,15 +110,11 @@ pub fn decode_slice(
 fn read_coding_quadtree(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) {
-    if DEBUG_MORE {
-        println!(
-            "read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
+    debug_more!("read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
             x0,
             y0,
             1_u64 << log_2_cb_size,
-            ct_depth,
-        );
-    }
+            ct_depth,);
     let cb_size = 1 << log_2_cb_size;
 
     let sps = ctx.sps;
@@ -186,39 +178,25 @@ fn read_coding_quadtree(
 fn decode_split_cu_flag(ctx: &mut DecodeSliceContext, x0: usize, y0: usize, depth: u8) -> bool {
     let ctx_v = ctx.neighbor_tracker.get_split_ctx(x0, y0, depth);
     let index = CONTEXT_MODEL_SPLIT_CU_FLAG + ctx_v;
-    if DEBUG_MORE {
-        println!(
-            "decode_split_cu_flag -> ctx={} Range={} Value={}",
-            ctx_v, ctx.cabac_engine.range, ctx.cabac_engine.value
-        );
-    }
+    debug_more!("decode_split_cu_flag -> ctx={} Range={} Value={}",
+            ctx_v, ctx.cabac_engine.range, ctx.cabac_engine.value);
     let bit = ctx.cabac_engine.decode_decision(index);
-    if DEBUG_MORE {
-        println!(
-            "decode_split_cu_flag Range=>{}, ctx={} bit={}",
-            ctx.cabac_engine.range, ctx_v, bit
-        );
-    }
+    debug_more!("decode_split_cu_flag Range=>{}, ctx={} bit={}",
+            ctx.cabac_engine.range, ctx_v, bit);
     bit == 1
 }
 
 fn decode_quantization_parameters(
     ctx: &mut DecodeSliceContext, xc: usize, yc: usize, xc_base: usize, yc_base: usize
 ) {
-    if DEBUG_MORE {
-        println!(
-            "-------------decode_quantization_parameters( xc={},yc={}) ---------------",
-            xc, yc
-        );
-    }
+    debug_more!("-------------decode_quantization_parameters( xc={},yc={}) ---------------",
+            xc, yc);
     let pps = ctx.pps;
     // top left pixel position of current quantization group
     let x_qg = xc_base - (xc_base & ((1 << pps.log2_min_cu_qp_delta_size) - 1));
     let y_gq = yc_base - (yc_base & ((1 << pps.log2_min_cu_qp_delta_size) - 1));
 
-    if DEBUG_MORE {
-        println!("X_QG:{},Y_QG:{}", x_qg, y_gq);
-    }
+    debug_more!("X_QG:{},Y_QG:{}", x_qg, y_gq);
     if x_qg != ctx.current_qg_x || y_gq != ctx.current_qg_y {
         
     }
@@ -228,12 +206,8 @@ fn read_coding_unit(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) {
     let cb_size = 1 << log_2_cb_size;
-    if DEBUG_MORE {
-        println!(
-            "read_coding_unit x0={},y0={},log_2_cb_size:{}",
-            x0, y0, cb_size
-        );
-    }
+    debug_more!("read_coding_unit x0={},y0={},log_2_cb_size:{}",
+            x0, y0, cb_size);
     decode_quantization_parameters(ctx, x0, y0, x0, y0);
 }
 
@@ -247,11 +221,7 @@ fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usiz
     let x_ctb_pixels = ctu_x << log_2_ctb_size_y;
     let y_ctb_pixels = ctu_y << log_2_ctb_size_y;
 
-    if DEBUG_MORE {
-        println!(
-            "DECODE CTB log_2_ctb_size_y: {log_2_ctb_size_y} x_ctb_pixels: {x_ctb_pixels} y_ctb_pixels: {y_ctb_pixels}"
-        );
-    }
+    debug_more!("DECODE CTB log_2_ctb_size_y: {log_2_ctb_size_y} x_ctb_pixels: {x_ctb_pixels} y_ctb_pixels: {y_ctb_pixels}");
     if shdr.slice_sao_luma_flag || shdr.slice_sao_chroma_flag {
         let sao_info = read_sao(ctx, x_ctb_pixels, y_ctb_pixels);
     }

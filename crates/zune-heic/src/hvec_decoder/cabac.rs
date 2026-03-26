@@ -1,6 +1,6 @@
+use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::cabac_tables::*;
-use crate::hvec_decoder::nal_unit_headers::SliceType;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ContextModel {
@@ -45,8 +45,8 @@ pub struct CabacEngine<'a> {
     buffered_bits: u64,
     bits_left:     u8,
     pub value:     u32,
-    pub range:    u32,
-    pub contexts: [u8; NUM_CABAC_CONTEXTS] // Room for all HEVC contexts
+    pub range:     u32,
+    pub contexts:  [u8; NUM_CABAC_CONTEXTS] // Room for all HEVC contexts
 }
 
 impl<'a> CabacEngine<'a> {
@@ -124,32 +124,29 @@ impl<'a> CabacEngine<'a> {
         let mps = state_packed & 1;
         let state = (state_packed >> 1) as usize;
 
-        if DEBUG_MORE {
-            println!(
-                "decode_bin range:{} value:{} state:{}",
-                self.range, self.value, state
-            );
-        }
+        debug_more!(
+            "decode_bin range:{} value:{} state:{}",
+            self.range,
+            self.value,
+            state
+        );
         let q_idx = (self.range >> 6) & 3;
         let lps_range = RANGE_LPS_TABLE[state][q_idx as usize] as u32;
 
         self.range -= lps_range;
         let scaled_range = self.range << 7;
 
-        if DEBUG_MORE {
-            println!(
-                " decode_bin[1] scaled_range:{} value:{} ",
-                scaled_range, self.value
-            );
-        }
+        debug_more!(
+            " decode_bin[1] scaled_range:{} value:{} ",
+            scaled_range,
+            self.value
+        );
 
         let bin;
         if self.value < scaled_range {
             // MPS Path
             bin = mps;
-            if DEBUG_MORE {
-                println!(" decode_bin[2] MPS");
-            }
+            debug_more!(" decode_bin[2] MPS");
             self.contexts[ctx_idx] = (TRANSITION_MPS[state] << 1) | mps;
 
             if self.range < 256 {
@@ -173,21 +170,21 @@ impl<'a> CabacEngine<'a> {
             let next_mps = if state == 0 { 1 - mps } else { mps };
             self.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
         }
-        if DEBUG_MORE {
-            println!(
-                " decode_bin[3] MPS bit {} range:{} value:{}",
-                bin, self.range, self.value
-            );
-        }
+        debug_more!(
+            " decode_bin[3] MPS bit {} range:{} value:{}",
+            bin,
+            self.range,
+            self.value
+        );
         bin
     }
     pub fn decode_fl_bypass_parallel(&mut self, n_bits: u8) -> u32 {
-        if DEBUG_MORE {
-            println!(
-                "decode_bypass_parallel range={} value={} (n_bits={})",
-                self.range, self.value, n_bits
-            );
-        }
+        debug_more!(
+            "decode_bypass_parallel range={} value={} (n_bits={})",
+            self.range,
+            self.value,
+            n_bits
+        );
         self.value <<= n_bits;
         self.bits_left -= n_bits;
 
@@ -195,12 +192,12 @@ impl<'a> CabacEngine<'a> {
         let v = self.value / scaled_range;
         self.value -= v * scaled_range;
 
-        if DEBUG_MORE {
-            println!(
-                " decode_bypass_parallel d={} range={} value={} ",
-                v, scaled_range, self.value
-            );
-        }
+        debug_more!(
+            " decode_bypass_parallel d={} range={} value={} ",
+            v,
+            scaled_range,
+            self.value
+        );
         v
     }
     pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
@@ -221,16 +218,12 @@ impl<'a> CabacEngine<'a> {
                 n_bits -= 1;
             }
         }
-        if DEBUG_MORE {
-            println!("decode_fl_bypass v={}", v);
-        }
+        debug_more!("decode_fl_bypass v={}", v);
         return v;
     }
 
     pub fn decode_bypass(&mut self) -> u8 {
-        if DEBUG_MORE {
-            println!("decode_bypass range:{} value:{}", self.range, self.value);
-        }
+        debug_more!("decode_bypass range:{} value:{}", self.range, self.value);
         self.value = (self.value << 1) | self.read_n_bits(1);
         let scaled_range = self.range << 7;
 
@@ -240,12 +233,12 @@ impl<'a> CabacEngine<'a> {
         } else {
             0
         };
-        if DEBUG_MORE {
-            println!(
-                " decode_bypass[2] bit:{} range:{},value:{}",
-                return_value, self.range, self.value
-            );
-        }
+        debug_more!(
+            " decode_bypass[2] bit:{} range:{},value:{}",
+            return_value,
+            self.range,
+            self.value
+        );
         return_value
     }
 

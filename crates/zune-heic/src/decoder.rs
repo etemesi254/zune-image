@@ -1,6 +1,6 @@
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::{trace, warn};
+use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
 use crate::bmf_reader::{BoxHeader, BoxSize};
@@ -553,7 +553,7 @@ where
                         profile_type: _,
                         profile_data
                     } => {
-                        trace!("Icc profile ({} bytes)",profile_data.len());
+                        trace!("Icc profile ({} bytes)", profile_data.len());
                         self.icc_data = Some(profile_data.to_vec());
                         break;
                     }

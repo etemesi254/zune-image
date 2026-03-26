@@ -2,7 +2,7 @@ use zune_core::log::trace;
 
 use crate::hvec_decoder::nal_parser::{NalParser, NalUnitType};
 use crate::hvec_decoder::nal_unit_headers::{Pps, Sps, Vps};
-use crate::hvec_decoder::nal_unit_parsers::{decode_pps, decode_slice_vb, decode_sps, decode_vps};
+use crate::hvec_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
 use crate::hvec_decoder::quadtree::decode_slice;
 use crate::processor::HevcSample;
 
@@ -12,13 +12,13 @@ mod bitstream;
 mod cabac;
 mod cabac_tables;
 mod context_model;
+mod macros;
 mod nal_parser;
 mod nal_unit_headers;
 mod nal_unit_parsers;
 mod quadtree;
 mod quadtree_vb;
 mod utils;
-mod macros;
 struct HVecDecoder<'a> {
     hevc_sample: HevcSample<'a>,
     vps_storage: Vec<Option<Vps>>,

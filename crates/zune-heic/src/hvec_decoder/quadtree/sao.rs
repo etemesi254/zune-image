@@ -1,5 +1,6 @@
 use std::cmp::min;
 
+use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::nal_unit_headers::ChromaFormat;
 use crate::hvec_decoder::quadtree::DecodeSliceContext;
@@ -15,76 +16,53 @@ pub struct SaoInfo {
 }
 fn decode_sao_type_idx(ctx: &mut DecodeSliceContext) -> u8 {
     const OFF_SAO_TYPE: usize = 1;
-    if DEBUG_MORE {
-        println!("decode_sao_type_idx(luma/chroma)");
-    }
+    debug_more!("decode_sao_type_idx(luma/chroma)");
+
     let bit0 = ctx.cabac_engine.decode_decision(OFF_SAO_TYPE);
 
     return if bit0 == 0 {
-        if DEBUG_MORE {
-            println!("decode_sao_type_idx(bit0) {}", bit0);
-        }
+        debug_more!("decode_sao_type_idx(bit0) {}", bit0);
         0
     } else {
         let bit1 = ctx.cabac_engine.decode_bypass();
 
         if bit1 == 0 {
-            if DEBUG_MORE {
-                println!("decode_sao_type_idx(bit1) {}", 1);
-            }
+            debug_more!("decode_sao_type_idx(bit1) {}", 1);
             1
         } else {
-            if DEBUG_MORE {
-                println!("decode_sao_type_idx(bit1) {}", 2);
-            }
+            debug_more!("decode_sao_type_idx(bit1) {}", 2);
             2
         }
     };
 }
 fn decode_sao_offset_abs(ctx: &mut DecodeSliceContext, bit_depth: u8) -> u8 {
-    if DEBUG_MORE {
-        println!("sao_offset_abs");
-    }
+    debug_more!("sao_offset_abs");
     let c_max = (1 << (min(bit_depth, 10) - 5)) - 1;
     debug_assert!(c_max >= 7 && c_max <= 31);
     let value = ctx.cabac_engine.decode_tu_bypass(c_max);
 
-    if DEBUG_MORE {
-        println!("sao_offset_abs(value) {}", value);
-    }
+    debug_more!("sao_offset_abs(value) {}", value);
 
     value
 }
 fn decode_sao_offset_sign(ctx: &mut DecodeSliceContext) -> u8 {
-    if DEBUG_MORE {
-        println!("sao_offset_sign");
-    }
+    debug_more!("sao_offset_sign");
     let value = ctx.cabac_engine.decode_bypass();
-    if DEBUG_MORE {
-        println!("sao_offset_sign(value) {}", value);
-    }
+    debug_more!("sao_offset_sign(value) {}", value);
     value
 }
 fn decode_sao_band_position(ctx: &mut DecodeSliceContext) -> u8 {
-    if DEBUG_MORE {
-        println!("sao_band_position");
-    }
+    debug_more!("sao_band_position");
     let value = ctx.cabac_engine.decode_bypass();
-    if DEBUG_MORE {
-        println!("sao_band_position(value) {}", value);
-    }
+    debug_more!("sao_band_position(value) {}", value);
     value
 }
 fn decode_sao_class(ctx: &mut DecodeSliceContext) -> u8 {
-    if DEBUG_MORE {
-        println!("sao_class");
-    }
+    debug_more!("sao_class");
 
     let value = ctx.cabac_engine.decode_fl_bypass(2);
 
-    if DEBUG_MORE {
-        println!("sao_class(value) {}", value);
-    }
+    debug_more!("sao_class(value) {}", value);
     value as u8
 }
 
@@ -93,9 +71,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
     let sps = ctx.sps;
     let pps = ctx.pps;
 
-    if DEBUG_MORE {
-        println!("read_sao ({} {})", x_ctb, y_ctb);
-    }
+    debug_more!("read_sao ({} {})", x_ctb, y_ctb);
     let mut sao_info = SaoInfo::default();
 
     let sao_merge_left_flag = false;
@@ -120,17 +96,13 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
                 if i == 0 {
                     let sao_type_idx_luma = decode_sao_type_idx(ctx);
 
-                    if DEBUG_MORE {
-                        println!("sao_type_idx_luma -> {sao_type_idx_luma}");
-                    }
+                    debug_more!("sao_type_idx_luma -> {sao_type_idx_luma}");
                     sao_type_idx = sao_type_idx_luma;
                     sao_info.type_index = sao_type_idx_luma;
                 } else if i == 1 {
                     let sao_idx_chroma = decode_sao_type_idx(ctx);
 
-                    if DEBUG_MORE {
-                        println!("sao_idx_chroma -> {sao_idx_chroma}");
-                    }
+                    debug_more!("sao_idx_chroma -> {sao_idx_chroma}");
                     sao_type_idx = sao_idx_chroma;
 
                     // set for both chroma components
@@ -148,12 +120,12 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
                         };
                         sao_info.sao_offset_val[i][j] = decode_sao_offset_abs(ctx, bit_depth) as i8;
 
-                        if DEBUG_MORE {
-                            println!(
-                                " sao_offset_val[{}][{}]= {}",
-                                i, j, sao_info.sao_offset_val[i][j]
-                            );
-                        }
+                        debug_more!(
+                            " sao_offset_val[{}][{}]= {}",
+                            i,
+                            j,
+                            sao_info.sao_offset_val[i][j]
+                        );
                     }
                     let mut sign: [i32; 4] = [0; 4];
                     if sao_type_idx == 1 {
@@ -180,9 +152,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
                             sao_info.sao_eo_class |= sao_eo_class << 4;
                         }
 
-                        if DEBUG_MORE {
-                            println!("sao_eo_class[{}](value) {}", i, sao_info.sao_eo_class);
-                        }
+                        debug_more!("sao_eo_class[{}](value) {}", i, sao_info.sao_eo_class);
 
                         let mut log_offset_scale: i32 = 0;
 
@@ -203,8 +173,6 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
             }
         }
     }
-    if DEBUG_MORE {
-        println!("{:#?}", sao_info);
-    }
+    debug_more!(false=>"{:#?}", sao_info);
     return sao_info;
 }
