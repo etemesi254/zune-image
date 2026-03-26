@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 extern crate core;
 extern crate alloc;
 

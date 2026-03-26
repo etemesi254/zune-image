@@ -69,7 +69,6 @@ fn decode_sao_class(ctx: &mut DecodeSliceContext) -> u8 {
 pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> SaoInfo {
     let shdr = ctx.shdr;
     let sps = ctx.sps;
-    let pps = ctx.pps;
 
     debug_more!("read_sao ({} {})", x_ctb, y_ctb);
     let mut sao_info = SaoInfo::default();
@@ -91,7 +90,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
 
         for i in 0..n_chroma {
             if (shdr.slice_sao_luma_flag && i == 0) || (shdr.slice_sao_chroma_flag && i > 0) {
-                let mut sao_type_idx = 0;
+                let  sao_type_idx ;
 
                 if i == 0 {
                     let sao_type_idx_luma = decode_sao_type_idx(ctx);

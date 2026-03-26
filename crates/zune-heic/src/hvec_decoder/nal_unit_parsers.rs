@@ -3,7 +3,6 @@ use zune_core::log::{trace, warn};
 use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::bitstream::BitReader;
-use crate::hvec_decoder::context_model::NeighborTracker;
 use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
 use crate::hvec_decoder::nal_unit_headers::{
     ChromaFormat, Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType,
@@ -736,8 +735,9 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             let mut chroma_qp_offset_list_len = 0;
             let mut cr_qp_offset_list = [0; 6];
             let mut cb_qp_offset_list = [0; 6];
-            let mut log2_sao_offset_scale_luma = 0;
-            let mut log2_sao_offset_scale_chroma = 0;
+            
+            let log2_sao_offset_scale_luma ;
+            let log2_sao_offset_scale_chroma;
 
             if pps.transform_skip_enabled_flag {
                 let v = r.read_ue() as u8;
@@ -862,89 +862,6 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     debug_more!(false=>"{:#?}", pps);
 
     Ok(pps)
-}
-pub fn decode_slice_vb(
-    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>]
-) -> Result<(), NalError> {
-    // 1. Clean the entire NAL unit first! Skip the 2-byte NAL header.
-    let clean_rbsp = extract_rbsp(&nal.payload[..]);
-
-    // 2. Pass the clean bytes to the slice header parser
-    //let _slice_header = _decode_slice_header(&clean_rbsp)?;
-    let slice_header = decode_slice_header(&nal, &pps_storage, &sps_storage, &clean_rbsp)?;
-
-    // 1. Resolve Active Parameter Sets
-    let pps = pps_storage[slice_header.slice_pic_parameter_set_id as usize]
-        .as_ref()
-        .expect("Stream error: PPS missing!");
-    let sps = sps_storage[pps.sps_id as usize]
-        .as_ref()
-        .expect("Stream error: SPS missing!");
-
-    // 2. Extract the raw CABAC payload
-    let payload_start = slice_header.cabac_start_position;
-
-    // 3. Calculate Slice QP for Context Initialization
-    let slice_qp = 26 + pps.init_qp_minus26 + slice_header.slice_qp_delta;
-
-    // 4. Boot up the Entropy Pipeline
-    // let mut cabac =
-    //     CabacEngine::new(&clean_rbsp[payload_start..], slice_header.slice_type, slice_qp);
-    // let mut binarizer = Binarizer::new(&mut cabac);
-
-    let pic_width = sps.pic_width_in_luma_samples as usize;
-    let mut tracker = NeighborTracker::new(pic_width);
-
-    // 5. The CTU Raster Scan Loop
-    let ctu_size = sps.ctb_size_y as usize;
-    let width_in_ctus = sps.pic_width_in_ctbs_y as usize;
-    let height_in_ctus = sps.pic_height_in_ctbs_y as usize;
-    let total_ctus = width_in_ctus * height_in_ctus;
-
-    // for ctu_idx in 0..total_ctus {
-    //     // 1. Calculate our grid coordinates using the ctu_idx
-    //     let ctu_x = ctu_idx % width_in_ctus;
-    //     let ctu_y = ctu_idx / width_in_ctus;
-    //
-    //     // 2. Convert grid coordinates to actual pixel coordinates
-    //     let x_ctu = ctu_x * ctu_size;
-    //     let y_ctu = ctu_y * ctu_size;
-    //
-    //     // Eat the SAO bits so CABAC stays aligned!
-    //     if sps.sample_adaptive_offset_enabled_flag {
-    //         if slice_header.slice_sao_luma_flag
-    //             || slice_header.slice_sao_chroma_flag
-    //         {
-    //             decode_sao(
-    //                 &mut binarizer,
-    //                 ctu_x,
-    //                 ctu_y,
-    //                 slice_header.slice_sao_luma_flag,
-    //                 slice_header.slice_sao_chroma_flag
-    //             );
-    //         }
-    //     }
-    //
-    //     // Start the recursive Z-Scan decode for this CTU
-    //     decode_coding_quadtree(
-    //         &mut binarizer,
-    //         &mut tracker,
-    //         sps,
-    //         pps,
-    //         slice_header.slice_type,
-    //         x_ctu,
-    //         y_ctu,
-    //         ctu_size,
-    //         0 // Starting Depth
-    //     );
-    //
-    //     // Terminate the slice if HEVC signals it
-    //     if binarizer.engine.decode_terminate() == 1 {
-    //         binarizer.engine.align_to_byte();
-    //         break; // Slice is finished!
-    //     }
-    // }
-    Ok(())
 }
 pub fn decode_slice_header(
     nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]

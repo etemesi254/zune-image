@@ -255,8 +255,10 @@ impl<'a> NalParser<'a> {
                 remaining = tail;
 
                 // 4. Process the NAL (offset + 4 is the exact start of the payload)
+                // NB: CAE, there was something removed here, extent and offset+4
+                // if important return
                 if let Some(cont) =
-                    parse_nal_header(nal_bytes, extent_idx, offset + 4, &mut visitor)?
+                    parse_nal_header(nal_bytes, &mut visitor)?
                 {
                     if !cont {
                         return Ok(());
@@ -275,7 +277,7 @@ impl<'a> NalParser<'a> {
     where
         F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
     {
-        for (extent_idx, extent) in self.extents.iter().enumerate() {
+        for  extent in self.extents.iter() {
             let mut search_start = 0;
 
             // 1. Find the next 0x00 0x00 0x01 start code
@@ -304,7 +306,7 @@ impl<'a> NalParser<'a> {
                 // 3. Process the NAL if it's not empty
                 if nal_end > nal_start {
                     let nal_bytes = &extent[nal_start..nal_end];
-                    if let Some(cont) = parse_nal_header(nal_bytes, extent_idx, nal_start, visitor)?
+                    if let Some(cont) = parse_nal_header(nal_bytes, visitor)?
                     {
                         if !cont {
                             return Ok(());
@@ -331,7 +333,7 @@ impl<'a> NalParser<'a> {
 // have a header (silently skipped).
 
 fn parse_nal_header<'a, F>(
-    nal_bytes: &'a [u8], extent_idx: usize, offset: usize, visitor: &mut F
+    nal_bytes: &'a [u8], visitor: &mut F
 ) -> Result<Option<bool>, NalError>
 where
     F: FnMut(NalUnit<'a>) -> Result<bool, NalError>

@@ -231,16 +231,7 @@ impl<'src> BitReader<'src> {
         }
     }
 
-    // ── State ─────────────────────────────────────────────────────────────
 
-    #[inline(always)]
-    pub fn bits_left(&self) -> u8 {
-        self.bits_left
-    }
-    #[inline(always)]
-    pub fn has(&self, n: u8) -> bool {
-        self.bits_left >= n
-    }
     #[inline(always)]
     pub fn is_byte_aligned(&self) -> bool {
         self.bits_left % 8 == 0

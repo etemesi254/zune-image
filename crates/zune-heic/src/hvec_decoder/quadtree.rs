@@ -1,13 +1,10 @@
-use std::cmp::min;
-
-use zune_core::log::trace;
 use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::cabac::CabacEngine;
-use crate::hvec_decoder::cabac_tables::{CABAC_INIT_VALUES, CONTEXT_MODEL_SPLIT_CU_FLAG};
+use crate::hvec_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hvec_decoder::context_model::NeighborTracker;
 use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
-use crate::hvec_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, SliceType, Sps};
+use crate::hvec_decoder::nal_unit_headers::{Pps, SliceHeader, SliceType, Sps};
 use crate::hvec_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hvec_decoder::quadtree::sao::read_sao;
 use crate::hvec_decoder::utils::extract_rbsp;
@@ -75,12 +72,7 @@ pub fn decode_slice(
     let slice_qp = 26 + pps.init_qp_minus26 + slice_header.slice_qp_delta;
 
     // 4. Create the engine
-    let cabac = CabacEngine::new(
-        payload_start,
-        slice_qp as i32,
-        init_type,
-        &CABAC_INIT_VALUES
-    );
+    let cabac = CabacEngine::new(payload_start, slice_qp as i32, init_type);
 
     // 5. The CTU Raster Scan Loop
     let ctu_size = sps.ctb_size_y as usize;
@@ -110,11 +102,13 @@ pub fn decode_slice(
 fn read_coding_quadtree(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) {
-    debug_more!("read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
-            x0,
-            y0,
-            1_u64 << log_2_cb_size,
-            ct_depth,);
+    debug_more!(
+        "read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
+        x0,
+        y0,
+        1_u64 << log_2_cb_size,
+        ct_depth,
+    );
     let cb_size = 1 << log_2_cb_size;
 
     let sps = ctx.sps;
@@ -178,36 +172,49 @@ fn read_coding_quadtree(
 fn decode_split_cu_flag(ctx: &mut DecodeSliceContext, x0: usize, y0: usize, depth: u8) -> bool {
     let ctx_v = ctx.neighbor_tracker.get_split_ctx(x0, y0, depth);
     let index = CONTEXT_MODEL_SPLIT_CU_FLAG + ctx_v;
-    debug_more!("decode_split_cu_flag -> ctx={} Range={} Value={}",
-            ctx_v, ctx.cabac_engine.range, ctx.cabac_engine.value);
+    debug_more!(
+        "decode_split_cu_flag -> ctx={} Range={} Value={}",
+        ctx_v,
+        ctx.cabac_engine.range,
+        ctx.cabac_engine.value
+    );
     let bit = ctx.cabac_engine.decode_decision(index);
-    debug_more!("decode_split_cu_flag Range=>{}, ctx={} bit={}",
-            ctx.cabac_engine.range, ctx_v, bit);
+    debug_more!(
+        "decode_split_cu_flag Range=>{}, ctx={} bit={}",
+        ctx.cabac_engine.range,
+        ctx_v,
+        bit
+    );
     bit == 1
 }
 
 fn decode_quantization_parameters(
     ctx: &mut DecodeSliceContext, xc: usize, yc: usize, xc_base: usize, yc_base: usize
 ) {
-    debug_more!("-------------decode_quantization_parameters( xc={},yc={}) ---------------",
-            xc, yc);
+    debug_more!(
+        "-------------decode_quantization_parameters( xc={},yc={}) ---------------",
+        xc,
+        yc
+    );
     let pps = ctx.pps;
     // top left pixel position of current quantization group
     let x_qg = xc_base - (xc_base & ((1 << pps.log2_min_cu_qp_delta_size) - 1));
     let y_gq = yc_base - (yc_base & ((1 << pps.log2_min_cu_qp_delta_size) - 1));
 
     debug_more!("X_QG:{},Y_QG:{}", x_qg, y_gq);
-    if x_qg != ctx.current_qg_x || y_gq != ctx.current_qg_y {
-        
-    }
+    if x_qg != ctx.current_qg_x || y_gq != ctx.current_qg_y {}
     panic!();
 }
 fn read_coding_unit(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) {
     let cb_size = 1 << log_2_cb_size;
-    debug_more!("read_coding_unit x0={},y0={},log_2_cb_size:{}",
-            x0, y0, cb_size);
+    debug_more!(
+        "read_coding_unit x0={},y0={},log_2_cb_size:{}",
+        x0,
+        y0,
+        cb_size
+    );
     decode_quantization_parameters(ctx, x0, y0, x0, y0);
 }
 
@@ -221,7 +228,9 @@ fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usiz
     let x_ctb_pixels = ctu_x << log_2_ctb_size_y;
     let y_ctb_pixels = ctu_y << log_2_ctb_size_y;
 
-    debug_more!("DECODE CTB log_2_ctb_size_y: {log_2_ctb_size_y} x_ctb_pixels: {x_ctb_pixels} y_ctb_pixels: {y_ctb_pixels}");
+    debug_more!(
+        "DECODE CTB log_2_ctb_size_y: {log_2_ctb_size_y} x_ctb_pixels: {x_ctb_pixels} y_ctb_pixels: {y_ctb_pixels}"
+    );
     if shdr.slice_sao_luma_flag || shdr.slice_sao_chroma_flag {
         let sao_info = read_sao(ctx, x_ctb_pixels, y_ctb_pixels);
     }

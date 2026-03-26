@@ -2,39 +2,6 @@ use crate::debug_more;
 use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::cabac_tables::*;
 
-#[derive(Copy, Clone, Debug)]
-pub struct ContextModel {
-    pub state: u8, // 0-62
-    pub mps:   u8  // 0 or 1
-}
-
-impl ContextModel {
-    pub fn new() -> Self {
-        Self { state: 0, mps: 0 }
-    }
-
-    /// Initializes state based on Slice QP and the HEVC Init Value (8-bit)
-    pub fn init(&mut self, qp: i32, init_value: u8) {
-        let slope_idx = (init_value >> 4) as i32;
-        let intersec_idx = (init_value & 0xF) as i32;
-
-        let m = slope_idx * 5 - 45;
-        let n = (intersec_idx << 3) - 16;
-
-        // HEVC Equation: preCtxState = Clip3(1, 126, ((m * Clip3(0, 51, SliceQPY)) >> 4) + n)
-        let pre_ctx_state = ((m * qp.clamp(0, 51)) >> 4) + n;
-        let pre_ctx_state = pre_ctx_state.clamp(1, 126);
-
-        if pre_ctx_state <= 63 {
-            self.mps = 0;
-            self.state = (63 - pre_ctx_state) as u8;
-        } else {
-            self.mps = 1;
-            self.state = (pre_ctx_state - 64) as u8;
-        }
-    }
-}
-
 pub const NUM_CABAC_CONTEXTS: usize = 171;
 
 // --- ENGINE IMPLEMENTATION ---
@@ -51,7 +18,7 @@ pub struct CabacEngine<'a> {
 
 impl<'a> CabacEngine<'a> {
     pub fn new(
-        data: &'a [u8], slice_qp: i32, init_type: usize, init_values: &[[u8; 512]; 3]
+        data: &'a [u8], slice_qp: i32, init_type: usize
     ) -> Self {
         let mut engine = Self {
             data,
@@ -111,11 +78,11 @@ impl<'a> CabacEngine<'a> {
         }
     }
 
-    pub fn print_states(&self) {
+    pub fn _print_states(&self) {
         for (i, x) in self.contexts.iter().enumerate() {
             let mps = x & 1;
             let state = (x >> 1) as usize;
-            println!("{i} mps: {} state: {}", mps, state);
+            debug_more!("{i} mps: {} state: {}", mps, state);
         }
     }
 
@@ -201,7 +168,7 @@ impl<'a> CabacEngine<'a> {
         v
     }
     pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
-        let mut v = 0;
+        let mut v;
 
         if n_bits == 0 {
             return 0;

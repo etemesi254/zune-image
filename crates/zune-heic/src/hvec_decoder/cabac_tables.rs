@@ -194,46 +194,4 @@ pub const INIT_INTER_PRED_IDC: [u8; 5] = [95, 79, 63, 31, 31];
 
 pub const INIT_TRANSQUANT_BYPASS: [u8; 3] = [154, 154, 154];
 // Mapping indices:
-// B (0..4), P (1..5), I (5..9)
-/// Initial values for context models (3 rows: B, P, I slices)
-/// Based on Table 9-4 of the HEVC specification.
-pub const CABAC_INIT_VALUES: [[u8; 512]; 3] = {
-    let mut table = [[154u8; 512]; 3]; // Default to 154 (neutral state)
 
-    // We populate the table row by row for clarity
-    // Row 0: B-Slice, Row 1: P-Slice, Row 2: I-Slice
-
-    // --- Split CU Flag ---
-    table[0][0] = 139;
-    table[0][1] = 141;
-    table[0][2] = 157;
-    table[1][0] = 107;
-    table[1][1] = 139;
-    table[1][2] = 126;
-    table[2][0] = 107;
-    table[2][1] = 139;
-    table[2][2] = 126;
-
-    // --- CU Skip Flag ---
-    table[0][3] = 197;
-    table[0][4] = 185;
-    table[0][5] = 201;
-    table[1][3] = 197;
-    table[1][4] = 185;
-    table[1][5] = 201;
-    // (I-slices don't use skip flag contexts usually)
-
-    // --- SAO Type Index (Luma/Chroma) ---
-    table[0][152] = 200; // B
-    table[1][152] = 185; // P
-    table[2][152] = 160; // I
-
-    // --- Significant Coeff Flag (Partial example for mapping) ---
-    // In a real decoder, you'd fill all 42 values here.
-    // For now, let's use the first few to verify your sao_type_idx logic.
-    table[0][75] = 111;
-    table[1][75] = 155;
-    table[2][75] = 170;
-
-    table
-};
