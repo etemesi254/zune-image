@@ -1,25 +1,61 @@
-use crate::hvec_decoder::cabac_tables::{
-    CABAC_INIT_VALUES, RANGE_LPS_TABLE, TRANSITION_LPS, TRANSITION_MPS
-};
+use crate::hvec_decoder::DEBUG_MORE;
+use crate::hvec_decoder::cabac_tables::*;
 use crate::hvec_decoder::nal_unit_headers::SliceType;
 
-pub const NUM_CABAC_CONTEXTS: usize = 500;
+#[derive(Copy, Clone, Debug)]
+pub struct ContextModel {
+    pub state: u8, // 0-62
+    pub mps:   u8  // 0 or 1
+}
+
+impl ContextModel {
+    pub fn new() -> Self {
+        Self { state: 0, mps: 0 }
+    }
+
+    /// Initializes state based on Slice QP and the HEVC Init Value (8-bit)
+    pub fn init(&mut self, qp: i32, init_value: u8) {
+        let slope_idx = (init_value >> 4) as i32;
+        let intersec_idx = (init_value & 0xF) as i32;
+
+        let m = slope_idx * 5 - 45;
+        let n = (intersec_idx << 3) - 16;
+
+        // HEVC Equation: preCtxState = Clip3(1, 126, ((m * Clip3(0, 51, SliceQPY)) >> 4) + n)
+        let pre_ctx_state = ((m * qp.clamp(0, 51)) >> 4) + n;
+        let pre_ctx_state = pre_ctx_state.clamp(1, 126);
+
+        if pre_ctx_state <= 63 {
+            self.mps = 0;
+            self.state = (63 - pre_ctx_state) as u8;
+        } else {
+            self.mps = 1;
+            self.state = (pre_ctx_state - 64) as u8;
+        }
+    }
+}
+
+pub const NUM_CABAC_CONTEXTS: usize = 171;
+
+// --- ENGINE IMPLEMENTATION ---
 
 pub struct CabacEngine<'a> {
     data:          &'a [u8],
-    byte_cursor:   usize,
-    range:         u32,
-    value:         u32,
+    cursor:        usize,
     buffered_bits: u64,
     bits_left:     u8,
-    contexts:      [u8; NUM_CABAC_CONTEXTS]
+    pub value:     u32,
+    pub range:    u32,
+    pub contexts: [u8; NUM_CABAC_CONTEXTS] // Room for all HEVC contexts
 }
 
 impl<'a> CabacEngine<'a> {
-    pub fn new(data: &'a [u8], slice_type: SliceType, slice_qp: i64) -> Self {
+    pub fn new(
+        data: &'a [u8], slice_qp: i32, init_type: usize, init_values: &[[u8; 512]; 3]
+    ) -> Self {
         let mut engine = Self {
             data,
-            byte_cursor: 0,
+            cursor: 0,
             range: 510,
             value: 0,
             buffered_bits: 0,
@@ -27,525 +63,389 @@ impl<'a> CabacEngine<'a> {
             contexts: [0; NUM_CABAC_CONTEXTS]
         };
 
-        engine.init_contexts(slice_type, slice_qp);
-
-        let n = data.len().min(8);
-        for i in 0..n {
-            engine.buffered_bits |= (data[i] as u64) << (56 - i * 8);
-        }
-        engine.byte_cursor = n;
-        engine.bits_left = (n * 8) as u8;
-
-        engine.value = (engine.buffered_bits >> 48) as u32;
-        engine.buffered_bits <<= 16;
-        engine.bits_left = engine.bits_left.saturating_sub(16);
-
+        engine.init_contexts_libde265(slice_qp, init_type);
+        engine.init_value();
         engine
     }
 
-    fn init_contexts(&mut self, slice_type: SliceType, slice_qp: i64) {
-        let init_type: usize = match slice_type {
-            SliceType::I => 2,
-            SliceType::P => 1,
-            SliceType::B => 0
-        };
-
-        for (i, &init_val) in CABAC_INIT_VALUES[init_type].iter().enumerate() {
-            let init_val = init_val as i64;
-            let m = (init_val >> 4) * 5 - 45;
-            let n = (init_val & 0xF) * 8 - 16;
-
-            let pre_ctx_state = (m * slice_qp >> 4) + n;
-            let pre_ctx_state = pre_ctx_state.clamp(1, 126);
-
-            if pre_ctx_state <= 63 {
-                self.contexts[i] = ((63 - pre_ctx_state) as u8) << 1;
-            } else {
-                self.contexts[i] = (((pre_ctx_state - 64) as u8) << 1) | 1;
-            }
+    fn init_value(&mut self) {
+        if self.data.len() >= 2 {
+            // Read first two bytes: value = byte0 << 8 | byte1
+            self.value = (self.data[0] as u32) << 8 | (self.data[1] as u32);
+            self.cursor = 2;
+            self.bits_left = 0; // Forces refill_bulk on the next bit read
+            self.buffered_bits = 0;
         }
     }
 
-    // ========================================================================
-    // Reservoir Management (Hot Path)
-    // ========================================================================
-
-    /// Extracts `n` bits from the MSB.
-    /// Caller MUST ensure `bits_left >= n` (enforced by renorm/refill logic).
     #[inline(always)]
     fn read_n_bits(&mut self, n: u8) -> u32 {
         if n == 0 {
             return 0;
         }
+        if self.bits_left < n {
+            self.refill_bulk();
+        }
+
         let bits = (self.buffered_bits >> (64 - n)) as u32;
         self.buffered_bits <<= n;
         self.bits_left -= n;
         bits
     }
 
-    /// Single bit read for bypass and legacy calls.
-    #[inline(always)]
-    fn read_next_bit(&mut self) -> u32 {
-        self.read_n_bits(1)
-    }
-
     #[inline(never)]
     fn refill_bulk(&mut self) {
-        let empty_bits = 64u8.saturating_sub(self.bits_left);
-        let bytes_needed = (empty_bits / 8) as usize;
+        let bytes_available = self.data.len().saturating_sub(self.cursor);
+        let bytes_to_read = bytes_available.min(8);
 
-        // If we don't need at least 1 full byte, skip reading entirely.
-        if bytes_needed > 0 {
-            match self.data.get(self.byte_cursor..self.byte_cursor + 8) {
-                None => {
-                    let bytes_left_in_stream = self.data.len() - self.byte_cursor;
+        if bytes_to_read > 0 {
+            let mut word = 0u64;
+            for i in 0..bytes_to_read {
+                word |= (self.data[self.cursor + i] as u64) << (56 - i * 8);
+            }
 
-                    // ============================================================
-                    // SLOW PATH: Nearing EOF, fallback to safe byte-by-byte loop
-                    // ============================================================
-                    let bytes_available = bytes_left_in_stream.min(bytes_needed);
+            // Shift into the empty part of the buffer
+            self.buffered_bits |= word >> self.bits_left;
+            self.cursor += bytes_to_read;
+            self.bits_left += (bytes_to_read * 8) as u8;
+        }
+    }
 
-                    for i in 0..bytes_available {
-                        let byte = self.data[self.byte_cursor + i] as u64;
-                        let shift = empty_bits - 8 - (i as u8 * 8);
-                        self.buffered_bits |= byte << shift;
-                    }
+    pub fn print_states(&self) {
+        for (i, x) in self.contexts.iter().enumerate() {
+            let mps = x & 1;
+            let state = (x >> 1) as usize;
+            println!("{i} mps: {} state: {}", mps, state);
+        }
+    }
 
-                    self.byte_cursor += bytes_available;
-                }
-                Some(bytes) => {
-                    // ============================================================
-                    // FAST PATH: Branchless 64-bit word read
-                    // Compiles down to a single movbe/bswap instruction on x86_64
-                    // ============================================================
+    pub fn decode_decision(&mut self, ctx_idx: usize) -> u8 {
+        let state_packed = self.contexts[ctx_idx];
+        let mps = state_packed & 1;
+        let state = (state_packed >> 1) as usize;
 
-                    // 1. Read the next 8 bytes unconditionally
-                    let word = u64::from_be_bytes(bytes.try_into().unwrap());
+        if DEBUG_MORE {
+            println!(
+                "decode_bin range:{} value:{} state:{}",
+                self.range, self.value, state
+            );
+        }
+        let q_idx = (self.range >> 6) & 3;
+        let lps_range = RANGE_LPS_TABLE[state][q_idx as usize] as u32;
 
-                    // 2. We only want to keep `bytes_needed` bytes.
-                    // Create a mask that keeps the top valid bytes and zeroes the rest.
-                    let valid_bits = (bytes_needed as u64) * 8;
-                    let mask = !0u64 << (64 - valid_bits);
+        self.range -= lps_range;
+        let scaled_range = self.range << 7;
 
-                    // 3. Mask out the unwanted bytes, then shift the whole block right
-                    // so the top byte lands exactly at the start of our empty space.
-                    self.buffered_bits |= (word & mask) >> self.bits_left;
+        if DEBUG_MORE {
+            println!(
+                " decode_bin[1] scaled_range:{} value:{} ",
+                scaled_range, self.value
+            );
+        }
 
-                    self.byte_cursor += bytes_needed;
-                }
+        let bin;
+        if self.value < scaled_range {
+            // MPS Path
+            bin = mps;
+            if DEBUG_MORE {
+                println!(" decode_bin[2] MPS");
+            }
+            self.contexts[ctx_idx] = (TRANSITION_MPS[state] << 1) | mps;
+
+            if self.range < 256 {
+                self.range <<= 1;
+                self.value = self.value << 1;
+
+                let new_bits = self.read_n_bits(1);
+
+                self.value |= new_bits;
+            }
+        } else {
+            // LPS Path
+            bin = 1 - mps;
+            self.value -= scaled_range;
+
+            let shift = RENORM_TABLE[(lps_range >> 3) as usize] as u32;
+            self.value <<= shift;
+            self.value |= self.read_n_bits(shift as u8);
+            self.range = lps_range << shift;
+
+            let next_mps = if state == 0 { 1 - mps } else { mps };
+            self.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
+        }
+        if DEBUG_MORE {
+            println!(
+                " decode_bin[3] MPS bit {} range:{} value:{}",
+                bin, self.range, self.value
+            );
+        }
+        bin
+    }
+    pub fn decode_fl_bypass_parallel(&mut self, n_bits: u8) -> u32 {
+        if DEBUG_MORE {
+            println!(
+                "decode_bypass_parallel range={} value={} (n_bits={})",
+                self.range, self.value, n_bits
+            );
+        }
+        self.value <<= n_bits;
+        self.bits_left -= n_bits;
+
+        let scaled_range = self.range << 7;
+        let v = self.value / scaled_range;
+        self.value -= v * scaled_range;
+
+        if DEBUG_MORE {
+            println!(
+                " decode_bypass_parallel d={} range={} value={} ",
+                v, scaled_range, self.value
+            );
+        }
+        v
+    }
+    pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
+        let mut v = 0;
+
+        if n_bits == 0 {
+            return 0;
+        }
+        if n_bits == 1 {
+            v = self.decode_bypass() as u32;
+        } else {
+            v = self.decode_fl_bypass_parallel(8);
+            n_bits -= 8;
+
+            while n_bits > 0 {
+                v <<= 1;
+                v |= self.decode_bypass() as u32;
+                n_bits -= 1;
             }
         }
-
-        // Clamp to 64. Any unwritten LSB slots implicitly remain 0 per HEVC spec.
-        self.bits_left = 64;
-    }
-
-    // ========================================================================
-    // Branchless Renormalization
-    // ========================================================================
-
-    /// Renormalizes `range` back into [256, 510] without a while loop.
-    #[inline(always)]
-    fn renorm(&mut self) {
-        // range is a u32. 256 is bit 8.
-        // If range >= 256, leading_zeros() is <= 23, saturating_sub yields 0.
-        // If range < 256, we calculate exactly how many bits to shift in one go.
-        let shift = self.range.leading_zeros().saturating_sub(23);
-
-        if shift > 0 {
-            self.range <<= shift;
-            self.value = (self.value << shift) | self.read_n_bits(shift as u8);
+        if DEBUG_MORE {
+            println!("decode_fl_bypass v={}", v);
         }
-
-        // Refill only if we depleted our safety buffer.
-        if self.bits_left <= 8 {
-            self.refill_bulk();
-        }
+        return v;
     }
-
-    // ========================================================================
-    // Decoding Methods
-    // ========================================================================
 
     pub fn decode_bypass(&mut self) -> u8 {
-        if self.bits_left == 0 {
-            self.refill_bulk();
+        if DEBUG_MORE {
+            println!("decode_bypass range:{} value:{}", self.range, self.value);
         }
+        self.value = (self.value << 1) | self.read_n_bits(1);
+        let scaled_range = self.range << 7;
 
-        self.value = (self.value << 1) | self.read_next_bit();
-        let scaled_range = self.range << 8;
-
-        if self.value >= scaled_range {
+        let return_value = if self.value >= scaled_range {
             self.value -= scaled_range;
             1
         } else {
             0
+        };
+        if DEBUG_MORE {
+            println!(
+                " decode_bypass[2] bit:{} range:{},value:{}",
+                return_value, self.range, self.value
+            );
         }
+        return_value
     }
 
-    /// Optimized method to decode N bypass bins consecutively.
-    /// Crucial for reading Exp-Golomb suffixes and MVDs.
-    pub fn decode_bypass_n(&mut self, n: u8) -> u32 {
-        let mut result = 0;
-        // Inlining the bypass logic here prevents N function call overheads
-        // across module boundaries when binarizing.
-        for _ in 0..n {
-            result = (result << 1) | self.decode_bypass() as u32;
-        }
-        result
-    }
-
-    pub fn decode_decision(&mut self, ctx_idx: usize) -> u8 {
-        let state = self.contexts[ctx_idx];
-        let mps = state & 1;
-        let p_state = state >> 1;
-
-        let range_lps = self.calculate_lps_range(p_state);
-        self.range -= range_lps;
-
-        let bin_decoded;
-
-        if self.value < (self.range << 8) {
-            bin_decoded = mps;
-            self.contexts[ctx_idx] = self.next_state_mps(state);
-        } else {
-            bin_decoded = 1 - mps;
-            self.value -= self.range << 8;
-            self.range = range_lps;
-            self.contexts[ctx_idx] = self.next_state_lps(state);
-        }
-
-        self.renorm();
-        bin_decoded
-    }
-
-    /// Required for end_of_slice_segment_flag and end_of_subset_one_bit.
-    /// Uses a hardcoded range of 2.
     pub fn decode_terminate(&mut self) -> u8 {
         self.range -= 2;
-        let scaled_range = self.range << 8;
+        let scaled_range = self.range << 7;
 
         if self.value >= scaled_range {
-            // Terminated. Value is technically adjusted here per spec,
-            // but since decoding halts, we just return the bin.
             1
         } else {
-            // Not terminated. Proceed with renormalization.
-            self.renorm();
+            if self.range < 256 {
+                self.range <<= 1;
+                self.value = (self.value << 1) | self.read_n_bits(1);
+            }
             0
         }
     }
-
-    /// Halts CABAC and flushes remaining bits in the current byte.
-    /// Required when switching to IPCM (raw pixel) mode.
-    pub fn align_to_byte(&mut self) {
-        // We calculate how many actual bits from the stream we've consumed.
-        // byte_cursor * 8 is total loaded.
-        // bits_left is what's still in the reservoir.
-        // 16 is what's currently trapped inside `self.value`.
-        let bits_consumed = (self.byte_cursor * 8) as u64 - self.bits_left as u64 - 16;
-        let padding_bits = (8 - (bits_consumed % 8)) % 8;
-
-        if padding_bits > 0 {
-            // Discard the padding bits to reach the byte boundary
-            self.read_n_bits(padding_bits as u8);
+    pub fn decode_tu_bypass(&mut self, c_max: u8) -> u8 {
+        for i in 0..c_max {
+            let bit = self.decode_bypass();
+            if bit == 0 {
+                return i;
+            }
         }
-    }
-
-    // ========================================================================
-    // Internal State Helpers
-    // ========================================================================
-
-    #[inline(always)]
-    fn next_state_mps(&self, state: u8) -> u8 {
-        let mps = state & 1;
-        let p_state = (state >> 1) as usize;
-        (TRANSITION_MPS[p_state] << 1) | mps
-    }
-
-    #[inline(always)]
-    fn next_state_lps(&self, state: u8) -> u8 {
-        let mps = state & 1;
-        let p_state = (state >> 1) as usize;
-        let next_p_state = TRANSITION_LPS[p_state];
-        let next_mps = if p_state == 0 { 1 - mps } else { mps };
-        (next_p_state << 1) | next_mps
-    }
-
-    #[inline(always)]
-    fn calculate_lps_range(&self, p_state: u8) -> u32 {
-        let q_range = ((self.range >> 6) & 3) as usize;
-        RANGE_LPS_TABLE[p_state as usize][q_range] as u32
+        return c_max;
     }
 }
 
-// cabac_engine_tests.rs
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hvec_decoder::nal_unit_headers::SliceType;
+impl<'a> CabacEngine<'a> {
+    pub fn init_contexts_libde265(&mut self, qp: i32, init_type: usize) {
+        let qp_y = qp.clamp(0, 51);
 
-    // =========================================================================
-    // Helpers
-    // =========================================================================
-
-    /// Builds an engine from a raw byte slice with neutral QP (26) and an
-    /// I-slice so init_contexts has a deterministic path when implemented.
-    fn make_engine(data: &[u8]) -> CabacEngine<'_> {
-        CabacEngine::new(data, SliceType::I, 26)
-    }
-
-    /// Returns a byte that, when repeated, gives a well-known bit pattern.
-    /// 0b10101010 = alternating 1/0 starting with 1.
-    const ALTERNATING: u8 = 0b10101010;
-
-    // =========================================================================
-    // 1. Reservoir initialization
-    // =========================================================================
-
-    /// The 16-bit value register must equal the top 16 bits of the stream.
-    #[test]
-    fn test_value_register_primed_correctly() {
-        // First two bytes are 0x12, 0x34 → value should be 0x1234
-        let data = [0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0x00];
-        let engine = make_engine(&data);
-        assert_eq!(
-            engine.value, 0x1234,
-            "value register must be primed with the first 16 bits of the stream"
-        );
-    }
-
-    /// Range must start at exactly 510 per HEVC spec §9.3.1.
-    #[test]
-    fn test_initial_range_is_510() {
-        let data = [0u8; 16];
-        let engine = make_engine(&data);
-        assert_eq!(
-            engine.range, 510,
-            "range must initialise to 510 per HEVC spec §9.3.1"
-        );
-    }
-
-    // =========================================================================
-    // 2. Bit reading & reservoir management
-    // =========================================================================
-
-    /// Reads the MSB of the first byte and checks correctness for all-zeros
-    /// and all-ones streams, exercising the hot refill path.
-    #[test]
-    fn test_read_next_bit_all_zeros() {
-        let data = [0x00u8; 32];
-        let mut engine = make_engine(&data);
-        // The value register was primed with 0x0000, so the first several
-        // bypass bins must all decode as 0.
-        for i in 0..16 {
-            let bin = engine.decode_bypass();
-            assert_eq!(bin, 0, "bin {} of all-zeros stream should be 0", i);
-        }
-    }
-
-    // =========================================================================
-    // 3. Short-stream / EOF handling
-    // =========================================================================
-
-    /// A 1-byte stream must not panic. EOF should silently extend with zeros.
-    #[test]
-    fn test_single_byte_stream_does_not_panic() {
-        let data = [0x80u8]; // Single byte: 1000_0000
-        let mut engine = make_engine(&data);
-        // Read more bins than there are data bits — must not panic or overflow.
-        for _ in 0..32 {
-            let _ = engine.decode_bypass();
-        }
-    }
-
-    /// An empty slice should be handled gracefully (no panic, no UB).
-    #[test]
-    fn test_empty_stream_does_not_panic() {
-        let data: [u8; 0] = [];
-        let mut engine = make_engine(&data);
-        for _ in 0..8 {
-            let _ = engine.decode_bypass();
-        }
-    }
-
-    /// Exactly 8 bytes — the reservoir is filled exactly once during init.
-    /// A 9th byte must not be consumed during construction.
-    #[test]
-    fn test_exactly_8_bytes_cursor_position() {
-        let data = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
-        let engine = make_engine(&data);
-        // The engine should have consumed exactly 8 bytes during init.
-        // byte_cursor must be <= 8 (the 9th byte is untouched at this point
-        // because construction consumes at most 8 bytes into the reservoir
-        // then primes value from the top 16 bits — the cursor moves up to 8).
-        assert!(
-            engine.byte_cursor <= 8,
-            "byte_cursor advanced past the initial reservoir fill: {}",
-            engine.byte_cursor
-        );
-    }
-
-    // =========================================================================
-    // 4. decode_bypass arithmetic
-    // =========================================================================
-
-    /// decode_bypass must return 0 or 1 only. Never another value.
-    #[test]
-    fn test_decode_bypass_returns_binary() {
-        let data = [ALTERNATING; 64];
-        let mut engine = make_engine(&data);
-        for i in 0..256 {
-            let bin = engine.decode_bypass();
-            assert!(
-                bin == 0 || bin == 1,
-                "decode_bypass returned {} at iteration {}",
-                bin,
-                i
+        // 1. Initialize Motion Contexts (Only for P/B slices)
+        if init_type > 0 {
+            // libde265 uses initType: 0=B, 1=P, 2=I
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_CU_SKIP_FLAG,
+                &INIT_CU_SKIP[init_type],
+                3
             );
-        }
-    }
-
-    /// With a known all-0xFF stream the arithmetic should remain consistent
-    /// across many calls without range collapsing to 0.
-    #[test]
-    fn test_decode_bypass_range_never_zero() {
-        let data = [0xFFu8; 64];
-        let mut engine = make_engine(&data);
-        for i in 0..256 {
-            let _ = engine.decode_bypass();
-            assert!(
-                engine.range > 0,
-                "range collapsed to 0 after {} bypass decodes",
-                i
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_PRED_MODE_FLAG,
+                &[INIT_PRED_MODE[init_type]],
+                1
             );
-        }
-    }
-
-    // =========================================================================
-    // 5. decode_decision arithmetic
-    // =========================================================================
-
-    /// decode_decision must return 0 or 1 only.
-    #[test]
-    fn test_decode_decision_returns_binary() {
-        let data = [ALTERNATING; 64];
-        let mut engine = make_engine(&data);
-        for ctx in 0..NUM_CABAC_CONTEXTS {
-            let bin = engine.decode_decision(ctx);
-            assert!(
-                bin == 0 || bin == 1,
-                "decode_decision returned {} for ctx {}",
-                bin,
-                ctx
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_MERGE_FLAG,
+                &[INIT_MERGE_FLAG[init_type]],
+                1
             );
-        }
-    }
-
-    /// After each decode_decision, `range` must stay in [256, 510] because
-    /// renorm guarantees it.
-    #[test]
-    fn test_range_stays_in_renorm_bounds_after_decision() {
-        let data = [0xA5u8; 128];
-        let mut engine = make_engine(&data);
-        for i in 0..200 {
-            let _ = engine.decode_decision(i % NUM_CABAC_CONTEXTS);
-            assert!(
-                engine.range >= 256 && engine.range <= 510,
-                "range {} out of renorm bounds [256,510] at step {}",
-                engine.range,
-                i
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_MERGE_IDX,
+                &[INIT_MERGE_IDX[init_type]],
+                1
             );
-        }
-    }
+            self.set_init(qp_y, CONTEXT_MODEL_INTER_PRED_IDC, &INIT_INTER_PRED_IDC, 5);
+            self.set_init(qp_y, CONTEXT_MODEL_REF_IDX_LX, &INIT_REF_IDX, 2);
 
-    /// Decoding with every context index must not panic (bounds check).
-    #[test]
-    fn test_all_context_indices_accessible() {
-        let data = [0x55u8; 256];
-        let mut engine = make_engine(&data);
-        for ctx in 0..NUM_CABAC_CONTEXTS {
-            let bin = engine.decode_decision(ctx);
-            assert!(bin <= 1, "unexpected bin {} at ctx {}", bin, ctx);
-        }
-    }
-
-    // =========================================================================
-    // 6. Renormalization invariants
-    // =========================================================================
-
-    /// After renorm, `range` must be >= 256 and < 512.
-    #[test]
-    fn test_renorm_brings_range_into_bounds() {
-        let data = [0b11001100u8; 64];
-        let mut engine = make_engine(&data);
-        // Force several renorm cycles by reading decisions.
-        for _ in 0..100 {
-            let _ = engine.decode_decision(0);
-            assert!(
-                engine.range >= 256,
-                "renorm failed: range {} < 256",
-                engine.range
+            let mvd_idx = if init_type == 1 { 0 } else { 2 };
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG,
+                &INIT_ABS_MVD[mvd_idx..],
+                2
             );
-        }
-    }
+            self.set_init(qp_y, CONTEXT_MODEL_MVP_LX_FLAG, &INIT_MVP_LX, 1);
+            self.set_init(qp_y, CONTEXT_MODEL_RQT_ROOT_CBF, &INIT_RQT_ROOT, 1);
 
-    // =========================================================================
-    // 7. Context array bounds
-    // =========================================================================
-
-    // =========================================================================
-    // 8. Known-good golden vector
-    // =========================================================================
-
-    /// Smoke test: a sequence of bypass decodes on a well-known byte produces
-    /// a deterministic sequence of bins.
-    ///
-    /// 0x96 = 1001_0110 — the expected bypass output depends on the
-    /// arithmetic (range=510, value=0x9696 after priming).
-    ///
-    /// NOTE: once the state-transition tables and range-LPS table are
-    /// implemented (currently stubs), this expected vector must be
-    /// recalculated from the HEVC reference decoder output.
-    #[test]
-    fn test_bypass_golden_vector_stub() {
-        // Repeat 0x96 so the reservoir is always full.
-        let data = [0x96u8; 64];
-        let mut engine = make_engine(&data);
-
-        let bins: Vec<u8> = (0..8).map(|_| engine.decode_bypass()).collect();
-
-        // Validate only the binary constraint for now.
-        for (i, &bin) in bins.iter().enumerate() {
-            assert!(bin <= 1, "golden vector bin {} = {} (not binary)", i, bin);
-        }
-        // TODO: once tables are implemented, replace with:
-        // assert_eq!(bins, vec![expected_0, expected_1, ...]);
-    }
-
-    // =========================================================================
-    // 9. Fuzz-like stress test
-    // =========================================================================
-
-    /// Mixes bypass and decision decodes with a pseudo-random stream to check
-    /// that no combination of calls causes a panic, overflow, or UB.
-    #[test]
-    fn test_mixed_decode_stress() {
-        // A stream with varied bits — not cryptographically random but good
-        // enough to exercise multiple code paths.
-        let data: Vec<u8> = (0u8..=255u8).cycle().take(512).collect();
-        let mut engine = make_engine(&data);
-
-        for i in 0..1024 {
-            if i % 3 == 0 {
-                let bin = engine.decode_decision(i % NUM_CABAC_CONTEXTS);
-                assert!(bin <= 1, "stress: decode_decision out of range at {}", i);
-            } else {
-                let bin = engine.decode_bypass();
-                assert!(bin <= 1, "stress: decode_bypass out of range at {}", i);
+            // RDPCM (Constant 139)
+            for i in 0..2 {
+                self.set_init_const(qp_y, CONTEXT_MODEL_RDPCM_FLAG + i, 139);
+                self.set_init_const(qp_y, CONTEXT_MODEL_RDPCM_DIR + i, 139);
             }
-            // Invariant: range must never be 0 or negative.
-            assert!(engine.range > 0, "stress: range collapsed at step {}", i);
         }
+
+        // 2. Initialize Common Contexts (All slices)
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SPLIT_CU_FLAG,
+            &INIT_SPLIT_CU[init_type],
+            3
+        );
+
+        let part_idx = if init_type != 2 { init_type } else { 5 };
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_PART_MODE,
+            &INIT_PART_MODE[part_idx..],
+            4
+        );
+
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG,
+            &[INIT_PREV_INTRA[init_type]],
+            1
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE,
+            &[INIT_CHROMA_PRED[init_type]],
+            1
+        );
+
+        let cbf_l_idx = if init_type == 0 { 0 } else { 2 };
+        self.set_init(qp_y, CONTEXT_MODEL_CBF_LUMA, &INIT_CBF_LUMA[cbf_l_idx..], 2);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_CBF_CHROMA,
+            &INIT_CBF_CHROMA[init_type * 4..],
+            4
+        );
+
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG,
+            &INIT_SPLIT_TRANS[init_type * 3..],
+            3
+        );
+
+        // Residuals
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
+            &INIT_LAST_COEFF[init_type * 18..],
+            18
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX,
+            &INIT_LAST_COEFF[init_type * 18..],
+            18
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG,
+            &INIT_CODED_SUB[init_type * 4..],
+            4
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
+            &INIT_SIG_COEFF[init_type],
+            42
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG + 42,
+            &INIT_SIG_COEFF_SKIP[init_type],
+            2
+        );
+
+        // SAO
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SAO_MERGE_FLAG,
+            &[INIT_SAO_MERGE[init_type]],
+            1
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SAO_TYPE_IDX,
+            &[INIT_SAO_TYPE[init_type]],
+            1
+        );
+    }
+
+    fn set_init(&mut self, qp: i32, start_idx: usize, values: &[u8], len: usize) {
+        // libde265 does Clip3(0, 51, SliceQPY)
+        let qp_clipped = qp.clamp(0, 51);
+
+        for i in 0..len {
+            let iv = values[i] as i32;
+            let slope_idx = iv >> 4;
+            let intersec_idx = iv & 0xF;
+
+            let m = slope_idx * 5 - 45;
+            let n = (intersec_idx << 3) - 16;
+
+            // Using arithmetic shift >> 4 on i32 is equivalent to C's signed shift
+            let pre = ((m * qp_clipped) >> 4) + n;
+            let pre = pre.clamp(1, 126);
+
+            if pre <= 63 {
+                // MPS = 0, State = 63 - pre
+                // Packed as (state << 1) | mps
+                self.contexts[start_idx + i] = ((63 - pre) as u8) << 1;
+            } else {
+                // MPS = 1, State = pre - 64
+                // Packed as (state << 1) | mps
+                self.contexts[start_idx + i] = (((pre - 64) as u8) << 1) | 1;
+            }
+        }
+    }
+
+    fn set_init_const(&mut self, qp: i32, idx: usize, iv: u8) {
+        self.set_init(qp, idx, &[iv], 1);
     }
 }

@@ -1,12 +1,14 @@
-use zune_core::log::trace;
-use crate::hvec_decoder::binarizer::Binarizer;
+use zune_core::log::{trace, warn};
+
+use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::bitstream::BitReader;
 use crate::hvec_decoder::cabac::CabacEngine;
 use crate::hvec_decoder::context_model::NeighborTracker;
-use crate::hvec_decoder::DEBUG_MORE;
 use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
-use crate::hvec_decoder::nal_unit_headers::{ChromaFormat, Pps, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType, Sps, Vps, Vui, VuiVideoFormat};
-use crate::hvec_decoder::quadtree_vb::{decode_coding_quadtree, decode_sao};
+use crate::hvec_decoder::nal_unit_headers::{
+    ChromaFormat, Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType,
+    Sps, Vps, Vui, VuiVideoFormat
+};
 use crate::hvec_decoder::utils::extract_rbsp;
 
 pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
@@ -71,7 +73,7 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
         max_dec_pic_buffering,
         max_num_reorder_pics
     };
-    if (DEBUG_MORE){
+    if (DEBUG_MORE) {
         println!("vps: {:#?}", vps);
     }
     trace!("vps: {:?}", vps);
@@ -135,7 +137,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     const SPS_MAX_SETS_LIMITS: u64 = 16;
     const MAX_PICTURE_WIDTH: u64 = 2 << 15;
     const MAX_PICTURE_HEIGHT: u64 = 2 << 15;
-    const MAX_LUMA_BITDEPTH: u64 = 16;
+    const MAX_LUMA_BITDEPTH: u8 = 16;
 
     let mut r = BitReader::new(nal.payload);
     r.refill();
@@ -169,7 +171,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.sps_id = vlc;
 
     // --- Decode Chroma type ---
-    sps.chroma_format_idc = match r.read_ue() {
+    sps.chroma_format = match r.read_ue() {
         0 => ChromaFormat::Monochrome,
         1 => ChromaFormat::Yuv420,
         2 => ChromaFormat::Yuv422,
@@ -182,11 +184,8 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         }
     };
 
-    sps.separate_color_plane_flag = if sps.chroma_format_idc == ChromaFormat::Yuv444 {
-        r.read_flag()
-    } else {
-        false
-    };
+    sps.separate_color_plane_flag =
+        if sps.chroma_format == ChromaFormat::Yuv444 { r.read_flag() } else { false };
 
     // --- Picture Size ---
     sps.pic_width_in_luma_samples = r.read_ue();
@@ -222,20 +221,20 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- Bit Depth ---
-    sps.bit_depth_luma = r.read_ue() + 8;
+    sps.bit_depth_luma = r.read_ue() as u8 + 8;
     if sps.bit_depth_luma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_LUMA_BITDEPTH,
-            value: sps.bit_depth_luma,
+            limit: MAX_LUMA_BITDEPTH as _,
+            value: sps.bit_depth_luma as _,
             field: "bit_depth (luma)"
         });
     }
 
-    sps.bit_depth_chroma = r.read_ue() + 8;
+    sps.bit_depth_chroma = r.read_ue() as u8 + 8;
     if sps.bit_depth_chroma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_LUMA_BITDEPTH,
-            value: sps.bit_depth_chroma,
+            limit: MAX_LUMA_BITDEPTH as _,
+            value: sps.bit_depth_chroma as _,
             field: "bit_depth (chroma)"
         });
     }
@@ -246,7 +245,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         )));
     }
 
-    sps.log2_max_pic_order_cnt_lsb = r.read_ue() + 4;
+    sps.log2_max_pic_order_cnt_lsb = (r.read_ue() as u8) + 4;
 
     // --- Sub-layer ordering info ---
     let sps_sub_layer_ordering_info_present_flag = r.read_flag();
@@ -274,10 +273,10 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- CTB & Transform Sizes ---
-    sps.log2_min_luma_coding_block_size = r.read_ue() + 3;
-    sps.log2_diff_max_min_luma_coding_block_size = r.read_ue();
-    sps.log2_min_transform_block_size = r.read_ue() + 2;
-    sps.log2_diff_max_min_transform_block_size = r.read_ue();
+    sps.log2_min_luma_coding_block_size = (r.read_ue() + 3) as u8;
+    sps.log2_diff_max_min_luma_coding_block_size = r.read_ue() as u8;
+    sps.log2_min_transform_block_size = (r.read_ue() + 2) as u8;
+    sps.log2_diff_max_min_transform_block_size = (r.read_ue()) as u8;
     sps.max_transform_hierarchy_depth_inter = r.read_ue();
     sps.max_transform_hierarchy_depth_intra = r.read_ue();
 
@@ -343,7 +342,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.min_cb_size_y = 1 << sps.log2_min_luma_coding_block_size;
 
     let log2_ctb_size_y =
-        sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
+        sps.log2_min_luma_coding_block_size + (sps.log2_diff_max_min_luma_coding_block_size);
     sps.ctb_size_y = 1 << log2_ctb_size_y;
 
     // Integer math equivalent of ceil(width / ctb_size)
@@ -623,7 +622,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     let cu_qp_delta_enabled_flag = r.read_flag();
     pps.cu_qp_delta_enabled_flag = cu_qp_delta_enabled_flag;
     if cu_qp_delta_enabled_flag {
-        pps.diff_cu_qp_delta_depth = r.read_ue();
+        pps.diff_cu_qp_delta_depth = r.read_ue() as u8;
     }
 
     pps.cb_qp_offset = r.read_se();
@@ -682,18 +681,143 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     pps.slice_segment_header_extension_present_flag = r.read_flag();
 
     let pps_extension_present_flag = r.read_flag();
-    if pps_extension_present_flag {
-        // Normally false for basic HEVC. Range extensions go here.
-    }
-
-    pps.pic_init_qp = 26 + pps.init_qp_minus26;
 
     let sps = sps[pps.sps_id as usize]
         .as_ref()
         .ok_or_else(|| NalError::Generic(format!("PPS references missing SPS {}", pps.sps_id)))?;
 
+    if pps_extension_present_flag {
+        let range_extension_flag = r.read_flag();
+        let multilayer_extension_flag = r.read_flag();
+        let extension_6_bits = r.get_bits(6);
+
+        if range_extension_flag {
+            let mut log2_max_transform_skip_block_size = 2;
+            let mut diff_cu_chroma_qp_offset_depth = 0;
+            let mut chroma_qp_offset_list_len = 0;
+            let mut cr_qp_offset_list = [0; 6];
+            let mut cb_qp_offset_list = [0; 6];
+            let mut log2_sao_offset_scale_luma = 0;
+            let mut log2_sao_offset_scale_chroma = 0;
+
+            if pps.transform_skip_enabled_flag {
+                let v = r.read_ue() as u8;
+                let log_2_max_transform_size = (sps.log2_min_transform_block_size
+                    + sps.log2_diff_max_min_transform_block_size)
+                    - 2;
+
+                if v > log_2_max_transform_size {
+                    return Err(NalError::Generic(
+                        "Invalid PPS Header range-extension".to_string()
+                    ));
+                }
+                log2_max_transform_skip_block_size = v + 2;
+            }
+
+            let cross_component_prediction_enabled_flag = r.read_flag();
+
+            if sps.chroma_format == ChromaFormat::Yuv444 && cross_component_prediction_enabled_flag
+            {
+                warn!(
+                    "Invalid PPS header(range_component), chross_component_prediction={} and format=Yuv444 ",
+                    cross_component_prediction_enabled_flag
+                );
+            }
+
+            let chroma_qp_offset_list_enabled_flag = r.read_flag();
+
+            if sps.chroma_format == ChromaFormat::Monochrome && chroma_qp_offset_list_enabled_flag {
+                warn!(
+                    "Invalid PPS header(range_component) chroma_qp_offset_list_enabled_flag =true and format=Monochrome ",
+                );
+            }
+
+            if chroma_qp_offset_list_enabled_flag {
+                let max_v = sps.log2_diff_max_min_luma_coding_block_size;
+                let v = r.read_ue() as u8;
+
+                if v > max_v {
+                    return Err(NalError::Generic(format!(
+                        "PPS header invalid diff_cu_chroma_qp_offset_depth={} should be greater than {}",
+                        max_v, v
+                    )));
+                }
+
+                diff_cu_chroma_qp_offset_depth = v;
+
+                let v = r.read_ue() as u8;
+
+                if v > 5 {
+                    return Err(NalError::Generic(format!(
+                        "PPS header invalid chroma_qp_offset_list_len = {} should be less than 5",
+                        v
+                    )));
+                }
+                chroma_qp_offset_list_len = v + 1;
+
+                for i in 0..chroma_qp_offset_list_len {
+                    let s_v = r.read_se();
+
+                    if s_v < -12 || s_v > 12 {
+                        return Err(NalError::Generic(format!(
+                            "SVLC value cb {} not in range of -12 = 12",
+                            s_v
+                        )));
+                    }
+                    cb_qp_offset_list[i as usize] = s_v as i8;
+
+                    let s_v = r.read_se();
+
+                    if s_v < -12 || s_v > 12 {
+                        return Err(NalError::Generic(format!(
+                            "SVLC value cr {} not in range of -12 = 12",
+                            s_v
+                        )));
+                    }
+                    cr_qp_offset_list[i as usize] = s_v as i8;
+                }
+            }
+
+            let u = r.read_ue() as u8;
+
+            if u > sps.bit_depth_luma.saturating_sub(10) {
+                return Err(NalError::Generic(format!(
+                    "INVALID PPS header bit_depth_luma {} > {}",
+                    sps.bit_depth_luma.saturating_sub(10),
+                    u
+                )));
+            }
+            log2_sao_offset_scale_luma = u;
+
+            let u = r.read_ue() as u8;
+
+            if u > sps.bit_depth_chroma.saturating_sub(10) {
+                return Err(NalError::Generic(format!(
+                    "INVALID PPS header bit_depth_chroma {} > {}",
+                    sps.bit_depth_luma.saturating_sub(10),
+                    u
+                )));
+            }
+
+            log2_sao_offset_scale_chroma = u;
+
+            let range_ext = PpsRangeExtension {
+                cb_qp_offset_list,
+                cr_qp_offset_list,
+                log2_sao_offset_scale_luma,
+                log2_sao_offset_scale_chroma,
+                log2_max_transform_skip_block_size,
+                diff_cu_chroma_qp_offset_depth,
+                chroma_qp_offset_list_len
+            };
+            pps.range_extension = Some(range_ext);
+        }
+    }
+
+    pps.pic_init_qp = 26 + pps.init_qp_minus26;
+
     let log2_ctb_size_y =
-        sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
+        sps.log2_min_luma_coding_block_size + (sps.log2_diff_max_min_luma_coding_block_size);
     pps.log2_min_cu_qp_delta_size = log2_ctb_size_y - pps.diff_cu_qp_delta_depth;
 
     if DEBUG_MORE {
@@ -703,26 +827,17 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     Ok(pps)
 }
 pub fn decode_slice_vb(
-    nal: &NalUnit,
-    pps_storage: &[Option<Pps>],
-    sps_storage: &[Option<Sps>],
-)->Result<(), NalError> {
-
+    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>]
+) -> Result<(), NalError> {
     // 1. Clean the entire NAL unit first! Skip the 2-byte NAL header.
     let clean_rbsp = extract_rbsp(&nal.payload[..]);
 
     // 2. Pass the clean bytes to the slice header parser
     //let _slice_header = _decode_slice_header(&clean_rbsp)?;
-    let slice_header = decode_slice_header(
-        &nal,
-        &pps_storage,
-        &sps_storage,
-        &clean_rbsp
-    )?;
+    let slice_header = decode_slice_header(&nal, &pps_storage, &sps_storage, &clean_rbsp)?;
 
     // 1. Resolve Active Parameter Sets
-    let pps = pps_storage
-        [slice_header.slice_pic_parameter_set_id as usize]
+    let pps = pps_storage[slice_header.slice_pic_parameter_set_id as usize]
         .as_ref()
         .expect("Stream error: PPS missing!");
     let sps = sps_storage[pps.sps_id as usize]
@@ -736,9 +851,9 @@ pub fn decode_slice_vb(
     let slice_qp = 26 + pps.init_qp_minus26 + slice_header.slice_qp_delta;
 
     // 4. Boot up the Entropy Pipeline
-    let mut cabac =
-        CabacEngine::new(&clean_rbsp[payload_start..], slice_header.slice_type, slice_qp);
-    let mut binarizer = Binarizer::new(&mut cabac);
+    // let mut cabac =
+    //     CabacEngine::new(&clean_rbsp[payload_start..], slice_header.slice_type, slice_qp);
+    // let mut binarizer = Binarizer::new(&mut cabac);
 
     let pic_width = sps.pic_width_in_luma_samples as usize;
     let mut tracker = NeighborTracker::new(pic_width);
@@ -749,56 +864,53 @@ pub fn decode_slice_vb(
     let height_in_ctus = sps.pic_height_in_ctbs_y as usize;
     let total_ctus = width_in_ctus * height_in_ctus;
 
-    for ctu_idx in 0..total_ctus {
-        // 1. Calculate our grid coordinates using the ctu_idx
-        let ctu_x = ctu_idx % width_in_ctus;
-        let ctu_y = ctu_idx / width_in_ctus;
-
-        // 2. Convert grid coordinates to actual pixel coordinates
-        let x_ctu = ctu_x * ctu_size;
-        let y_ctu = ctu_y * ctu_size;
-
-        // Eat the SAO bits so CABAC stays aligned!
-        if sps.sample_adaptive_offset_enabled_flag {
-            if slice_header.slice_sao_luma_flag
-                || slice_header.slice_sao_chroma_flag
-            {
-                decode_sao(
-                    &mut binarizer,
-                    ctu_x,
-                    ctu_y,
-                    slice_header.slice_sao_luma_flag,
-                    slice_header.slice_sao_chroma_flag
-                );
-            }
-        }
-
-        // Start the recursive Z-Scan decode for this CTU
-        decode_coding_quadtree(
-            &mut binarizer,
-            &mut tracker,
-            sps,
-            pps,
-            slice_header.slice_type,
-            x_ctu,
-            y_ctu,
-            ctu_size,
-            0 // Starting Depth
-        );
-
-        // Terminate the slice if HEVC signals it
-        if binarizer.engine.decode_terminate() == 1 {
-            binarizer.engine.align_to_byte();
-            break; // Slice is finished!
-        }
-    }
+    // for ctu_idx in 0..total_ctus {
+    //     // 1. Calculate our grid coordinates using the ctu_idx
+    //     let ctu_x = ctu_idx % width_in_ctus;
+    //     let ctu_y = ctu_idx / width_in_ctus;
+    //
+    //     // 2. Convert grid coordinates to actual pixel coordinates
+    //     let x_ctu = ctu_x * ctu_size;
+    //     let y_ctu = ctu_y * ctu_size;
+    //
+    //     // Eat the SAO bits so CABAC stays aligned!
+    //     if sps.sample_adaptive_offset_enabled_flag {
+    //         if slice_header.slice_sao_luma_flag
+    //             || slice_header.slice_sao_chroma_flag
+    //         {
+    //             decode_sao(
+    //                 &mut binarizer,
+    //                 ctu_x,
+    //                 ctu_y,
+    //                 slice_header.slice_sao_luma_flag,
+    //                 slice_header.slice_sao_chroma_flag
+    //             );
+    //         }
+    //     }
+    //
+    //     // Start the recursive Z-Scan decode for this CTU
+    //     decode_coding_quadtree(
+    //         &mut binarizer,
+    //         &mut tracker,
+    //         sps,
+    //         pps,
+    //         slice_header.slice_type,
+    //         x_ctu,
+    //         y_ctu,
+    //         ctu_size,
+    //         0 // Starting Depth
+    //     );
+    //
+    //     // Terminate the slice if HEVC signals it
+    //     if binarizer.engine.decode_terminate() == 1 {
+    //         binarizer.engine.align_to_byte();
+    //         break; // Slice is finished!
+    //     }
+    // }
     Ok(())
 }
 pub fn decode_slice_header(
-    nal: &NalUnit,
-    pps_storage: &[Option<Pps>],
-    sps_storage: &[Option<Sps>],
-    clean_payload: &[u8]
+    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
     // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
     let mut r = BitReader::new(&clean_payload);
@@ -904,8 +1016,8 @@ pub fn decode_slice_header(
         }
 
         // 10. Loop Filter Across Slices (The 1-bit drift culprit)
-        let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag &&
-            (sh.slice_sao_luma_flag || sh.slice_sao_chroma_flag);
+        let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag
+            && (sh.slice_sao_luma_flag || sh.slice_sao_chroma_flag);
         let is_dbf_enabled = !pps.deblocking_filter_disabled_flag;
 
         if pps.loop_filter_across_slices_enabled_flag && (is_sao_enabled || is_dbf_enabled) {
@@ -927,54 +1039,11 @@ pub fn decode_slice_header(
     // 12. Final Alignment
     r.byte_align();
 
-
     // sh.cabac_start_position = (r.position * 8 - r.bits_left) / 8
     sh.cabac_start_position = r.byte_position();
 
-
     if DEBUG_MORE {
-        println!("{:#?}",sh)
+        println!("{:#?}", sh)
     }
     Ok(sh)
-}
-
-// Context offsets for Intra Prediction
-const BASE_CTX_IPRED_LUMA: usize = 0;   // prev_intra_luma_pred_flag
-const BASE_CTX_IPRED_CHROMA: usize = 64; // intra_chroma_pred_mode
-
-pub fn decode_pu_intra(binarizer: &mut Binarizer) -> (u8, u8) {
-    // 1. Luma Prediction Mode
-    // prev_intra_luma_pred_flag
-    let prev_intra_luma_pred_flag = binarizer.engine.decode_decision(BASE_CTX_IPRED_LUMA);
-
-    if prev_intra_luma_pred_flag == 1 {
-        // mpm_idx (Truncated Rice/Unary)
-        let _mpm_idx = binarizer.engine.decode_bypass(); // Simplified for trace alignment
-        if _mpm_idx == 1 {
-            let _extra = binarizer.engine.decode_bypass();
-        }
-    } else {
-        // rem_intra_luma_pred_mode (Fixed length 5 bits)
-        let _rem_mode = binarizer.engine.decode_bypass_n(5);
-    }
-
-    // 2. Chroma Prediction Mode
-    // intra_chroma_pred_mode
-    let mut chroma_mode = 0;
-    if binarizer.engine.decode_decision(BASE_CTX_IPRED_CHROMA) == 1 {
-        // It's not the derived mode, so read the bypass bits for the specific mode
-        chroma_mode = binarizer.engine.decode_bypass_n(2) + 1;
-    }
-
-    (0, chroma_mode as u8)
-}
-fn ceil_log2(mut n: u64) -> u8 {
-    if n <= 1 { return 0; }
-    let mut bits = 0;
-    n -= 1;
-    while n > 0 {
-        bits += 1;
-        n >>= 1;
-    }
-    bits
 }

@@ -15,8 +15,8 @@ mod context_model;
 mod nal_parser;
 mod nal_unit_headers;
 mod nal_unit_parsers;
-mod quadtree_vb;
 mod quadtree;
+mod quadtree_vb;
 mod utils;
 
 struct HVecDecoder<'a> {
@@ -68,8 +68,9 @@ impl<'a> HVecDecoder<'a> {
                         decode_slice(&nal, &self.pps_storage, &self.sps_storage)?;
                     }
 
-                    // --- SEI, AUD, and everything else ---
-                    _ => {}
+                    _ => {
+                        trace!("Skipping NAL section {:?}", nal.nal_type);
+                    }
                 }
 
                 Ok(true)
@@ -87,7 +88,7 @@ mod tests {
 
     #[test]
     fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0001.hvc").unwrap();
+        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0002.hvc").unwrap();
 
         let sample = HevcSample {
             item_id: 0,

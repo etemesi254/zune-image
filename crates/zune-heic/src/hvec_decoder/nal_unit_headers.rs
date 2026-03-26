@@ -62,7 +62,7 @@ pub struct Sps {
     pub vps_id:                    u64,
     pub sps_id:                    u64,
     pub max_sub_layers:            u64,
-    pub chroma_format_idc:         ChromaFormat,
+    pub chroma_format:             ChromaFormat,
     pub separate_color_plane_flag: bool,
 
     // Dimensions
@@ -77,9 +77,9 @@ pub struct Sps {
     pub conf_win_bottom_offset:  u64,
 
     // Bit Depths
-    pub bit_depth_luma:             u64,
-    pub bit_depth_chroma:           u64,
-    pub log2_max_pic_order_cnt_lsb: u64,
+    pub bit_depth_luma:             u8,
+    pub bit_depth_chroma:           u8,
+    pub log2_max_pic_order_cnt_lsb: u8,
 
     // Sub-layer Ordering Info
     pub max_dec_pic_buffering:      [u64; 8],
@@ -87,10 +87,10 @@ pub struct Sps {
     pub max_latency_increase_plus1: [u64; 8],
 
     // CTB / Transform Sizes
-    pub log2_min_luma_coding_block_size:          u64,
-    pub log2_diff_max_min_luma_coding_block_size: u64,
-    pub log2_min_transform_block_size:            u64,
-    pub log2_diff_max_min_transform_block_size:   u64,
+    pub log2_min_luma_coding_block_size:          u8,
+    pub log2_diff_max_min_luma_coding_block_size: u8,
+    pub log2_min_transform_block_size:            u8,
+    pub log2_diff_max_min_transform_block_size:   u8,
     pub max_transform_hierarchy_depth_inter:      u64,
     pub max_transform_hierarchy_depth_intra:      u64,
 
@@ -111,7 +111,7 @@ pub struct Sps {
 
     // Reference Picture Sets
     pub num_short_term_ref_pic_sets: u64,
-    pub num_long_term_ref_pics_sps: u64,
+    pub num_long_term_ref_pics_sps:  u64,
 
     // optional ptl (generally present)
     pub ptl: Option<ProfileTierLevel>,
@@ -148,6 +148,16 @@ impl Default for VuiVideoFormat {
     }
 }
 
+#[derive(Default, Clone, Debug)]
+pub struct PpsRangeExtension {
+    pub cb_qp_offset_list:                  [i8; 6],
+    pub cr_qp_offset_list:                  [i8; 6],
+    pub log2_sao_offset_scale_luma:         u8,
+    pub log2_sao_offset_scale_chroma:       u8,
+    pub log2_max_transform_skip_block_size: u8,
+    pub diff_cu_chroma_qp_offset_depth:     u8,
+    pub chroma_qp_offset_list_len:          u8
+}
 #[derive(Debug, Clone, Default)]
 pub struct Pps {
     pub pps_id: u64,
@@ -170,7 +180,7 @@ pub struct Pps {
     pub constrained_intra_pred_flag: bool,
     pub transform_skip_enabled_flag: bool,
     pub cu_qp_delta_enabled_flag:    bool,
-    pub diff_cu_qp_delta_depth:      u64,
+    pub diff_cu_qp_delta_depth:      u8,
 
     // Offsets
     pub cb_qp_offset: i64,
@@ -202,14 +212,15 @@ pub struct Pps {
     pub tc_offset_div2: i64,
 
     // Extensions
-    pub lists_modification_present_flag:             bool,
-    pub log2_parallel_merge_level:                   u64,
+    pub lists_modification_present_flag: bool,
+    pub log2_parallel_merge_level: u64,
     pub slice_segment_header_extension_present_flag: bool,
-    pub transquant_bypass_enabled_flag:              bool,
+    pub transquant_bypass_enabled_flag: bool,
+    pub range_extension: Option<PpsRangeExtension>,
 
     // Derived
     pub pic_init_qp:               i64,
-    pub log2_min_cu_qp_delta_size: u64
+    pub log2_min_cu_qp_delta_size: u8
 }
 
 #[derive(Debug, Default)]
@@ -223,7 +234,7 @@ pub struct SliceHeader {
     pub cabac_start_position: usize,
     pub slice_qp_delta: i64,
     pub slice_sao_luma_flag: bool,
-    pub slice_sao_chroma_flag: bool,
+    pub slice_sao_chroma_flag: bool
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,8 +265,8 @@ impl Default for SliceType {
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct BlockState {
-    pub available: bool,    // False if off-screen, in another slice, or not yet decoded
-    pub skip_flag: bool,    // Was this block skipped?
-    pub cqt_depth: u8,      // How deeply was the CTU split here? (0 = 64x64, 3 = 8x8)
-    pub is_intra: bool,     // Intra (spatial) or Inter (temporal) prediction?
+    pub available: bool, // False if off-screen, in another slice, or not yet decoded
+    pub skip_flag: bool, // Was this block skipped?
+    pub cqt_depth: u8,   // How deeply was the CTU split here? (0 = 64x64, 3 = 8x8)
+    pub is_intra:  bool  // Intra (spatial) or Inter (temporal) prediction?
 }

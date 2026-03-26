@@ -72,7 +72,7 @@ where
 
     pub fn decode_headers(&mut self) -> Result<(), HeicErrors> {
         if self.read_headers {
-            warn!("Headers already read");
+            //warn!("Headers already read");
             return Ok(());
         }
         loop {
@@ -121,7 +121,7 @@ where
                         self.stream.skip(payload_size as usize)?;
                     }
                     BoxSize::ToEnd => {
-                        println!("Skipping to end");
+                        trace!("Skipping to end, found a section with skip_to_end flag");
                         break;
                     }
                 }
