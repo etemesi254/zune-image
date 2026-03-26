@@ -6,9 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-// #[macro_export] is required to make macros works across crates
-// but it always put the macro in the crate root.
-// #[doc(hidden)] + "pub use" is a workaround to namespace a macro.
+// Re-export macros under nicer names
 pub use crate::{
     __debug as debug, __error as error, __info as info, __log_enabled as log_enabled,
     __trace as trace, __warn as warn
@@ -24,6 +22,9 @@ pub enum Level {
     Trace
 }
 
+//
+// log_enabled (unchanged)
+//
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __log_enabled {
@@ -33,40 +34,85 @@ macro_rules! __log_enabled {
     }};
 }
 
+//
+// ERROR
+//
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __error {
-    ($($arg:tt)+) => {
-        #[cfg(feature = "std")]
-        {
-            //eprintln!($($arg)+);
-        }
-    };
+    ($($arg:tt)+) => {};
 }
 
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __error {
+    ($($arg:tt)+) => {};
+}
+
+//
+// WARN
+//
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __warn {
-    ($($arg:tt)+) => {
-        #[cfg(feature = "std")]
-        {
-            //eprintln!($($arg)+);
-        }
-    };
+    ($($arg:tt)+) => {};
 }
 
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __warn {
+    ($($arg:tt)+) => {};
+}
+
+//
+// INFO
+//
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __info {
     ($($arg:tt)+) => {};
 }
 
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __info {
+    ($($arg:tt)+) => {};
+}
+
+//
+// DEBUG
+//
+#[cfg(feature = "std")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __debug {
     ($($arg:tt)+) => {};
 }
 
+#[cfg(not(feature = "std"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __debug {
+    ($($arg:tt)+) => {};
+}
+
+//
+// TRACE
+//
+#[cfg(feature = "std")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __trace {
+    ($($arg:tt)+) => {};
+}
+
+#[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __trace {
