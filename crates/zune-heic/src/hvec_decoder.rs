@@ -18,7 +18,7 @@ mod nal_unit_parsers;
 mod quadtree;
 mod quadtree_vb;
 mod utils;
-
+mod macros;
 struct HVecDecoder<'a> {
     hevc_sample: HevcSample<'a>,
     vps_storage: Vec<Option<Vps>>,

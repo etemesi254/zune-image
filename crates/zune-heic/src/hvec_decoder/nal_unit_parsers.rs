@@ -7,7 +7,7 @@ use crate::hvec_decoder::context_model::NeighborTracker;
 use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
 use crate::hvec_decoder::nal_unit_headers::{
     ChromaFormat, Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType,
-    Sps, Vps, Vui, VuiVideoFormat
+    Sps, Vps, Vui, VuiVideoFormat,
 };
 use crate::hvec_decoder::utils::extract_rbsp;
 
@@ -24,18 +24,18 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
 
     if max_layers > VPS_MAX_LAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
-            limit: VPS_MAX_LAYERS_LIMIT,
-            value: max_layers,
-            field: "vps_max_layers"
+            limit: VPS_MAX_LAYERS_LIMIT as _,
+            value: max_layers as _,
+            field: "vps_max_layers",
         });
     }
 
     let max_sub_layers = r.get_bits(3) + 1;
     if max_sub_layers > VPS_MAX_SUBLAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
-            limit: VPS_MAX_LAYERS_LIMIT,
-            value: max_sub_layers,
-            field: "vps_max_sub_layers"
+            limit: VPS_MAX_LAYERS_LIMIT as _,
+            value: max_sub_layers as _,
+            field: "vps_max_sub_layers",
         });
     }
     r.skip_bits(1);
@@ -71,9 +71,9 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
         max_sub_layers: max_sub_layers as u8,
         profile_info: ptl_info.expect("NO Profile Info"),
         max_dec_pic_buffering,
-        max_num_reorder_pics
+        max_num_reorder_pics,
     };
-    if (DEBUG_MORE) {
+    if DEBUG_MORE {
         println!("vps: {:#?}", vps);
     }
     trace!("vps: {:?}", vps);
@@ -82,7 +82,7 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
 }
 
 fn decode_profile_data(
-    profile_present: bool, level_present: bool, r: &mut BitReader
+    profile_present: bool, level_present: bool, r: &mut BitReader,
 ) -> Result<Option<ProfileTierLevel>, NalError> {
     if !profile_present {
         trace!("Profile skipped");
@@ -126,7 +126,7 @@ fn decode_profile_data(
         interlaced_source_flag,
         non_packed_constraint_flag,
         frame_only_constraint_flag,
-        level_idc
+        level_idc,
     };
 
     Ok(Some(item))
@@ -149,9 +149,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     if sps.max_sub_layers > SPS_MAX_LAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
-            limit: SPS_MAX_LAYERS_LIMIT,
-            value: sps.max_sub_layers,
-            field: "sps_max_sub_layers"
+            limit: SPS_MAX_LAYERS_LIMIT as _,
+            value: sps.max_sub_layers as _,
+            field: "sps_max_sub_layers",
         });
     }
 
@@ -163,9 +163,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     let vlc = r.read_ue();
     if vlc >= SPS_MAX_SETS_LIMITS {
         return Err(NalError::ParameterOutOfRange {
-            limit: SPS_MAX_SETS_LIMITS,
-            value: vlc,
-            field: "(sps) vlc"
+            limit: SPS_MAX_SETS_LIMITS as _,
+            value: vlc as _,
+            field: "(sps) vlc",
         });
     }
     sps.sps_id = vlc;
@@ -193,16 +193,16 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     if sps.pic_width_in_luma_samples > MAX_PICTURE_WIDTH {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_PICTURE_WIDTH,
-            value: sps.pic_width_in_luma_samples,
-            field: "(sps) width"
+            limit: MAX_PICTURE_WIDTH as _,
+            value: sps.pic_width_in_luma_samples as _,
+            field: "(sps) width",
         });
     }
     if sps.pic_height_in_luma_samples > MAX_PICTURE_HEIGHT {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_PICTURE_HEIGHT,
-            value: sps.pic_height_in_luma_samples,
-            field: "(sps) height"
+            limit: MAX_PICTURE_HEIGHT as _,
+            value: sps.pic_height_in_luma_samples as _,
+            field: "(sps) height",
         });
     }
 
@@ -226,7 +226,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         return Err(NalError::ParameterOutOfRange {
             limit: MAX_LUMA_BITDEPTH as _,
             value: sps.bit_depth_luma as _,
-            field: "bit_depth (luma)"
+            field: "bit_depth (luma)",
         });
     }
 
@@ -235,7 +235,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         return Err(NalError::ParameterOutOfRange {
             limit: MAX_LUMA_BITDEPTH as _,
             value: sps.bit_depth_chroma as _,
-            field: "bit_depth (chroma)"
+            field: "bit_depth (chroma)",
         });
     }
     if sps.bit_depth_chroma != sps.bit_depth_luma {
@@ -312,7 +312,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
             &mut r,
             i,
             sps.num_short_term_ref_pic_sets as usize,
-            &mut num_delta_pocs
+            &mut num_delta_pocs,
         )?;
     }
 
@@ -385,7 +385,7 @@ fn skip_scaling_list_data(r: &mut BitReader) -> Result<(), NalError> {
 
 fn parse_short_term_ref_pic_set(
     r: &mut BitReader, st_rps_idx: usize, num_short_term_ref_pic_sets: usize,
-    num_delta_pocs: &mut [usize]
+    num_delta_pocs: &mut [usize],
 ) -> Result<(), NalError> {
     let mut inter_ref_pic_set_prediction_flag = false;
 
@@ -522,7 +522,7 @@ fn parse_vui(r: &mut BitReader, max_sub_layers_minus1: u64) -> Result<Vui, NalEr
 }
 
 fn skip_hrd_parameters(
-    r: &mut BitReader, common_inf_present_flag: bool, max_num_sub_layers_minus1: u64
+    r: &mut BitReader, common_inf_present_flag: bool, max_num_sub_layers_minus1: u64,
 ) -> Result<(), NalError> {
     let mut nal_hrd_present = false;
     let mut vcl_hrd_present = false;
@@ -598,34 +598,88 @@ fn skip_hrd_parameters(
 }
 
 pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
+    // 7.4.3.3.1: pps_pic_parameter_set_id is in [0, 63].
+    const HEVC_MAX_PPS_COUNT: u8 = 64;
+    // 7.4.3.2.1: sps_seq_parameter_set_id is in [0, 15].
+    const HEVC_MAX_SPS_COUNT: u8 = 16;
+    // 7.4.3.1: vps_max_dec_pic_buffering_minus1[i] is in [0, MaxDpbSize - 1].
+    const HEVC_MAX_REFS: u8 = 16;
+
     let mut r = BitReader::new(nal.payload);
     r.refill();
 
     let mut pps = Pps::default();
 
-    pps.pps_id = r.read_ue();
-    pps.sps_id = r.read_ue();
+    pps.pps_id = r.read_ue_u8()?;
+
+    if pps.pps_id >= HEVC_MAX_PPS_COUNT {
+        return Err(NalError::ParameterOutOfRange {
+            limit: HEVC_MAX_PPS_COUNT as _,
+            value: pps.pps_id as _,
+            field: "pps.pps_id",
+        });
+    }
+
+    pps.sps_id = r.read_ue_u8()?;
+
+    if pps.sps_id >= HEVC_MAX_SPS_COUNT {
+        return Err(NalError::ParameterOutOfRange {
+            limit: HEVC_MAX_PPS_COUNT as _,
+            value: pps.sps_id as _,
+            field: "pps.sps_id",
+        });
+    }
+
+    let sps = sps[pps.sps_id as usize]
+        .as_ref()
+        .ok_or_else(|| NalError::Generic(format!("PPS references missing SPS {}", pps.sps_id)))?;
 
     pps.dependent_slice_segments_enabled_flag = r.read_flag();
     pps.output_flag_present_flag = r.read_flag();
-    pps.num_extra_slice_header_bits = r.get_bits(3) as u8; // Store this! Slices need it.
+    pps.num_extra_slice_header_bits = r.get_bits(3) as u8;
     pps.sign_data_hiding_enabled_flag = r.read_flag();
     pps.cabac_init_present_flag = r.read_flag();
 
-    pps.num_ref_idx_l0_default_active = r.read_ue() + 1;
-    pps.num_ref_idx_l1_default_active = r.read_ue() + 1;
+    pps.num_ref_idx_l0_default_active = r.read_ue_u8()? + 1;
+    pps.num_ref_idx_l1_default_active = r.read_ue_u8()? + 1;
+
+    if pps.num_ref_idx_l0_default_active >= HEVC_MAX_REFS
+        || pps.num_ref_idx_l1_default_active >= HEVC_MAX_REFS
+    {
+        return Err(
+            NalError::ParameterOutOfRange {
+                limit: HEVC_MAX_REFS as _,
+                value: pps.num_ref_idx_l0_default_active as _,
+                field: "pps.num_ref_idx_l0_default_active",
+            }
+        );
+    }
 
     pps.init_qp_minus26 = r.read_se();
     pps.constrained_intra_pred_flag = r.read_flag();
     pps.transform_skip_enabled_flag = r.read_flag();
+    pps.cu_qp_delta_enabled_flag = r.read_flag();;
 
-    let cu_qp_delta_enabled_flag = r.read_flag();
-    pps.cu_qp_delta_enabled_flag = cu_qp_delta_enabled_flag;
-    if cu_qp_delta_enabled_flag {
+    if pps.cu_qp_delta_enabled_flag {
         pps.diff_cu_qp_delta_depth = r.read_ue() as u8;
     }
 
+    if pps.diff_cu_qp_delta_depth > sps.log2_diff_max_min_luma_coding_block_size {
+        return Err(
+            NalError::ParameterOutOfRange {
+                limit: sps.log2_diff_max_min_luma_coding_block_size as _,
+                value: pps.diff_cu_qp_delta_depth as _,
+                field: "pps.diff_cu_qp_delta_depth"
+            }
+        );
+    }
+
     pps.cb_qp_offset = r.read_se();
+
+    if pps.cb_qp_offset <- 12 || pps.cb_qp_offset>12{
+
+    }
+
     pps.cr_qp_offset = r.read_se();
     pps.slice_chroma_qp_offsets_present_flag = r.read_flag();
     pps.weighted_pred_flag = r.read_flag();
@@ -681,10 +735,6 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     pps.slice_segment_header_extension_present_flag = r.read_flag();
 
     let pps_extension_present_flag = r.read_flag();
-
-    let sps = sps[pps.sps_id as usize]
-        .as_ref()
-        .ok_or_else(|| NalError::Generic(format!("PPS references missing SPS {}", pps.sps_id)))?;
 
     if pps_extension_present_flag {
         let range_extension_flag = r.read_flag();
@@ -808,7 +858,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 log2_sao_offset_scale_chroma,
                 log2_max_transform_skip_block_size,
                 diff_cu_chroma_qp_offset_depth,
-                chroma_qp_offset_list_len
+                chroma_qp_offset_list_len,
             };
             pps.range_extension = Some(range_ext);
         }
@@ -827,7 +877,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     Ok(pps)
 }
 pub fn decode_slice_vb(
-    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>]
+    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>],
 ) -> Result<(), NalError> {
     // 1. Clean the entire NAL unit first! Skip the 2-byte NAL header.
     let clean_rbsp = extract_rbsp(&nal.payload[..]);
@@ -910,7 +960,7 @@ pub fn decode_slice_vb(
     Ok(())
 }
 pub fn decode_slice_header(
-    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
+    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8],
 ) -> Result<SliceHeader, NalError> {
     // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
     let mut r = BitReader::new(&clean_payload);

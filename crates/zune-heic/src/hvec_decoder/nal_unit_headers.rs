@@ -160,8 +160,8 @@ pub struct PpsRangeExtension {
 }
 #[derive(Debug, Clone, Default)]
 pub struct Pps {
-    pub pps_id: u64,
-    pub sps_id: u64,
+    pub pps_id: u8,
+    pub sps_id: u8,
 
     // Flags
     pub dependent_slice_segments_enabled_flag: bool,
@@ -170,8 +170,8 @@ pub struct Pps {
     pub cabac_init_present_flag:               bool,
 
     // Reference indices
-    pub num_ref_idx_l0_default_active: u64,
-    pub num_ref_idx_l1_default_active: u64,
+    pub num_ref_idx_l0_default_active: u8,
+    pub num_ref_idx_l1_default_active: u8,
     // slice bits
     pub num_extra_slice_header_bits:   u8,
 

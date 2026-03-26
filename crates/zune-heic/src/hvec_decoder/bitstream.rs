@@ -2,6 +2,8 @@
 //  HEVC Bitstream Reader — MSB-first, 64-bit barrel buffer
 // ============================================================
 
+use crate::hvec_decoder::nal_parser::NalError;
+
 pub struct BitReader<'src> {
     src:        &'src [u8],
     position:   usize,
@@ -207,6 +209,17 @@ impl<'src> BitReader<'src> {
         (1 << num_zeros) - 1 + suffix
     }
 
+    pub fn read_ue_u8(&mut self) -> Result<u8, NalError> {
+        let val = self.read_ue();
+        debug_assert!(val < u8::MAX as _);
+
+        if val > u8::MAX as _ {
+            let msg =
+                format!("exp golomb decode for u8 failed, value {val} larger than u8::MAX(255)");
+            return Err(NalError::Generic(msg));
+        }
+        return Ok(val as u8);
+    }
     /// Decode one signed Exp-Golomb codeword `se(v)`.
     #[inline(always)]
     pub fn read_se(&mut self) -> i64 {
@@ -236,7 +249,8 @@ impl<'src> BitReader<'src> {
     pub fn byte_align(&mut self) {
         // Read the "1" bit and then all "0" bits until alignment
         let bit = self.read_flag();
-        if bit { // Only align if we actually found the stop bit
+        if bit {
+            // Only align if we actually found the stop bit
             let rem = self.bits_left % 8;
             self.drop_bits(rem);
         }

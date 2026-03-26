@@ -24,8 +24,8 @@ pub enum NalError {
     /// nuh_temporal_id_plus1 == 0 is illegal per spec §7.4.2.2.
     InvalidTemporalId,
     ParameterOutOfRange {
-        limit: u64,
-        value: u64,
+        limit: i64,
+        value: i64,
         field: &'static str
     },
     Generic(String)
