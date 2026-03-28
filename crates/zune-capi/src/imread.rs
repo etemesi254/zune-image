@@ -371,45 +371,9 @@ where
                 decoder.decode_into(output)?;
             }
             ImageFormat::PNG => {
-                // note: PNG has 8 bit and 16 bit images, it's a common format so we have to do some optimizations
-                //
-                // we don't strip 16 bit to 8 bit automatically, so we need to  handle that path
-                // but we have `decode_into` only taking &[u8] slices, and making it generic and sucks
-                //
-                // so we branch on the depth, cheat a bit on 16 bit and return whatever we can
-                // we expect the caller to have appropriately taken care of allocating enough to hold 16 bit
-                //
-                let mut decoder = PngDecoder::new(data);
+                // TODO: Fix this
+                todo!();
 
-                match decoder.depth().unwrap() {
-                    BitDepth::Eight => {
-                        decoder.decode_into(output)?;
-
-                        return Ok(());
-                    }
-                    BitDepth::Sixteen => {
-                        // safety:
-                        // we can alias strong types to weak types, e.g u16->u8 works, we only care
-                        // about alignment so it should be fine
-                        //
-                        // Reason:
-                        // Saves us an unnecessary image allocation which is expensive
-                        // set sample endianness to match platform
-                        #[cfg(target_endian = "little")]
-                        {
-                            let options = decoder.options().set_byte_endian(ByteEndian::LE);
-                            decoder.set_options(options);
-                        }
-                        #[cfg(target_endian = "big")]
-                        {
-                            let options = decoder.get_options().set_byte_endian(ByteEndian::BE);
-                            decoder.set_options(options);
-                        }
-
-                        decoder.decode_into(output)?;
-                    }
-                    _ => unreachable!()
-                }
             }
             ImageFormat::PPM => {
                 let mut decoder = PPMDecoder::new(data);
