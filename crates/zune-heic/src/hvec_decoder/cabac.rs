@@ -6,210 +6,134 @@ pub const NUM_CABAC_CONTEXTS: usize = 171;
 
 // --- ENGINE IMPLEMENTATION ---
 
-pub struct CabacEngine<'a> {
-    data:          &'a [u8],
-    cursor:        usize,
-    buffered_bits: u64,
-    bits_left:     u8,
-    pub value:     u32,
-    pub range:     u32,
-    pub contexts:  [u8; NUM_CABAC_CONTEXTS] // Room for all HEVC contexts
+pub struct CabacDecoder<'a> {
+    data:   &'a [u8],
+    cursor: usize,
+
+    pub range:       u32,
+    pub value:       u32,
+    pub bits_needed: i8,
+    pub contexts:    [u8; NUM_CABAC_CONTEXTS]
 }
 
-impl<'a> CabacEngine<'a> {
-    pub fn new(
-        data: &'a [u8], slice_qp: i32, init_type: usize
-    ) -> Self {
+impl<'a> CabacDecoder<'a> {
+    pub fn new(data: &'a [u8], slice_qp: i32, init_type: usize) -> Self {
         let mut engine = Self {
             data,
             cursor: 0,
             range: 510,
             value: 0,
-            buffered_bits: 0,
-            bits_left: 0,
+            bits_needed: -8,
             contexts: [0; NUM_CABAC_CONTEXTS]
         };
 
-        engine.init_contexts_libde265(slice_qp, init_type);
+        engine.init_contexts(slice_qp, init_type);
         engine.init_value();
         engine
     }
 
     fn init_value(&mut self) {
         if self.data.len() >= 2 {
-            // Read first two bytes: value = byte0 << 8 | byte1
             self.value = (self.data[0] as u32) << 8 | (self.data[1] as u32);
             self.cursor = 2;
-            self.bits_left = 0; // Forces refill_bulk on the next bit read
-            self.buffered_bits = 0;
+            self.bits_needed = -8;
+            debug_more!(
+                "init_CABAC_decode_2 range :{} value :{}",
+                self.range,
+                self.value
+            );
         }
     }
+
+    /// Batch renorm: shifts value/range by `shift` bits and reads at most one
+    /// new byte. Since shift <= 6 in the LPS path and bits_needed starts at
+    /// -8, a single byte always covers the demand — no loop needed.
+    #[inline(always)]
+    fn renorm(&mut self, shift: u32) {
+        self.value <<= shift;
+        self.bits_needed += shift as i8;
+
+        if self.bits_needed >= 0 {
+            // We have consumed enough bits that a new byte is needed.
+            let byte = if self.cursor < self.data.len() {
+                let b = self.data[self.cursor];
+                self.cursor += 1;
+                b as u32
+            } else {
+                0 // Trailing padding — safe to treat as zero.
+            };
+            // Place the new byte so its MSB lands at bit (7 - bits_needed).
+            self.value |= byte << self.bits_needed;
+            self.bits_needed -= 8;
+        }
+    }
+
+    /// Single-bit renorm kept for the MPS path (shift == 1 always).
+    #[inline(always)]
+    fn renorm_one(&mut self) {
+        self.renorm(1);
+    }
+
+    // --- Core Decoding Functions ---
 
     #[inline(always)]
-    fn read_n_bits(&mut self, n: u8) -> u32 {
-        if n == 0 {
-            return 0;
-        }
-        if self.bits_left < n {
-            self.refill_bulk();
-        }
-
-        let bits = (self.buffered_bits >> (64 - n)) as u32;
-        self.buffered_bits <<= n;
-        self.bits_left -= n;
-        bits
-    }
-
-    #[inline(never)]
-    fn refill_bulk(&mut self) {
-        let bytes_available = self.data.len().saturating_sub(self.cursor);
-        let bytes_to_read = bytes_available.min(8);
-
-        if bytes_to_read > 0 {
-            let mut word = 0u64;
-            for i in 0..bytes_to_read {
-                word |= (self.data[self.cursor + i] as u64) << (56 - i * 8);
-            }
-
-            // Shift into the empty part of the buffer
-            self.buffered_bits |= word >> self.bits_left;
-            self.cursor += bytes_to_read;
-            self.bits_left += (bytes_to_read * 8) as u8;
-        }
-    }
-
-    pub fn _print_states(&self) {
-        for (i, x) in self.contexts.iter().enumerate() {
-            let mps = x & 1;
-            let state = (x >> 1) as usize;
-            debug_more!("{i} mps: {} state: {}", mps, state);
-        }
-    }
-
     pub fn decode_decision(&mut self, ctx_idx: usize) -> u8 {
         let state_packed = self.contexts[ctx_idx];
         let mps = state_packed & 1;
         let state = (state_packed >> 1) as usize;
 
         debug_more!(
-            "decode_bin range:{} value:{} state:{}",
+            "decodeBin range :{} value:{} state:{}",
             self.range,
             self.value,
             state
         );
+
         let q_idx = (self.range >> 6) & 3;
         let lps_range = RANGE_LPS_TABLE[state][q_idx as usize] as u32;
 
         self.range -= lps_range;
         let scaled_range = self.range << 7;
 
-        debug_more!(
-            " decode_bin[1] scaled_range:{} value:{} ",
-            scaled_range,
-            self.value
-        );
+        debug_more!(" sr:{} v:{}", scaled_range, self.value);
 
-        let bin;
         if self.value < scaled_range {
-            // MPS Path
-            bin = mps;
-            debug_more!(" decode_bin[2] MPS");
+            // --- MPS path (hot ~94 %+ of the time) ---
+            debug_more!(" MPS");
             self.contexts[ctx_idx] = (TRANSITION_MPS[state] << 1) | mps;
 
             if self.range < 256 {
                 self.range <<= 1;
-                self.value = self.value << 1;
-
-                let new_bits = self.read_n_bits(1);
-
-                self.value |= new_bits;
+                self.renorm_one();
             }
+
+            debug_more!(" -> bit {}  r:{} v:{}", mps, self.range, self.value);
+            mps
         } else {
-            // LPS Path
-            bin = 1 - mps;
-            self.value -= scaled_range;
-
-            let shift = RENORM_TABLE[(lps_range >> 3) as usize] as u32;
-            self.value <<= shift;
-            self.value |= self.read_n_bits(shift as u8);
-            self.range = lps_range << shift;
-
-            let next_mps = if state == 0 { 1 - mps } else { mps };
-            self.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
+            // --- LPS path (cold) ---
+            lps_decode(self, ctx_idx, mps, state, lps_range, scaled_range)
         }
-        debug_more!(
-            " decode_bin[3] MPS bit {} range:{} value:{}",
-            bin,
-            self.range,
-            self.value
-        );
-        bin
-    }
-    pub fn decode_fl_bypass_parallel(&mut self, n_bits: u8) -> u32 {
-        debug_more!(
-            "decode_bypass_parallel range={} value={} (n_bits={})",
-            self.range,
-            self.value,
-            n_bits
-        );
-        self.value <<= n_bits;
-        self.bits_left -= n_bits;
-
-        let scaled_range = self.range << 7;
-        let v = self.value / scaled_range;
-        self.value -= v * scaled_range;
-
-        debug_more!(
-            " decode_bypass_parallel d={} range={} value={} ",
-            v,
-            scaled_range,
-            self.value
-        );
-        v
-    }
-    pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
-        let mut v;
-
-        if n_bits == 0 {
-            return 0;
-        }
-        if n_bits == 1 {
-            v = self.decode_bypass() as u32;
-        } else {
-            v = self.decode_fl_bypass_parallel(8);
-            n_bits -= 8;
-
-            while n_bits > 0 {
-                v <<= 1;
-                v |= self.decode_bypass() as u32;
-                n_bits -= 1;
-            }
-        }
-        debug_more!("decode_fl_bypass v={}", v);
-        return v;
     }
 
+    #[inline(always)]
     pub fn decode_bypass(&mut self) -> u8 {
-        debug_more!("decode_bypass range:{} value:{}", self.range, self.value);
-        self.value = (self.value << 1) | self.read_n_bits(1);
-        let scaled_range = self.range << 7;
+        debug_more!("bypass r:{} v:{}", self.range, self.value);
+        self.renorm_one();
 
-        let return_value = if self.value >= scaled_range {
+        let scaled_range = self.range << 7;
+        let bit = (self.value >= scaled_range) as u8;
+        if bit == 1 {
             self.value -= scaled_range;
-            1
-        } else {
-            0
-        };
-        debug_more!(
-            " decode_bypass[2] bit:{} range:{},value:{}",
-            return_value,
-            self.range,
-            self.value
-        );
-        return_value
+        }
+
+        debug_more!(" -> bit {}  r:{} v:{}", bit, self.range, self.value);
+        bit
     }
 
+    #[inline(always)]
     pub fn decode_terminate(&mut self) -> u8 {
+        debug_more!("CABAC term: range={:x}", self.range);
+
         self.range -= 2;
         let scaled_range = self.range << 7;
 
@@ -218,24 +142,93 @@ impl<'a> CabacEngine<'a> {
         } else {
             if self.range < 256 {
                 self.range <<= 1;
-                self.value = (self.value << 1) | self.read_n_bits(1);
+                self.renorm_one();
             }
             0
         }
     }
+
+    // --- Specialized bypass decoders ---
+
+    /// Decode `n_bits` bypass bins in one pass.
+    /// All renorms are done up front; then bits are peeled off the value
+    /// register without touching the range register again.
+    pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
+        // Renorm all bits at once.
+        self.renorm(n_bits as u32);
+
+        let scaled = self.range << 7;
+        let mut res = 0u32;
+
+        for i in (0..n_bits).rev() {
+            if self.value >= scaled {
+                self.value -= scaled;
+                res |= 1 << i;
+            }
+            // Each iteration represents one bypass step; value was
+            // pre-shifted by renorm so we don't need extra shifts here.
+        }
+        res
+    }
+
+    pub fn decode_bypass_eg0(&mut self) -> u32 {
+        // Count leading 1-bins (prefix).
+        let mut prefix = 0u32;
+        while self.decode_bypass() == 1 {
+            prefix += 1;
+            // Guard against malformed streams (max EG0 prefix in practice ≤ 12).
+            if prefix > 12 {
+                break;
+            }
+        }
+
+        if prefix == 0 {
+            return 0;
+        }
+
+        // Read `prefix` suffix bits in one batched call.
+        let suffix = self.decode_fl_bypass(prefix as u8);
+        (1 << prefix) - 1 + suffix
+    }
+
+    /// Decodes Truncated Unary bypass values.
     pub fn decode_tu_bypass(&mut self, c_max: u8) -> u8 {
         for i in 0..c_max {
-            let bit = self.decode_bypass();
-            if bit == 0 {
+            if self.decode_bypass() == 0 {
                 return i;
             }
         }
-        return c_max;
+        c_max
     }
 }
 
-impl<'a> CabacEngine<'a> {
-    pub fn init_contexts_libde265(&mut self, qp: i32, init_type: usize) {
+/// Cold LPS path extracted to its own function so the branch predictor and
+/// inliner can treat the MPS path in `decode_decision` as the sole hot path.
+#[cold]
+#[inline(never)]
+fn lps_decode(
+    dec: &mut CabacDecoder<'_>, ctx_idx: usize, mps: u8, state: usize, lps_range: u32,
+    scaled_range: u32
+) -> u8 {
+    let bin = 1 - mps;
+    debug_more!(" LPS");
+    dec.value -= scaled_range;
+
+    let shift = RENORM_TABLE[(lps_range >> 3) as usize] as u32;
+    dec.range = lps_range << shift;
+
+    // Single batched renorm replaces the original `for _ in 0..shift` loop.
+    dec.renorm(shift);
+
+    let next_mps = if state == 0 { 1 - mps } else { mps };
+    dec.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
+
+    debug_more!(" -> bit {}  r:{} v:{}", bin, dec.range, dec.value);
+    bin
+}
+
+impl<'a> CabacDecoder<'a> {
+    pub fn init_contexts(&mut self, qp: i32, init_type: usize) {
         let qp_y = qp.clamp(0, 51);
 
         // 1. Initialize Motion Contexts (Only for P/B slices)
