@@ -1,57 +1,64 @@
-use crate::hevc_decoder::DEBUG_MORE;
 use crate::debug_more;
+use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::constants::PartMode;
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockState {
+    pub pred_mode:       PredMode,
+    pub part_mode:       PartMode,
+    pub slice_id:        u16, // To check if neighbors are in the same slice
+    pub decoded:         bool,
     pub available:       bool, // False if off-screen or not yet decoded
     pub skip_flag:       bool,
-    pub cqt_depth:       u8,   // Depth at which this 8x8 was decided
+    pub cqt_depth:       u8, // Depth at which this 8x8 was decided
     pub is_intra:        bool,
-    pub intra_mode_luma: u8,   // 0-34
-    pub qp:              i8,
+    pub intra_mode_luma: u8, // 0-34
+    pub qp:              i8
 }
 
 impl Default for BlockState {
     fn default() -> Self {
         Self {
-            available: false,
-            skip_flag: false,
-            cqt_depth: 0,
-            is_intra: false,
+            pred_mode:       PredMode::ModeInter,
+            part_mode:       PartMode::Part2Nx2N,
+            available:       false,
+            skip_flag:       false,
+            cqt_depth:       0,
+            is_intra:        false,
             intra_mode_luma: 1, // Default to DC
-            qp: 0,
+            qp:              0,
+            decoded:         false,
+            slice_id:        0
         }
     }
 }
-
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum PredMode {
+    ModeIntra,
+    ModeInter,
+    ModeSkip // Skip is often treated as a subset of Inter
+}
 pub struct NeighborTracker {
     /// Full frame map stored in 8x8 units.
-    pub blocks: Vec<BlockState>,
-    pub width_8x8: usize,
-    pub height_8x8: usize,
+    pub blocks:          Vec<BlockState>,
+    pub height_in_units: usize,
+    pub width_in_units:  usize,
+    pub log2_unit_size:  u8 // Usually 2 for 4x4 units, or 3 for 8x8 units
 }
 
 impl NeighborTracker {
     /// Initializes a tracker based on the image dimensions in pixels.
     pub fn new(pic_width: usize, pic_height: usize) -> Self {
-        let width_8x8 = (pic_width + 7) / 8;
-        let height_8x8 = (pic_height + 7) / 8;
+        // Since we are using 8x8 units:
+        let log2_unit_size = 3; // 1 << 3 = 8
+        let width_in_units = (pic_width + 7) >> log2_unit_size;
+        let height_in_units = (pic_height + 7) >> log2_unit_size;
 
         Self {
-            blocks: vec![BlockState::default(); width_8x8 * height_8x8],
-            width_8x8,
-            height_8x8,
-        }
-    }
-
-    /// Boundary-safe helper to fetch a state at pixel coordinates.
-    pub fn get_state(&self, x: usize, y: usize) -> BlockState {
-        let gx = x / 8;
-        let gy = y / 8;
-        if gx < self.width_8x8 && gy < self.height_8x8 {
-            self.blocks[gy * self.width_8x8 + gx]
-        } else {
-            BlockState::default() // available = false
+            blocks: vec![BlockState::default(); width_in_units * height_in_units],
+            width_in_units,
+            height_in_units,
+            log2_unit_size
         }
     }
 
@@ -66,8 +73,8 @@ impl NeighborTracker {
             for dx in 0..units {
                 let gx = gx_start + dx;
                 let gy = gy_start + dy;
-                if gx < self.width_8x8 && gy < self.height_8x8 {
-                    let idx = gy * self.width_8x8 + gx;
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
                     self.blocks[idx] = state;
                     self.blocks[idx].available = true; // Mark as decoded
                 }
@@ -105,8 +112,8 @@ impl NeighborTracker {
             for dx in 0..units {
                 let gx = gx_start + dx;
                 let gy = gy_start + dy;
-                if gx < self.width_8x8 && gy < self.height_8x8 {
-                    let idx = gy * self.width_8x8 + gx;
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
                     self.blocks[idx].qp = qp;
                     self.blocks[idx].available = true;
                 }
@@ -121,8 +128,12 @@ impl NeighborTracker {
         let above = if y > 0 { self.get_state(x, y - 1) } else { BlockState::default() };
 
         let mut ctx_inc = 0;
-        if left.available && left.skip_flag { ctx_inc += 1; }
-        if above.available && above.skip_flag { ctx_inc += 1; }
+        if left.available && left.skip_flag {
+            ctx_inc += 1;
+        }
+        if above.available && above.skip_flag {
+            ctx_inc += 1;
+        }
         ctx_inc
     }
 
@@ -136,28 +147,43 @@ impl NeighborTracker {
 
         let mut mpm = [0u8; 3];
 
+        // 2. Build candidate list (Matching your C code snippet)
         if mode_l == mode_a {
-            if mode_l < 2 { // Planar (0) or DC (1)
-                mpm = [0, 1, 26]; // 26 is Vertical
+            if mode_l < 2 {
+                // Case: Both are Planar or DC
+                mpm = [0, 1, 26]; // Planar, DC, Vertical
             } else {
-                // Angular Mode Wrap-around logic (Spec 8.4.2)
+                // Case: Both are the same Angular mode
                 mpm[0] = mode_l;
-                // Mode-2 shift + 29 (which is -3) then +2 offset back
-                mpm[1] = 2 + ((mode_l - 2 + 29) % 32);
-                // Mode-2 shift + 1 then +2 offset back
+                // Mode - 1 (The '+ 31' is '-1 + 32' to handle the unsigned wrap)
+                mpm[1] = 2 + ((mode_l - 2 + 31) % 32);
+                // Mode + 1
                 mpm[2] = 2 + ((mode_l - 2 + 1) % 32);
             }
         } else {
+            // Case: A and B are different
             mpm[0] = mode_l;
             mpm[1] = mode_a;
-            if mode_l != 0 && mode_a != 0 { mpm[2] = 0; }
-            else if mode_l != 1 && mode_a != 1 { mpm[2] = 1; }
-            else { mpm[2] = 26; }
+
+            if mode_l != 0 && mode_a != 0 {
+                mpm[2] = 0; // Filler is Planar
+            } else if mode_l != 1 && mode_a != 1 {
+                mpm[2] = 1; // Filler is DC
+            } else {
+                mpm[2] = 26; // Filler is Vertical
+            }
         }
-        debug_more!("MPM Candidates for [{},{}]: [{}, {}, {}]", x, y, mpm[0], mpm[1], mpm[2]);
+
+        debug_more!(
+            "MPM Candidates for [{},{}]: [{}, {}, {}]",
+            x,
+            y,
+            mpm[0],
+            mpm[1],
+            mpm[2]
+        );
         mpm
     }
-
     pub fn get_qp_left(&self, x: usize, y: usize) -> Option<i8> {
         let s = if x > 0 { self.get_state(x - 1, y) } else { return None };
         if s.available { Some(s.qp) } else { None }
@@ -166,6 +192,39 @@ impl NeighborTracker {
     pub fn get_qp_above(&self, x: usize, y: usize) -> Option<i8> {
         let s = if y > 0 { self.get_state(x, y - 1) } else { return None };
         if s.available { Some(s.qp) } else { None }
+    }
+}
+impl NeighborTracker {
+    /// Returns the intra luma mode for the 8x8 block covering pixel (x, y).
+    /// This is used by derive_mpms to see what the neighbors chose.
+    pub fn get_intra_mode(&self, x: usize, y: usize) -> u8 {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        // Safety check for image boundaries
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            // If out of bounds, return DC (1) or Planar (0)
+            return 1;
+        }
+
+        let index = uy * self.width_in_units + ux;
+        self.blocks[index].intra_mode_luma
+    }
+
+    /// Helper to get the full state for a coordinate (used in your derive_mpms)
+    pub fn get_state(&self, x: usize, y: usize) -> BlockState {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            // Return a default state with 'available' = false
+            return BlockState {
+                available: false,
+                ..BlockState::default()
+            };
+        }
+
+        self.blocks[uy * self.width_in_units + ux].clone()
     }
 }
 impl NeighborTracker {
@@ -184,7 +243,10 @@ impl NeighborTracker {
 
         debug_more!(
             "Tracker: Setting Intra Mode {} at [{}, {}] size {}",
-            mode, x0, y0, pb_size
+            mode,
+            x0,
+            y0,
+            pb_size
         );
 
         for dy in 0..units {
@@ -192,8 +254,8 @@ impl NeighborTracker {
                 let gx = gx_start + dx;
                 let gy = gy_start + dy;
 
-                if gx < self.width_8x8 && gy < self.height_8x8 {
-                    let idx = gy * self.width_8x8 + gx;
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
                     let state = &mut self.blocks[idx];
 
                     state.is_intra = true;
@@ -202,5 +264,98 @@ impl NeighborTracker {
                 }
             }
         }
+    }
+}
+impl NeighborTracker {
+    pub fn set_pred_mode(&mut self, x: usize, y: usize, log2_blk_size: u8, mode: PredMode) {
+        let unit_x = x >> self.log2_unit_size;
+        let unit_y = y >> self.log2_unit_size;
+
+        // Calculate how many 8x8 units we need to fill
+        // (e.g., a 32x32 block is 4 units wide)
+        let width_in_units = 1 << (log2_blk_size - self.log2_unit_size);
+
+        for cy in unit_y..(unit_y + width_in_units) {
+            let offset = cy * self.width_in_units;
+            for cx in unit_x..(unit_x + width_in_units) {
+                // Now setting the actual field inside your blocks vector
+                if let Some(block) = self.blocks.get_mut(offset + cx) {
+                    block.pred_mode = mode;
+                }
+            }
+        }
+    }
+
+    pub fn get_pred_mode(&self, x: usize, y: usize) -> PredMode {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            return PredMode::ModeInter; // Treat out-of-bounds as Inter (Unavailable for Intra)
+        }
+
+        self.blocks[uy * self.width_in_units + ux].pred_mode
+    }
+}
+
+impl NeighborTracker {
+    /// Sets the PartMode for all units covered by the block
+    pub fn set_part_mode(&mut self, x: usize, y: usize, log2_blk_size: u8, mode: PartMode) {
+        let unit_x = x >> self.log2_unit_size;
+        let unit_y = y >> self.log2_unit_size;
+        let width_in_units = 1 << (log2_blk_size - self.log2_unit_size);
+
+        for cy in unit_y..(unit_y + width_in_units) {
+            let offset = cy * self.width_in_units;
+            for cx in unit_x..(unit_x + width_in_units) {
+                if let Some(block) = self.blocks.get_mut(offset + cx) {
+                    block.part_mode = mode;
+                }
+            }
+        }
+    }
+
+    /// Gets the PartMode of the block containing the pixel (x, y)
+    pub fn get_part_mode(&self, x: usize, y: usize) -> PartMode {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        // Boundary check
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            return PartMode::Part2Nx2N; // Default fallback
+        }
+
+        self.blocks[uy * self.width_in_units + ux].part_mode
+    }
+}
+
+impl NeighborTracker {
+    pub fn is_available(
+        &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize
+    ) -> bool {
+        // 1. Image Boundary Check
+        if neighbor_x < 0 || neighbor_y < 0 {
+            return false;
+        }
+
+        let nx = neighbor_x as usize;
+        let ny = neighbor_y as usize;
+
+        if nx >= self.width_in_units << 3 || ny >= self.height_in_units << 3 {
+            return false;
+        }
+
+        // 2. Lookup neighbor data
+        let curr_unit = &self.blocks[(curr_y >> 3) * self.width_in_units + (curr_x >> 3)];
+        let neighbor_unit = &self.blocks[(ny >> 3) * self.width_in_units + (nx >> 3)];
+
+        // 3. Slice Boundary Check
+        if curr_unit.slice_id != neighbor_unit.slice_id {
+            return false;
+        }
+
+        // 4. Decoding Order Check
+        // A neighbor is only available if it has been marked as 'decoded'
+        neighbor_unit.decoded
     }
 }

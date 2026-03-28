@@ -4,6 +4,7 @@ use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
 
 pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
+    debug_more!("decode_cu_qp_delta");
     // HEVC uses 2 contexts for cu_qp_delta_abs:
     // ctxIdx = 0 for the first bin
     // ctxIdx = 1 for the remaining bins (1 to 4)
@@ -22,6 +23,7 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
         }
         prefix += 1;
     }
+
 
     let mut abs_qp_delta = prefix as u32;
 
@@ -47,6 +49,7 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
     let final_delta = if sign_flag == 1 { -(abs_qp_delta as i32) } else { abs_qp_delta as i32 };
 
     debug_more!("Final cu_qp_delta: {}", final_delta);
+    panic!();
     final_delta
 }
 pub fn decode_quantization_parameters(

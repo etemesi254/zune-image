@@ -8,6 +8,7 @@ use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
     CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG
 };
+use crate::hevc_decoder::constants::PartMode;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
 use crate::hevc_decoder::quadtree::quant::{decode_cu_qp_delta, decode_quantization_parameters};
@@ -18,6 +19,34 @@ enum Component {
     Cb,
     Cr
 }
+
+fn decode_cbf_luma(ctx: &mut DecodeSliceContext, trafo_depth: u8) -> bool {
+    debug_more!("decode_cbf_luma");
+    let ctx_idx = CONTEXT_MODEL_CBF_LUMA + (if trafo_depth == 0 { 1 } else { 0 });
+    let bit = ctx.cabac.decode_decision(ctx_idx) == 1;
+    debug_more!("  decode_cbf_luma=>{bit}");
+    bit
+}
+fn decode_cbf_chroma(ctx: &mut DecodeSliceContext, trafo_depth: u8) -> u8 {
+    debug_more!("decode_cbf_chroma");
+    let ctx_idx = CONTEXT_MODEL_CBF_CHROMA + (trafo_depth as usize);
+    let bit = ctx.cabac.decode_decision(ctx_idx);
+    debug_more!("  decode_cbf_chroma=>{bit}");
+    bit
+}
+fn decode_split_transform_flag(ctx: &mut DecodeSliceContext, log2_trafo_size: u8) -> bool {
+    debug_more!(
+        "decode_split_transform_flag (log2_trafo_size={})",
+        log2_trafo_size
+    );
+    let context = 5_u8.wrapping_sub(log2_trafo_size) as usize;
+    assert!(context >= 0 && context <= 2);
+    let ctx_idx = CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG + context;
+    let flag = ctx.cabac.decode_decision(ctx_idx) == 1;
+    debug_more!("  decode_split_transform_flag=>{flag}");
+
+    return flag;
+}
 pub fn read_transform_tree(
     ctx: &mut DecodeSliceContext,
     x0: usize,
@@ -27,46 +56,101 @@ pub fn read_transform_tree(
     log2_trafo_size: u8,
     trafo_depth: u8,
     max_trafo_depth: u8,
+    intra_split_flag: bool,
     mut cbf_cb: bool,
     mut cbf_cr: bool
 ) {
     let mut cbf_luma = false;
     let mut split_flag = false;
 
-    // 1. Determine if we split the transform block
-    // We split if:
-    // - Depth < MaxDepth
-    // - AND TrafoSize > MinTrafoSize
-    // - AND (Size > 32 or Intra-Split or we decode a '1' bin)
-    if log2_trafo_size <= ctx.sps.log2_max_transform_block_size
+    debug_more!(
+        " ---- read_transform_tree(interleaved) x0:{} y0:{} x_base:{},y_base:{},log2_trafo_size:{},trafo_depth:{},max_trafo_depth:{}",
+        x0,
+        y0,
+        x_base,
+        y_base,
+        log2_trafo_size,
+        trafo_depth,
+        max_trafo_depth
+    );
+
+    // 1. Determine if we decode or infer the split flag
+    let mut split_flag = false;
+
+    // Logic for "Can we even choose?"
+    // We can ONLY choose if:
+    // - We are within the min/max size bounds
+    // - We haven't reached the max depth
+    // - AND it's NOT a forced Intra split (Intra NxN at depth 0)
+    let can_decode_flag = log2_trafo_size <= ctx.sps.log2_max_transform_block_size
         && log2_trafo_size > ctx.sps.log2_min_transform_block_size
         && trafo_depth < max_trafo_depth
-    {
-        split_flag = ctx
-            .cabac
-            .decode_decision(CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG + (5 - log2_trafo_size as usize))
-            == 1;
+        && !(intra_split_flag && trafo_depth == 0);
+
+    if can_decode_flag {
+        // Decode from bitstream
+        // Note: HEVC uses the size to pick the context
+        split_flag = decode_split_transform_flag(ctx, log2_trafo_size);
     } else {
-        // Inferred split
-        split_flag = log2_trafo_size > ctx.sps.log2_max_transform_block_size;
+        // INFERENCE LOGIC
+        let part_mode = ctx.neighbor_tracker.get_part_mode(x0, y0);
+
+        // Case A: Size too big
+        let size_too_big = log2_trafo_size > ctx.sps.log2_max_transform_block_size;
+
+        // Case B: Forced Intra NxN split at the root
+        let forced_intra_split = intra_split_flag && trafo_depth == 0;
+
+        // Case C: Inter split edge case
+        // (Matches libde265: depth 0, hierarchy 0, non-2Nx2N Inter)
+        let inter_split_flag = ctx.sps.max_transform_hierarchy_depth_inter == 0
+            && trafo_depth == 0
+            && !ctx.is_intra
+            && part_mode != PartMode::Part2Nx2N;
+
+        split_flag = size_too_big || forced_intra_split || inter_split_flag;
     }
 
     // 2. Decode Chroma CBFs (Coded Block Flags)
-    // Only decoded if TrafoSize > 4, or we are at depth 0.
-    if log2_trafo_size > 2 || ctx.sps.chroma_format == ChromaFormat::Yuv422 {
-        if trafo_depth == 0 || cbf_cb {
-            let ctx_idx = CONTEXT_MODEL_CBF_CHROMA + trafo_depth as usize;
-            cbf_cb = ctx.cabac.decode_decision(ctx_idx) == 1;
+    // Only decode if we have chroma data
+    let has_chroma = (log2_trafo_size > 2 && ctx.sps.chroma_format != ChromaFormat::Monochrome)
+        || ctx.sps.chroma_format == ChromaFormat::Yuv444;
+
+    if has_chroma {
+        // 1. Process Cb (Chroma Blue)
+        if cbf_cb {
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
+
+            // 4:2:2 Special Case: Read second CBF bit if necessary
+            if ctx.sps.chroma_format == ChromaFormat::Yuv422
+                && (!split_flag || log2_trafo_size == 3)
+            {
+                let second_bit = decode_cbf_chroma(ctx, trafo_depth);
+                bit |= second_bit << 1;
+            }
+            cbf_cb = bit != 0;
         }
-        if trafo_depth == 0 || cbf_cr {
-            let ctx_idx = CONTEXT_MODEL_CBF_CHROMA + trafo_depth as usize;
-            cbf_cr = ctx.cabac.decode_decision(ctx_idx) == 1;
+
+        // 2. Process Cr (Chroma Red)
+        if cbf_cr {
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
+
+            // 4:2:2 Special Case: Read second CBF bit if necessary
+            if ctx.sps.chroma_format == ChromaFormat::Yuv422
+                && (!split_flag || log2_trafo_size == 3)
+            {
+                let second_bit = decode_cbf_chroma(ctx, trafo_depth);
+                bit |= second_bit << 1;
+            }
+            cbf_cr = bit != 0;
         }
     }
 
     if split_flag {
         let sub_size = 1 << (log2_trafo_size - 1);
         let half_size = sub_size;
+
+        debug_more!("transform_split (sub_size: {sub_size}, half_size: {half_size})");
 
         // Recursive split into 4 quadrants
         for j in 0..2 {
@@ -80,6 +164,7 @@ pub fn read_transform_tree(
                     log2_trafo_size - 1,
                     trafo_depth + 1,
                     max_trafo_depth,
+                    intra_split_flag,
                     cbf_cb,
                     cbf_cr
                 );
@@ -89,8 +174,7 @@ pub fn read_transform_tree(
         // 3. Leaf Node: Decode Luma CBF
         // Intra blocks at depth 0 ALWAYS have cbf_luma = 1 if not explicitly split.
         if ctx.is_intra || trafo_depth != 0 || cbf_cb || cbf_cr {
-            let ctx_idx = CONTEXT_MODEL_CBF_LUMA + (if log2_trafo_size == 2 { 1 } else { 0 });
-            cbf_luma = ctx.cabac.decode_decision(ctx_idx) == 1;
+            cbf_luma = decode_cbf_luma(ctx, trafo_depth);
         } else {
             cbf_luma = true; // Inferred
         }

@@ -63,53 +63,44 @@ pub fn decode_intra_luma_mode(
 }
 
 pub fn decode_intra_chroma_mode(ctx: &mut DecodeSliceContext, luma_mode: u8) -> u8 {
-    // 1. Decode the intra_chroma_pred_mode index
-    debug_more!("decode_intra_chroma_mode");
-    // Bin 0: Context-coded (Base 13). 0 = DM, 1 = Not DM.
-    let bin0 = ctx
-        .cabac
-        .decode_decision(CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE);
+    // 1. Decode the DM (Derived Mode) flag
+    // Context index for this is usually CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE
+    let is_dm = ctx.cabac.decode_decision(CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE) == 0;
 
-    let chroma_idx = if bin0 == 0 {
-        4 // DM_CHROMA (Derived Mode)
-    } else {
-        // Bins 1 and 2: Bypass-coded. These form a 2-bit index (0-3).
-        (ctx.cabac.decode_bypass() << 1) | ctx.cabac.decode_bypass()
-    };
-
-    // 2. Map the signaled index to a base mode
-    let mut chroma_mode = match chroma_idx {
-        0 => 0,         // Planar
-        1 => 26,        // Vertical
-        2 => 10,        // Horizontal
-        3 => 1,         // DC
-        4 => luma_mode, // Derived from Luma
-        _ => unreachable!()
-    };
-
-    // 3. Apply the "Conflict" Rule (Spec Table 7-3)
-    // If the signaled mode (0-3) is identical to the Luma mode,
-    // it is remapped to Mode 34 (Intra_Angular 34) to avoid redundancy.
-    if chroma_idx < 4 && chroma_mode == luma_mode {
-        chroma_mode = 34;
+    if is_dm {
+        debug_more!("Chroma Mode: Derived (DM) -> Mode {}", luma_mode);
+        return luma_mode;
     }
 
-    // 4. Handle 4:2:2 Chroma Format
-    // In 4:2:2, the vertical resolution is double that of 4:2:0 relative to the width.
-    // We must remap the angles so they look correct in the stretched space.
-    if ctx.sps.chroma_format == ChromaFormat::Yuv422 {
-        let original_mode = chroma_mode;
-        chroma_mode = MAP_CHROMA_422[chroma_mode as usize];
-        debug_more!("4:2:2 Chroma Remap: {} -> {}", original_mode, chroma_mode);
+    // 2. Decode the 3-bit bypass index (fixed-length 3 bits)
+    let chroma_idx = ctx.cabac.decode_fl_bypass(3) as u8;
+
+    // 3. Mapping Table (Spec Section 7.4.8.5)
+    // The candidate modes are: Planar (0), Vertical (26), Horizontal (10), DC (1), and Mode 34.
+    let mut mode_list = [0, 26, 10, 1, 34];
+
+    // Pick the "base" mode from the list based on our 3-bit index
+    // Note: The index in the bitstream only goes up to 4.
+    let mut selected_mode = match chroma_idx {
+        0 => 0,  // Planar
+        1 => 26, // Vertical
+        2 => 10, // Horizontal
+        3 => 1,  // DC
+        4 => 34, // Mode 34
+        _ => 34, // Safety fallback
+    };
+
+    // 4. Remapping Rule:
+    // If our selected mode is the SAME as the luma mode,
+    // we use the last candidate (Mode 34) instead.
+    if selected_mode == luma_mode {
+        selected_mode = 34;
     }
 
     debug_more!(
-        "Final Chroma Mode: signaled_idx={}, mode={} (Luma was {})",
-        chroma_idx,
-        chroma_mode,
-        luma_mode
+        "Chroma Mode: Signaled (idx {}), Final Mode: {} (Luma was {})",
+        chroma_idx, selected_mode, luma_mode
     );
 
-    chroma_mode
+    selected_mode
 }
-
