@@ -70,6 +70,7 @@ jxl-oxide = { version = "0.12.5", optional = true }
 kamadak-exif = { version = "0.6.1", optional = true }
 
 image-webp = { version = "0.2.4", optional = true }
+png = "0.18.0"
 
 [dev-dependencies]
 num-complex = "0.4.3" # Runs generate-fractals

@@ -9,147 +9,108 @@
 #![cfg(feature = "png")]
 #![allow(unused_variables)]
 
-//! Represents an png image decoder and encoder
-use std::io::Cursor;
+//! Represents a png image decoder and encoder
+use std::io::{BufRead, Seek};
 
+use png::{BitDepth as PngBitDepth, ColorType, Decoder, Encoder, Reader};
 use zune_core::bit_depth::BitDepth;
-use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
+use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
-use zune_core::result::DecodingResult;
-use zune_png::error::PngDecodeErrors;
-use zune_png::*;
 
-pub use zune_png::PngDecoder;
 use crate::codecs::{create_options_for_encoder, ImageFormat};
-use crate::errors::ImageErrors;
-use crate::errors::ImageErrors::ImageDecodeErrors;
-use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
-use crate::frame::Frame;
+use crate::errors::{ImageErrors, ImgEncodeErrors};
 use crate::image::Image;
-use crate::metadata::ImageMetadata;
+use crate::metadata::{AlphaState, ImageMetadata};
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
 
-impl<T> DecoderTrait for PngDecoder<T>
-where
-    T: ZByteReaderTrait
-{
-    fn decode(&mut self) -> Result<Image, ImageErrors> {
-        let metadata = self.read_headers()?.unwrap();
+pub struct PngDecoder<T: BufRead + Seek> {
+    inner: Reader<T>
+}
 
-        let depth = self.depth().unwrap();
-        let (width, height) = self.dimensions().unwrap();
-        let colorspace = self.colorspace().unwrap();
+impl<T: BufRead + Seek> PngDecoder<T> {
+    pub fn new(r: T) -> Result<Self, ImageErrors> {
+        let reader = Decoder::new(r)
+            .read_info()
+            .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
 
-        if self.is_animated() && self.options().png_decode_animated() {
-            // decode apng frames
-            //let mut previous_frame
-            let info = self.info().unwrap().clone();
-            // the output, since we know that no frame will be bigger than the width and height, we can
-            // set this up outside of the loop.
-            let mut output = vec![0; info.width * info.height * colorspace.num_components()];
-            let mut output_frames = Vec::new();
-            while self.more_frames() {
-                self.decode_headers()?;
-
-                let mut frame = self.frame_info().unwrap();
-                if frame.dispose_op == DisposeOp::Previous {
-                    // we don't clear our buffer, so output always contains the previous frame
-                    //
-                    // this means that there is no need to store the previous frame and copy it
-                    frame.dispose_op = DisposeOp::None;
-                }
-                let pix = self.decode()?;
-                match pix {
-                    DecodingResult::U8(pix) => {
-                        post_process_image(
-                            &info,
-                            colorspace,
-                            &frame,
-                            &pix,
-                            None,
-                            &mut output,
-                            None,
-                        )?;
-                        let duration = f64::from(frame.delay_num) / f64::from(frame.delay_denom);
-                        // then build a frame from that
-                        let im_frame = Frame::from_u8(&output, colorspace, usize::from(frame.delay_num),usize::from(frame.delay_denom));
-                        output_frames.push(im_frame);
-                    }
-                    _ => return Err(ImageDecodeErrors("The current image is an  Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
-                }
-            }
-            let mut image = Image::new_frames(output_frames, depth, width, height, colorspace);
-            image.metadata = metadata;
-
-            Ok(image)
-        } else {
-            let pixels = self
-                .decode()
-                .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
-
-            let mut image = match pixels {
-                DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
-                DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
-                _ => unreachable!()
-            };
-            // metadata
-            image.metadata = metadata;
-
-            Ok(image)
-        }
-    }
-    fn dimensions(&self) -> Option<(usize, usize)> {
-        self.dimensions()
-    }
-
-    fn out_colorspace(&self) -> ColorSpace {
-        self.colorspace().unwrap()
-    }
-
-    fn name(&self) -> &'static str {
-        "PNG Decoder"
-    }
-
-    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, crate::errors::ImageErrors> {
-        self.decode_headers()
-            .map_err(<error::PngDecodeErrors as Into<ImageErrors>>::into)?;
-
-        let (width, height) = self.dimensions().unwrap();
-        let depth = self.depth().unwrap();
-
-        let mut metadata = ImageMetadata {
-            format: Some(ImageFormat::PNG),
-            colorspace: self.colorspace().unwrap(),
-            depth: depth,
-            width: width,
-            height: height,
-            default_gamma: self.info().unwrap().gamma,
-            ..Default::default()
-        };
-        #[cfg(feature = "metadata")]
-        {
-            let info = self.info().unwrap();
-            // see if we have an exif chunk
-            if let Some(exif) = &info.exif {
-                metadata.parse_raw_exif(exif)
-            }
-        }
-        // load icc
-        if let Some(icc) = &self.info().unwrap().icc_profile {
-            metadata.set_icc_chunk(icc.to_owned());
-        }
-
-        Ok(Some(metadata))
+        Ok(PngDecoder { inner: reader })
     }
 }
 
-impl From<zune_png::error::PngDecodeErrors> for ImageErrors {
-    fn from(from: zune_png::error::PngDecodeErrors) -> Self {
-        let err = format!("png: {from:?}");
+impl<T: BufRead + Seek> DecoderTrait for PngDecoder<T> {
+    fn decode(&mut self) -> Result<Image, ImageErrors> {
+        let info = self.inner.info();
+        let width = info.width as usize;
+        let height = info.height as usize;
+        let colorspace = png_color_type_to_colorspace(info.color_type);
+        let depth = png_bit_depth_to_zune(info.bit_depth);
 
-        ImageErrors::ImageDecodeErrors(err)
+        let output_size = self
+            .inner
+            .output_buffer_size()
+            .ok_or(ImageErrors::ImageDecodeErrors(
+                "Output buffer overflowed".to_string()
+            ))?;
+        let mut raw_pixels = vec![0_u8; output_size];
+
+        self.inner
+            .next_frame(&mut raw_pixels)
+            .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
+
+        let mut img = match depth {
+            BitDepth::Sixteen => {
+                // image-png gives 16-bit data as big-endian bytes; convert to u16
+                let pixels_u16: Vec<u16> = raw_pixels
+                    .chunks_exact(2)
+                    .map(|b| u16::from_be_bytes([b[0], b[1]]))
+                    .collect();
+                Image::from_u16(&pixels_u16, width, height, colorspace)
+            }
+            _ => Image::from_u8(&raw_pixels, width, height, colorspace)
+        };
+
+        img.metadata.format = Some(ImageFormat::PNG);
+
+        Ok(img)
+    }
+
+    fn dimensions(&self) -> Option<(usize, usize)> {
+        let info = self.inner.info();
+        Some((info.width as usize, info.height as usize))
+    }
+
+    fn out_colorspace(&self) -> ColorSpace {
+        png_color_type_to_colorspace(self.inner.info().color_type)
+    }
+
+    fn name(&self) -> &'static str {
+        "PNG Decoder (image-png)"
+    }
+
+    fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
+        let info = self.inner.info();
+        let width = info.width as usize;
+        let height = info.height as usize;
+        let colorspace = png_color_type_to_colorspace(info.color_type);
+        let depth = png_bit_depth_to_zune(info.bit_depth);
+
+        let mut metadata = ImageMetadata {
+            format: Some(ImageFormat::PNG),
+            colorspace,
+            depth,
+            width,
+            height,
+            default_gamma: info.gama_chunk.map(|g| g.into_value()),
+            ..Default::default()
+        };
+
+        if let Some(icc) = &info.icc_profile {
+            metadata.set_icc_chunk(icc.to_vec());
+        }
+
+        Ok(Some(metadata))
     }
 }
 
@@ -162,6 +123,7 @@ impl PngEncoder {
     pub fn new() -> PngEncoder {
         PngEncoder::default()
     }
+
     pub fn new_with_options(options: EncoderOptions) -> PngEncoder {
         PngEncoder {
             options: Some(options)
@@ -171,20 +133,46 @@ impl PngEncoder {
 
 impl EncoderTrait for PngEncoder {
     fn name(&self) -> &'static str {
-        "PNG encoder"
+        "PNG encoder (image-png)"
     }
 
     fn encode_inner<T: ZByteWriterTrait>(
-        &mut self, image: &Image, sink: T
+        &mut self, image: &Image, mut sink: T
     ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
-        let frame = &image.to_u8_be()[0];
+        let width = options.width() as u32;
+        let height = options.height() as u32;
+        let colorspace = options.colorspace();
+        let bit_depth = options.depth();
 
-        let mut encoder = zune_png::PngEncoder::new(frame, options);
+        let color_type = zune_colorspace_to_png(colorspace).ok_or_else(|| {
+            ImageErrors::EncodeErrors(ImgEncodeErrors::UnsupportedColorspace(
+                colorspace,
+                self.supported_colorspaces()
+            ))
+        })?;
 
-        #[allow(unused_mut)]
-        let mut buf: Cursor<Vec<u8>> = std::io::Cursor::new(vec![]);
+        let mut output: Vec<u8> = Vec::new();
+
+        {
+            let mut encoder = Encoder::new(&mut output, width, height);
+            encoder.set_color(color_type);
+            encoder.set_depth(match bit_depth {
+                BitDepth::Sixteen => PngBitDepth::Sixteen,
+                _ => PngBitDepth::Eight
+            });
+
+            let mut writer = encoder
+                .write_header()
+                .map_err(|e| ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string())))?;
+
+            let frame_data = &image.to_u8_be()[0];
+
+            writer
+                .write_image_data(frame_data)
+                .map_err(|e| ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string())))?;
+        }
 
         #[cfg(feature = "metadata")]
         {
@@ -192,23 +180,24 @@ impl EncoderTrait for PngEncoder {
 
             if !options.strip_metadata() {
                 if let Some(fields) = &image.metadata.exif {
+                    let mut buf = std::io::Cursor::new(Vec::new());
                     let mut writer = Writer::new();
-
                     for metadatum in fields {
                         writer.push_field(metadatum);
                     }
                     let result = writer.write(&mut buf, false);
                     if result.is_ok() {
-                        encoder.add_exif_segment(buf.get_ref());
+                        // image-png has no direct exif chunk injection API
+                        warn!("Exif embedding is not supported with image-png encoder");
                     } else {
                         warn!("Writing exif failed {:?}", result);
                     }
                 }
             }
         }
-        encoder
-            .encode(sink)
-            .map_err(|e| ImageErrors::EncodeErrors(ImageEncodeErrors(format!("{:?}", e))))
+
+        sink.write_all_bytes(output.as_ref())?;
+        Ok(output.len())
     }
 
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
@@ -234,6 +223,7 @@ impl EncoderTrait for PngEncoder {
             _ => BitDepth::Eight
         }
     }
+
     fn set_options(&mut self, opts: EncoderOptions) {
         self.options = Some(opts)
     }
@@ -241,33 +231,68 @@ impl EncoderTrait for PngEncoder {
 
 impl<T> DecodeInto for PngDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: BufRead + Seek
 {
     type BufferType = u8;
 
     fn decode_into(&mut self, buffer: &mut [Self::BufferType]) -> Result<(), ImageErrors> {
-        self.decode_into(buffer)
-            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
+        self.inner
+            .next_frame(buffer)
+            .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
 
         Ok(())
     }
 
     fn decode_output_buffer_size(&mut self) -> Result<usize, ImageErrors> {
-        self.decode_headers()
-            .map_err(<PngDecodeErrors as Into<ImageErrors>>::into)?;
-
-        // unwrap is okay because we successfully decoded image headers
-        Ok(self.output_buffer_size().unwrap())
+        let output_size = self
+            .inner
+            .output_buffer_size()
+            .ok_or(ImageErrors::ImageDecodeErrors(
+                "Output buffer overflowed".to_string()
+            ))?;
+        Ok(output_size)
     }
 }
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+fn png_color_type_to_colorspace(ct: ColorType) -> ColorSpace {
+    match ct {
+        ColorType::Grayscale => ColorSpace::Luma,
+        ColorType::GrayscaleAlpha => ColorSpace::LumaA,
+        ColorType::Rgb => ColorSpace::RGB,
+        ColorType::Rgba => ColorSpace::RGBA,
+        // Indexed PNG is expanded to RGB by image-png by default
+        ColorType::Indexed => ColorSpace::RGB
+    }
+}
+
+fn png_bit_depth_to_zune(bd: PngBitDepth) -> BitDepth {
+    match bd {
+        PngBitDepth::Sixteen => BitDepth::Sixteen,
+        _ => BitDepth::Eight
+    }
+}
+
+fn zune_colorspace_to_png(cs: ColorSpace) -> Option<ColorType> {
+    match cs {
+        ColorSpace::Luma => Some(ColorType::Grayscale),
+        ColorSpace::LumaA => Some(ColorType::GrayscaleAlpha),
+        ColorSpace::RGB => Some(ColorType::Rgb),
+        ColorSpace::RGBA => Some(ColorType::Rgba),
+        _ => None
+    }
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
-    use zune_core::bytestream::ZCursor;
-    use zune_core::colorspace::ColorSpace;
-    use zune_png::PngDecoder;
+    use std::io::Cursor;
 
-    use crate::codecs::png::PngEncoder;
+    use zune_core::colorspace::ColorSpace;
+
+    use crate::codecs::png::{PngDecoder, PngEncoder};
     use crate::codecs::ImageFormat;
     use crate::image::Image;
     use crate::traits::DecodeInto;
@@ -277,11 +302,12 @@ mod tests {
         let image = Image::fill(10_u8, ColorSpace::RGB, 100, 100);
         image.write_to_vec(ImageFormat::PNG).unwrap()
     }
+
     #[test]
     fn test_png_decode_into() {
         let mut output = vec![0; 100 * 100 * 3];
         let img = create_png();
-        let mut decoder = PngDecoder::new(ZCursor::new(&img));
+        let mut decoder = PngDecoder::new(Cursor::new(&img)).unwrap();
         decoder.decode_into(&mut output).unwrap();
     }
 }

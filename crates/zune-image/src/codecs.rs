@@ -158,9 +158,9 @@ impl ImageFormat {
             ImageFormat::PNG => {
                 #[cfg(feature = "png")]
                 {
-                    Ok(Box::new(zune_png::PngDecoder::new_with_options(
-                        data, options
-                    )))
+                    Ok(Box::new(codecs::png::PngDecoder::new(
+                        data
+                    )?))
                 }
                 #[cfg(not(feature = "png"))]
                 {
