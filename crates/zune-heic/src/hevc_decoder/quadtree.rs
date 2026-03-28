@@ -9,6 +9,8 @@ use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_cod
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
 
+mod transform_unit;
+
 mod coding_unit;
 mod intra;
 mod part_mode;

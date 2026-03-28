@@ -99,16 +99,23 @@ pub struct Sps {
     pub amp_enabled_flag:                    bool,
     pub sample_adaptive_offset_enabled_flag: bool,
     pub pcm_enabled_flag:                    bool,
-
-    pub sps_temporal_mvp_enabled_flag:      bool,
-    pub strong_intra_smoothing_enable_flag: bool,
+    pub sps_temporal_mvp_enabled_flag:       bool,
+    pub strong_intra_smoothing_enable_flag:  bool,
 
     // Derived Values
-    pub min_cb_size_y:        u64,
-    pub ctb_size_y:           u64,
-    pub pic_width_in_ctbs_y:  u64,
-    pub pic_height_in_ctbs_y: u64,
-    pub log2_ctb_size_y:      u8,
+    pub min_cb_size_y:                 u64,
+    pub ctb_size_y:                    u64,
+    pub pic_width_in_ctbs_y:           u64,
+    pub pic_height_in_ctbs_y:          u64,
+    pub log2_ctb_size_y:               u8,
+    pub log2_max_transform_block_size: u8,
+
+    // PCM
+    pub pcm_loop_filter_disable_flag:                 bool,
+    pub pcm_sample_bit_depth_luma:                    u8,
+    pub pcm_sample_bit_depth_chroma:                  u8,
+    pub log2_min_pcm_luma_coding_block_size:          u8,
+    pub log2_diff_max_min_pcm_luma_coding_block_size: u8,
 
     // Reference Picture Sets
     pub num_short_term_ref_pic_sets: u64,
@@ -263,12 +270,4 @@ impl Default for SliceType {
     fn default() -> Self {
         Self::I // Defaulting to I-slice is safest for initialization
     }
-}
-
-#[derive(Clone, Copy, Default, Debug)]
-pub struct BlockState {
-    pub available: bool, // False if off-screen, in another slice, or not yet decoded
-    pub skip_flag: bool, // Was this block skipped?
-    pub cqt_depth: u8,   // How deeply was the CTU split here? (0 = 64x64, 3 = 8x8)
-    pub is_intra:  bool  // Intra (spatial) or Inter (temporal) prediction?
 }

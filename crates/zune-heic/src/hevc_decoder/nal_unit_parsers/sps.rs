@@ -1,9 +1,11 @@
-use crate::hevc_decoder::DEBUG_MORE;
 use crate::debug_more;
+use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
-use crate::hevc_decoder::nal_unit_parsers::{decode_profile_data, parse_short_term_ref_pic_set, parse_vui, skip_scaling_list_data};
+use crate::hevc_decoder::nal_unit_parsers::{
+    decode_profile_data, parse_short_term_ref_pic_set, parse_vui, skip_scaling_list_data
+};
 
 pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     const SPS_MAX_LAYERS_LIMIT: u64 = 7;
@@ -167,11 +169,11 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.pcm_enabled_flag = r.read_flag();
 
     if sps.pcm_enabled_flag {
-        let _pcm_sample_bit_depth_luma = r.get_bits(4) + 1;
-        let _pcm_sample_bit_depth_chroma = r.get_bits(4) + 1;
-        let _log2_min_pcm_luma_coding_block_size = r.read_ue() + 3;
-        let _log2_diff_max_min_pcm_luma_coding_block_size = r.read_ue();
-        let _pcm_loop_filter_disable_flag = r.read_flag();
+        sps.pcm_sample_bit_depth_luma = (r.get_bits(4) + 1) as u8;
+        sps.pcm_sample_bit_depth_chroma = (r.get_bits(4) + 1) as u8;
+        sps.log2_min_pcm_luma_coding_block_size = (r.read_ue() + 3) as u8;
+        sps.log2_diff_max_min_pcm_luma_coding_block_size = r.read_ue() as u8;
+        sps.pcm_loop_filter_disable_flag = r.read_flag();
     }
 
     // --- Reference Picture Sets ---
@@ -222,7 +224,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.pic_width_in_ctbs_y = sps.pic_width_in_luma_samples.div_ceil(sps.ctb_size_y);
     sps.pic_height_in_ctbs_y = sps.pic_height_in_luma_samples.div_ceil(sps.ctb_size_y);
 
-    sps.log2_ctb_size_y = sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
+    sps.log2_ctb_size_y = log2_ctb_size_y;
+    sps.log2_max_transform_block_size =
+        sps.log2_min_transform_block_size + sps.log2_diff_max_min_transform_block_size;
 
     debug_more!(false=>"{:#?}", sps);
 

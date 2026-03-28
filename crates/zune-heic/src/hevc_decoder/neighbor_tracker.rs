@@ -127,6 +127,7 @@ impl NeighborTracker {
     }
 
     pub fn derive_mpms(&self, x: usize, y: usize) -> [u8; 3] {
+        debug_more!("derive_mpms called with {} and {}", x, y);
         let left = if x > 0 { self.get_state(x - 1, y) } else { BlockState::default() };
         let above = if y > 0 { self.get_state(x, y - 1) } else { BlockState::default() };
 
@@ -153,6 +154,7 @@ impl NeighborTracker {
             else if mode_l != 1 && mode_a != 1 { mpm[2] = 1; }
             else { mpm[2] = 26; }
         }
+        debug_more!("MPM Candidates for [{},{}]: [{}, {}, {}]", x, y, mpm[0], mpm[1], mpm[2]);
         mpm
     }
 
