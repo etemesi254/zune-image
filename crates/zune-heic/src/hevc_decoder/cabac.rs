@@ -1,6 +1,6 @@
 use crate::debug_more;
-use crate::hvec_decoder::DEBUG_MORE;
-use crate::hvec_decoder::cabac_tables::*;
+use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::cabac_tables::*;
 
 pub const NUM_CABAC_CONTEXTS: usize = 171;
 
@@ -47,28 +47,28 @@ impl<'a> CabacDecoder<'a> {
 
     /// Batch renorm: shifts value/range by `shift` bits and reads at most one
     /// new byte. Since shift <= 6 in the LPS path and bits_needed starts at
-    /// -8, a single byte always covers the demand — no loop needed.
+    /// -8, a single byte always covers the demand.
     #[inline(always)]
     fn renorm(&mut self, shift: u32) {
         self.value <<= shift;
         self.bits_needed += shift as i8;
 
         if self.bits_needed >= 0 {
-            // We have consumed enough bits that a new byte is needed.
+            // Refill the register from the bitstream
             let byte = if self.cursor < self.data.len() {
                 let b = self.data[self.cursor];
                 self.cursor += 1;
                 b as u32
             } else {
-                0 // Trailing padding — safe to treat as zero.
+                0 // Padding for trailing bits
             };
-            // Place the new byte so its MSB lands at bit (7 - bits_needed).
+
+            // Align the new byte based on how many bits were already consumed
             self.value |= byte << self.bits_needed;
             self.bits_needed -= 8;
         }
     }
 
-    /// Single-bit renorm kept for the MPS path (shift == 1 always).
     #[inline(always)]
     fn renorm_one(&mut self) {
         self.renorm(1);
@@ -82,12 +82,7 @@ impl<'a> CabacDecoder<'a> {
         let mps = state_packed & 1;
         let state = (state_packed >> 1) as usize;
 
-        debug_more!(
-            "decodeBin range :{} value:{} state:{}",
-            self.range,
-            self.value,
-            state
-        );
+        debug_more!("decodeBin range :{} value:{} state:{}", self.range, self.value, state);
 
         let q_idx = (self.range >> 6) & 3;
         let lps_range = RANGE_LPS_TABLE[state][q_idx as usize] as u32;
@@ -98,7 +93,7 @@ impl<'a> CabacDecoder<'a> {
         debug_more!(" sr:{} v:{}", scaled_range, self.value);
 
         if self.value < scaled_range {
-            // --- MPS path (hot ~94 %+ of the time) ---
+            // --- MPS path ---
             debug_more!(" MPS");
             self.contexts[ctx_idx] = (TRANSITION_MPS[state] << 1) | mps;
 
@@ -110,9 +105,28 @@ impl<'a> CabacDecoder<'a> {
             debug_more!(" -> bit {}  r:{} v:{}", mps, self.range, self.value);
             mps
         } else {
-            // --- LPS path (cold) ---
-            lps_decode(self, ctx_idx, mps, state, lps_range, scaled_range)
+            // --- LPS path ---
+            // Assuming lps_decode is a helper or inline logic:
+            self.lps_decode(ctx_idx, mps, state, lps_range, scaled_range)
         }
+    }
+
+    /// Internal LPS logic to keep decode_decision slim
+    #[inline(never)]
+    fn lps_decode(&mut self, ctx_idx: usize, mps: u8, state: usize, lps_range: u32, scaled_range: u32) -> u8 {
+        debug_more!(" LPS");
+        let bin = 1 - mps;
+        self.value -= scaled_range;
+
+        let shift = RENORM_TABLE[(lps_range >> 3) as usize] as u32;
+        self.range = lps_range << shift;
+        self.renorm(shift);
+
+        let next_mps = if state == 0 { 1 - mps } else { mps };
+        self.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
+
+        debug_more!(" -> bit {}  r:{} v:{}", bin, self.range, self.value);
+        bin
     }
 
     #[inline(always)]
@@ -150,48 +164,42 @@ impl<'a> CabacDecoder<'a> {
 
     // --- Specialized bypass decoders ---
 
-    /// Decode `n_bits` bypass bins in one pass.
-    /// All renorms are done up front; then bits are peeled off the value
-    /// register without touching the range register again.
+    /// Optimized: Decode `n_bits` bypass bins in one pass.
     pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
-        // Renorm all bits at once.
+        if n_bits == 0 { return 0; }
+
+        // Renorm all bits at once
         self.renorm(n_bits as u32);
 
         let scaled = self.range << 7;
         let mut res = 0u32;
 
+        // Peel bits off from MSB to LSB
         for i in (0..n_bits).rev() {
-            if self.value >= scaled {
-                self.value -= scaled;
+            if self.value >= (scaled << i) { // Account for the batched shift in value
+                self.value -= scaled << i;
                 res |= 1 << i;
             }
-            // Each iteration represents one bypass step; value was
-            // pre-shifted by renorm so we don't need extra shifts here.
         }
         res
     }
 
     pub fn decode_bypass_eg0(&mut self) -> u32 {
-        // Count leading 1-bins (prefix).
         let mut prefix = 0u32;
         while self.decode_bypass() == 1 {
             prefix += 1;
-            // Guard against malformed streams (max EG0 prefix in practice ≤ 12).
-            if prefix > 12 {
-                break;
-            }
+            if prefix > 32 { break; } // Safety break
         }
 
         if prefix == 0 {
             return 0;
         }
 
-        // Read `prefix` suffix bits in one batched call.
+        // Optimized suffix read using the FL batch helper
         let suffix = self.decode_fl_bypass(prefix as u8);
         (1 << prefix) - 1 + suffix
     }
 
-    /// Decodes Truncated Unary bypass values.
     pub fn decode_tu_bypass(&mut self, c_max: u8) -> u8 {
         for i in 0..c_max {
             if self.decode_bypass() == 0 {

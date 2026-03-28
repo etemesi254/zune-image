@@ -10,7 +10,7 @@ mod header_structs;
 mod headers;
 mod processor;
 mod utils;
-mod hvec_decoder;
+pub mod hevc_decoder;
 
 pub use decoder::HeifDecoder;
 pub use errors::HeicErrors;

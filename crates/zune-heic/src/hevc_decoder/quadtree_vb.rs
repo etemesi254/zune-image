@@ -1,9 +1,9 @@
 // use zune_core::log::trace;
 //
-// use crate::hvec_decoder::DEBUG_MORE;
-// use crate::hvec_decoder::binarizer::Binarizer;
-// use crate::hvec_decoder::context_model::{BlockState, NeighborTracker};
-// use crate::hvec_decoder::nal_unit_headers::{Pps, SliceType, Sps};
+// use crate::hevc_decoder::DEBUG_MORE;
+// use crate::hevc_decoder::binarizer::Binarizer;
+// use crate::hevc_decoder::context_model::{BlockState, NeighborTracker};
+// use crate::hevc_decoder::nal_unit_headers::{Pps, SliceType, Sps};
 //
 // const BASE_CTX_SPLIT_FLAG: usize = 0;
 // const BASE_CTX_TRANS_SUBDIV_FLAG: usize = 36;

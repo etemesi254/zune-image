@@ -1,14 +1,13 @@
 use zune_core::log::{trace, warn};
 
 use crate::debug_more;
-use crate::hvec_decoder::DEBUG_MORE;
-use crate::hvec_decoder::bitstream::BitReader;
-use crate::hvec_decoder::nal_parser::{NalError, NalUnit};
-use crate::hvec_decoder::nal_unit_headers::{
+use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::bitstream::BitReader;
+use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
+use crate::hevc_decoder::nal_unit_headers::{
     ChromaFormat, Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType,
     Sps, Vps, Vui, VuiVideoFormat
 };
-use crate::hvec_decoder::utils::extract_rbsp;
 
 pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
     const VPS_MAX_LAYERS_LIMIT: u64 = 64;
@@ -342,9 +341,10 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.ctb_size_y = 1 << log2_ctb_size_y;
 
     // Integer math equivalent of ceil(width / ctb_size)
-    sps.pic_width_in_ctbs_y = (sps.pic_width_in_luma_samples + sps.ctb_size_y - 1) / sps.ctb_size_y;
-    sps.pic_height_in_ctbs_y =
-        (sps.pic_height_in_luma_samples + sps.ctb_size_y - 1) / sps.ctb_size_y;
+    sps.pic_width_in_ctbs_y = sps.pic_width_in_luma_samples.div_ceil(sps.ctb_size_y);
+    sps.pic_height_in_ctbs_y = sps.pic_height_in_luma_samples.div_ceil(sps.ctb_size_y);
+
+    sps.log2_ctb_size_y = sps.log2_min_luma_coding_block_size + sps.log2_diff_max_min_luma_coding_block_size;
 
     debug_more!(false=>"{:#?}", sps);
 
@@ -666,9 +666,22 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
     pps.cb_qp_offset = r.read_se();
 
-    if pps.cb_qp_offset < -12 || pps.cb_qp_offset > 12 {}
+    if pps.cb_qp_offset < -12 || pps.cb_qp_offset > 12 {
+        return Err(NalError::Generic(format!(
+            "pps.cb_qp_offset must be between -12 and 12 but is {} ",
+            pps.cb_qp_offset
+        )));
+    }
 
     pps.cr_qp_offset = r.read_se();
+
+    if pps.cr_qp_offset < -12 || pps.cr_qp_offset > 12 {
+        return Err(NalError::Generic(format!(
+            "pps.cb_qp_offset must be between -12 and 12 but is {} ",
+            pps.cr_qp_offset
+        )));
+    }
+
     pps.slice_chroma_qp_offsets_present_flag = r.read_flag();
     pps.weighted_pred_flag = r.read_flag();
     pps.weighted_bipred_flag = r.read_flag();
@@ -684,6 +697,9 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         pps.uniform_spacing_flag = r.read_flag();
 
         if !pps.uniform_spacing_flag {
+            pps.column_width.reserve(pps.num_tile_columns as _);
+            pps.row_height.reserve(pps.num_tile_rows as _);
+
             for _ in 0..(pps.num_tile_columns - 1) {
                 pps.column_width.push(r.read_ue() + 1);
             }
@@ -709,17 +725,39 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         if !pps.deblocking_filter_disabled_flag {
             pps.beta_offset_div2 = r.read_se();
             pps.tc_offset_div2 = r.read_se();
+
+            if pps.beta_offset_div2 < -6 || pps.beta_offset_div2 > 6 {
+                return Err(NalError::Generic(format!(
+                    "pps.beta_offset_div2 must be between -6 and 6 but is {} ",
+                    pps.cr_qp_offset
+                )));
+            }
+            if pps.tc_offset_div2 < -6 || pps.tc_offset_div2 > 6 {
+                return Err(NalError::Generic(format!(
+                    "pps.tc_offset_div2 must be between -6 and 6 but is {} ",
+                    pps.cr_qp_offset
+                )));
+            }
         }
     }
 
     pps.pic_scaling_list_data_present_flag = r.read_flag();
     if pps.pic_scaling_list_data_present_flag {
-        // We can reuse the same scaling list skipper we wrote for the SPS!
         skip_scaling_list_data(&mut r)?;
     }
     // --- Extensions ---
     pps.lists_modification_present_flag = r.read_flag();
-    pps.log2_parallel_merge_level = r.read_ue() + 2;
+
+    let log2_parallel_merge_level_minus2 = r.read_ue_u8()?;
+    if log2_parallel_merge_level_minus2 > sps.log2_ctb_size_y {
+        return Err(NalError::ParameterOutOfRange {
+            limit: sps.log2_ctb_size_y as _,
+            value: log2_parallel_merge_level_minus2 as _,
+            field: "log2_parallel_merge_level_minus2"
+        });
+    }
+    pps.log2_parallel_merge_level = log2_parallel_merge_level_minus2 + 2;
+
     pps.slice_segment_header_extension_present_flag = r.read_flag();
 
     let pps_extension_present_flag = r.read_flag();
@@ -727,6 +765,9 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     if pps_extension_present_flag {
         let range_extension_flag = r.read_flag();
         let multilayer_extension_flag = r.read_flag();
+        // skips
+        // 3d extension flag => 1 bit
+        // scc extension flag => 1 bit
         let extension_6_bits = r.get_bits(6);
 
         if range_extension_flag {
@@ -735,8 +776,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             let mut chroma_qp_offset_list_len = 0;
             let mut cr_qp_offset_list = [0; 6];
             let mut cb_qp_offset_list = [0; 6];
-            
-            let log2_sao_offset_scale_luma ;
+
+            let log2_sao_offset_scale_luma;
             let log2_sao_offset_scale_chroma;
 
             if pps.transform_skip_enabled_flag {
@@ -864,7 +905,10 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     Ok(pps)
 }
 pub fn decode_slice_header(
-    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
+    nal: &NalUnit,
+    pps_storage: &[Option<Pps>],
+    sps_storage: &[Option<Sps>],
+    clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
     // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
     let mut r = BitReader::new(&clean_payload);
@@ -990,11 +1034,13 @@ pub fn decode_slice_header(
         }
     }
 
+    debug_more!("Before byte alignment, start position :{}",r.byte_position());
     // 12. Final Alignment
     r.byte_align();
 
     // sh.cabac_start_position = (r.position * 8 - r.bits_left) / 8
     sh.cabac_start_position = r.byte_position();
+    debug_more!("cabac start position: {}", sh.cabac_start_position);
 
     debug_more!(false=>"{:#?}",sh);
     Ok(sh)

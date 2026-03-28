@@ -1,9 +1,9 @@
 use zune_core::log::trace;
 
-use crate::hvec_decoder::nal_parser::{NalParser, NalUnitType};
-use crate::hvec_decoder::nal_unit_headers::{Pps, Sps, Vps};
-use crate::hvec_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
-use crate::hvec_decoder::quadtree::decode_slice;
+use crate::hevc_decoder::nal_parser::{NalParser, NalUnitType};
+use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, Sps, Vps};
+use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
+use crate::hevc_decoder::quadtree::decode_slice;
 use crate::processor::HevcSample;
 
 pub const DEBUG_MORE: bool = true;
@@ -11,7 +11,7 @@ mod binarizer;
 mod bitstream;
 mod cabac;
 mod cabac_tables;
-mod context_model;
+mod neighbor_tracker;
 mod macros;
 mod nal_parser;
 mod nal_unit_headers;
@@ -19,24 +19,26 @@ mod nal_unit_parsers;
 mod quadtree;
 mod quadtree_vb;
 mod utils;
-struct HVecDecoder<'a> {
-    hevc_sample: HevcSample<'a>,
-    vps_storage: Vec<Option<Vps>>,
-    sps_storage: Vec<Option<Sps>>,
-    pps_storage: Vec<Option<Pps>>
+mod constants;
+pub struct HevcDecoder {
+    vps_storage:      Vec<Option<Vps>>,
+    sps_storage:      Vec<Option<Sps>>,
+    pps_storage:      Vec<Option<Pps>>,
+    last_size_header: Box<Option<SliceHeader>>
 }
-impl<'a> HVecDecoder<'a> {
-    fn new(sample: HevcSample<'a>) -> Self {
+
+impl HevcDecoder {
+    fn new() -> Self {
         Self {
-            hevc_sample: sample,
-            vps_storage: vec![None; 16],
-            sps_storage: vec![None; 16],
-            pps_storage: vec![None; 16]
+            vps_storage:      vec![None; 16],
+            sps_storage:      vec![None; 16],
+            pps_storage:      vec![None; 16],
+            last_size_header: Box::new(None)
         }
     }
 
-    pub fn decode(&mut self) {
-        let nal_parser = NalParser::new_detect(&self.hevc_sample.extents);
+    pub fn decode(&mut self, sample: HevcSample) {
+        let nal_parser = NalParser::new_detect(&sample.extents);
 
         nal_parser
             .for_each_nal(|nal| {
@@ -65,7 +67,7 @@ impl<'a> HVecDecoder<'a> {
                     // HEVC VCL NAL types are 0 to 31. We can catch all of them here.
                     nal_type if (nal_type as u8) <= 31 => {
                         trace!("Decoding NAL {:?}", nal_type);
-                        decode_slice(&nal, &self.pps_storage, &self.sps_storage)?;
+                        decode_slice(&nal, self)?;
                     }
 
                     _ => {
@@ -83,7 +85,7 @@ impl<'a> HVecDecoder<'a> {
 mod tests {
     use std::fs::read;
 
-    use crate::hvec_decoder::HVecDecoder;
+    use crate::hevc_decoder::HevcDecoder;
     use crate::processor::HevcSample;
 
     #[test]
@@ -97,7 +99,7 @@ mod tests {
             pps:     None,
             extents: vec![&data]
         };
-        let mut decoder = HVecDecoder::new(sample);
-        decoder.decode();
+        let mut decoder = HevcDecoder::new();
+        decoder.decode(sample);
     }
 }

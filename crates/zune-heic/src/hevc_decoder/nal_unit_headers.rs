@@ -1,4 +1,4 @@
-use crate::hvec_decoder::nal_parser::NalError;
+use crate::hevc_decoder::nal_parser::NalError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -108,6 +108,7 @@ pub struct Sps {
     pub ctb_size_y:           u64,
     pub pic_width_in_ctbs_y:  u64,
     pub pic_height_in_ctbs_y: u64,
+    pub log2_ctb_size_y:      u8,
 
     // Reference Picture Sets
     pub num_short_term_ref_pic_sets: u64,
@@ -213,7 +214,7 @@ pub struct Pps {
 
     // Extensions
     pub lists_modification_present_flag: bool,
-    pub log2_parallel_merge_level: u64,
+    pub log2_parallel_merge_level: u8,
     pub slice_segment_header_extension_present_flag: bool,
     pub transquant_bypass_enabled_flag: bool,
     pub range_extension: Option<PpsRangeExtension>,
@@ -223,7 +224,7 @@ pub struct Pps {
     pub log2_min_cu_qp_delta_size: u8
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SliceHeader {
     pub first_slice_segment_in_pic_flag: bool,
     pub dependent_slice_segment_flag: bool,
@@ -234,7 +235,8 @@ pub struct SliceHeader {
     pub cabac_start_position: usize,
     pub slice_qp_delta: i64,
     pub slice_sao_luma_flag: bool,
-    pub slice_sao_chroma_flag: bool
+    pub slice_sao_chroma_flag: bool,
+    pub slice_addr_rs: Box<Option<SliceHeader>>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
