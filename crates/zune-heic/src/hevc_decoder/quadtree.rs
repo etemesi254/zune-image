@@ -53,7 +53,6 @@ impl<'a> DecodeSliceContext<'a> {
             cabac: cabac_engine,
             neighbor_tracker,
             last_qp_in_slice,
-
             is_cu_qp_delta_coded: false,
             cu_qp_delta: 0,
             current_qg_x: 0,

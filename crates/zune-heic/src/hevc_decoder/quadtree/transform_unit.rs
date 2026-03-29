@@ -188,6 +188,7 @@ fn read_transform_unit(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_size: u8, cbf_luma: bool,
     cbf_cb: bool, cbf_cr: bool
 ) {
+    debug_more!("---read_transform_unit(x0={},y0={},log2size={})", x0, y0, log2_size);
     // 1. HEVC Spec §7.3.8.11: cu_qp_delta is decoded here if enabled
     // and not yet coded for the current Quantization Group (QG).
     if (cbf_luma || cbf_cb || cbf_cr) && ctx.pps.cu_qp_delta_enabled_flag {
@@ -224,7 +225,7 @@ fn decode_last_sig_pos(ctx: &mut DecodeSliceContext, log2_size: u8, comp: Compon
     let ctx_shift = if comp == Component::Luma { (log2_size - 2) >> 2 } else { log2_size - 2 };
     let max_prefix = (log2_size << 1) - 1;
 
-    // Use specific X and Y bases from your table
+    // Use specific X and Y bases from  table
     let last_x = decode_pos_component(
         ctx,
         CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,

@@ -1,55 +1,56 @@
 use crate::debug_more;
+use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_CU_QP_DELTA_ABS;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
 
 pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
-    debug_more!("decode_cu_qp_delta");
-    // HEVC uses 2 contexts for cu_qp_delta_abs:
-    // ctxIdx = 0 for the first bin
-    // ctxIdx = 1 for the remaining bins (1 to 4)
-    // We assume these are defined in your CABAC model offset.
-    let ctx_base = 0; // Placeholder for the actual QP delta context offset
+    debug_more!("# cu_qp_delta_abs");
 
-    // 1. Decode the Prefix (Truncated Unary, max length 5)
-    let mut prefix = 0;
-    while prefix < 5 {
-        // Use context 0 for the first bin, context 1 for all subsequent prefix bins
-        let ctx_idx = if prefix == 0 { ctx_base } else { ctx_base + 1 };
-        let bin = ctx.cabac.decode_decision(ctx_idx);
+    let ctx_base = CONTEXT_MODEL_CU_QP_DELTA_ABS;
+    let mut abs_qp_delta: u32 = 0;
 
-        if bin == 0 {
-            break;
+    // 1. Decode the first bin (Context 0)
+    let first_bin = ctx.cabac.decode_decision(ctx_base);
+
+    if first_bin == 1 {
+        // We have at least a value of 1
+        abs_qp_delta = 1;
+
+        // 2. Decode up to 4 more prefix bins (Context 1)
+        for _ in 0..4 {
+            let bin = ctx.cabac.decode_decision(ctx_base + 1);
+            if bin == 0 {
+                break;
+            }
+            abs_qp_delta += 1;
         }
-        prefix += 1;
+
+        // 3. Decode the Suffix if prefix reached 5
+        if abs_qp_delta == 5 {
+            let suffix_val = ctx.cabac.decode_bypass_eg0();
+            abs_qp_delta += suffix_val;
+            // Note: libde265 checks if value + 5 >= 250 for error handling
+        }
     }
 
-
-    let mut abs_qp_delta = prefix as u32;
-
-    // 2. Decode the Suffix (Exp-Golomb order 0)
-    // Only present if the prefix reached the maximum value of 5
-    if prefix == 5 {
-        let suffix_val = ctx.cabac.decode_bypass_eg0();
-        abs_qp_delta += suffix_val;
-        debug_more!(
-            "QP Delta Suffix decoded: {}, Total Abs: {}",
-            suffix_val,
-            abs_qp_delta
-        );
-    }
+    // Match libde265 trace: "$1 cu_qp_delta_abs=%d"
+    debug_more!("  cu_qp_delta_abs={}", abs_qp_delta);
 
     if abs_qp_delta == 0 {
         return 0;
     }
 
-    // 3. Decode the Sign Flag (Bypass coded)
-    // 0 = Positive, 1 = Negative
+    // 4. Decode the Sign Flag (Bypass) - Only if abs > 0
+    // In HEVC: 0 = Positive, 1 = Negative
     let sign_flag = ctx.cabac.decode_bypass();
-    let final_delta = if sign_flag == 1 { -(abs_qp_delta as i32) } else { abs_qp_delta as i32 };
+    let final_delta = if sign_flag == 1 {
+        -(abs_qp_delta as i32)
+    } else {
+        abs_qp_delta as i32
+    };
 
     debug_more!("Final cu_qp_delta: {}", final_delta);
-    panic!();
     final_delta
 }
 pub fn decode_quantization_parameters(

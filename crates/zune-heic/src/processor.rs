@@ -170,9 +170,9 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
             let sample = HevcSample {
                 item_id,
-                vps: vps,
-                sps: sps,
-                pps: pps,
+                vps,
+                sps,
+                pps,
                 extents: zero_copy_extents
             };
 
