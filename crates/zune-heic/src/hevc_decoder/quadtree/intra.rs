@@ -1,7 +1,6 @@
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::debug_more;
 use crate::hevc_decoder::cabac_tables::{CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG};
-use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
 // h.265-V2 Table 8-3
 #[rustfmt::skip]
@@ -77,8 +76,6 @@ pub fn decode_intra_chroma_mode(ctx: &mut DecodeSliceContext, luma_mode: u8) -> 
 
     // 3. Mapping Table (Spec Section 7.4.8.5)
     // The candidate modes are: Planar (0), Vertical (26), Horizontal (10), DC (1), and Mode 34.
-    let mut mode_list = [0, 26, 10, 1, 34];
-
     // Pick the "base" mode from the list based on our 3-bit index
     // Note: The index in the bitstream only goes up to 4.
     let mut selected_mode = match chroma_idx {

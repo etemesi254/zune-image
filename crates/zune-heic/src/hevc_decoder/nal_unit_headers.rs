@@ -125,9 +125,21 @@ pub struct Sps {
     pub ptl: Option<ProfileTierLevel>,
 
     // Optional VUI
-    pub vui: Option<Vui>
+    pub vui:             Option<Vui>,
+    pub range_extension: Option<SpsRangeExtension>
 }
-
+#[derive(Debug, Clone, Default)]
+pub struct SpsRangeExtension {
+    pub transform_skip_rotation_enabled_flag:    bool,
+    pub transform_skip_context_enabled_flag:     bool,
+    pub implicit_rdpcm_enabled_flag:             bool,
+    pub explicit_rdpcm_enabled_flag:             bool,
+    pub extended_precision_processing_flag:      bool,
+    pub intra_smoothing_disabled_flag:           bool,
+    pub high_precision_offsets_enabled_flag:     bool,
+    pub persistent_rice_adaptation_enabled_flag: bool,
+    pub cabac_bypass_alignment_enabled_flag:     bool
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ChromaFormat {

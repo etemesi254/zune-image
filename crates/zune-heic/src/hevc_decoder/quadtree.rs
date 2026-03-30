@@ -7,6 +7,7 @@ use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, SliceType, Sps};
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hevc_decoder::neighbor_tracker::{BlockState, NeighborTracker, PredMode};
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
+use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
 
@@ -16,7 +17,10 @@ mod coding_unit;
 mod intra;
 mod part_mode;
 mod quant;
+mod residual_block;
 mod sao;
+mod sig_ctx_generator;
+
 struct DecodeSliceContext<'a> {
     sps:                  &'a Sps,
     pps:                  &'a Pps,
@@ -36,10 +40,21 @@ struct DecodeSliceContext<'a> {
     pub intra_mode_luma:   u8,
     pub intra_mode_chroma: u8,
 
+    qp_y_prime:  i32,
+    qp_cb_prime: i32,
+    qp_cr_prime: i32,
+
+    // residual data
     cu_transquant_bypass_flag: bool,
-    qp_y_prime:                i32,
-    qp_cb_prime:               i32,
-    qp_cr_prime:               i32
+    explicit_rdpcm_flag:       bool,
+    explicit_rdpcm_dir:        u8,
+    transform_skip_flag:       [u8; 3],
+    // context significant maps
+    pub sig_ctx_maps:          Vec<Vec<Vec<Vec<Vec<u8>>>>>,
+    pub stat_coeff:            [u8; 4],
+    pub coeff_list:            [[i16; 32 * 32]; 3],
+    pub coeff_pos:             [[i16; 32 * 32]; 3],
+    pub n_coeff:               [i16; 3]
 }
 impl<'a> DecodeSliceContext<'a> {
     fn new(
@@ -64,7 +79,15 @@ impl<'a> DecodeSliceContext<'a> {
             cu_transquant_bypass_flag: false,
             qp_y_prime: 0,
             qp_cb_prime: 0,
-            qp_cr_prime: 0
+            qp_cr_prime: 0,
+            transform_skip_flag: [0; 3],
+            explicit_rdpcm_flag: false,
+            explicit_rdpcm_dir: 0,
+            sig_ctx_maps: generate_all_sig_ctx_maps(),
+            stat_coeff: [0; 4],
+            coeff_list: [[0; 32 * 32]; 3],
+            coeff_pos: [[0; 32 * 32]; 3],
+            n_coeff: [0; 3]
         }
     }
 }
@@ -128,7 +151,7 @@ pub fn decode_slice(nal: &NalUnit, hevc_decoder: &mut HevcDecoder) -> Result<(),
         let ctu_y = (ctu_idx / width_in_ctus) * ctu_size;
 
         debug_more!("Decoding CTU at pixel [{}, {}]", ctu_x, ctu_y);
-        read_coding_tree_unit(&mut decode_slice_context, ctu_x, ctu_y);
+        read_coding_tree_unit(&mut decode_slice_context, ctu_x, ctu_y)?;
     }
 
     Ok(())
@@ -136,7 +159,7 @@ pub fn decode_slice(nal: &NalUnit, hevc_decoder: &mut HevcDecoder) -> Result<(),
 
 fn read_coding_quadtree(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
-) {
+) -> Result<(), NalError> {
     debug_more!(
         "read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
         x0,
@@ -183,23 +206,24 @@ fn read_coding_quadtree(
         let x1 = x0 + cb_size_min_1;
         let y1 = y0 + cb_size_min_1;
 
-        read_coding_quadtree(ctx, x0, y0, log_2_cb_size - 1, ct_depth + 1);
+        read_coding_quadtree(ctx, x0, y0, log_2_cb_size - 1, ct_depth + 1)?;
 
         if x1 < sps.pic_width_in_luma_samples as usize {
-            read_coding_quadtree(ctx, x1, y0, log_2_cb_size - 1, ct_depth + 1);
+            read_coding_quadtree(ctx, x1, y0, log_2_cb_size - 1, ct_depth + 1)?;
         }
         if y1 < sps.pic_height_in_luma_samples as usize {
-            read_coding_quadtree(ctx, x0, y1, log_2_cb_size - 1, ct_depth + 1);
+            read_coding_quadtree(ctx, x0, y1, log_2_cb_size - 1, ct_depth + 1)?;
         }
         if x1 < sps.pic_width_in_luma_samples as usize
             && y1 < sps.pic_height_in_luma_samples as usize
         {
-            read_coding_quadtree(ctx, x1, y1, log_2_cb_size - 1, ct_depth + 1);
+            read_coding_quadtree(ctx, x1, y1, log_2_cb_size - 1, ct_depth + 1)?;
         }
+        Ok(())
     } else {
         // --- THIS IS A LEAF CU ---
         //    1. Record the depth in the tracker for neighbors to use
-        read_coding_unit(ctx, x0, y0, log_2_cb_size, ct_depth);
+        read_coding_unit(ctx, x0, y0, log_2_cb_size, ct_depth)?;
 
         // 2. NOW update the neighbor tracker with the finalized state
         // We use the last_qp_in_slice because that is the official QP for this area
@@ -212,16 +236,12 @@ fn read_coding_quadtree(
 
         // 2. Prepare the block state for neighbors
         let final_state = BlockState {
-            pred_mode:       PredMode::ModeInter,
-            part_mode:       PartMode::Part2Nx2N,
-            slice_id:        0,
-            decoded:         false,
-            available:       true,
-            skip_flag:       ctx.is_skip,
-            cqt_depth:       ct_depth,
-            is_intra:        ctx.is_intra,
+            skip_flag: ctx.is_skip,
+            cqt_depth: ct_depth,
+            is_intra: ctx.is_intra,
             intra_mode_luma: ctx.intra_mode_luma,
-            qp:              ctx.last_qp_in_slice
+            qp: ctx.last_qp_in_slice,
+            ..BlockState::default()
         };
 
         debug_more!(
@@ -237,6 +257,8 @@ fn read_coding_quadtree(
         // 3. Commit to tracker (updates both line buffer and left column)
         ctx.neighbor_tracker
             .update_block(x0, y0, cb_size, final_state);
+
+        Ok(())
     }
 }
 

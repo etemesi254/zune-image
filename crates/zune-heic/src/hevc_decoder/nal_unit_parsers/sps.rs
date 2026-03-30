@@ -2,7 +2,7 @@ use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
+use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps, SpsRangeExtension};
 use crate::hevc_decoder::nal_unit_parsers::{
     decode_profile_data, parse_short_term_ref_pic_set, parse_vui, skip_scaling_list_data
 };
@@ -211,7 +211,23 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         sps.vui = Some(parse_vui(&mut r, sps.max_sub_layers - 1)?);
     }
 
-    let _sps_extension_present_flag = r.read_flag();
+    let sps_extension_present_flag = r.read_flag();
+
+    if sps_extension_present_flag {
+        let mut sps_range_ext = SpsRangeExtension::default();
+
+        sps_range_ext.transform_skip_rotation_enabled_flag = r.read_flag();
+        sps_range_ext.transform_skip_context_enabled_flag = r.read_flag();
+        sps_range_ext.implicit_rdpcm_enabled_flag = r.read_flag();
+        sps_range_ext.explicit_rdpcm_enabled_flag = r.read_flag();
+        sps_range_ext.extended_precision_processing_flag = r.read_flag();
+        sps_range_ext.intra_smoothing_disabled_flag = r.read_flag();
+        sps_range_ext.high_precision_offsets_enabled_flag = r.read_flag();
+        sps_range_ext.persistent_rice_adaptation_enabled_flag = r.read_flag();
+        sps_range_ext.cabac_bypass_alignment_enabled_flag = r.read_flag();
+
+        sps.range_extension = Some(sps_range_ext);
+    }
 
     // --- Compute Derived Values ---
     sps.min_cb_size_y = 1 << sps.log2_min_luma_coding_block_size;

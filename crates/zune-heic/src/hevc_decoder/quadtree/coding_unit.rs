@@ -5,7 +5,7 @@ use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_PRED_MODE_FLAG, CONTEXT_MODEL_RQT_ROOT_CBF
 };
 use crate::hevc_decoder::constants::PartMode;
-use crate::hevc_decoder::constants::PartMode::Part2Nx2N;
+use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, SliceType};
 use crate::hevc_decoder::neighbor_tracker::PredMode;
 use crate::hevc_decoder::quadtree::intra::{
@@ -51,7 +51,7 @@ fn decode_cu_transquant_bypass_flag(ctx: &mut DecodeSliceContext) -> bool {
 }
 pub fn read_coding_unit(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
-) {
+) ->Result<(),NalError> {
     let cb_size = 1 << log_2_cb_size;
     let shdr = ctx.slice_header;
 
@@ -75,7 +75,6 @@ pub fn read_coding_unit(
         ctx.neighbor_tracker
             .set_pred_mode(x0, y0, log_2_cb_size, PredMode::ModeSkip);
         todo!();
-        return;
     }
 
     // 3. pred_mode_flag (Only for P/B slices)
@@ -116,7 +115,6 @@ pub fn read_coding_unit(
                 debug_more!("CU Mode: PCM at [{}, {}]", x0, y0);
                 // read_pcm_samples(ctx, x0, y0, log_2_cb_size);
                 todo!();
-                return; // PCM blocks have no standard intra modes and NO residuals.
             }
         }
         // 5. Intra Mode Decoding
@@ -224,12 +222,13 @@ pub fn read_coding_unit(
                 intra_split_flag,
                 true,
                 true
-            );
+            )?;
         }
     }
+    Ok(())
 }
 
-pub fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usize) {
+pub fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usize) -> Result<(),NalError> {
     let sps = ctx.sps;
     let pps = ctx.pps;
     let shdr = &ctx.slice_header;
@@ -245,7 +244,7 @@ pub fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: 
         let sao_info = read_sao(ctx, x_ctb_pixels, y_ctb_pixels);
     }
 
-    read_coding_quadtree(ctx, x_ctb_pixels, y_ctb_pixels, log_2_ctb_size_y, 0);
+    read_coding_quadtree(ctx, x_ctb_pixels, y_ctb_pixels, log_2_ctb_size_y, 0)?;
 
-    let z = 0;
+    Ok(())
 }

@@ -179,11 +179,11 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
     if pps_extension_present_flag {
         let range_extension_flag = r.read_flag();
-        let multilayer_extension_flag = r.read_flag();
+        let _multilayer_extension_flag = r.read_flag();
         // skips
         // 3d extension flag => 1 bit
         // scc extension flag => 1 bit
-        let extension_6_bits = r.get_bits(6);
+        let _extension_6_bits = r.get_bits(6);
 
         if range_extension_flag {
             let mut log2_max_transform_skip_block_size = 2;

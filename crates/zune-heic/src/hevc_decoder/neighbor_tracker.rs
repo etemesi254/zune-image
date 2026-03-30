@@ -4,31 +4,33 @@ use crate::hevc_decoder::constants::PartMode;
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockState {
-    pub pred_mode:       PredMode,
-    pub part_mode:       PartMode,
-    pub slice_id:        u16, // To check if neighbors are in the same slice
-    pub decoded:         bool,
-    pub available:       bool, // False if off-screen or not yet decoded
-    pub skip_flag:       bool,
-    pub cqt_depth:       u8, // Depth at which this 8x8 was decided
-    pub is_intra:        bool,
-    pub intra_mode_luma: u8, // 0-34
-    pub qp:              i8
+    pub pred_mode:         PredMode,
+    pub part_mode:         PartMode,
+    pub slice_id:          u16, // To check if neighbors are in the same slice
+    pub decoded:           bool,
+    pub available:         bool, // False if off-screen or not yet decoded
+    pub skip_flag:         bool,
+    pub cqt_depth:         u8, // Depth at which this 8x8 was decided
+    pub is_intra:          bool,
+    pub intra_mode_luma:   u8, // 0-34
+    pub qp:                i8,
+    pub has_nonzero_coeff: bool
 }
 
 impl Default for BlockState {
     fn default() -> Self {
         Self {
-            pred_mode:       PredMode::ModeInter,
-            part_mode:       PartMode::Part2Nx2N,
-            available:       false,
-            skip_flag:       false,
-            cqt_depth:       0,
-            is_intra:        false,
-            intra_mode_luma: 1, // Default to DC
-            qp:              0,
-            decoded:         false,
-            slice_id:        0
+            pred_mode:         PredMode::ModeInter,
+            part_mode:         PartMode::Part2Nx2N,
+            available:         false,
+            skip_flag:         false,
+            cqt_depth:         0,
+            is_intra:          false,
+            intra_mode_luma:   1, // Default to DC
+            qp:                0,
+            decoded:           false,
+            slice_id:          0,
+            has_nonzero_coeff: false
         }
     }
 }
@@ -357,5 +359,24 @@ impl NeighborTracker {
         // 4. Decoding Order Check
         // A neighbor is only available if it has been marked as 'decoded'
         neighbor_unit.decoded
+    }
+}
+
+impl NeighborTracker {
+    pub fn set_nonzero_coefficient(&mut self, x: usize, y: usize, log2_trafo_size: u8) {
+        let unit_x = x >> self.log2_unit_size;
+        let unit_y = y >> self.log2_unit_size;
+
+        // How many 8x8 units wide is this TU?
+        let width_in_units = 1 << (log2_trafo_size - self.log2_unit_size);
+
+        for cy in unit_y..(unit_y + width_in_units) {
+            let offset = cy * self.width_in_units;
+            for cx in unit_x..(unit_x + width_in_units) {
+                if let Some(block) = self.blocks.get_mut(offset + cx) {
+                    block.has_nonzero_coeff = true;
+                }
+            }
+        }
     }
 }

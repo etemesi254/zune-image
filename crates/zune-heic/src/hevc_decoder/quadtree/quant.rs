@@ -1,10 +1,11 @@
 use crate::debug_more;
-use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_CU_QP_DELTA_ABS;
 use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_CU_QP_DELTA_ABS;
+use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
 
-pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
+pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32,NalError> {
     debug_more!("# cu_qp_delta_abs");
 
     let ctx_base = CONTEXT_MODEL_CU_QP_DELTA_ABS;
@@ -30,7 +31,11 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
         if abs_qp_delta == 5 {
             let suffix_val = ctx.cabac.decode_bypass_eg0();
             abs_qp_delta += suffix_val;
-            // Note: libde265 checks if value + 5 >= 250 for error handling
+            if suffix_val >= 250 {
+                return Err(NalError::Generic(format!(
+                    "CABAC Max bin >=250 {suffix_val}"
+                )));
+            }
         }
     }
 
@@ -38,20 +43,16 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> i32 {
     debug_more!("  cu_qp_delta_abs={}", abs_qp_delta);
 
     if abs_qp_delta == 0 {
-        return 0;
+        return Ok(0);
     }
 
     // 4. Decode the Sign Flag (Bypass) - Only if abs > 0
     // In HEVC: 0 = Positive, 1 = Negative
     let sign_flag = ctx.cabac.decode_bypass();
-    let final_delta = if sign_flag == 1 {
-        -(abs_qp_delta as i32)
-    } else {
-        abs_qp_delta as i32
-    };
+    let final_delta = if sign_flag == 1 { -(abs_qp_delta as i32) } else { abs_qp_delta as i32 };
 
     debug_more!("Final cu_qp_delta: {}", final_delta);
-    final_delta
+    Ok(final_delta)
 }
 pub fn decode_quantization_parameters(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8

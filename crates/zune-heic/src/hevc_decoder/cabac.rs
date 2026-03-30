@@ -182,6 +182,7 @@ impl<'a> CabacDecoder<'a> {
 
     /// Optimized: Decode `n_bits` bypass bins in one pass.
     pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
+        debug_more!("bypass group r:{},v:{} (n_bits={})", self.range, self.value,n_bits);
         if n_bits == 0 {
             return 0;
         }
@@ -200,6 +201,7 @@ impl<'a> CabacDecoder<'a> {
                 res |= 1 << i;
             }
         }
+        debug_more!("  FL: {}",res);
         res
     }
 
