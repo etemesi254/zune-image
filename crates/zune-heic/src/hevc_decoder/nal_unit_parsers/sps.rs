@@ -244,6 +244,12 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.log2_max_transform_block_size =
         sps.log2_min_transform_block_size + sps.log2_diff_max_min_transform_block_size;
 
+    let sub_width_c_tab = [1, 2, 2, 1];
+    let sub_height_c_tab = [1, 2, 1, 1];
+
+    sps.sub_width_c = sub_width_c_tab[sps.chroma_format as usize];
+    sps.sub_height_c = sub_height_c_tab[sps.chroma_format as usize];
+
     debug_more!(false=>"{:#?}", sps);
 
     Ok(sps)

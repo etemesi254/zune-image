@@ -10,7 +10,9 @@ use crate::hevc_decoder::cabac_tables::{
 use crate::hevc_decoder::constants::PartMode;
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
+use crate::hevc_decoder::neighbor_tracker::PredMode;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
+use crate::hevc_decoder::quadtree::intra_prediction::decode_intra_prediction;
 use crate::hevc_decoder::quadtree::quant::{decode_cu_qp_delta, decode_quantization_parameters};
 use crate::hevc_decoder::quadtree::residual_block::decode_residual_block;
 
@@ -49,6 +51,42 @@ fn decode_split_transform_flag(ctx: &mut DecodeSliceContext, log2_trafo_size: u8
 
     return flag;
 }
+
+pub fn decode_tu(
+    ctx: &mut DecodeSliceContext,
+    x0: usize,
+    y0: usize,
+    n_t: usize, // TU size (4, 8, 16, 32)
+    c_idx: usize,
+    cu_pred_mode: PredMode,
+    cbf: bool
+) {
+    let mut residual_dpcm = 0;
+    let sps = ctx.sps;
+    if cu_pred_mode == PredMode::ModeIntra {
+        // --- 1. Get Intra Prediction Mode ---
+        let intra_pred_mode = if c_idx == 0 {
+            ctx.neighbor_tracker.get_intra_mode(x0, y0)
+        } else {
+            let sub_width_c = sps.sub_width_c as usize;
+            let sub_height_c = sps.sub_height_c as usize;
+            ctx.neighbor_tracker
+                .get_intra_mode_chroma(x0 * sub_width_c, y0 * sub_width_c + sub_width_c)
+        };
+        if  intra_pred_mode >= 35 {
+            panic!("intra_pred_mode cannot be more than 35");
+        }
+
+        // --- 2. Perform Intra Prediction ---
+        // This fills the prediction buffer with spatial directions
+        decode_intra_prediction(ctx, x0, y0, intra_pred_mode, n_t, c_idx);
+        panic!();
+       
+    } else {
+       
+    }
+}
+
 pub fn read_transform_tree(
     ctx: &mut DecodeSliceContext,
     x0: usize,
@@ -197,6 +235,10 @@ fn read_transform_unit(
         y0,
         log2_size
     );
+
+    let nt = 1 << log2_size;
+
+    let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
     // 1. HEVC Spec §7.3.8.11: cu_qp_delta is decoded here if enabled
     // and not yet coded for the current Quantization Group (QG).
     if (cbf_luma || cbf_cb || cbf_cr) && ctx.pps.cu_qp_delta_enabled_flag {
@@ -215,7 +257,7 @@ fn read_transform_unit(
     if cbf_luma {
         decode_residual_block(ctx, x0, y0, log2_size, Component::Luma, use_dst);
     }
-
+    decode_tu(ctx, x0, y0, nt, 0, pred_mode, cbf_luma);
     // Chroma blocks ALWAYS use DCT-II
     if cbf_cb {
         decode_residual_block(ctx, x0, y0, log2_size - 1, Component::Cb, false);

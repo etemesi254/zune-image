@@ -849,7 +849,7 @@ pub fn decode_residual_block(
             if c_idx == 0 {
                 pred_mode_intra = ctx.neighbor_tracker.get_intra_mode(x0, y0);
             } else {
-                pred_mode_intra = ctx.intra_mode_chroma
+                pred_mode_intra = ctx.neighbor_tracker.get_intra_mode_chroma(x0, y0);
             }
             let implicit_rdpcm_enabled_flag = ctx
                 .sps

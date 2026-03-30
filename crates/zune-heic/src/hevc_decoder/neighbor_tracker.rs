@@ -12,7 +12,9 @@ pub struct BlockState {
     pub skip_flag:         bool,
     pub cqt_depth:         u8, // Depth at which this 8x8 was decided
     pub is_intra:          bool,
-    pub intra_mode_luma:   u8, // 0-34
+    pub intra_mode_luma:   u8,   // 0-34
+    pub intra_mode_chroma: u8,   // 0-34 (The mapped direction)
+    pub is_chroma_dm:      bool, // True if syntax element was 4
     pub qp:                i8,
     pub has_nonzero_coeff: bool
 }
@@ -30,7 +32,9 @@ impl Default for BlockState {
             qp:                0,
             decoded:           false,
             slice_id:          0,
-            has_nonzero_coeff: false
+            has_nonzero_coeff: false,
+            intra_mode_chroma: 1, // Default to DC
+            is_chroma_dm:      false
         }
     }
 }
@@ -378,5 +382,61 @@ impl NeighborTracker {
                 }
             }
         }
+    }
+}
+
+impl NeighborTracker {
+    /// Sets the chroma mode using Luma-scale coordinates (Matching libde265)
+    /// x0, y0: Top-left LUMA pixel coordinates
+    /// log2_blk_size: Luma block size (e.g., 4 for 16x16)
+    pub fn set_intra_mode_chroma(
+        &mut self, x0: usize, y0: usize, log2_blk_size: u8, mode: u8, is_dm: bool
+    ) {
+        let gx_start = x0 >> 3; // Equivalent to x0 / 8
+        let gy_start = y0 >> 3; // Equivalent to y0 / 8
+
+        // How many 8x8 units wide is this Luma block?
+        let units = (1 << (log2_blk_size - 3)).max(1);
+
+        for dy in 0..units {
+            for dx in 0..units {
+                let gx = gx_start + dx;
+                let gy = gy_start + dy;
+
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
+                    let state = &mut self.blocks[idx];
+
+                    state.intra_mode_chroma = mode;
+                    state.is_chroma_dm = is_dm;
+                }
+            }
+        }
+    }
+    /// Gets the actual intra direction (0-34) for Chroma at the given LUMA coordinates.
+    pub fn get_intra_mode_chroma(&self, x: usize, y: usize) -> u8 {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            return 1; // Default to DC
+        }
+
+        let state = &self.blocks[uy * self.width_in_units + ux];
+
+        // We return the raw mode (0-34).
+        state.intra_mode_chroma
+    }
+    /// Helper for the 'read_transform_unit' check:
+    /// Returns true if the chroma mode at luma position (x,y) was Derived Mode (Mode 4).
+    pub fn is_chroma_dm(&self, x: usize, y: usize) -> bool {
+        let ux = x >> self.log2_unit_size;
+        let uy = y >> self.log2_unit_size;
+
+        if ux >= self.width_in_units || uy >= self.height_in_units {
+            return false;
+        }
+
+        self.blocks[uy * self.width_in_units + ux].is_chroma_dm
     }
 }

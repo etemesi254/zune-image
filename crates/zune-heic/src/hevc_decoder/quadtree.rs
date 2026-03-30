@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
@@ -8,6 +10,7 @@ use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hevc_decoder::neighbor_tracker::{BlockState, NeighborTracker, PredMode};
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
+use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
 
@@ -15,6 +18,7 @@ mod transform_unit;
 
 mod coding_unit;
 mod intra;
+mod intra_prediction;
 mod part_mode;
 mod quant;
 mod residual_block;
@@ -54,12 +58,22 @@ struct DecodeSliceContext<'a> {
     pub stat_coeff:            [u8; 4],
     pub coeff_list:            [[i16; 32 * 32]; 3],
     pub coeff_pos:             [[i16; 32 * 32]; 3],
-    pub n_coeff:               [i16; 3]
+    pub n_coeff:               [i16; 3],
+    // raw image frame reference
+    pub raw_frame:             Arc<RawFrame>,
+    // --- scratch buffers
+    // scratchpad for storing decoded pixels in predict_planar
+    // setup to be 1024 (32 * 32) for maximum CTU size, and
+    // reused
+    pub scratchpad:            Vec<u8>,
+    // needed for predict_angular, condition is >= 3 * n_t + 1
+    // n_t cannot go above 32, so its 3 * 32 +1 => 97
+    pub ref_main_buf:          Vec<u8>
 }
 impl<'a> DecodeSliceContext<'a> {
     fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
-        neighbor_tracker: NeighborTracker, last_qp_in_slice: i8
+        neighbor_tracker: NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
     ) -> Self {
         Self {
             sps,
@@ -87,11 +101,44 @@ impl<'a> DecodeSliceContext<'a> {
             stat_coeff: [0; 4],
             coeff_list: [[0; 32 * 32]; 3],
             coeff_pos: [[0; 32 * 32]; 3],
-            n_coeff: [0; 3]
+            n_coeff: [0; 3],
+            raw_frame,
+            scratchpad: vec![0; 1024],
+            ref_main_buf: vec![0; 97]
         }
     }
 }
-pub fn decode_slice(nal: &NalUnit, hevc_decoder: &mut HevcDecoder) -> Result<(), NalError> {
+
+impl<'a> DecodeSliceContext<'a> {
+    /// Sets a block of pixels (e.g., after reconstruction)
+    pub fn write_block(&self, c_idx: usize, x0: usize, y0: usize, n_t: usize) {
+        let block_data = &self.scratchpad;
+        // 1. Lock the appropriate plane
+        let mut plane = match c_idx {
+            0 => self.raw_frame.luma.lock().unwrap(),
+            1 => self.raw_frame.cb.lock().unwrap(),
+            2 => self.raw_frame.cr.lock().unwrap(),
+            _ => panic!("Invalid component index")
+        };
+
+        // 2. Calculate coordinates with padding offset
+        let stride = plane.stride;
+        let padding = plane.padding;
+        let offset_base = (y0 + padding) * stride + (x0 + padding);
+
+        // 3. Copy row by row
+        for dy in 0..n_t {
+            let src_start = dy * n_t;
+            let dst_start = offset_base + (dy * stride);
+
+            plane.pixels[dst_start..dst_start + n_t]
+                .copy_from_slice(&block_data[src_start..src_start + n_t]);
+        }
+    }
+}
+pub fn decode_slice(
+    nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
+) -> Result<(), NalError> {
     let clean_rbsp = extract_rbsp(&nal.payload[..]);
     let sps_storage = &hevc_decoder.sps_storage;
     let pps_storage = &hevc_decoder.pps_storage;
@@ -141,8 +188,15 @@ pub fn decode_slice(nal: &NalUnit, hevc_decoder: &mut HevcDecoder) -> Result<(),
         slice_header.slice_addr_rs = hevc_decoder.last_size_header.clone();
     }
 
-    let mut decode_slice_context =
-        DecodeSliceContext::new(&sps, &pps, &slice_header, cabac, neighbor_tracker, slice_qp);
+    let mut decode_slice_context = DecodeSliceContext::new(
+        &sps,
+        &pps,
+        &slice_header,
+        cabac,
+        neighbor_tracker,
+        slice_qp,
+        raw_frame
+    );
 
     // 5. The CTU Loop
     let total_ctus = width_in_ctus * height_in_ctus;

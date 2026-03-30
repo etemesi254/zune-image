@@ -4,6 +4,7 @@ use crate::hevc_decoder::nal_parser::{NalParser, NalUnitType};
 use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
 use crate::hevc_decoder::quadtree::decode_slice;
+use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
 pub const DEBUG_MORE: bool = true;
@@ -11,15 +12,18 @@ mod binarizer;
 mod bitstream;
 mod cabac;
 mod cabac_tables;
-mod neighbor_tracker;
+mod constants;
 mod macros;
 mod nal_parser;
 mod nal_unit_headers;
 mod nal_unit_parsers;
+mod neighbor_tracker;
 mod quadtree;
 mod quadtree_vb;
 mod utils;
-mod constants;
+
+mod raw_frame;
+
 pub struct HevcDecoder {
     vps_storage:      Vec<Option<Vps>>,
     sps_storage:      Vec<Option<Sps>>,
@@ -40,6 +44,7 @@ impl HevcDecoder {
     pub fn decode(&mut self, sample: HevcSample) {
         let nal_parser = NalParser::new_detect(&sample.extents);
 
+        let mut raw_frame = None;
         nal_parser
             .for_each_nal(|nal| {
                 match nal.nal_type {
@@ -54,6 +59,7 @@ impl HevcDecoder {
                         trace!("Decoding sps nal unit");
                         let sps = decode_sps(&nal)?;
                         let sps_id = sps.sps_id as usize;
+                        raw_frame = Some(RawFrame::from_sps(&sps));
                         self.sps_storage[sps_id] = Some(sps);
                     }
                     NalUnitType::PpsNut => {
@@ -67,7 +73,10 @@ impl HevcDecoder {
                     // HEVC VCL NAL types are 0 to 31. We can catch all of them here.
                     nal_type if (nal_type as u8) <= 31 => {
                         trace!("Decoding NAL {:?}", nal_type);
-                        decode_slice(&nal, self)?;
+                        if let Some(f) = raw_frame.clone() {
+                            decode_slice(&nal, self,f)?;
+
+                        }
                     }
 
                     _ => {

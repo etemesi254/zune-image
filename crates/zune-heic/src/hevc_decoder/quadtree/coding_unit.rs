@@ -49,9 +49,31 @@ fn decode_cu_transquant_bypass_flag(ctx: &mut DecodeSliceContext) -> bool {
     debug_more!("  decode_cu_transquant_bypass_flag={}", bit);
     bit
 }
+
+pub fn get_actual_chroma_mode(intra_mode_chroma: u8, intra_mode_luma: u8) -> u8 {
+    // intra_mode_chroma is the 0-4 value from the bitstream
+    // intra_mode_luma is the 0-34 value from the corresponding Luma block
+
+    let mut actual_mode = match intra_mode_chroma {
+        0 => 0,                      // Planar
+        1 => 26,                     // Vertical
+        2 => 10,                     // Horizontal
+        3 => 1,                      // DC
+        4 => return intra_mode_luma, // DM: Just return Luma's mode
+        _ => 1                       // Safety fallback to DC
+    };
+
+    // If the mapped mode is the SAME as the Luma mode,
+    // HEVC "swaps" it to Mode 34 (Intra_Angular 34)
+    if actual_mode == intra_mode_luma {
+        actual_mode = 34;
+    }
+
+    actual_mode
+}
 pub fn read_coding_unit(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
-) ->Result<(),NalError> {
+) -> Result<(), NalError> {
     let cb_size = 1 << log_2_cb_size;
     let shdr = ctx.slice_header;
 
@@ -160,9 +182,23 @@ pub fn read_coding_unit(
             ctx.neighbor_tracker.set_intra_mode(x0, y0, cb_size, mode);
             ctx.intra_mode_luma = mode;
         }
-
+        // intra choma processing
         if ctx.sps.chroma_format != ChromaFormat::Monochrome {
-            ctx.intra_mode_chroma = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
+            let intra_mode_luma = ctx.neighbor_tracker.get_intra_mode(x0, y0);
+
+            // 1. Get the syntax element from CABAC (0..4)
+            let intra_chroma_pred_mode_idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
+            // 2. Map index 0-4 to actual mode 0-34
+            let actual_mode = get_actual_chroma_mode(intra_chroma_pred_mode_idx, intra_mode_luma);
+
+            ctx.neighbor_tracker.set_intra_mode_chroma(
+                x0,
+                y0,
+                log_2_cb_size, // The Luma size
+                actual_mode,
+                intra_chroma_pred_mode_idx == 4
+            );
+            ctx.intra_mode_chroma = intra_chroma_pred_mode_idx;
         }
     } else {
         // 8. INTER PROCESSING (Prediction Units)
@@ -228,7 +264,9 @@ pub fn read_coding_unit(
     Ok(())
 }
 
-pub fn read_coding_tree_unit(ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usize) -> Result<(),NalError> {
+pub fn read_coding_tree_unit(
+    ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usize
+) -> Result<(), NalError> {
     let sps = ctx.sps;
     let pps = ctx.pps;
     let shdr = &ctx.slice_header;

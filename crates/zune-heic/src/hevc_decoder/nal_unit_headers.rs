@@ -126,7 +126,10 @@ pub struct Sps {
 
     // Optional VUI
     pub vui:             Option<Vui>,
-    pub range_extension: Option<SpsRangeExtension>
+    pub range_extension: Option<SpsRangeExtension>,
+    // derived values
+    pub sub_width_c:     u8,
+    pub sub_height_c:    u8
 }
 #[derive(Debug, Clone, Default)]
 pub struct SpsRangeExtension {
@@ -147,6 +150,16 @@ pub enum ChromaFormat {
     Yuv420 = 1,     // 4:2:0
     Yuv422 = 2,     // 4:2:2
     Yuv444 = 3      // 4:4:4
+}
+impl ChromaFormat {
+    pub fn get_subsampling(self) -> (usize, usize) {
+        match self {
+            ChromaFormat::Monochrome => (1, 1),
+            ChromaFormat::Yuv420 => (2, 2),
+            ChromaFormat::Yuv422 => (2, 1),
+            ChromaFormat::Yuv444 => (1, 1)
+        }
+    }
 }
 impl Default for ChromaFormat {
     fn default() -> Self {
