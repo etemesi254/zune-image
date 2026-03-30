@@ -1,101 +1,126 @@
+use std::sync::Arc;
+
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::nal_unit_headers::Pps;
+use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::DecodeSliceContext;
+use crate::hevc_decoder::raw_frame::RawFrame;
 
 /// The "Wall of Pixels" used for intra prediction.
 /// Size is 4 * n_t + 1.
-pub struct IntraReferenceSamples {
-    pub p:   Vec<u8>,
-    pub n_t: usize
-}
+impl<'a> DecodeSliceContext<'a> {
+    /// Prepares the reference samples in the context's internal buffers.
+    /// Returns the length of the valid segment (4 * n_t + 1).
+    pub fn setup_reference_samples(
+        &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
+    ) -> usize {
+        let p_len = 4 * n_t + 1;
 
-impl IntraReferenceSamples {
-    /// Main Entry Point: Logic to fetch, pad, and smooth reference samples.
-    pub fn setup(
-        ctx: &DecodeSliceContext, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
-    ) -> Self {
-        let mut p = vec![0u8; 4 * n_t + 1];
-        let mut available = vec![false; 4 * n_t + 1];
+        // 1. Reset/Clear the values for the current segment
+        // We only clear up to p_len to save cycles
+        self.ref_samples_p[..p_len].fill(0);
+        self.ref_samples_available[..p_len].fill(false);
 
-        // 1. Check Availability
-        check_availability(ctx, x0, y0, n_t, &mut available);
+        // 2. Check Availability
+        // We pass slices of our fixed arrays
+        check_availability(
+            &self.neighbor_tracker,
+            &self.pps,
+            x0,
+            y0,
+            n_t,
+            &mut self.ref_samples_available[..p_len]
+        );
 
-        // 2. Fetch and Pad
-        perform_padding(ctx, &mut p, &available, x0, y0, n_t, c_idx);
+        // 3. Fetch and Pad
+        perform_padding(
+            &self.raw_frame,
+            &mut self.ref_samples_p[..p_len],
+            &self.ref_samples_available[..p_len],
+            x0,
+            y0,
+            n_t,
+            c_idx
+        );
 
-        // 3. Filter/Smoothing
-        let strong_enabled = ctx.sps.strong_intra_smoothing_enable_flag;
-        apply_reference_smoothing(&mut p, n_t, intra_mode, strong_enabled);
+        // 4. Filter/Smoothing
+        let strong_enabled = self.sps.strong_intra_smoothing_enable_flag;
+        apply_reference_smoothing(
+            &mut self.ref_samples_p[..p_len],
+            n_t,
+            intra_mode,
+            strong_enabled
+        );
 
-        IntraReferenceSamples { p, n_t }
+        p_len
     }
 }
-
-/// Determines which neighbor pixels are allowed to be used.
 fn check_availability(
-    ctx: &DecodeSliceContext, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
+    tracker: &NeighborTracker, pps: &Pps, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
 ) {
-    // 0: Top-Left
-    available[0] = ctx
-        .neighbor_tracker
-        .is_available(x0, y0, x0 as isize - 1, y0 as isize - 1);
+    // Top-Left
+    available[0] = tracker.is_available(x0, y0, x0 as isize - 1, y0 as isize - 1);
 
-    // 1..2nT: Top and Top-Right
+    // Top & Top-Right
     for i in 0..(2 * n_t) {
-        available[1 + i] =
-            ctx.neighbor_tracker
-                .is_available(x0, y0, (x0 + i) as isize, y0 as isize - 1);
+        available[1 + i] = tracker.is_available(x0, y0, (x0 + i) as isize, y0 as isize - 1);
     }
 
-    // 2nT+1..4nT: Left and Below-Left
+    // Left & Below-Left
     for i in 0..(2 * n_t) {
         available[1 + 2 * n_t + i] =
-            ctx.neighbor_tracker
-                .is_available(x0, y0, x0 as isize - 1, (y0 + i) as isize);
+            tracker.is_available(x0, y0, x0 as isize - 1, (y0 + i) as isize);
     }
 
-    // Optional: Constraint check for error resilience
-    if ctx.pps.constrained_intra_pred_flag {
-        filter_constrained(ctx, x0, y0, n_t, available);
+    if pps.constrained_intra_pred_flag {
+        // filter_constrained logic...
+        filter_constrained(tracker, x0, y0, n_t, available);
     }
 }
 
-/// Pulls pixels from the Mutex-protected RawFrame and spreads them to gaps.
 fn perform_padding(
-    ctx: &DecodeSliceContext, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
+    frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
     c_idx: usize
 ) {
-    // 1. Lock the plane once to fetch available pixels
-    let plane = match c_idx {
-        0 => ctx.raw_frame.luma.lock().unwrap(),
-        1 => ctx.raw_frame.cb.lock().unwrap(),
-        2 => ctx.raw_frame.cr.lock().unwrap(),
-        _ => unreachable!()
-    };
+    // 1. Fetch available pixels from the Mutex-protected frame
+    {
+        let plane = match c_idx {
+            0 => frame.luma.lock().unwrap(),
+            1 => frame.cb.lock().unwrap(),
+            2 => frame.cr.lock().unwrap(),
+            _ => unreachable!()
+        };
 
-    let get_pixel = |px: isize, py: isize| -> u8 {
         let stride = plane.stride;
-        let padding = plane.padding;
-        let idx = (py as usize + padding) * stride + (px as usize + padding);
-        plane.pixels[idx]
-    };
+        let pad = plane.padding;
+        let pixels = &plane.pixels;
 
-    if available[0] {
-        p[0] = get_pixel(x0 as isize - 1, y0 as isize - 1);
-    }
-    for i in 0..(2 * n_t) {
-        if available[1 + i] {
-            p[1 + i] = get_pixel((x0 + i) as isize, y0 as isize - 1);
+        let get_p = |px: isize, py: isize| -> u8 {
+            pixels[(py as usize + pad) * stride + (px as usize + pad)]
+        };
+
+        if available[0] {
+            p[0] = get_p(x0 as isize - 1, y0 as isize - 1);
         }
-        if available[1 + 2 * n_t + i] {
-            p[1 + 2 * n_t + i] = get_pixel(x0 as isize - 1, (y0 + i) as isize);
+        for i in 0..(2 * n_t) {
+            if available[1 + i] {
+                p[1 + i] = get_p((x0 + i) as isize, y0 as isize - 1);
+            }
+            if available[1 + 2 * n_t + i] {
+                p[1 + 2 * n_t + i] = get_p(x0 as isize - 1, (y0 + i) as isize);
+            }
         }
     }
 
-    drop(plane); // Release lock before math
+    // 2. Propagation Logic (HEVC Spec 8.4.4.2.2)
+    if !available.iter().any(|&a| a) {
+        p.fill(128); // Default gray if nothing is available
+        return;
+    }
 
-    // 2. Define Search Order (Bottom-Left -> Up -> Across to Top-Right)
-    let mut order = Vec::with_capacity(4 * n_t + 1);
+    // Standard HEVC search order: Bottom-Left -> Corner -> Top-Right
+    let mut order = Vec::with_capacity(p.len());
     for i in ((2 * n_t + 1)..=(4 * n_t)).rev() {
         order.push(i);
     }
@@ -104,13 +129,6 @@ fn perform_padding(
         order.push(i);
     }
 
-    // 3. First-pass: If nothing is available, fill with 128
-    if !available.iter().any(|&a| a) {
-        p.fill(128);
-        return;
-    }
-
-    // 4. Second-pass: Propagation
     let first_valid_idx = *order.iter().find(|&&idx| available[idx]).unwrap();
     let mut last_val = p[first_valid_idx];
 
@@ -122,7 +140,6 @@ fn perform_padding(
         }
     }
 }
-
 /// Applies [1, 2, 1] smoothing or Strong Intra Smoothing (Spec 8.4.4.2.3)
 fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled: bool) {
     if n_t == 4 {
@@ -155,7 +172,6 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
         p.copy_from_slice(&p_copy);
     }
 }
-
 fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
     let tl = p[0] as i32;
     let tr = p[2 * n_t] as i32;
@@ -183,10 +199,10 @@ fn is_filtering_required(mode: u8, n_t: usize) -> bool {
 }
 
 fn filter_constrained(
-    ctx: &DecodeSliceContext, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
+    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
 ) {
     let mut check = |px: usize, py: usize, idx: usize| {
-        if available[idx] && !ctx.neighbor_tracker.get_state(px, py).is_intra {
+        if available[idx] && !tracker.get_state(px, py).is_intra {
             available[idx] = false;
         }
     };
@@ -422,43 +438,38 @@ pub fn decode_intra_prediction_internal_u8(
     // We need (2 * nT + 1) samples for both the Top and Left arrays.
     // These are pulled from already reconstructed pixels in the current frame.
 
-    let ref_samples = IntraReferenceSamples::setup(ctx, x_b0, y_b0, n_t, intra_mode, c_idx);
-    // 2. Dispatch to the specific Mode Logic
-
+    let p_len = ctx.setup_reference_samples(x_b0, y_b0, n_t, intra_mode, c_idx); // 2. Dispatch to the specific Mode Logic
     let scratchpad = &mut ctx.scratchpad;
     let ref_main_scratch = &mut ctx.ref_main_buf;
+
+    let p_slice = &ctx.ref_samples_p[..p_len];
     let log2_n_t = n_t.trailing_zeros() as u8;
 
     match intra_mode {
-        0 => predict_planar(&ref_samples.p, scratchpad, n_t, log2_n_t),
-        1 => predict_dc(&ref_samples.p, scratchpad, n_t, log2_n_t, c_idx == 0),
-        2..=34 => predict_angular(
-            &ref_samples.p,
-            scratchpad,
-            ref_main_scratch,
-            n_t,
-            intra_mode
-        ),
+        0 => predict_planar(p_slice, scratchpad, n_t, log2_n_t),
+        1 => predict_dc(p_slice, scratchpad, n_t, log2_n_t, c_idx == 0),
+        2..=34 => predict_angular(&p_slice, scratchpad, ref_main_scratch, n_t, intra_mode),
         _ => unreachable!()
     }
 
-    // --- DEBUG PRINT SECTION ---
-    // Only printing for smaller blocks to avoid flooding the terminal
-    if n_t <= 32 {
-        println!(
-            "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
-            intra_mode, n_t, n_t, c_idx, x_b0, y_b0
-        );
-        for y in 0..n_t {
-            print!("  Row {:2}: ", y);
-            for x in 0..n_t {
-                print!("{:3} ", scratchpad[y * n_t + x]);
+    if DEBUG_MORE {
+        // --- DEBUG PRINT SECTION ---
+        if n_t <= 32 {
+            println!(
+                "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
+                intra_mode, n_t, n_t, c_idx, x_b0, y_b0
+            );
+            for y in 0..n_t {
+                print!("  Row {:2}: ", y);
+                for x in 0..n_t {
+                    print!("{:3} ", scratchpad[y * n_t + x]);
+                }
+                println!();
             }
-            println!();
+            println!("------------------------------------------------------------");
         }
-        println!("------------------------------------------------------------");
     }
-    ctx.write_block(c_idx, x_b0, y_b0, n_t);
+    ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t);
     panic!();
 }
 pub fn decode_intra_prediction(

@@ -68,7 +68,10 @@ struct DecodeSliceContext<'a> {
     pub scratchpad:            Vec<u8>,
     // needed for predict_angular, condition is >= 3 * n_t + 1
     // n_t cannot go above 32, so its 3 * 32 +1 => 97
-    pub ref_main_buf:          Vec<u8>
+    pub ref_main_buf:          Vec<u8>,
+    // value is 4 * n_t +1 so can never be more than 129
+    pub ref_samples_p:         Vec<u8>, // The 1D reference "p" array
+    pub ref_samples_available: Vec<bool>
 }
 impl<'a> DecodeSliceContext<'a> {
     fn new(
@@ -104,14 +107,17 @@ impl<'a> DecodeSliceContext<'a> {
             n_coeff: [0; 3],
             raw_frame,
             scratchpad: vec![0; 1024],
-            ref_main_buf: vec![0; 97]
+            ref_main_buf: vec![0; 97],
+            ref_samples_p: vec![0; 129],
+            ref_samples_available: vec![false; 129]
         }
     }
 }
 
 impl<'a> DecodeSliceContext<'a> {
     /// Sets a block of pixels (e.g., after reconstruction)
-    pub fn write_block(&self, c_idx: usize, x0: usize, y0: usize, n_t: usize) {
+    pub fn write_block_scratchpad(&self, c_idx: usize, x0: usize, y0: usize, n_t: usize) {
+        // data is expected to be in scratchpad
         let block_data = &self.scratchpad;
         // 1. Lock the appropriate plane
         let mut plane = match c_idx {
