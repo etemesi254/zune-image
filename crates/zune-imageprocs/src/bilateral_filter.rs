@@ -234,7 +234,7 @@ fn test_bilateral_simple() {
 
     // fill with random items
     let mut input = vec![0_u8; w * h * color.num_components()];
-    nanorand::WyRand::new().fill(&mut input);
+    nanorand::WyRand::new_seed(301).fill(&mut input);
 
     let pixels = Image::from_u8(&input, w, h, color);
     let filter = BilateralFilter::new(20, 75.0, 75.0);

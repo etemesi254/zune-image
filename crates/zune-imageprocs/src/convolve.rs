@@ -344,7 +344,7 @@ mod tests {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
-        nanorand::WyRand::new().fill(&mut data);
+        nanorand::WyRand::new_seed(201919).fill(&mut data);
         convolve_3x3(&data, &mut out, width, height, &[0.0; 9], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
@@ -354,7 +354,7 @@ mod tests {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
-        nanorand::WyRand::new().fill(&mut data);
+        nanorand::WyRand::new_seed(3245601).fill(&mut data);
         convolve_5x5(&data, &mut out, width, height, &[0.0; 25], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
@@ -364,7 +364,7 @@ mod tests {
         let (width, height) = (100, 100);
         let mut data = vec![0u8; width * height];
         let mut out = vec![13; width * height];
-        nanorand::WyRand::new().fill(&mut data);
+        nanorand::WyRand::new_seed(23131).fill(&mut data);
         convolve_7x7(&data, &mut out, width, height, &[0.0; 49], 1.);
         assert!(out.iter().all(|x| *x == 0));
     }
