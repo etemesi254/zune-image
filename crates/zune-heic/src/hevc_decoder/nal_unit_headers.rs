@@ -256,7 +256,9 @@ pub struct Pps {
 
     // Derived
     pub pic_init_qp:               i64,
-    pub log2_min_cu_qp_delta_size: u8
+    pub log2_min_cu_qp_delta_size: u8,
+    /// Derived: Map from CTB Raster Scan address to Tile ID
+    pub tile_id_rs: Vec<u16>,
 }
 
 #[derive(Debug, Default, Clone)]

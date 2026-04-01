@@ -7,13 +7,13 @@ pub const NUM_CABAC_CONTEXTS: usize = 172;
 // --- ENGINE IMPLEMENTATION ---
 
 pub struct CabacDecoder<'a> {
-    data: &'a [u8],
+    data:   &'a [u8],
     cursor: usize,
 
-    pub range: u32,
-    pub value: u32,
+    pub range:       u32,
+    pub value:       u32,
     pub bits_needed: i8,
-    pub contexts: [u8; NUM_CABAC_CONTEXTS],
+    pub contexts:    [u8; NUM_CABAC_CONTEXTS]
 }
 
 impl<'a> CabacDecoder<'a> {
@@ -24,24 +24,40 @@ impl<'a> CabacDecoder<'a> {
             range: 510,
             value: 0,
             bits_needed: -8,
-            contexts: [0; NUM_CABAC_CONTEXTS],
+            contexts: [0; NUM_CABAC_CONTEXTS]
         };
 
         engine.init_contexts(slice_qp, init_type);
-        engine.init_value();
+        engine.init_cabac();
         engine
     }
 
-    fn init_value(&mut self) {
-        if self.data.len() >= 2 {
-            self.value = (self.data[0] as u32) << 8 | (self.data[1] as u32);
-            self.cursor = 2;
+    pub fn init_cabac(&mut self) {
+        // Ensure we have at least 2 bytes available from the current cursor
+        if self.data.len() >= self.cursor + 2 {
+            // 1. Read 16 bits starting from the current cursor (byte-aligned)
+            // This is the 'iv' value in the spec (Initial Value)
+            self.value = (self.data[self.cursor] as u32) << 8 | (self.data[self.cursor + 1] as u32);
+
+            // 2. Advance cursor by 2 bytes
+            self.cursor += 2;
+
+            // 3. Reset the Arithmetic range to 510 as per Section 9.3.2.2
+            self.range = 510;
+
+            // 4. bits_needed = -8 indicates that the next 'renorm'
+            // will trigger a read of the next byte.
             self.bits_needed = -8;
+
             debug_more!(
-                "init_CABAC_decode_2 range :{} value :{}",
+                "init_CABAC_decode_2 range :{} value :{} cursor: {}",
                 self.range,
-                self.value
+                self.value,
+                self.cursor
             );
+        } else {
+            // Handle end of stream / error case
+            debug_more!("init_CABAC_decode_2: NOT ENOUGH DATA");
         }
     }
 
@@ -128,7 +144,7 @@ impl<'a> CabacDecoder<'a> {
     /// Internal LPS logic to keep decode_decision slim
     #[inline(never)]
     fn lps_decode(
-        &mut self, ctx_idx: usize, mps: u8, state: usize, lps_range: u32, scaled_range: u32,
+        &mut self, ctx_idx: usize, mps: u8, state: usize, lps_range: u32, scaled_range: u32
     ) -> u8 {
         debug_more!(" LPS");
         let bin = 1 - mps;
@@ -182,7 +198,12 @@ impl<'a> CabacDecoder<'a> {
 
     /// Optimized: Decode `n_bits` bypass bins in one pass.
     pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
-        debug_more!("bypass group r:{},v:{} (n_bits={})", self.range, self.value,n_bits);
+        debug_more!(
+            "bypass group r:{},v:{} (n_bits={})",
+            self.range,
+            self.value,
+            n_bits
+        );
         if n_bits == 0 {
             return 0;
         }
@@ -201,7 +222,7 @@ impl<'a> CabacDecoder<'a> {
                 res |= 1 << i;
             }
         }
-        debug_more!("  FL: {}",res);
+        debug_more!("  FL: {}", res);
         res
     }
 
@@ -241,18 +262,34 @@ impl<'a> CabacDecoder<'a> {
         // libde265 initType: 0=I, 1=P, 2=B.
         // Based on your code, your mapping is: 0=B, 1=P, 2=I.
         // We must ensure we adjust the 'init_type' used as index for the C++ tables.
-        if init_type > 0 { // Only for B (0) or P (1)
+        if init_type > 0 {
+            // Only for B (0) or P (1)
             let lib_idx = if init_type == 1 { 0 } else { 1 }; // P=0, B=1 for motion tables
 
             self.set_init(qp_y, CONTEXT_MODEL_CU_SKIP_FLAG, &INIT_CU_SKIP[lib_idx], 3);
-            self.set_init(qp_y, CONTEXT_MODEL_PRED_MODE_FLAG, &[INIT_PRED_MODE[lib_idx]], 1);
-            self.set_init(qp_y, CONTEXT_MODEL_MERGE_FLAG, &[INIT_MERGE_FLAG[lib_idx]], 1);
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_PRED_MODE_FLAG,
+                &[INIT_PRED_MODE[lib_idx]],
+                1
+            );
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_MERGE_FLAG,
+                &[INIT_MERGE_FLAG[lib_idx]],
+                1
+            );
             self.set_init(qp_y, CONTEXT_MODEL_MERGE_IDX, &[INIT_MERGE_IDX[lib_idx]], 1);
             self.set_init(qp_y, CONTEXT_MODEL_INTER_PRED_IDC, &INIT_INTER_PRED_IDC, 5);
             self.set_init(qp_y, CONTEXT_MODEL_REF_IDX_LX, &INIT_REF_IDX, 2);
 
             let mvd_idx = if init_type == 1 { 0 } else { 2 }; // P=0, B=2
-            self.set_init(qp_y, CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG, &INIT_ABS_MVD[mvd_idx..], 2);
+            self.set_init(
+                qp_y,
+                CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG,
+                &INIT_ABS_MVD[mvd_idx..],
+                2
+            );
 
             self.set_init(qp_y, CONTEXT_MODEL_MVP_LX_FLAG, &INIT_MVP_LX, 1);
             self.set_init(qp_y, CONTEXT_MODEL_RQT_ROOT_CBF, &INIT_RQT_ROOT, 1);
@@ -262,42 +299,127 @@ impl<'a> CabacDecoder<'a> {
         }
 
         // --- 2. COMMON CONTEXTS (All Slices) ---
-        self.set_init(qp_y, CONTEXT_MODEL_SPLIT_CU_FLAG, &INIT_SPLIT_CU[init_type], 3);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SPLIT_CU_FLAG,
+            &INIT_SPLIT_CU[init_type],
+            3
+        );
 
         let part_idx = if init_type != 2 { init_type } else { 5 };
-        self.set_init(qp_y, CONTEXT_MODEL_PART_MODE, &INIT_PART_MODE[part_idx..], 4);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_PART_MODE,
+            &INIT_PART_MODE[part_idx..],
+            4
+        );
 
-        self.set_init(qp_y, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG, &[INIT_PREV_INTRA[init_type]], 1);
-        self.set_init(qp_y, CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE, &[INIT_CHROMA_PRED[init_type]], 1);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG,
+            &[INIT_PREV_INTRA[init_type]],
+            1
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE,
+            &[INIT_CHROMA_PRED[init_type]],
+            1
+        );
 
         let cbf_l_idx = if init_type == 0 { 0 } else { 2 };
         self.set_init(qp_y, CONTEXT_MODEL_CBF_LUMA, &INIT_CBF_LUMA[cbf_l_idx..], 2);
-        self.set_init(qp_y, CONTEXT_MODEL_CBF_CHROMA, &INIT_CBF_CHROMA[init_type * 4..], 4);
-        self.set_init(qp_y, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG, &INIT_SPLIT_TRANS[init_type * 3..], 3);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_CBF_CHROMA,
+            &INIT_CBF_CHROMA[init_type * 4..],
+            4
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG,
+            &INIT_SPLIT_TRANS[init_type * 3..],
+            3
+        );
 
         // --- 3. RESIDUALS / COEFFICIENTS ---
-        self.set_init(qp_y, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX, &INIT_LAST_COEFF[init_type * 18..], 18);
-        self.set_init(qp_y, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, &INIT_LAST_COEFF[init_type * 18..], 18);
-        self.set_init(qp_y, CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG, &INIT_CODED_SUB[init_type * 4..], 4);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
+            &INIT_LAST_COEFF[init_type * 18..],
+            18
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX,
+            &INIT_LAST_COEFF[init_type * 18..],
+            18
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG,
+            &INIT_CODED_SUB[init_type * 4..],
+            4
+        );
 
         // Significance flags (42 + 2)
-        self.set_init(qp_y, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG, &INIT_SIG_COEFF[init_type], 42);
-        self.set_init(qp_y, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG + 42, &INIT_SIG_COEFF_SKIP[init_type], 2);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
+            &INIT_SIG_COEFF[init_type],
+            42
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG + 42,
+            &INIT_SIG_COEFF_SKIP[init_type],
+            2
+        );
 
         // !!! START OF MISSING DATA (i=109+) !!!
 
         // Coefficient Absolute Levels (Greater than 1 and 2)
-        self.set_init(qp_y, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG, &INIT_GTR_1[init_type * 24..], 24);
-        self.set_init(qp_y, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG, &INIT_GTR_2[init_type * 6..], 6);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG,
+            &INIT_GTR_1[init_type * 24..],
+            24
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG,
+            &INIT_GTR_2[init_type * 6..],
+            6
+        );
 
         // SAO
-        self.set_init(qp_y, CONTEXT_MODEL_SAO_MERGE_FLAG, &[INIT_SAO_MERGE[init_type]], 1);
-        self.set_init(qp_y, CONTEXT_MODEL_SAO_TYPE_IDX, &[INIT_SAO_TYPE[init_type]], 1);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SAO_MERGE_FLAG,
+            &[INIT_SAO_MERGE[init_type]],
+            1
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_SAO_TYPE_IDX,
+            &[INIT_SAO_TYPE[init_type]],
+            1
+        );
 
         // Quantization and Transform
         self.set_init(qp_y, CONTEXT_MODEL_CU_QP_DELTA_ABS, &INIT_QP_DELTA, 2);
-        self.set_init(qp_y, CONTEXT_MODEL_TRANSFORM_SKIP_FLAG, &INIT_TRANSFORM_SKIP, 2);
-        self.set_init(qp_y, CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG, &[INIT_TRANSQUANT_BYPASS[init_type]], 1);
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_TRANSFORM_SKIP_FLAG,
+            &INIT_TRANSFORM_SKIP,
+            2
+        );
+        self.set_init(
+            qp_y,
+            CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG,
+            &[INIT_TRANSQUANT_BYPASS[init_type]],
+            1
+        );
 
         // Constant Initializations (Standard HEVC values, usually 154)
         self.set_init_const(qp_y, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1, 154, 8);
@@ -305,37 +427,37 @@ impl<'a> CabacDecoder<'a> {
         self.set_init_const(qp_y, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_FLAG, 154, 1);
         self.set_init_const(qp_y, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_IDX, 154, 1);
     }
-        fn set_init(&mut self, qp: i32, start_idx: usize, values: &[u8], len: usize) {
-            // libde265 does Clip3(0, 51, SliceQPY)
-            let qp_clipped = qp.clamp(0, 51);
+    fn set_init(&mut self, qp: i32, start_idx: usize, values: &[u8], len: usize) {
+        // libde265 does Clip3(0, 51, SliceQPY)
+        let qp_clipped = qp.clamp(0, 51);
 
-            for i in 0..len {
-                let iv = values[i] as i32;
-                let slope_idx = iv >> 4;
-                let intersec_idx = iv & 0xF;
+        for i in 0..len {
+            let iv = values[i] as i32;
+            let slope_idx = iv >> 4;
+            let intersec_idx = iv & 0xF;
 
-                let m = slope_idx * 5 - 45;
-                let n = (intersec_idx << 3) - 16;
+            let m = slope_idx * 5 - 45;
+            let n = (intersec_idx << 3) - 16;
 
-                // Using arithmetic shift >> 4 on i32 is equivalent to C's signed shift
-                let pre = ((m * qp_clipped) >> 4) + n;
-                let pre = pre.clamp(1, 126);
+            // Using arithmetic shift >> 4 on i32 is equivalent to C's signed shift
+            let pre = ((m * qp_clipped) >> 4) + n;
+            let pre = pre.clamp(1, 126);
 
-                if pre <= 63 {
-                    // MPS = 0, State = 63 - pre
-                    // Packed as (state << 1) | mps
-                    self.contexts[start_idx + i] = ((63 - pre) as u8) << 1;
-                } else {
-                    // MPS = 1, State = pre - 64
-                    // Packed as (state << 1) | mps
-                    self.contexts[start_idx + i] = (((pre - 64) as u8) << 1) | 1;
-                }
+            if pre <= 63 {
+                // MPS = 0, State = 63 - pre
+                // Packed as (state << 1) | mps
+                self.contexts[start_idx + i] = ((63 - pre) as u8) << 1;
+            } else {
+                // MPS = 1, State = pre - 64
+                // Packed as (state << 1) | mps
+                self.contexts[start_idx + i] = (((pre - 64) as u8) << 1) | 1;
             }
         }
-
-        // Updated helper to handle multiple constants
-        fn set_init_const(&mut self, qp: i32, idx: usize, iv: u8, len: usize) {
-            let values = vec![iv; len];
-            self.set_init(qp, idx, &values, len);
-        }
     }
+
+    // Updated helper to handle multiple constants
+    fn set_init_const(&mut self, qp: i32, idx: usize, iv: u8, len: usize) {
+        let values = vec![iv; len];
+        self.set_init(qp, idx, &values, len);
+    }
+}

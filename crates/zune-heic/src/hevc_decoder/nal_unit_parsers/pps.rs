@@ -5,7 +5,7 @@ use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, PpsRangeExtension, Sps};
-use crate::hevc_decoder::nal_unit_parsers::{parse_scaling_list_data};
+use crate::hevc_decoder::nal_unit_parsers::parse_scaling_list_data;
 
 pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     // 7.4.3.3.1: pps_pic_parameter_set_id is in [0, 63].
@@ -309,9 +309,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 diff_cu_chroma_qp_offset_depth,
                 chroma_qp_offset_list_len,
                 cross_component_prediction_enabled_flag
-                
             };
-            
+
             pps.range_extension = Some(range_ext);
         }
     }
@@ -321,8 +320,65 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     let log2_ctb_size_y =
         sps.log2_min_luma_coding_block_size + (sps.log2_diff_max_min_luma_coding_block_size);
     pps.log2_min_cu_qp_delta_size = log2_ctb_size_y - pps.diff_cu_qp_delta_depth;
+    derive_tile_id_map(&mut pps, sps);
 
     debug_more!(false=>"{:#?}", pps);
 
     Ok(pps)
+}
+
+pub fn derive_tile_id_map(pps: &mut Pps, sps: &Sps) {
+    let pic_width_in_ctbs = sps.pic_width_in_ctbs_y as usize;
+    let pic_height_in_ctbs = sps.pic_height_in_ctbs_y as usize;
+    let total_ctbs = pic_width_in_ctbs * pic_height_in_ctbs;
+
+    // Initialize the buffer
+    pps.tile_id_rs = vec![0; total_ctbs];
+
+    if !pps.tiles_enabled_flag {
+        return; // All CTBs stay ID 0
+    }
+
+    // 1. Calculate tile column boundaries
+    let mut col_bd = vec![0; (pps.num_tile_columns + 1) as usize];
+    if pps.uniform_spacing_flag {
+        for i in 0..=pps.num_tile_columns as usize {
+            col_bd[i] = i * pic_width_in_ctbs / pps.num_tile_columns as usize;
+        }
+    } else {
+        col_bd[0] = 0;
+        for i in 0..pps.num_tile_columns as usize - 1 {
+            col_bd[i + 1] = col_bd[i] + pps.column_width[i] as usize;
+        }
+        col_bd[pps.num_tile_columns as usize] = pic_width_in_ctbs;
+    }
+
+    // 2. Calculate tile row boundaries
+    let mut row_bd = vec![0; (pps.num_tile_rows + 1) as usize];
+    if pps.uniform_spacing_flag {
+        for j in 0..=pps.num_tile_rows as usize {
+            row_bd[j] = j * pic_height_in_ctbs / pps.num_tile_rows as usize;
+        }
+    } else {
+        row_bd[0] = 0;
+        for j in 0..pps.num_tile_rows as usize - 1 {
+            row_bd[j + 1] = row_bd[j] + pps.row_height[j] as usize;
+        }
+        row_bd[pps.num_tile_rows as usize] = pic_height_in_ctbs;
+    }
+
+    // 3. Fill the tile_id_rs map
+    for j in 0..pps.num_tile_rows as usize {
+        for i in 0..pps.num_tile_columns as usize {
+            let tile_id = (j * pps.num_tile_columns as usize + i) as u16;
+
+            // For every CTB within this tile's boundaries
+            for y in row_bd[j]..row_bd[j + 1] {
+                for x in col_bd[i]..col_bd[i + 1] {
+                    let addr_rs = y * pic_width_in_ctbs + x;
+                    pps.tile_id_rs[addr_rs] = tile_id;
+                }
+            }
+        }
+    }
 }

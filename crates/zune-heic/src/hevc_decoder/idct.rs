@@ -1,5 +1,4 @@
 /// HEVC (H.265) Inverse Transform — Full Correctness & Optimized Performance.
-
 // ---------------------------------------------------------------------------
 // Constants: Basis Matrices (Odd Parts)
 // ---------------------------------------------------------------------------
@@ -48,6 +47,10 @@ const T32: [[i32; 16]; 16] = [
 // Helpers & Clipping
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Helpers & Clipping
+// ---------------------------------------------------------------------------
+
 #[inline(always)]
 fn shift_clip(val: i32, shift: i32) -> i32 {
     let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
@@ -57,22 +60,6 @@ fn shift_clip(val: i32, shift: i32) -> i32 {
 #[inline(always)]
 fn intermediate_clip(val: i32) -> i32 {
     val.clamp(-32768, 32767)
-}
-
-#[inline(always)]
-fn final_clip(val: i32, bit_depth: u8) -> i32 {
-    let max = (1 << bit_depth) - 1;
-    val.clamp(0, max)
-}
-
-#[inline(always)]
-fn get_last_nonzero_idx(data: &[i32]) -> i32 {
-    for i in (0..data.len()).rev() {
-        if data[i] != 0 {
-            return i as i32;
-        }
-    }
-    -1
 }
 
 // ---------------------------------------------------------------------------
@@ -114,48 +101,48 @@ fn transform8_1d(input: &[i32], output: &mut [i32], shift: i32, should_clip: boo
     let eo1 = (input[2] * 36) - (input[6] * 83);
     let e = [ee0 + eo0, ee1 + eo1, ee1 - eo1, ee0 - eo0];
 
-    let c = |n: usize| input[n * 2 + 1];
     let mut o = [0i32; 4];
-
     for i in 0..4 {
-        o[i] = (c(0) * T8[i][0]) + (c(1) * T8[i][1]) + (c(2) * T8[i][2]) + (c(3) * T8[i][3]);
+        o[i] = (input[1] * T8[i][0])
+            + (input[3] * T8[i][1])
+            + (input[5] * T8[i][2])
+            + (input[7] * T8[i][3]);
     }
 
+    // Mirroring Fix: output[i] = e[i]+o[i], output[7-i] = e[i]-o[i]
     for i in 0..4 {
-        let v1 = shift_clip(e[i] + o[i], shift);
-        let v2 = shift_clip(e[3 - i] - o[3 - i], shift);
-        output[i] = if should_clip { intermediate_clip(v1) } else { v1 };
-        output[7 - i] = if should_clip { intermediate_clip(v2) } else { v2 };
+        let v_high = shift_clip(e[i] + o[i], shift);
+        let v_low = shift_clip(e[i] - o[i], shift);
+        output[i] = if should_clip { intermediate_clip(v_high) } else { v_high };
+        output[7 - i] = if should_clip { intermediate_clip(v_low) } else { v_low };
     }
 }
 
 fn transform16_1d(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
     let mut e = [0i32; 8];
-    let mut even_in = [0i32; 8];
-    for i in 0..8 {
-        even_in[i] = input[i * 2];
-    }
-    transform8_1d(&even_in, &mut e, 0, false);
+    transform8_1d(
+        &[
+            input[0], input[2], input[4], input[6], input[8], input[10], input[12], input[14]
+        ],
+        &mut e,
+        0,
+        false
+    );
 
-    let c = |n: usize| input[n * 2 + 1];
     let mut o = [0i32; 8];
-
     for i in 0..8 {
-        o[i] = (c(0) * T16[i][0])
-            + (c(1) * T16[i][1])
-            + (c(2) * T16[i][2])
-            + (c(3) * T16[i][3])
-            + (c(4) * T16[i][4])
-            + (c(5) * T16[i][5])
-            + (c(6) * T16[i][6])
-            + (c(7) * T16[i][7]);
+        let mut sum = 0;
+        for j in 0..8 {
+            sum += input[j * 2 + 1] * T16[i][j];
+        }
+        o[i] = sum;
     }
 
     for i in 0..8 {
-        let v1 = shift_clip(e[i] + o[i], shift);
-        let v2 = shift_clip(e[7 - i] - o[7 - i], shift);
-        output[i] = if should_clip { intermediate_clip(v1) } else { v1 };
-        output[15 - i] = if should_clip { intermediate_clip(v2) } else { v2 };
+        let v_high = shift_clip(e[i] + o[i], shift);
+        let v_low = shift_clip(e[i] - o[i], shift);
+        output[i] = if should_clip { intermediate_clip(v_high) } else { v_high };
+        output[15 - i] = if should_clip { intermediate_clip(v_low) } else { v_low };
     }
 }
 
@@ -167,29 +154,28 @@ fn transform32_1d(input: &[i32], output: &mut [i32], shift: i32, should_clip: bo
     }
     transform16_1d(&even_in, &mut e, 0, false);
 
-    let c = |n: usize| input[n * 2 + 1];
     let mut o = [0i32; 16];
-
     for i in 0..16 {
         let mut sum = 0;
         for j in 0..16 {
-            sum += c(j) * T32[i][j];
+            sum += input[j * 2 + 1] * T32[i][j];
         }
         o[i] = sum;
     }
 
     for i in 0..16 {
-        let v1 = shift_clip(e[i] + o[i], shift);
-        let v2 = shift_clip(e[15 - i] - o[15 - i], shift);
-        output[i] = if should_clip { intermediate_clip(v1) } else { v1 };
-        output[31 - i] = if should_clip { intermediate_clip(v2) } else { v2 };
+        let v_high = shift_clip(e[i] + o[i], shift);
+        let v_low = shift_clip(e[i] - o[i], shift);
+        output[i] = if should_clip { intermediate_clip(v_high) } else { v_high };
+        output[31 - i] = if should_clip { intermediate_clip(v_low) } else { v_low };
     }
 }
 
 // ---------------------------------------------------------------------------
-// Optimized 2D Wrapper
+// 2D Wrapper
 // ---------------------------------------------------------------------------
-fn idct_2d_optimized<const N: usize>(
+
+pub fn idct_2d_scalar<const N: usize>(
     block: &mut [i32], bit_depth: u8, is_dst: bool, transform_1d: fn(&[i32], &mut [i32], i32, bool)
 ) {
     let mut intermediate = [0i32; 1024];
@@ -198,11 +184,17 @@ fn idct_2d_optimized<const N: usize>(
 
     // Pass 1: Horizontal Rows
     for r in 0..N {
-        let start = r * N;
-        let row_in = &block[start..start + N];
-        let last_idx = get_last_nonzero_idx(row_in);
+        let row_start = r * N;
+        let row = &block[row_start..row_start + N];
 
-        if last_idx < 0 {
+        let mut all_zero = true;
+        for &v in row {
+            if v != 0 {
+                all_zero = false;
+                break;
+            }
+        }
+        if all_zero {
             for c in 0..N {
                 intermediate[c * N + r] = 0;
             }
@@ -210,13 +202,22 @@ fn idct_2d_optimized<const N: usize>(
         }
 
         let mut row_out = [0i32; 32];
-        if last_idx == 0 && !is_dst {
-            let dc_val = intermediate_clip(shift_clip(row_in[0] * 64, shift1));
+        let mut dc_only = row[0] != 0;
+        for i in 1..N {
+            if row[i] != 0 {
+                dc_only = false;
+                break;
+            }
+        }
+
+        if dc_only && !is_dst {
+            let dc_val = shift_clip(row[0] * 64, shift1);
+            let clipped = intermediate_clip(dc_val);
             for c in 0..N {
-                row_out[c] = dc_val;
+                row_out[c] = clipped;
             }
         } else {
-            transform_1d(row_in, &mut row_out[..N], shift1, true);
+            transform_1d(row, &mut row_out[..N], shift1, true);
         }
 
         for c in 0..N {
@@ -224,13 +225,19 @@ fn idct_2d_optimized<const N: usize>(
         }
     }
 
-    // Pass 2: Vertical (Columns are rows in intermediate buffer)
+    // Pass 2: Vertical (Columns are rows in intermediate)
     for r in 0..N {
-        let start = r * N;
-        let col_in = &intermediate[start..start + N];
-        let last_idx = get_last_nonzero_idx(col_in);
+        let col_start = r * N;
+        let col = &intermediate[col_start..col_start + N];
 
-        if last_idx < 0 {
+        let mut all_zero = true;
+        for &v in col {
+            if v != 0 {
+                all_zero = false;
+                break;
+            }
+        }
+        if all_zero {
             for c in 0..N {
                 block[c * N + r] = 0;
             }
@@ -238,17 +245,24 @@ fn idct_2d_optimized<const N: usize>(
         }
 
         let mut col_out = [0i32; 32];
-        // Note: For Pass 2, even if last_idx is 0, col_in[0] might differ across columns
-        // because Pass 1 was already applied. The shortcut remains bit-exact.
-        if last_idx == 0 && !is_dst {
-            let dc_val = final_clip(shift_clip(col_in[0] * 64, shift2), bit_depth);
+        let mut dc_only = col[0] != 0;
+        for i in 1..N {
+            if col[i] != 0 {
+                dc_only = false;
+                break;
+            }
+        }
+
+        if dc_only && !is_dst {
+            let val = shift_clip(col[0] * 64, shift2);
+            let clipped = intermediate_clip(val); // Keep residuals signed!
             for c in 0..N {
-                col_out[c] = dc_val;
+                col_out[c] = clipped;
             }
         } else {
-            transform_1d(col_in, &mut col_out[..N], shift2, false);
+            transform_1d(col, &mut col_out[..N], shift2, false);
             for c in 0..N {
-                col_out[c] = final_clip(col_out[c], bit_depth);
+                col_out[c] = intermediate_clip(col_out[c]);
             }
         }
 
@@ -257,26 +271,45 @@ fn idct_2d_optimized<const N: usize>(
         }
     }
 }
-
 // ---------------------------------------------------------------------------
 // Public Entry Points
 // ---------------------------------------------------------------------------
 pub fn idst_4x4_hevc(block: &mut [i32; 16], bit_depth: u8) {
-    idct_2d_optimized::<4>(block, bit_depth, true, transform4_dst_1d);
+    #[cfg(feature = "simd")]
+    {
+        return std_simd::idst_4x4_hevc(block, bit_depth);
+    }
+    idct_2d_scalar::<4>(block, bit_depth, true, transform4_dst_1d);
 }
 
 pub fn idct_4x4_hevc(block: &mut [i32; 16], bit_depth: u8) {
-    idct_2d_optimized::<4>(block, bit_depth, false, transform4_1d);
+    #[cfg(feature = "simd")]
+    {
+        return std_simd::idct_4x4_hevc(block, bit_depth);
+    }
+    idct_2d_scalar::<4>(block, bit_depth, false, transform4_1d);
 }
 
 pub fn idct_8x8_hevc(block: &mut [i32; 64], bit_depth: u8) {
-    idct_2d_optimized::<8>(block, bit_depth, false, transform8_1d);
+    #[cfg(feature = "simd")]
+    {
+        return std_simd::idct_8x8_hevc(block, bit_depth);
+    }
+    idct_2d_scalar::<8>(block, bit_depth, false, transform8_1d);
 }
 
 pub fn idct_16x16_hevc(block: &mut [i32; 256], bit_depth: u8) {
-    idct_2d_optimized::<16>(block, bit_depth, false, transform16_1d);
+    #[cfg(feature = "simd")]
+    {
+        return std_simd::idct_16x16_hevc(block, bit_depth);
+    }
+    idct_2d_scalar::<16>(block, bit_depth, false, transform16_1d);
 }
 
 pub fn idct_32x32_hevc(block: &mut [i32; 1024], bit_depth: u8) {
-    idct_2d_optimized::<32>(block, bit_depth, false, transform32_1d);
+    #[cfg(feature = "simd")]
+    {
+        return std_simd::idct_32x32_hevc(block, bit_depth);
+    }
+    idct_2d_scalar::<32>(block, bit_depth, false, transform32_1d);
 }

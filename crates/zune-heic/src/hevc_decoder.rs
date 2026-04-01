@@ -7,7 +7,7 @@ use crate::hevc_decoder::quadtree::decode_slice;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
-pub const DEBUG_MORE: bool = true;
+pub const DEBUG_MORE: bool = false;
 mod binarizer;
 mod bitstream;
 mod cabac;

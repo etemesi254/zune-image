@@ -9,6 +9,9 @@ use crate::hevc_decoder::cabac_tables::{
 };
 use crate::hevc_decoder::constants::PartMode;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
+use crate::hevc_decoder::idct::{
+    idct_4x4_hevc, idct_8x8_hevc, idct_16x16_hevc, idct_32x32_hevc, idst_4x4_hevc
+};
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::neighbor_tracker::PredMode;
@@ -126,6 +129,7 @@ pub fn decode_tu(
     // We run scaling if there is a CBF OR if Chroma CCP is active (even if CBF is 0)
     let ccp_active = c_idx != 0 && ctx.res_scale_val != 0;
 
+    let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
     if cbf || ccp_active {
         // Scale coefficients into math_scratchpad
         ctx.scale_coefficients(x0, y0, n_t, c_idx, ctx.transform_skip_flag[c_idx] == 1);
@@ -135,10 +139,43 @@ pub fn decode_tu(
             // Pick DST for Luma 4x4 Intra, otherwise IDCT
             let use_dst = c_idx == 0 && n_t == 4 && cu_pred_mode == PredMode::ModeIntra;
             if use_dst {
-                todo!("inverse dst 4x4 luma")
+                // Luma 4x4 Intra -> Special DST path
+                let block: &mut [i32; 16] = (&mut ctx.math_scratchpad[..16])
+                    .try_into()
+                    .expect("Scratchpad must have at least 16 elements");
+                idst_4x4_hevc(block, bit_depth);
             } else {
-                todo!("inverse idct {c_idx} {n_t} {:?}", cu_pred_mode);
-            }
+                // Standard IDCT Path
+                match n_t {
+                    4 => {
+                        let block: &mut [i32; 16] =
+                            (&mut ctx.math_scratchpad[..16]).try_into().unwrap();
+                        idct_4x4_hevc(block, bit_depth);
+                    }
+                    8 => {
+                        let block: &mut [i32; 64] =
+                            (&mut ctx.math_scratchpad[..64]).try_into().unwrap();
+                        idct_8x8_hevc(block, bit_depth);
+                    }
+                    16 => {
+                        let block: &mut [i32; 256] =
+                            (&mut ctx.math_scratchpad[..256]).try_into().unwrap();
+                        idct_16x16_hevc(block, bit_depth);
+                    }
+                    32 => {
+                        let block: &mut [i32; 1024] = ctx
+                            .math_scratchpad
+                            .get_mut(..1024)
+                            .unwrap()
+                            .try_into()
+                            .unwrap();
+                        idct_32x32_hevc(block, bit_depth);
+                    }
+                    _ => unreachable!("HEVC TU sizes are 4, 8, 16, or 32")
+                }
+
+
+             }
         } else {
             // RDPCM for Transform Skip (Spec 8.6.4.4.1)
             todo!("apply residual dcpm")
@@ -473,7 +510,6 @@ pub fn read_transform_unit(
             }
         }
     }
-    panic!();
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 #![allow(unexpected_cfgs)]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
 

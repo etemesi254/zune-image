@@ -1,11 +1,12 @@
-#![cfg(feature = "simd")]
-
 use std::simd::cmp::{SimdOrd, SimdPartialEq};
 use std::simd::num::SimdInt;
-use std::simd::{Simd, i32x4, i32x8, i32x16};
+use std::simd::{LaneCount, Simd, SupportedLaneCount, i32x4, i32x8, i32x16};
+
+use crate::hevc_decoder::idct::transform4_dst_1d;
 // ---------------------------------------------------------------------------
-// Constants: Basis Matrices (Odd Parts)
+// Constants: Basis Matrices (Spec-Validated)
 // ---------------------------------------------------------------------------
+
 #[rustfmt::skip]
 const T8: [[i32; 4]; 4] = [
     [89,  75,  50,  18], [75, -18, -89, -50],
@@ -20,6 +21,7 @@ const T16: [[i32; 8]; 8] = [
     [25, -70,  90, -80,  43,   9, -57,  87], [ 9, -25,  43, -57,  70, -80,  87, -90],
 ];
 
+// 32-point odd part basis (Rows 1,3,5...31)
 #[rustfmt::skip]
 const T32: [[i32; 16]; 16] = [
     [90, 90, 88, 85, 82, 78, 73, 67, 61, 54, 46, 38, 31, 22, 13,  4],
@@ -41,71 +43,82 @@ const T32: [[i32; 16]; 16] = [
 ];
 
 // ---------------------------------------------------------------------------
-// SIMD Helpers & Clipping
+// SIMD Helpers
 // ---------------------------------------------------------------------------
 
 #[inline(always)]
-fn simd_shift_clip<const LANES: usize>(val: Simd<i32, LANES>, shift: i32) -> Simd<i32, LANES>
+fn simd_shift_clip<const L: usize>(val: Simd<i32, L>, shift: i32) -> Simd<i32, L>
 where
-    Simd<i32, LANES>:
-        std::ops::Add<Output = Simd<i32, LANES>> + std::ops::Shr<i32, Output = Simd<i32, LANES>>
+    LaneCount<L>: SupportedLaneCount
 {
     let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
     (val + Simd::splat(offset)) >> (shift as i32)
 }
 
 #[inline(always)]
-fn intermediate_clip<const LANES: usize>(val: Simd<i32, LANES>) -> Simd<i32, LANES> {
+fn intermediate_clip<const L: usize>(val: Simd<i32, L>) -> Simd<i32, L>
+where
+    LaneCount<L>: SupportedLaneCount
+{
     val.simd_clamp(Simd::splat(-32768), Simd::splat(32767))
 }
 
-#[inline(always)]
-fn final_clip<const LANES: usize>(val: Simd<i32, LANES>, bit_depth: u8) -> Simd<i32, LANES> {
-    let max = (1 << bit_depth) - 1;
-    val.simd_clamp(Simd::splat(0), Simd::splat(max))
-}
+/// 4-point DST-VII (used for Intra 4x4 Luma)
+/// This implementation uses SIMD dot products for the basis matrix multiplication.
+fn transform4_dst_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
+    // 1. Load input coefficients into a 4-lane SIMD register
+    let v = i32x4::from_slice(&input[..4]);
 
-#[inline(always)]
-fn reverse_vec8(v: i32x8) -> i32x8 {
-    Simd::from_array([v[7], v[6], v[5], v[4], v[3], v[2], v[1], v[0]])
-}
+    // 2. Basis matrix coefficients (HEVC Section 8.6.2.1)
+    // Row 0: { 29,  55,  74,  84 }
+    // Row 1: { 74,  74,   0, -74 }
+    // Row 2: { 84, -29, -74,  55 }
+    // Row 3: { 55, -84,  74, -29 }
+    let c0 = i32x4::from_array([29, 55, 74, 84]);
+    let c1 = i32x4::from_array([74, 74, 0, -74]);
+    let c2 = i32x4::from_array([84, -29, -74, 55]);
+    let c3 = i32x4::from_array([55, -84, 74, -29]);
 
-#[inline(always)]
-fn reverse_vec16(v: i32x16) -> i32x16 {
-    Simd::from_array([
-        v[15], v[14], v[13], v[12], v[11], v[10], v[9], v[8], v[7], v[6], v[5], v[4], v[3], v[2],
-        v[1], v[0]
-    ])
+    // 3. Perform dot products
+    // Vertical multiplication across lanes, followed by a horizontal reduction sum
+    let s0 = (v * c0).reduce_sum();
+    let s1 = (v * c1).reduce_sum();
+    let s2 = (v * c2).reduce_sum();
+    let s3 = (v * c3).reduce_sum();
+
+    // 4. Pack results and apply shift/rounding
+    let res = i32x4::from_array([s0, s1, s2, s3]);
+
+    // Applying: (val + offset) >> shift
+    let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
+    let shifted = (res + i32x4::splat(offset)) >> shift;
+
+    // 5. Spec-compliant intermediate clipping (16-bit signed)
+    let final_v = if should_clip {
+        shifted.simd_clamp(i32x4::splat(-32768), i32x4::splat(32767))
+    } else {
+        shifted
+    };
+
+    // 6. Store back to output
+    output[..4].copy_from_slice(final_v.as_array());
 }
 
 // ---------------------------------------------------------------------------
-// 1D SIMD Transform Kernels
+// 1D Kernels
 // ---------------------------------------------------------------------------
 
 fn transform4_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
-    let vec = i32x4::from_slice(input);
-    let e0 = (vec[0] * 64) + (vec[2] * 64);
-    let e1 = (vec[0] * 64) - (vec[2] * 64);
-    let o0 = (vec[1] * 83) + (vec[3] * 36);
-    let o1 = (vec[1] * 36) - (vec[3] * 83);
+    let (c0, c1, c2, c3) = (input[0], input[1], input[2], input[3]);
+    let e0 = (c0 * 64) + (c2 * 64);
+    let e1 = (c0 * 64) - (c2 * 64);
+    let o0 = (c1 * 83) + (c3 * 36);
+    let o1 = (c1 * 36) - (c3 * 83);
 
     let res = i32x4::from_array([e0 + o0, e1 + o1, e1 - o1, e0 - o0]);
     let v = simd_shift_clip(res, shift);
     let final_v = if should_clip { intermediate_clip(v) } else { v };
-    output.copy_from_slice(final_v.as_array());
-}
-
-fn transform4_dst_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
-    let v = i32x4::from_slice(input);
-    let s0 = (v[0] * 29) + (v[1] * 55) + (v[2] * 74) + (v[3] * 84);
-    let s1 = (v[0] * 74) + (v[1] * 74) - (v[3] * 74);
-    let s2 = (v[0] * 84) - (v[1] * 29) - (v[2] * 74) + (v[3] * 55);
-    let s3 = (v[0] * 55) - (v[1] * 84) + (v[2] * 74) - (v[3] * 29);
-
-    let res = i32x4::from_array([s0, s1, s2, s3]);
-    let v_res = simd_shift_clip(res, shift);
-    let final_v = if should_clip { intermediate_clip(v_res) } else { v_res };
-    output.copy_from_slice(final_v.as_array());
+    output[..4].copy_from_slice(final_v.as_array());
 }
 
 fn transform8_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
@@ -113,27 +126,22 @@ fn transform8_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip
     let ee1 = (input[0] * 64) - (input[4] * 64);
     let eo0 = (input[2] * 83) + (input[6] * 36);
     let eo1 = (input[2] * 36) - (input[6] * 83);
-    let e = i32x4::from_array([ee0 + eo0, ee1 + eo1, ee1 - eo1, ee0 - eo0]);
+    let e = [ee0 + eo0, ee1 + eo1, ee1 - eo1, ee0 - eo0];
 
     let odd_in = i32x4::from_array([input[1], input[3], input[5], input[7]]);
     let mut o = [0i32; 4];
     for i in 0..4 {
         o[i] = (odd_in * i32x4::from_array(T8[i])).reduce_sum();
     }
-    let o_vec = i32x4::from_array(o);
 
-    let v_first = simd_shift_clip(e + o_vec, shift);
-    let v_last = simd_shift_clip(
-        Simd::from_array([e[3], e[2], e[1], e[0]])
-            - Simd::from_array([o_vec[3], o_vec[2], o_vec[1], o_vec[0]]),
-        shift
-    );
-
-    let res_h = if should_clip { intermediate_clip(v_first) } else { v_first };
-    let res_l = if should_clip { intermediate_clip(v_last) } else { v_last };
-
-    output[0..4].copy_from_slice(res_h.as_array());
-    output[4..8].copy_from_slice(res_l.as_array());
+    let mut res = [0i32; 8];
+    for i in 0..4 {
+        res[i] = e[i] + o[i];
+        res[7 - i] = e[i] - o[i];
+    }
+    let v = simd_shift_clip(i32x8::from_slice(&res), shift);
+    let final_v = if should_clip { intermediate_clip(v) } else { v };
+    output[..8].copy_from_slice(final_v.as_array());
 }
 
 fn transform16_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
@@ -150,23 +158,19 @@ fn transform16_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_cli
     let odd_in = i32x8::from_array([
         input[1], input[3], input[5], input[7], input[9], input[11], input[13], input[15]
     ]);
-
-    let mut o_arr = [0i32; 8];
+    let mut o = [0i32; 8];
     for i in 0..8 {
-        o_arr[i] = (odd_in * i32x8::from_array(T16[i])).reduce_sum();
+        o[i] = (odd_in * i32x8::from_array(T16[i])).reduce_sum();
     }
 
-    let e_vec = i32x8::from_slice(&e);
-    let o_vec = i32x8::from_array(o_arr);
-
-    let v_first = simd_shift_clip(e_vec + o_vec, shift);
-    let v_last = simd_shift_clip(reverse_vec8(e_vec) - reverse_vec8(o_vec), shift);
-
-    let res_h = if should_clip { intermediate_clip(v_first) } else { v_first };
-    let res_l = if should_clip { intermediate_clip(v_last) } else { v_last };
-
-    output[0..8].copy_from_slice(res_h.as_array());
-    output[8..16].copy_from_slice(res_l.as_array());
+    let mut res = [0i32; 16];
+    for i in 0..8 {
+        res[i] = e[i] + o[i];
+        res[15 - i] = e[i] - o[i];
+    }
+    let v = simd_shift_clip(i32x16::from_slice(&res), shift);
+    let final_v = if should_clip { intermediate_clip(v) } else { v };
+    output[..16].copy_from_slice(final_v.as_array());
 }
 
 fn transform32_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_clip: bool) {
@@ -182,26 +186,31 @@ fn transform32_1d_simd(input: &[i32], output: &mut [i32], shift: i32, should_cli
         input[17], input[19], input[21], input[23], input[25], input[27], input[29], input[31]
     ]);
 
-    let mut o_arr = [0i32; 16];
+    let mut o = [0i32; 16];
     for i in 0..16 {
-        o_arr[i] = (odd_in * i32x16::from_array(T32[i])).reduce_sum();
+        o[i] = (odd_in * i32x16::from_array(T32[i])).reduce_sum();
     }
 
-    let e_vec = i32x16::from_slice(&e);
-    let o_vec = i32x16::from_array(o_arr);
+    let mut final_res = [0i32; 32];
+    for i in 0..16 {
+        final_res[i] = e[i] + o[i];
+        final_res[31 - i] = e[i] - o[i];
+    }
 
-    let v_first = simd_shift_clip(e_vec + o_vec, shift);
-    let v_last = simd_shift_clip(reverse_vec16(e_vec) - reverse_vec16(o_vec), shift);
+    for i in 0..32 {
+        let v = shift_clip(final_res[i], shift);
+        output[i] = if should_clip { v.clamp(-32768, 32767) } else { v };
+    }
+}
 
-    let res_h = if should_clip { intermediate_clip(v_first) } else { v_first };
-    let res_l = if should_clip { intermediate_clip(v_last) } else { v_last };
-
-    output[0..16].copy_from_slice(res_h.as_array());
-    output[16..32].copy_from_slice(res_l.as_array());
+#[inline(always)]
+fn shift_clip(val: i32, shift: i32) -> i32 {
+    let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
+    (val + offset) >> shift
 }
 
 // ---------------------------------------------------------------------------
-// 2D Wrapper with All Optimizations
+// 2D Wrapper
 // ---------------------------------------------------------------------------
 
 pub fn idct_2d_core<const N: usize>(
@@ -216,10 +225,9 @@ pub fn idct_2d_core<const N: usize>(
         let row_start = r * N;
         let row = &block[row_start..row_start + N];
 
-        // LNZ Early Exit
         let mut all_zero = true;
-        for &val in row {
-            if val != 0 {
+        for &v in row {
+            if v != 0 {
                 all_zero = false;
                 break;
             }
@@ -232,7 +240,6 @@ pub fn idct_2d_core<const N: usize>(
         }
 
         let mut row_out = [0i32; 32];
-        // Bit-exact DC shortcut
         let mut dc_only = row[0] != 0;
         for i in 1..N {
             if row[i] != 0 {
@@ -262,8 +269,8 @@ pub fn idct_2d_core<const N: usize>(
         let col = &intermediate[col_start..col_start + N];
 
         let mut all_zero = true;
-        for &val in col {
-            if val != 0 {
+        for &v in col {
+            if v != 0 {
                 all_zero = false;
                 break;
             }
@@ -286,14 +293,15 @@ pub fn idct_2d_core<const N: usize>(
 
         if dc_only && !is_dst {
             let val = (col[0] * 64 + (1 << (shift2 - 1))) >> shift2;
-            let clipped = val.clamp(0, (1 << bit_depth) - 1);
+            let clipped = val.clamp(-32768, 32767); // Residual remains signed!
             for c in 0..N {
                 col_out[c] = clipped;
             }
         } else {
             transform_1d(col, &mut col_out[..N], shift2, false);
+            // Residuals are clamped to 16-bit signed as per spec
             for c in 0..N {
-                col_out[c] = col_out[c].clamp(0, (1 << bit_depth) - 1);
+                col_out[c] = col_out[c].clamp(-32768, 32767);
             }
         }
 

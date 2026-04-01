@@ -23,12 +23,20 @@ mod intra_prediction;
 mod part_mode;
 mod quant;
 mod residual_block;
-mod sao;
+pub(crate) mod sao;
 pub(crate) mod sig_ctx_generator;
+
+#[derive(PartialEq)]
+pub enum CtuStatus {
+    Continue,
+    EndOfSliceSegment,
+    EndOfSubstream
+}
 
 pub fn decode_slice(
     nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
 ) -> Result<(), NalError> {
+    debug_more!("---------------decode-slice-------------");
     let clean_rbsp = extract_rbsp(&nal.payload[..]);
     let sps_storage = &hevc_decoder.sps_storage;
     let pps_storage = &hevc_decoder.pps_storage;
@@ -78,7 +86,7 @@ pub fn decode_slice(
         slice_header.slice_addr_rs = hevc_decoder.last_size_header.clone();
     }
 
-    let mut decode_slice_context = DecodeSliceContext::new(
+    let mut ctx = DecodeSliceContext::new(
         &sps,
         &pps,
         &slice_header,
@@ -91,16 +99,102 @@ pub fn decode_slice(
     // 5. The CTU Loop
     let total_ctus = width_in_ctus * height_in_ctus;
     for ctu_idx in 0..total_ctus {
-        let ctu_x = (ctu_idx % width_in_ctus) * ctu_size; // Convert to pixel coordinates
-        let ctu_y = (ctu_idx / width_in_ctus) * ctu_size;
+        let ctu_x = (ctu_idx % width_in_ctus); // Convert to pixel coordinates
+        let ctu_y = (ctu_idx / width_in_ctus);
 
-        debug_more!("Decoding CTU at pixel [{}, {}]", ctu_x, ctu_y);
-        read_coding_tree_unit(&mut decode_slice_context, ctu_x, ctu_y)?;
+        debug_more!(
+            "Decoding CTU at pixel [{}, {}]",
+            ctu_x * ctu_size,
+            ctu_y * ctu_size
+        );
+        read_coding_tree_unit(&mut ctx, ctu_x, ctu_y)?;
+        finish_ctu(&mut ctx, ctu_x, ctu_y)?;
     }
 
     Ok(())
 }
 
+pub fn finish_ctu(
+    ctx: &mut DecodeSliceContext, ctbx: usize, ctby: usize
+) -> Result<CtuStatus, NalError> {
+    let pps = &ctx.pps;
+    let sps = &ctx.sps;
+
+    debug_more!("finish_ctu ({} {})", ctbx, ctby);
+
+    // --- 1. WPP Context Storage (Section 6.3.3) ---
+    // If Wavefront Parallel Processing is enabled, we save the context state
+    // after the second CTU of a row to initialize the first CTU of the next row.
+    if pps.entropy_coding_sync_enabled_flag && ctbx == 1 {
+        if ctby + 1 < sps.pic_height_in_ctbs_y as usize {
+            debug_more!("Saving WPP Context for row {}", ctby);
+            // We clone the current context model state (the "decouple" in libde265)
+            // ctx.wpp_context_models[ctby] = ctx.cabac.contexts.clone();
+        }
+    }
+
+    // --- 2. Decode Terminal Bit (end_of_slice_segment_flag) ---
+    // This bit is mandatory after every CTU (Section 7.3.8.1)
+    let end_of_slice_segment_flag = ctx.cabac.decode_terminate();
+    debug_more!("end_of_slice_segment_flag -> {}", end_of_slice_segment_flag);
+
+    if end_of_slice_segment_flag != 0 {
+        // If dependent slices are enabled, save context for the next slice header
+        if pps.dependent_slice_segments_enabled_flag {
+            debug_more!("Saving context for dependent slice");
+            // ctx.shdr.ctx_model_storage = Some(ctx.cabac.ctx_model.clone());
+        }
+        return Ok(CtuStatus::EndOfSliceSegment);
+    }
+
+    // --- 3. Sub-stream Handling (Tiles and WPP Row Ends) ---
+    // We check if the NEXT CTU belongs to a different sub-stream
+    let mut end_of_sub_stream = false;
+
+    // We need the next CTU address to check for transitions
+    let curr_addr_rs = ctby * (sps.pic_width_in_ctbs_y as usize) + ctbx;
+
+    // Check for Tile Change (Section 7.3.8.1)
+    if pps.tiles_enabled_flag {
+        // HEVC decodes tiles in Tile Scan order, not Raster Scan.
+        // Assuming your loop handles the TS -> RS mapping:
+        let curr_tile_id = pps.tile_id_rs[curr_addr_rs];
+        let next_addr_rs = curr_addr_rs + 1; // Raster scan increment
+
+        todo!()
+        // // Peek at next CTB in Tile Scan order
+        // if let Some(next_addr_ts) = ctx.get_next_ctb_addr_ts() {
+        //     if pps.tile_id_ts[next_addr_ts] != pps.tile_id_ts[next_addr_ts - 1] {
+        //         end_of_sub_stream = true;
+        //     }
+        // }
+    }
+
+    // Check for WPP Row Change
+    if pps.entropy_coding_sync_enabled_flag && (ctbx == (sps.pic_width_in_ctbs_y as usize - 1)) {
+        end_of_sub_stream = true;
+    }
+
+    if end_of_sub_stream {
+        debug_more!("End of sub-stream detected. Decoding alignment bit.");
+
+        // Section 7.3.8.1: end_of_sub_stream_one_bit
+        let eoss_bit = ctx.cabac.decode_terminate();
+        if eoss_bit == 0 {
+            debug_more!("ERROR: end_of_sub_stream_one_bit was 0!");
+            return Err(NalError::Generic(
+                "end_of_sub_stream_one_bit was 0!".to_string()
+            ));
+        }
+
+        // Align CABAC: This flushes the engine and skips to the next byte
+        ctx.cabac.init_cabac();
+
+        return Ok(CtuStatus::EndOfSubstream);
+    }
+
+    Ok(CtuStatus::Continue)
+}
 fn read_coding_quadtree(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) -> Result<(), NalError> {

@@ -5,6 +5,7 @@ use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, Sps};
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
+use crate::hevc_decoder::quadtree::sao::SaoInfo;
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::RawFrame;
 
@@ -54,13 +55,24 @@ pub struct DecodeSliceContext<'a> {
     pub res_scale_val:             i8,
     ///  Stores the Luma residuals for the current TU area
     /// so Chroma can use them for CCP.
-    pub luma_residual_temp:        Vec<i32>
+    pub luma_residual_temp:        Vec<i32>,
+
+    pub ctb_sao_buffer: Vec<SaoInfo>
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
         neighbor_tracker: NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
     ) -> Self {
+        // SAO data
+
+        let ctb_size = 1 << sps.log2_ctb_size_y;
+
+        let width_in_ctbs = (sps.pic_width_in_luma_samples + ctb_size - 1) / ctb_size;
+        let height_in_ctbs = (sps.pic_height_in_luma_samples + ctb_size - 1) / ctb_size;
+
+        let buffer_size = (width_in_ctbs * height_in_ctbs) as usize;
+
         Self {
             sps,
             pps,
@@ -95,11 +107,38 @@ impl<'a> DecodeSliceContext<'a> {
             ref_samples_available: vec![false; 129],
             math_scratchpad: vec![0; 1024],
             luma_residual_temp: vec![0; 1024],
-            res_scale_val: -1
+            res_scale_val: -1,
+            ctb_sao_buffer: vec![SaoInfo::default(); buffer_size]
         }
     }
 }
 
+impl<'a> DecodeSliceContext<'a> {
+    pub fn set_sao_info(&mut self, x_ctb: usize, y_ctb: usize, info: SaoInfo) {
+        let width = self.sps.pic_width_in_ctbs_y as usize;
+        let addr = y_ctb * width + x_ctb;
+        // Assuming ctb_info is a Vec<SaoInfo> in your context
+        self.ctb_sao_buffer[addr] = info;
+    }
+
+    pub fn get_neighbor_sao(&self, x_ctb: usize, y_ctb: usize) -> &SaoInfo {
+        let width = self.sps.pic_width_in_ctbs_y as usize;
+        let addr = y_ctb * width + x_ctb;
+        &self.ctb_sao_buffer[addr]
+    }
+
+    #[inline]
+    fn get_ctb_addr_rs(&self, x: usize, y: usize) -> usize {
+        y * (self.sps.pic_width_in_ctbs_y as usize) + x
+    }
+
+    #[inline]
+    fn get_tile_id(&self, x: usize, y: usize) -> u16 {
+        // Accessing the PPS tile map
+        let addr = self.get_ctb_addr_rs(x, y);
+        self.pps.tile_id_rs[addr]
+    }
+}
 impl<'a> DecodeSliceContext<'a> {
     /// Sets a block of pixels (e.g., after reconstruction)
     ///
@@ -255,11 +294,12 @@ impl<'a> DecodeSliceContext<'a> {
                 let scaled = (level * fact + offset as i64) >> bd_shift;
 
                 let final_clipped = scaled.clamp(-32768, 32767);
-                // THE RUST TRACE
-                println!(
-                    "TRACE_SCALE: i={:>2} pos={:>4} level={:>4} m_x_y={:>3} fact={:>8} bdShift={:>2} final={:>5}",
-                    i, pos, level, m_x_y, fact, bd_shift, final_clipped
-                );
+                if DEBUG_MORE {
+                    println!(
+                        "TRACE_SCALE: i={:>2} pos={:>4} level={:>4} m_x_y={:>3} fact={:>8} bdShift={:>2} final={:>5}",
+                        i, pos, level, m_x_y, fact, bd_shift, final_clipped
+                    );
+                }
 
                 self.math_scratchpad[pos] = final_clipped as i32;
             }
@@ -378,7 +418,7 @@ impl<'a> DecodeSliceContext<'a> {
         // --- 5. Final Reconstruction ---
         let bit_depth =
             if c_idx == 0 { self.sps.bit_depth_luma } else { self.sps.bit_depth_chroma };
-        self.add_residual_and_write(x_t, y_t, n_t, c_idx, Some(&residual) , bit_depth);
+        self.add_residual_and_write(x_t, y_t, n_t, c_idx, Some(&residual), bit_depth);
 
         if rotate_coeffs {
             self.math_scratchpad[..16].fill(0);
@@ -440,7 +480,14 @@ impl<'a> DecodeSliceContext<'a> {
                 let r = res_row[x];
 
                 // Pixel = Clip3(0, max_val, Pred + Res)
-                dst_row[x] = (p + r).clamp(0, max_val) as u8;
+                let output = (p + r).clamp(0, max_val) as u8;
+                dst_row[x] = output;
+                if DEBUG_MORE {
+                    print!("{:3} ", output);
+                }
+            }
+            if DEBUG_MORE {
+                println!();
             }
         }
     }

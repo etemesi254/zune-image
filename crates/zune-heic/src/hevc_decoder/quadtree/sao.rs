@@ -1,11 +1,12 @@
 use std::cmp::min;
-
+use zune_core::log::info;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SAO_MERGE_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SaoInfo {
     // todo combine sao_type_idx and sao_eo_class into one byte to save on space
     type_index:   u8,
@@ -65,24 +66,43 @@ fn decode_sao_class(ctx: &mut DecodeSliceContext) -> u8 {
     debug_more!("sao_class(value) {}", value);
     value as u8
 }
+fn decode_sao_merge_flag(ctx: &mut DecodeSliceContext) -> u8 {
+    debug_more!("sao_merge_up/left_flag");
+    let bit = ctx.cabac.decode_decision(CONTEXT_MODEL_SAO_MERGE_FLAG);
+    debug_more!("decode_sao_merge_up/left_flag(bit) {}", bit);
+    bit
+}
 
-pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> SaoInfo {
+pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
     let shdr = ctx.slice_header;
     let sps = ctx.sps;
 
     debug_more!("read_sao ({} {})", x_ctb, y_ctb);
-    let mut sao_info = SaoInfo::default();
+    let mut sao_info;
 
-    let sao_merge_left_flag = false;
-    let sao_merge_right_flag = false;
+    let mut sao_merge_left_flag = false;
+    let mut sao_merge_up_flag = false;
 
     if x_ctb > 0 {
-        todo!()
+        // Merge left uses context 0
+        sao_merge_left_flag = decode_sao_merge_flag(ctx) != 0;
     }
-    if y_ctb > 0 && sao_merge_left_flag == false {
-        todo!()
+
+    if y_ctb > 0 && !sao_merge_left_flag {
+        // Merge up uses context 0
+        sao_merge_up_flag = decode_sao_merge_flag(ctx) != 0;
     }
-    if !sao_merge_left_flag && !sao_merge_right_flag {
+
+    if sao_merge_left_flag {
+        // Copy from left CTB
+        debug_more!("Merging SAO from LEFT");
+        sao_info = ctx.get_neighbor_sao(x_ctb - 1, y_ctb).clone();
+    } else if sao_merge_up_flag {
+        // Copy from top CTB
+        debug_more!("Merging SAO from UP");
+        sao_info = ctx.get_neighbor_sao(x_ctb, y_ctb - 1).clone();
+    } else {
+        sao_info = SaoInfo::default();
         let mut n_chroma = 3;
         if sps.chroma_format == ChromaFormat::Monochrome {
             n_chroma = 1;
@@ -173,5 +193,5 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
         }
     }
     debug_more!(false=>"{:#?}", sao_info);
-    return sao_info;
+    ctx.set_sao_info(x_ctb, y_ctb, sao_info);
 }

@@ -89,7 +89,8 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
 
     dst.chunks_exact_mut(n_t).enumerate().for_each(|(y, row)| {
         let y = y as i32;
-        let left_val = p[1 + 2 * n_t + y as usize] as i32;
+        let idx = 1 + 2 * n_t + y as usize;
+        let left_val = p[idx] as i32;
         let v_weight_b = y + 1; // (y+1) * bottom_left
         let v_weight_t = n - 1 - y; // (n-1-y) * top_val
 
@@ -124,13 +125,16 @@ const INTRA_ANGLES: [i16; 35] = [
       5,  9,  13, 17, 21, 26, 32,
 ];
 
-#[rustfmt::skip]
-const INV_ANGLES: [i16; 35] = [
-     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
- -4096, -1638,  -910,  -630,  -482,  -390,  -315,  -256,  -315,  -390,  -482,  -630,  -910, -1638, -4096,
-     0,    0,    0,    0,    0,    0,    0,    0,    0,
+/// HEVC invAngle table (Table 8-4).
+/// Maps mode_idx to the scaled inverse of the intraPredAngle.
+/// Only used for modes with negative angles (2-9 and 27-34).
+const INV_ANGLES: [u16; 35] = [
+    0, 0,                                         // 0: Planar, 1: DC
+    256, 315, 390, 482, 630, 910, 1638, 4096,     // 2-9:   Negative angles (Vertical-ish)
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 10-26: Positive/Zero angles
+    0, 0,                                         // 25-26: Mode 26 is Vertical (angle 0)
+    4096, 1638, 910, 630, 482, 390, 315, 256      // 27-34: Negative angles (Horizontal-ish)
 ];
-
 pub fn predict_angular(
     p: &[u8],
     dst: &mut [u8],

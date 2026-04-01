@@ -18,6 +18,7 @@ use crate::hevc_decoder::quadtree::read_coding_quadtree;
 use crate::hevc_decoder::quadtree::sao::read_sao;
 use crate::hevc_decoder::quadtree::transform_unit::read_transform_tree;
 
+
 fn decode_rqt_root_cbf(ctx: &mut DecodeSliceContext) -> bool {
     debug_more!("decode_rqt_root_cbf");
     let rqt_root_cbf = ctx.cabac.decode_decision(CONTEXT_MODEL_RQT_ROOT_CBF) == 1;
@@ -227,6 +228,7 @@ pub fn read_coding_tree_unit(
     let shdr = &ctx.slice_header;
 
     let log_2_ctb_size_y = sps.log2_ctb_size_y;
+
     let x_ctb_pixels = ctu_x << log_2_ctb_size_y;
     let y_ctb_pixels = ctu_y << log_2_ctb_size_y;
 
@@ -234,7 +236,7 @@ pub fn read_coding_tree_unit(
         "DECODE CTB log_2_ctb_size_y: {log_2_ctb_size_y} x_ctb_pixels: {x_ctb_pixels} y_ctb_pixels: {y_ctb_pixels}"
     );
     if shdr.slice_sao_luma_flag || shdr.slice_sao_chroma_flag {
-        let sao_info = read_sao(ctx, x_ctb_pixels, y_ctb_pixels);
+         read_sao(ctx, ctu_x, ctu_y);
     }
 
     read_coding_quadtree(ctx, x_ctb_pixels, y_ctb_pixels, log_2_ctb_size_y, 0)?;
