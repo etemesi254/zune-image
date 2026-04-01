@@ -1,7 +1,8 @@
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::debug_more;
 use crate::hevc_decoder::cabac_tables::{CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG};
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
+
 // h.265-V2 Table 8-3
 #[rustfmt::skip]
 const MAP_CHROMA_422: [u8; 35] = [

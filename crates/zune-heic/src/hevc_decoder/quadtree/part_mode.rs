@@ -2,7 +2,7 @@ use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_PART_MODE;
 use crate::hevc_decoder::constants::PartMode;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 
 pub fn decode_part_mode(ctx: &mut DecodeSliceContext, log2_cb_size: u8) -> PartMode {
     let sps = ctx.sps;

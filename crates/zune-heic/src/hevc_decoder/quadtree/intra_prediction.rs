@@ -1,218 +1,17 @@
 use std::sync::Arc;
 
 use crate::debug_more;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::nal_unit_headers::Pps;
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
 use crate::hevc_decoder::raw_frame::RawFrame;
 
 /// The "Wall of Pixels" used for intra prediction.
 /// Size is 4 * n_t + 1.
-impl<'a> DecodeSliceContext<'a> {
-    /// Prepares the reference samples in the context's internal buffers.
-    /// Returns the length of the valid segment (4 * n_t + 1).
-    pub fn setup_reference_samples(
-        &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
-    ) -> usize {
-        let p_len = 4 * n_t + 1;
 
-        // 1. Reset/Clear the values for the current segment
-        // We only clear up to p_len to save cycles
-        self.ref_samples_p[..p_len].fill(0);
-        self.ref_samples_available[..p_len].fill(false);
 
-        // 2. Check Availability
-        // We pass slices of our fixed arrays
-        check_availability(
-            &self.neighbor_tracker,
-            &self.pps,
-            x0,
-            y0,
-            n_t,
-            &mut self.ref_samples_available[..p_len]
-        );
 
-        // 3. Fetch and Pad
-        perform_padding(
-            &self.raw_frame,
-            &mut self.ref_samples_p[..p_len],
-            &self.ref_samples_available[..p_len],
-            x0,
-            y0,
-            n_t,
-            c_idx
-        );
-
-        // 4. Filter/Smoothing
-        let strong_enabled = self.sps.strong_intra_smoothing_enable_flag;
-        apply_reference_smoothing(
-            &mut self.ref_samples_p[..p_len],
-            n_t,
-            intra_mode,
-            strong_enabled
-        );
-
-        p_len
-    }
-}
-fn check_availability(
-    tracker: &NeighborTracker, pps: &Pps, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
-) {
-    // Top-Left
-    available[0] = tracker.is_available(x0, y0, x0 as isize - 1, y0 as isize - 1);
-
-    // Top & Top-Right
-    for i in 0..(2 * n_t) {
-        available[1 + i] = tracker.is_available(x0, y0, (x0 + i) as isize, y0 as isize - 1);
-    }
-
-    // Left & Below-Left
-    for i in 0..(2 * n_t) {
-        available[1 + 2 * n_t + i] =
-            tracker.is_available(x0, y0, x0 as isize - 1, (y0 + i) as isize);
-    }
-
-    if pps.constrained_intra_pred_flag {
-        // filter_constrained logic...
-        filter_constrained(tracker, x0, y0, n_t, available);
-    }
-}
-
-fn perform_padding(
-    frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
-    c_idx: usize
-) {
-    // 1. Fetch available pixels from the Mutex-protected frame
-    {
-        let plane = match c_idx {
-            0 => frame.luma.lock().unwrap(),
-            1 => frame.cb.lock().unwrap(),
-            2 => frame.cr.lock().unwrap(),
-            _ => unreachable!()
-        };
-
-        let stride = plane.stride;
-        let pad = plane.padding;
-        let pixels = &plane.pixels;
-
-        let get_p = |px: isize, py: isize| -> u8 {
-            pixels[(py as usize + pad) * stride + (px as usize + pad)]
-        };
-
-        if available[0] {
-            p[0] = get_p(x0 as isize - 1, y0 as isize - 1);
-        }
-        for i in 0..(2 * n_t) {
-            if available[1 + i] {
-                p[1 + i] = get_p((x0 + i) as isize, y0 as isize - 1);
-            }
-            if available[1 + 2 * n_t + i] {
-                p[1 + 2 * n_t + i] = get_p(x0 as isize - 1, (y0 + i) as isize);
-            }
-        }
-    }
-
-    // 2. Propagation Logic (HEVC Spec 8.4.4.2.2)
-    if !available.iter().any(|&a| a) {
-        p.fill(128); // Default gray if nothing is available
-        return;
-    }
-
-    // Standard HEVC search order: Bottom-Left -> Corner -> Top-Right
-    let mut order = Vec::with_capacity(p.len());
-    for i in ((2 * n_t + 1)..=(4 * n_t)).rev() {
-        order.push(i);
-    }
-    order.push(0);
-    for i in 1..=(2 * n_t) {
-        order.push(i);
-    }
-
-    let first_valid_idx = *order.iter().find(|&&idx| available[idx]).unwrap();
-    let mut last_val = p[first_valid_idx];
-
-    for &idx in &order {
-        if available[idx] {
-            last_val = p[idx];
-        } else {
-            p[idx] = last_val;
-        }
-    }
-}
-/// Applies [1, 2, 1] smoothing or Strong Intra Smoothing (Spec 8.4.4.2.3)
-fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled: bool) {
-    if n_t == 4 {
-        return;
-    } // 4x4 is never smoothed
-
-    // Strong Intra Smoothing check for 32x32 blocks
-    if n_t == 32 && strong_enabled {
-        let threshold = 1 << (8 - 5); // Default for 8-bit
-        let tl = p[0] as i32;
-        let tr = p[2 * n_t] as i32;
-        let bl = p[4 * n_t] as i32;
-
-        if (tl + tr - 2 * p[n_t] as i32).abs() < threshold
-            && (tl + bl - 2 * p[3 * n_t] as i32).abs() < threshold
-        {
-            apply_strong_smoothing(p, n_t);
-            return;
-        }
-    }
-
-    // Standard [1, 2, 1] smoothing
-    if is_filtering_required(mode, n_t) {
-        let mut p_copy = p.to_vec();
-        for i in 1..4 * n_t {
-            p_copy[i] = ((p[i - 1] as u16 + 2 * p[i] as u16 + p[i + 1] as u16 + 2) >> 2) as u8;
-        }
-        // Corner and ends are not smoothed or use specific rules;
-        // standard HEVC logic skips p[0] and p[4*nT] during standard filter.
-        p.copy_from_slice(&p_copy);
-    }
-}
-fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
-    let tl = p[0] as i32;
-    let tr = p[2 * n_t] as i32;
-    let bl = p[4 * n_t] as i32;
-
-    // Top edge bilinear interpolation
-    for i in 1..=2 * n_t {
-        p[i] = (((2 * n_t - i) as i32 * tl + i as i32 * tr + n_t as i32) / (2 * n_t) as i32) as u8;
-    }
-    // Left edge bilinear interpolation
-    for i in 1..=2 * n_t {
-        p[2 * n_t + i] =
-            (((2 * n_t - i) as i32 * tl + i as i32 * bl + n_t as i32) / (2 * n_t) as i32) as u8;
-    }
-}
-
-fn is_filtering_required(mode: u8, n_t: usize) -> bool {
-    // HEVC Table 8-3
-    match n_t {
-        8 => mode == 0 || mode == 2 || mode == 18 || mode == 34,
-        16 => mode != 1 && mode != 10 && mode != 26,
-        32 => mode != 1 && mode != 10 && mode != 26,
-        _ => false
-    }
-}
-
-fn filter_constrained(
-    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
-) {
-    let mut check = |px: usize, py: usize, idx: usize| {
-        if available[idx] && !tracker.get_state(px, py).is_intra {
-            available[idx] = false;
-        }
-    };
-
-    check(x0 - 1, y0 - 1, 0);
-    for i in 0..(2 * n_t) {
-        check(x0 + i, y0 - 1, 1 + i);
-        check(x0 - 1, y0 + i, 1 + 2 * n_t + i);
-    }
-}
 
 // ============================================================
 // Caller contract (document these or add a wrapper that checks):
@@ -439,7 +238,7 @@ pub fn decode_intra_prediction_internal_u8(
     // These are pulled from already reconstructed pixels in the current frame.
 
     let p_len = ctx.setup_reference_samples(x_b0, y_b0, n_t, intra_mode, c_idx); // 2. Dispatch to the specific Mode Logic
-    let scratchpad = &mut ctx.scratchpad;
+    let scratchpad = &mut ctx.pixel_scratchpad;
     let ref_main_scratch = &mut ctx.ref_main_buf;
 
     let p_slice = &ctx.ref_samples_p[..p_len];
@@ -470,7 +269,6 @@ pub fn decode_intra_prediction_internal_u8(
         }
     }
     ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t);
-    panic!();
 }
 pub fn decode_intra_prediction(
     ctx: &mut DecodeSliceContext,

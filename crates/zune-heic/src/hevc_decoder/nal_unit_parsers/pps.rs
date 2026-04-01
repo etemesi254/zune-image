@@ -1,10 +1,11 @@
-use crate::hevc_decoder::DEBUG_MORE;
 use zune_core::log::warn;
+
 use crate::debug_more;
+use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, PpsRangeExtension, Sps};
-use crate::hevc_decoder::nal_unit_parsers::skip_scaling_list_data;
+use crate::hevc_decoder::nal_unit_parsers::{parse_scaling_list_data};
 
 pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     // 7.4.3.3.1: pps_pic_parameter_set_id is in [0, 63].
@@ -157,8 +158,11 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     }
 
     pps.pic_scaling_list_data_present_flag = r.read_flag();
+    // reading scaling lists
     if pps.pic_scaling_list_data_present_flag {
-        skip_scaling_list_data(&mut r)?;
+        pps.pic_scaling_lists = parse_scaling_list_data(&mut r)?;
+    } else {
+        pps.pic_scaling_lists = sps.scaling_lists.clone()
     }
     // --- Extensions ---
     pps.lists_modification_present_flag = r.read_flag();
@@ -303,8 +307,11 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 log2_sao_offset_scale_chroma,
                 log2_max_transform_skip_block_size,
                 diff_cu_chroma_qp_offset_depth,
-                chroma_qp_offset_list_len
+                chroma_qp_offset_list_len,
+                cross_component_prediction_enabled_flag
+                
             };
+            
             pps.range_extension = Some(range_ext);
         }
     }

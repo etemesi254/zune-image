@@ -1,11 +1,11 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_CU_QP_DELTA_ABS;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
 
-pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32,NalError> {
+pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32, NalError> {
     debug_more!("# cu_qp_delta_abs");
 
     let ctx_base = CONTEXT_MODEL_CU_QP_DELTA_ABS;
@@ -55,7 +55,7 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32,NalError> 
     Ok(final_delta)
 }
 pub fn decode_quantization_parameters(
-    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8
+    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8,
 ) {
     debug_more!(
         "-------------decode_quantization_parameters( xc={},yc={}) ---------------",

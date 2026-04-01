@@ -4,6 +4,7 @@ use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hevc_decoder::constants::PartMode;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, SliceType, Sps};
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
@@ -23,125 +24,8 @@ mod part_mode;
 mod quant;
 mod residual_block;
 mod sao;
-mod sig_ctx_generator;
+pub(crate) mod sig_ctx_generator;
 
-struct DecodeSliceContext<'a> {
-    sps:                  &'a Sps,
-    pps:                  &'a Pps,
-    slice_header:         &'a SliceHeader,
-    cabac:                CabacDecoder<'a>,
-    neighbor_tracker:     NeighborTracker,
-    is_cu_qp_delta_coded: bool,
-    cu_qp_delta:          i32,
-    // quantization group
-    current_qg_x:         usize,
-    current_qg_y:         usize,
-    last_qp_in_slice:     i8, // This tracks the "previous" QP for the next CU
-
-    // - CU state to be captured for the tracker
-    pub is_skip:           bool,
-    pub is_intra:          bool,
-    pub intra_mode_luma:   u8,
-    pub intra_mode_chroma: u8,
-
-    qp_y_prime:  i32,
-    qp_cb_prime: i32,
-    qp_cr_prime: i32,
-
-    // residual data
-    cu_transquant_bypass_flag: bool,
-    explicit_rdpcm_flag:       bool,
-    explicit_rdpcm_dir:        u8,
-    transform_skip_flag:       [u8; 3],
-    // context significant maps
-    pub sig_ctx_maps:          Vec<Vec<Vec<Vec<Vec<u8>>>>>,
-    pub stat_coeff:            [u8; 4],
-    pub coeff_list:            [[i16; 32 * 32]; 3],
-    pub coeff_pos:             [[i16; 32 * 32]; 3],
-    pub n_coeff:               [i16; 3],
-    // raw image frame reference
-    pub raw_frame:             Arc<RawFrame>,
-    // --- scratch buffers
-    // scratchpad for storing decoded pixels in predict_planar
-    // setup to be 1024 (32 * 32) for maximum CTU size, and
-    // reused
-    pub scratchpad:            Vec<u8>,
-    // needed for predict_angular, condition is >= 3 * n_t + 1
-    // n_t cannot go above 32, so its 3 * 32 +1 => 97
-    pub ref_main_buf:          Vec<u8>,
-    // value is 4 * n_t +1 so can never be more than 129
-    pub ref_samples_p:         Vec<u8>, // The 1D reference "p" array
-    pub ref_samples_available: Vec<bool>
-}
-impl<'a> DecodeSliceContext<'a> {
-    fn new(
-        sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
-        neighbor_tracker: NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
-    ) -> Self {
-        Self {
-            sps,
-            pps,
-            slice_header,
-            cabac: cabac_engine,
-            neighbor_tracker,
-            last_qp_in_slice,
-            is_cu_qp_delta_coded: false,
-            cu_qp_delta: 0,
-            current_qg_x: 0,
-            current_qg_y: 0,
-            is_skip: false,
-            is_intra: false,
-            intra_mode_luma: 0,
-            intra_mode_chroma: 0,
-            cu_transquant_bypass_flag: false,
-            qp_y_prime: 0,
-            qp_cb_prime: 0,
-            qp_cr_prime: 0,
-            transform_skip_flag: [0; 3],
-            explicit_rdpcm_flag: false,
-            explicit_rdpcm_dir: 0,
-            sig_ctx_maps: generate_all_sig_ctx_maps(),
-            stat_coeff: [0; 4],
-            coeff_list: [[0; 32 * 32]; 3],
-            coeff_pos: [[0; 32 * 32]; 3],
-            n_coeff: [0; 3],
-            raw_frame,
-            scratchpad: vec![0; 1024],
-            ref_main_buf: vec![0; 97],
-            ref_samples_p: vec![0; 129],
-            ref_samples_available: vec![false; 129]
-        }
-    }
-}
-
-impl<'a> DecodeSliceContext<'a> {
-    /// Sets a block of pixels (e.g., after reconstruction)
-    pub fn write_block_scratchpad(&self, c_idx: usize, x0: usize, y0: usize, n_t: usize) {
-        // data is expected to be in scratchpad
-        let block_data = &self.scratchpad;
-        // 1. Lock the appropriate plane
-        let mut plane = match c_idx {
-            0 => self.raw_frame.luma.lock().unwrap(),
-            1 => self.raw_frame.cb.lock().unwrap(),
-            2 => self.raw_frame.cr.lock().unwrap(),
-            _ => panic!("Invalid component index")
-        };
-
-        // 2. Calculate coordinates with padding offset
-        let stride = plane.stride;
-        let padding = plane.padding;
-        let offset_base = (y0 + padding) * stride + (x0 + padding);
-
-        // 3. Copy row by row
-        for dy in 0..n_t {
-            let src_start = dy * n_t;
-            let dst_start = offset_base + (dy * stride);
-
-            plane.pixels[dst_start..dst_start + n_t]
-                .copy_from_slice(&block_data[src_start..src_start + n_t]);
-        }
-    }
-}
 pub fn decode_slice(
     nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
 ) -> Result<(), NalError> {

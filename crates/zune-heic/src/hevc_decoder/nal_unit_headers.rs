@@ -95,12 +95,13 @@ pub struct Sps {
     pub max_transform_hierarchy_depth_intra:      u64,
 
     // Features
-    pub scaling_list_enabled_flag:           bool,
-    pub amp_enabled_flag:                    bool,
+    pub scaling_list_enabled_flag: bool,
+    pub scaling_lists: ScalingLists,
+    pub amp_enabled_flag: bool,
     pub sample_adaptive_offset_enabled_flag: bool,
-    pub pcm_enabled_flag:                    bool,
-    pub sps_temporal_mvp_enabled_flag:       bool,
-    pub strong_intra_smoothing_enable_flag:  bool,
+    pub pcm_enabled_flag: bool,
+    pub sps_temporal_mvp_enabled_flag: bool,
+    pub strong_intra_smoothing_enable_flag: bool,
 
     // Derived Values
     pub min_cb_size_y:                 u64,
@@ -183,13 +184,14 @@ impl Default for VuiVideoFormat {
 
 #[derive(Default, Clone, Debug)]
 pub struct PpsRangeExtension {
-    pub cb_qp_offset_list:                  [i8; 6],
-    pub cr_qp_offset_list:                  [i8; 6],
-    pub log2_sao_offset_scale_luma:         u8,
-    pub log2_sao_offset_scale_chroma:       u8,
+    pub cb_qp_offset_list: [i8; 6],
+    pub cr_qp_offset_list: [i8; 6],
+    pub log2_sao_offset_scale_luma: u8,
+    pub log2_sao_offset_scale_chroma: u8,
     pub log2_max_transform_skip_block_size: u8,
-    pub diff_cu_chroma_qp_offset_depth:     u8,
-    pub chroma_qp_offset_list_len:          u8
+    pub diff_cu_chroma_qp_offset_depth: u8,
+    pub chroma_qp_offset_list_len: u8,
+    pub cross_component_prediction_enabled_flag: bool
 }
 #[derive(Debug, Clone, Default)]
 pub struct Pps {
@@ -235,6 +237,7 @@ pub struct Pps {
     pub loop_filter_across_tiles_enabled_flag: bool,
 
     pub pic_scaling_list_data_present_flag: bool,
+    pub pic_scaling_lists:                  ScalingLists,
 
     // Loop Filter & Control
     pub loop_filter_across_slices_enabled_flag: bool,
@@ -294,5 +297,80 @@ impl TryFrom<u64> for SliceType {
 impl Default for SliceType {
     fn default() -> Self {
         Self::I // Defaulting to I-slice is safest for initialization
+    }
+}
+
+const DEFAULT_SCALING_8X8_INTRA: [u8; 64] = [
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 17, 16, 17, 16, 17, 18, 17, 18, 18, 17, 18, 21, 19, 20,
+    21, 20, 19, 21, 24, 22, 22, 24, 24, 22, 22, 24, 25, 25, 27, 30, 27, 25, 25, 29, 31, 35, 35, 31,
+    29, 36, 41, 44, 41, 36, 47, 54, 54, 47, 65, 70, 65, 88, 88, 115
+];
+
+const DEFAULT_SCALING_8X8_INTER: [u8; 64] = [
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 20, 20, 20,
+    20, 20, 20, 20, 24, 24, 24, 24, 24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 25, 28, 28, 28, 28, 28,
+    28, 33, 33, 33, 33, 33, 41, 41, 41, 41, 54, 54, 54, 71, 71, 91
+];
+#[rustfmt::skip]
+const SCAN_8X8: [usize; 64] = [
+    0,  8,  1, 16,  9,  2, 24, 17, 10,  3, 32, 25, 18, 11,  4, 40,
+    33, 26, 19, 12,  5, 48, 41, 34, 27, 20, 13,  6, 56, 49, 42, 35,
+    28, 21, 14,  7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30,
+    23, 59, 52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63
+];
+#[derive(Debug, Clone)]
+pub struct ScalingLists {
+    // 4x4 matrices (6 of them, 16 samples each)
+    pub size0: [[u8; 16]; 6],
+    // 8x8 matrices (6 of them, 64 samples each)
+    pub size1: [[u8; 64]; 6],
+    // 16x16 matrices (6 of them, 64 samples each - upsampled later)
+    pub size2: [[u8; 64]; 6],
+    // 32x32 matrices (2 of them, 64 samples each - upsampled later)
+    pub size3: [[u8; 64]; 2],
+
+    // Special DC values for 16x16 and 32x32
+    pub dc16: [u8; 6],
+    pub dc32: [u8; 2]
+}
+
+impl Default for ScalingLists {
+    fn default() -> Self {
+        let mut sl = Self {
+            size0: [[16; 16]; 6],
+            size1: [[16; 64]; 6],
+            size2: [[16; 64]; 6],
+            size3: [[16; 64]; 2],
+            dc16:  [16; 6],
+            dc32:  [16; 2]
+        };
+
+        // Standard HEVC Scan-Order Defaults
+        let scan_intra = DEFAULT_SCALING_8X8_INTRA;
+        let scan_inter = DEFAULT_SCALING_8X8_INTER;
+
+        // Temporary buffers for rasterized versions
+        let mut raster_intra = [0u8; 64];
+        let mut raster_inter = [0u8; 64];
+
+        for i in 0..64 {
+            raster_intra[SCAN_8X8[i]] = scan_intra[i];
+            raster_inter[SCAN_8X8[i]] = scan_inter[i];
+        }
+
+        // Apply to 8x8, 16x16, and 32x32
+        for i in 0..6 {
+            if i < 3 {
+                sl.size1[i] = raster_intra;
+                sl.size2[i] = raster_intra;
+            } else {
+                sl.size1[i] = raster_inter;
+                sl.size2[i] = raster_inter;
+            }
+        }
+        sl.size3[0] = raster_intra;
+        sl.size3[1] = raster_inter;
+
+        sl
     }
 }

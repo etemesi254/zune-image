@@ -1,17 +1,17 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
-use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_CBF_CHROMA, CONTEXT_MODEL_CBF_LUMA, CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG,
     CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG,
     CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
-    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG
+    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1,
+    CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG
 };
 use crate::hevc_decoder::constants::PartMode;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::neighbor_tracker::PredMode;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
 use crate::hevc_decoder::quadtree::intra_prediction::decode_intra_prediction;
 use crate::hevc_decoder::quadtree::quant::{decode_cu_qp_delta, decode_quantization_parameters};
 use crate::hevc_decoder::quadtree::residual_block::decode_residual_block;
@@ -63,84 +63,151 @@ pub fn decode_tu(
 ) {
     let mut residual_dpcm = 0;
     let sps = ctx.sps;
+
+    // --- 1. INTRA PREDICTION ---
+    // Predicted pixels are written to pixel_scratchpad
     if cu_pred_mode == PredMode::ModeIntra {
-        // --- 1. Get Intra Prediction Mode ---
         let intra_pred_mode = if c_idx == 0 {
             ctx.neighbor_tracker.get_intra_mode(x0, y0)
         } else {
             let sub_width_c = sps.sub_width_c as usize;
             let sub_height_c = sps.sub_height_c as usize;
+            // Chroma uses the luma coordinates to fetch its specific mode
             ctx.neighbor_tracker
-                .get_intra_mode_chroma(x0 * sub_width_c, y0 * sub_width_c + sub_width_c)
+                .get_intra_mode_chroma(x0 * sub_width_c, y0 * sub_height_c)
         };
-        if  intra_pred_mode >= 35 {
+
+        if intra_pred_mode >= 35 {
             panic!("intra_pred_mode cannot be more than 35");
         }
 
-        // --- 2. Perform Intra Prediction ---
-        // This fills the prediction buffer with spatial directions
         decode_intra_prediction(ctx, x0, y0, intra_pred_mode, n_t, c_idx);
-        panic!();
-       
+
+        // Determine Implicit RDPCM (Spec 8.6.4.2)
+        let implicit_rdpcm_enabled = sps
+            .range_extension
+            .as_ref()
+            .map_or(false, |s| s.implicit_rdpcm_enabled_flag);
+
+        if implicit_rdpcm_enabled
+            && (ctx.cu_transquant_bypass_flag || ctx.transform_skip_flag[c_idx] == 1)
+        {
+            if intra_pred_mode == 10 {
+                residual_dpcm = 1;
+            }
+            // Horizontal
+            else if intra_pred_mode == 26 {
+                residual_dpcm = 2;
+            } // Vertical
+        }
     } else {
-       
+        // Inter logic for Explicit RDPCM
+        if ctx.explicit_rdpcm_flag {
+            residual_dpcm = if ctx.explicit_rdpcm_dir > 0 { 2 } else { 1 };
+        }
+    }
+
+    // --- 2. LOSSLESS (TRANSQUANT BYPASS) PATH ---
+    if ctx.cu_transquant_bypass_flag {
+        // This function handles scattering, RDPCM, CCP, and frame write
+        ctx.reconstruct_lossless(x0, y0, n_t, c_idx, residual_dpcm);
+
+        // IMPORTANT: In lossless mode, the "residual" is exactly what was in the bitstream
+        if c_idx == 0 {
+            // We still need to back up Luma for potential CCP in Chroma
+            for i in 0..n_t * n_t {
+                ctx.luma_residual_temp[i] = ctx.math_scratchpad[i];
+            }
+        }
+        return; // Exit early; no transform/scaling needed
+    }
+
+    // --- 3. NORMAL PATH (Scaling & Transform) ---
+    // We run scaling if there is a CBF OR if Chroma CCP is active (even if CBF is 0)
+    let ccp_active = c_idx != 0 && ctx.res_scale_val != 0;
+
+    if cbf || ccp_active {
+        // Scale coefficients into math_scratchpad
+        ctx.scale_coefficients(x0, y0, n_t, c_idx, ctx.transform_skip_flag[c_idx] == 1);
+
+        // Inverse Transform
+        if ctx.transform_skip_flag[c_idx] == 0 {
+            // Pick DST for Luma 4x4 Intra, otherwise IDCT
+            let use_dst = c_idx == 0 && n_t == 4 && cu_pred_mode == PredMode::ModeIntra;
+            if use_dst {
+                todo!("inverse dst 4x4 luma")
+            } else {
+                todo!("inverse idct {c_idx} {n_t} {:?}", cu_pred_mode);
+            }
+        } else {
+            // RDPCM for Transform Skip (Spec 8.6.4.4.1)
+            todo!("apply residual dcpm")
+            // match residual_dpcm {
+            //     1 => ctx.apply_rdpcm_horizontal_in_place(n_t),
+            //     2 => ctx.apply_rdpcm_vertical_in_place(n_t),
+            //     _ => {}
+            // }
+        }
+
+        // Apply CCP for Chroma
+        if c_idx != 0 && ctx.res_scale_val != 0 {
+            let scale = ctx.res_scale_val;
+            ctx.apply_cross_component_prediction(n_t, scale, None);
+        }
+
+        // --- 4. SAVE LUMA TEMPLATE ---
+        // After Luma transform/scaling is done, but BEFORE we add to pixels,
+        // save the residual result for Cb and Cr to use.
+        if c_idx == 0 {
+            ctx.luma_residual_temp[..n_t * n_t].copy_from_slice(&ctx.math_scratchpad[..n_t * n_t]);
+        }
+
+        // --- 5. RECONSTRUCT (Residuals + Prediction) ---
+        let bit_depth = if c_idx == 0 { sps.bit_depth_luma } else { sps.bit_depth_chroma };
+        ctx.add_residual_and_write(x0, y0, n_t, c_idx, None, bit_depth);
+    } else {
+        // No coefficients and no CCP: Just copy prediction pixels to frame
+        ctx.write_block_scratchpad(c_idx, x0, y0, n_t);
     }
 }
 
 pub fn read_transform_tree(
     ctx: &mut DecodeSliceContext,
     x0: usize,
-    y0: usize, // Current block top-left
+    y0: usize,
     x_base: usize,
-    y_base: usize, // CU top-left
+    y_base: usize,
     log2_trafo_size: u8,
     trafo_depth: u8,
     max_trafo_depth: u8,
+    blk_idx: usize, // New: identifies the quadrant (0-3)
     intra_split_flag: bool,
-    mut cbf_cb: bool,
-    mut cbf_cr: bool
+    mut cbf_cb: u8,
+    mut cbf_cr: u8
 ) -> Result<(), NalError> {
     debug_more!(
-        " ---- read_transform_tree(interleaved) x0:{} y0:{} x_base:{},y_base:{},log2_trafo_size:{},trafo_depth:{},max_trafo_depth:{}",
+        "read_transform_tree: x0:{} y0:{} log2_trafo_size:{} trafo_depth:{} blk_idx:{}",
         x0,
         y0,
-        x_base,
-        y_base,
         log2_trafo_size,
         trafo_depth,
-        max_trafo_depth
+        blk_idx
     );
 
-    // 1. Determine if we decode or infer the split flag
-    let cbf_luma;
+    // 1. Determine split_flag
     let mut split_flag;
-
-    // Logic for "Can we even choose?"
-    // We can ONLY choose if:
-    // - We are within the min/max size bounds
-    // - We haven't reached the max depth
-    // - AND it's NOT a forced Intra split (Intra NxN at depth 0)
     let can_decode_flag = log2_trafo_size <= ctx.sps.log2_max_transform_block_size
         && log2_trafo_size > ctx.sps.log2_min_transform_block_size
         && trafo_depth < max_trafo_depth
         && !(intra_split_flag && trafo_depth == 0);
 
     if can_decode_flag {
-        // Decode from bitstream
-        // Note: HEVC uses the size to pick the context
         split_flag = decode_split_transform_flag(ctx, log2_trafo_size);
     } else {
-        // INFERENCE LOGIC
+        // Inference logic (Size limits, Forced Intra NxN, or Inter hierarchy)
         let part_mode = ctx.neighbor_tracker.get_part_mode(x0, y0);
-
-        // Case A: Size too big
         let size_too_big = log2_trafo_size > ctx.sps.log2_max_transform_block_size;
-
-        // Case B: Forced Intra NxN split at the root
         let forced_intra_split = intra_split_flag && trafo_depth == 0;
-
-        // Case C: Inter split edge case
-        // (Matches libde265: depth 0, hierarchy 0, non-2Nx2N Inter)
         let inter_split_flag = ctx.sps.max_transform_hierarchy_depth_inter == 0
             && trafo_depth == 0
             && !ctx.is_intra
@@ -149,50 +216,41 @@ pub fn read_transform_tree(
         split_flag = size_too_big || forced_intra_split || inter_split_flag;
     }
 
-    // 2. Decode Chroma CBFs (Coded Block Flags)
-    // Only decode if we have chroma data
+    // 2. Decode Chroma CBFs
+    // If the parent TU had a CBF of 0, all children are inferred to be 0.
+    // If parent was 1, we decode a flag to see if this specific TU has coefficients.
     let has_chroma = (log2_trafo_size > 2 && ctx.sps.chroma_format != ChromaFormat::Monochrome)
         || ctx.sps.chroma_format == ChromaFormat::Yuv444;
 
     if has_chroma {
-        // 1. Process Cb (Chroma Blue)
-        if cbf_cb {
-            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
-
-            // 4:2:2 Special Case: Read second CBF bit if necessary
+        // Cb Component
+        if cbf_cb != 0 {
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth) as u8;
             if ctx.sps.chroma_format == ChromaFormat::Yuv422
                 && (!split_flag || log2_trafo_size == 3)
             {
-                let second_bit = decode_cbf_chroma(ctx, trafo_depth);
-                bit |= second_bit << 1;
+                bit |= (decode_cbf_chroma(ctx, trafo_depth) as u8) << 1;
             }
-            cbf_cb = bit != 0;
+            cbf_cb = bit;
         }
-
-        // 2. Process Cr (Chroma Red)
-        if cbf_cr {
-            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
-
-            // 4:2:2 Special Case: Read second CBF bit if necessary
+        // Cr Component
+        if cbf_cr != 0 {
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth) as u8;
             if ctx.sps.chroma_format == ChromaFormat::Yuv422
                 && (!split_flag || log2_trafo_size == 3)
             {
-                let second_bit = decode_cbf_chroma(ctx, trafo_depth);
-                bit |= second_bit << 1;
+                bit |= (decode_cbf_chroma(ctx, trafo_depth) as u8) << 1;
             }
-            cbf_cr = bit != 0;
+            cbf_cr = bit;
         }
     }
 
     if split_flag {
-        let sub_size = 1 << (log2_trafo_size - 1);
-        let half_size = sub_size;
+        let half_size = 1 << (log2_trafo_size - 1);
 
-        debug_more!("transform_split (sub_size: {sub_size}, half_size: {half_size})");
-
-        // Recursive split into 4 quadrants
         for j in 0..2 {
             for i in 0..2 {
+                // Recursively call with the updated quadrant index
                 read_transform_tree(
                     ctx,
                     x0 + i * half_size,
@@ -202,68 +260,220 @@ pub fn read_transform_tree(
                     log2_trafo_size - 1,
                     trafo_depth + 1,
                     max_trafo_depth,
+                    j * 2 + i, // New blk_idx
                     intra_split_flag,
                     cbf_cb,
                     cbf_cr
                 )?;
             }
         }
-
-        Ok(())
     } else {
-        // 3. Leaf Node: Decode Luma CBF
-        // Intra blocks at depth 0 ALWAYS have cbf_luma = 1 if not explicitly split.
-        if ctx.is_intra || trafo_depth != 0 || cbf_cb || cbf_cr {
-            cbf_luma = decode_cbf_luma(ctx, trafo_depth);
+        // 3. Leaf Node: Decode/Infer Luma CBF
+        let cbf_luma = if ctx.is_intra || trafo_depth != 0 || cbf_cb != 0 || cbf_cr != 0 {
+            decode_cbf_luma(ctx, trafo_depth)
         } else {
-            cbf_luma = true; // Inferred
-        }
+            true // Inferred: if everything else is 0, Luma MUST be 1 for a leaf
+        };
 
-        // 4. Enter the Transform Unit (Residual Coding)
-        read_transform_unit(ctx, x0, y0, log2_trafo_size, cbf_luma, cbf_cb, cbf_cr)?;
-        Ok(())
+        // 4. Transform Unit Processing
+        // Passing the full set of parameters to handle 4:2:0 and 4:2:2 logic
+        read_transform_unit(
+            ctx,
+            x0,
+            y0,
+            x_base,
+            y_base,
+            log2_trafo_size,
+            blk_idx,
+            cbf_luma,
+            cbf_cb,
+            cbf_cr
+        )?;
     }
+    Ok(())
 }
 
-fn read_transform_unit(
-    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_size: u8, cbf_luma: bool,
-    cbf_cb: bool, cbf_cr: bool
+fn decode_log2_res_scale_abs_plus1(ctx: &mut DecodeSliceContext, c_idx_minus_1: usize) -> u8 {
+    debug_more!(" log2_res_scale_abs_plus1(c={})", c_idx_minus_1);
+
+    let mut value = 0;
+    let c_max = 4;
+
+    for bin_idx in 0..c_max {
+        // libde265 logic: 4 contexts per component
+        let ctx_idx_inc = 4 * c_idx_minus_1 + bin_idx;
+
+        let bit = ctx
+            .cabac
+            .decode_decision(CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1 + ctx_idx_inc);
+
+        if bit == 0 {
+            break;
+        }
+        value += 1;
+    }
+    debug_more!(" decode_log2_res_scale_abs_plus1(value={})", value);
+
+    value
+}
+fn decode_res_scale_sign_flag(ctx: &mut DecodeSliceContext, c_idx_minus_1: usize) -> u8 {
+    // Context index 0 for Cb, 1 for Cr
+    debug_more!(" decode_res_scale_sign_flag(c={})", c_idx_minus_1);
+    let bit = ctx
+        .cabac
+        .decode_decision(CONTEXT_MODEL_RES_SCALE_SIGN_FLAG + c_idx_minus_1);
+    debug_more!(" decode_res_scale_sign_flag(bit={})", bit);
+
+    bit
+}
+pub fn read_cross_comp_pred(ctx: &mut DecodeSliceContext, c_idx_minus_1: usize) -> i8 {
+    let log2_res_scale_abs_plus1 = decode_log2_res_scale_abs_plus1(ctx, c_idx_minus_1);
+    let mut res_scale_val: i32;
+
+    if log2_res_scale_abs_plus1 != 0 {
+        let res_scale_sign_flag = decode_res_scale_sign_flag(ctx, c_idx_minus_1);
+
+        // ResScaleVal = 2^(log2 - 1)
+        res_scale_val = 1 << (log2_res_scale_abs_plus1 - 1);
+
+        // Apply sign: 0 -> *1, 1 -> *-1
+        res_scale_val *= 1 - 2 * (res_scale_sign_flag as i32);
+    } else {
+        res_scale_val = 0;
+    }
+
+    // Store in context for the upcoming TU reconstruction
+    res_scale_val as i8
+}
+pub fn read_transform_unit(
+    ctx: &mut DecodeSliceContext,
+    x0: usize,
+    y0: usize,
+    x_base: usize, // Base of the CU/TU group
+    y_base: usize,
+    log2_size: u8,
+    blk_idx: usize,
+    cbf_luma: bool,
+    cbf_cb: u8, // 2 bits for 4:2:2
+    cbf_cr: u8
 ) -> Result<(), NalError> {
-    debug_more!(
-        "---read_transform_unit(x0={},y0={},log2size={})",
-        x0,
-        y0,
-        log2_size
-    );
-
     let nt = 1 << log2_size;
+    let chroma_format = ctx.sps.chroma_format;
 
-    let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
-    // 1. HEVC Spec §7.3.8.11: cu_qp_delta is decoded here if enabled
-    // and not yet coded for the current Quantization Group (QG).
-    if (cbf_luma || cbf_cb || cbf_cr) && ctx.pps.cu_qp_delta_enabled_flag {
+    // 1. QP Delta Handling
+    if (cbf_luma || cbf_cb != 0 || cbf_cr != 0) && ctx.pps.cu_qp_delta_enabled_flag {
         if !ctx.is_cu_qp_delta_coded {
             ctx.cu_qp_delta = decode_cu_qp_delta(ctx)?;
             ctx.is_cu_qp_delta_coded = true;
-
-            // Recalculate QPs now that we have the delta
             decode_quantization_parameters(ctx, x0, y0, log2_size);
         }
     }
-    // 1. Deciding on DST (Discrete Sine Transform)
-    // HEVC Spec §8.4.4.1: DST is used ONLY for Luma 4x4 Intra blocks.
-    let use_dst = ctx.is_intra && log2_size == 2;
 
+    // 2. Luma Path
+    let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
     if cbf_luma {
+        let use_dst = ctx.is_intra && log2_size == 2;
         decode_residual_block(ctx, x0, y0, log2_size, Component::Luma, use_dst);
     }
+    // Scale -> Transform -> Reconstruct Luma
     decode_tu(ctx, x0, y0, nt, 0, pred_mode, cbf_luma);
-    // Chroma blocks ALWAYS use DCT-II
-    if cbf_cb {
-        decode_residual_block(ctx, x0, y0, log2_size - 1, Component::Cb, false);
+    // 3. Chroma Path
+    if chroma_format == ChromaFormat::Monochrome {
+        return Ok(());
     }
-    if cbf_cr {
-        decode_residual_block(ctx, x0, y0, log2_size - 1, Component::Cr, false);
+
+    // In 4:2:0, if Luma is 4x4, we only process Chroma at the 4th block (blk_idx 3)
+    let is_420_small = (chroma_format == ChromaFormat::Yuv420) && (log2_size == 2);
+    let should_decode_chroma = !is_420_small || blk_idx == 3;
+
+    if should_decode_chroma {
+        // Calculate Chroma TU size
+        // For 4:4:4 or 4:2:0 group-of-four, the chroma TU is the same size as luma (4x4)
+        // For 8x8, 16x16, 32x32, chroma is half the luma size (except 4:4:4)
+        let log2_size_c = if chroma_format == ChromaFormat::Yuv444 || is_420_small {
+            log2_size
+        } else {
+            log2_size - 1
+        };
+        let nt_c = 1 << log2_size_c;
+
+        // --- Cross Component Prediction (CCP) Check ---
+        let cross_component_prediction_enabled_flag = ctx
+            .pps
+            .range_extension
+            .as_ref()
+            .map_or(false, |range| range.cross_component_prediction_enabled_flag);
+
+        let do_ccp = cross_component_prediction_enabled_flag
+            && cbf_luma
+            && (pred_mode == PredMode::ModeInter || ctx.is_intra_pred_mode_c_mode4(x0, y0));
+
+        // Subsampling factors
+        let (sub_w, sub_h) = match chroma_format {
+            ChromaFormat::Yuv420 => (2, 2),
+            ChromaFormat::Yuv422 => (2, 1),
+            ChromaFormat::Yuv444 => (1, 1),
+            _ => (1, 1)
+        };
+
+        // --- Process Cb & Cr ---
+        for c_idx in 1..=2 {
+            let cbf = if c_idx == 1 { cbf_cb } else { cbf_cr };
+
+            if do_ccp {
+                ctx.res_scale_val = read_cross_comp_pred(ctx, c_idx - 1);
+            } else {
+                ctx.res_scale_val = 0;
+            }
+
+            // Top (or only) Chroma Block
+            if (cbf & 1) != 0 {
+                decode_residual_block(
+                    ctx,
+                    x_base,
+                    y_base,
+                    log2_size_c,
+                    if c_idx == 1 { Component::Cb } else { Component::Cr },
+                    false
+                );
+            }
+            decode_tu(
+                ctx,
+                x_base / sub_w,
+                y_base / sub_h,
+                nt_c,
+                c_idx,
+                pred_mode,
+                (cbf & 1) != 0
+            );
+
+            // 4:2:2 Vertical Extension (Second Chroma Block)
+            if chroma_format == ChromaFormat::Yuv422 {
+                let y_offset = 1 << log2_size_c;
+                if (cbf & 2) != 0 {
+                    // Note: y_base + y_offset translated back to Luma coordinates
+                    decode_residual_block(
+                        ctx,
+                        x_base,
+                        y_base + (y_offset * sub_h),
+                        log2_size_c,
+                        if c_idx == 1 { Component::Cb } else { Component::Cr },
+                        false
+                    );
+                }
+                decode_tu(
+                    ctx,
+                    x_base / sub_w,
+                    y_base / sub_h + y_offset,
+                    nt_c,
+                    c_idx,
+                    pred_mode,
+                    (cbf & 2) != 0
+                );
+            }
+        }
     }
+    panic!();
+
     Ok(())
 }

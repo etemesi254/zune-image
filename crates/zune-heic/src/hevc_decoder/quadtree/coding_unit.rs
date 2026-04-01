@@ -5,6 +5,7 @@ use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_PRED_MODE_FLAG, CONTEXT_MODEL_RQT_ROOT_CBF
 };
 use crate::hevc_decoder::constants::PartMode;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, SliceType};
 use crate::hevc_decoder::neighbor_tracker::PredMode;
@@ -13,9 +14,9 @@ use crate::hevc_decoder::quadtree::intra::{
 };
 use crate::hevc_decoder::quadtree::part_mode::decode_part_mode;
 use crate::hevc_decoder::quadtree::quant::decode_quantization_parameters;
+use crate::hevc_decoder::quadtree::read_coding_quadtree;
 use crate::hevc_decoder::quadtree::sao::read_sao;
 use crate::hevc_decoder::quadtree::transform_unit::read_transform_tree;
-use crate::hevc_decoder::quadtree::{DecodeSliceContext, read_coding_quadtree};
 
 fn decode_rqt_root_cbf(ctx: &mut DecodeSliceContext) -> bool {
     debug_more!("decode_rqt_root_cbf");
@@ -79,13 +80,16 @@ pub fn read_coding_unit(
 
     debug_more!("read_coding_unit x0={}, y0={}, size={}", x0, y0, cb_size);
 
+    // 1. Initial Quantization Setup
+    // Note: Actual QP delta decoding is moved into TU for some profiles,
+    // but we'll keep your call here for base parameters.
     decode_quantization_parameters(ctx, x0, y0, log_2_cb_size);
-    // 1. cu_transquant_bypass_flag
+
     if ctx.pps.transquant_bypass_enabled_flag {
         ctx.cu_transquant_bypass_flag = decode_cu_transquant_bypass_flag(ctx);
     }
 
-    // 2. cu_skip_flag
+    // 2. Skip Flag
     ctx.is_skip = false;
     if shdr.slice_type != SliceType::I {
         ctx.is_skip = decode_cu_skip_flag(ctx, x0, y0);
@@ -93,146 +97,93 @@ pub fn read_coding_unit(
 
     if ctx.is_skip {
         ctx.is_intra = false;
-        // Inter skip MV logic would go here
         ctx.neighbor_tracker
             .set_pred_mode(x0, y0, log_2_cb_size, PredMode::ModeSkip);
-        todo!();
+        // Inter skip MV logic (Merge/Skip) would be handled here
+        return Ok(());
     }
 
-    // 3. pred_mode_flag (Only for P/B slices)
+    // 3. Prediction Mode
     ctx.is_intra = if shdr.slice_type != SliceType::I { decode_pred_mode_flag(ctx) } else { true };
-
     let mode = if ctx.is_intra { PredMode::ModeIntra } else { PredMode::ModeInter };
     ctx.neighbor_tracker
         .set_pred_mode(x0, y0, log_2_cb_size, mode);
 
-    // 4. Partition Mode Inference (CRITICAL FIX)
+    // 4. Partition Mode
     let part_mode = if !ctx.is_intra || log_2_cb_size == ctx.sps.log2_min_luma_coding_block_size {
         decode_part_mode(ctx, log_2_cb_size)
     } else {
-        // If it's Intra and NOT the min size, it's ALWAYS 2Nx2N
         PartMode::Part2Nx2N
     };
-    // store it
     ctx.neighbor_tracker
         .set_part_mode(x0, y0, log_2_cb_size, part_mode);
 
     let intra_split_flag = ctx.is_intra && part_mode == PartMode::PartNxN;
 
-    // 5. PCM
+    // 5. Intra Prediction Decoding
     let mut pcm_flag = false;
     if ctx.is_intra {
-        if ctx.is_intra && part_mode == PartMode::Part2Nx2N && ctx.sps.pcm_enabled_flag {
-            // Check if the current size is within the allowed PCM range
-            let log_2_max_ipcm_size_y = ctx.sps.log2_min_pcm_luma_coding_block_size
-                + ctx.sps.log2_diff_max_min_pcm_luma_coding_block_size;
+        // PCM Logic
+        if part_mode == PartMode::Part2Nx2N && ctx.sps.pcm_enabled_flag {
+            let log_2_min_pcm = ctx.sps.log2_min_pcm_luma_coding_block_size;
+            let log_2_max_pcm =
+                log_2_min_pcm + ctx.sps.log2_diff_max_min_pcm_luma_coding_block_size;
 
-            if log_2_cb_size >= ctx.sps.log2_min_pcm_luma_coding_block_size
-                && log_2_cb_size <= log_2_max_ipcm_size_y
-            {
+            if log_2_cb_size >= log_2_min_pcm && log_2_cb_size <= log_2_max_pcm {
                 pcm_flag = ctx.cabac.decode_terminate() == 1;
             }
-
-            if pcm_flag {
-                debug_more!("CU Mode: PCM at [{}, {}]", x0, y0);
-                // read_pcm_samples(ctx, x0, y0, log_2_cb_size);
-                todo!();
-            }
         }
-        // 5. Intra Mode Decoding
 
-        if part_mode == PartMode::PartNxN {
-            let pb_size = cb_size / 2;
-            let mut prev_mpm_flags = [false; 4];
-
-            // --- PASS 1: Decode all 4 flags first ---
-            let mut idx = 0;
-            for j in 0..2 {
-                for i in 0..2 {
-                    // This is the call that happens 4 times in the first loop
-                    prev_mpm_flags[idx] = decode_prev_intra_luma_pred_flag(ctx) == 1;
-                    idx += 1;
+        if pcm_flag {
+            // read_pcm_samples(...)
+            todo!();
+        } else {
+            // Decode Luma Intra Modes
+            if part_mode == PartMode::PartNxN {
+                let pb_size = cb_size / 2;
+                let mut prev_mpm_flags = [false; 4];
+                for i in 0..4 {
+                    prev_mpm_flags[i] = decode_prev_intra_luma_pred_flag(ctx) == 1;
                 }
-            }
 
-            // --- PASS 2: Decode the 4 modes/indices using those flags ---
-            idx = 0;
-            for j in 0..2 {
-                for i in 0..2 {
-                    let curr_x = x0 + i * pb_size;
-                    let curr_y = y0 + j * pb_size;
-
-                    // Pass the pre-decoded flag into a specialized function
+                for idx in 0..4 {
+                    let curr_x = x0 + (idx % 2) * pb_size;
+                    let curr_y = y0 + (idx / 2) * pb_size;
                     let mode = decode_intra_luma_mode(ctx, curr_x, curr_y, prev_mpm_flags[idx]);
-
                     ctx.neighbor_tracker
                         .set_intra_mode(curr_x, curr_y, pb_size, mode);
-
-                    // Chroma DM mode always looks at the top-left (PU0)
-                    if i == 0 && j == 0 {
+                    if idx == 0 {
                         ctx.intra_mode_luma = mode;
                     }
-                    idx += 1;
                 }
+            } else {
+                let is_mpm = decode_prev_intra_luma_pred_flag(ctx) == 1;
+                let mode = decode_intra_luma_mode(ctx, x0, y0, is_mpm);
+                ctx.neighbor_tracker.set_intra_mode(x0, y0, cb_size, mode);
+                ctx.intra_mode_luma = mode;
             }
-        } else {
-            // 2Nx2N: Single pass is safe here
-            let is_mpm = decode_prev_intra_luma_pred_flag(ctx) == 1;
-            let mode = decode_intra_luma_mode(ctx, x0, y0, is_mpm);
-            ctx.neighbor_tracker.set_intra_mode(x0, y0, cb_size, mode);
-            ctx.intra_mode_luma = mode;
-        }
-        // intra choma processing
-        if ctx.sps.chroma_format != ChromaFormat::Monochrome {
-            let intra_mode_luma = ctx.neighbor_tracker.get_intra_mode(x0, y0);
 
-            // 1. Get the syntax element from CABAC (0..4)
-            let intra_chroma_pred_mode_idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
-            // 2. Map index 0-4 to actual mode 0-34
-            let actual_mode = get_actual_chroma_mode(intra_chroma_pred_mode_idx, intra_mode_luma);
-
-            ctx.neighbor_tracker.set_intra_mode_chroma(
-                x0,
-                y0,
-                log_2_cb_size, // The Luma size
-                actual_mode,
-                intra_chroma_pred_mode_idx == 4
-            );
-            ctx.intra_mode_chroma = intra_chroma_pred_mode_idx;
+            // Decode Chroma Intra Mode
+            if ctx.sps.chroma_format != ChromaFormat::Monochrome {
+                let idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
+                let actual_mode = get_actual_chroma_mode(idx, ctx.intra_mode_luma);
+                ctx.neighbor_tracker.set_intra_mode_chroma(
+                    x0,
+                    y0,
+                    log_2_cb_size,
+                    actual_mode,
+                    idx == 4
+                );
+                ctx.intra_mode_chroma = idx;
+            }
         }
     } else {
-        // 8. INTER PROCESSING (Prediction Units)
-        let n_cs = 1 << log_2_cb_size;
-
-        todo!()
-        //     match part_mode {
-        //         PartMode::Part2Nx2N => {
-        //             read_prediction_unit(ctx, x0, y0, n_cs, n_cs, 0);
-        //         }
-        //         PartMode::Part2NxN => {
-        //             read_prediction_unit(ctx, x0, y0, n_cs, n_cs / 2, 0);
-        //             read_prediction_unit(ctx, x0, y0 + (n_cs / 2), n_cs, n_cs / 2, 1);
-        //         }
-        //         PartMode::PartNx2N => {
-        //             read_prediction_unit(ctx, x0, y0, n_cs / 2, n_cs, 0);
-        //             read_prediction_unit(ctx, x0 + (n_cs / 2), y0, n_cs / 2, n_cs, 1);
-        //         }
-        //         PartMode::PartNxN => {
-        //             let pb_size = n_cs / 2;
-        //             for j in 0..2 {
-        //                 for i in 0..2 {
-        //                     read_prediction_unit(ctx, x0 + i * pb_size, y0 + j * pb_size, pb_size, pb_size, (j * 2 + i) as u8);
-        //                 }
-        //             }
-        //         }
-        //         // Asymmetric Motion Partitions (AMP)
-        //         PartMode::Part2NxnU | PartMode::Part2NxnD | PartMode::PartnLx2N | PartMode::PartnRx2N => {
-        //             decode_amp_prediction_units(ctx, x0, y0, n_cs, part_mode);
-        //         }
-        // }
+        // Inter Prediction Units (MVs, Merges, etc.)
+        todo!();
     }
-    // 9. RESIDUAL PROCESSING (Transform Tree)
-    if pcm_flag == false {
+
+    // 6. Residual Processing (Transform Tree)
+    if !pcm_flag {
         let mut rqt_root_cbf = true;
         if !ctx.is_intra {
             rqt_root_cbf = decode_rqt_root_cbf(ctx);
@@ -245,22 +196,26 @@ pub fn read_coding_unit(
                 ctx.sps.max_transform_hierarchy_depth_inter
             };
 
-            // It happens inside the transform tree when the first CBF=1 is found.
+            // START TRANSFORM TREE
+            // x_base/y_base are set to the current CU origin (x0, y0)
+            // blk_idx starts at 0. cbf_cb/cr start as u8 (value 1)
             read_transform_tree(
                 ctx,
                 x0,
                 y0,
-                x0,
-                y0,
+                x0, // x_base
+                y0, // y_base
                 log_2_cb_size,
-                0,
+                0, // trafo_depth
                 max_trafo_depth as u8,
+                0, // blk_idx
                 intra_split_flag,
-                true,
-                true
+                1, // cbf_cb (u8)
+                1  // cbf_cr (u8)
             )?;
         }
     }
+
     Ok(())
 }
 

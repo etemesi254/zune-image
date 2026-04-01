@@ -8,9 +8,9 @@ use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_RDPCM_FLAG, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
     CONTEXT_MODEL_TRANSFORM_SKIP_FLAG
 };
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::neighbor_tracker::PredMode;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
 use crate::hevc_decoder::quadtree::transform_unit::Component;
 use crate::hevc_decoder::quadtree::transform_unit::Component::Luma;
 
@@ -638,7 +638,6 @@ pub fn decode_residual_block(
         // --- 1. Check whether this sub-block is coded (CSBF) ---
         let mut sub_block_is_coded = false;
 
-
         if i < last_sub_block && i > 0 {
             sub_block_is_coded = decode_coded_sub_block_flag(
                 ctx,
@@ -646,7 +645,6 @@ pub fn decode_residual_block(
                 coded_sub_block_neighbors[(s.x as usize) + ((s.y as usize) * sb_width)]
             );
             infer_sb_dc_sig_coeff_flag = true;
-
         } else if i == 0 || i == last_sub_block {
             // first (DC) and last sub-block are always coded
             // - the first will most probably contain coefficients
@@ -975,6 +973,5 @@ pub fn decode_residual_block(
                 ctx.n_coeff[c_idx] += 1;
             }
         }
-
     }
 }

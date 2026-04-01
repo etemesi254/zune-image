@@ -2,8 +2,8 @@ use std::cmp::min;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
-use crate::hevc_decoder::quadtree::DecodeSliceContext;
 
 #[derive(Default, Debug)]
 pub struct SaoInfo {
@@ -78,7 +78,6 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
 
     if x_ctb > 0 {
         todo!()
-
     }
     if y_ctb > 0 && sao_merge_left_flag == false {
         todo!()
@@ -91,7 +90,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) -> Sao
 
         for i in 0..n_chroma {
             if (shdr.slice_sao_luma_flag && i == 0) || (shdr.slice_sao_chroma_flag && i > 0) {
-                let  sao_type_idx ;
+                let sao_type_idx;
 
                 if i == 0 {
                     let sao_type_idx_luma = decode_sao_type_idx(ctx);

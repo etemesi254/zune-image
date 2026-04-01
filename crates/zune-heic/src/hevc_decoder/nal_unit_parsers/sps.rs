@@ -4,7 +4,7 @@ use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps, SpsRangeExtension};
 use crate::hevc_decoder::nal_unit_parsers::{
-    decode_profile_data, parse_short_term_ref_pic_set, parse_vui, skip_scaling_list_data
+    decode_profile_data, parse_scaling_list_data, parse_short_term_ref_pic_set, parse_vui,
 };
 
 pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
@@ -160,7 +160,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     if sps.scaling_list_enabled_flag {
         let sps_scaling_list_data_present_flag = r.read_flag();
         if sps_scaling_list_data_present_flag {
-            skip_scaling_list_data(&mut r)?;
+            sps.scaling_lists = parse_scaling_list_data(&mut r)?;
         }
     }
 

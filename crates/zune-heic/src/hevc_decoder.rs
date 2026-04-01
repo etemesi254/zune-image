@@ -21,8 +21,10 @@ mod neighbor_tracker;
 mod quadtree;
 mod quadtree_vb;
 mod utils;
-
 mod raw_frame;
+pub (crate) mod ctx;
+
+mod idct;
 
 pub struct HevcDecoder {
     vps_storage:      Vec<Option<Vps>>,

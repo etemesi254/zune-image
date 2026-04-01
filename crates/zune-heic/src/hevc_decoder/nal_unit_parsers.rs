@@ -4,19 +4,15 @@ use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{
-    Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, SliceHeader, SliceType,
-    Sps, Vps, Vui, VuiVideoFormat
-};
+use crate::hevc_decoder::nal_unit_headers::{Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vps, Vui, VuiVideoFormat};
 
-
-mod vps;
-mod sps;
 mod pps;
+mod sps;
+mod vps;
 
-pub use vps::decode_vps;
-pub use sps::decode_sps;
 pub use pps::decode_pps;
+pub use sps::decode_sps;
+pub use vps::decode_vps;
 
 // ============================================================================
 // Helper Functions
@@ -72,26 +68,84 @@ fn decode_profile_data(
     Ok(Some(item))
 }
 
-fn skip_scaling_list_data(r: &mut BitReader) -> Result<(), NalError> {
+
+#[rustfmt::skip]
+    const SCAN_4X4: [usize; 16] = [
+        0, 4, 1, 8, 5, 2, 12, 9, 6, 3, 13, 10, 7, 14, 11, 15
+    ];
+#[rustfmt::skip]
+    const SCAN_8X8: [usize; 64] = [
+        0,  8,  1, 16,  9,  2, 24, 17, 10,  3, 32, 25, 18, 11,  4, 40,
+        33, 26, 19, 12,  5, 48, 41, 34, 27, 20, 13,  6, 56, 49, 42, 35,
+        28, 21, 14,  7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30,
+        23, 59, 52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63
+    ];
+pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalError> {
+    let mut sl = ScalingLists::default();
+
     for size_id in 0..4 {
         let num_matrices = if size_id == 3 { 2 } else { 6 };
 
-        for _ in 0..num_matrices {
+        for matrix_id in 0..num_matrices {
             let scaling_list_pred_mode_flag = r.read_flag();
+
             if !scaling_list_pred_mode_flag {
-                r.read_ue(); // scaling_list_pred_matrix_id_delta
-            } else {
-                let coef_num = std::cmp::min(64, 1 << (4 + (size_id << 1)));
-                if size_id > 1 {
-                    r.read_se(); // scaling_list_dc_coef_minus8
+                // Prediction Mode: Copy from a previous matrix
+                let pred_matrix_id_delta = r.read_ue() as usize;
+                let ref_matrix_id = matrix_id - pred_matrix_id_delta;
+
+                match size_id {
+                    0 => sl.size0[matrix_id] = sl.size0[ref_matrix_id],
+                    1 => sl.size1[matrix_id] = sl.size1[ref_matrix_id],
+                    2 => {
+                        sl.size2[matrix_id] = sl.size2[ref_matrix_id];
+                        sl.dc16[matrix_id] = sl.dc16[ref_matrix_id];
+                    }
+                    3 => {
+                        sl.size3[matrix_id] = sl.size3[ref_matrix_id];
+                        sl.dc32[matrix_id] = sl.dc32[ref_matrix_id];
+                    }
+                    _ => unreachable!()
                 }
-                for _ in 0..coef_num {
-                    r.read_se(); // scaling_list_delta_coef
+            } else {
+                // DPCM Mode: Decode deltas
+                let coef_num = std::cmp::min(64, 1 << (4 + (size_id << 1)));
+                let mut next_coef = 8; // Starting value for DPCM is 8
+
+                if size_id > 1 {
+                    // Read DC coefficient for 16x16 and 32x32
+                    let dc_coef_minus8 = r.read_se();
+                    let dc_val = (dc_coef_minus8 + 8) as u8;
+                    if size_id == 2 {
+                        sl.dc16[matrix_id] = dc_val;
+                    } else {
+                        sl.dc32[matrix_id] = dc_val;
+                    }
+                    next_coef = dc_val as i32;
+                }
+
+                for i in 0..coef_num {
+                    let delta = r.read_se();
+                    next_coef = (next_coef + (delta as i32) + 256) % 256;
+
+                    // Map to 2D using the diagonal scan order
+                    if size_id == 0 {
+                        sl.size0[matrix_id][SCAN_4X4[i]] = next_coef as u8;
+                    } else {
+                        // All larger blocks use the 8x8 scan indices
+                        let val = next_coef as u8;
+                        match size_id {
+                            1 => sl.size1[matrix_id][SCAN_8X8[i]] = val,
+                            2 => sl.size2[matrix_id][SCAN_8X8[i]] = val,
+                            3 => sl.size3[matrix_id][SCAN_8X8[i]] = val,
+                            _ => unreachable!()
+                        }
+                    }
                 }
             }
         }
     }
-    Ok(())
+    Ok(sl)
 }
 
 fn parse_short_term_ref_pic_set(
@@ -308,12 +362,8 @@ fn skip_hrd_parameters(
     Ok(())
 }
 
-
 pub fn decode_slice_header(
-    nal: &NalUnit,
-    pps_storage: &[Option<Pps>],
-    sps_storage: &[Option<Sps>],
-    clean_payload: &[u8]
+    nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
     // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
     let mut r = BitReader::new(&clean_payload);
@@ -439,7 +489,10 @@ pub fn decode_slice_header(
         }
     }
 
-    debug_more!("Before byte alignment, start position :{}",r.byte_position());
+    debug_more!(
+        "Before byte alignment, start position :{}",
+        r.byte_position()
+    );
     // 12. Final Alignment
     r.byte_align();
 

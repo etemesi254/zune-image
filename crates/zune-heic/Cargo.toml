@@ -6,7 +6,8 @@ edition = "2024"
 [dependencies]
 zune-core = { version = "0.5.1", path = "../zune-core" }
 
-
+[features]
+simd=[""]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation-sys = "0.8.7"
