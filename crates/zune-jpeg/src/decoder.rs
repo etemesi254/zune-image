@@ -74,6 +74,15 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
+/// Tracks the current decoding phase for incremental decoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodingState {
+    /// Headers not yet fully decoded.
+    DecodeHeaders,
+    /// Headers decoded; scan data starts at `scan_start_position`.
+    DecodeScan { scan_start_position: u64 },
+}
+
 /// An encapsulation of an ICC chunk
 pub(crate) struct ICCChunk {
     pub(crate) seq_no:      u8,
@@ -175,6 +184,8 @@ pub struct JpegDecoder<T> {
     pub(crate) coeff:    usize, // Solves some weird bug :)
     /// Extended XMP segments
     pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
+    /// Current decoding phase for incremental decoding.
+    state: DecodingState,
 }
 
 impl<T> JpegDecoder<T>
@@ -238,6 +249,7 @@ where
             is_mjpeg:          false,
             coeff:             1,
             extended_xmp_segments: vec![],
+            state:             DecodingState::DecodeHeaders,
         }
     }
     /// Decode a buffer already in memory
@@ -887,7 +899,14 @@ where
     ///
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
-        self.decode_headers_internal()?;
+        // Ensure headers are decoded (idempotent if already done).
+        self.decode_headers()?;
+
+        // At this point state is guaranteed to be DecodeScan.
+        if let DecodingState::DecodeScan { scan_start_position } = self.state {
+            // Seek back to scan start (needed for retry after more data arrived).
+            self.stream.set_position(scan_start_position as usize)?;
+        }
 
         let expected_size = self.output_buffer_size().unwrap();
 
@@ -936,11 +955,70 @@ where
     /// println!("Number of components in the image are {}", decoder.info().unwrap().components);
     /// ```
     /// # Errors
-    /// See DecodeErrors enum for list of possible errors during decoding
+    /// See DecodeErrors enum for list of possible errors during decoding.
+    ///
+    /// If the reader runs out of data the error will satisfy
+    /// [`is_recoverable_eof()`](crate::errors::DecodeErrors::is_recoverable_eof);
+    /// the decoder resets and the caller may retry after providing more data.
     pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
-        self.decode_headers_internal()?;
-        Ok(())
+        match self.decode_headers_internal() {
+            Ok(()) => {
+                // Transition to scan phase, remembering where scan data starts.
+                if self.state == DecodingState::DecodeHeaders {
+                    let pos = self.stream.position()?;
+                    self.state = DecodingState::DecodeScan {
+                        scan_start_position: pos,
+                    };
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if e.is_recoverable_eof() {
+                    self.reset_header_state();
+                }
+                Err(e)
+            }
+        }
     }
+
+    /// Reset all state set during header parsing so that
+    /// `decode_headers_internal` can be called again from scratch.
+    // NB: fields here must stay in sync with `fn default()`.
+    fn reset_header_state(&mut self) {
+        self.info = ImageInfo::default();
+        self.qt_tables = [None, None, None, None];
+        self.dc_huffman_tables = [None, None, None, None];
+        self.ac_huffman_tables = [None, None, None, None];
+        self.components.clear();
+        self.h_max = 1;
+        self.v_max = 1;
+        self.mcu_height = 0;
+        self.mcu_width = 0;
+        self.mcu_x = 0;
+        self.mcu_y = 0;
+        self.is_interleaved = false;
+        self.is_progressive = false;
+        self.spec_start = 0;
+        self.spec_end = 0;
+        self.succ_high = 0;
+        self.succ_low = 0;
+        self.num_scans = 0;
+        self.scan_subsampled = false;
+        self.input_colorspace = ColorSpace::YCbCr;
+        self.z_order = [0; MAX_COMPONENTS];
+        self.restart_interval = 0;
+        self.todo = 0x7fff_ffff;
+        self.headers_decoded = false;
+        self.seen_sof = false;
+        self.icc_data.clear();
+        self.is_mjpeg = false;
+        self.coeff = 1;
+        self.extended_xmp_segments.clear();
+        self.state = DecodingState::DecodeHeaders;
+        // Best-effort seek to start; may fail for non-seekable streams.
+        let _ = self.stream.set_position(0);
+    }
+
     /// Create a new decoder with the specified options to be used for decoding
     /// an image
     ///

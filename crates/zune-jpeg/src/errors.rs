@@ -58,6 +58,30 @@ pub enum DecodeErrors {
 #[cfg(feature = "std")]
 impl std::error::Error for DecodeErrors {}
 
+impl DecodeErrors {
+    /// Returns `true` when this error indicates the reader ran out of
+    /// data, as opposed to a format or data-corruption error.
+    ///
+    /// Useful for incremental decoding: feed more bytes and retry.
+    #[must_use]
+    pub fn is_recoverable_eof(&self) -> bool {
+        match self {
+            DecodeErrors::ExhaustedData => true,
+            DecodeErrors::IoErrors(io) => {
+                if matches!(io, ZByteIoError::NotEnoughBytes(_, _)) {
+                    return true;
+                }
+                #[cfg(feature = "std")]
+                if let ZByteIoError::StdIoError(e) = io {
+                    return e.kind() == std::io::ErrorKind::UnexpectedEof;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+}
+
 impl From<&'static str> for DecodeErrors {
     fn from(data: &'static str) -> Self {
         return Self::FormatStatic(data);
