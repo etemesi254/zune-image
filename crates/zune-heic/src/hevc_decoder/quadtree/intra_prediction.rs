@@ -3,12 +3,7 @@ use std::sync::Arc;
 use crate::debug_more;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::DEBUG_MORE;
-use crate::hevc_decoder::nal_unit_headers::Pps;
-use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
-use crate::hevc_decoder::raw_frame::RawFrame;
 
-/// The "Wall of Pixels" used for intra prediction.
-/// Size is 4 * n_t + 1.
 
 
 
@@ -86,6 +81,7 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
     let bottom_left = p[3 * n_t + 1] as i32;
     let shift = log2_n_t + 1;
     let n = n_t as i32;
+    let dst = &mut dst[..n_t*n_t];
 
     dst.chunks_exact_mut(n_t).enumerate().for_each(|(y, row)| {
         let y = y as i32;
@@ -248,6 +244,12 @@ pub fn decode_intra_prediction_internal_u8(
     let p_slice = &ctx.ref_samples_p[..p_len];
     let log2_n_t = n_t.trailing_zeros() as u8;
 
+    if DEBUG_MORE{
+        println!(
+            "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
+            intra_mode, n_t, n_t, c_idx, x_b0, y_b0
+        );
+    }
     match intra_mode {
         0 => predict_planar(p_slice, scratchpad, n_t, log2_n_t),
         1 => predict_dc(p_slice, scratchpad, n_t, log2_n_t, c_idx == 0),

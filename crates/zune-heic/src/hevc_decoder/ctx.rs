@@ -14,7 +14,7 @@ pub struct DecodeSliceContext<'a> {
     pub pps:                  &'a Pps,
     pub slice_header:         &'a SliceHeader,
     pub cabac:                CabacDecoder<'a>,
-    pub neighbor_tracker:     NeighborTracker,
+    pub neighbor_tracker:     &'a mut NeighborTracker,
     pub is_cu_qp_delta_coded: bool,
     pub cu_qp_delta:          i32,
     // quantization group
@@ -62,7 +62,7 @@ pub struct DecodeSliceContext<'a> {
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
-        neighbor_tracker: NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
+        neighbor_tracker: &'a mut NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
     ) -> Self {
         // SAO data
 
@@ -482,6 +482,7 @@ impl<'a> DecodeSliceContext<'a> {
                 // Pixel = Clip3(0, max_val, Pred + Res)
                 let output = (p + r).clamp(0, max_val) as u8;
                 dst_row[x] = output;
+
                 if DEBUG_MORE {
                     print!("{:3} ", output);
                 }
@@ -559,8 +560,8 @@ impl<'a> DecodeSliceContext<'a> {
         check_availability(
             &self.neighbor_tracker,
             &self.pps,
-            x0,
-            y0,
+            x0 / n_t,
+            y0 / n_t,
             n_t,
             &mut self.ref_samples_available[..p_len]
         );
@@ -604,6 +605,12 @@ fn check_availability(
     for i in 0..(2 * n_t) {
         available[1 + 2 * n_t + i] =
             tracker.is_available(x0, y0, x0 as isize - 1, (y0 + i) as isize);
+    }
+    if DEBUG_MORE {
+        debug_more!("available \n");
+        available.chunks(n_t).for_each(|chunk| {
+            println!("{:?}", chunk);
+        })
     }
 
     if pps.constrained_intra_pred_flag {

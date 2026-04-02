@@ -7,7 +7,6 @@ pub struct BlockState {
     pub pred_mode:         PredMode,
     pub part_mode:         PartMode,
     pub slice_id:          u16, // To check if neighbors are in the same slice
-    pub decoded:           bool,
     pub available:         bool, // False if off-screen or not yet decoded
     pub skip_flag:         bool,
     pub cqt_depth:         u8, // Depth at which this 8x8 was decided
@@ -30,7 +29,6 @@ impl Default for BlockState {
             is_intra:          false,
             intra_mode_luma:   1, // Default to DC
             qp:                0,
-            decoded:           false,
             slice_id:          0,
             has_nonzero_coeff: false,
             intra_mode_chroma: 1, // Default to DC
@@ -54,11 +52,11 @@ pub struct NeighborTracker {
 
 impl NeighborTracker {
     /// Initializes a tracker based on the image dimensions in pixels.
-    pub fn new(pic_width: usize, pic_height: usize) -> Self {
+    pub fn new(pic_width: usize, pic_height: usize, log2_unit_size: u8) -> Self {
         // Since we are using 8x8 units:
-        let log2_unit_size = 3; // 1 << 3 = 8
-        let width_in_units = (pic_width + 7) >> log2_unit_size;
-        let height_in_units = (pic_height + 7) >> log2_unit_size;
+        //let log2_unit_size = 3;
+        let width_in_units = pic_width.div_ceil(1 << log2_unit_size);
+        let height_in_units = pic_height.div_ceil(1 << log2_unit_size);
 
         Self {
             blocks: vec![BlockState::default(); width_in_units * height_in_units],
@@ -71,9 +69,9 @@ impl NeighborTracker {
     /// MISSING FUNCTION 1: update_block
     /// Updates all 8x8 units covered by a block of 'size' (e.g., 32, 16, 8).
     pub fn update_block(&mut self, x: usize, y: usize, size: usize, state: BlockState) {
-        let gx_start = x / 8;
-        let gy_start = y / 8;
-        let units = (size / 8).max(1);
+        let gx_start = x >> self.log2_unit_size;
+        let gy_start = y >> self.log2_unit_size;
+        let units = (size >> self.log2_unit_size).max(1);
 
         for dy in 0..units {
             for dx in 0..units {
@@ -87,32 +85,55 @@ impl NeighborTracker {
             }
         }
     }
+    pub fn update_block_depth(&mut self, x: usize, y: usize, size: usize, ct_depth: u8) {
+        let gx_start = x >> self.log2_unit_size;
+        let gy_start = y >> self.log2_unit_size;
+        let units = (size >> self.log2_unit_size).max(1);
 
-    /// MISSING FUNCTION 2: get_split_ctx
-    /// Derived from Spec §9.3.4.2.2. Returns 0, 1, or 2 based on neighbors.
-    pub fn get_split_ctx(&self, x: usize, y: usize, current_depth: u8) -> usize {
-        // Neighbor Left (one pixel to the left)
-        let left = if x > 0 { self.get_state(x - 1, y) } else { BlockState::default() };
-        // Neighbor Above (one pixel above)
-        let above = if y > 0 { self.get_state(x, y - 1) } else { BlockState::default() };
-
-        let mut ctx_inc = 0;
-        if left.available && left.cqt_depth > current_depth {
-            ctx_inc += 1;
+        for dy in 0..units {
+            for dx in 0..units {
+                let gx = gx_start + dx;
+                let gy = gy_start + dy;
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
+                    self.blocks[idx].cqt_depth = ct_depth; // Mark as decoded
+                }
+            }
         }
-        if above.available && above.cqt_depth > current_depth {
-            ctx_inc += 1;
-        }
-
-        ctx_inc
     }
 
-    /// MISSING FUNCTION 3: update_qp
+    /// Derived from Spec §9.3.4.2.2. Returns 0, 1, or 2 based on neighbors.
+    pub fn get_split_ctx(&self, x: usize, y: usize, current_depth: u8, current_slice_id: u16) -> usize {
+        let mut cond_l = 0;
+        let mut cond_a = 0;
+
+        if x > 0 {
+            let left = self.get_state(x - 1, y);
+            // Neighbor is only "Available" if it's in the same slice segment
+            if left.available && left.slice_id == current_slice_id {
+                if left.cqt_depth > current_depth {
+                    cond_l = 1;
+                }
+            }
+        }
+
+        if y > 0 {
+            let above = self.get_state(x, y - 1);
+            if above.available && above.slice_id == current_slice_id {
+                if above.cqt_depth > current_depth {
+                    cond_a = 1;
+                }
+            }
+        }
+
+        cond_l + cond_a
+    }
+
     /// Used when a QP delta is decoded to refresh the area's quantization state.
     pub fn update_qp(&mut self, x: usize, y: usize, size: usize, qp: i8) {
-        let gx_start = x / 8;
-        let gy_start = y / 8;
-        let units = (size / 8).max(1);
+        let gx_start = x >> self.log2_unit_size;
+        let gy_start = y >> self.log2_unit_size;
+        let units = (size >> self.log2_unit_size).max(1);
 
         for dy in 0..units {
             for dx in 0..units {
@@ -230,7 +251,8 @@ impl NeighborTracker {
             };
         }
 
-        self.blocks[uy * self.width_in_units + ux].clone()
+        let idx = uy * self.width_in_units + ux;
+        self.blocks[idx].clone()
     }
 }
 impl NeighborTracker {
@@ -239,13 +261,13 @@ impl NeighborTracker {
     /// pb_size: Size of the PB in pixels (e.g., 32, 16, 8, or 4).
     /// mode: The decoded intra luma mode (0-34).
     pub fn set_intra_mode(&mut self, x0: usize, y0: usize, pb_size: usize, mode: u8) {
-        let gx_start = x0 / 8;
-        let gy_start = y0 / 8;
+        let gx_start = x0 >> self.log2_unit_size;
+        let gy_start = y0 >> self.log2_unit_size;
 
         // Determine how many 8x8 units this block covers.
         // For sizes 32, 16, 8: coverage is 4, 2, 1 units.
         // For size 4 (Intra NxN): .max(1) ensures we still update the containing 8x8 cell.
-        let units = (pb_size / 8).max(1);
+        let units = (pb_size >> self.log2_unit_size).max(1);
 
         debug_more!(
             "Tracker: Setting Intra Mode {} at [{}, {}] size {}",
@@ -347,13 +369,15 @@ impl NeighborTracker {
         let nx = neighbor_x as usize;
         let ny = neighbor_y as usize;
 
-        if nx >= self.width_in_units << 3 || ny >= self.height_in_units << 3 {
+        if nx >= self.width_in_units << self.log2_unit_size
+            || ny >= self.height_in_units << self.log2_unit_size
+        {
             return false;
         }
 
         // 2. Lookup neighbor data
-        let curr_unit = &self.blocks[(curr_y >> 3) * self.width_in_units + (curr_x >> 3)];
-        let neighbor_unit = &self.blocks[(ny >> 3) * self.width_in_units + (nx >> 3)];
+        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units + (curr_x >> self.log2_unit_size)];
+        let neighbor_unit = &self.blocks[(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
 
         // 3. Slice Boundary Check
         if curr_unit.slice_id != neighbor_unit.slice_id {
@@ -362,7 +386,7 @@ impl NeighborTracker {
 
         // 4. Decoding Order Check
         // A neighbor is only available if it has been marked as 'decoded'
-        neighbor_unit.decoded
+        neighbor_unit.available
     }
 }
 
@@ -392,11 +416,11 @@ impl NeighborTracker {
     pub fn set_intra_mode_chroma(
         &mut self, x0: usize, y0: usize, log2_blk_size: u8, mode: u8, is_dm: bool
     ) {
-        let gx_start = x0 >> 3; // Equivalent to x0 / 8
-        let gy_start = y0 >> 3; // Equivalent to y0 / 8
+        let gx_start = x0 >> self.log2_unit_size; // Equivalent to x0 / 8
+        let gy_start = y0 >> self.log2_unit_size; // Equivalent to y0 / 8
 
         // How many 8x8 units wide is this Luma block?
-        let units = (1 << (log2_blk_size - 3)).max(1);
+        let units = (1 << (log2_blk_size - self.log2_unit_size)).max(1);
 
         for dy in 0..units {
             for dx in 0..units {

@@ -75,9 +75,9 @@ macro_rules! debug_more {
     ($cond:expr => $($arg:tt)*) => {
         if DEBUG_MORE && $cond {
             println!(
-                "[{}:{}] {}",
-                file!(),
-                line!(),
+                "{}",
+                //file!(),
+                //line!(),
                 format_args!($($arg)*)
             );
         }
@@ -85,9 +85,9 @@ macro_rules! debug_more {
     ($($arg:tt)*) => {
         if DEBUG_MORE {
             println!(
-                "[{}:{}] {}",
-                file!(),
-                line!(),
+                "{}",
+                // file!(),
+                // line!(),
                 format_args!($($arg)*)
             );
         }

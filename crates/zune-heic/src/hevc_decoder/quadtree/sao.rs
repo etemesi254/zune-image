@@ -1,5 +1,7 @@
 use std::cmp::min;
+
 use zune_core::log::info;
+
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SAO_MERGE_FLAG;
@@ -13,7 +15,7 @@ pub struct SaoInfo {
     sao_eo_class: u8,
 
     sao_band_position: [u8; 3],
-    sao_offset_val:    [[i8; 3]; 4]
+    sao_offset_val:    [[i8; 4]; 3]
 }
 fn decode_sao_type_idx(ctx: &mut DecodeSliceContext) -> u8 {
     const OFF_SAO_TYPE: usize = 1;

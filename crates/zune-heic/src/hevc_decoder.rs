@@ -3,16 +3,18 @@ use zune_core::log::trace;
 use crate::hevc_decoder::nal_parser::{NalParser, NalUnitType};
 use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
+use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::decode_slice;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
-pub const DEBUG_MORE: bool = false;
+pub const DEBUG_MORE: bool = true;
 mod binarizer;
 mod bitstream;
 mod cabac;
 mod cabac_tables;
 mod constants;
+pub(crate) mod ctx;
 mod macros;
 mod nal_parser;
 mod nal_unit_headers;
@@ -20,16 +22,17 @@ mod nal_unit_parsers;
 mod neighbor_tracker;
 mod quadtree;
 mod quadtree_vb;
-mod utils;
 mod raw_frame;
-pub (crate) mod ctx;
+mod utils;
 
 mod idct;
 
 pub struct HevcDecoder {
-    vps_storage:      Vec<Option<Vps>>,
-    sps_storage:      Vec<Option<Sps>>,
-    pps_storage:      Vec<Option<Pps>>,
+    vps_storage:                 Vec<Option<Vps>>,
+    sps_storage:                 Vec<Option<Sps>>,
+    pps_storage:                 Vec<Option<Pps>>,
+    pub(crate) neighbor_tracker: Option<NeighborTracker>,
+
     last_size_header: Box<Option<SliceHeader>>
 }
 
@@ -39,6 +42,7 @@ impl HevcDecoder {
             vps_storage:      vec![None; 16],
             sps_storage:      vec![None; 16],
             pps_storage:      vec![None; 16],
+            neighbor_tracker: None,
             last_size_header: Box::new(None)
         }
     }
@@ -61,8 +65,14 @@ impl HevcDecoder {
                         trace!("Decoding sps nal unit");
                         let sps = decode_sps(&nal)?;
                         let sps_id = sps.sps_id as usize;
+
+                        let units_w = ((sps.pic_width_in_luma_samples + 7) >> 3) as usize;
+                        let units_h = ((sps.pic_height_in_luma_samples + 7) >> 3) as usize;
+
                         raw_frame = Some(RawFrame::from_sps(&sps));
                         self.sps_storage[sps_id] = Some(sps);
+
+                        self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 3))
                     }
                     NalUnitType::PpsNut => {
                         trace!("Decoding pps nal unit");
@@ -76,8 +86,7 @@ impl HevcDecoder {
                     nal_type if (nal_type as u8) <= 31 => {
                         trace!("Decoding NAL {:?}", nal_type);
                         if let Some(f) = raw_frame.clone() {
-                            decode_slice(&nal, self,f)?;
-
+                            decode_slice(&nal, self, f)?;
                         }
                     }
 

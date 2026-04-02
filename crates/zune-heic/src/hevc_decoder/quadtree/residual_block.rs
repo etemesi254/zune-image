@@ -438,7 +438,6 @@ pub fn decode_residual_block(
     );
     let pps = ctx.pps;
 
-    let c1 = 1;
     let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
 
     if component == Component::Luma {

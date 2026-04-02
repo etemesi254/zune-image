@@ -168,6 +168,7 @@ pub fn read_coding_unit(
             if ctx.sps.chroma_format != ChromaFormat::Monochrome {
                 let idx = decode_intra_chroma_mode(ctx, ctx.intra_mode_luma);
                 let actual_mode = get_actual_chroma_mode(idx, ctx.intra_mode_luma);
+                debug_more!("Final actual chroma mode: {:?}", actual_mode);
                 ctx.neighbor_tracker.set_intra_mode_chroma(
                     x0,
                     y0,
@@ -175,7 +176,7 @@ pub fn read_coding_unit(
                     actual_mode,
                     idx == 4
                 );
-                ctx.intra_mode_chroma = idx;
+                ctx.intra_mode_chroma = actual_mode;
             }
         }
     } else {

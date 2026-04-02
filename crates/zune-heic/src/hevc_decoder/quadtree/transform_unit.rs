@@ -83,6 +83,7 @@ pub fn decode_tu(
         if intra_pred_mode >= 35 {
             panic!("intra_pred_mode cannot be more than 35");
         }
+        debug_more!("intra_pred_mode=>{intra_pred_mode} c_idx={c_idx}");
 
         decode_intra_prediction(ctx, x0, y0, intra_pred_mode, n_t, c_idx);
 
@@ -414,11 +415,11 @@ pub fn read_transform_unit(
     }
     // Scale -> Transform -> Reconstruct Luma
     decode_tu(ctx, x0, y0, nt, 0, pred_mode, cbf_luma);
+
     // 3. Chroma Path
     if chroma_format == ChromaFormat::Monochrome {
         return Ok(());
     }
-
     // In 4:2:0, if Luma is 4x4, we only process Chroma at the 4th block (blk_idx 3)
     let is_420_small = (chroma_format == ChromaFormat::Yuv420) && (log2_size == 2);
     let should_decode_chroma = !is_420_small || blk_idx == 3;

@@ -33,7 +33,7 @@ pub enum CtuStatus {
     EndOfSubstream
 }
 
-pub fn decode_slice(
+pub fn decode_slice_(
     nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
 ) -> Result<(), NalError> {
     debug_more!("---------------decode-slice-------------");
@@ -72,8 +72,7 @@ pub fn decode_slice(
     // The tracker needs to know the width in 8x8 units (Minimum Coding Block size)
     let width_in_8x8 = (width_in_ctus * ctu_size) / 8;
     let height_in_8x8 = (height_in_ctus * ctu_size) / 8;
-
-    let neighbor_tracker = NeighborTracker::new(width_in_8x8, height_in_8x8);
+    let log2_unit_size = sps.log2_min_luma_coding_block_size - 1;
 
     debug_more!(
         "CTU Size: {}, Width in CTUs: {}, Width in 8x8 units: {}",
@@ -85,6 +84,8 @@ pub fn decode_slice(
     if slice_header.dependent_slice_segment_flag {
         slice_header.slice_addr_rs = hevc_decoder.last_size_header.clone();
     }
+
+    let neighbor_tracker = hevc_decoder.neighbor_tracker.as_mut().unwrap();
 
     let mut ctx = DecodeSliceContext::new(
         &sps,
@@ -114,6 +115,93 @@ pub fn decode_slice(
     Ok(())
 }
 
+pub fn decode_slice(
+    nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
+) -> Result<(), NalError> {
+    let clean_rbsp = extract_rbsp(&nal.payload[..]);
+    let sps_storage = &hevc_decoder.sps_storage;
+    let pps_storage = &hevc_decoder.pps_storage;
+
+    let slice_header = decode_slice_header(&nal, &pps_storage, &sps_storage, &clean_rbsp)?;
+
+    let pps = pps_storage[slice_header.slice_pic_parameter_set_id as usize]
+        .as_ref()
+        .unwrap();
+    let sps = sps_storage[pps.sps_id as usize].as_ref().unwrap();
+
+    // 1. Initial QP
+    let slice_qp = (26 + pps.init_qp_minus26 + slice_header.slice_qp_delta) as i8;
+
+    // 2. CABAC Initialization (Section 9.3.2.2)
+    // Dependent slices inherit the previous CABAC state, independent ones reset.
+    let payload_start = &clean_rbsp[slice_header.cabac_start_position..];
+    let mut cabac = if slice_header.dependent_slice_segment_flag {
+        todo!("Dependent slice segment flag")
+        // let mut prev_cabac = hevc_decoder.last_cabac_state.take().expect("Dependent slice without parent!");
+        // prev_cabac.update_data(payload_start);
+        // prev_cabac
+    } else {
+        // Derive init_type (0=I, 1=P, 2=B)
+        let init_type = match slice_header.slice_type {
+            SliceType::I => 0,
+            SliceType::P => 1,
+            SliceType::B => 2
+        };
+        CabacDecoder::new(payload_start, slice_qp as i32, init_type)
+    };
+
+    // 3. CTU Range (Raster Scan Address)
+
+    let width_in_ctus = sps.pic_width_in_ctbs_y as usize;
+
+    let start_ctu_addr = slice_header.slice_segment_address as usize;
+    let total_ctus = width_in_ctus * (sps.pic_height_in_ctbs_y as usize);
+
+    // 4. Update the existing Neighbor Tracker
+    let neighbor_tracker = hevc_decoder.neighbor_tracker.as_mut().unwrap();
+
+    let mut ctx = DecodeSliceContext::new(
+        &sps,
+        &pps,
+        &slice_header,
+        cabac,
+        neighbor_tracker,
+        //&mut hevc_decoder.neighbor_tracker, // Borrow the persistent tracker
+        slice_qp,
+        raw_frame
+    );
+
+    // 5. The CTU Loop (starts at slice address)
+    for ctu_addr in start_ctu_addr..total_ctus {
+        let ctu_x = ctu_addr % width_in_ctus;
+        let ctu_y = ctu_addr / width_in_ctus;
+
+        debug_more!("--- Decoding CTU {} [{}, {}] ---", ctu_addr, ctu_x, ctu_y);
+
+        read_coding_tree_unit(&mut ctx, ctu_x, ctu_y)?;
+
+        // finish_ctu handles the end_of_slice_segment_flag terminal bit
+        match finish_ctu(&mut ctx, ctu_x, ctu_y)? {
+            CtuStatus::EndOfSliceSegment => {
+                debug_more!("Slice Segment Finished at CTU {}", ctu_addr);
+
+                // If it's a dependent slice, save the state for the next one
+                if pps.dependent_slice_segments_enabled_flag {
+                    todo!("Dependent slice segment flag")
+                    // hevc_decoder.last_cabac_state = Some(ctx.cabac.clone());
+                }
+                break; // Exit loop, slice is done
+            }
+            CtuStatus::EndOfSubstream => {
+                // Handle Tiles / WPP alignment
+                ctx.cabac.init_cabac();
+            }
+            CtuStatus::Continue => {}
+        }
+    }
+
+    Ok(())
+}
 pub fn finish_ctu(
     ctx: &mut DecodeSliceContext, ctbx: usize, ctby: usize
 ) -> Result<CtuStatus, NalError> {
@@ -193,6 +281,13 @@ pub fn finish_ctu(
         return Ok(CtuStatus::EndOfSubstream);
     }
 
+    ctx.math_scratchpad.fill(0);
+    ctx.n_coeff.fill(0);
+    ctx.coeff_list.iter_mut().for_each(|c| c.fill(0));
+    ctx.coeff_pos.iter_mut().for_each(|c| c.fill(0));
+    ctx.ref_samples_p.fill(0);
+    ctx.ref_main_buf.fill(0);
+    ctx.ref_samples_available.fill(false);
     Ok(CtuStatus::Continue)
 }
 fn read_coding_quadtree(
@@ -259,6 +354,11 @@ fn read_coding_quadtree(
         }
         Ok(())
     } else {
+        // set depth
+        if ct_depth > 0 {
+            ctx.neighbor_tracker
+                .update_block_depth(x0, y0, cb_size, ct_depth);
+        }
         // --- THIS IS A LEAF CU ---
         //    1. Record the depth in the tracker for neighbors to use
         read_coding_unit(ctx, x0, y0, log_2_cb_size, ct_depth)?;
@@ -279,6 +379,7 @@ fn read_coding_quadtree(
             is_intra: ctx.is_intra,
             intra_mode_luma: ctx.intra_mode_luma,
             qp: ctx.last_qp_in_slice,
+            slice_id: ctx.slice_header.slice_segment_address as u16,
             ..BlockState::default()
         };
 
@@ -301,13 +402,18 @@ fn read_coding_quadtree(
 }
 
 fn decode_split_cu_flag(ctx: &mut DecodeSliceContext, x0: usize, y0: usize, depth: u8) -> bool {
-    let ctx_v = ctx.neighbor_tracker.get_split_ctx(x0, y0, depth);
+    let current_slice_id = ctx.slice_header.slice_segment_address as u16;
+    let ctx_v = ctx
+        .neighbor_tracker
+        .get_split_ctx(x0, y0, depth, current_slice_id);
+
     let index = CONTEXT_MODEL_SPLIT_CU_FLAG + ctx_v;
     debug_more!(
-        "decode_split_cu_flag -> ctx={} Range={} Value={}",
+        "decode_split_cu_flag -> ctx={} Range={} Value={} state:{}",
         ctx_v,
         ctx.cabac.range,
-        ctx.cabac.value
+        ctx.cabac.value,
+        index
     );
     let bit = ctx.cabac.decode_decision(index);
     debug_more!(
