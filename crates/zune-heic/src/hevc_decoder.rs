@@ -21,7 +21,6 @@ mod nal_unit_headers;
 mod nal_unit_parsers;
 mod neighbor_tracker;
 mod quadtree;
-mod quadtree_vb;
 mod raw_frame;
 mod utils;
 
