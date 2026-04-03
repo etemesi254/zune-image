@@ -139,29 +139,37 @@ pub fn decode_tu(
         if ctx.transform_skip_flag[c_idx] == 0 {
             // Pick DST for Luma 4x4 Intra, otherwise IDCT
             let use_dst = c_idx == 0 && n_t == 4 && cu_pred_mode == PredMode::ModeIntra;
+
+            // scratchpad can be reused without reset-ing as the buffer is overwritten
+            // so no need to reset it every time
+            let idct_scratchpad: &mut [i32; 1024] = &mut ctx.idct_scratchpad[..].try_into().unwrap();
+
             if use_dst {
                 // Luma 4x4 Intra -> Special DST path
                 let block: &mut [i32; 16] = (&mut ctx.math_scratchpad[..16])
                     .try_into()
                     .expect("Scratchpad must have at least 16 elements");
-                idst_4x4_hevc(block, bit_depth);
+                idst_4x4_hevc(block, idct_scratchpad, bit_depth);
             } else {
                 // Standard IDCT Path
                 match n_t {
                     4 => {
                         let block: &mut [i32; 16] =
                             (&mut ctx.math_scratchpad[..16]).try_into().unwrap();
-                        idct_4x4_hevc(block, bit_depth);
+
+                        idct_4x4_hevc(block, idct_scratchpad, bit_depth);
                     }
                     8 => {
                         let block: &mut [i32; 64] =
                             (&mut ctx.math_scratchpad[..64]).try_into().unwrap();
-                        idct_8x8_hevc(block, bit_depth);
+
+                        idct_8x8_hevc(block, idct_scratchpad, bit_depth);
                     }
                     16 => {
                         let block: &mut [i32; 256] =
                             (&mut ctx.math_scratchpad[..256]).try_into().unwrap();
-                        idct_16x16_hevc(block, bit_depth);
+
+                        idct_16x16_hevc(block, idct_scratchpad, bit_depth);
                     }
                     32 => {
                         let block: &mut [i32; 1024] = ctx
@@ -170,13 +178,11 @@ pub fn decode_tu(
                             .unwrap()
                             .try_into()
                             .unwrap();
-                        idct_32x32_hevc(block, bit_depth);
+                        idct_32x32_hevc(block, idct_scratchpad, bit_depth);
                     }
                     _ => unreachable!("HEVC TU sizes are 4, 8, 16, or 32")
                 }
-
-
-             }
+            }
         } else {
             // RDPCM for Transform Skip (Spec 8.6.4.4.1)
             todo!("apply residual dcpm")
@@ -201,11 +207,10 @@ pub fn decode_tu(
         }
 
         // --- 5. RECONSTRUCT (Residuals + Prediction) ---
-        let bit_depth = if c_idx == 0 { sps.bit_depth_luma } else { sps.bit_depth_chroma };
         ctx.add_residual_and_write(x0, y0, n_t, c_idx, None, bit_depth);
     } else {
         // No coefficients and no CCP: Just copy prediction pixels to frame
-        ctx.write_block_scratchpad(c_idx, x0, y0, n_t);
+        ctx.write_block_scratchpad(c_idx, x0, y0, n_t, bit_depth);
     }
 }
 

@@ -7,7 +7,7 @@ use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, Sps}
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
-use crate::hevc_decoder::raw_frame::RawFrame;
+use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
 
 pub struct DecodeSliceContext<'a> {
     pub sps:                  &'a Sps,
@@ -48,6 +48,8 @@ pub struct DecodeSliceContext<'a> {
     pub pixel_scratchpad:          Vec<u8>,
     // Use i32 so it's large enough for Scaling, IDCT, and RDPCM
     pub math_scratchpad:           Vec<i32>,
+    // idct scratchpad instead of allocating
+    pub idct_scratchpad:          Vec<i32>,
     // Reference Wall buffers
     pub ref_samples_p:             Vec<u8>,
     pub ref_samples_available:     Vec<bool>,
@@ -107,6 +109,7 @@ impl<'a> DecodeSliceContext<'a> {
             ref_samples_available: vec![false; 129],
             math_scratchpad: vec![0; 1024],
             luma_residual_temp: vec![0; 1024],
+            idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
             ctb_sao_buffer: vec![SaoInfo::default(); buffer_size]
         }
@@ -143,10 +146,9 @@ impl<'a> DecodeSliceContext<'a> {
     /// Sets a block of pixels (e.g., after reconstruction)
     ///
     /// Data is expected to be in scratchpad
-    pub fn write_block_scratchpad(&self, c_idx: usize, x0: usize, y0: usize, n_t: usize) {
-        // data is expected to be in scratchpad
-        let block_data = &self.pixel_scratchpad;
-        // 1. Lock the appropriate plane
+    pub fn write_block_scratchpad(
+        &self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8
+    ) {
         let mut plane = match c_idx {
             0 => self.raw_frame.luma.lock().unwrap(),
             1 => self.raw_frame.cb.lock().unwrap(),
@@ -154,20 +156,17 @@ impl<'a> DecodeSliceContext<'a> {
             _ => panic!("Invalid component index")
         };
 
-        // 2. Calculate coordinates with padding offset
-        let stride = plane.stride;
-        let padding = plane.padding;
-        let offset_base = (y0 + padding) * stride + (x0 + padding);
-
-        // 3. Copy row by row
-        for dy in 0..n_t {
-            let src_start = dy * n_t;
-            let dst_start = offset_base + (dy * stride);
-
-            plane.pixels[dst_start..dst_start + n_t]
-                .copy_from_slice(&block_data[src_start..src_start + n_t]);
-        }
+        write_block_and_pad(
+            &mut plane,
+            x0,
+            y0,
+            n_t,
+            &self.pixel_scratchpad,
+            None,
+            bit_depth
+        )
     }
+
     pub fn scale_coefficients(
         &mut self,
         xT: usize,
@@ -326,35 +325,6 @@ impl<'a> DecodeSliceContext<'a> {
             }
         }
     }
-    /// Returns a slice of the scaling factors (m[x][y]) for the current TU.
-    pub fn get_scaling_list(&self, n_t: usize, c_idx: usize, is_intra: bool) -> &[u8] {
-        let pps = &self.pps;
-
-        // 1. Determine MatrixID based on libde265 logic
-        let mut matrix_id = c_idx;
-
-        if n_t == 32 {
-            // 32x32 only has Luma IDs (0 for Intra, 1 for Inter)
-            matrix_id = 0;
-            if !is_intra {
-                matrix_id = 1;
-            }
-        } else {
-            // 4x4, 8x8, 16x16 have 3 Intra followed by 3 Inter matrices
-            if !is_intra {
-                matrix_id += 3;
-            }
-        }
-
-        // 2. Return the correct buffer based on size
-        match n_t {
-            4 => &pps.pic_scaling_lists.size0[matrix_id], // [6][16]
-            8 => &pps.pic_scaling_lists.size1[matrix_id], // [6][64]
-            16 => &pps.pic_scaling_lists.size2[matrix_id], // [6][256]
-            32 => &pps.pic_scaling_lists.size3[matrix_id], // [2][1024]
-            _ => unreachable!("Invalid TU size for scaling list")
-        }
-    }
     /// Returns true if the Chroma Intra Prediction mode is DM_CHROMA (Mode 4).
     /// This is used to gate Cross-Component Prediction (CCP).
     pub fn is_intra_pred_mode_c_mode4(&self, x0: usize, y0: usize) -> bool {
@@ -448,9 +418,7 @@ impl<'a> DecodeSliceContext<'a> {
         bit_depth: u8
     ) {
         let residual = residual.unwrap_or(&self.math_scratchpad);
-        let max_val = ((1i32 << bit_depth) - 1) as i32;
 
-        // 1. Lock the appropriate plane
         let mut plane = match c_idx {
             0 => self.raw_frame.luma.lock().unwrap(),
             1 => self.raw_frame.cb.lock().unwrap(),
@@ -458,39 +426,15 @@ impl<'a> DecodeSliceContext<'a> {
             _ => panic!("Invalid component index")
         };
 
-        let stride = plane.stride;
-        let padding = plane.padding;
-        let offset_base = (y0 + padding) * stride + (x0 + padding);
-
-        // 2. Process row by row
-        for dy in 0..n_t {
-            let start_idx = dy * n_t;
-            let end_idx = start_idx + n_t;
-
-            // Slices for the current row
-            let pred_row = &self.pixel_scratchpad[start_idx..end_idx];
-            let res_row = &residual[start_idx..end_idx];
-
-            let dst_offset = offset_base + (dy * stride);
-            let dst_row = &mut plane.pixels[dst_offset..dst_offset + n_t];
-
-            // 3. Zip prediction and residual, add, clamp, and write to destination
-            for x in 0..n_t {
-                let p = pred_row[x] as i32;
-                let r = res_row[x];
-
-                // Pixel = Clip3(0, max_val, Pred + Res)
-                let output = (p + r).clamp(0, max_val) as u8;
-                dst_row[x] = output;
-
-                if DEBUG_MORE {
-                    print!("{:3} ", output);
-                }
-            }
-            if DEBUG_MORE {
-                println!();
-            }
-        }
+        write_block_and_pad(
+            &mut plane,
+            x0,
+            y0,
+            n_t,
+            &self.pixel_scratchpad,
+            Some(residual),
+            bit_depth
+        );
     }
     pub fn apply_cross_component_prediction(
         &mut self,
@@ -543,30 +487,30 @@ impl<'a> DecodeSliceContext<'a> {
 }
 
 impl<'a> DecodeSliceContext<'a> {
-    /// Prepares the reference samples in the context's internal buffers.
-    /// Returns the length of the valid segment (4 * n_t + 1).
     pub fn setup_reference_samples(
         &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
     ) -> usize {
         let p_len = 4 * n_t + 1;
 
-        // 1. Reset/Clear the values for the current segment
-        // We only clear up to p_len to save cycles
-        self.ref_samples_p[..p_len].fill(0);
-        self.ref_samples_available[..p_len].fill(false);
+        // 1. Reset/Clear internal buffers
+        self.ref_samples_p.fill(0);
+        self.ref_samples_available.fill(false);
 
-        // 2. Check Availability
-        // We pass slices of our fixed arrays
+        // 2. Check Availability (Using PIXEL coordinates x0, y0)
         check_availability(
             &self.neighbor_tracker,
-            &self.pps,
-            x0 / n_t,
-            y0 / n_t,
+            x0,
+            y0,
             n_t,
+            c_idx,
             &mut self.ref_samples_available[..p_len]
         );
+        if DEBUG_MORE {
+            println!("--- Reference Border (N={}) ---", n_t);
+            print_available(&self.ref_samples_available[..p_len], n_t);
+        }
 
-        // 3. Fetch and Pad
+        // 3. Fetch pixels from frame and perform HEVC propagation padding
         perform_padding(
             &self.raw_frame,
             &mut self.ref_samples_p[..p_len],
@@ -576,46 +520,216 @@ impl<'a> DecodeSliceContext<'a> {
             n_t,
             c_idx
         );
+        if DEBUG_MORE {
+            println!("--- Reference Border (N={}) ---", n_t);
+            print_border(
+                &self.ref_samples_p[..p_len],
+                &self.ref_samples_available[..p_len],
+                n_t
+            );
+        }
 
-        // 4. Filter/Smoothing
-        let strong_enabled = self.sps.strong_intra_smoothing_enable_flag;
-        apply_reference_smoothing(
-            &mut self.ref_samples_p[..p_len],
-            n_t,
-            intra_mode,
-            strong_enabled
-        );
+        if c_idx == 0 {
+            // 4. Apply Smoothing filters (Standard [1,2,1] or Strong 32x32)
+            let strong_enabled = self.sps.strong_intra_smoothing_enable_flag;
+            apply_reference_smoothing(
+                &mut self.ref_samples_p[..p_len],
+                n_t,
+                intra_mode,
+                strong_enabled
+            );
+        }
 
         p_len
     }
 }
 
-fn check_availability(
-    tracker: &NeighborTracker, pps: &Pps, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
+fn write_block_and_pad(
+    plane: &mut SingleFrame, x0: usize, y0: usize, n_t: usize, pred: &[u8],
+    residual: Option<&[i32]>, bit_depth: u8
 ) {
-    // Top-Left
-    available[0] = tracker.is_available(x0, y0, x0 as isize - 1, y0 as isize - 1);
+    let max_val = (1_i32 << bit_depth) - 1;
+    let buf = &mut plane.pixels;
+    let (w, h, s, p) = (plane.width, plane.height, plane.stride, plane.padding);
 
-    // Top & Top-Right
-    for i in 0..(2 * n_t) {
-        available[1 + i] = tracker.is_available(x0, y0, (x0 + i) as isize, y0 as isize - 1);
+    let x_end = x0 + n_t;
+    let y_end = y0 + n_t;
+    let frame_ox = p;
+    let frame_oy = p;
+
+    if let Some(b) = residual {
+        // --- 1. Reconstruct directly into the padded buffer ---
+        //
+        // for dy in 0..n_t {
+        //     let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
+        //     let i_start = dy * n_t;
+        //     for dx in 0..n_t {
+        //         let i = i_start + dx;
+        //         buf[dst_row + dx] = (b[i] + pred[i] as i32).clamp(0, max_val) as u8;
+        //     }
+        // }
+        for (dy, (b_row, pred_row)) in b.chunks(n_t).zip(pred.chunks(n_t)).enumerate() {
+            let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
+            let dst_slice = &mut buf[dst_row..dst_row + n_t];
+
+            for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
+                *dst = (bv + pv as i32).clamp(0, max_val) as u8;
+            }
+        }
+    } else {
+        // just copy-paste residual into the buffer
+        for dy in 0..n_t {
+            let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
+            buf[dst_row..dst_row + n_t].copy_from_slice(&pred[dy * n_t..(dy + 1) * n_t]);
+        }
     }
 
-    // Left & Below-Left
-    for i in 0..(2 * n_t) {
-        available[1 + 2 * n_t + i] =
-            tracker.is_available(x0, y0, x0 as isize - 1, (y0 + i) as isize);
-    }
     if DEBUG_MORE {
-        debug_more!("available \n");
-        available.chunks(n_t).for_each(|chunk| {
-            println!("{:?}", chunk);
-        })
+        println!("--- Out Padding (N={}) ---", n_t);
+        for dy in 0..n_t {
+            let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
+            let i_start = dy * n_t;
+            for dx in 0..n_t {
+                print!("{} ", buf[dst_row + dx]);
+            }
+            println!();
+        }
+    }
+    // --- 2. Left edge ---
+    if x0 == 0 {
+        for dy in 0..n_t {
+            let row = (frame_oy + y0 + dy) * s + frame_ox;
+            let val = buf[row];
+            buf[row - p..row].fill(val);
+        }
     }
 
-    if pps.constrained_intra_pred_flag {
-        // filter_constrained logic...
-        filter_constrained(tracker, x0, y0, n_t, available);
+    // --- 3. Right edge ---
+    if x_end == w {
+        for dy in 0..n_t {
+            let row_last = (frame_oy + y0 + dy) * s + frame_ox + w - 1;
+            let val = buf[row_last];
+            buf[row_last + 1..row_last + 1 + p].fill(val);
+        }
+    }
+
+    // --- 4. Top edge ---
+    if y0 == 0 {
+        let src_row_base = frame_oy * s;
+        let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
+        let x_stop = if x_end == w { s } else { frame_ox + x_end };
+        for py in 1..=p {
+            buf.copy_within(
+                src_row_base + x_start..src_row_base + x_stop,
+                src_row_base - py * s + x_start
+            );
+        }
+    }
+
+    // --- 5. Bottom edge ---
+    if y_end == h {
+        let src_row_base = (frame_oy + h - 1) * s;
+        let x_start = if x0 == 0 { 0 } else { frame_ox + x0 };
+        let x_stop = if x_end == w { s } else { frame_ox + x_end };
+        for py in 1..=p {
+            buf.copy_within(
+                src_row_base + x_start..src_row_base + x_stop,
+                src_row_base + py * s + x_start
+            );
+        }
+    }
+}
+pub fn print_border(p: &[u8], available: &[bool], n_t: usize) {
+    let nt_i = n_t as i32;
+
+    // We loop from -2N to 2N to match libde265's logical segments
+    for i in -2 * nt_i..=2 * nt_i {
+        // 1. Print Separators
+        if i == 0 || i == 1 || i == -nt_i || i == nt_i + 1 {
+            print!("|\n");
+        } else {
+            print!(" ");
+        }
+
+        // 2. Map libde265 'i' to your buffer 'idx'
+        // Your layout: [0]=Corner, [1..2N]=Top/TR, [1+2N..4N]=Left/BL
+        let idx = if i < 0 {
+            // libde265: -1 is first Left sample.
+            // Your p: 1 + 2*n_t is first Left sample.
+            (1 + 2 * n_t as i32 + (-i - 1)) as usize
+        } else if i == 0 {
+            0 // Corner
+        } else {
+            i as usize // Top and Top-Right
+        };
+
+        // 3. Print value or "missing" marker
+
+        print!("{}", p[idx] as u8);
+    }
+    println!(" |");
+}
+pub fn print_available(available: &[bool], n_t: usize) {
+    let nt_i = n_t as i32;
+
+    // We loop from -2N to 2N to match libde265's logical segments
+    for i in -2 * nt_i..=2 * nt_i {
+        // 1. Print Separators
+        if i == 0 || i == 1 || i == -nt_i || i == nt_i + 1 {
+            print!("|\n");
+        } else {
+            print!(" ");
+        }
+
+        // 2. Map libde265 'i' to your buffer 'idx'
+        // Your layout: [0]=Corner, [1..2N]=Top/TR, [1+2N..4N]=Left/BL
+        let idx = if i < 0 {
+            // libde265: -1 is first Left sample.
+            // Your p: 1 + 2*n_t is first Left sample.
+            (1 + 2 * n_t as i32 + (-i - 1)) as usize
+        } else if i == 0 {
+            0 // Corner
+        } else {
+            i as usize // Top and Top-Right
+        };
+
+        // 3. Print value or "missing" marker
+
+        print!("{}", available[idx] as u8);
+    }
+    println!(" |");
+}
+
+fn check_availability(
+    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
+    available: &mut [bool]
+) {
+    // scale is 1 for Luma (c_idx=0), 2 for Chroma (c_idx=1,2) in 4:2:0
+    let scale = if c_idx == 0 { 1 } else { 2 };
+
+    // Scale the current block coordinates to the Luma-indexed tracker
+    let sx0 = x0 * scale;
+    let sy0 = y0 * scale;
+
+    // 1. Top-Left Corner (Index 0)
+    // Neighbor is (-1, -1) relative to current Chroma pixel,
+    // which is (-1*scale, -1*scale) in Luma units.
+    available[0] = tracker.is_available(sx0, sy0, sx0 as isize - 1, sy0 as isize - 1);
+
+    // 2. Top & Top-Right (Indices 1 to 2*N)
+    for i in 0..(2 * n_t) {
+        // Neighbor is (i, -1) relative to Chroma, scale X by 'scale'
+        let px = sx0 as isize + (i * scale) as isize;
+        let py = sy0 as isize - 1;
+        available[1 + i] = tracker.is_available(sx0, sy0, px, py);
+    }
+
+    // 3. Left & Below-Left (Indices 1 + 2*N to 4*N)
+    for i in 0..(2 * n_t) {
+        // Neighbor is (-1, i) relative to Chroma, scale Y by 'scale'
+        let px = sx0 as isize - 1;
+        let py = sy0 as isize + (i * scale) as isize;
+        available[1 + 2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
     }
 }
 
@@ -623,7 +737,12 @@ fn perform_padding(
     frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
     c_idx: usize
 ) {
-    // 1. Fetch available pixels from the Mutex-protected frame
+    // p and available are both length 4*n_t+1
+    // index mapping: logical index i (-2*n_t ..= 2*n_t) -> flat index i + 2*n_t
+    let n = 2 * n_t;
+    let idx = |i: isize| (i + n as isize) as usize;
+
+    // 1. Fetch available pixels
     {
         let plane = match c_idx {
             0 => frame.luma.lock().unwrap(),
@@ -631,103 +750,104 @@ fn perform_padding(
             2 => frame.cr.lock().unwrap(),
             _ => unreachable!()
         };
+        let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
+        let get_p =
+            |px: isize, py: isize| pixels[(py as usize + pad) * stride + (px as usize + pad)];
 
-        let stride = plane.stride;
-        let pad = plane.padding;
-        let pixels = &plane.pixels;
-
-        let get_p = |px: isize, py: isize| -> u8 {
-            pixels[(py as usize + pad) * stride + (px as usize + pad)]
-        };
-
-        if available[0] {
-            p[0] = get_p(x0 as isize - 1, y0 as isize - 1);
+        // corner: logical index 0
+        if available[idx(0)] {
+            p[idx(0)] = get_p(x0 as isize - 1, y0 as isize - 1);
         }
-        for i in 0..(2 * n_t) {
-            if available[1 + i] {
-                p[1 + i] = get_p((x0 + i) as isize, y0 as isize - 1);
+        // top row: logical -2*n_t ..= -1 (right to left means x0+2*n_t-1 down to x0)
+        for i in 1..=(2 * n_t) {
+            let li = -(i as isize); // -1 .. -2*n_t
+            if available[idx(li)] {
+                p[idx(li)] = get_p(x0 as isize - 1 + i as isize, y0 as isize - 1);
             }
-            if available[1 + 2 * n_t + i] {
-                p[1 + 2 * n_t + i] = get_p(x0 as isize - 1, (y0 + i) as isize);
+        }
+        // left column: logical 1 ..= 2*n_t (top to bottom)
+        for i in 1..=(2 * n_t) {
+            let li = i as isize;
+            if available[idx(li)] {
+                p[idx(li)] = get_p(x0 as isize - 1, y0 as isize - 1 + i as isize);
             }
         }
     }
 
-    // 2. Propagation Logic (HEVC Spec 8.4.4.2.2)
-    if !available.iter().any(|&a| a) {
-        p.fill(128); // Default gray if nothing is available
+    // 2. Reference sample substitution — direct translation of libde265
+    let total = 4 * n_t + 1;
+    if available.iter().filter(|&&a| a).count() == total {
+        return; // all available, nothing to do
+    }
+
+    if available.iter().all(|&a| !a) {
+        p.fill(1 << 7); // 8-bit mid-grey
         return;
     }
 
-    // Standard HEVC search order: Bottom-Left -> Corner -> Top-Right
-    let mut order = Vec::with_capacity(p.len());
-    for i in ((2 * n_t + 1)..=(4 * n_t)).rev() {
-        order.push(i);
-    }
-    order.push(0);
-    for i in 1..=(2 * n_t) {
-        order.push(i);
+    // Find firstValue: first available sample scanning from -2*n_t
+    let first_value = available
+        .iter()
+        .zip(p.iter())
+        .find(|&(&a, _)| a)
+        .map(|(_, &v)| v)
+        .unwrap();
+
+    let idx_n = idx(-(n as isize));
+    if !available[idx_n] {
+        p[idx_n] = first_value;
     }
 
-    let first_valid_idx = *order.iter().find(|&&idx| available[idx]).unwrap();
-    let mut last_val = p[first_valid_idx];
-
-    for &idx in &order {
-        if available[idx] {
-            last_val = p[idx];
-        } else {
-            p[idx] = last_val;
+    for i in (-(n as isize) + 1)..=(n as isize) {
+        let idx_i = idx(i);
+        let idx_i_min1 = idx(i - 1);
+        if !available[idx_i] {
+            p[idx_i] = p[idx_i_min1];
         }
     }
 }
-/// Applies [1, 2, 1] smoothing or Strong Intra Smoothing (Spec 8.4.4.2.3)
+
 fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled: bool) {
     if n_t == 4 {
         return;
-    } // 4x4 is never smoothed
+    }
 
-    // Strong Intra Smoothing check for 32x32 blocks
     if n_t == 32 && strong_enabled {
-        let threshold = 1 << (8 - 5); // Default for 8-bit
-        let tl = p[0] as i32;
-        let tr = p[2 * n_t] as i32;
-        let bl = p[4 * n_t] as i32;
-
-        if (tl + tr - 2 * p[n_t] as i32).abs() < threshold
-            && (tl + bl - 2 * p[3 * n_t] as i32).abs() < threshold
+        let threshold = 1 << (8 - 5); // Assuming 8-bit
+        if (p[0] as i32 + p[2 * n_t] as i32 - 2 * p[n_t] as i32).abs() < threshold
+            && (p[0] as i32 + p[4 * n_t] as i32 - 2 * p[3 * n_t] as i32).abs() < threshold
         {
             apply_strong_smoothing(p, n_t);
             return;
         }
     }
 
-    // Standard [1, 2, 1] smoothing
     if is_filtering_required(mode, n_t) {
-        let mut p_copy = p.to_vec();
-        for i in 1..4 * n_t {
-            p_copy[i] = ((p[i - 1] as u16 + 2 * p[i] as u16 + p[i + 1] as u16 + 2) >> 2) as u8;
+        let raw = p.to_vec();
+        // Corner
+        p[0] = ((raw[2 * n_t + 1] as u16 + 2 * raw[0] as u16 + raw[1] as u16 + 2) >> 2) as u8;
+        // Top segment
+        for i in 1..(2 * n_t) {
+            p[i] = ((raw[i - 1] as u16 + 2 * raw[i] as u16 + raw[i + 1] as u16 + 2) >> 2) as u8;
         }
-        // Corner and ends are not smoothed or use specific rules;
-        // standard HEVC logic skips p[0] and p[4*nT] during standard filter.
-        p.copy_from_slice(&p_copy);
+        // Left segment (p[2*n_t+1] uses p[0] as its 'previous')
+        let first_l = 2 * n_t + 1;
+        p[first_l] =
+            ((raw[0] as u16 + 2 * raw[first_l] as u16 + raw[first_l + 1] as u16 + 2) >> 2) as u8;
+        for i in (first_l + 1)..(4 * n_t) {
+            p[i] = ((raw[i - 1] as u16 + 2 * raw[i] as u16 + raw[i + 1] as u16 + 2) >> 2) as u8;
+        }
     }
 }
-fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
-    let tl = p[0] as i32;
-    let tr = p[2 * n_t] as i32;
-    let bl = p[4 * n_t] as i32;
 
-    // Top edge bilinear interpolation
+fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
+    let (tl, tr, bl) = (p[0] as i32, p[2 * n_t] as i32, p[4 * n_t] as i32);
     for i in 1..=2 * n_t {
         p[i] = (((2 * n_t - i) as i32 * tl + i as i32 * tr + n_t as i32) / (2 * n_t) as i32) as u8;
-    }
-    // Left edge bilinear interpolation
-    for i in 1..=2 * n_t {
         p[2 * n_t + i] =
             (((2 * n_t - i) as i32 * tl + i as i32 * bl + n_t as i32) / (2 * n_t) as i32) as u8;
     }
 }
-
 fn filter_constrained(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
 ) {

@@ -319,6 +319,7 @@ impl NeighborTracker {
         let uy = y >> self.log2_unit_size;
 
         if ux >= self.width_in_units || uy >= self.height_in_units {
+            debug_more!("Pred mode out of bounds");
             return PredMode::ModeInter; // Treat out-of-bounds as Inter (Unavailable for Intra)
         }
 

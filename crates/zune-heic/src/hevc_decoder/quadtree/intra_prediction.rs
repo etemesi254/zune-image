@@ -1,12 +1,8 @@
 use std::sync::Arc;
 
 use crate::debug_more;
-use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::DEBUG_MORE;
-
-
-
-
+use crate::hevc_decoder::ctx::DecodeSliceContext;
 
 // ============================================================
 // Caller contract (document these or add a wrapper that checks):
@@ -81,7 +77,7 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
     let bottom_left = p[3 * n_t + 1] as i32;
     let shift = log2_n_t + 1;
     let n = n_t as i32;
-    let dst = &mut dst[..n_t*n_t];
+    let dst = &mut dst[..n_t * n_t];
 
     dst.chunks_exact_mut(n_t).enumerate().for_each(|(y, row)| {
         let y = y as i32;
@@ -121,97 +117,69 @@ const INTRA_ANGLES: [i16; 35] = [
       5,  9,  13, 17, 21, 26, 32,
 ];
 
+#[rustfmt::skip]
+/// HEVC invAngle table (Table 8-4). 
+/// Maps mode_idx (0..34) to the scaled inverse of the intraPredAngle.
+#[rustfmt::skip]
 /// HEVC invAngle table (Table 8-4).
-/// Maps mode_idx to the scaled inverse of the intraPredAngle.
-/// Only used for modes with negative angles (2-9 and 27-34).
-const INV_ANGLES: [u16; 35] = [
+/// Maps mode_idx (0..34) to the scaled inverse of the intraPredAngle.
+/// Required for all negative-angle modes: 2-9 (Horizontal) and 18-25 (Vertical).
+const INV_ANGLES: [i16; 35] = [
     0, 0,                                         // 0: Planar, 1: DC
-    256, 315, 390, 482, 630, 910, 1638, 4096,     // 2-9:   Negative angles (Vertical-ish)
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 10-26: Positive/Zero angles
-    0, 0,                                         // 25-26: Mode 26 is Vertical (angle 0)
-    4096, 1638, 910, 630, 482, 390, 315, 256      // 27-34: Negative angles (Horizontal-ish)
+    256, 315, 390, 482, 630, 910, 1638, 4096,     // 2-9:   Negative Horizontal
+    0, 0, 0, 0, 0, 0, 0, 0,                       // 10-17: Positive Horizontal
+    256, 315, 390, 482, 630, 910, 1638, 4096,     // 18-25: Negative Vertical
+    0, 0, 0, 0, 0, 0, 0, 0, 0                     // 26-34: Positive Vertical
 ];
-pub fn predict_angular(
-    p: &[u8],
-    dst: &mut [u8],
-    ref_main_buf: &mut [u8], // must be >= 3*n_t + 1; caller allocates once
-    n_t: usize,
-    mode: u8
-) {
-    check_predict_args(p, dst, n_t);
-    assert!(
-        ref_main_buf.len() >= 3 * n_t + 1,
-        "ref_main_buf too short: need {}, got {}",
-        3 * n_t + 1,
-        ref_main_buf.len()
-    );
 
+pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: usize, mode: u8) {
     let mode_idx = mode as usize;
     let angle = INTRA_ANGLES[mode_idx];
     let is_vert = mode >= 18;
-
-    // We keep a virtual index `offset` = n_t so that ref_main[offset + i]
-    // corresponds to the spec's ref_main[i], and ref_main[offset - i]
-    // handles the negative projections without ever forming a negative usize.
     let offset = n_t;
 
-    // ── build ref_main ────────────────────────────────────────
+    // ── 1. Build ref_main ────────────────────────────────────────
     if is_vert {
-        // Vertical-like modes 18-34: seed from top/corner row
-        ref_main_buf[offset..=offset + n_t]
-            .iter_mut()
-            .zip(&p[0..=n_t])
-            .for_each(|(r, &s)| *r = s);
+        // Main: Top. Side: Left.
+        ref_main_buf[offset] = p[0]; // Corner (-1,-1)
+        ref_main_buf[offset + 1..=offset + 2 * n_t].copy_from_slice(&p[1..=2 * n_t]);
 
         if angle < 0 {
-            let inv_angle = INV_ANGLES[mode_idx];
-            let proj_len = (((n_t as i32) * (angle as i32)) >> 5).unsigned_abs() as usize;
-
+            let inv_angle = INV_ANGLES[mode_idx] as i32;
+            let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
             for i in 1..=proj_len {
-                let left_idx = (((i as i32) * (inv_angle as i32) + 128) >> 8) as usize;
-                ref_main_buf[offset - i] = p[1 + 2 * n_t + left_idx.saturating_sub(1)];
+                let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
+                // p[1 + 2*n_t] is the start of Left samples in your 4N+1 buffer
+                ref_main_buf[offset - i] = p[1 + 2 * n_t + (side_idx - 1)];
             }
-        } else {
-            ref_main_buf[offset + n_t + 1..=offset + 2 * n_t]
-                .iter_mut()
-                .zip(&p[n_t + 1..=2 * n_t])
-                .for_each(|(r, &s)| *r = s);
         }
     } else {
-        // Horizontal-like modes 2-17: seed from left/corner column
-        ref_main_buf[offset..=offset + n_t]
-            .iter_mut()
-            .zip(&p[2 * n_t..=3 * n_t])
-            .for_each(|(r, &s)| *r = s);
+        // Main: Left. Side: Top.
+        ref_main_buf[offset] = p[0]; // Corner (-1,-1)
+        ref_main_buf[offset + 1..=offset + 2 * n_t].copy_from_slice(&p[1 + 2 * n_t..=4 * n_t]);
 
         if angle < 0 {
-            let inv_angle = INV_ANGLES[mode_idx];
-            let proj_len = (((n_t as i32) * (angle as i32)) >> 5).unsigned_abs() as usize;
-
+            let inv_angle = INV_ANGLES[mode_idx] as i32;
+            let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
             for i in 1..=proj_len {
-                let above_idx = (((i as i32) * (inv_angle as i32) + 128) >> 8) as usize;
-                ref_main_buf[offset - i] = p[above_idx];
+                let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
+                // p[1] is the start of Top samples
+                ref_main_buf[offset - i] = p[1 + (side_idx - 1)];
             }
-        } else {
-            ref_main_buf[offset + n_t + 1..=offset + 2 * n_t]
-                .iter_mut()
-                .zip(&p[3 * n_t + 1..=4 * n_t])
-                .for_each(|(r, &s)| *r = s);
         }
     }
 
-    // ── project into dst (1/32-pixel interpolation) ───────────
-    //
-    // Unified: swapping (row, col) vs (col, row) on the dst write
-    // replaces the duplicated if/else inside the hot x-loop.
+    // ── 2. Project into dst (1/32-pixel interpolation) ───────────
     for y in 0..n_t {
+        // The spec uses distance (y + 1) from the reference line
         let pos = ((y + 1) as i32) * (angle as i32);
-        let int_pos = (pos >> 5) as isize;
+        let int_pos = (pos >> 5);
         let frac = (pos & 31) as u32;
 
         for x in 0..n_t {
-            // ref_main virtual index: offset + x + int_pos
-            let base = (offset as isize + x as isize + int_pos) as usize;
+            // THE FIX: Adding +1 to the base index.
+            // This aligns ref_main_buf[offset + 1] with the first Top/Left sample.
+            let base = (offset as i32 + x as i32 + int_pos + 1) as usize;
 
             let val = if frac != 0 {
                 let s1 = ref_main_buf[base] as u32;
@@ -221,14 +189,11 @@ pub fn predict_angular(
                 ref_main_buf[base]
             };
 
-            // Vertical: dst[y][x];
-            // Horizontal: transposed dst[x][y]
             let (row, col) = if is_vert { (y, x) } else { (x, y) };
             dst[row * n_t + col] = val;
         }
     }
 }
-
 pub fn decode_intra_prediction_internal_u8(
     ctx: &mut DecodeSliceContext, x_b0: usize, y_b0: usize, intra_mode: u8, n_t: usize,
     c_idx: usize
@@ -244,7 +209,9 @@ pub fn decode_intra_prediction_internal_u8(
     let p_slice = &ctx.ref_samples_p[..p_len];
     let log2_n_t = n_t.trailing_zeros() as u8;
 
-    if DEBUG_MORE{
+    let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
+
+    if DEBUG_MORE {
         println!(
             "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
             intra_mode, n_t, n_t, c_idx, x_b0, y_b0
@@ -265,7 +232,6 @@ pub fn decode_intra_prediction_internal_u8(
                 intra_mode, n_t, n_t, c_idx, x_b0, y_b0
             );
             for y in 0..n_t {
-                print!("  Row {:2}: ", y);
                 for x in 0..n_t {
                     print!("{:3} ", scratchpad[y * n_t + x]);
                 }
@@ -274,7 +240,7 @@ pub fn decode_intra_prediction_internal_u8(
             println!("------------------------------------------------------------");
         }
     }
-    ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t);
+    ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t, bit_depth);
 }
 pub fn decode_intra_prediction(
     ctx: &mut DecodeSliceContext,

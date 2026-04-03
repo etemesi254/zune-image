@@ -176,9 +176,9 @@ fn transform32_1d(input: &[i32], output: &mut [i32], shift: i32, should_clip: bo
 // ---------------------------------------------------------------------------
 
 pub fn idct_2d_scalar<const N: usize>(
-    block: &mut [i32], bit_depth: u8, is_dst: bool, transform_1d: fn(&[i32], &mut [i32], i32, bool)
+    block: &mut [i32], intermediate: &mut [i32; 1024], bit_depth: u8, is_dst: bool,
+    transform_1d: fn(&[i32], &mut [i32], i32, bool)
 ) {
-    let mut intermediate = [0i32; 1024];
     let shift1 = 7;
     let shift2 = 20 - bit_depth as i32;
 
@@ -274,42 +274,42 @@ pub fn idct_2d_scalar<const N: usize>(
 // ---------------------------------------------------------------------------
 // Public Entry Points
 // ---------------------------------------------------------------------------
-pub fn idst_4x4_hevc(block: &mut [i32; 16], bit_depth: u8) {
+pub fn idst_4x4_hevc(block: &mut [i32; 16], scratchpad: &mut [i32; 1024], bit_depth: u8) {
     #[cfg(feature = "simd")]
     {
-        return std_simd::idst_4x4_hevc(block, bit_depth);
+        return std_simd::idst_4x4_hevc(block,scratchpad, bit_depth);
     }
-    idct_2d_scalar::<4>(block, bit_depth, true, transform4_dst_1d);
+    idct_2d_scalar::<4>(block,scratchpad, bit_depth, true, transform4_dst_1d);
 }
 
-pub fn idct_4x4_hevc(block: &mut [i32; 16], bit_depth: u8) {
+pub fn idct_4x4_hevc(block: &mut [i32; 16], scratchpad: &mut [i32; 1024], bit_depth: u8) {
     #[cfg(feature = "simd")]
     {
-        return std_simd::idct_4x4_hevc(block, bit_depth);
+        return std_simd::idct_4x4_hevc(block,scratchpad, bit_depth);
     }
-    idct_2d_scalar::<4>(block, bit_depth, false, transform4_1d);
+    idct_2d_scalar::<4>(block,scratchpad, bit_depth, false, transform4_1d);
 }
 
-pub fn idct_8x8_hevc(block: &mut [i32; 64], bit_depth: u8) {
+pub fn idct_8x8_hevc(block: &mut [i32; 64], scratchpad: &mut [i32; 1024], bit_depth: u8) {
     #[cfg(feature = "simd")]
     {
-        return std_simd::idct_8x8_hevc(block, bit_depth);
+        return std_simd::idct_8x8_hevc(block,scratchpad, bit_depth);
     }
-    idct_2d_scalar::<8>(block, bit_depth, false, transform8_1d);
+    idct_2d_scalar::<8>(block,scratchpad, bit_depth, false, transform8_1d);
 }
 
-pub fn idct_16x16_hevc(block: &mut [i32; 256], bit_depth: u8) {
+pub fn idct_16x16_hevc(block: &mut [i32; 256], scratchpad: &mut [i32; 1024], bit_depth: u8) {
     #[cfg(feature = "simd")]
     {
-        return std_simd::idct_16x16_hevc(block, bit_depth);
+        return std_simd::idct_16x16_hevc(block,scratchpad, bit_depth);
     }
-    idct_2d_scalar::<16>(block, bit_depth, false, transform16_1d);
+    idct_2d_scalar::<16>(block,scratchpad, bit_depth, false, transform16_1d);
 }
 
-pub fn idct_32x32_hevc(block: &mut [i32; 1024], bit_depth: u8) {
+pub fn idct_32x32_hevc(block: &mut [i32; 1024], scratchpad: &mut [i32; 1024], bit_depth: u8) {
     #[cfg(feature = "simd")]
     {
-        return std_simd::idct_32x32_hevc(block, bit_depth);
+        return std_simd::idct_32x32_hevc(block,scratchpad, bit_depth);
     }
-    idct_2d_scalar::<32>(block, bit_depth, false, transform32_1d);
+    idct_2d_scalar::<32>(block,scratchpad, bit_depth, false, transform32_1d);
 }

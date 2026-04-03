@@ -65,13 +65,13 @@ impl HevcDecoder {
                         let sps = decode_sps(&nal)?;
                         let sps_id = sps.sps_id as usize;
 
-                        let units_w = ((sps.pic_width_in_luma_samples + 7) >> 3) as usize;
-                        let units_h = ((sps.pic_height_in_luma_samples + 7) >> 3) as usize;
+                        let units_w = sps.pic_width_in_luma_samples as usize;
+                        let units_h = sps.pic_height_in_luma_samples as usize;
 
                         raw_frame = Some(RawFrame::from_sps(&sps));
                         self.sps_storage[sps_id] = Some(sps);
 
-                        self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 3))
+                        self.neighbor_tracker = Some(NeighborTracker::new(units_w,units_h ,3))
                     }
                     NalUnitType::PpsNut => {
                         trace!("Decoding pps nal unit");
