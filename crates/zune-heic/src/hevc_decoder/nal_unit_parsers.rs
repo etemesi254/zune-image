@@ -1,10 +1,10 @@
-use zune_core::log::{trace, warn};
+use zune_core::log::{trace};
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{Pps, PpsRangeExtension, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vps, Vui, VuiVideoFormat};
+use crate::hevc_decoder::nal_unit_headers::{Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui, VuiVideoFormat};
 
 mod pps;
 mod sps;

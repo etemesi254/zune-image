@@ -65,26 +65,6 @@ impl NeighborTracker {
             log2_unit_size
         }
     }
-
-    /// MISSING FUNCTION 1: update_block
-    /// Updates all 8x8 units covered by a block of 'size' (e.g., 32, 16, 8).
-    pub fn update_block(&mut self, x: usize, y: usize, size: usize, state: BlockState) {
-        let gx_start = x >> self.log2_unit_size;
-        let gy_start = y >> self.log2_unit_size;
-        let units = (size >> self.log2_unit_size).max(1);
-
-        for dy in 0..units {
-            for dx in 0..units {
-                let gx = gx_start + dx;
-                let gy = gy_start + dy;
-                if gx < self.width_in_units && gy < self.height_in_units {
-                    let idx = gy * self.width_in_units + gx;
-                    self.blocks[idx] = state;
-                    self.blocks[idx].available = true; // Mark as decoded
-                }
-            }
-        }
-    }
     pub fn update_block_depth(&mut self, x: usize, y: usize, size: usize, ct_depth: u8) {
         let gx_start = x >> self.log2_unit_size;
         let gy_start = y >> self.log2_unit_size;
@@ -284,7 +264,7 @@ impl NeighborTracker {
         let gy_start = y0 >> self.log2_unit_size;
 
         // Determine how many 4x4 units this block covers.
-        let units = (pb_size >> self.log2_unit_size);
+        let units = pb_size >> self.log2_unit_size;
 
         debug_more!(
             "Tracker: Setting Intra Mode {} at [{}, {}] size {}",
@@ -379,38 +359,6 @@ impl NeighborTracker {
     }
 }
 
-impl NeighborTracker {
-    pub fn is_available_ex(
-        &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize
-    ) -> bool {
-        // 1. Image Boundary Check
-        if neighbor_x < 0 || neighbor_y < 0 {
-            return false;
-        }
-
-        let nx = neighbor_x as usize;
-        let ny = neighbor_y as usize;
-
-        if nx >= self.width_in_units << self.log2_unit_size
-            || ny >= self.height_in_units << self.log2_unit_size
-        {
-            return false;
-        }
-
-        // 2. Lookup neighbor data
-        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units + (curr_x >> self.log2_unit_size)];
-        let neighbor_unit = &self.blocks[(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
-
-        // 3. Slice Boundary Check
-        if curr_unit.slice_id != neighbor_unit.slice_id {
-            return false;
-        }
-
-        // 4. Decoding Order Check
-        // A neighbor is only available if it has been marked as 'decoded'
-        neighbor_unit.available
-    }
-}
 
 impl NeighborTracker {
     pub fn is_available(
@@ -513,25 +461,13 @@ impl NeighborTracker {
         // We return the raw mode (0-34).
         state.intra_mode_chroma
     }
-    /// Helper for the 'read_transform_unit' check:
-    /// Returns true if the chroma mode at luma position (x,y) was Derived Mode (Mode 4).
-    pub fn is_chroma_dm(&self, x: usize, y: usize) -> bool {
-        let ux = x >> self.log2_unit_size;
-        let uy = y >> self.log2_unit_size;
-
-        if ux >= self.width_in_units || uy >= self.height_in_units {
-            return false;
-        }
-
-        self.blocks[uy * self.width_in_units + ux].is_chroma_dm
-    }
 }
 impl NeighborTracker {
     /// Converts pixel coordinates to a Z-Scan address.
     /// log2_min_cb_size is usually 3 (for 8x8) or 2 (for 4x4).
     pub fn get_zscan_addr(&self,x: usize, y: usize) -> u32 {
-        let mut x = x >> self.log2_unit_size;
-        let mut y = y >> self.log2_unit_size;
+        let  x = x >> self.log2_unit_size;
+        let  y = y >> self.log2_unit_size;
         let mut addr = 0;
 
         // Interleave bits of x and y (Morton Order)

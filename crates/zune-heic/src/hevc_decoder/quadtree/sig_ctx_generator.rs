@@ -26,7 +26,7 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
     let mut map = vec![0u8; w * w];
 
     #[rustfmt::skip]
-     const  ctx_idx_map_4x4:[u8;16] = [
+     const  CTX_IDX_MAP_4X4:[u8;16] = [
         0, 1, 4, 5,
         2, 3, 4, 5,
         6, 6, 8, 8,
@@ -39,7 +39,7 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
 
             if sb_width == 1 {
                 // 4x4 block
-                sig_ctx = ctx_idx_map_4x4[(yc << 2) + xc] as i32;
+                sig_ctx = CTX_IDX_MAP_4X4[(yc << 2) + xc] as i32;
             } else if xc + yc == 0 {
                 // DC component of larger blocks
                 sig_ctx = 0;

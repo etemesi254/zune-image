@@ -262,16 +262,6 @@ impl<'src> BitReader<'src> {
         self.tell() / 8
     }
 
-    /// Update your existing position to return the bit-count
-    pub fn position(&self) -> usize {
-        self.tell()
-    }
-    #[inline(always)]
-    pub fn reset(&mut self) {
-        self.buffer = 0;
-        self.bits_left = 0;
-        self.position = 0;
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

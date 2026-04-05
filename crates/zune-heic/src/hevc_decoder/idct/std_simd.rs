@@ -2,7 +2,6 @@ use std::simd::cmp::{SimdOrd, SimdPartialEq};
 use std::simd::num::SimdInt;
 use std::simd::{LaneCount, Simd, SupportedLaneCount, i32x4, i32x8, i32x16};
 
-use crate::hevc_decoder::idct::transform4_dst_1d;
 // ---------------------------------------------------------------------------
 // Constants: Basis Matrices (Spec-Validated)
 // ---------------------------------------------------------------------------

@@ -1,17 +1,13 @@
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
-use crate::hevc_decoder::constants::PartMode;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, SliceType, Sps};
+use crate::hevc_decoder::nal_unit_headers::{ SliceType};
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
-use crate::hevc_decoder::neighbor_tracker::{BlockState, NeighborTracker, PredMode};
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
-use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
@@ -135,6 +131,7 @@ pub fn decode_slice(
         match finish_ctu(&mut ctx, ctu_x, ctu_y)? {
             CtuStatus::EndOfSliceSegment => {
                 debug_more!("Slice Segment Finished at CTU {}", ctu_addr);
+                println!("cursor:{} len:{}",ctx.cabac.cursor,ctx.cabac.data.len());
 
                 // If it's a dependent slice, save the state for the next one
                 if pps.dependent_slice_segments_enabled_flag {
@@ -323,7 +320,7 @@ fn read_coding_quadtree(
         }
         // --- THIS IS A LEAF CU ---
         //    1. Record the depth in the tracker for neighbors to use
-        read_coding_unit(ctx, x0, y0, log_2_cb_size, ct_depth)?;
+        read_coding_unit(ctx, x0, y0, log_2_cb_size)?;
 
         // 2. NOW update the neighbor tracker with the finalized state
         // We use the last_qp_in_slice because that is the official QP for this area

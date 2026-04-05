@@ -1,10 +1,7 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::{
-    CONTEXT_MODEL_CBF_CHROMA, CONTEXT_MODEL_CBF_LUMA, CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG,
-    CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG,
-    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
-    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1,
+    CONTEXT_MODEL_CBF_CHROMA, CONTEXT_MODEL_CBF_LUMA, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1,
     CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG
 };
 use crate::hevc_decoder::constants::PartMode;
@@ -47,7 +44,7 @@ fn decode_split_transform_flag(ctx: &mut DecodeSliceContext, log2_trafo_size: u8
         log2_trafo_size
     );
     let context = 5_u8.wrapping_sub(log2_trafo_size) as usize;
-    assert!(context >= 0 && context <= 2);
+    assert!( context <= 2);
     let ctx_idx = CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG + context;
     let flag = ctx.cabac.decode_decision(ctx_idx) == 1;
     debug_more!("  decode_split_transform_flag=>{flag}");
@@ -133,7 +130,7 @@ pub fn decode_tu(
     let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
     if cbf || ccp_active {
         // Scale coefficients into math_scratchpad
-        ctx.scale_coefficients(x0, y0, n_t, c_idx, ctx.transform_skip_flag[c_idx] == 1);
+        ctx.scale_coefficients(x0, y0, n_t, c_idx);
 
         // Inverse Transform
         if ctx.transform_skip_flag[c_idx] == 0 {
@@ -238,7 +235,7 @@ pub fn read_transform_tree(
     );
 
     // 1. Determine split_flag
-    let mut split_flag;
+    let  split_flag;
     let can_decode_flag = log2_trafo_size <= ctx.sps.log2_max_transform_block_size
         && log2_trafo_size > ctx.sps.log2_min_transform_block_size
         && trafo_depth < max_trafo_depth
@@ -415,8 +412,7 @@ pub fn read_transform_unit(
     // 2. Luma Path
     let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
     if cbf_luma {
-        let use_dst = ctx.is_intra && log2_size == 2;
-        decode_residual_block(ctx, x0, y0, log2_size, Component::Luma, use_dst);
+        decode_residual_block(ctx, x0, y0, log2_size, Component::Luma);
     }
     // Scale -> Transform -> Reconstruct Luma
     decode_tu(ctx, x0, y0, nt, 0, pred_mode, cbf_luma);
@@ -477,7 +473,7 @@ pub fn read_transform_unit(
                     y_base,
                     log2_size_c,
                     if c_idx == 1 { Component::Cb } else { Component::Cr },
-                    false
+                    
                 );
             }
             decode_tu(
@@ -501,7 +497,7 @@ pub fn read_transform_unit(
                         y_base + (y_offset * sub_h),
                         log2_size_c,
                         if c_idx == 1 { Component::Cb } else { Component::Cr },
-                        false
+                        
                     );
                 }
                 decode_tu(

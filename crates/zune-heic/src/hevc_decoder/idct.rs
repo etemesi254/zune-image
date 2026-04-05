@@ -1,3 +1,4 @@
+#![allow(unreachable_code)]
 /// HEVC (H.265) Inverse Transform — Full Correctness & Optimized Performance.
 // ---------------------------------------------------------------------------
 // Constants: Basis Matrices (Odd Parts)

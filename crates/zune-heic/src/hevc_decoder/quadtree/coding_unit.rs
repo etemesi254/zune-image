@@ -74,7 +74,7 @@ pub fn get_actual_chroma_mode(intra_mode_chroma: u8, intra_mode_luma: u8) -> u8 
     actual_mode
 }
 pub fn read_coding_unit(
-    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
+    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8,
 ) -> Result<(), NalError> {
     let cb_size = 1 << log_2_cb_size;
     let shdr = ctx.slice_header;
@@ -226,7 +226,6 @@ pub fn read_coding_tree_unit(
     ctx: &mut DecodeSliceContext, ctu_x: usize, ctu_y: usize
 ) -> Result<(), NalError> {
     let sps = ctx.sps;
-    let pps = ctx.pps;
     let shdr = &ctx.slice_header;
 
     let log_2_ctb_size_y = sps.log2_ctb_size_y;

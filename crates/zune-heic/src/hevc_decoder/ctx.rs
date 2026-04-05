@@ -134,18 +134,6 @@ impl<'a> DecodeSliceContext<'a> {
         let addr = y_ctb * width + x_ctb;
         &self.ctb_sao_buffer[addr]
     }
-
-    #[inline]
-    fn get_ctb_addr_rs(&self, x: usize, y: usize) -> usize {
-        y * (self.sps.pic_width_in_ctbs_y as usize) + x
-    }
-
-    #[inline]
-    fn get_tile_id(&self, x: usize, y: usize) -> u16 {
-        // Accessing the PPS tile map
-        let addr = self.get_ctb_addr_rs(x, y);
-        self.pps.tile_id_rs[addr]
-    }
 }
 impl<'a> DecodeSliceContext<'a> {
     /// Sets a block of pixels (e.g., after reconstruction)
@@ -174,16 +162,15 @@ impl<'a> DecodeSliceContext<'a> {
 
     pub fn scale_coefficients(
         &mut self,
-        xT: usize,
-        yT: usize,  // TU pos
+        x_t: usize,
+        y_t: usize,  // TU pos
         n_t: usize, // TU size (4, 8, 16, 32)
         c_idx: usize,
-        transform_skip_flag: bool
     ) {
         debug_more!(
             "scale_coefficients :xT={} yT={} n_t={} cidx={}",
-            xT,
-            yT,
+            x_t,
+            y_t,
             n_t,
             c_idx
         );
@@ -316,7 +303,7 @@ impl<'a> DecodeSliceContext<'a> {
             if n_t <= 32 {
                 println!(
                     "coefficients OUT (cIdx:{} at {},{} size:{}):",
-                    c_idx, xT, yT, n_t
+                    c_idx, x_t, y_t, n_t
                 );
                 for y in 0..n_t {
                     print!("  ");
@@ -399,22 +386,22 @@ impl<'a> DecodeSliceContext<'a> {
             self.math_scratchpad[..16].fill(0);
         }
     }
-    pub fn apply_rdpcm_horizontal(&self, residual: &mut [i32], nT: usize) {
-        for y in 0..nT {
+    pub fn apply_rdpcm_horizontal(&self, residual: &mut [i32], n_t: usize) {
+        for y in 0..n_t {
             let mut sum = 0i32;
-            for x in 0..nT {
-                sum += self.math_scratchpad[y * nT + x] as i32;
-                residual[y * nT + x] = sum;
+            for x in 0..n_t {
+                sum += self.math_scratchpad[y * n_t + x] as i32;
+                residual[y * n_t + x] = sum;
             }
         }
     }
 
-    pub fn apply_rdpcm_vertical(&self, residual: &mut [i32], nT: usize) {
-        for x in 0..nT {
+    pub fn apply_rdpcm_vertical(&self, residual: &mut [i32], n_t: usize) {
+        for x in 0..n_t {
             let mut sum = 0i32;
-            for y in 0..nT {
-                sum += self.math_scratchpad[y * nT + x] as i32;
-                residual[y * nT + x] = sum;
+            for y in 0..n_t {
+                sum += self.math_scratchpad[y * n_t + x];
+                residual[y * n_t + x] = sum;
             }
         }
     }
@@ -596,7 +583,6 @@ fn write_block_and_pad(
         println!("--- Out Padding (N={}) ---", n_t);
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
-            let i_start = dy * n_t;
             for dx in 0..n_t {
                 print!("{} ", buf[dst_row + dx]);
             }

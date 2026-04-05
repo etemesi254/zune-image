@@ -127,8 +127,7 @@ const SCAN_8X8_VER: [Pos; 64] = {
 };
 
 const SCAN_1X1: [Pos; 1] = [Pos { x: 0, y: 0 }];
-// 2. Updated Match Statement
-pub fn get_scan_order(log2_size: u8, scan_idx: u8) -> &'static [Pos] {
+fn get_scan_order(log2_size: u8, scan_idx: u8) -> &'static [Pos] {
     match (log2_size, scan_idx) {
         (0, _) => &SCAN_1X1,
         // --- 2x2 Sub-block Scans (log2_size = 1) ---
@@ -459,7 +458,6 @@ pub fn decode_coeff_abs_level_remaining(ctx: &mut DecodeSliceContext, c_rice_par
 
 pub fn decode_residual_block(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_trafo_size: u8, component: Component,
-    use_dst: bool
 ) {
     debug_more!(
         "--- residual_coding x0:{} y0:{} log2TrafoSize:{} cIdx:{:?}",
@@ -478,7 +476,7 @@ pub fn decode_residual_block(
     }
 
     // --- Transform Skip Logic ---
-    let mut transform_skip_flag = 0u8;
+    let transform_skip_flag ;
     let log2_max_transform_skip_size = if let Some(range) = pps.range_extension.as_ref() {
         range.log2_max_transform_skip_block_size
     } else {
@@ -927,7 +925,7 @@ pub fn decode_residual_block(
             if !persistent_rice_adaptation_enabled_flag {
                 ui_go_rice_param = 0;
             } else {
-                ui_go_rice_param = (ctx.stat_coeff[sb_type] / 4);
+                ui_go_rice_param = ctx.stat_coeff[sb_type] / 4;
             }
 
             let mut first_coeff_with_abs_level_remaining = true;

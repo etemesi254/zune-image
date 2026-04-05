@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use zune_core::log::trace;
 
 use crate::hevc_decoder::nal_parser::{NalError, NalParser, NalUnitType};
-use crate::hevc_decoder::nal_unit_headers::{Pps, SliceHeader, Sps, Vps};
+use crate::hevc_decoder::nal_unit_headers::{Pps, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::decode_slice;
@@ -33,8 +33,7 @@ pub struct HevcDecoder {
     sps_storage:                  Vec<Option<Sps>>,
     pps_storage:                  Vec<Option<Pps>>,
     pub(crate) neighbor_tracker:  Option<NeighborTracker>,
-    last_size_header:             Box<Option<SliceHeader>>,
-    pub dependent_slice_contexts: Option<Vec<u8>>
+    pub (crate) dependent_slice_contexts: Option<Vec<u8>>
 }
 
 impl HevcDecoder {
@@ -44,7 +43,6 @@ impl HevcDecoder {
             sps_storage:              vec![None; 16],
             pps_storage:              vec![None; 16],
             neighbor_tracker:         None,
-            last_size_header:         Box::new(None),
             dependent_slice_contexts: None
         }
     }
@@ -67,13 +65,8 @@ impl HevcDecoder {
                     let sps = decode_sps(&nal)?;
                     let sps_id = sps.sps_id as usize;
 
-                    let units_w = sps.pic_width_in_luma_samples as usize;
-                    let units_h = sps.pic_height_in_luma_samples as usize;
-
-                    raw_frame = Some(RawFrame::from_sps(&sps));
                     self.sps_storage[sps_id] = Some(sps);
 
-                    self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 2))
                 }
                 NalUnitType::PpsNut => {
                     trace!("Decoding pps nal unit");
@@ -85,9 +78,30 @@ impl HevcDecoder {
                 // --- Video Coding Layer (VCL) NALs (The actual frames) ---
                 // HEVC VCL NAL types are 0 to 31. We can catch all of them here.
                 nal_type if (nal_type as u8) <= 31 => {
+
+                    // 1. LAZY ALLOCATION: Do we have a frame buffer for this sample yet?
+                    if raw_frame.is_none() {
+                        // We need the SPS to know the resolution.
+                        // In a perfect decoder, you peek the first byte of the slice header
+                        // to get the active PPS/SPS ID, but usually ID 0 is safe.
+                        let active_sps = self.sps_storage.iter()
+                            .find_map(|sps| sps.as_ref())
+                            .expect("Stream Error: VCL NAL encountered before any SPS was loaded!");
+
+                        let units_w = active_sps.pic_width_in_luma_samples as usize;
+                        let units_h = active_sps.pic_height_in_luma_samples as usize;
+
+                        // Spin up the fresh pixel buffer and tracker for this frame!
+                        raw_frame = Some(RawFrame::from_sps(active_sps));
+
+                        self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 2));
+                    }
+
                     trace!("Decoding NAL {:?}", nal_type);
                     if let Some(f) = raw_frame.clone() {
                         decode_slice(&nal, self, f)?;
+                    } else{
+                        panic!("No Raw frame allocated");
                     }
                 }
 
@@ -98,6 +112,38 @@ impl HevcDecoder {
 
             Ok(true)
         })?;
+        Ok(())
+    }
+
+    /// Call this if the container format (like HEIC or MP4) provides global
+    /// parameter sets in its header (e.g., the `hvcC` box) before video samples.
+    pub fn parse_extradata(&mut self, extradata: &[u8]) -> Result<(), NalError> {
+        let binding = [extradata];
+
+        let nal_parser = NalParser::new_detect(&binding);
+
+        nal_parser.for_each_nal(|nal| {
+            match nal.nal_type {
+                NalUnitType::VpsNut => {
+                    let vps = decode_vps(&nal)?;
+                    let vps_id = vps.vps_id as usize;
+                    self.vps_storage[vps_id as usize] = Some(vps);
+                }
+                NalUnitType::SpsNut => {
+                    let sps = decode_sps(&nal)?;
+                    let sps_id = sps.sps_id as usize;
+                    self.sps_storage[sps_id] = Some(sps);
+                }
+                NalUnitType::PpsNut => {
+                    let pps = decode_pps(&nal, &self.sps_storage)?;
+                    let pps_id= pps.pps_id as usize;
+                    self.pps_storage[pps_id] = Some(pps);
+                }
+                _ => {trace!("Ignoring non-metadata NAL in extradata: {:?}", nal.nal_type);}
+            }
+            Ok(true)
+        })?;
+
         Ok(())
     }
 }
@@ -111,7 +157,7 @@ mod tests {
 
     #[test]
     fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0002.hvc").unwrap();
+        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0013.hvc").unwrap();
 
         let sample = HevcSample {
             item_id: 0,

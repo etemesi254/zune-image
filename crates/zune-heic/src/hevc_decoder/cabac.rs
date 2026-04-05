@@ -7,7 +7,7 @@ pub const NUM_CABAC_CONTEXTS: usize = 172;
 // --- ENGINE IMPLEMENTATION ---
 
 pub struct CabacDecoder<'a> {
-    data:            &'a [u8],
+    pub data:        &'a [u8],
     pub cursor:      usize,
     pub range:       u32,
     pub value:       u32,
