@@ -7,13 +7,13 @@ pub const NUM_CABAC_CONTEXTS: usize = 172;
 // --- ENGINE IMPLEMENTATION ---
 
 pub struct CabacDecoder<'a> {
-    data:   &'a [u8],
-    cursor: usize,
-
+    data:            &'a [u8],
+    pub cursor:      usize,
     pub range:       u32,
     pub value:       u32,
     pub bits_needed: i8,
-    pub contexts:    [u8; NUM_CABAC_CONTEXTS]
+    // TODO: Investigate whether a stack one makes it faster
+    pub contexts:    Vec<u8>
 }
 
 impl<'a> CabacDecoder<'a> {
@@ -24,7 +24,7 @@ impl<'a> CabacDecoder<'a> {
             range: 510,
             value: 0,
             bits_needed: -8,
-            contexts: [0; NUM_CABAC_CONTEXTS]
+            contexts: vec![0; NUM_CABAC_CONTEXTS]
         };
 
         engine.init_contexts(slice_qp, init_type);

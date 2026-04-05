@@ -73,7 +73,8 @@
 #[macro_export]
 macro_rules! debug_more {
     ($cond:expr => $($arg:tt)*) => {
-        if DEBUG_MORE && $cond {
+        unsafe{
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) && $cond {
             println!(
                 "{}",
                 //file!(),
@@ -81,15 +82,17 @@ macro_rules! debug_more {
                 format_args!($($arg)*)
             );
         }
+            }
     };
     ($($arg:tt)*) => {
-        if DEBUG_MORE {
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
             println!(
                 "{}",
                 // file!(),
                 // line!(),
                 format_args!($($arg)*)
             );
-        }
+
+            }
     };
 }

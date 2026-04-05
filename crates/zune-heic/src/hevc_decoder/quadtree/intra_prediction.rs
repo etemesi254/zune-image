@@ -31,11 +31,16 @@ fn check_predict_args(p: &[u8], dst: &[u8], n_t: usize) {
 pub fn predict_dc(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8, is_luma: bool) {
     check_predict_args(p, dst, n_t);
 
-    // Sum the top row (p[1..=n_t]) and left column (p[1+2*n_t..=1+3*n_t])
-    // in a single pass by chaining the two slices.
-    let sum: u32 = p[1..=n_t]
+    // Top row (x = 0..n_t-1) -> indices 2N+1 to 3N
+    let top_slice = &p[2 * n_t + 1..=3 * n_t];
+
+    // Left column (y = 0..n_t-1) -> indices N to 2N-1
+    let left_slice = &p[n_t..=2 * n_t - 1];
+
+    // Sum the top row and left column in a single pass
+    let sum: u32 = top_slice
         .iter()
-        .chain(&p[1 + 2 * n_t..=1 + 3 * n_t])
+        .chain(left_slice)
         .fold(0u32, |acc, &v| acc + v as u32);
 
     let dc_val = ((sum + n_t as u32) >> (log2_n_t + 1)) as u8;
@@ -45,52 +50,65 @@ pub fn predict_dc(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8, is_luma: b
     if is_luma && n_t < 32 {
         let dc_i32 = dc_val as i32;
 
-        // Top-left corner
-        dst[0] = ((p[1] as i32 + 2 * dc_i32 + p[1 + 2 * n_t] as i32 + 2) >> 2) as u8;
+        // Top-left corner (y=0, x=0)
+        // Top(x=0) is index 2*n_t + 1. Left(y=0) is index 2*n_t - 1.
+        dst[0] = ((p[2 * n_t + 1] as i32 + 2 * dc_i32 + p[2 * n_t - 1] as i32 + 2) >> 2) as u8;
 
-        // Top row (x = 1..n_t)  — zip avoids recomputing the index
+        // Top row (x = 1..n_t-1)
         dst[1..n_t]
             .iter_mut()
-            .zip(&p[2..=n_t])
+            .zip(&p[2 * n_t + 2..=3 * n_t])
             .for_each(|(d, &above)| {
                 *d = ((above as i32 + 3 * dc_i32 + 2) >> 2) as u8;
             });
 
-        // Left column (y = 1..n_t)
-        let left = &p[2 + 2 * n_t..=3 * n_t]; // p[1+2*n_t+1 .. 1+2*n_t+n_t-1]
+        // Left column (y = 1..n_t-1)
+        // Left pixels for y=1..n_t-1 are indices 2*n_t - 2 down to n_t.
+        let left_y1_to_n = &p[n_t..=2 * n_t - 2];
+
         dst[n_t..]
             .iter_mut()
             .step_by(n_t)
-            .zip(left)
+            // We use .rev() because the slice goes from y=N-1 up to y=1,
+            // but the dst step_by goes from y=1 down to y=N-1!
+            .zip(left_y1_to_n.iter().rev())
             .for_each(|(d, &lv)| {
                 *d = ((lv as i32 + 3 * dc_i32 + 2) >> 2) as u8;
             });
     }
 }
-
 // ── predict_planar ────────────────────────────────────────────
 
 pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
     check_predict_args(p, dst, n_t);
 
-    let top_right = p[n_t + 1] as i32;
-    let bottom_left = p[3 * n_t + 1] as i32;
+    // top_right: x = n_t -> index = 2*n_t + 1 + n_t = 3*n_t + 1
+    let top_right = p[3 * n_t + 1] as i32;
+
+    // bottom_left: y = n_t -> index = 2*n_t - 1 - n_t = n_t - 1
+    let bottom_left = p[n_t - 1] as i32;
+
     let shift = log2_n_t + 1;
     let n = n_t as i32;
     let dst = &mut dst[..n_t * n_t];
 
     dst.chunks_exact_mut(n_t).enumerate().for_each(|(y, row)| {
-        let y = y as i32;
-        let idx = 1 + 2 * n_t + y as usize;
-        let left_val = p[idx] as i32;
-        let v_weight_b = y + 1; // (y+1) * bottom_left
-        let v_weight_t = n - 1 - y; // (n-1-y) * top_val
+        let y_i32 = y as i32;
+
+        // left_val: at current y -> index = 2*n_t - 1 - y
+        let left_val = p[2 * n_t - 1 - y] as i32;
+
+        let v_weight_b = y_i32 + 1; // (y+1) * bottom_left
+        let v_weight_t = n - 1 - y_i32; // (n-1-y) * top_val
 
         row.iter_mut().enumerate().for_each(|(x, dst_px)| {
-            let x = x as i32;
-            let top_val = p[1 + x as usize] as i32;
+            let x_i32 = x as i32;
+
+            // top_val: at current x -> index = 2*n_t + 1 + x
+            let top_val = p[2 * n_t + 1 + x] as i32;
+
             // Horizontal linear interpolation
-            let h = (n - 1 - x) * left_val + (x + 1) * top_right;
+            let h = (n - 1 - x_i32) * left_val + (x_i32 + 1) * top_right;
             // Vertical linear interpolation
             let v = v_weight_t * top_val + v_weight_b * bottom_left;
 
@@ -98,7 +116,6 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
         });
     });
 }
-
 // ── predict_angular ───────────────────────────────────────────
 //
 // Caller must also provide:
@@ -118,9 +135,6 @@ const INTRA_ANGLES: [i16; 35] = [
 ];
 
 #[rustfmt::skip]
-/// HEVC invAngle table (Table 8-4). 
-/// Maps mode_idx (0..34) to the scaled inverse of the intraPredAngle.
-#[rustfmt::skip]
 /// HEVC invAngle table (Table 8-4).
 /// Maps mode_idx (0..34) to the scaled inverse of the intraPredAngle.
 /// Required for all negative-angle modes: 2-9 (Horizontal) and 18-25 (Vertical).
@@ -138,47 +152,63 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
     let is_vert = mode >= 18;
     let offset = n_t;
 
+    // Corner is exactly at index 2*n_t in the new linear layout
+    let corner_idx = 2 * n_t;
+
     // ── 1. Build ref_main ────────────────────────────────────────
     if is_vert {
         // Main: Top. Side: Left.
-        ref_main_buf[offset] = p[0]; // Corner (-1,-1)
-        ref_main_buf[offset + 1..=offset + 2 * n_t].copy_from_slice(&p[1..=2 * n_t]);
+        ref_main_buf[offset] = p[corner_idx];
+
+        // Top pixels are from (2*n_t + 1) to (4*n_t)
+        ref_main_buf[offset + 1..=offset + 2 * n_t]
+            .copy_from_slice(&p[corner_idx + 1..=4 * n_t]);
 
         if angle < 0 {
             let inv_angle = INV_ANGLES[mode_idx] as i32;
             let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
+
             for i in 1..=proj_len {
                 let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
-                // p[1 + 2*n_t] is the start of Left samples in your 4N+1 buffer
-                ref_main_buf[offset - i] = p[1 + 2 * n_t + (side_idx - 1)];
+                // Clamp side_idx so we don't read past the available 2N side pixels
+                let safe_side = side_idx.min(2 * n_t).max(1);
+
+                // Left pixels go downwards from (2*n_t - 1) to 0.
+                // Distance 1 from corner is 2*n_t - 1. Distance side_idx is 2*n_t - side_idx.
+                ref_main_buf[offset - i] = p[corner_idx - safe_side];
             }
         }
     } else {
         // Main: Left. Side: Top.
-        ref_main_buf[offset] = p[0]; // Corner (-1,-1)
-        ref_main_buf[offset + 1..=offset + 2 * n_t].copy_from_slice(&p[1 + 2 * n_t..=4 * n_t]);
+        ref_main_buf[offset] = p[corner_idx];
+
+        // Left pixels are backwards in `p` (Bottom-to-Top), so we must reverse them into ref_main
+        for y in 1..=2 * n_t {
+            ref_main_buf[offset + y] = p[corner_idx - y];
+        }
 
         if angle < 0 {
             let inv_angle = INV_ANGLES[mode_idx] as i32;
             let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
+
             for i in 1..=proj_len {
                 let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
-                // p[1] is the start of Top samples
-                ref_main_buf[offset - i] = p[1 + (side_idx - 1)];
+                // Clamp side_idx
+                let safe_side = side_idx.min(2 * n_t).max(1);
+
+                // Top pixels go rightwards from (2*n_t + 1) to 4*n_t.
+                ref_main_buf[offset - i] = p[corner_idx + safe_side];
             }
         }
     }
 
     // ── 2. Project into dst (1/32-pixel interpolation) ───────────
     for y in 0..n_t {
-        // The spec uses distance (y + 1) from the reference line
         let pos = ((y + 1) as i32) * (angle as i32);
-        let int_pos = (pos >> 5);
+        let int_pos = pos >> 5;
         let frac = (pos & 31) as u32;
 
         for x in 0..n_t {
-            // THE FIX: Adding +1 to the base index.
-            // This aligns ref_main_buf[offset + 1] with the first Top/Left sample.
             let base = (offset as i32 + x as i32 + int_pos + 1) as usize;
 
             let val = if frac != 0 {
@@ -199,9 +229,7 @@ pub fn decode_intra_prediction_internal_u8(
     c_idx: usize
 ) {
     // 1. Setup Reference Samples
-    // We need (2 * nT + 1) samples for both the Top and Left arrays.
     // These are pulled from already reconstructed pixels in the current frame.
-
     let p_len = ctx.setup_reference_samples(x_b0, y_b0, n_t, intra_mode, c_idx); // 2. Dispatch to the specific Mode Logic
     let scratchpad = &mut ctx.pixel_scratchpad;
     let ref_main_scratch = &mut ctx.ref_main_buf;
@@ -211,7 +239,7 @@ pub fn decode_intra_prediction_internal_u8(
 
     let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
 
-    if DEBUG_MORE {
+    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)  {
         println!(
             "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
             intra_mode, n_t, n_t, c_idx, x_b0, y_b0
@@ -224,22 +252,6 @@ pub fn decode_intra_prediction_internal_u8(
         _ => unreachable!()
     }
 
-    if DEBUG_MORE {
-        // --- DEBUG PRINT SECTION ---
-        if n_t <= 32 {
-            println!(
-                "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
-                intra_mode, n_t, n_t, c_idx, x_b0, y_b0
-            );
-            for y in 0..n_t {
-                for x in 0..n_t {
-                    print!("{:3} ", scratchpad[y * n_t + x]);
-                }
-                println!();
-            }
-            println!("------------------------------------------------------------");
-        }
-    }
     ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t, bit_depth);
 }
 pub fn decode_intra_prediction(

@@ -140,6 +140,7 @@ pub fn read_coding_unit(
             todo!();
         } else {
             // Decode Luma Intra Modes
+            debug_more!("Part Mode:{:?}",part_mode);
             if part_mode == PartMode::PartNxN {
                 let pb_size = cb_size / 2;
                 let mut prev_mpm_flags = [false; 4];

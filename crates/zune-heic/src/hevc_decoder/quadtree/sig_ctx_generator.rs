@@ -25,8 +25,13 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
     let sb_width = w >> 2;
     let mut map = vec![0u8; w * w];
 
-    // libde265 4x4 constant map
-    let ctx_idx_map_4x4 = [0, 1, 4, 5, 2, 3, 8, 9, 6, 7, 10, 11, 12, 13, 14, 15];
+    #[rustfmt::skip]
+     const  ctx_idx_map_4x4:[u8;16] = [
+        0, 1, 4, 5,
+        2, 3, 4, 5,
+        6, 6, 8, 8,
+        7, 7, 8, 99
+    ];
 
     for yc in 0..w {
         for xc in 0..w {

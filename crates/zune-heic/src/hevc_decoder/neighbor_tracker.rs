@@ -164,10 +164,27 @@ impl NeighborTracker {
         ctx_inc
     }
 
-    pub fn derive_mpms(&self, x: usize, y: usize) -> [u8; 3] {
-        debug_more!("derive_mpms called with {} and {}", x, y);
+    pub fn derive_mpms(&self, x: usize, y: usize,ctu_size:usize) -> [u8; 3] {
+        debug_more!("derive_mpms called with {} and {} for ctu size:{}", x, y,ctu_size);
         let left = if x > 0 { self.get_state(x - 1, y) } else { BlockState::default() };
-        let above = if y > 0 { self.get_state(x, y - 1) } else { BlockState::default() };
+        let above = if y > 0 {
+            // Fetch the CTU size (e.g., 32).
+            // NOTE: Replace `self.ctu_size` with however you access `1 << sps.log2_ctb_size_y`
+
+            // Find the absolute top edge of the current CTU row
+            let ctu_top_edge = (y / ctu_size) * ctu_size;
+
+            if (y - 1) < ctu_top_edge {
+                // We crossed the CTU row boundary! Hardware line buffer prevents inheritance.
+                // Pretend the block is unavailable.
+                BlockState::default()
+            } else {
+                // Safe to inherit from the block above
+                self.get_state(x, y - 1)
+            }
+        } else {
+            BlockState::default()
+        };
 
         let mode_l = if left.available && left.is_intra { left.intra_mode_luma } else { 1 };
         let mode_a = if above.available && above.is_intra { above.intra_mode_luma } else { 1 };
@@ -201,13 +218,14 @@ impl NeighborTracker {
             }
         }
 
-        debug_more!(
-            "MPM Candidates for [{},{}]: [{}, {}, {}]",
+        println!(
+            "MPM Candidates for [{},{}]: [{}, {}, {}] (CTU SIZE:{})",
             x,
             y,
             mpm[0],
             mpm[1],
-            mpm[2]
+            mpm[2],
+            ctu_size,
         );
         mpm
     }
@@ -235,7 +253,8 @@ impl NeighborTracker {
         }
 
         let index = uy * self.width_in_units + ux;
-        self.blocks[index].intra_mode_luma
+        let block = &self.blocks[index];
+        block.intra_mode_luma
     }
 
     /// Helper to get the full state for a coordinate (used in your derive_mpms)
@@ -264,10 +283,8 @@ impl NeighborTracker {
         let gx_start = x0 >> self.log2_unit_size;
         let gy_start = y0 >> self.log2_unit_size;
 
-        // Determine how many 8x8 units this block covers.
-        // For sizes 32, 16, 8: coverage is 4, 2, 1 units.
-        // For size 4 (Intra NxN): .max(1) ensures we still update the containing 8x8 cell.
-        let units = (pb_size >> self.log2_unit_size).max(1);
+        // Determine how many 4x4 units this block covers.
+        let units = (pb_size >> self.log2_unit_size);
 
         debug_more!(
             "Tracker: Setting Intra Mode {} at [{}, {}] size {}",
@@ -286,9 +303,13 @@ impl NeighborTracker {
                     let idx = gy * self.width_in_units + gx;
                     let state = &mut self.blocks[idx];
 
+
                     state.is_intra = true;
                     state.intra_mode_luma = mode;
                     state.available = true; // Mark this area as decoded and available for neighbors
+                    if idx == 3686{
+                        println!("idx[{idx}]=state:{:#?}",state);
+                    }
                 }
             }
         }
@@ -359,7 +380,7 @@ impl NeighborTracker {
 }
 
 impl NeighborTracker {
-    pub fn is_available(
+    pub fn is_available_ex(
         &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize
     ) -> bool {
         // 1. Image Boundary Check
@@ -391,6 +412,46 @@ impl NeighborTracker {
     }
 }
 
+impl NeighborTracker {
+    pub fn is_available(
+        &self,
+        curr_x: usize,
+        curr_y: usize,
+        neighbor_x: isize,
+        neighbor_y: isize
+    ) -> bool {
+        // 1. Hard Boundary Check
+        if neighbor_x < 0 || neighbor_y < 0 { return false; }
+        let nx = neighbor_x as usize;
+        let ny = neighbor_y as usize;
+
+        if nx >= self.width_in_units << self.log2_unit_size ||
+            ny >= self.height_in_units << self.log2_unit_size {
+            return false;
+        }
+
+        // 2. Z-Scan Order Check (Crucial for HEVC)
+        let curr_z = self.get_zscan_addr(curr_x, curr_y);
+        let neigh_z = self.get_zscan_addr(nx, ny);
+
+        // A neighbor is only available if it has already been decoded.
+        // In HEVC, this means its Z-scan address must be strictly less than ours.
+        if neigh_z >= curr_z {
+            return false;
+        }
+
+        // 3. Metadata Lookup
+        let neighbor_unit = &self.blocks[(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
+        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units + (curr_x >> self.log2_unit_size)];
+
+        // 4. Slice/Tile Check
+        if curr_unit.slice_id != neighbor_unit.slice_id {
+            return false;
+        }
+
+        neighbor_unit.available
+    }
+}
 impl NeighborTracker {
     pub fn set_nonzero_coefficient(&mut self, x: usize, y: usize, log2_trafo_size: u8) {
         let unit_x = x >> self.log2_unit_size;
@@ -463,5 +524,48 @@ impl NeighborTracker {
         }
 
         self.blocks[uy * self.width_in_units + ux].is_chroma_dm
+    }
+}
+impl NeighborTracker {
+    /// Converts pixel coordinates to a Z-Scan address.
+    /// log2_min_cb_size is usually 3 (for 8x8) or 2 (for 4x4).
+    pub fn get_zscan_addr(&self,x: usize, y: usize) -> u32 {
+        let mut x = x >> self.log2_unit_size;
+        let mut y = y >> self.log2_unit_size;
+        let mut addr = 0;
+
+        // Interleave bits of x and y (Morton Order)
+        for i in 0..8 { // Supports up to 256x256 units
+            addr |= ((x & (1 << i)) << i) as u32;
+            addr |= ((y & (1 << i)) << (i + 1)) as u32;
+        }
+        addr
+    }
+}
+
+impl NeighborTracker {
+    pub fn update_cu_info(&mut self, x0: usize, y0: usize, cb_size: usize, depth: u8, qp: i8, is_skip: bool, slice_id: u16) {
+        let gx_start = x0 >> self.log2_unit_size;
+        let gy_start = y0 >> self.log2_unit_size;
+        let units = cb_size >> self.log2_unit_size;
+
+        for dy in 0..units {
+            for dx in 0..units {
+                let gx = gx_start + dx;
+                let gy = gy_start + dy;
+
+                if gx < self.width_in_units && gy < self.height_in_units {
+                    let idx = gy * self.width_in_units + gx;
+
+                    // ONLY update the CU-level attributes!
+                    // Leave is_intra, part_mode, and intra_mode_luma alone!
+                    self.blocks[idx].cqt_depth = depth;
+                    self.blocks[idx].qp = qp;
+                    self.blocks[idx].skip_flag = is_skip;
+                    self.blocks[idx].slice_id = slice_id;
+                    self.blocks[idx].available = true;
+                }
+            }
+        }
     }
 }

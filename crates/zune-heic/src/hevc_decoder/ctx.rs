@@ -21,6 +21,7 @@ pub struct DecodeSliceContext<'a> {
     pub current_qg_x:         usize,
     pub current_qg_y:         usize,
     pub last_qp_in_slice:     i8, // This tracks the "previous" QP for the next CU
+    pub last_qp_in_previous_qg:i8,
 
     // - CU state to be captured for the tracker
     pub is_skip:                   bool,
@@ -59,7 +60,9 @@ pub struct DecodeSliceContext<'a> {
     /// so Chroma can use them for CCP.
     pub luma_residual_temp:        Vec<i32>,
 
-    pub ctb_sao_buffer: Vec<SaoInfo>
+    pub ctb_sao_buffer: Vec<SaoInfo>,
+    // ctb contexts
+    pub ctb_context:Vec<Option<Vec<u8>>>,
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
@@ -86,6 +89,7 @@ impl<'a> DecodeSliceContext<'a> {
             cu_qp_delta: 0,
             current_qg_x: 0,
             current_qg_y: 0,
+            last_qp_in_previous_qg: 0,
             is_skip: false,
             is_intra: false,
             intra_mode_luma: 0,
@@ -111,7 +115,8 @@ impl<'a> DecodeSliceContext<'a> {
             luma_residual_temp: vec![0; 1024],
             idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
-            ctb_sao_buffer: vec![SaoInfo::default(); buffer_size]
+            ctb_sao_buffer: vec![SaoInfo::default(); buffer_size],
+            ctb_context: vec![None; height_in_ctbs as usize],
         }
     }
 }
@@ -293,7 +298,7 @@ impl<'a> DecodeSliceContext<'a> {
                 let scaled = (level * fact + offset as i64) >> bd_shift;
 
                 let final_clipped = scaled.clamp(-32768, 32767);
-                if DEBUG_MORE {
+                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
                     println!(
                         "TRACE_SCALE: i={:>2} pos={:>4} level={:>4} m_x_y={:>3} fact={:>8} bdShift={:>2} final={:>5}",
                         i, pos, level, m_x_y, fact, bd_shift, final_clipped
@@ -307,7 +312,7 @@ impl<'a> DecodeSliceContext<'a> {
 
         // Note: We only print if n_t is 4 or 8 to prevent overwhelming the console.
         // In a real debug session, you might remove this check.
-        if DEBUG_MORE {
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
             if n_t <= 32 {
                 println!(
                     "coefficients OUT (cIdx:{} at {},{} size:{}):",
@@ -505,7 +510,7 @@ impl<'a> DecodeSliceContext<'a> {
             c_idx,
             &mut self.ref_samples_available[..p_len]
         );
-        if DEBUG_MORE {
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
             println!("--- Reference Border (N={}) ---", n_t);
             print_available(&self.ref_samples_available[..p_len], n_t);
         }
@@ -520,7 +525,7 @@ impl<'a> DecodeSliceContext<'a> {
             n_t,
             c_idx
         );
-        if DEBUG_MORE {
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
             println!("--- Reference Border (N={}) ---", n_t);
             print_border(
                 &self.ref_samples_p[..p_len],
@@ -568,7 +573,10 @@ fn write_block_and_pad(
         //         buf[dst_row + dx] = (b[i] + pred[i] as i32).clamp(0, max_val) as u8;
         //     }
         // }
-        for (dy, (b_row, pred_row)) in b.chunks(n_t).zip(pred.chunks(n_t)).enumerate() {
+        for (dy, (b_row, pred_row)) in b.chunks(n_t)
+            .zip(pred.chunks(n_t))
+            .take(n_t)
+            .enumerate() {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
@@ -584,7 +592,7 @@ fn write_block_and_pad(
         }
     }
 
-    if DEBUG_MORE {
+    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
         println!("--- Out Padding (N={}) ---", n_t);
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
@@ -639,110 +647,90 @@ fn write_block_and_pad(
         }
     }
 }
-pub fn print_border(p: &[u8], available: &[bool], n_t: usize) {
-    let nt_i = n_t as i32;
-
-    // We loop from -2N to 2N to match libde265's logical segments
-    for i in -2 * nt_i..=2 * nt_i {
-        // 1. Print Separators
-        if i == 0 || i == 1 || i == -nt_i || i == nt_i + 1 {
-            print!("|\n");
-        } else {
-            print!(" ");
-        }
-
-        // 2. Map libde265 'i' to your buffer 'idx'
-        // Your layout: [0]=Corner, [1..2N]=Top/TR, [1+2N..4N]=Left/BL
-        let idx = if i < 0 {
-            // libde265: -1 is first Left sample.
-            // Your p: 1 + 2*n_t is first Left sample.
-            (1 + 2 * n_t as i32 + (-i - 1)) as usize
-        } else if i == 0 {
-            0 // Corner
-        } else {
-            i as usize // Top and Top-Right
-        };
-
-        // 3. Print value or "missing" marker
-
-        print!("{}", p[idx] as u8);
-    }
-    println!(" |");
-}
 pub fn print_available(available: &[bool], n_t: usize) {
-    let nt_i = n_t as i32;
+    let total = 4 * n_t;
 
-    // We loop from -2N to 2N to match libde265's logical segments
-    for i in -2 * nt_i..=2 * nt_i {
-        // 1. Print Separators
-        if i == 0 || i == 1 || i == -nt_i || i == nt_i + 1 {
+    // We loop strictly forward through the linear 0..4N array
+    for i in 0..=total {
+        print!("{}", available[i] as u8);
+
+        // Print libde265-style separators at the segment boundaries
+        if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
             print!("|\n");
-        } else {
+        } else if i != total {
             print!(" ");
         }
-
-        // 2. Map libde265 'i' to your buffer 'idx'
-        // Your layout: [0]=Corner, [1..2N]=Top/TR, [1+2N..4N]=Left/BL
-        let idx = if i < 0 {
-            // libde265: -1 is first Left sample.
-            // Your p: 1 + 2*n_t is first Left sample.
-            (1 + 2 * n_t as i32 + (-i - 1)) as usize
-        } else if i == 0 {
-            0 // Corner
-        } else {
-            i as usize // Top and Top-Right
-        };
-
-        // 3. Print value or "missing" marker
-
-        print!("{}", available[idx] as u8);
     }
-    println!(" |");
+    println!();
+}
+
+pub fn print_border(p: &[u8], available: &[bool], n_t: usize) {
+    let total = 4 * n_t;
+
+    // Exact same linear sweep for the values
+    for i in 0..=total {
+        print!("{}", p[i]);
+
+        if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
+            print!("|\n");
+        } else if i != total {
+            print!(" ");
+        }
+    }
+    println!();
 }
 
 fn check_availability(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
     available: &mut [bool]
 ) {
-    // scale is 1 for Luma (c_idx=0), 2 for Chroma (c_idx=1,2) in 4:2:0
+    // 4:2:0 Scaling: Chroma pixels (c_idx 1,2) correspond to 2x2 Luma areas
     let scale = if c_idx == 0 { 1 } else { 2 };
 
-    // Scale the current block coordinates to the Luma-indexed tracker
     let sx0 = x0 * scale;
     let sy0 = y0 * scale;
 
-    // 1. Top-Left Corner (Index 0)
-    // Neighbor is (-1, -1) relative to current Chroma pixel,
-    // which is (-1*scale, -1*scale) in Luma units.
-    available[0] = tracker.is_available(sx0, sy0, sx0 as isize - 1, sy0 as isize - 1);
-
-    // 2. Top & Top-Right (Indices 1 to 2*N)
+    // 1. Indices 0 to 2*nT - 1: Below-Left and Left (Bottom-to-Top)
+    // We start from the very bottom neighbor and move UP toward the corner
     for i in 0..(2 * n_t) {
-        // Neighbor is (i, -1) relative to Chroma, scale X by 'scale'
-        let px = sx0 as isize + (i * scale) as isize;
-        let py = sy0 as isize - 1;
-        available[1 + i] = tracker.is_available(sx0, sy0, px, py);
+        let px = sx0 as isize - 1; // Safely becomes -1 at the left edge
+        // i=0 is the bottom-most pixel: (y0 + 2*nT - 1)
+        let py = sy0 as isize + ((2 * n_t - 1 - i) * scale) as isize;
+
+        available[i] = tracker.is_available(sx0, sy0, px, py);
     }
 
-    // 3. Left & Below-Left (Indices 1 + 2*N to 4*N)
-    for i in 0..(2 * n_t) {
-        // Neighbor is (-1, i) relative to Chroma, scale Y by 'scale'
-        let px = sx0 as isize - 1;
-        let py = sy0 as isize + (i * scale) as isize;
-        available[1 + 2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
+    // 2. Index 2*nT: Top-Left Corner
+    available[2 * n_t] = tracker.is_available(
+        sx0,
+        sy0,
+        sx0 as isize - 1, // Safely becomes -1
+        sy0 as isize - 1  // Safely becomes -1
+    );
+
+    // 3. Indices 2*nT + 1 to 4*nT: Top and Top-Right (Left-to-Right)
+    for i in 1..=(2 * n_t) {
+        // i=1 is directly above x0, i=2nT is Top-Right
+        let px = sx0 as isize + ((i - 1) * scale) as isize;
+        let py = sy0 as isize - 1; // Safely becomes -1 at the top edge
+
+        available[2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
     }
 }
 
 fn perform_padding(
-    frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
+    frame: &Arc<RawFrame>,
+    p: &mut [u8],
+    available: &[bool],
+    x0: usize,
+    y0: usize,
+    n_t: usize,
     c_idx: usize
 ) {
-    // p and available are both length 4*n_t+1
-    // index mapping: logical index i (-2*n_t ..= 2*n_t) -> flat index i + 2*n_t
-    let n = 2 * n_t;
-    let idx = |i: isize| (i + n as isize) as usize;
+    let total = 4 * n_t + 1;
+    let bit_depth = 8;
 
-    // 1. Fetch available pixels
+    // 1. Fetch available pixels into the strictly linear 0..4N array
     {
         let plane = match c_idx {
             0 => frame.luma.lock().unwrap(),
@@ -751,62 +739,58 @@ fn perform_padding(
             _ => unreachable!()
         };
         let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
-        let get_p =
-            |px: isize, py: isize| pixels[(py as usize + pad) * stride + (px as usize + pad)];
 
-        // corner: logical index 0
-        if available[idx(0)] {
-            p[idx(0)] = get_p(x0 as isize - 1, y0 as isize - 1);
-        }
-        // top row: logical -2*n_t ..= -1 (right to left means x0+2*n_t-1 down to x0)
-        for i in 1..=(2 * n_t) {
-            let li = -(i as isize); // -1 .. -2*n_t
-            if available[idx(li)] {
-                p[idx(li)] = get_p(x0 as isize - 1 + i as isize, y0 as isize - 1);
+        // SAFE GET_P: Add pad as isize FIRST to prevent usize::MAX overflow
+        let pad_i = pad as isize;
+        let get_p = |px: isize, py: isize| {
+            pixels[((py + pad_i) as usize) * stride + ((px + pad_i) as usize)]
+        };
+
+        for i in 0..total {
+            if available[i] {
+                // Map the 1D linear index 'i' back to 2D image coordinates
+                let (px, py) = if i < 2 * n_t {
+                    // Indices 0 to 2*nT - 1: Below-Left and Left
+                    (x0 as isize - 1, y0 as isize + (2 * n_t - 1 - i) as isize)
+                } else if i == 2 * n_t {
+                    // Index 2*nT: Top-Left Corner
+                    (x0 as isize - 1, y0 as isize - 1)
+                } else {
+                    // Indices 2*nT + 1 to 4*nT: Top and Top-Right
+                    (x0 as isize + (i - 2 * n_t - 1) as isize, y0 as isize - 1)
+                };
+
+                p[i] = get_p(px, py);
             }
         }
-        // left column: logical 1 ..= 2*n_t (top to bottom)
-        for i in 1..=(2 * n_t) {
-            let li = i as isize;
-            if available[idx(li)] {
-                p[idx(li)] = get_p(x0 as isize - 1, y0 as isize - 1 + i as isize);
-            }
+    }
+
+    // 2. HEVC Reference Sample Substitution (Spec 8.4.4.2.2)
+    let n_avail = available.iter().filter(|&&a| a).count();
+
+    if n_avail == 0 {
+        // Case 1: No samples available at all -> Fill with mid-grey
+        p.fill(1 << (bit_depth - 1));
+    } else if n_avail < total {
+        // Case 2: Partial availability -> Substitution sweep
+
+        // Find the very first available sample starting from the bottom-left
+        let first_idx = available.iter().position(|&a| a).unwrap();
+        let first_value = p[first_idx];
+
+        // Backfill: If the first available sample isn't at index 0, fill backwards
+        for i in 0..first_idx {
+            p[i] = first_value;
         }
-    }
 
-    // 2. Reference sample substitution — direct translation of libde265
-    let total = 4 * n_t + 1;
-    if available.iter().filter(|&&a| a).count() == total {
-        return; // all available, nothing to do
-    }
-
-    if available.iter().all(|&a| !a) {
-        p.fill(1 << 7); // 8-bit mid-grey
-        return;
-    }
-
-    // Find firstValue: first available sample scanning from -2*n_t
-    let first_value = available
-        .iter()
-        .zip(p.iter())
-        .find(|&(&a, _)| a)
-        .map(|(_, &v)| v)
-        .unwrap();
-
-    let idx_n = idx(-(n as isize));
-    if !available[idx_n] {
-        p[idx_n] = first_value;
-    }
-
-    for i in (-(n as isize) + 1)..=(n as isize) {
-        let idx_i = idx(i);
-        let idx_i_min1 = idx(i - 1);
-        if !available[idx_i] {
-            p[idx_i] = p[idx_i_min1];
+        // Forward fill: Propagate the previous valid value into any remaining gaps
+        for i in (first_idx + 1)..total {
+            if !available[i] {
+                p[i] = p[i - 1];
+            }
         }
     }
 }
-
 fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled: bool) {
     if n_t == 4 {
         return;

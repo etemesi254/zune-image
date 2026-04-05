@@ -31,6 +31,27 @@ pub struct Greater1State {
     pub greater1_ctx: i32,
     pub ctx_set:      i32
 }
+// log2_size == 1 (2x2 grid)
+const SCAN_2X2_DIAG:[Pos;4] = [
+Pos { x: 0, y: 0 },
+Pos { x: 0, y: 1 },
+Pos { x: 1, y: 0 },
+Pos { x: 1, y: 1 },
+];
+
+const SCAN_2X2_HOR:[Pos;4] = [
+Pos { x: 0, y: 0 },
+Pos { x: 1, y: 0 },
+Pos { x: 0, y: 1 },
+Pos { x: 1, y: 1 },
+];
+
+const SCAN_2X2_VER:[Pos;4] = [
+Pos { x: 0, y: 0 },
+Pos { x: 0, y: 1 },
+Pos { x: 1, y: 0 },
+Pos { x: 1, y: 1 },
+];
 // Static tables for 4x4 blocks (log2 = 2)
 #[rustfmt::skip]
 const SCAN_4X4_DIAG: [Pos; 16] = [
@@ -104,17 +125,28 @@ const SCAN_8X8_VER: [Pos; 64] = {
     }
     pos
 };
+
+const SCAN_1X1: [Pos; 1] = [Pos { x: 0, y: 0 }];
+// 2. Updated Match Statement
 pub fn get_scan_order(log2_size: u8, scan_idx: u8) -> &'static [Pos] {
-    // Note: In a full decoder, you would have tables for 2x2, 4x4, 8x8 (for sub-blocks)
-    // For now, we'll focus on the 4x4 (log2=2) which is what ScanOrderPos always uses.
     match (log2_size, scan_idx) {
+        (0, _) => &SCAN_1X1,
+        // --- 2x2 Sub-block Scans (log2_size = 1) ---
+        (1, 0) => &SCAN_2X2_DIAG,
+        (1, 1) => &SCAN_2X2_HOR,
+        (1, 2) => &SCAN_2X2_VER,
+
+        // --- 4x4 Scans (log2_size = 2) ---
         (2, 0) => &SCAN_4X4_DIAG,
         (2, 1) => &SCAN_4X4_HOR,
         (2, 2) => &SCAN_4X4_VER,
+
+        // --- 8x8 Scans (log2_size = 3) ---
         (3, 0) => &SCAN_8X8_DIAG,
         (3, 1) => &SCAN_8X8_HOR,
         (3, 2) => &SCAN_8X8_VER,
-        _ => &SCAN_4X4_DIAG
+
+        _ => panic!("Unsupported scan config: scan_idx={}, log2size={}", scan_idx, log2_size)
     }
 }
 pub fn decode_transform_skip_flag(ctx: &mut DecodeSliceContext, component: Component) -> u8 {
@@ -578,7 +610,7 @@ pub fn decode_residual_block(
     // (Always size 2, because sub-blocks are always 4x4)
     let scan_order_pos = get_scan_order(2, scan_idx);
 
-    if DEBUG_MORE {
+    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
         // libde265 style tracing
         let mut scan_pos_trace = String::from("ScanOrderPos: ");
         for n in 0..16 {
@@ -612,10 +644,6 @@ pub fn decode_residual_block(
         sb_width
     );
 
-    // --- Inside decode_residual_block ---
-
-    // Initialize the coefficient count for this component
-    let mut n_coeff = 0;
     let mut g1_state = Greater1State {
         bit:          0,
         greater1_ctx: 0,
@@ -627,6 +655,9 @@ pub fn decode_residual_block(
         Component::Cb => 1,
         Component::Cr => 2
     };
+
+    ctx.n_coeff[c_idx] = 0;
+
     // Iterate through sub-blocks in reverse scan order
     for i in (0..=last_sub_block).rev() {
         let s = scan_order_sub[i as usize];

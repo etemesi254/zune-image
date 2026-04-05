@@ -55,7 +55,7 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32, NalError>
     Ok(final_delta)
 }
 pub fn decode_quantization_parameters(
-    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8,
+    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8
 ) {
     debug_more!(
         "-------------decode_quantization_parameters( xc={},yc={}) ---------------",
@@ -81,7 +81,10 @@ pub fn decode_quantization_parameters(
     let x_qg = x0 & !(qg_size - 1);
     let y_qg = y0 & !(qg_size - 1);
 
+    let slice_qp = (26 + pps.init_qp_minus26 + ctx.slice_header.slice_qp_delta) as i8;
+
     debug_more!("x_qg={}, y_qg={}", x_qg, y_qg);
+    // If we've moved to a new QG, reset the "already coded" flag
     // If we've moved to a new QG, reset the "already coded" flag
     if x_qg != ctx.current_qg_x || y_qg != ctx.current_qg_y {
         debug_more!(
@@ -89,35 +92,59 @@ pub fn decode_quantization_parameters(
             x_qg,
             y_qg
         );
+        // Save the QP of the last block we decoded before entering this new QG
+        ctx.last_qp_in_previous_qg = ctx.last_qp_in_slice;
         ctx.current_qg_x = x_qg;
         ctx.current_qg_y = y_qg;
         ctx.is_cu_qp_delta_coded = false;
     }
-
     // 2. Derive the Predictor (qP_pred)
     // This only happens once per QG. If already coded, we use the last derived QP.
+    // 2. Derive the Predictor (qP_pred)
     let qp_pred = if !ctx.is_cu_qp_delta_coded {
-        let qp_a = ctx.neighbor_tracker.get_qp_left(x0, y0);
-        let qp_b = ctx.neighbor_tracker.get_qp_above(x0, y0);
+        // Determine qp_prev
+        let is_first_qg_in_slice = x_qg == 0 && y_qg == 0; // Update this to match slice start bounds if needed
 
-        let pred = match (qp_a, qp_b) {
-            (Some(a), Some(b)) => (a + b + 1) >> 1,
-            (Some(a), None) => a,
-            (None, Some(b)) => b,
-            (None, None) => ctx.last_qp_in_slice // Fallback to Slice QP or previous CU
+        let qp_prev = if is_first_qg_in_slice {
+            // Initial slice QP (e.g., 26 + init_qp_minus26 + slice_qp_delta)
+            slice_qp
+        } else {
+            ctx.last_qp_in_previous_qg
         };
+
+        // Mask to determine if we are at the edge of a CTU.
+        // e.g., if CTB size is 64, mask is 63 (0x3F).
+        let ctb_mask = (1 << sps.log2_ctb_size_y) - 1;
+
+        // Note: Spec 8.1.6.1 - Spatial neighbors are INVALID if they are in a different CTU.
+        let qp_a = if x_qg == 0 || (x_qg & ctb_mask) == 0 {
+            // At the left edge of the frame OR the left edge of a CTU
+            qp_prev
+        } else {
+            ctx.neighbor_tracker.get_qp_left(x_qg, y_qg).unwrap_or(qp_prev)
+        };
+
+        let qp_b = if y_qg == 0 || (y_qg & ctb_mask) == 0 {
+            // At the top edge of the frame OR the top edge of a CTU
+            qp_prev
+        } else {
+            ctx.neighbor_tracker.get_qp_above(x_qg, y_qg).unwrap_or(qp_prev)
+        };
+        let pred = (qp_a + qp_b + 1) >> 1;
 
         debug_more!(
             "QP Prediction: Left={:?}, Above={:?}, Prev={} -> Final Pred={}",
-            qp_a,
-            qp_b,
-            ctx.last_qp_in_slice,
+            ctx.neighbor_tracker.get_qp_left(x_qg, y_qg),
+            ctx.neighbor_tracker.get_qp_above(x_qg, y_qg),
+            qp_prev,
             pred
         );
         pred
     } else {
+        // If the delta was already coded for this QG, the predictor is just the current QP
         ctx.last_qp_in_slice
     };
+    debug_more!("Decoded CU QP delta: {}", ctx.cu_qp_delta);
     let qp_y = ((qp_pred as i32 + ctx.cu_qp_delta + 52) % 52) as i8;
     // 1. Calculate Bit Depth Offsets
     // QpBdOffset = 6 * (bit_depth - 8)

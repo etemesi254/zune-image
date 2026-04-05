@@ -26,9 +26,12 @@ pub fn decode_intra_luma_mode(
     ctx: &mut DecodeSliceContext,
     x0: usize,
     y0: usize,
-    is_mpm: bool // Flag is now passed in
+    is_mpm: bool
 ) -> u8 {
-    let mpm_list = ctx.neighbor_tracker.derive_mpms(x0, y0);
+
+    let log2_ctu_size = ctx.sps.log2_min_luma_coding_block_size  + ctx.sps.log2_diff_max_min_luma_coding_block_size;
+    let ctu_size = 1 << log2_ctu_size;
+    let mpm_list = ctx.neighbor_tracker.derive_mpms(x0, y0,ctu_size);
 
     if is_mpm {
         debug_more!("MPM_IDX (TU:2)");
