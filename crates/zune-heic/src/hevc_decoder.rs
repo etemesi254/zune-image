@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use zune_core::log::trace;
@@ -11,7 +12,6 @@ use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
 pub(crate) static  DEBUG_MORE: AtomicBool = AtomicBool::new(false);
-mod binarizer;
 mod bitstream;
 mod cabac;
 mod cabac_tables;
@@ -47,7 +47,7 @@ impl HevcDecoder {
         }
     }
 
-    pub fn decode(&mut self, sample: HevcSample) -> Result<(), NalError> {
+    pub fn decode(&mut self, sample: HevcSample) -> Result<Option<Arc<RawFrame>>, NalError> {
         let nal_parser = NalParser::new_detect(&sample.extents);
 
         let mut raw_frame = None;
@@ -111,7 +111,7 @@ impl HevcDecoder {
 
             Ok(true)
         })?;
-        Ok(())
+        Ok(raw_frame)
     }
 
     /// Call this if the container format (like HEIC or MP4) provides global
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0013.hvc").unwrap();
+        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0040.hvc").unwrap();
 
         let sample = HevcSample {
             item_id: 0,
@@ -166,6 +166,9 @@ mod tests {
             extents: vec![&data]
         };
         let mut decoder = HevcDecoder::new();
-        decoder.decode(sample).unwrap();
+
+       let frame= decoder.decode(sample).unwrap();
+
+        frame.unwrap().dump_ppm("item_0002.ppm").unwrap();
     }
 }

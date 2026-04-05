@@ -274,7 +274,9 @@ pub struct SliceHeader {
     pub slice_qp_delta: i64,
     pub slice_sao_luma_flag: bool,
     pub slice_sao_chroma_flag: bool,
-    pub slice_addr_rs: Box<Option<SliceHeader>>
+    pub slice_addr_rs: Box<Option<SliceHeader>>,
+    pub slice_cb_qp_offset: i8,
+    pub slice_cr_qp_offset: i8
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

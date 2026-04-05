@@ -217,7 +217,6 @@ pub fn finish_ctu(
     if end_of_sub_stream {
         debug_more!("End of sub-stream detected. Decoding alignment bit.");
 
-        println!();
         // Section 7.3.8.1: end_of_sub_stream_one_bit
         let eoss_bit = ctx.cabac.decode_terminate();
         if eoss_bit == 0 {

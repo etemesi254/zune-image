@@ -83,7 +83,9 @@ impl NeighborTracker {
     }
 
     /// Derived from Spec §9.3.4.2.2. Returns 0, 1, or 2 based on neighbors.
-    pub fn get_split_ctx(&self, x: usize, y: usize, current_depth: u8, current_slice_id: u16) -> usize {
+    pub fn get_split_ctx(
+        &self, x: usize, y: usize, current_depth: u8, current_slice_id: u16
+    ) -> usize {
         let mut cond_l = 0;
         let mut cond_a = 0;
 
@@ -144,8 +146,13 @@ impl NeighborTracker {
         ctx_inc
     }
 
-    pub fn derive_mpms(&self, x: usize, y: usize,ctu_size:usize) -> [u8; 3] {
-        debug_more!("derive_mpms called with {} and {} for ctu size:{}", x, y,ctu_size);
+    pub fn derive_mpms(&self, x: usize, y: usize, ctu_size: usize) -> [u8; 3] {
+        debug_more!(
+            "derive_mpms called with {} and {} for ctu size:{}",
+            x,
+            y,
+            ctu_size
+        );
         let left = if x > 0 { self.get_state(x - 1, y) } else { BlockState::default() };
         let above = if y > 0 {
             // Fetch the CTU size (e.g., 32).
@@ -283,7 +290,6 @@ impl NeighborTracker {
                     let idx = gy * self.width_in_units + gx;
                     let state = &mut self.blocks[idx];
 
-
                     state.is_intra = true;
                     state.intra_mode_luma = mode;
                     state.available = true; // Mark this area as decoded and available for neighbors
@@ -356,22 +362,20 @@ impl NeighborTracker {
     }
 }
 
-
 impl NeighborTracker {
     pub fn is_available(
-        &self,
-        curr_x: usize,
-        curr_y: usize,
-        neighbor_x: isize,
-        neighbor_y: isize
+        &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize
     ) -> bool {
         // 1. Hard Boundary Check
-        if neighbor_x < 0 || neighbor_y < 0 { return false; }
+        if neighbor_x < 0 || neighbor_y < 0 {
+            return false;
+        }
         let nx = neighbor_x as usize;
         let ny = neighbor_y as usize;
 
-        if nx >= self.width_in_units << self.log2_unit_size ||
-            ny >= self.height_in_units << self.log2_unit_size {
+        if nx >= self.width_in_units << self.log2_unit_size
+            || ny >= self.height_in_units << self.log2_unit_size
+        {
             return false;
         }
 
@@ -386,8 +390,10 @@ impl NeighborTracker {
         }
 
         // 3. Metadata Lookup
-        let neighbor_unit = &self.blocks[(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
-        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units + (curr_x >> self.log2_unit_size)];
+        let neighbor_unit = &self.blocks
+            [(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
+        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units
+            + (curr_x >> self.log2_unit_size)];
 
         // 4. Slice/Tile Check
         if curr_unit.slice_id != neighbor_unit.slice_id {
@@ -462,13 +468,14 @@ impl NeighborTracker {
 impl NeighborTracker {
     /// Converts pixel coordinates to a Z-Scan address.
     /// log2_min_cb_size is usually 3 (for 8x8) or 2 (for 4x4).
-    pub fn get_zscan_addr(&self,x: usize, y: usize) -> u32 {
-        let  x = x >> self.log2_unit_size;
-        let  y = y >> self.log2_unit_size;
+    pub fn get_zscan_addr(&self, x: usize, y: usize) -> u32 {
+        let x = x >> self.log2_unit_size;
+        let y = y >> self.log2_unit_size;
         let mut addr = 0;
 
         // Interleave bits of x and y (Morton Order)
-        for i in 0..8 { // Supports up to 256x256 units
+        for i in 0..8 {
+            // Supports up to 256x256 units
             addr |= ((x & (1 << i)) << i) as u32;
             addr |= ((y & (1 << i)) << (i + 1)) as u32;
         }
@@ -477,7 +484,10 @@ impl NeighborTracker {
 }
 
 impl NeighborTracker {
-    pub fn update_cu_info(&mut self, x0: usize, y0: usize, cb_size: usize, depth: u8, qp: i8, is_skip: bool, slice_id: u16) {
+    pub fn update_cu_info(
+        &mut self, x0: usize, y0: usize, cb_size: usize, depth: u8, qp: i8, is_skip: bool,
+        slice_id: u16
+    ) {
         let gx_start = x0 >> self.log2_unit_size;
         let gy_start = y0 >> self.log2_unit_size;
         let units = cb_size >> self.log2_unit_size;

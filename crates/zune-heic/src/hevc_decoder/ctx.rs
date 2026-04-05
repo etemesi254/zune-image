@@ -10,18 +10,18 @@ use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
 
 pub struct DecodeSliceContext<'a> {
-    pub sps:                  &'a Sps,
-    pub pps:                  &'a Pps,
-    pub slice_header:         &'a SliceHeader,
-    pub cabac:                CabacDecoder<'a>,
-    pub neighbor_tracker:     &'a mut NeighborTracker,
-    pub is_cu_qp_delta_coded: bool,
-    pub cu_qp_delta:          i32,
+    pub sps:                    &'a Sps,
+    pub pps:                    &'a Pps,
+    pub slice_header:           &'a SliceHeader,
+    pub cabac:                  CabacDecoder<'a>,
+    pub neighbor_tracker:       &'a mut NeighborTracker,
+    pub is_cu_qp_delta_coded:   bool,
+    pub cu_qp_delta:            i32,
     // quantization group
-    pub current_qg_x:         usize,
-    pub current_qg_y:         usize,
-    pub last_qp_in_slice:     i8, // This tracks the "previous" QP for the next CU
-    pub last_qp_in_previous_qg:i8,
+    pub current_qg_x:           usize,
+    pub current_qg_y:           usize,
+    pub last_qp_in_slice:       i8, // This tracks the "previous" QP for the next CU
+    pub last_qp_in_previous_qg: i8,
 
     // - CU state to be captured for the tracker
     pub is_skip:                   bool,
@@ -48,9 +48,9 @@ pub struct DecodeSliceContext<'a> {
     // --- High-Speed Fixed Buffers ---
     pub pixel_scratchpad:          Vec<u8>,
     // Use i32 so it's large enough for Scaling, IDCT, and RDPCM
-    pub math_scratchpad:           Vec<i32>,
+    pub math_scratchpad:           Vec<i16>,
     // idct scratchpad instead of allocating
-    pub idct_scratchpad:          Vec<i32>,
+    pub idct_scratchpad:           Vec<i16>,
     // Reference Wall buffers
     pub ref_samples_p:             Vec<u8>,
     pub ref_samples_available:     Vec<bool>,
@@ -58,11 +58,11 @@ pub struct DecodeSliceContext<'a> {
     pub res_scale_val:             i8,
     ///  Stores the Luma residuals for the current TU area
     /// so Chroma can use them for CCP.
-    pub luma_residual_temp:        Vec<i32>,
+    pub luma_residual_temp:        Vec<i16>,
 
     pub ctb_sao_buffer: Vec<SaoInfo>,
     // ctb contexts
-    pub ctb_context:Vec<Option<Vec<u8>>>,
+    pub ctb_context:    Vec<Option<Vec<u8>>>
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
@@ -87,8 +87,8 @@ impl<'a> DecodeSliceContext<'a> {
             last_qp_in_slice,
             is_cu_qp_delta_coded: false,
             cu_qp_delta: 0,
-            current_qg_x: 0,
-            current_qg_y: 0,
+            current_qg_x: usize::MAX,
+            current_qg_y: usize::MAX,
             last_qp_in_previous_qg: 0,
             is_skip: false,
             is_intra: false,
@@ -116,7 +116,7 @@ impl<'a> DecodeSliceContext<'a> {
             idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
             ctb_sao_buffer: vec![SaoInfo::default(); buffer_size],
-            ctb_context: vec![None; height_in_ctbs as usize],
+            ctb_context: vec![None; height_in_ctbs as usize]
         }
     }
 }
@@ -163,9 +163,9 @@ impl<'a> DecodeSliceContext<'a> {
     pub fn scale_coefficients(
         &mut self,
         x_t: usize,
-        y_t: usize,  // TU pos
+        y_t: usize, // TU pos
         n_t: usize, // TU size (4, 8, 16, 32)
-        c_idx: usize,
+        c_idx: usize
     ) {
         debug_more!(
             "scale_coefficients :xT={} yT={} n_t={} cidx={}",
@@ -196,7 +196,7 @@ impl<'a> DecodeSliceContext<'a> {
             for i in 0..self.n_coeff[c_idx] {
                 let pos = self.coeff_pos[c_idx][i as usize] as usize;
                 let level = self.coeff_list[c_idx][i as usize];
-                self.math_scratchpad[pos] = level as i32;
+                self.math_scratchpad[pos] = level
             }
             return;
         }
@@ -222,7 +222,7 @@ impl<'a> DecodeSliceContext<'a> {
                 let scaled = (level * fact as i64 + offset as i64) >> bd_shift;
 
                 // Clip to 16-bit range
-                self.math_scratchpad[pos] = scaled.clamp(-32768, 32767) as i32;
+                self.math_scratchpad[pos] = scaled.clamp(-32768, 32767) as _;
             }
         } else {
             // --- Custom Scaling Lists ---
@@ -292,7 +292,7 @@ impl<'a> DecodeSliceContext<'a> {
                     );
                 }
 
-                self.math_scratchpad[pos] = final_clipped as i32;
+                self.math_scratchpad[pos] = final_clipped as i16;
             }
         }
         // --- do transform or skip ---
@@ -351,7 +351,7 @@ impl<'a> DecodeSliceContext<'a> {
         for i in 0..n_coeffs {
             let pos = self.coeff_pos[c_idx][i] as usize;
             let level = self.coeff_list[c_idx][i];
-            self.math_scratchpad[pos] = level as i32;
+            self.math_scratchpad[pos] = level;
         }
 
         if rotate_coeffs {
@@ -359,7 +359,7 @@ impl<'a> DecodeSliceContext<'a> {
         }
 
         // --- 3. Transformation Bypass ---
-        let mut residual = [0i32; 1024];
+        let mut residual = [0i16; 1024];
 
         match rdpcm_mode {
             1 => self.apply_rdpcm_horizontal(&mut residual, n_t),
@@ -386,27 +386,62 @@ impl<'a> DecodeSliceContext<'a> {
             self.math_scratchpad[..16].fill(0);
         }
     }
-    pub fn apply_rdpcm_horizontal(&self, residual: &mut [i32], n_t: usize) {
+    pub fn apply_rdpcm_horizontal(&self, residual: &mut [i16], n_t: usize) {
+        // Accumulates left-to-right across each row
         for y in 0..n_t {
-            let mut sum = 0i32;
+            let mut sum = 0i32; // Safe 32-bit accumulator
             for x in 0..n_t {
                 sum += self.math_scratchpad[y * n_t + x] as i32;
-                residual[y * n_t + x] = sum;
+                let clamped = sum.clamp(-32768, 32767) as i16;
+                residual[y * n_t + x] = clamped;
+                sum = clamped as i32; // Carry clamped value to the next pixel
             }
         }
     }
 
-    pub fn apply_rdpcm_vertical(&self, residual: &mut [i32], n_t: usize) {
+    pub fn apply_rdpcm_vertical(&self, residual: &mut [i16], n_t: usize) {
+        // Accumulates top-to-bottom down each column
         for x in 0..n_t {
-            let mut sum = 0i32;
+            let mut sum = 0i32; // Safe 32-bit accumulator
             for y in 0..n_t {
-                sum += self.math_scratchpad[y * n_t + x];
-                residual[y * n_t + x] = sum;
+                // Notice y is on the inner loop, jumping by n_t
+                sum += self.math_scratchpad[y * n_t + x] as i32;
+                let clamped = sum.clamp(-32768, 32767) as i16;
+                residual[y * n_t + x] = clamped;
+                sum = clamped as i32; // Carry clamped value to the next pixel
+            }
+        }
+    }
+
+    pub fn apply_rdpcm_horizontal_in_place(&mut self, n_t: usize) {
+        for y in 0..n_t {
+            let mut sum = 0i32; // Accumulate in i32
+            for x in 0..n_t {
+                let idx = y * n_t + x;
+                sum += self.math_scratchpad[idx] as i32;
+
+                let clamped = sum.clamp(-32768, 32767) as i16;
+                self.math_scratchpad[idx] = clamped; // Write back in-place
+                sum = clamped as i32;
+            }
+        }
+    }
+
+    pub fn apply_rdpcm_vertical_in_place(&mut self, n_t: usize) {
+        for x in 0..n_t {
+            let mut sum = 0i32; // Accumulate in i32
+            for y in 0..n_t {
+                let idx = y * n_t + x;
+                sum += self.math_scratchpad[idx] as i32;
+
+                let clamped = sum.clamp(-32768, 32767) as i16;
+                self.math_scratchpad[idx] = clamped; // Write back in-place
+                sum = clamped as i32;
             }
         }
     }
     pub fn add_residual_and_write(
-        &mut self, x0: usize, y0: usize, n_t: usize, c_idx: usize, residual: Option<&[i32]>,
+        &mut self, x0: usize, y0: usize, n_t: usize, c_idx: usize, residual: Option<&[i16]>,
         bit_depth: u8
     ) {
         let residual = residual.unwrap_or(&self.math_scratchpad);
@@ -432,7 +467,7 @@ impl<'a> DecodeSliceContext<'a> {
         &mut self,
         n_t_c: usize, // Chroma TU size
         res_scale_val: i8,
-        residual: Option<&mut [i32]>
+        residual: Option<&mut [i16]>
     ) {
         if res_scale_val == 0 {
             return;
@@ -471,8 +506,9 @@ impl<'a> DecodeSliceContext<'a> {
                 let luma_res = self.luma_residual_temp[luma_idx];
 
                 // formula: chroma_res += (scale * (luma_res << shift)) >> 3
-                let adjustment = (res_scale_val as i32 * (luma_res << shift)) >> 3;
-                residual[y * n_t_c + x] += adjustment;
+                let adjustment = (res_scale_val as i32 * ((luma_res as i32) << shift)) >> 3;
+                let current = residual[y * n_t_c + x] as i32;
+                residual[y * n_t_c + x] = (current + adjustment).clamp(-32768, 32767) as i16;
             }
         }
     }
@@ -514,10 +550,7 @@ impl<'a> DecodeSliceContext<'a> {
         );
         if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
             println!("--- Reference Border (N={}) ---", n_t);
-            print_border(
-                &self.ref_samples_p[..p_len],
-                n_t
-            );
+            print_border(&self.ref_samples_p[..p_len], n_t);
         }
 
         if c_idx == 0 {
@@ -537,7 +570,7 @@ impl<'a> DecodeSliceContext<'a> {
 
 fn write_block_and_pad(
     plane: &mut SingleFrame, x0: usize, y0: usize, n_t: usize, pred: &[u8],
-    residual: Option<&[i32]>, bit_depth: u8
+    residual: Option<&[i16]>, bit_depth: u8
 ) {
     let max_val = (1_i32 << bit_depth) - 1;
     let buf = &mut plane.pixels;
@@ -559,15 +592,12 @@ fn write_block_and_pad(
         //         buf[dst_row + dx] = (b[i] + pred[i] as i32).clamp(0, max_val) as u8;
         //     }
         // }
-        for (dy, (b_row, pred_row)) in b.chunks(n_t)
-            .zip(pred.chunks(n_t))
-            .take(n_t)
-            .enumerate() {
+        for (dy, (b_row, pred_row)) in b.chunks(n_t).zip(pred.chunks(n_t)).take(n_t).enumerate() {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
             for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
-                *dst = (bv + pv as i32).clamp(0, max_val) as u8;
+                *dst = ((bv as i32) + (pv as i32)).clamp(0, max_val) as u8;
             }
         }
     } else {
@@ -704,12 +734,7 @@ fn check_availability(
 }
 
 fn perform_padding(
-    frame: &Arc<RawFrame>,
-    p: &mut [u8],
-    available: &[bool],
-    x0: usize,
-    y0: usize,
-    n_t: usize,
+    frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
     c_idx: usize
 ) {
     let total = 4 * n_t + 1;
@@ -782,10 +807,16 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
     }
 
     if n_t == 32 && strong_enabled {
-        let threshold = 1 << (8 - 5); // Assuming 8-bit
-        if (p[0] as i32 + p[2 * n_t] as i32 - 2 * p[n_t] as i32).abs() < threshold
-            && (p[0] as i32 + p[4 * n_t] as i32 - 2 * p[3 * n_t] as i32).abs() < threshold
-        {
+        let threshold = 1 << (8 - 5); // Assuming 8-bit depth (BitDepth - 5)
+
+        let bl = p[0] as i32; // Bottom-Left
+        let mid_l = p[n_t] as i32; // Mid-Left
+        let tl = p[2 * n_t] as i32; // Top-Left Corner
+        let mid_t = p[3 * n_t] as i32; // Mid-Top
+        let tr = p[4 * n_t] as i32; // Top-Right
+
+        // Spec 8.4.4.2.3: Strong smoothing condition checks the left edge and top edge
+        if (bl + tl - 2 * mid_l).abs() < threshold && (tl + tr - 2 * mid_t).abs() < threshold {
             apply_strong_smoothing(p, n_t);
             return;
         }
@@ -793,28 +824,34 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
 
     if is_filtering_required(mode, n_t) {
         let raw = p.to_vec();
-        // Corner
-        p[0] = ((raw[2 * n_t + 1] as u16 + 2 * raw[0] as u16 + raw[1] as u16 + 2) >> 2) as u8;
-        // Top segment
-        for i in 1..(2 * n_t) {
-            p[i] = ((raw[i - 1] as u16 + 2 * raw[i] as u16 + raw[i + 1] as u16 + 2) >> 2) as u8;
-        }
-        // Left segment (p[2*n_t+1] uses p[0] as its 'previous')
-        let first_l = 2 * n_t + 1;
-        p[first_l] =
-            ((raw[0] as u16 + 2 * raw[first_l] as u16 + raw[first_l + 1] as u16 + 2) >> 2) as u8;
-        for i in (first_l + 1)..(4 * n_t) {
+
+        // Because the 0..4N array traces the exact physical perimeter of the block
+        // (Bottom-Left -> Corner -> Top-Right), a single contiguous sweep
+        // applies the [1, 2, 1] filter perfectly across all edges!
+        for i in 1..(4 * n_t) {
             p[i] = ((raw[i - 1] as u16 + 2 * raw[i] as u16 + raw[i + 1] as u16 + 2) >> 2) as u8;
         }
     }
 }
 
 fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
-    let (tl, tr, bl) = (p[0] as i32, p[2 * n_t] as i32, p[4 * n_t] as i32);
-    for i in 1..=2 * n_t {
-        p[i] = (((2 * n_t - i) as i32 * tl + i as i32 * tr + n_t as i32) / (2 * n_t) as i32) as u8;
-        p[2 * n_t + i] =
-            (((2 * n_t - i) as i32 * tl + i as i32 * bl + n_t as i32) / (2 * n_t) as i32) as u8;
+    let bl = p[0] as i32; // Index 0: Bottom-Left
+    let tl = p[2 * n_t] as i32; // Index 2N: Top-Left Corner
+    let tr = p[4 * n_t] as i32; // Index 4N: Top-Right
+
+    let n2 = 2 * n_t; // 2N distance
+
+    // 1. Left column (Interpolating between Bottom-Left at 0 and Top-Left at 2N)
+    for i in 1..n2 {
+        // Distance from BL is i. Distance from TL is (2N - i).
+        p[i] = (((n2 - i) as i32 * bl + (i as i32) * tl + n_t as i32) / n2 as i32) as u8;
+    }
+
+    // 2. Top row (Interpolating between Top-Left at 2N and Top-Right at 4N)
+    for i in 1..n2 {
+        let idx = n2 + i;
+        // Distance from TL is (2N - i). Distance from TR is i.
+        p[idx] = (((n2 - i) as i32 * tl + (i as i32) * tr + n_t as i32) / n2 as i32) as u8;
     }
 }
 

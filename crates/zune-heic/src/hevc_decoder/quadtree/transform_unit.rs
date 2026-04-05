@@ -139,11 +139,11 @@ pub fn decode_tu(
 
             // scratchpad can be reused without reset-ing as the buffer is overwritten
             // so no need to reset it every time
-            let idct_scratchpad: &mut [i32; 1024] = &mut ctx.idct_scratchpad[..].try_into().unwrap();
+            let idct_scratchpad: &mut [i16; 1024] = &mut ctx.idct_scratchpad[..].try_into().unwrap();
 
             if use_dst {
                 // Luma 4x4 Intra -> Special DST path
-                let block: &mut [i32; 16] = (&mut ctx.math_scratchpad[..16])
+                let block: &mut [i16; 16] = (&mut ctx.math_scratchpad[..16])
                     .try_into()
                     .expect("Scratchpad must have at least 16 elements");
                 idst_4x4_hevc(block, idct_scratchpad, bit_depth);
@@ -151,25 +151,25 @@ pub fn decode_tu(
                 // Standard IDCT Path
                 match n_t {
                     4 => {
-                        let block: &mut [i32; 16] =
+                        let block: &mut [i16; 16] =
                             (&mut ctx.math_scratchpad[..16]).try_into().unwrap();
 
                         idct_4x4_hevc(block, idct_scratchpad, bit_depth);
                     }
                     8 => {
-                        let block: &mut [i32; 64] =
+                        let block: &mut [i16; 64] =
                             (&mut ctx.math_scratchpad[..64]).try_into().unwrap();
 
                         idct_8x8_hevc(block, idct_scratchpad, bit_depth);
                     }
                     16 => {
-                        let block: &mut [i32; 256] =
+                        let block: &mut [i16; 256] =
                             (&mut ctx.math_scratchpad[..256]).try_into().unwrap();
 
                         idct_16x16_hevc(block, idct_scratchpad, bit_depth);
                     }
                     32 => {
-                        let block: &mut [i32; 1024] = ctx
+                        let block: &mut [i16; 1024] = ctx
                             .math_scratchpad
                             .get_mut(..1024)
                             .unwrap()
@@ -182,12 +182,25 @@ pub fn decode_tu(
             }
         } else {
             // RDPCM for Transform Skip (Spec 8.6.4.4.1)
-            todo!("apply residual dcpm")
-            // match residual_dpcm {
-            //     1 => ctx.apply_rdpcm_horizontal_in_place(n_t),
-            //     2 => ctx.apply_rdpcm_vertical_in_place(n_t),
-            //     _ => {}
-            // }
+            // --- 1. RDPCM for Transform Skip (Spec 8.6.4.4.1) ---
+            match residual_dpcm {
+                1 => ctx.apply_rdpcm_horizontal_in_place(n_t),
+                2 => ctx.apply_rdpcm_vertical_in_place(n_t),
+                _ => {}
+            }
+
+            // --- 2. The Missing Transform Skip Shift! (Spec 8.6.2.1) ---
+            // Because we bypassed the IDCT, we must manually apply the
+            // post-transform bit-shift to scale the residuals back down to pixel space.
+            let shift = 20 - bit_depth as i32;
+            let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
+
+            for i in 0..(n_t * n_t) {
+                let val = ctx.math_scratchpad[i] as i32;
+                // Shift, and safely clamp to the 16-bit intermediate range
+                let shifted = (val + offset) >> shift;
+                ctx.math_scratchpad[i] = shifted.clamp(-32768, 32767) as i16;
+            }
         }
 
         // Apply CCP for Chroma

@@ -61,3 +61,87 @@ impl RawFrame {
         Self::new(width, height, sps.chroma_format)
     }
 }
+
+use std::fs::File;
+use std::io::{BufWriter, Write};
+
+impl RawFrame {
+    /// Dumps the reconstructed frame to a P6 PPM file.
+    /// This automatically strips HEVC padding and converts YCbCr to RGB.
+    pub fn dump_ppm(&self, filename: &str) -> std::io::Result<()> {
+        // Safely lock all three color planes
+        let luma = self.luma.lock().unwrap();
+        let cb = self.cb.lock().unwrap();
+        let cr = self.cr.lock().unwrap();
+
+        let width = luma.width;
+        let height = luma.height;
+
+        // Open the file with a BufWriter for maximum write speed
+        let file = File::create(filename)?;
+        let mut writer = BufWriter::new(file);
+
+        // Write the PPM P6 Header
+        // P6 = Binary RGB, followed by Width, Height, and Max Color Value (255)
+        writeln!(writer, "P6\n{} {}\n255", width, height)?;
+
+        let (sub_x, sub_y) = self.format.get_subsampling();
+        let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
+
+        // Pre-allocate the RGB buffer
+        let mut rgb_buf = vec![0u8; width * height * 3];
+        let mut out_idx = 0;
+
+        for y in 0..height {
+            // Luma row offset (skipping top padding, moving to current row, skipping left padding)
+            let y_row_offset = (y + luma.padding) * luma.stride + luma.padding;
+
+            // Chroma row offset (scaled by subsampling)
+            let c_row_offset = if is_monochrome {
+                0
+            } else {
+                (y / sub_y + cb.padding) * cb.stride + cb.padding
+            };
+
+            for x in 0..width {
+                // 1. Fetch Y
+                let y_val = luma.pixels[y_row_offset + x] as i32;
+
+                // 2. Fetch Cb and Cr (handling subsampling mapping)
+                let (cb_val, cr_val) = if is_monochrome {
+                    (128, 128) // Default chroma for monochrome
+                } else {
+                    let cx = x / sub_x;
+                    // Because Cb and Cr were created identically, they share the same stride/padding
+                    (
+                        cb.pixels[c_row_offset + cx] as i32,
+                        cr.pixels[c_row_offset + cx] as i32,
+                    )
+                };
+
+                // 3. YCbCr to RGB Conversion (Fast Integer Approximation)
+                // Center Chroma around 0
+                let u = cb_val - 128;
+                let v = cr_val - 128;
+
+                // Full-Range BT.601 -> RGB
+                let r = y_val + ((v * 359 + 128) >> 8);
+                let g = y_val - ((u * 88 + v * 183 + 128) >> 8);
+                let b = y_val + ((u * 454 + 128) >> 8);
+
+                // 4. Clamp and Write to Buffer
+                rgb_buf[out_idx]     = r.clamp(0, 255) as u8;
+                rgb_buf[out_idx + 1] = g.clamp(0, 255) as u8;
+                rgb_buf[out_idx + 2] = b.clamp(0, 255) as u8;
+
+                out_idx += 3;
+            }
+        }
+
+        // Blast the RGB buffer to the file
+        writer.write_all(&rgb_buf)?;
+        writer.flush()?;
+
+        Ok(())
+    }
+}

@@ -454,6 +454,15 @@ pub fn decode_slice_header(
         // 8. QP Delta (se(v))
         sh.slice_qp_delta = r.read_se();
 
+        // 8.5 Chroma QP Offsets (se(v))
+        if pps.slice_chroma_qp_offsets_present_flag {
+            sh.slice_cb_qp_offset = r.read_se() as i8;
+            sh.slice_cr_qp_offset = r.read_se() as i8;
+        } else {
+            sh.slice_cb_qp_offset = 0;
+            sh.slice_cr_qp_offset = 0;
+        }
+
         // 9. Deblocking Filter
         if pps.deblocking_filter_control_present_flag {
             if pps.deblocking_filter_override_enabled_flag {

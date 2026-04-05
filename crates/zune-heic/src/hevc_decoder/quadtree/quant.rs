@@ -57,12 +57,6 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32, NalError>
 pub fn decode_quantization_parameters(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8
 ) {
-    debug_more!(
-        "-------------decode_quantization_parameters( xc={},yc={}) ---------------",
-        x0,
-        y0
-    );
-
     #[rustfmt::skip]
     const TABLE_8_22: [i8; 58] = [
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
@@ -83,102 +77,86 @@ pub fn decode_quantization_parameters(
 
     let slice_qp = (26 + pps.init_qp_minus26 + ctx.slice_header.slice_qp_delta) as i8;
 
-    debug_more!("x_qg={}, y_qg={}", x_qg, y_qg);
-    // If we've moved to a new QG, reset the "already coded" flag
-    // If we've moved to a new QG, reset the "already coded" flag
+    // 2. QG State Reset
     if x_qg != ctx.current_qg_x || y_qg != ctx.current_qg_y {
-        debug_more!(
-            "New QG detected at [{}, {}]. Resetting cu_qp_delta_coded.",
-            x_qg,
-            y_qg
-        );
-        // Save the QP of the last block we decoded before entering this new QG
-        ctx.last_qp_in_previous_qg = ctx.last_qp_in_slice;
+        if ctx.current_qg_x != usize::MAX {
+            ctx.last_qp_in_previous_qg = ctx.last_qp_in_slice;
+        } else {
+            // Absolute start of the parsing process
+            ctx.last_qp_in_previous_qg = slice_qp;
+        }
+
         ctx.current_qg_x = x_qg;
         ctx.current_qg_y = y_qg;
+
+        // We entered a new QG! Reset the delta flags!
         ctx.is_cu_qp_delta_coded = false;
+        ctx.cu_qp_delta = 0;
     }
-    // 2. Derive the Predictor (qP_pred)
-    // This only happens once per QG. If already coded, we use the last derived QP.
-    // 2. Derive the Predictor (qP_pred)
-    let qp_pred = if !ctx.is_cu_qp_delta_coded {
-        // Determine qp_prev
-        let is_first_qg_in_slice = x_qg == 0 && y_qg == 0; // Update this to match slice start bounds if needed
 
-        let qp_prev = if is_first_qg_in_slice {
-            // Initial slice QP (e.g., 26 + init_qp_minus26 + slice_qp_delta)
-            slice_qp
-        } else {
-            ctx.last_qp_in_previous_qg
-        };
+    // 3. Determine qp_prev
+    let ctb_size = 1 << sps.log2_ctb_size_y;
+    let slice_start_x = (ctx.slice_header.slice_segment_address as usize % sps.pic_width_in_ctbs_y as usize) * ctb_size;
+    let slice_start_y = (ctx.slice_header.slice_segment_address as usize / sps.pic_width_in_ctbs_y as usize) * ctb_size;
 
-        // Mask to determine if we are at the edge of a CTU.
-        // e.g., if CTB size is 64, mask is 63 (0x3F).
-        let ctb_mask = (1 << sps.log2_ctb_size_y) - 1;
+    let is_first_qg_in_slice = x_qg == slice_start_x && y_qg == slice_start_y;
 
-        // Note: Spec 8.1.6.1 - Spatial neighbors are INVALID if they are in a different CTU.
+    // WPP check (if entropy sync is enabled, the start of every CTB row resets to slice_qp)
+    let is_first_in_ctb_row = x_qg == 0 && (y_qg % ctb_size) == 0;
+
+    let qp_prev = if is_first_qg_in_slice || (is_first_in_ctb_row && pps.entropy_coding_sync_enabled_flag) {
+        slice_qp
+    } else {
+        ctx.last_qp_in_previous_qg
+    };
+
+    // 4. Derive Luma QP (QpY)
+    let qp_y = if !ctx.is_cu_qp_delta_coded {
+        let ctb_mask = ctb_size - 1;
+
+        // Spatial prediction cannot cross CTU boundaries
         let qp_a = if x_qg == 0 || (x_qg & ctb_mask) == 0 {
-            // At the left edge of the frame OR the left edge of a CTU
             qp_prev
         } else {
             ctx.neighbor_tracker.get_qp_left(x_qg, y_qg).unwrap_or(qp_prev)
         };
 
         let qp_b = if y_qg == 0 || (y_qg & ctb_mask) == 0 {
-            // At the top edge of the frame OR the top edge of a CTU
             qp_prev
         } else {
             ctx.neighbor_tracker.get_qp_above(x_qg, y_qg).unwrap_or(qp_prev)
         };
-        let pred = (qp_a + qp_b + 1) >> 1;
+
+        let qp_pred = (qp_a + qp_b + 1) >> 1;
 
         debug_more!(
-            "QP Prediction: Left={:?}, Above={:?}, Prev={} -> Final Pred={}",
-            ctx.neighbor_tracker.get_qp_left(x_qg, y_qg),
-            ctx.neighbor_tracker.get_qp_above(x_qg, y_qg),
+            "QP Prediction: Left={}, Above={}, Prev={} -> Final Pred={}",
+            if x_qg == 0 || (x_qg & ctb_mask) == 0 { "None".to_string() } else { format!("{:?}", ctx.neighbor_tracker.get_qp_left(x_qg, y_qg)) },
+            if y_qg == 0 || (y_qg & ctb_mask) == 0 { "None".to_string() } else { format!("{:?}", ctx.neighbor_tracker.get_qp_above(x_qg, y_qg)) },
             qp_prev,
-            pred
+            qp_pred
         );
-        pred
+
+        // Calculate and return the new QP
+        ((qp_pred as i32 + ctx.cu_qp_delta + 52) % 52) as i8
     } else {
-        // If the delta was already coded for this QG, the predictor is just the current QP
+        // If the delta was already coded for this QG, the current CU simply inherits the previous QP!
         ctx.last_qp_in_slice
     };
-    debug_more!("Decoded CU QP delta: {}", ctx.cu_qp_delta);
-    let qp_y = ((qp_pred as i32 + ctx.cu_qp_delta + 52) % 52) as i8;
-    // 1. Calculate Bit Depth Offsets
-    // QpBdOffset = 6 * (bit_depth - 8)
+
+    // 5. Calculate Bit Depth Offsets
     let qp_bd_offset_y = 6 * (sps.bit_depth_luma as i32 - 8);
     let qp_bd_offset_c = 6 * (sps.bit_depth_chroma as i32 - 8);
 
-    // 2. Final Luma QP Prime (Qp'Y)
-    // qp_y is the value we derived earlier (0-51)
     ctx.qp_y_prime = (qp_y as i32) + qp_bd_offset_y;
 
-    // 3. Calculate intermediate Chroma QP index (qPi)
-    // Formula: qPi = Clip3(-QpBdOffset_C, 57, QpY + pps_offset + slice_offset + cu_offset)
-
-    // Note: CuQpOffsetCb/Cr come from PPS extensions (usually 0 in Main profile)
-    let cu_qp_offset_cb = 0;
-    let cu_qp_offset_cr = 0;
-
-    let qp_i_cb = (qp_y as i32 + pps.cb_qp_offset as i32 + 0 /* slice offset */ + cu_qp_offset_cb)
+    // 6. Chroma Derivation (Includes missing slice header offsets!)
+    let qp_i_cb = (qp_y as i32 + pps.cb_qp_offset as i32 + ctx.slice_header.slice_cb_qp_offset as i32)
         .clamp(-qp_bd_offset_c, 57);
-    let qp_i_cr = (qp_y as i32 + pps.cr_qp_offset as i32 + 0 /* slice offset */ + cu_qp_offset_cr)
+    let qp_i_cr = (qp_y as i32 + pps.cr_qp_offset as i32 + ctx.slice_header.slice_cr_qp_offset as i32)
         .clamp(-qp_bd_offset_c, 57);
 
-    debug_more!(
-        "qPiCb: {} (PPS: {}), qPiCr: {} (PPS: {})",
-        qp_i_cb,
-        pps.cb_qp_offset,
-        qp_i_cr,
-        pps.cr_qp_offset
-    );
-
-    // 4. Map to final Chroma QPs based on Chroma Format
     let (qp_cb, qp_cr) = if sps.chroma_format == ChromaFormat::Yuv420 {
-        // Use non-linear table for 4:2:0
-        // We offset by qp_bd_offset_c to index the table properly if it's 10-bit
         let idx_cb = (qp_i_cb + qp_bd_offset_c).clamp(0, 57) as usize;
         let idx_cr = (qp_i_cr + qp_bd_offset_c).clamp(0, 57) as usize;
         (
@@ -186,23 +164,13 @@ pub fn decode_quantization_parameters(
             TABLE_8_22[idx_cr] - qp_bd_offset_c as i8
         )
     } else {
-        // 4:2:2 and 4:4:4 use linear mapping
         (qp_i_cb as i8, qp_i_cr as i8)
     };
 
-    // 5. Calculate Final Chroma QP Primes (Qp'Cb and Qp'Cr)
     ctx.qp_cb_prime = (qp_cb as i32 + qp_bd_offset_c).max(0);
     ctx.qp_cr_prime = (qp_cr as i32 + qp_bd_offset_c).max(0);
 
-    debug_more!(
-        "FINAL QPs: Y'={} Cb'={} Cr'={}",
-        ctx.qp_y_prime,
-        ctx.qp_cb_prime,
-        ctx.qp_cr_prime
-    );
-
-    // Update global state
+    // 7. Update Tracker State
     ctx.last_qp_in_slice = qp_y;
-    ctx.neighbor_tracker
-        .update_qp(x0, y0, 1 << log2_cb_size, qp_y);
+    ctx.neighbor_tracker.update_qp(x0, y0, 1 << log2_cb_size, qp_y);
 }
