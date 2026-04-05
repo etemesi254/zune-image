@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::hevc_decoder::nal_parser::NalError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
