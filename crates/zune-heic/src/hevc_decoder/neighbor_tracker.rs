@@ -198,7 +198,7 @@ impl NeighborTracker {
             }
         }
 
-        println!(
+        debug_more!(
             "MPM Candidates for [{},{}]: [{}, {}, {}] (CTU SIZE:{})",
             x,
             y,
@@ -287,9 +287,6 @@ impl NeighborTracker {
                     state.is_intra = true;
                     state.intra_mode_luma = mode;
                     state.available = true; // Mark this area as decoded and available for neighbors
-                    if idx == 3686{
-                        println!("idx[{idx}]=state:{:#?}",state);
-                    }
                 }
             }
         }

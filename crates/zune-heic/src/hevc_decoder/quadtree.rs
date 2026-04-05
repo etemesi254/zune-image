@@ -131,7 +131,7 @@ pub fn decode_slice(
         match finish_ctu(&mut ctx, ctu_x, ctu_y)? {
             CtuStatus::EndOfSliceSegment => {
                 debug_more!("Slice Segment Finished at CTU {}", ctu_addr);
-                println!("cursor:{} len:{}",ctx.cabac.cursor,ctx.cabac.data.len());
+                debug_more!("cursor:{} len:{}",ctx.cabac.cursor,ctx.cabac.data.len());
 
                 // If it's a dependent slice, save the state for the next one
                 if pps.dependent_slice_segments_enabled_flag {
@@ -168,7 +168,7 @@ pub fn finish_ctu(
         }
     }
 
-    println!(
+    debug_more!(
         "Cabac EOC range:{} value:{},position:{}",
         ctx.cabac.range, ctx.cabac.value, ctx.cabac.cursor
     );
@@ -240,7 +240,7 @@ pub fn finish_ctu(
 fn read_coding_quadtree(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log_2_cb_size: u8, ct_depth: u8
 ) -> Result<(), NalError> {
-    println!(
+    debug_more!(
         "read_coding_quadtree (x0={},y0={},cb_size:{}, depth:{})",
         x0,
         y0,
@@ -249,7 +249,7 @@ fn read_coding_quadtree(
     );
     let cb_size = 1 << log_2_cb_size;
 
-    println!(
+    debug_more!(
         "before split range:{},value:{},pos:{}",
         ctx.cabac.range, ctx.cabac.value, ctx.cabac.cursor
     );

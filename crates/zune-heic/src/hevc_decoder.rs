@@ -82,8 +82,7 @@ impl HevcDecoder {
                     // 1. LAZY ALLOCATION: Do we have a frame buffer for this sample yet?
                     if raw_frame.is_none() {
                         // We need the SPS to know the resolution.
-                        // In a perfect decoder, you peek the first byte of the slice header
-                        // to get the active PPS/SPS ID, but usually ID 0 is safe.
+                        // TODO: Get the raw sps_id
                         let active_sps = self.sps_storage.iter()
                             .find_map(|sps| sps.as_ref())
                             .expect("Stream Error: VCL NAL encountered before any SPS was loaded!");

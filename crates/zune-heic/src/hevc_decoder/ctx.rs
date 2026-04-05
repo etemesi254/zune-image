@@ -516,7 +516,6 @@ impl<'a> DecodeSliceContext<'a> {
             println!("--- Reference Border (N={}) ---", n_t);
             print_border(
                 &self.ref_samples_p[..p_len],
-                &self.ref_samples_available[..p_len],
                 n_t
             );
         }
@@ -650,7 +649,7 @@ pub fn print_available(available: &[bool], n_t: usize) {
     println!();
 }
 
-pub fn print_border(p: &[u8], available: &[bool], n_t: usize) {
+pub fn print_border(p: &[u8], n_t: usize) {
     let total = 4 * n_t;
 
     // Exact same linear sweep for the values
@@ -816,21 +815,6 @@ fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
         p[i] = (((2 * n_t - i) as i32 * tl + i as i32 * tr + n_t as i32) / (2 * n_t) as i32) as u8;
         p[2 * n_t + i] =
             (((2 * n_t - i) as i32 * tl + i as i32 * bl + n_t as i32) / (2 * n_t) as i32) as u8;
-    }
-}
-fn filter_constrained(
-    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, available: &mut [bool]
-) {
-    let mut check = |px: usize, py: usize, idx: usize| {
-        if available[idx] && !tracker.get_state(px, py).is_intra {
-            available[idx] = false;
-        }
-    };
-
-    check(x0 - 1, y0 - 1, 0);
-    for i in 0..(2 * n_t) {
-        check(x0 + i, y0 - 1, 1 + i);
-        check(x0 - 1, y0 + i, 1 + 2 * n_t + i);
     }
 }
 
