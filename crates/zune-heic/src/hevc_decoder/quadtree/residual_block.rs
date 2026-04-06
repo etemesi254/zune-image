@@ -320,6 +320,7 @@ pub fn decode_significant_coeff_flag_lookup(ctx: &mut DecodeSliceContext, ctx_id
     bit == 1
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_coeff_abs_level_greater1(
     ctx: &mut DecodeSliceContext,
     c_idx: usize,
@@ -327,7 +328,7 @@ fn decode_coeff_abs_level_greater1(
     first_coeff_in_subblock: bool,
     first_subblock: bool,
     last_subblock_greater1_ctx: i32,
-    prev_state: Greater1State, // Replaces the 3 pointers
+    prev_state: Greater1State, 
     c1: i32
 ) -> Greater1State {
     debug_more!("# coeff_abs_level_greater1");
@@ -455,6 +456,7 @@ pub fn decode_coeff_abs_level_remaining(ctx: &mut DecodeSliceContext, c_rice_par
     value
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn decode_residual_block(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_trafo_size: u8, component: Component,
 ) {
@@ -627,7 +629,7 @@ pub fn decode_residual_block(
 
     // coded_sub_block_neighbors tracks which 4x4 groups have coefficients
     // Max TU is 32x32, so max sb_width is 8. 8*8 = 64.
-    let mut coded_sub_block_neighbors = vec![0u8; (sb_width * sb_width)];
+    let mut coded_sub_block_neighbors = vec![0u8; sb_width * sb_width];
 
     // --- 8. Initialize loop state variables ---
     let mut c1 = 1i32;

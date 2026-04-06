@@ -88,7 +88,6 @@ impl ImageMetadata {
     ///
     #[cfg(feature = "metadata")]
     #[cfg_attr(feature = "docs", doc(cfg(feature = "metadata")))]
-
     pub fn exif_mut(&mut self) -> Option<&mut Vec<::exif::Field>> {
         self.exif.as_mut()
     }

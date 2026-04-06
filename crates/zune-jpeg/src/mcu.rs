@@ -26,7 +26,6 @@ use crate::worker::{color_convert, upsample};
 use crate::JpegDecoder;
 
 /// The size of a DC block for a MCU.
-
 pub const DCT_BLOCK: usize = 64;
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -187,7 +186,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut pixels_written = 0;
 
         let is_hv = usize::from(self.is_interleaved);
-        let upsampler_scratch_size = is_hv * self.components.iter().map(|x| x.width_stride).max().unwrap_or(0) * 8;
+        let upsampler_scratch_size = is_hv
+            * self
+                .components
+                .iter()
+                .map(|x| x.width_stride)
+                .max()
+                .unwrap_or(0)
+            * 8;
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
         'sos: loop {
@@ -200,7 +206,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             for i in 0..mcu_height {
                 if stream.overread_by > 0 {
-                    if let Some(v) = pixels.get_mut(pixels_written..) { v.fill(128) }
+                    if let Some(v) = pixels.get_mut(pixels_written..) {
+                        v.fill(128);
+                    }
                     if self.options.strict_mode() {
                         return Err(DecodeErrors::FormatStatic("Premature end of buffer"));
                     }
@@ -278,7 +286,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     McuContinuation::Terminate => {
                         warn!("Got terminate signal, will not process further");
-                        if let Some(v) = pixels.get_mut(pixels_written..) { v.fill(128) }
+                        if let Some(v) = pixels.get_mut(pixels_written..) {
+                            v.fill(128);
+                        }
                         return Ok(());
                     }
                 }
@@ -339,7 +349,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 self.options.jpeg_get_out_colorspace().num_components() - 1,
                 pos
             ) == pos
-                || self.input_colorspace == ColorSpace::YCCK || self.input_colorspace == ColorSpace::CMYK;
+                || self.input_colorspace == ColorSpace::YCCK
+                || self.input_colorspace == ColorSpace::CMYK;
         }
 
         let mut pixels_written = 0;
@@ -482,8 +493,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     let offset =
                         mcu_height * component.width_stride * 8 * component.vertical_sample;
                     // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
-                    if offset >= progressive[k].len(){
-                        return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"))
+                    if offset >= progressive[k].len() {
+                        return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
                     }
                     &mut progressive[k][offset..]
                 } else {
@@ -542,9 +553,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         // even if its bad, matching browsers.
                         //
                         // See example in https://github.com/etemesi254/zune-image/issues/293
-                        let len = if let Ok(len) = result {
-                            len
-                        } else {
+                        let Ok(len) = result else {
                             // result.is_err()
                             return if self.options.strict_mode() {
                                 Err(result.err().unwrap())
@@ -650,9 +659,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         "Marker {m:?} found where not expected"
                     )));
                 }
-                error!(
-                    "Marker `{m:?}` Found within Huffman Stream, possibly corrupt jpeg"
-                );
+                error!("Marker `{m:?}` Found within Huffman Stream, possibly corrupt jpeg");
 
                 self.parse_marker_inner(m)?;
                 stream.marker.take();
@@ -679,9 +686,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// * `Ok(false)` - Found EOI, decoding complete
     /// * `Err(_)` - Error (too many markers, unexpected marker in strict mode, etc.)
     fn advance_to_next_sos(
-        &mut self,
-        first_marker: Marker,
-        stream: &mut BitStream
+        &mut self, first_marker: Marker, stream: &mut BitStream
     ) -> Result<bool, DecodeErrors> {
         // Limit iterations to prevent DoS from malicious files.
         const MAX_INTER_SCAN_MARKERS: usize = 64;
@@ -752,13 +757,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     self.components.iter_mut().for_each(|x| x.dc_pred = 0);
                     // Start iterating again. from position.
                 }
-                Marker::EOI => {
-                    // silent pass
-                }
                 // Valid markers that can appear between scans at a restart boundary
                 // (restart interval aligns with end of scan). Leave for caller.
-                Marker::SOS | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM
-                | Marker::APP(_) => {}
+                Marker::SOS
+                | Marker::DHT
+                | Marker::DQT
+                | Marker::DRI
+                | Marker::COM
+                | Marker::APP(_)
+                | Marker::EOI => {}
                 _ => {
                     if self.options.strict_mode() {
                         return Err(DecodeErrors::MCUError(format!(

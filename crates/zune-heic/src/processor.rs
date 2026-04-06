@@ -6,6 +6,11 @@ use crate::decoder::HeifDecoder;
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
+pub struct ParameterSets {
+    pub vps: Option<Vec<u8>>,
+    pub sps: Option<Vec<u8>>,
+    pub pps: Option<Vec<u8>>
+}
 pub struct HevcSample<'a> {
     pub item_id: u32,
 
@@ -22,6 +27,7 @@ pub struct HevcSample<'a> {
 }
 impl<T: ZByteReaderTrait> HeifDecoder<T> {
     /// Iterates over HEVC items and passes zero-copy slices to a provided closure.
+    #[allow(clippy::too_many_lines)]
     pub fn process_hevc_samples<F>(&self, mut callback: F) -> Result<(), HeicErrors>
     where
         F: FnMut(HevcSample<'_>) -> Result<(), HeicErrors>
@@ -87,38 +93,41 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             });
         }
 
-        let get_hvcc_for_item =
-            |target_id: u32| -> (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>) {
-                if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == target_id) {
-                    for assoc in &entry.associations {
-                        if assoc.property_index == 0 {
-                            continue;
-                        }
-                        let array_index = (assoc.property_index - 1) as usize;
+        let get_hvcc_for_item = |target_id: u32| -> ParameterSets {
+            if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == target_id) {
+                for assoc in &entry.associations {
+                    if assoc.property_index == 0 {
+                        continue;
+                    }
+                    let array_index = (assoc.property_index - 1) as usize;
 
-                        if let Some(ItemProperty::HvcC { payload }) =
-                            ipco.properties.get(array_index)
-                        {
-                            return extract_hevc_parameter_sets(payload);
-                        }
+                    if let Some(ItemProperty::HvcC { payload }) = ipco.properties.get(array_index) {
+                        return extract_hevc_parameter_sets(payload);
                     }
                 }
-                (None, None, None)
-            };
+            }
+            ParameterSets {
+                vps: None,
+                sps: None,
+                pps: None
+            }
+        };
 
         // 2. Loop through the targets, slice the data, and trigger the callback
         for item_id in target_item_ids {
             // First, try to get the parameter sets directly from the current item
-            let (mut vps, mut sps, mut pps) = get_hvcc_for_item(item_id);
-
+            let mut parameter_sets = get_hvcc_for_item(item_id);
+            let vps = &mut parameter_sets.vps;
+            let sps = &mut parameter_sets.sps;
+            let pps = &mut parameter_sets.pps;
             // --- THE FALLBACK ---
             // If the item doesn't have its own parameter sets, and it is NOT the
             // primary item itself, fall back to checking the primary item's properties.
             if vps.is_none() && sps.is_none() && pps.is_none() && item_id != pitm.item_id {
                 let fallback = get_hvcc_for_item(pitm.item_id);
-                vps = fallback.0;
-                sps = fallback.1;
-                pps = fallback.2;
+                *vps = fallback.vps;
+                *sps = fallback.sps;
+                *pps = fallback.pps;
             }
 
             let item_iloc =
@@ -170,9 +179,9 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
             let sample = HevcSample {
                 item_id,
-                vps,
-                sps,
-                pps,
+                vps: parameter_sets.vps,
+                sps: parameter_sets.sps,
+                pps: parameter_sets.pps,
                 extents: zero_copy_extents
             };
 
@@ -251,10 +260,9 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         Ok(())
     }
 }
+
 /// Extracts the raw VPS, SPS, and PPS NAL units from an HEVC Configuration Record.
-pub fn extract_hevc_parameter_sets(
-    hvcc_payload: &[u8]
-) -> (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>) {
+pub fn extract_hevc_parameter_sets(hvcc_payload: &[u8]) -> ParameterSets {
     let mut vps = None;
     let mut sps = None;
     let mut pps = None;
@@ -262,7 +270,7 @@ pub fn extract_hevc_parameter_sets(
     // The hvcC record has exactly 22 bytes of fixed-length configuration
     // flags before the NAL unit arrays begin.
     if hvcc_payload.len() < 23 {
-        return (vps, sps, pps);
+        return ParameterSets { vps, sps, pps };
     }
 
     let mut offset = 22;
@@ -322,5 +330,5 @@ pub fn extract_hevc_parameter_sets(
         }
     }
 
-    (vps, sps, pps)
+    ParameterSets { vps, sps, pps }
 }

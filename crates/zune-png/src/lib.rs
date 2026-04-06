@@ -67,10 +67,10 @@
 //! bytes of the image.
 //!
 //! - **Note**: The interpretation of the data varies depending
-//! on the endianness of the source image, for 16 bit depth images
-//! each two bytes represent a single pixel in a configurable endian.
-//! So one should inspect `PngDecoder::get_bit_depth` to get bit depth
-//! of image in order to understand the raw bytes layout.
+//!   on the endianness of the source image, for 16 bit depth images
+//!   each two bytes represent a single pixel in a configurable endian.
+//!   So one should inspect `PngDecoder::get_bit_depth` to get bit depth
+//!   of image in order to understand the raw bytes layout.
 //!
 //! A more convenient API is given below, using `decode`
 //!
@@ -125,7 +125,7 @@
 //! the alpha channel.
 //!
 //! - Note: When input is in Luma, the transform will convert it to Luma+Alpha and not RGB+Alpha
-//! to convert it to such types use the zune-image crate which provides efficient transforms for that
+//!   to convert it to such types use the zune-image crate which provides efficient transforms for that
 //!
 //!```no_run
 //! use zune_core::bytestream::ZCursor;

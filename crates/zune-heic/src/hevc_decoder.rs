@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use zune_core::log::trace;
-
+use crate::hevc_decoder::cabac::NUM_CABAC_CONTEXTS;
 use crate::hevc_decoder::nal_parser::{NalError, NalParser, NalUnitType};
 use crate::hevc_decoder::nal_unit_headers::{Pps, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
@@ -36,7 +36,7 @@ pub struct HevcDecoder {
     width: usize,
     height: usize,
     pub(crate) neighbor_tracker: Option<NeighborTracker>,
-    pub(crate) dependent_slice_contexts: Option<Vec<u8>>
+    pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>,
 }
 
 impl HevcDecoder {

@@ -184,14 +184,28 @@ fn zune_image_flip_vertical_bench(input: &Image) {
 }
 fn zune_affine_transform_bench(input: &Image) {
     // hyperfine './zune --affine-transform 0.7071 -0.7071 0.7071 0.7071  0 0  -i "/Users/etemesi/Downloads/wallhaven-3qqdg6_3840x2160.png"  -o h.jpg' 'vips affine "/Users/etemesi/Downloads/wallhaven-3qqdg6_3840x2160.png"  output.jpg "0.707107 -0.707107 0.707107 0.707107"'
-    let im = AffineTransform::new(0.707107, -0.707107, 0.707107, 0.707107, 0.0, 0.0)
-        .clone_and_execute(input)
-        .unwrap();
+    let im = AffineTransform::new(
+        std::f32::consts::FRAC_1_SQRT_2,
+        -std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+        0.0,
+        0.0
+    )
+    .clone_and_execute(input)
+    .unwrap();
     im.flatten_frames::<u8>();
     black_box(im);
 }
 fn vips_affine_transform_bench(input: &VipsImage) {
-    let im = libvips::ops::affine(input, 0.707107, -0.707107, 0.707107, 0.707107).unwrap();
+    let im = libvips::ops::affine(
+        input,
+        std::f64::consts::FRAC_1_SQRT_2,
+        -std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2
+    )
+    .unwrap();
     im.image_write_to_memory();
     black_box(im);
 }

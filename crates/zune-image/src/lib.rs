@@ -35,12 +35,12 @@
 //!
 //! Image filters are divided into two types,
 //!  - core filters: Things needed to enable conversions from one format to another.
-//!                 This may include color conversion and depth conversion routines.
-//!                 These are in `zune-image` crate
+//!    This may include color conversion and depth conversion routines.
+//!    These are in `zune-image` crate
 //!  - extra filters: This include algorithms that do more complex pixel manipulations,
-//!     including contrast adjustment, resizing, blurring etc, the algorithms are usually
-//!     implemented in `zune-imageprocs` by the processes implementing
-//!     [OperationsTrait](crate::traits::OperationsTrait)
+//!    including contrast adjustment, resizing, blurring etc, the algorithms are usually
+//!    implemented in `zune-imageprocs` by the processes implementing
+//!    [OperationsTrait](crate::traits::OperationsTrait)
 //!
 //!  # High level api
 //! Load images using image `open`

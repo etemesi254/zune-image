@@ -20,7 +20,7 @@
 //! - Up to 4 channels for images
 //!
 //! - Non supported features
-//!  -> Palette support
+//!   -> Palette support
 //!
 //! Currently, it's fast with slightly worse compression when
 //! compared png for non-photo content and much better for other situations.
@@ -31,8 +31,8 @@
 //!  
 //!  - `std`: Enables linking against the  standard library
 //!  - `threads`: Enables using the standard library threading capabilities, this feature requires
-//!     the `std` feature to work (threading doesn't exist in no-std), if the above feature isn't enabled
-//!     this is a no-op
+//!    the `std` feature to work (threading doesn't exist in no-std), if the above feature isn't enabled
+//!    this is a no-op
 //!  - `log`:  Enables use of `log` to report on encoding configs and status
 //!
 //!

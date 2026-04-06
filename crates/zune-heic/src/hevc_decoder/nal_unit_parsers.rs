@@ -1,10 +1,14 @@
-use zune_core::log::{trace};
+#![allow(clippy::cast_possible_truncation)]
+use zune_core::log::trace;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui, VuiVideoFormat};
+use crate::hevc_decoder::nal_unit_headers::{
+    Pps, ProfileIdc, ProfileTierLevel, ScalingLists, SliceHeader, SliceType, Sps, Vui,
+    VuiVideoFormat
+};
 
 mod pps;
 mod sps;
@@ -68,7 +72,6 @@ fn decode_profile_data(
     Ok(Some(item))
 }
 
-
 #[rustfmt::skip]
     const SCAN_4X4: [usize; 16] = [
         0, 4, 1, 8, 5, 2, 12, 9, 6, 3, 13, 10, 7, 14, 11, 15
@@ -80,7 +83,7 @@ fn decode_profile_data(
         28, 21, 14,  7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30,
         23, 59, 52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63
     ];
-pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalError> {
+pub fn parse_scaling_list_data(r: &mut BitReader) -> ScalingLists {
     let mut sl = ScalingLists::default();
 
     for size_id in 0..4 {
@@ -145,7 +148,7 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
             }
         }
     }
-    Ok(sl)
+    sl
 }
 
 fn parse_short_term_ref_pic_set(
@@ -464,17 +467,17 @@ pub fn decode_slice_header(
         }
 
         // 9. Deblocking Filter
-        if pps.deblocking_filter_control_present_flag
-            && pps.deblocking_filter_override_enabled_flag {
-                let deblocking_filter_override_flag = r.read_flag();
-                if deblocking_filter_override_flag {
-                    let _slice_deblocking_filter_disabled_flag = r.read_flag();
-                    if !_slice_deblocking_filter_disabled_flag {
-                        r.read_se(); // beta_offset_div2
-                        r.read_se(); // tc_offset_div2
-                    }
+        if pps.deblocking_filter_control_present_flag && pps.deblocking_filter_override_enabled_flag
+        {
+            let deblocking_filter_override_flag = r.read_flag();
+            if deblocking_filter_override_flag {
+                let _slice_deblocking_filter_disabled_flag = r.read_flag();
+                if !_slice_deblocking_filter_disabled_flag {
+                    r.read_se(); // beta_offset_div2
+                    r.read_se(); // tc_offset_div2
                 }
             }
+        }
 
         // 10. Loop Filter Across Slices (The 1-bit drift culprit)
         let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag

@@ -7,6 +7,7 @@ use crate::hevc_decoder::nal_unit_parsers::{
     decode_profile_data, parse_scaling_list_data, parse_short_term_ref_pic_set, parse_vui,
 };
 
+#[allow(clippy::too_many_lines)]
 pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     const SPS_MAX_LAYERS_LIMIT: u64 = 7;
     const SPS_MAX_SETS_LIMITS: u64 = 16;
@@ -159,7 +160,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     if sps.scaling_list_enabled_flag {
         let sps_scaling_list_data_present_flag = r.read_flag();
         if sps_scaling_list_data_present_flag {
-            sps.scaling_lists = parse_scaling_list_data(&mut r)?;
+            sps.scaling_lists = parse_scaling_list_data(&mut r);
         }
     }
 

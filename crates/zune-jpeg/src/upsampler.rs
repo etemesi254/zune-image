@@ -161,7 +161,6 @@ pub fn choose_v_samp_function(options: &DecoderOptions) -> UpSampler {
 }
 
 /// Upsample nothing
-
 pub fn upsample_no_op(
     _input: &[i16],
     _in_ref: &[i16],
@@ -241,7 +240,7 @@ mod tests {
             _test_vertical(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                 // SAFETY: Test guarded behind `target_feature`
                 unsafe { neon::upsample_vertical_neon(a, b, c, d, e) }
-            })
+            });
         }
 
         #[test]
@@ -249,7 +248,7 @@ mod tests {
             _test_horizontal(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                 // SAFETY: Test guarded behind `target_feature`
                 unsafe { neon::upsample_horizontal_neon(a, b, c, d, e) }
-            })
+            });
         }
 
         #[test]
@@ -257,7 +256,7 @@ mod tests {
             _test_hv(|a: &[i16], b: &[i16], c: &[i16], d: &mut [i16], e: &mut [i16]| {
                 // SAFETY: Test guarded behind `target_feature`
                 unsafe { neon::upsample_hv_neon(a, b, c, d, e) }
-            })
+            });
         }
     }
 

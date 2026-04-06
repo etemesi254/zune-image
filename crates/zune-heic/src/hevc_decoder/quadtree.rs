@@ -165,7 +165,7 @@ pub fn finish_ctu(
         && ctby + 1 < sps.pic_height_in_ctbs_y as usize {
             debug_more!("Saving WPP Context for row {}", ctby);
             // We clone the current context model state (the "decouple" in libde265)
-            ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone().clone());
+            ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone());
         }
 
     debug_more!(

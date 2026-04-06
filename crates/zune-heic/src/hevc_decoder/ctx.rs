@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
-use crate::hevc_decoder::cabac::CabacDecoder;
+use crate::hevc_decoder::cabac::{CabacDecoder, NUM_CABAC_CONTEXTS};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, SliceHeader, Sps};
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
@@ -62,7 +62,7 @@ pub struct DecodeSliceContext<'a> {
 
     pub ctb_sao_buffer: Vec<SaoInfo>,
     // ctb contexts
-    pub ctb_context:    Vec<Option<Vec<u8>>>
+    pub ctb_context:    Vec<Option<[u8;NUM_CABAC_CONTEXTS]>>,
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(

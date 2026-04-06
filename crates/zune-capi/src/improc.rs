@@ -378,7 +378,6 @@ pub extern "C" fn zil_imgproc_sobel(image: *mut ZImage, status: *mut ZStatus) {
 /// \endcode
 ///
 /// The window is a 3x3 window.
-
 #[no_mangle]
 pub extern "C" fn zil_imgproc_scharr(image: *mut ZImage, status: *mut ZStatus) {
     exec_imgproc(image, Scharr::new(), status)

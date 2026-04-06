@@ -87,38 +87,36 @@ pub enum NalUnitType {
     EobNut = 37, // End of bitstream
     FdNut = 38,  // Filler data
     SeiPrefix = 39,
-    SeiSuffix = 40
-    // Any type not listed above. Raw value is preserved for diagnostics.
-    //Unknown(u8)
+    SeiSuffix = 40 // Any type not listed above. Raw value is preserved for diagnostics.
+                   //Unknown(u8)
 }
 
 impl NalUnitType {
-    fn from_u8(v: u8) -> Self {
+    fn from_u8(v: u8) -> Result<Self, u8> {
         match v {
-            0 => Self::TrailN,
-            1 => Self::TrailR,
-            2 => Self::TsaN,
-            3 => Self::TsaR,
-            4 => Self::StsaN,
-            5 => Self::StsaR,
-            6 => Self::RadlN,
-            7 => Self::RadlR,
-            8 => Self::RaslN,
-            9 => Self::RaslR,
-            19 => Self::IdrWRadl,
-            20 => Self::IdrNLp,
-            21 => Self::CraNut,
-            32 => Self::VpsNut,
-            33 => Self::SpsNut,
-            34 => Self::PpsNut,
-            35 => Self::AudNut,
-            36 => Self::EosNut,
-            37 => Self::EobNut,
-            38 => Self::FdNut,
-            39 => Self::SeiPrefix,
-            40 => Self::SeiSuffix,
-            _ => panic!()
-            // v => Self::Unknown(v)
+            0 => Ok(Self::TrailN),
+            1 => Ok(Self::TrailR),
+            2 => Ok(Self::TsaN),
+            3 => Ok(Self::TsaR),
+            4 => Ok(Self::StsaN),
+            5 => Ok(Self::StsaR),
+            6 => Ok(Self::RadlN),
+            7 => Ok(Self::RadlR),
+            8 => Ok(Self::RaslN),
+            9 => Ok(Self::RaslR),
+            19 => Ok(Self::IdrWRadl),
+            20 => Ok(Self::IdrNLp),
+            21 => Ok(Self::CraNut),
+            32 => Ok(Self::VpsNut),
+            33 => Ok(Self::SpsNut),
+            34 => Ok(Self::PpsNut),
+            35 => Ok(Self::AudNut),
+            36 => Ok(Self::EosNut),
+            37 => Ok(Self::EobNut),
+            38 => Ok(Self::FdNut),
+            39 => Ok(Self::SeiPrefix),
+            40 => Ok(Self::SeiSuffix),
+            _ => Err(v)
         }
     }
 }
@@ -255,11 +253,11 @@ impl<'a> NalParser<'a> {
                 // 4. Process the NAL (offset + 4 is the exact start of the payload)
                 // NB: CAE, there was something removed here, extent and offset+4
                 // if important return
-                if let Some(cont) =
-                    parse_nal_header(nal_bytes, &mut visitor)?
-                    && !cont {
-                        return Ok(());
-                    }
+                if let Some(cont) = parse_nal_header(nal_bytes, &mut visitor)?
+                    && !cont
+                {
+                    return Ok(());
+                }
             }
         }
         Ok(())
@@ -273,7 +271,7 @@ impl<'a> NalParser<'a> {
     where
         F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
     {
-        for  extent in self.extents {
+        for extent in self.extents {
             let mut search_start = 0;
 
             // 1. Find the next 0x00 0x00 0x01 start code
@@ -293,7 +291,9 @@ impl<'a> NalParser<'a> {
                     extent[nal_start..nal_start + offset]
                         .iter()
                         .rposition(|&b| b != 0)
-                        .map_or(nal_start, |last_non_zero_idx| nal_start + last_non_zero_idx + 1) // If all zeros, length is 0
+                        .map_or(nal_start, |last_non_zero_idx| {
+                            nal_start + last_non_zero_idx + 1
+                        }) // If all zeros, length is 0
                 } else {
                     extent.len() // No more start codes; read to the end
                 };
@@ -302,9 +302,10 @@ impl<'a> NalParser<'a> {
                 if nal_end > nal_start {
                     let nal_bytes = &extent[nal_start..nal_end];
                     if let Some(cont) = parse_nal_header(nal_bytes, visitor)?
-                        && !cont {
-                            return Ok(());
-                        }
+                        && !cont
+                    {
+                        return Ok(());
+                    }
                 }
 
                 // 4. Advance the search window exactly to the start of the next start code
@@ -325,9 +326,7 @@ impl<'a> NalParser<'a> {
 // bool mirrors the visitor return, or Ok(None) if the NAL was too short to
 // have a header (silently skipped).
 
-fn parse_nal_header<'a, F>(
-    nal_bytes: &'a [u8], visitor: &mut F
-) -> Result<Option<bool>, NalError>
+fn parse_nal_header<'a, F>(nal_bytes: &'a [u8], visitor: &mut F) -> Result<Option<bool>, NalError>
 where
     F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
 {
@@ -349,8 +348,11 @@ where
         return Err(NalError::InvalidTemporalId);
     }
 
+    let nal_type = NalUnitType::from_u8(raw_type)
+        .map_err(|e| NalError::Generic(format!("Unknown nal type: {}", e)))?;
+
     let nal_unit = NalUnit {
-        nal_type: NalUnitType::from_u8(raw_type),
+        nal_type,
         layer_id,
         temporal_id: temp_plus1 - 1,
         payload: &nal_bytes[2..]
@@ -365,7 +367,7 @@ mod tests {
 
     fn make_extent(nal_type: u8, layer_id: u8, temporal_id_plus1: u8, payload: &[u8]) -> Vec<u8> {
         let header = u16::to_be_bytes(
-            ((nal_type as u16) << 9) | ((layer_id as u16) << 3) | (temporal_id_plus1 as u16)
+            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | (temporal_id_plus1 as u16)
         );
         let nal_len = (2 + payload.len()) as u32;
         let mut out = nal_len.to_be_bytes().to_vec();
@@ -466,7 +468,7 @@ mod tests {
 
     fn make_annex_b(nal_type: u8, layer_id: u8, temporal_id_plus1: u8, payload: &[u8]) -> Vec<u8> {
         let header = u16::to_be_bytes(
-            ((nal_type as u16) << 9) | ((layer_id as u16) << 3) | (temporal_id_plus1 as u16)
+            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | (temporal_id_plus1 as u16)
         );
         let mut out = vec![0x00, 0x00, 0x00, 0x01];
         out.extend_from_slice(&header);

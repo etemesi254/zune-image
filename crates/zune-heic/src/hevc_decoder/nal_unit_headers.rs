@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(clippy::struct_excessive_bools)]
 use crate::hevc_decoder::nal_parser::NalError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +21,6 @@ pub struct Vps {
     pub max_dec_pic_buffering: Vec<u32>,
     pub max_num_reorder_pics:  Vec<u32>
 }
-///
 #[derive(Debug, Clone, Copy)]
 pub struct ProfileTierLevel {
     pub profile_space:               u8,
@@ -151,22 +151,21 @@ pub struct SpsRangeExtension {
 pub enum ChromaFormat {
     Monochrome = 0, // 4:0:0
     #[default]
-    Yuv420 = 1,     // 4:2:0
+    Yuv420 = 1, // 4:2:0
     Yuv422 = 2,     // 4:2:2
     Yuv444 = 3      // 4:4:4
 }
 impl ChromaFormat {
     pub fn get_subsampling(self) -> (usize, usize) {
         match self {
-            ChromaFormat::Monochrome => (1, 1),
+            ChromaFormat::Monochrome | ChromaFormat::Yuv444 => (1, 1),
             ChromaFormat::Yuv420 => (2, 2),
-            ChromaFormat::Yuv422 => (2, 1),
-            ChromaFormat::Yuv444 => (1, 1)
+            ChromaFormat::Yuv422 => (2, 1)
         }
     }
 }
-#[derive(Debug, Clone, Copy)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum VuiVideoFormat {
     Component,
     PAL,
@@ -253,7 +252,7 @@ pub struct Pps {
     pub pic_init_qp:               i64,
     pub log2_min_cu_qp_delta_size: u8,
     /// Derived: Map from CTB Raster Scan address to Tile ID
-    pub tile_id_rs: Vec<u16>,
+    pub tile_id_rs:                Vec<u16>
 }
 
 #[derive(Debug, Default, Clone)]

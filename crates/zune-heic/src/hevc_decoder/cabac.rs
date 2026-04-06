@@ -1,6 +1,27 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
-use crate::hevc_decoder::cabac_tables::{RANGE_LPS_TABLE, TRANSITION_MPS, RENORM_TABLE, TRANSITION_LPS, CONTEXT_MODEL_CU_SKIP_FLAG, INIT_CU_SKIP, CONTEXT_MODEL_PRED_MODE_FLAG, INIT_PRED_MODE, CONTEXT_MODEL_MERGE_FLAG, INIT_MERGE_FLAG, CONTEXT_MODEL_MERGE_IDX, INIT_MERGE_IDX, CONTEXT_MODEL_INTER_PRED_IDC, INIT_INTER_PRED_IDC, CONTEXT_MODEL_REF_IDX_LX, INIT_REF_IDX, CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG, INIT_ABS_MVD, CONTEXT_MODEL_MVP_LX_FLAG, INIT_MVP_LX, CONTEXT_MODEL_RQT_ROOT_CBF, INIT_RQT_ROOT, CONTEXT_MODEL_RDPCM_FLAG, CONTEXT_MODEL_RDPCM_DIR, CONTEXT_MODEL_SPLIT_CU_FLAG, INIT_SPLIT_CU, CONTEXT_MODEL_PART_MODE, INIT_PART_MODE, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG, INIT_PREV_INTRA, CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE, INIT_CHROMA_PRED, CONTEXT_MODEL_CBF_LUMA, INIT_CBF_LUMA, CONTEXT_MODEL_CBF_CHROMA, INIT_CBF_CHROMA, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG, INIT_SPLIT_TRANS, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX, INIT_LAST_COEFF, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG, INIT_CODED_SUB, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG, INIT_SIG_COEFF, INIT_SIG_COEFF_SKIP, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG, INIT_GTR_1, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG, INIT_GTR_2, CONTEXT_MODEL_SAO_MERGE_FLAG, INIT_SAO_MERGE, CONTEXT_MODEL_SAO_TYPE_IDX, INIT_SAO_TYPE, CONTEXT_MODEL_CU_QP_DELTA_ABS, INIT_QP_DELTA, CONTEXT_MODEL_TRANSFORM_SKIP_FLAG, INIT_TRANSFORM_SKIP, CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG, INIT_TRANSQUANT_BYPASS, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1, CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_FLAG, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_IDX};
+use crate::hevc_decoder::cabac_tables::{
+    CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG, CONTEXT_MODEL_CBF_CHROMA, CONTEXT_MODEL_CBF_LUMA,
+    CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG,
+    CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_FLAG,
+    CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_IDX, CONTEXT_MODEL_CU_QP_DELTA_ABS,
+    CONTEXT_MODEL_CU_SKIP_FLAG, CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG,
+    CONTEXT_MODEL_INTER_PRED_IDC, CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE,
+    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
+    CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1,
+    CONTEXT_MODEL_MERGE_FLAG, CONTEXT_MODEL_MERGE_IDX, CONTEXT_MODEL_MVP_LX_FLAG,
+    CONTEXT_MODEL_PART_MODE, CONTEXT_MODEL_PRED_MODE_FLAG, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG,
+    CONTEXT_MODEL_RDPCM_DIR, CONTEXT_MODEL_RDPCM_FLAG, CONTEXT_MODEL_REF_IDX_LX,
+    CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_RQT_ROOT_CBF, CONTEXT_MODEL_SAO_MERGE_FLAG,
+    CONTEXT_MODEL_SAO_TYPE_IDX, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG, CONTEXT_MODEL_SPLIT_CU_FLAG,
+    CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG, CONTEXT_MODEL_TRANSFORM_SKIP_FLAG, INIT_ABS_MVD,
+    INIT_CBF_CHROMA, INIT_CBF_LUMA, INIT_CHROMA_PRED, INIT_CODED_SUB, INIT_CU_SKIP, INIT_GTR_1,
+    INIT_GTR_2, INIT_INTER_PRED_IDC, INIT_LAST_COEFF, INIT_MERGE_FLAG, INIT_MERGE_IDX, INIT_MVP_LX,
+    INIT_PART_MODE, INIT_PRED_MODE, INIT_PREV_INTRA, INIT_QP_DELTA, INIT_REF_IDX, INIT_RQT_ROOT,
+    INIT_SAO_MERGE, INIT_SAO_TYPE, INIT_SIG_COEFF, INIT_SIG_COEFF_SKIP, INIT_SPLIT_CU,
+    INIT_SPLIT_TRANS, INIT_TRANSFORM_SKIP, INIT_TRANSQUANT_BYPASS, RANGE_LPS_TABLE_1D,
+    RENORM_TABLE, TRANSITION_LPS, TRANSITION_MPS
+};
 
 pub const NUM_CABAC_CONTEXTS: usize = 172;
 
@@ -11,9 +32,8 @@ pub struct CabacDecoder<'a> {
     pub cursor:      usize,
     pub range:       u32,
     pub value:       u32,
-    pub bits_needed: i8,
-    // TODO: Investigate whether a stack one makes it faster
-    pub contexts:    Vec<u8>
+    pub bits_needed: i32,
+    pub contexts:    [u8; NUM_CABAC_CONTEXTS]
 }
 
 impl<'a> CabacDecoder<'a> {
@@ -24,7 +44,7 @@ impl<'a> CabacDecoder<'a> {
             range: 510,
             value: 0,
             bits_needed: -8,
-            contexts: vec![0; NUM_CABAC_CONTEXTS]
+            contexts: [0; NUM_CABAC_CONTEXTS]
         };
 
         engine.init_contexts(slice_qp, init_type);
@@ -37,7 +57,8 @@ impl<'a> CabacDecoder<'a> {
         if self.data.len() >= self.cursor + 2 {
             // 1. Read 16 bits starting from the current cursor (byte-aligned)
             // This is the 'iv' value in the spec (Initial Value)
-            self.value = u32::from(self.data[self.cursor]) << 8 | u32::from(self.data[self.cursor + 1]);
+            self.value =
+                u32::from(self.data[self.cursor]) << 8 | u32::from(self.data[self.cursor + 1]);
 
             // 2. Advance cursor by 2 bytes
             self.cursor += 2;
@@ -67,16 +88,16 @@ impl<'a> CabacDecoder<'a> {
     #[inline(always)]
     fn renorm(&mut self, shift: u32) {
         self.value <<= shift;
-        self.bits_needed += shift as i8;
+        self.bits_needed += shift as i32;
 
         if self.bits_needed >= 0 {
             // Refill the register from the bitstream
-            let byte = if self.cursor < self.data.len() {
-                let b = self.data[self.cursor];
-                self.cursor += 1;
-                u32::from(b)
-            } else {
-                0 // Padding for trailing bits
+            let byte = match self.data.get(self.cursor) {
+                Some(byte) => {
+                    self.cursor += 1;
+                    u32::from(*byte)
+                }
+                None => 0
             };
 
             // Align the new byte based on how many bits were already consumed
@@ -115,7 +136,9 @@ impl<'a> CabacDecoder<'a> {
         );
 
         let q_idx = (self.range >> 6) & 3;
-        let lps_range = u32::from(RANGE_LPS_TABLE[state][q_idx as usize]);
+        let flat_idx = (state << 2) | (q_idx as usize);
+
+        let lps_range = u32::from(RANGE_LPS_TABLE_1D[flat_idx & 0xFF]);
 
         self.range -= lps_range;
         let scaled_range = self.range << 7;
@@ -197,6 +220,7 @@ impl<'a> CabacDecoder<'a> {
     // --- Specialized bypass decoders ---
 
     /// Optimized: Decode `n_bits` bypass bins in one pass.
+    #[inline]
     pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
         debug_more!(
             "bypass group r:{},v:{} (n_bits={})",
@@ -255,6 +279,7 @@ impl<'a> CabacDecoder<'a> {
 }
 
 impl CabacDecoder<'_> {
+    #[allow(clippy::too_many_lines)]
     pub fn init_contexts(&mut self, qp: i32, init_type: usize) {
         let qp_y = qp.clamp(0, 51);
 

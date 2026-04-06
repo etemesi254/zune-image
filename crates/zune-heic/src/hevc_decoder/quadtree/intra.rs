@@ -13,16 +13,14 @@ pub fn decode_prev_intra_luma_pred_flag(ctx: &mut DecodeSliceContext) -> u8 {
     debug_more!("prev_intra_luma_pred_flag={}", bit);
     return bit;
 }
+#[allow(clippy::same_functions_in_if_condition)]
 pub fn decode_intra_luma_mode(
-    ctx: &mut DecodeSliceContext,
-    x0: usize,
-    y0: usize,
-    is_mpm: bool
+    ctx: &mut DecodeSliceContext, x0: usize, y0: usize, is_mpm: bool
 ) -> u8 {
-
-    let log2_ctu_size = ctx.sps.log2_min_luma_coding_block_size  + ctx.sps.log2_diff_max_min_luma_coding_block_size;
+    let log2_ctu_size =
+        ctx.sps.log2_min_luma_coding_block_size + ctx.sps.log2_diff_max_min_luma_coding_block_size;
     let ctu_size = 1 << log2_ctu_size;
-    let mpm_list = ctx.neighbor_tracker.derive_mpms(x0, y0,ctu_size);
+    let mpm_list = ctx.neighbor_tracker.derive_mpms(x0, y0, ctu_size);
 
     if is_mpm {
         debug_more!("MPM_IDX (TU:2)");
@@ -56,8 +54,8 @@ pub fn decode_intra_luma_mode(
         let mut sorted_mpm = mpm_list;
         sorted_mpm.sort_unstable();
 
-        for i in 0..3 {
-            if final_mode >= sorted_mpm[i] {
+        for i in &sorted_mpm {
+            if final_mode >= *i {
                 final_mode += 1;
             }
         }
@@ -82,7 +80,11 @@ pub fn decode_intra_chroma_mode(ctx: &mut DecodeSliceContext, luma_mode: u8) -> 
     // This gives us an index 0..3
     let chroma_idx = ctx.cabac.decode_fl_bypass(2) as u8;
 
-    debug_more!("Chroma Mode: Signaled (idx {}), (Luma: {})", chroma_idx,luma_mode);
+    debug_more!(
+        "Chroma Mode: Signaled (idx {}), (Luma: {})",
+        chroma_idx,
+        luma_mode
+    );
 
     chroma_idx
 }

@@ -25,7 +25,7 @@
 //!
 //! ## Alternatives
 //!- For the fastest speeds, check out [libdeflate] (C), if using Rust there is [libdeflater] which
-//! provides bindings to [libdeflate]
+//!  provides bindings to [libdeflate]
 //!
 //!- For streaming support use [flate2-rs] with an appropriate backend(zlib-ng is recommended for speed)
 //!  
