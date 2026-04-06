@@ -1,7 +1,7 @@
 // ============================================================
 //  HEVC Bitstream Reader — MSB-first, 64-bit barrel buffer
 // ============================================================
-
+#![allow(dead_code)]
 use crate::hevc_decoder::nal_parser::NalError;
 
 pub struct BitReader<'src> {

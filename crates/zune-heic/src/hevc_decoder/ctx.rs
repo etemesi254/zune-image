@@ -765,7 +765,7 @@ fn check_availability_old(
         available[2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
     }
 }
-#[allow(too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn check_availability(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
     available: &mut [bool], frame_width: isize, frame_height: isize, ctu_size: isize
