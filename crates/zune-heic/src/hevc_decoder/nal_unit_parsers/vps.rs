@@ -51,8 +51,8 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
             let _max_latency_increase = r.read_ue();
         } else {
             // Derive from index 0 if not present for this sub-layer
-            let prev_dec = *max_dec_pic_buffering.get(0).unwrap_or(&0);
-            let prev_reorder = *max_num_reorder_pics.get(0).unwrap_or(&0);
+            let prev_dec = *max_dec_pic_buffering.first().unwrap_or(&0);
+            let prev_reorder = *max_num_reorder_pics.first().unwrap_or(&0);
             max_dec_pic_buffering.push(prev_dec);
             max_num_reorder_pics.push(prev_reorder);
         }

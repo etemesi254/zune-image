@@ -85,11 +85,11 @@ pub fn decode_quantization_parameters(
 
     // 2. QG State Reset
     if x_qg != ctx.current_qg_x || y_qg != ctx.current_qg_y {
-        if ctx.current_qg_x != usize::MAX {
-            ctx.last_qp_in_previous_qg = ctx.last_qp_in_slice;
-        } else {
+        if ctx.current_qg_x == usize::MAX {
             // Absolute start of the parsing process
             ctx.last_qp_in_previous_qg = slice_qp;
+        } else {
+            ctx.last_qp_in_previous_qg = ctx.last_qp_in_slice;
         }
 
         ctx.current_qg_x = x_qg;
@@ -112,7 +112,7 @@ pub fn decode_quantization_parameters(
     let is_first_qg_in_slice = x_qg == slice_start_x && y_qg == slice_start_y;
 
     // WPP check (if entropy sync is enabled, the start of every CTB row resets to slice_qp)
-    let is_first_in_ctb_row = x_qg == 0 && (y_qg % ctb_size) == 0;
+    let is_first_in_ctb_row = x_qg == 0 && y_qg.is_multiple_of(ctb_size);
 
     let qp_prev =
         if is_first_qg_in_slice || (is_first_in_ctb_row && pps.entropy_coding_sync_enabled_flag) {
@@ -160,11 +160,11 @@ pub fn decode_quantization_parameters(
     );
 
     // 5. Calculate Bit Depth Offsets
-    let qp_bd_offset_y = 6 * (sps.bit_depth_luma as i32 - 8);
-    let qp_bd_offset_c = 6 * (sps.bit_depth_chroma as i32 - 8);
+    let qp_bd_offset_y = 6 * (i32::from(sps.bit_depth_luma) - 8);
+    let qp_bd_offset_c = 6 * (i32::from(sps.bit_depth_chroma) - 8);
 
     // Calculate and return the new QP
-    let qp_y = ((qp_pred as i32 + ctx.cu_qp_delta + 52 + 2 * qp_bd_offset_y)
+    let qp_y = ((i32::from(qp_pred) + ctx.cu_qp_delta + 52 + 2 * qp_bd_offset_y)
         % (52 + qp_bd_offset_y))
         - qp_bd_offset_y;
 
@@ -173,10 +173,10 @@ pub fn decode_quantization_parameters(
 
     // 6. Chroma Derivation (Includes missing slice header offsets!)
     let qp_i_cb =
-        (qp_y as i32 + pps.cb_qp_offset as i32 + ctx.slice_header.slice_cb_qp_offset as i32)
+        (qp_y + pps.cb_qp_offset as i32 + i32::from(ctx.slice_header.slice_cb_qp_offset))
             .clamp(-qp_bd_offset_c, 57);
     let qp_i_cr =
-        (qp_y as i32 + pps.cr_qp_offset as i32 + ctx.slice_header.slice_cr_qp_offset as i32)
+        (qp_y + pps.cr_qp_offset as i32 + i32::from(ctx.slice_header.slice_cr_qp_offset))
             .clamp(-qp_bd_offset_c, 57);
 
     let (qp_cb, qp_cr) = if sps.chroma_format == ChromaFormat::Yuv420 {
@@ -190,8 +190,8 @@ pub fn decode_quantization_parameters(
         (qp_i_cb as i8, qp_i_cr as i8)
     };
 
-    ctx.qp_cb_prime = (qp_cb as i32 + qp_bd_offset_c).max(0);
-    ctx.qp_cr_prime = (qp_cr as i32 + qp_bd_offset_c).max(0);
+    ctx.qp_cb_prime = (i32::from(qp_cb) + qp_bd_offset_c).max(0);
+    ctx.qp_cr_prime = (i32::from(qp_cr) + qp_bd_offset_c).max(0);
 
     // 7. Update Tracker State
     ctx.last_qp_in_slice = qp_y as i8;

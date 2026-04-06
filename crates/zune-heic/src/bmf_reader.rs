@@ -92,7 +92,7 @@ impl BoxHeader {
                 header_size = 16;
                 BoxSize::Absolute(reader.get_u64_be_err()?)
             }
-            s => BoxSize::Absolute(s as u64)
+            s => BoxSize::Absolute(u64::from(s))
         };
 
         // Handle uuid extended type.

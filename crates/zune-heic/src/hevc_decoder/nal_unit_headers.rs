@@ -147,8 +147,10 @@ pub struct SpsRangeExtension {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum ChromaFormat {
     Monochrome = 0, // 4:0:0
+    #[default]
     Yuv420 = 1,     // 4:2:0
     Yuv422 = 2,     // 4:2:2
     Yuv444 = 3      // 4:4:4
@@ -163,24 +165,16 @@ impl ChromaFormat {
         }
     }
 }
-impl Default for ChromaFormat {
-    fn default() -> Self {
-        ChromaFormat::Yuv420
-    }
-}
 #[derive(Debug, Clone, Copy)]
+#[derive(Default)]
 pub enum VuiVideoFormat {
     Component,
     PAL,
     NTSC,
     SECAM,
     MAC,
+    #[default]
     Unspecified
-}
-impl Default for VuiVideoFormat {
-    fn default() -> Self {
-        VuiVideoFormat::Unspecified
-    }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -294,7 +288,7 @@ impl TryFrom<u64> for SliceType {
             0 => Ok(Self::B),
             1 => Ok(Self::P),
             2 => Ok(Self::I),
-            _ => Err(NalError::Generic(format!("Invalid slice_type: {}", value)))
+            _ => Err(NalError::Generic(format!("Invalid slice_type: {value}")))
         }
     }
 }

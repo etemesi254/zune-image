@@ -92,20 +92,18 @@ impl NeighborTracker {
         if x > 0 {
             let left = self.get_state(x - 1, y);
             // Neighbor is only "Available" if it's in the same slice segment
-            if left.available && left.slice_id == current_slice_id {
-                if left.cqt_depth > current_depth {
+            if left.available && left.slice_id == current_slice_id
+                && left.cqt_depth > current_depth {
                     cond_l = 1;
                 }
-            }
         }
 
         if y > 0 {
             let above = self.get_state(x, y - 1);
-            if above.available && above.slice_id == current_slice_id {
-                if above.cqt_depth > current_depth {
+            if above.available && above.slice_id == current_slice_id
+                && above.cqt_depth > current_depth {
                     cond_a = 1;
                 }
-            }
         }
 
         cond_l + cond_a
@@ -258,7 +256,7 @@ impl NeighborTracker {
         }
 
         let idx = uy * self.width_in_units + ux;
-        self.blocks[idx].clone()
+        self.blocks[idx]
     }
 }
 impl NeighborTracker {

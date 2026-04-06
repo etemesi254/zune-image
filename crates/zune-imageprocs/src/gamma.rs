@@ -36,7 +36,7 @@ fn build_gamma_lut<T: Default + NumOps<T> + Copy>(value: f32, max_value: u16) ->
     let mut lut = vec![T::default(); usize::from(max_value) + 1];
 
     let max_usize = usize::from(max_value);
-    let max_value = max_value as f32;
+    let max_value = f32::from(max_value);
     let value_inv = 1.0 / max_value;
     // optimizer hint to remove bounds check, these values should be
     // powers of two, currently we support 255 and 65535
@@ -101,21 +101,21 @@ impl OperationsTrait for Gamma {
             match depth.bit_type() {
                 BitType::U16 => {
                     if let Some(lut_u16) = gamma_u16.as_ref() {
-                        gamma(channel.reinterpret_as_mut::<u16>()?, lut_u16)
+                        gamma(channel.reinterpret_as_mut::<u16>()?, lut_u16);
                     } else {
                         panic!("LUT not built")
-                    };
+                    }
                 }
                 BitType::U8 => {
                     if let Some(lut_u8) = gamma_u8.as_ref() {
-                        gamma(channel.reinterpret_as_mut::<u8>()?, lut_u8)
+                        gamma(channel.reinterpret_as_mut::<u8>()?, lut_u8);
                     } else {
                         panic!("LUT not built")
                     }
                 }
                 BitType::F32 => {
                     // for floats, we can't use LUT tables, the scope is too big
-                    let value_inv = 1.0 / max_value as f32;
+                    let value_inv = 1.0 / f32::from(max_value);
 
                     channel
                         .reinterpret_as_mut::<f32>()?

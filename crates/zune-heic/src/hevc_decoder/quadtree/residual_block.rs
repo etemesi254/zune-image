@@ -145,12 +145,12 @@ fn get_scan_order(log2_size: u8, scan_idx: u8) -> &'static [Pos] {
         (3, 1) => &SCAN_8X8_HOR,
         (3, 2) => &SCAN_8X8_VER,
 
-        _ => panic!("Unsupported scan config: scan_idx={}, log2size={}", scan_idx, log2_size)
+        _ => panic!("Unsupported scan config: scan_idx={scan_idx}, log2size={log2_size}")
     }
 }
 pub fn decode_transform_skip_flag(ctx: &mut DecodeSliceContext, component: Component) -> u8 {
     // Context index is 0 for Luma (Y), and 1 for Chroma (Cb/Cr)
-    let ctx_inc = if component == Component::Luma { 0 } else { 1 };
+    let ctx_inc = usize::from(component != Component::Luma);
 
     let bit = ctx
         .cabac
@@ -162,7 +162,7 @@ pub fn decode_transform_skip_flag(ctx: &mut DecodeSliceContext, component: Compo
 
 pub fn decode_explicit_rdpcm_flag(ctx: &mut DecodeSliceContext, component: Component) -> bool {
     // Context: 0 for Luma, 1 for Chroma
-    let ctx_inc = if component == Component::Luma { 0 } else { 1 };
+    let ctx_inc = usize::from(component != Component::Luma);
     let bit = ctx
         .cabac
         .decode_decision(CONTEXT_MODEL_RDPCM_FLAG + ctx_inc);
@@ -173,7 +173,7 @@ pub fn decode_explicit_rdpcm_flag(ctx: &mut DecodeSliceContext, component: Compo
 
 pub fn decode_explicit_rdpcm_dir(ctx: &mut DecodeSliceContext, component: Component) -> u8 {
     // Context: 0 for Luma, 1 for Chroma
-    let ctx_inc = if component == Component::Luma { 0 } else { 1 };
+    let ctx_inc = usize::from(component != Component::Luma);
     let bit = ctx.cabac.decode_decision(CONTEXT_MODEL_RDPCM_DIR + ctx_inc);
 
     debug_more!("explicit_rdpcm_dir[{:?}] = {}", component, bit);
@@ -195,7 +195,7 @@ pub fn decode_last_significant_coeff_prefix(
 
     if c_idx == Component::Luma {
         // Luma formulas
-        ctx_offset = 3 * (log2_trafo_size as i32 - 2) + ((log2_trafo_size as i32 - 1) >> 2);
+        ctx_offset = 3 * (i32::from(log2_trafo_size) - 2) + ((i32::from(log2_trafo_size) - 1) >> 2);
         ctx_shift = (log2_trafo_size + 1) >> 2;
     } else {
         // Chroma formulas
@@ -251,10 +251,9 @@ pub fn get_intra_scan_idx(
         else {
             0
         };
-    } else {
-        // Larger blocks always use Diagonal Scan
-        0
     }
+    // Larger blocks always use Diagonal Scan
+    0
 }
 pub fn get_scan_position(x: u32, y: u32, scan_idx: u8, log2_trafo_size: u8) -> ScanPosition {
     // 1. Determine CG coordinates (the 4x4 blocks)
@@ -298,7 +297,7 @@ pub fn decode_coded_sub_block_flag(
     debug_more!("coded_sub_block_flag [{:?}] = {}", component, neighbor_info);
     // libde265 logic: ctxIdxInc = (neighbor_info > 0 ? 1 : 0)
     // neighbor_info is > 0 if either bit 1 (right) or bit 2 (bottom) is set.
-    let ctx_inc = if neighbor_info > 0 { 1 } else { 0 };
+    let ctx_inc = usize::from(neighbor_info > 0);
 
     // Luma contexts start at 0, Chroma at 2
     let ctx_base = if component == Luma { 0 } else { 2 };
@@ -442,12 +441,12 @@ pub fn decode_coeff_abs_level_remaining(ctx: &mut DecodeSliceContext, c_rice_par
     let value: i32;
     if prefix <= 3 {
         // Truncated Rice part
-        let codeword = ctx.cabac.decode_fl_bypass(c_rice_param as u8);
+        let codeword = ctx.cabac.decode_fl_bypass(c_rice_param);
         value = (prefix << c_rice_param) + codeword as i32;
     } else {
         // Exp-Golomb part (prefix-3)
         // libde265 math: (((1 << (prefix-3)) + 2) << cRiceParam) + codeword
-        let n_bits = (prefix - 3 + c_rice_param as i32) as usize;
+        let n_bits = (prefix - 3 + i32::from(c_rice_param)) as usize;
         let codeword = ctx.cabac.decode_fl_bypass(n_bits as u8);
         value = (((1 << (prefix - 3)) + 2) << c_rice_param) + codeword as i32;
     }
@@ -505,7 +504,7 @@ pub fn decode_residual_block(
         .sps
         .range_extension
         .as_ref()
-        .map_or(false, |re| re.explicit_rdpcm_enabled_flag);
+        .is_some_and(|re| re.explicit_rdpcm_enabled_flag);
 
     let ts_or_bypass = transform_skip_flag > 0 || ctx.cu_transquant_bypass_flag;
 
@@ -537,9 +536,9 @@ pub fn decode_residual_block(
         let last_x_suffix = ctx.cabac.decode_fl_bypass(n_bits);
 
         last_significant_coeff_x =
-            ((2 + (last_significant_coeff_x_prefix as u32 & 1)) << n_bits) + last_x_suffix;
+            ((2 + (u32::from(last_significant_coeff_x_prefix) & 1)) << n_bits) + last_x_suffix;
     } else {
-        last_significant_coeff_x = last_significant_coeff_x_prefix as u32;
+        last_significant_coeff_x = u32::from(last_significant_coeff_x_prefix);
     }
 
     // 2. Reconstruct LastSignificantCoeffY
@@ -549,9 +548,9 @@ pub fn decode_residual_block(
         let last_y_suffix = ctx.cabac.decode_fl_bypass(n_bits);
 
         last_significant_coeff_y =
-            ((2 + (last_significant_coeff_y_prefix as u32 & 1)) << n_bits) + last_y_suffix;
+            ((2 + (u32::from(last_significant_coeff_y_prefix) & 1)) << n_bits) + last_y_suffix;
     } else {
-        last_significant_coeff_y = last_significant_coeff_y_prefix as u32;
+        last_significant_coeff_y = u32::from(last_significant_coeff_y_prefix);
     }
 
     // --- Determine scan_idx (libde265 style) ---
@@ -628,7 +627,7 @@ pub fn decode_residual_block(
 
     // coded_sub_block_neighbors tracks which 4x4 groups have coefficients
     // Max TU is 32x32, so max sb_width is 8. 8*8 = 64.
-    let mut coded_sub_block_neighbors = vec![0u8; (sb_width * sb_width) as usize];
+    let mut coded_sub_block_neighbors = vec![0u8; (sb_width * sb_width)];
 
     // --- 8. Initialize loop state variables ---
     let mut c1 = 1i32;
@@ -709,7 +708,7 @@ pub fn decode_residual_block(
                 coded_sub_block_neighbors[((s.x as usize) + ((s.y as usize) * sb_width)) as usize];
 
             let size_idx = (log2_trafo_size - 2) as usize;
-            let chroma_idx = if component == Component::Luma { 0 } else { 1 };
+            let chroma_idx = usize::from(component != Component::Luma);
             let scan_type_idx = scan_idx as usize;
             let csbf_idx = prev_csbf as usize;
 
@@ -735,7 +734,7 @@ pub fn decode_residual_block(
                 .sps
                 .range_extension
                 .as_ref()
-                .map_or(false, |re| re.transform_skip_context_enabled_flag);
+                .is_some_and(|re| re.transform_skip_context_enabled_flag);
 
             // decode all coefficients significant_coeff
             // --- Pass 1: Decode significant_coeff_flags (AC coefficients) ---
@@ -779,7 +778,12 @@ pub fn decode_residual_block(
             }
             // --decode DC coeff significance ---
             if last_coeff >= 0 {
-                if infer_sb_dc_sig_coeff_flag == false {
+                if infer_sb_dc_sig_coeff_flag {
+                    coeff_value[n_coefficients] = 1;
+                    coeff_has_max_base_level[n_coefficients] = 1;
+                    coeff_scan_pos[n_coefficients] = 0;
+                    n_coefficients += 1;
+                } else {
                     // if inference failed, its coded
 
                     let ctx_inc: usize;
@@ -807,11 +811,6 @@ pub fn decode_residual_block(
                         coeff_scan_pos[n_coefficients] = 0;
                         n_coefficients += 1;
                     }
-                } else {
-                    coeff_value[n_coefficients] = 1;
-                    coeff_has_max_base_level[n_coefficients] = 1;
-                    coeff_scan_pos[n_coefficients] = 0;
-                    n_coefficients += 1;
                 }
             }
         }
@@ -865,7 +864,7 @@ pub fn decode_residual_block(
             if new_last_greater_1_scan_pos != -1 {
                 let flag = decode_coeff_abss_level_greater2(ctx, c_idx, g1_state.ctx_set as usize);
 
-                coeff_value[new_last_greater_1_scan_pos as usize] += flag as i16;
+                coeff_value[new_last_greater_1_scan_pos as usize] += i16::from(flag);
                 coeff_has_max_base_level[new_last_greater_1_scan_pos as usize] = flag as i8;
             }
             // --decode coefficient signs ---
@@ -881,7 +880,7 @@ pub fn decode_residual_block(
                 .sps
                 .range_extension
                 .as_ref()
-                .map_or(false, |s| s.implicit_rdpcm_enabled_flag);
+                .is_some_and(|s| s.implicit_rdpcm_enabled_flag);
 
             if ctx.cu_transquant_bypass_flag
                 || (pred_mode == PredMode::ModeIntra
@@ -915,23 +914,23 @@ pub fn decode_residual_block(
             let mut ui_go_rice_param: u8;
 
             // sb_type logic (usually 0 for Luma, 1 for Chroma in standard, more in RExt)
-            let sb_type = if c_idx == 0 { 0 } else { 1 };
+            let sb_type = usize::from(c_idx != 0);
             let persistent_rice_adaptation_enabled_flag = ctx
                 .sps
                 .range_extension
                 .as_ref()
-                .map_or(false, |s| s.persistent_rice_adaptation_enabled_flag);
+                .is_some_and(|s| s.persistent_rice_adaptation_enabled_flag);
 
-            if !persistent_rice_adaptation_enabled_flag {
-                ui_go_rice_param = 0;
-            } else {
+            if persistent_rice_adaptation_enabled_flag {
                 ui_go_rice_param = ctx.stat_coeff[sb_type] / 4;
+            } else {
+                ui_go_rice_param = 0;
             }
 
             let mut first_coeff_with_abs_level_remaining = true;
 
             for n in 0..n_coefficients {
-                let base_level = coeff_value[n] as i32;
+                let base_level = i32::from(coeff_value[n]);
                 let mut coeff_abs_level_remaining = 0;
 
                 if coeff_has_max_base_level[n] != 0 {
@@ -987,8 +986,8 @@ pub fn decode_residual_block(
 
                 // Map back to 2D Raster Coordinates
                 let p = coeff_scan_pos[n] as usize;
-                let xc = ((s.x as u32) << 2) + scan_order_pos[p].x as u32;
-                let yc = ((s.y as u32) << 2) + scan_order_pos[p].y as u32;
+                let xc = (u32::from(s.x) << 2) + u32::from(scan_order_pos[p].x);
+                let yc = (u32::from(s.y) << 2) + u32::from(scan_order_pos[p].y);
 
                 let coeff_stride = 1u32 << log2_trafo_size;
 

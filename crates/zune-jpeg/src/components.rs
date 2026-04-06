@@ -142,11 +142,7 @@ impl Components {
             return Err(DecodeErrors::Format("Vertical sample is zero".to_string()));
         }
         trace!(
-            "Component ID:{:?} \tHS:{} VS:{} QT:{}",
-            id,
-            horizontal_sample,
-            vertical_sample,
-            quantization_table_number
+            "Component ID:{id:?} \tHS:{horizontal_sample} VS:{vertical_sample} QT:{quantization_table_number}"
         );
 
         Ok(Components {
@@ -221,6 +217,7 @@ pub enum SampleRatios {
 }
 
 impl SampleRatios {
+    #[must_use] 
     pub fn sample(self) -> usize {
         match self {
             SampleRatios::HV => 4,

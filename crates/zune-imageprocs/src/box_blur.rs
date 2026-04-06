@@ -143,7 +143,7 @@ pub fn box_blur_u16(
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
-    if (radius % 2) == 0 {
+    if radius.is_multiple_of(2) {
         radius += 1;
     }
     box_blur_inner(in_out_image, scratch_space, width, radius);
@@ -160,7 +160,7 @@ pub fn box_blur_u8(
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
-    if (radius % 2) == 0 {
+    if radius.is_multiple_of(2) {
         // evn radius are annoying, generates wrong values, just bump it to the next odd one
         radius += 1;
     }
@@ -178,7 +178,7 @@ pub fn box_blur_f32(
         warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
-    if (radius % 2) == 0 {
+    if radius.is_multiple_of(2) {
         radius += 1;
     }
     box_blur_f32_inner(in_out_image, scratch_space, width, radius);
@@ -230,7 +230,7 @@ where
         .chunks_exact(width)
         .zip(out_image.chunks_exact_mut(width))
     {
-        let half_radius = (diameter + 1) / 2;
+        let half_radius = diameter.div_ceil(2);
 
         let mut accumulator: u32 = stride_in[..half_radius].iter().map(|x| u32::from(*x)).sum();
 
@@ -316,7 +316,7 @@ pub(crate) fn box_blur_f32_inner(
         .chunks_exact(width)
         .zip(out_image.chunks_exact_mut(width))
     {
-        let half_radius = (diameter + 1) / 2;
+        let half_radius = diameter.div_ceil(2);
 
         let mut accumulator: f32 = stride_in[..half_radius].iter().copied().sum();
 

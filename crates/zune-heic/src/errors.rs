@@ -56,26 +56,24 @@ impl fmt::Display for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HeicErrors::Io(e) => {
-                write!(f, "I/O error: {:?}", e)
+                write!(f, "I/O error: {e:?}")
             }
             HeicErrors::InvalidBoxSize { offset, size } => {
-                write!(f, "Box at offset {} has invalid size {}", offset, size)
+                write!(f, "Box at offset {offset} has invalid size {size}")
             }
             HeicErrors::UnexpectedEof { offset, needed } => {
                 write!(
                     f,
-                    "Unexpected end of data: need {} bytes at offset {}",
-                    needed, offset
+                    "Unexpected end of data: need {needed} bytes at offset {offset}"
                 )
             }
             HeicErrors::InvalidBoxType(bytes) => {
-                write!(f, "Box type contains non-ASCII bytes: {:?}", bytes)
+                write!(f, "Box type contains non-ASCII bytes: {bytes:?}")
             }
             HeicErrors::UnsupportedVersion { offset, version } => {
                 write!(
                     f,
-                    "FullBox at offset {} has unsupported version {}",
-                    offset, version
+                    "FullBox at offset {offset} has unsupported version {version}"
                 )
             }
             HeicErrors::PayloadTooShort {
@@ -85,18 +83,17 @@ impl fmt::Display for HeicErrors {
             } => {
                 write!(
                     f,
-                    "Payload too short for box '{}': need {}, have {}",
-                    box_type, needed, have
+                    "Payload too short for box '{box_type}': need {needed}, have {have}"
                 )
             }
             HeicErrors::ParseError { box_type, msg } => {
-                write!(f, "Parse error in box '{}': {}", box_type, msg)
+                write!(f, "Parse error in box '{box_type}': {msg}")
             }
             HeicErrors::WouldUnderflow { a, b } => {
-                write!(f, "Would underflow ({}-{}) ", a, b)
+                write!(f, "Would underflow ({a}-{b}) ")
             }
             HeicErrors::Generic { msg } => {
-                write!(f, "{}", msg)
+                write!(f, "{msg}")
             }
         }
     }
@@ -140,7 +137,7 @@ impl fmt::Debug for HeicErrors {
                 .finish(),
 
             HeicErrors::WouldUnderflow { a, b } => {
-                write!(f, "Would underflow ({}-{}) ", a, b)
+                write!(f, "Would underflow ({a}-{b}) ")
             }
             HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish()
         }

@@ -17,7 +17,7 @@
 //!
 //! 1. Test for zeroes
 //! > There is a shortcut method for idct  where when all AC values are zero, we can get the answer really quickly.
-//!  by scaling the 1/8th of the DCT coefficient of the block to the whole block and level shifting.
+//! > by scaling the 1/8th of the DCT coefficient of the block to the whole block and level shifting.
 //!
 //! 2. If above fails, we proceed to carry out IDCT as a two pass one dimensional algorithm.
 //! IT does two whole scans where it carries out IDCT on all items

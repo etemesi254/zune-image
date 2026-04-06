@@ -10,7 +10,7 @@
 //! NEON is mandatory on aarch64.
 
 #![cfg(all(feature = "neon", target_arch = "aarch64"))]
-use core::arch::aarch64::*;
+use core::arch::aarch64::{uint8x16_t, vdupq_n_s16, vcombine_s16, vcreate_s16, vld1q_s16, vsubq_s16, vdupq_n_s32, vmlal_laneq_s16, vget_low_s16, vmlal_high_laneq_s16, vqshrun_n_s32, vqmovn_u16, vcombine_u16, vcombine_u8, vst3q_u8, uint8x16x3_t, vst4q_u8, uint8x16x4_t, vdupq_n_u8};
 
 use crate::color_convert::scalar::{CB_CF, CR_CF, C_G_CB_COEF_2, C_G_CR_COEF_1, YUV_RND, Y_CF};
 

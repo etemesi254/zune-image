@@ -209,8 +209,8 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     let img_width = img.stream.get_u16_be_err()?;
     img.info.set_width(img_width);
 
-    trace!("Image width  :{}", img_width);
-    trace!("Image height :{}", img_height);
+    trace!("Image width  :{img_width}");
+    trace!("Image height :{img_height}");
 
     if usize::from(img_width) > img.options.max_width() {
         return Err(DecodeErrors::Format(format!("Image width {} greater than width limit {}. If use `set_limits` if you want to support huge images", img_width, img.options.max_width())));
@@ -242,7 +242,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         )));
     }
 
-    trace!("Image components : {}", num_components);
+    trace!("Image components : {num_components}");
 
     if num_components == 1 {
         // SOF sets the number of image components
@@ -511,7 +511,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // transform = 1
         length = length.saturating_sub(14);
     } else {
-        warn!("Not a valid Adobe APP14 Segment, skipping {} bytes", length);
+        warn!("Not a valid Adobe APP14 Segment, skipping {length} bytes");
         length = length.saturating_sub(2);
     }
     // skip any proceeding lengths.

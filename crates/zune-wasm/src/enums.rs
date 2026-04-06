@@ -154,9 +154,9 @@ impl From<SpatialOperations> for WasmSpatialOperations {
         }
     }
 }
-impl Into<SpatialOperations> for WasmSpatialOperations {
-    fn into(self) -> SpatialOperations {
-        match self {
+impl From<WasmSpatialOperations> for SpatialOperations {
+    fn from(val: WasmSpatialOperations) -> Self {
+        match val {
             WasmSpatialOperations::Contrast => SpatialOperations::Contrast,
             WasmSpatialOperations::Maximum => SpatialOperations::Maximum,
             WasmSpatialOperations::Gradient => SpatialOperations::Gradient,

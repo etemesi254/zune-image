@@ -108,8 +108,7 @@ impl OperationsTrait for Resize {
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
             trace!(
-                "Image conversion to linear successfully completed in {:.2?}",
-                duration
+                "Image conversion to linear successfully completed in {duration:.2?}"
             );
         }
         // if alpha is present premultiply
@@ -123,14 +122,16 @@ impl OperationsTrait for Resize {
             let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::PreMultiplied).execute_impl(image)?;
             let duration = start.elapsed();
-            trace!("Premultiply successfully completed in {:.2?}", duration);
+            trace!("Premultiply successfully completed in {duration:.2?}");
         }
         let (old_w, old_h) = image.dimensions();
         let depth = image.depth().bit_type();
 
         let new_length = self.new_width * self.new_height * image.depth().size_of();
 
-        let precomputed_kernels = if self.method != ResizeMethod::Bilinear {
+        let precomputed_kernels = if self.method == ResizeMethod::Bilinear {
+            None
+        } else {
             Some(PrecomputedKernels::new(
                 old_w,
                 old_h,
@@ -138,8 +139,6 @@ impl OperationsTrait for Resize {
                 self.new_height,
                 self.method
             ))
-        } else {
-            None
         };
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
@@ -195,7 +194,7 @@ impl OperationsTrait for Resize {
             // return the depth originally there
             image.convert_depth(original_depth)?;
             let duration = start.elapsed();
-            trace!("Un-premultiply successfully completed in {:.2?}", duration);
+            trace!("Un-premultiply successfully completed in {duration:.2?}");
         }
         // convert back again to gamma
         if !is_image_linear {
@@ -208,8 +207,7 @@ impl OperationsTrait for Resize {
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
             trace!(
-                "Image conversion to linear successfully completed in {:.2?}",
-                duration
+                "Image conversion to linear successfully completed in {duration:.2?}"
             );
         }
 

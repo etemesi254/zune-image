@@ -40,7 +40,7 @@ fn decode_sao_type_idx(ctx: &mut DecodeSliceContext) -> u8 {
 fn decode_sao_offset_abs(ctx: &mut DecodeSliceContext, bit_depth: u8) -> u8 {
     debug_more!("sao_offset_abs");
     let c_max = (1 << (min(bit_depth, 10) - 5)) - 1;
-    debug_assert!(c_max >= 7 && c_max <= 31);
+    debug_assert!((7..=31).contains(&c_max));
     let value = ctx.cabac.decode_tu_bypass(c_max);
 
     debug_more!("sao_offset_abs(value) {}", value);
@@ -135,8 +135,8 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
                 if sao_type_idx != 0 {
                     for j in 0..4 {
                         let bit_depth = match i {
-                            0 => ctx.sps.bit_depth_luma as u8,
-                            _ => ctx.sps.bit_depth_chroma as u8
+                            0 => ctx.sps.bit_depth_luma,
+                            _ => ctx.sps.bit_depth_chroma
                         };
                         sao_info.sao_offset_val[i][j] = decode_sao_offset_abs(ctx, bit_depth) as i8;
 
@@ -155,7 +155,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
                             }
                         }
 
-                        sao_info.sao_band_position[i] = decode_sao_band_position(ctx)
+                        sao_info.sao_band_position[i] = decode_sao_band_position(ctx);
                     } else {
                         sign[0] = 1;
                         sign[1] = 1;
@@ -178,14 +178,14 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
 
                         if let Some(range_ext) = ctx.pps.range_extension.as_ref() {
                             if i == 0 {
-                                log_offset_scale = range_ext.log2_sao_offset_scale_luma as i32;
+                                log_offset_scale = i32::from(range_ext.log2_sao_offset_scale_luma);
                             } else {
-                                log_offset_scale = range_ext.log2_sao_offset_scale_chroma as i32;
+                                log_offset_scale = i32::from(range_ext.log2_sao_offset_scale_chroma);
                             }
                         }
                         for j in 0..4 {
                             sao_info.sao_offset_val[i][j] = (sign[i]
-                                * ((sao_info.sao_offset_val[i][j] as i32) << log_offset_scale))
+                                * (i32::from(sao_info.sao_offset_val[i][j]) << log_offset_scale))
                                 as i8;
                         }
                     }

@@ -54,7 +54,7 @@ pub fn decode_intra_luma_mode(
         debug_more!("rem_intra_luma_pred_mode={}", rem_mode);
         let mut final_mode = rem_mode;
         let mut sorted_mpm = mpm_list;
-        sorted_mpm.sort();
+        sorted_mpm.sort_unstable();
 
         for i in 0..3 {
             if final_mode >= sorted_mpm[i] {

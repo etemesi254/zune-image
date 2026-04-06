@@ -105,9 +105,8 @@ impl OperationsTrait for Exposure {
                 }
                 BitType::F32 => {
                     let raw_px = channel.reinterpret_as_mut::<f32>()?;
-                    raw_px
-                        .iter_mut()
-                        .for_each(|x| *x = (*x - black) * self.exposure);
+                    for x in raw_px
+                        .iter_mut() { *x = (*x - black) * self.exposure; }
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
             }

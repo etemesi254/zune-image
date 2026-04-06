@@ -40,7 +40,7 @@ mod deinterleave_impls;
 fn deinterleave_generic<T: Default + Clone + Copy + 'static + Zeroable + Pod>(
     interleaved_pixels: &[T], colorspace: ColorSpace
 ) -> Result<Vec<Channel>, ImageErrors> {
-    if interleaved_pixels.len() % colorspace.num_components() != 0 {
+    if !interleaved_pixels.len().is_multiple_of(colorspace.num_components()) {
         return Err(ImageErrors::OperationsError(
             ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
@@ -75,7 +75,7 @@ fn deinterleave_generic<T: Default + Clone + Copy + 'static + Zeroable + Pod>(
 pub fn deinterleave_u8(
     interleaved_pixels: &[u8], colorspace: ColorSpace
 ) -> Result<Vec<Channel>, ImageErrors> {
-    if interleaved_pixels.len() % colorspace.num_components() != 0 {
+    if !interleaved_pixels.len().is_multiple_of(colorspace.num_components()) {
         return Err(ImageErrors::OperationsError(
             ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
@@ -144,7 +144,7 @@ pub fn deinterleave_u8(
 pub fn deinterleave_u16(
     interleaved_pixels: &[u16], colorspace: ColorSpace
 ) -> Result<Vec<Channel>, ImageErrors> {
-    if interleaved_pixels.len() % colorspace.num_components() != 0 {
+    if !interleaved_pixels.len().is_multiple_of(colorspace.num_components()) {
         return Err(ImageErrors::OperationsError(
             ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));
@@ -213,7 +213,7 @@ pub fn deinterleave_u16(
 pub fn deinterleave_f32(
     interleaved_pixels: &[f32], colorspace: ColorSpace
 ) -> Result<Vec<Channel>, ImageErrors> {
-    if interleaved_pixels.len() % colorspace.num_components() != 0 {
+    if !interleaved_pixels.len().is_multiple_of(colorspace.num_components()) {
         return Err(ImageErrors::OperationsError(
             ImageOperationsErrors::InvalidChannelLayout("Extra pixels in the colorspace")
         ));

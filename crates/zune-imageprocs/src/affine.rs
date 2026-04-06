@@ -23,10 +23,12 @@ pub struct AffineTransform {
 }
 
 impl AffineTransform {
+    #[must_use] 
     pub fn new(a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) -> Self {
         Self { a, b, c, d, tx, ty }
     }
     /// Identity transform (no change)
+    #[must_use] 
     pub fn identity() -> Self {
         Self {
             a:  1.0,
@@ -39,6 +41,7 @@ impl AffineTransform {
     }
 
     /// Rotation around origin
+    #[must_use] 
     pub fn rotation(angle: f32) -> Self {
         let rad = angle.to_radians();
         let cos = rad.cos();
@@ -54,6 +57,7 @@ impl AffineTransform {
     }
 
     /// Translation
+    #[must_use] 
     pub fn translation(tx: f32, ty: f32) -> Self {
         Self {
             a: 1.0,
@@ -66,6 +70,7 @@ impl AffineTransform {
     }
 
     /// Scaling
+    #[must_use] 
     pub fn scale(sx: f32, sy: f32) -> Self {
         Self {
             a:  sx,
@@ -78,6 +83,7 @@ impl AffineTransform {
     }
 
     /// Shear
+    #[must_use] 
     pub fn shear(shx: f32, shy: f32) -> Self {
         Self {
             a:  1.0,
@@ -90,6 +96,7 @@ impl AffineTransform {
     }
 
     /// Compose two transforms (multiply matrices)
+    #[must_use] 
     pub fn then(&self, other: &AffineTransform) -> Self {
         Self {
             a:  self.a * other.a + self.b * other.c,
@@ -102,6 +109,7 @@ impl AffineTransform {
     }
 
     /// Apply transform to a point
+    #[must_use] 
     pub fn transform_point(&self, x: f32, y: f32) -> (f32, f32) {
         (
             self.a * x + self.b * y + self.tx,
@@ -110,6 +118,7 @@ impl AffineTransform {
     }
 
     /// Invert the transform (for reverse mapping)
+    #[must_use] 
     pub fn inverse(&self) -> Option<Self> {
         let det = self.a * self.d - self.b * self.c;
         if det.abs() < f32::EPSILON {
@@ -194,6 +203,7 @@ impl OperationsTrait for AffineTransform {
 }
 
 /// Calculate output dimensions needed for an affine transform
+#[must_use] 
 pub fn get_affine_output_dimensions(
     width: usize, height: usize, transform: &AffineTransform
 ) -> (usize, usize) {

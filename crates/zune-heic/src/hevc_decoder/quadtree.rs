@@ -33,11 +33,11 @@ pub enum CtuStatus {
 pub fn decode_slice(
     nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
 ) -> Result<(), NalError> {
-    let clean_rbsp = extract_rbsp(&nal.payload[..]);
+    let clean_rbsp = extract_rbsp(nal.payload);
     let sps_storage = &hevc_decoder.sps_storage;
     let pps_storage = &hevc_decoder.pps_storage;
 
-    let slice_header = decode_slice_header(&nal, &pps_storage, &sps_storage, &clean_rbsp)?;
+    let slice_header = decode_slice_header(nal, pps_storage, sps_storage, &clean_rbsp)?;
 
     let pps = pps_storage[slice_header.slice_pic_parameter_set_id as usize]
         .as_ref()
@@ -56,7 +56,7 @@ pub fn decode_slice(
     };
     // Dependent slices inherit the previous CABAC state, independent ones reset.
     let payload_start = &clean_rbsp[slice_header.cabac_start_position..];
-    let mut cabac = CabacDecoder::new(payload_start, slice_qp as i32, init_type);
+    let mut cabac = CabacDecoder::new(payload_start, i32::from(slice_qp), init_type);
 
 
     if slice_header.dependent_slice_segment_flag {
@@ -81,8 +81,8 @@ pub fn decode_slice(
     let neighbor_tracker = hevc_decoder.neighbor_tracker.as_mut().unwrap();
 
     let mut ctx = DecodeSliceContext::new(
-        &sps,
-        &pps,
+        sps,
+        pps,
         &slice_header,
         cabac,
         neighbor_tracker,
@@ -123,7 +123,7 @@ pub fn decode_slice(
             } else {
                 // Edge Case: Video is only 1 CTU wide. There was no ctu_x == 1 to save from.
                 // Spec says we just re-initialize the probabilities from the Slice QP.
-                ctx.cabac.init_contexts(slice_qp as i32, init_type);
+                ctx.cabac.init_contexts(i32::from(slice_qp), init_type);
             }
         }
         read_coding_tree_unit(&mut ctx, ctu_x, ctu_y)?;
@@ -161,13 +161,12 @@ pub fn finish_ctu(
     // --- 1. WPP Context Storage (Section 6.3.3) ---
     // If Wavefront Parallel Processing is enabled, we save the context state
     // after the second CTU of a row to initialize the first CTU of the next row.
-    if pps.entropy_coding_sync_enabled_flag && ctbx == 1 {
-        if ctby + 1 < sps.pic_height_in_ctbs_y as usize {
+    if pps.entropy_coding_sync_enabled_flag && ctbx == 1
+        && ctby + 1 < sps.pic_height_in_ctbs_y as usize {
             debug_more!("Saving WPP Context for row {}", ctby);
             // We clone the current context model state (the "decouple" in libde265)
-            ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.to_vec().clone());
+            ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone().clone());
         }
-    }
 
     debug_more!(
         "Cabac EOC range:{} value:{},position:{}",
@@ -276,11 +275,9 @@ fn read_coding_quadtree(
         && y0 + cb_size <= sps.pic_height_in_luma_samples as usize
         && log_2_cb_size > sps.log2_min_luma_coding_block_size
     {
-        split_cu_flag = decode_split_cu_flag(ctx, x0, y0, ct_depth)
-    } else {
-        if log_2_cb_size > sps.log2_min_luma_coding_block_size {
-            split_cu_flag = true;
-        }
+        split_cu_flag = decode_split_cu_flag(ctx, x0, y0, ct_depth);
+    } else if log_2_cb_size > sps.log2_min_luma_coding_block_size {
+        split_cu_flag = true;
     }
     if pps.cu_qp_delta_enabled_flag && log_2_cb_size >= pps.log2_min_cu_qp_delta_size {
         ctx.is_cu_qp_delta_coded = false;

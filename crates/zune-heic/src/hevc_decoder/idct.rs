@@ -75,10 +75,10 @@ fn is_all_zero(s: &[i16]) -> bool {
 #[inline(always)]
 fn transform4_dst_1d(input: &[i16], output: &mut [i32]) {
     let [c0, c1, c2, c3] = [
-        input[0] as i32,
-        input[1] as i32,
-        input[2] as i32,
-        input[3] as i32
+        i32::from(input[0]),
+        i32::from(input[1]),
+        i32::from(input[2]),
+        i32::from(input[3])
     ];
 
     // Correct HEVC DST-VII transposed matrix (T^T * v)
@@ -91,10 +91,10 @@ fn transform4_dst_1d(input: &[i16], output: &mut [i32]) {
 #[inline(always)]
 fn transform4_1d(input: &[i16], output: &mut [i32]) {
     let [c0, c1, c2, c3] = [
-        input[0] as i32,
-        input[1] as i32,
-        input[2] as i32,
-        input[3] as i32
+        i32::from(input[0]),
+        i32::from(input[1]),
+        i32::from(input[2]),
+        i32::from(input[3])
     ];
     let e0 = (c0 + c2) * 64;
     let e1 = (c0 - c2) * 64;
@@ -114,10 +114,10 @@ fn transform8_1d(input: &[i16], output: &mut [i32]) {
     let mut e = [0i32; 4];
     {
         let [c0, c1, c2, c3] = [
-            even_in[0] as i32,
-            even_in[1] as i32,
-            even_in[2] as i32,
-            even_in[3] as i32
+            i32::from(even_in[0]),
+            i32::from(even_in[1]),
+            i32::from(even_in[2]),
+            i32::from(even_in[3])
         ];
         let ee0 = (c0 + c2) * 64;
         let ee1 = (c0 - c2) * 64;
@@ -131,14 +131,14 @@ fn transform8_1d(input: &[i16], output: &mut [i32]) {
 
     // Odd part
     let [i1, i3, i5, i7] = [
-        input[1] as i32,
-        input[3] as i32,
-        input[5] as i32,
-        input[7] as i32
+        i32::from(input[1]),
+        i32::from(input[3]),
+        i32::from(input[5]),
+        i32::from(input[7])
     ];
     let o: [i32; 4] = std::array::from_fn(|i| {
         let r = &T8[i];
-        i1 * r[0] as i32 + i3 * r[1] as i32 + i5 * r[2] as i32 + i7 * r[3] as i32
+        i1 * i32::from(r[0]) + i3 * i32::from(r[1]) + i5 * i32::from(r[2]) + i7 * i32::from(r[3])
     });
 
     for i in 0..4 {
@@ -155,10 +155,10 @@ fn transform16_1d(input: &[i16], output: &mut [i32]) {
     transform8_1d(&even_in, &mut e);
 
     // Odd part — hoist odd inputs once, dot with each basis row
-    let odds: [i32; 8] = std::array::from_fn(|j| input[j * 2 + 1] as i32);
+    let odds: [i32; 8] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
     let o: [i32; 8] = std::array::from_fn(|i| {
         let r = &T16[i];
-        odds.iter().zip(r.iter()).map(|(&x, &b)| x * b as i32).sum()
+        odds.iter().zip(r.iter()).map(|(&x, &b)| x * i32::from(b)).sum()
     });
 
     for i in 0..8 {
@@ -175,10 +175,10 @@ fn transform32_1d(input: &[i16], output: &mut [i32]) {
     transform16_1d(&even_in, &mut e);
 
     // Odd part — hoist odd inputs once, dot with each basis row
-    let odds: [i32; 16] = std::array::from_fn(|j| input[j * 2 + 1] as i32);
+    let odds: [i32; 16] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
     let o: [i32; 16] = std::array::from_fn(|i| {
         let r = &T32[i];
-        odds.iter().zip(r.iter()).map(|(&x, &b)| x * b as i32).sum()
+        odds.iter().zip(r.iter()).map(|(&x, &b)| x * i32::from(b)).sum()
     });
 
     for i in 0..16 {
@@ -196,7 +196,7 @@ pub fn idct_2d_scalar<const N: usize>(
     transform_1d: fn(&[i16], &mut [i32])
 ) {
     let shift1: i32 = 7;
-    let shift2: i32 = 20 - bit_depth as i32;
+    let shift2: i32 = 20 - i32::from(bit_depth);
 
     // --- Pass 1: Vertical (Columns of block -> rows of intermediate) ---
     for c in 0..N {
@@ -211,7 +211,7 @@ pub fn idct_2d_scalar<const N: usize>(
         }
 
         if !is_dst && col[0] != 0 && is_all_zero(&col[1..N]) {
-            let dc_val = shift_clip(col[0] as i32 * 64, shift1);
+            let dc_val = shift_clip(i32::from(col[0]) * 64, shift1);
             for r in 0..N { intermediate[r * N + c] = dc_val; }
             continue;
         }
@@ -236,7 +236,7 @@ pub fn idct_2d_scalar<const N: usize>(
         }
 
         if !is_dst && row[0] != 0 && is_all_zero(&row[1..N]) {
-            let val = shift_clip(row[0] as i32 * DC_VERTICAL_SCALE, shift2);
+            let val = shift_clip(i32::from(row[0]) * DC_VERTICAL_SCALE, shift2);
             for c in 0..N { block[r * N + c] = val; }
             continue;
         }

@@ -105,7 +105,7 @@ pub fn read_coding_unit(
     }
 
     // 3. Prediction Mode
-    ctx.is_intra = if shdr.slice_type != SliceType::I { decode_pred_mode_flag(ctx) } else { true };
+    ctx.is_intra = if shdr.slice_type == SliceType::I { true } else { decode_pred_mode_flag(ctx) };
     let mode = if ctx.is_intra { PredMode::ModeIntra } else { PredMode::ModeInter };
     ctx.neighbor_tracker
         .set_pred_mode(x0, y0, log_2_cb_size, mode);
@@ -194,7 +194,7 @@ pub fn read_coding_unit(
 
         if rqt_root_cbf {
             let max_trafo_depth = if ctx.is_intra {
-                ctx.sps.max_transform_hierarchy_depth_intra + (intra_split_flag as u64)
+                ctx.sps.max_transform_hierarchy_depth_intra + u64::from(intra_split_flag)
             } else {
                 ctx.sps.max_transform_hierarchy_depth_inter
             };

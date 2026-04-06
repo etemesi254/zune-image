@@ -118,7 +118,7 @@ impl<'a> QoiEncoder<'a> {
 
         writer.write_u8_err(channel)?;
         // colorspace, gamma
-        let xtic = u8::from(0);
+        let xtic = 0;
         writer.write_u8_err(xtic)?;
 
         Ok(())

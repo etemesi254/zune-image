@@ -36,8 +36,8 @@ fn decode_profile_data(
     };
     let mut profile_compatibility_flags = [false; 32];
 
-    for item in profile_compatibility_flags.iter_mut() {
-        *item = r.read_flag()
+    for item in &mut profile_compatibility_flags {
+        *item = r.read_flag();
     }
     let progressive_source_flag = r.get_bits(1) as u8;
     let interlaced_source_flag = r.get_bits(1) as u8;
@@ -89,25 +89,7 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
         for matrix_id in 0..num_matrices {
             let scaling_list_pred_mode_flag = r.read_flag();
 
-            if !scaling_list_pred_mode_flag {
-                // Prediction Mode: Copy from a previous matrix
-                let pred_matrix_id_delta = r.read_ue() as usize;
-                let ref_matrix_id = matrix_id - pred_matrix_id_delta;
-
-                match size_id {
-                    0 => sl.size0[matrix_id] = sl.size0[ref_matrix_id],
-                    1 => sl.size1[matrix_id] = sl.size1[ref_matrix_id],
-                    2 => {
-                        sl.size2[matrix_id] = sl.size2[ref_matrix_id];
-                        sl.dc16[matrix_id] = sl.dc16[ref_matrix_id];
-                    }
-                    3 => {
-                        sl.size3[matrix_id] = sl.size3[ref_matrix_id];
-                        sl.dc32[matrix_id] = sl.dc32[ref_matrix_id];
-                    }
-                    _ => unreachable!()
-                }
-            } else {
+            if scaling_list_pred_mode_flag {
                 // DPCM Mode: Decode deltas
                 let coef_num = std::cmp::min(64, 1 << (4 + (size_id << 1)));
                 let mut next_coef = 8; // Starting value for DPCM is 8
@@ -121,7 +103,7 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
                     } else {
                         sl.dc32[matrix_id] = dc_val;
                     }
-                    next_coef = dc_val as i32;
+                    next_coef = i32::from(dc_val);
                 }
 
                 for i in 0..coef_num {
@@ -141,6 +123,24 @@ pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, NalErr
                             _ => unreachable!()
                         }
                     }
+                }
+            } else {
+                // Prediction Mode: Copy from a previous matrix
+                let pred_matrix_id_delta = r.read_ue() as usize;
+                let ref_matrix_id = matrix_id - pred_matrix_id_delta;
+
+                match size_id {
+                    0 => sl.size0[matrix_id] = sl.size0[ref_matrix_id],
+                    1 => sl.size1[matrix_id] = sl.size1[ref_matrix_id],
+                    2 => {
+                        sl.size2[matrix_id] = sl.size2[ref_matrix_id];
+                        sl.dc16[matrix_id] = sl.dc16[ref_matrix_id];
+                    }
+                    3 => {
+                        sl.size3[matrix_id] = sl.size3[ref_matrix_id];
+                        sl.dc32[matrix_id] = sl.dc32[ref_matrix_id];
+                    }
+                    _ => unreachable!()
                 }
             }
         }
@@ -366,7 +366,7 @@ pub fn decode_slice_header(
     nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
     // 1. Clean the RBSP first to handle 0x03 Emulation Prevention Bytes
-    let mut r = BitReader::new(&clean_payload);
+    let mut r = BitReader::new(clean_payload);
 
     let mut sh = SliceHeader::default();
 
@@ -374,7 +374,7 @@ pub fn decode_slice_header(
     sh.first_slice_segment_in_pic_flag = r.read_flag();
 
     let nal_unit_type = nal.nal_type as u8;
-    let is_irap = nal_unit_type >= 16 && nal_unit_type <= 23;
+    let is_irap = (16..=23).contains(&nal_unit_type);
     let is_idr = nal_unit_type == 19 || nal_unit_type == 20;
 
     if is_irap {
@@ -404,7 +404,7 @@ pub fn decode_slice_header(
 
     if !sh.dependent_slice_segment_flag {
         if pps.num_extra_slice_header_bits > 0 {
-            r.get_bits(pps.num_extra_slice_header_bits as u8);
+            r.get_bits(pps.num_extra_slice_header_bits);
         }
 
         sh.slice_type = SliceType::try_from(r.read_ue())?;
@@ -419,7 +419,7 @@ pub fn decode_slice_header(
 
         // 5. POC LSB (Skipped for IDR, present for CRA/Trailing)
         if !is_idr {
-            sh.slice_pic_order_cnt_lsb = r.get_bits(sps.log2_max_pic_order_cnt_lsb as u8);
+            sh.slice_pic_order_cnt_lsb = r.get_bits(sps.log2_max_pic_order_cnt_lsb);
 
             let short_term_ref_pic_set_sps_flag = r.read_flag();
             if !short_term_ref_pic_set_sps_flag {
@@ -464,8 +464,8 @@ pub fn decode_slice_header(
         }
 
         // 9. Deblocking Filter
-        if pps.deblocking_filter_control_present_flag {
-            if pps.deblocking_filter_override_enabled_flag {
+        if pps.deblocking_filter_control_present_flag
+            && pps.deblocking_filter_override_enabled_flag {
                 let deblocking_filter_override_flag = r.read_flag();
                 if deblocking_filter_override_flag {
                     let _slice_deblocking_filter_disabled_flag = r.read_flag();
@@ -475,7 +475,6 @@ pub fn decode_slice_header(
                     }
                 }
             }
-        }
 
         // 10. Loop Filter Across Slices (The 1-bit drift culprit)
         let is_sao_enabled = sps.sample_adaptive_offset_enabled_flag

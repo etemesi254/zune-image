@@ -50,11 +50,10 @@ impl fmt::Display for NalError {
             } => {
                 write!(
                     f,
-                    "NAL header parameter_out_of_bounds (param:{}) limit={} value={}",
-                    field, limit, value
+                    "NAL header parameter_out_of_bounds (param:{field}) limit={limit} value={value}"
                 )
             }
-            Self::Generic(msg) => write!(f, "{}", msg)
+            Self::Generic(msg) => write!(f, "{msg}")
         }
     }
 }
@@ -190,8 +189,7 @@ impl<'a> NalParser<'a> {
     pub fn new_detect(extents: &'a [&'a [u8]]) -> Self {
         let framing = extents
             .first()
-            .map(|e| NalFraming::detect(e))
-            .unwrap_or(NalFraming::LengthPrefixed);
+            .map_or(NalFraming::LengthPrefixed, |e| NalFraming::detect(e));
         Self { extents, framing }
     }
 
@@ -259,11 +257,9 @@ impl<'a> NalParser<'a> {
                 // if important return
                 if let Some(cont) =
                     parse_nal_header(nal_bytes, &mut visitor)?
-                {
-                    if !cont {
+                    && !cont {
                         return Ok(());
                     }
-                }
             }
         }
         Ok(())
@@ -277,7 +273,7 @@ impl<'a> NalParser<'a> {
     where
         F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
     {
-        for  extent in self.extents.iter() {
+        for  extent in self.extents {
             let mut search_start = 0;
 
             // 1. Find the next 0x00 0x00 0x01 start code
@@ -297,8 +293,7 @@ impl<'a> NalParser<'a> {
                     extent[nal_start..nal_start + offset]
                         .iter()
                         .rposition(|&b| b != 0)
-                        .map(|last_non_zero_idx| nal_start + last_non_zero_idx + 1)
-                        .unwrap_or(nal_start) // If all zeros, length is 0
+                        .map_or(nal_start, |last_non_zero_idx| nal_start + last_non_zero_idx + 1) // If all zeros, length is 0
                 } else {
                     extent.len() // No more start codes; read to the end
                 };
@@ -307,11 +302,9 @@ impl<'a> NalParser<'a> {
                 if nal_end > nal_start {
                     let nal_bytes = &extent[nal_start..nal_end];
                     if let Some(cont) = parse_nal_header(nal_bytes, visitor)?
-                    {
-                        if !cont {
+                        && !cont {
                             return Ok(());
                         }
-                    }
                 }
 
                 // 4. Advance the search window exactly to the start of the next start code

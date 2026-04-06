@@ -134,7 +134,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     }
 
     pub(crate) fn parse_plte(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
-        if chunk.length % 3 != 0 {
+        if !chunk.length.is_multiple_of(3) {
             return Err(PngDecodeErrors::GenericStatic(
                 "Invalid pLTE length, corrupt PNG"
             ));

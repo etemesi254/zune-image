@@ -61,11 +61,7 @@ pub(crate) fn create_options_for_encoder(
     options: Option<EncoderOptions>, image: &Image
 ) -> EncoderOptions {
     // choose if we take options from pre-configured , or we create default options
-    let start_options = if let Some(configured_opts) = options {
-        configured_opts
-    } else {
-        EncoderOptions::default()
-    };
+    let start_options = options.unwrap_or_default();
     let (width, height) = image.dimensions();
     // then set image configuration
     start_options
@@ -379,58 +375,58 @@ impl ImageFormat {
                 {
                     return Some(ImageFormat::QOI);
                 }
-                return None;
+                None
             }
             "ppm" | "pam" | "pgm" | "pbm" | "pfm" => {
                 #[cfg(feature = "ppm")]
                 {
                     return Some(ImageFormat::PPM);
                 }
-                return None;
+                None
             }
             "jpeg" | "jpg" => {
                 #[cfg(feature = "jpeg")]
                 {
                     return Some(ImageFormat::JPEG);
                 }
-                return None;
+                None
             }
             "jxl" => {
                 #[cfg(feature = "jpeg-xl")]
                 {
                     return Some(ImageFormat::JPEG_XL);
                 }
-                return None;
+                None
             }
             "ff" => {
                 #[cfg(feature = "farbfeld")]
                 {
                     return Some(ImageFormat::Farbfeld);
                 }
-                return None;
+                None
             }
             "hdr" => {
                 #[cfg(feature = "hdr")]
                 {
                     return Some(ImageFormat::HDR);
                 }
-                return None;
+                None
             }
             "png" => {
                 #[cfg(feature = "png")]
                 {
                     return Some(ImageFormat::PNG);
                 }
-                return None;
+                None
             }
             "webp" => {
                 #[cfg(feature = "webp")]
                 {
                     return Some(ImageFormat::WEBP);
                 }
-                return None;
+                None
             }
-            _ => return None
+            _ => None
         }
     }
 }
@@ -461,7 +457,7 @@ impl Image {
     /// image.save("hello.jpg").unwrap();
     /// ```
     pub fn save<P: AsRef<Path>>(&self, file: P) -> Result<(), ImageErrors> {
-        return if let Some(ext) = file.as_ref().extension() {
+        if let Some(ext) = file.as_ref().extension() {
             if let Some(format) = ImageFormat::encoder_for_extension(ext.to_string_lossy()) {
                 self.save_to(file, format)
             } else {
@@ -473,7 +469,7 @@ impl Image {
             let msg = format!("No extension for file {:?}", file.as_ref());
 
             Err(ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(msg)))
-        };
+        }
     }
     /// Save an image using a specified format to a file
     ///

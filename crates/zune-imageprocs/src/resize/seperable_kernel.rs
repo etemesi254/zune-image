@@ -28,22 +28,22 @@ impl PrecomputedKernels {
     ) -> Self {
         let (kernel_fn, radius) = get_kernel_fn_and_radius(method);
 
-        let horizontal = if in_width != out_width {
+        let horizontal = if in_width == out_width {
+            None
+        } else {
             let x_ratio = in_width as f32 / out_width as f32;
             Some(precompute_kernels(
                 in_width, out_width, x_ratio, radius, kernel_fn
             ))
-        } else {
-            None
         };
 
-        let vertical = if in_height != out_height {
+        let vertical = if in_height == out_height {
+            None
+        } else {
             let y_ratio = in_height as f32 / out_height as f32;
             Some(precompute_kernels(
                 in_height, out_height, y_ratio, radius, kernel_fn
             ))
-        } else {
-            None
         };
 
         PrecomputedKernels {
@@ -68,7 +68,7 @@ pub fn resample_separable<T>(
         out_width,
         out_height,
         kernels
-    )
+    );
 }
 
 pub fn resample_separable_precomputed<T>(

@@ -198,7 +198,7 @@ fn bilateral_filter_int<T>(
     // This impl matches opencv bilateral_filter's inner loop, with less pointer chasing as
     // the spatial function sends the right thing to us
     let bilateral_func = |area: &[T]| -> T {
-        let mid = (area.len() + 1) / 2;
+        let mid = area.len().div_ceil(2);
 
         let mut sum = 0.0;
         let mut wsum = 0.0;

@@ -183,7 +183,7 @@ pub fn swizzle_channels<T: Copy + Default + 'static>(
                     written_pixels += 1;
                 }
             }
-            return Ok(written_pixels);
+            Ok(written_pixels)
         }
     }
 }

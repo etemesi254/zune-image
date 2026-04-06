@@ -1,7 +1,24 @@
 #![feature(portable_simd)]
 #![allow(unexpected_cfgs)]
 #![cfg_attr(feature = "portable-simd", feature(portable_simd))]
-
+#![warn(
+    clippy::correctness,
+    clippy::perf,
+    clippy::pedantic,
+    clippy::inline_always,
+    clippy::missing_errors_doc,
+    clippy::panic
+)]
+#![allow(
+    clippy::needless_return,
+    clippy::similar_names,
+    clippy::inline_always,
+    clippy::similar_names,
+    clippy::doc_markdown,
+    clippy::module_name_repetitions,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc
+)]
 extern crate alloc;
 extern crate core;
 

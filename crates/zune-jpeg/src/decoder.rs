@@ -508,7 +508,7 @@ where
                         let mut is_rgb = self.components.len() == 3;
                         let chars = ['R', 'G', 'B'];
                         for (comp, single_char) in self.components.iter().zip(chars.iter()) {
-                            is_rgb &= comp.id == (*single_char) as u8
+                            is_rgb &= comp.id == (*single_char) as u8;
                         }
                         // Image is RGB, change colorspace
                         if is_rgb {
@@ -520,7 +520,7 @@ where
                 } else {
                     bytes_before_marker = 0;
 
-                    warn!("Marker 0xFF{:X} not known", m);
+                    warn!("Marker 0xFF{m:X} not known");
 
                     let length = self.stream.get_u16_be_err()?;
 
@@ -553,7 +553,7 @@ where
                     }
                 };
 
-                trace!("Image encoding scheme =`{:?}`", marker);
+                trace!("Image encoding scheme =`{marker:?}`");
                 // get components
                 parse_start_of_frame(marker, self)?;
             }
@@ -637,8 +637,7 @@ where
             }
             _ => {
                 warn!(
-                    "Capabilities for processing marker \"{:?}\" not implemented",
-                    m
+                    "Capabilities for processing marker \"{m:?}\" not implemented"
                 );
 
                 let length = self.stream.get_u16_be_err()?;

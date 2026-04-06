@@ -83,7 +83,7 @@ impl RawFrame {
 
         // Write the PPM P6 Header
         // P6 = Binary RGB, followed by Width, Height, and Max Color Value (255)
-        writeln!(writer, "P6\n{} {}\n255", width, height)?;
+        writeln!(writer, "P6\n{width} {height}\n255")?;
 
         let (sub_x, sub_y) = self.format.get_subsampling();
         let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
@@ -105,7 +105,7 @@ impl RawFrame {
 
             for x in 0..width {
                 // 1. Fetch Y
-                let y_val = luma.pixels[y_row_offset + x] as i32;
+                let y_val = i32::from(luma.pixels[y_row_offset + x]);
 
                 // 2. Fetch Cb and Cr (handling subsampling mapping)
                 let (cb_val, cr_val) = if is_monochrome {
@@ -114,8 +114,8 @@ impl RawFrame {
                     let cx = x / sub_x;
                     // Because Cb and Cr were created identically, they share the same stride/padding
                     (
-                        cb.pixels[c_row_offset + cx] as i32,
-                        cr.pixels[c_row_offset + cx] as i32,
+                        i32::from(cb.pixels[c_row_offset + cx]),
+                        i32::from(cr.pixels[c_row_offset + cx]),
                     )
                 };
 

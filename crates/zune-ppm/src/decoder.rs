@@ -541,7 +541,7 @@ where
         let size =
             self.width * self.height * self.colorspace.num_components() * self.bit_depth.size_of();
 
-        return match self.bit_depth.bit_type() {
+        match self.bit_depth.bit_type() {
             BitType::U8 => {
                 let mut data = vec![0; size];
                 // get the bytes
@@ -616,7 +616,7 @@ where
                 Ok(DecodingResult::F32(result))
             }
             _ => unreachable!()
-        };
+        }
     }
 }
 

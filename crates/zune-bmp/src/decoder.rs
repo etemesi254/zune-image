@@ -863,7 +863,7 @@ where
                                     //
                                     // this does ceil division to ensure input is appropriately rounded
                                     // of to a multiple of 4 to handle pad bytes in BMP
-                                    let input_bytes_per_width = (((num_iters * 2) + 3) / 4) * 4;
+                                    let input_bytes_per_width = (num_iters * 2).div_ceil(4) * 4;
 
                                     // we chunk according to number of iterations, which is usually the
                                     // image dimensions (w*h*color components), this is given by the size of
@@ -938,7 +938,7 @@ where
 
                     // temporary location for an scaled down image width, bytes are read here
                     // before expanding them in a separate pass
-                    let in_width_bytes = ((self.width * usize::from(self.depth)) + 7) / 8;
+                    let in_width_bytes = (self.width * usize::from(self.depth)).div_ceil(8);
                     let mut in_width_buf = vec![0_u8; in_width_bytes];
 
                     let scanline_size = width_bytes * 3;
@@ -1213,7 +1213,7 @@ where
                     } else {
                         // copy pixels from encoded stream
                         let odd_pixel = usize::from(stream_byte & 1);
-                        rle_code = (u16::from(stream_byte) + 1) / 2;
+                        rle_code = u16::from(stream_byte).div_ceil(2);
                         let extra_byte = usize::from(rle_code & 0x01);
 
                         for i in 0..rle_code {

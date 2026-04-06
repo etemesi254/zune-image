@@ -97,7 +97,7 @@ where
                             self.mdat_section = Some(MDatSection {
                                 raw_data:     output,
                                 start_offset: payload_start_offset
-                            })
+                            });
                         }
                         BoxSize::ToEnd => {
                             // read to end of file/stream
@@ -216,8 +216,8 @@ where
             let flags = self.stream.read_u8_err()?;
 
             // The next two bytes are rows and columns (stored as N-1)
-            self.rows = (self.stream.read_u8_err()? as u32) + 1;
-            self.cols = (self.stream.read_u8_err()? as u32) + 1;
+            self.rows = u32::from(self.stream.read_u8_err()?) + 1;
+            self.cols = u32::from(self.stream.read_u8_err()?) + 1;
 
             // 4. Parse output width and height
             if (flags & 1) == 1 {
@@ -226,8 +226,8 @@ where
                 self.height = Some(self.stream.get_u32_be_err()?);
             } else {
                 // 16-bit dimensions (most common)
-                self.width = Some(self.stream.get_u16_be_err()? as u32);
-                self.height = Some(self.stream.get_u16_be_err()? as u32);
+                self.width = Some(u32::from(self.stream.get_u16_be_err()?));
+                self.height = Some(u32::from(self.stream.get_u16_be_err()?));
             }
 
             trace!(
@@ -305,7 +305,7 @@ where
                         }
                         // (Optional) Grab Mirroring
                         ItemProperty::Imir { axis } => {
-                            trace!("Image is mirrored on axis: {}", axis);
+                            trace!("Image is mirrored on axis: {axis}");
                             self.mirror = Some(*axis);
                         }
                         _ => {}
@@ -318,8 +318,7 @@ where
         self.height = Some(final_height);
 
         trace!(
-            "Width and height from ispe {}x{}",
-            final_width, final_height
+            "Width and height from ispe {final_width}x{final_height}"
         );
         Ok(())
     }
@@ -371,8 +370,8 @@ where
         let mut has_alpha_mask = false;
 
         // --- STEP 1: Find base channels via `pixi` on the primary item ---
-        if let Some(iprp) = &meta.iprp {
-            if let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) {
+        if let Some(iprp) = &meta.iprp
+            && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) {
                 // Find properties assigned to the primary item
                 if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == primary_id) {
                     for assoc in &entry.associations {
@@ -389,7 +388,6 @@ where
                     }
                 }
             }
-        }
 
         // --- STEP 2: Find Alpha channel via `iref` and `auxC` ---
         if let Some(iref) = &meta.iref {
@@ -401,9 +399,9 @@ where
                     let auxiliary_item_id = ref_entry.from_item_id;
 
                     // We found an auxiliary item. Now check if it's an Alpha Mask (auxid:1)
-                    if let Some(iprp) = &meta.iprp {
-                        if let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) {
-                            if let Some(entry) =
+                    if let Some(iprp) = &meta.iprp
+                        && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
+                            && let Some(entry) =
                                 ipma.entries.iter().find(|e| e.item_id == auxiliary_item_id)
                             {
                                 for assoc in &entry.associations {
@@ -423,8 +421,6 @@ where
                                     }
                                 }
                             }
-                        }
-                    }
                 }
             }
         }
@@ -437,7 +433,7 @@ where
             (3, true) => ColorSpace::RGBA,
             (4, _) => ColorSpace::RGBA, // 4 native channels is usually RGBA
             (n, _) => {
-                if let Some(nz) = core::num::NonZeroU32::new(n as u32) {
+                if let Some(nz) = core::num::NonZeroU32::new(u32::from(n)) {
                     ColorSpace::MultiBand(nz)
                 } else {
                     ColorSpace::Unknown
@@ -515,7 +511,7 @@ where
             .saturating_sub(tiff_header_offset);
 
         if exif_data_length > 0 {
-            trace!("Exif data length: ({} bytes)", exif_data_length);
+            trace!("Exif data length: ({exif_data_length} bytes)");
             let mut exif_bytes = vec![0; exif_data_length];
             for i in 0..exif_data_length {
                 exif_bytes[i] = self.stream.read_fixed_bytes_or_error::<1>()?[0];
@@ -545,7 +541,7 @@ where
         let iprp = self.meta_section.as_ref()?.iprp.as_ref()?;
 
         // 2. Iterate through the properties in 'ipco'
-        for item in iprp.ipco.as_ref().unwrap().properties.iter() {
+        for item in &iprp.ipco.as_ref().unwrap().properties {
             if let ItemProperty::Colr(c) = item {
                 match c {
                     ColourInformation::Nclx { .. } => {}
@@ -554,7 +550,7 @@ where
                         profile_data
                     } => {
                         trace!("Icc profile ({} bytes)", profile_data.len());
-                        self.icc_data = Some(profile_data.to_vec());
+                        self.icc_data = Some(profile_data.clone());
                         break;
                     }
                     ColourInformation::Unknown { .. } => {}

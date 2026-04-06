@@ -73,8 +73,8 @@ impl<'a> DecodeSliceContext<'a> {
 
         let ctb_size = 1 << sps.log2_ctb_size_y;
 
-        let width_in_ctbs = (sps.pic_width_in_luma_samples + ctb_size - 1) / ctb_size;
-        let height_in_ctbs = (sps.pic_height_in_luma_samples + ctb_size - 1) / ctb_size;
+        let width_in_ctbs = sps.pic_width_in_luma_samples.div_ceil(ctb_size);
+        let height_in_ctbs = sps.pic_height_in_luma_samples.div_ceil(ctb_size);
 
         let buffer_size = (width_in_ctbs * height_in_ctbs) as usize;
 
@@ -121,7 +121,7 @@ impl<'a> DecodeSliceContext<'a> {
     }
 }
 
-impl<'a> DecodeSliceContext<'a> {
+impl DecodeSliceContext<'_> {
     pub fn set_sao_info(&mut self, x_ctb: usize, y_ctb: usize, info: SaoInfo) {
         let width = self.sps.pic_width_in_ctbs_y as usize;
         let addr = y_ctb * width + x_ctb;
@@ -135,7 +135,7 @@ impl<'a> DecodeSliceContext<'a> {
         &self.ctb_sao_buffer[addr]
     }
 }
-impl<'a> DecodeSliceContext<'a> {
+impl DecodeSliceContext<'_> {
     /// Sets a block of pixels (e.g., after reconstruction)
     ///
     /// Data is expected to be in scratchpad
@@ -157,7 +157,7 @@ impl<'a> DecodeSliceContext<'a> {
             &self.pixel_scratchpad,
             None,
             bit_depth
-        )
+        );
     }
 
     pub fn scale_coefficients(
@@ -196,7 +196,7 @@ impl<'a> DecodeSliceContext<'a> {
             for i in 0..self.n_coeff[c_idx] {
                 let pos = self.coeff_pos[c_idx][i as usize] as usize;
                 let level = self.coeff_list[c_idx][i as usize];
-                self.math_scratchpad[pos] = level
+                self.math_scratchpad[pos] = level;
             }
             return;
         }
@@ -204,38 +204,10 @@ impl<'a> DecodeSliceContext<'a> {
         // 4. Calculate bdShift (Spec 8.6.3)
         let bit_depth = if c_idx == 0 { sps.bit_depth_luma } else { sps.bit_depth_chroma };
         let log2_n_t = n_t.trailing_zeros() as i32;
-        let mut bd_shift = bit_depth as i32 + log2_n_t - 5;
+        let mut bd_shift = i32::from(bit_depth) + log2_n_t - 5;
 
         // 5. Scaling Logic
-        if sps.scaling_list_enabled_flag == false {
-            // Default Scaling (m_x_y = 16)
-            bd_shift -= 4;
-            debug_more!("bd_shift:{}", bd_shift);
-            let offset = 1 << (bd_shift - 1);
-            let fact = LEVEL_SCALE[(qp % 6) as usize] << (qp / 6);
-
-            for i in 0..self.n_coeff[c_idx] {
-                let pos = self.coeff_pos[c_idx][i as usize] as usize;
-                let level = self.coeff_list[c_idx][i as usize] as i64;
-
-                // The actual scaling math
-                let scaled = (level * fact as i64 + offset as i64) >> bd_shift;
-
-                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-                    println!(
-                        "TRACE_SCALE: i={:>2} pos={:>4} level={:>4}  fact={:>8} bdShift={:>2} final={:>5}",
-                        i,
-                        pos,
-                        level,
-                        fact,
-                        bd_shift,
-                        scaled.clamp(-32768, 32767),
-                    );
-                }
-                // Clip to 16-bit range
-                self.math_scratchpad[pos] = scaled.clamp(-32768, 32767) as _;
-            }
-        } else {
+        if sps.scaling_list_enabled_flag {
             // --- Custom Scaling Lists ---
             debug_more!("bd_shift:{}", bd_shift);
             let offset = 1 << (bd_shift - 1);
@@ -271,62 +243,87 @@ impl<'a> DecodeSliceContext<'a> {
 
             for i in 0..self.n_coeff[c_idx] {
                 let pos = self.coeff_pos[c_idx][i as usize] as usize;
-                let level = self.coeff_list[c_idx][i as usize] as i64;
+                let level = i64::from(self.coeff_list[c_idx][i as usize]);
 
                 // --- FIX: Map NxN position to 8x8 scaling list ---
                 let mut m_x_y = if n_t <= 8 {
-                    scaling_list[pos] as i64
+                    i64::from(scaling_list[pos])
                 } else {
                     let x = pos % n_t;
                     let y = pos / n_t;
                     let ratio = n_t >> 3; // 2 for 16x16, 4 for 32x32
-                    scaling_list[(y / ratio) * 8 + (x / ratio)] as i64
+                    i64::from(scaling_list[(y / ratio) * 8 + (x / ratio)])
                 };
 
                 // Special Case: DC Coefficient (Spec 8.6.3)
                 if pos == 0 {
                     if n_t == 16 {
-                        m_x_y = pps.pic_scaling_lists.dc16[matrix_id] as i64;
+                        m_x_y = i64::from(pps.pic_scaling_lists.dc16[matrix_id]);
                     } else if n_t == 32 {
-                        m_x_y = pps.pic_scaling_lists.dc32[matrix_id] as i64;
+                        m_x_y = i64::from(pps.pic_scaling_lists.dc32[matrix_id]);
                     }
                 }
 
-                let fact = (m_x_y * LEVEL_SCALE[(qp % 6) as usize] as i64) << (qp / 6);
-                let scaled = (level * fact + offset as i64) >> bd_shift;
+                let fact = (m_x_y * i64::from(LEVEL_SCALE[(qp % 6) as usize])) << (qp / 6);
+                let scaled = (level * fact + i64::from(offset)) >> bd_shift;
 
                 let final_clipped = scaled.clamp(-32768, 32767);
                 if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
                     println!(
-                        "TRACE_SCALE: i={:>2} pos={:>4} level={:>4} m_x_y={:>3} fact={:>8} bdShift={:>2} final={:>5}",
-                        i, pos, level, m_x_y, fact, bd_shift, final_clipped
+                        "TRACE_SCALE: i={i:>2} pos={pos:>4} level={level:>4} m_x_y={m_x_y:>3} fact={fact:>8} bdShift={bd_shift:>2} final={final_clipped:>5}"
                     );
                 }
 
                 self.math_scratchpad[pos] = final_clipped as i16;
+            }
+        } else {
+            // Default Scaling (m_x_y = 16)
+            bd_shift -= 4;
+            debug_more!("bd_shift:{}", bd_shift);
+            let offset = 1 << (bd_shift - 1);
+            let fact = LEVEL_SCALE[(qp % 6) as usize] << (qp / 6);
+
+            for i in 0..self.n_coeff[c_idx] {
+                let pos = self.coeff_pos[c_idx][i as usize] as usize;
+                let level = i64::from(self.coeff_list[c_idx][i as usize]);
+
+                // The actual scaling math
+                let scaled = (level * i64::from(fact) + i64::from(offset)) >> bd_shift;
+
+                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!(
+                        "TRACE_SCALE: i={:>2} pos={:>4} level={:>4}  fact={:>8} bdShift={:>2} final={:>5}",
+                        i,
+                        pos,
+                        level,
+                        fact,
+                        bd_shift,
+                        scaled.clamp(-32768, 32767),
+                    );
+                }
+                // Clip to 16-bit range
+                self.math_scratchpad[pos] = scaled.clamp(-32768, 32767) as _;
             }
         }
         // --- do transform or skip ---
 
         // Note: We only print if n_t is 4 or 8 to prevent overwhelming the console.
         // In a real debug session, you might remove this check.
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-            if n_t <= 32 {
+        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)
+            && n_t <= 32 {
                 println!(
-                    "coefficients OUT (cIdx:{} at {},{} size:{}):",
-                    c_idx, x_t, y_t, n_t
+                    "coefficients OUT (cIdx:{c_idx} at {x_t},{y_t} size:{n_t}):"
                 );
                 for y in 0..n_t {
                     print!("  ");
                     for x in 0..n_t {
                         // In your Rust port, coeffStride is just n_t since coeff_buffer is 1D
                         let val = self.math_scratchpad[y * n_t + x];
-                        print!("{:3} ", val);
+                        print!("{val:3} ");
                     }
                     println!();
                 }
             }
-        }
     }
     /// Returns true if the Chroma Intra Prediction mode is DM_CHROMA (Mode 4).
     /// This is used to gate Cross-Component Prediction (CCP).
@@ -352,7 +349,7 @@ impl<'a> DecodeSliceContext<'a> {
             .sps
             .range_extension
             .as_ref()
-            .map_or(false, |rext| rext.transform_skip_rotation_enabled_flag);
+            .is_some_and(|rext| rext.transform_skip_rotation_enabled_flag);
 
         let rotate_coeffs = transform_skip_rotation_enabled && n_t == 4 && self.is_intra;
 
@@ -402,10 +399,10 @@ impl<'a> DecodeSliceContext<'a> {
         for y in 0..n_t {
             let mut sum = 0i32; // Safe 32-bit accumulator
             for x in 0..n_t {
-                sum += self.math_scratchpad[y * n_t + x] as i32;
+                sum += i32::from(self.math_scratchpad[y * n_t + x]);
                 let clamped = sum.clamp(-32768, 32767) as i16;
                 residual[y * n_t + x] = clamped;
-                sum = clamped as i32; // Carry clamped value to the next pixel
+                sum = i32::from(clamped); // Carry clamped value to the next pixel
             }
         }
     }
@@ -416,10 +413,10 @@ impl<'a> DecodeSliceContext<'a> {
             let mut sum = 0i32; // Safe 32-bit accumulator
             for y in 0..n_t {
                 // Notice y is on the inner loop, jumping by n_t
-                sum += self.math_scratchpad[y * n_t + x] as i32;
+                sum += i32::from(self.math_scratchpad[y * n_t + x]);
                 let clamped = sum.clamp(-32768, 32767) as i16;
                 residual[y * n_t + x] = clamped;
-                sum = clamped as i32; // Carry clamped value to the next pixel
+                sum = i32::from(clamped); // Carry clamped value to the next pixel
             }
         }
     }
@@ -429,11 +426,11 @@ impl<'a> DecodeSliceContext<'a> {
             let mut sum = 0i32; // Accumulate in i32
             for x in 0..n_t {
                 let idx = y * n_t + x;
-                sum += self.math_scratchpad[idx] as i32;
+                sum += i32::from(self.math_scratchpad[idx]);
 
                 let clamped = sum.clamp(-32768, 32767) as i16;
                 self.math_scratchpad[idx] = clamped; // Write back in-place
-                sum = clamped as i32;
+                sum = i32::from(clamped);
             }
         }
     }
@@ -443,11 +440,11 @@ impl<'a> DecodeSliceContext<'a> {
             let mut sum = 0i32; // Accumulate in i32
             for y in 0..n_t {
                 let idx = y * n_t + x;
-                sum += self.math_scratchpad[idx] as i32;
+                sum += i32::from(self.math_scratchpad[idx]);
 
                 let clamped = sum.clamp(-32768, 32767) as i16;
                 self.math_scratchpad[idx] = clamped; // Write back in-place
-                sum = clamped as i32;
+                sum = i32::from(clamped);
             }
         }
     }
@@ -488,7 +485,7 @@ impl<'a> DecodeSliceContext<'a> {
         // Bit depth alignment (usually 0 if Luma and Chroma have same bit depth)
         let bit_depth_luma = self.sps.bit_depth_luma;
         let bit_depth_chroma = self.sps.bit_depth_chroma;
-        let shift = bit_depth_chroma as i32 - bit_depth_luma as i32;
+        let shift = i32::from(bit_depth_chroma) - i32::from(bit_depth_luma);
 
         let chroma_format = self.sps.chroma_format;
 
@@ -517,15 +514,15 @@ impl<'a> DecodeSliceContext<'a> {
                 let luma_res = self.luma_residual_temp[luma_idx];
 
                 // formula: chroma_res += (scale * (luma_res << shift)) >> 3
-                let adjustment = (res_scale_val as i32 * ((luma_res as i32) << shift)) >> 3;
-                let current = residual[y * n_t_c + x] as i32;
+                let adjustment = (i32::from(res_scale_val) * (i32::from(luma_res) << shift)) >> 3;
+                let current = i32::from(residual[y * n_t_c + x]);
                 residual[y * n_t_c + x] = (current + adjustment).clamp(-32768, 32767) as i16;
             }
         }
     }
 }
 
-impl<'a> DecodeSliceContext<'a> {
+impl DecodeSliceContext<'_> {
     pub fn setup_reference_samples(
         &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
     ) -> usize {
@@ -537,7 +534,7 @@ impl<'a> DecodeSliceContext<'a> {
 
         // 2. Check Availability (Using PIXEL coordinates x0, y0)
         check_availability(
-            &self.neighbor_tracker,
+            self.neighbor_tracker,
             x0,
             y0,
             n_t,
@@ -545,7 +542,7 @@ impl<'a> DecodeSliceContext<'a> {
             &mut self.ref_samples_available[..p_len]
         );
         if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("--- Reference Border (N={}) ---", n_t);
+            println!("--- Reference Border (N={n_t}) ---");
             print_available(&self.ref_samples_available[..p_len], n_t);
         }
 
@@ -560,7 +557,7 @@ impl<'a> DecodeSliceContext<'a> {
             c_idx
         );
         if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("--- Reference Border (N={}) ---", n_t);
+            println!("--- Reference Border (N={n_t}) ---");
             print_border(&self.ref_samples_p[..p_len], n_t);
         }
 
@@ -608,12 +605,11 @@ fn write_block_and_pad(
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
             for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
-                let sum = (bv as i32) + (pv as i32);
-                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-                    if sum > 255 {
-                        println!("CLIPPING DETECTED: Pred={} + Residual={} = {}", pv, bv, sum);
+                let sum = i32::from(bv) + i32::from(pv);
+                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)
+                    && sum > 255 {
+                        println!("CLIPPING DETECTED: Pred={pv} + Residual={bv} = {sum}");
                     }
-                }
                 *dst = sum.clamp(0, max_val) as u8;
             }
         }
@@ -626,7 +622,7 @@ fn write_block_and_pad(
     }
 
     if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
-        println!("--- Out Padding (N={}) ---", n_t);
+        println!("--- Out Padding (N={n_t}) ---");
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             for dx in 0..n_t {
@@ -684,11 +680,11 @@ pub fn print_available(available: &[bool], n_t: usize) {
 
     // We loop strictly forward through the linear 0..4N array
     for i in 0..=total {
-        print!("{}", available[i] as u8);
+        print!("{}", u8::from(available[i]));
 
         // Print libde265-style separators at the segment boundaries
         if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
-            print!("|\n");
+            println!("|");
         } else if i != total {
             print!(" ");
         }
@@ -704,7 +700,7 @@ pub fn print_border(p: &[u8], n_t: usize) {
         print!("{}", p[i]);
 
         if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
-            print!("|\n");
+            println!("|");
         } else if i != total {
             print!(" ");
         }
@@ -827,11 +823,11 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
     if n_t == 32 && strong_enabled {
         let threshold = 1 << (8 - 5); // Assuming 8-bit depth (BitDepth - 5)
 
-        let bl = p[0] as i32; // Bottom-Left
-        let mid_l = p[n_t] as i32; // Mid-Left
-        let tl = p[2 * n_t] as i32; // Top-Left Corner
-        let mid_t = p[3 * n_t] as i32; // Mid-Top
-        let tr = p[4 * n_t] as i32; // Top-Right
+        let bl = i32::from(p[0]); // Bottom-Left
+        let mid_l = i32::from(p[n_t]); // Mid-Left
+        let tl = i32::from(p[2 * n_t]); // Top-Left Corner
+        let mid_t = i32::from(p[3 * n_t]); // Mid-Top
+        let tr = i32::from(p[4 * n_t]); // Top-Right
 
         // Spec 8.4.4.2.3: Strong smoothing condition checks the left edge and top edge
         if (bl + tl - 2 * mid_l).abs() < threshold && (tl + tr - 2 * mid_t).abs() < threshold {
@@ -847,15 +843,15 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
         // (Bottom-Left -> Corner -> Top-Right), a single contiguous sweep
         // applies the [1, 2, 1] filter perfectly across all edges!
         for i in 1..(4 * n_t) {
-            p[i] = ((raw[i - 1] as u16 + 2 * raw[i] as u16 + raw[i + 1] as u16 + 2) >> 2) as u8;
+            p[i] = ((u16::from(raw[i - 1]) + 2 * u16::from(raw[i]) + u16::from(raw[i + 1]) + 2) >> 2) as u8;
         }
     }
 }
 
 fn apply_strong_smoothing(p: &mut [u8], n_t: usize) {
-    let bl = p[0] as i32; // Index 0: Bottom-Left
-    let tl = p[2 * n_t] as i32; // Index 2N: Top-Left Corner
-    let tr = p[4 * n_t] as i32; // Index 4N: Top-Right
+    let bl = i32::from(p[0]); // Index 0: Bottom-Left
+    let tl = i32::from(p[2 * n_t]); // Index 2N: Top-Left Corner
+    let tr = i32::from(p[4 * n_t]); // Index 4N: Top-Right
 
     let n2 = 2 * n_t; // 2N distance
 

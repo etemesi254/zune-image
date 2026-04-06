@@ -133,9 +133,8 @@ pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
     let t_min = T::MIN_VAL.to_f32();
     let t_max = T::MAX_VAL.to_f32();
     let scale_v = value.clamp(-1f32, 1f32) * (t_max - t_min);
-    channel
-        .iter_mut()
-        .for_each(|x| *x = T::from_f32((x.to_f32() + scale_v).zclamp(t_min, t_max)));
+    for x in channel
+        .iter_mut() { *x = T::from_f32((x.to_f32() + scale_v).zclamp(t_min, t_max)); }
 }
 
 /// Brighten operation
@@ -150,7 +149,6 @@ pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
 ///
 
 pub fn brighten_f32(channel: &mut [f32], value: f32, max_value: f32) {
-    channel
-        .iter_mut()
-        .for_each(|x| *x = (*x + value).clamp(0.0, max_value));
+    for x in channel
+        .iter_mut() { *x = (*x + value).clamp(0.0, max_value); }
 }

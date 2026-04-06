@@ -70,7 +70,7 @@ impl<'src> Blend<'src> {
     }
 }
 
-impl<'src> OperationsTrait for Blend<'src> {
+impl OperationsTrait for Blend<'_> {
     fn name(&self) -> &'static str {
         "Blend"
     }

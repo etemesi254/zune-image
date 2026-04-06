@@ -24,7 +24,7 @@ impl<T: BufRead + Seek> ZuneWebpDecoder<T> {
             println!("{:?}", e);
             ImageErrors::ImageDecodeErrors(e.to_string())
         })?;
-        return Ok(ZuneWebpDecoder { inner: decoder });
+        Ok(ZuneWebpDecoder { inner: decoder })
     }
 }
 impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
@@ -66,7 +66,7 @@ impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
     }
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
         let (w, h) = self.dimensions().expect("Failed to determine dimensions");
-        return Ok(Some(ImageMetadata {
+        Ok(Some(ImageMetadata {
             color_trc: None,
             default_gamma: None,
             width: w,
@@ -79,11 +79,17 @@ impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
             exif: None,
             icc_chunk: None,
             is_linear: false
-        }));
+        }))
     }
 }
 
 pub struct ZuneWebpImageEncoder {}
+impl Default for ZuneWebpImageEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ZuneWebpImageEncoder {
     pub fn new() -> Self {
         Self {}

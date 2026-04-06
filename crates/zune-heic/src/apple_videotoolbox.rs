@@ -151,7 +151,7 @@ impl AppleHardwareDecoder {
                 parameter_set_sizes.as_ptr(),
                 4,           // NAL unit header length (4 bytes in HVCC)
                 ptr::null(), // extensions (NULL = none)
-                &mut format_desc
+                &raw mut format_desc
             );
 
             if status != 0 {
@@ -172,12 +172,12 @@ impl AppleHardwareDecoder {
                 format_desc,
                 ptr::null_mut(), // decoder specification  (NULL = auto-select hardware)
                 ptr::null_mut(), // destination image buffer attributes (NULL = native YUV)
-                &callback_record,
-                &mut session
+                &raw const callback_record,
+                &raw mut session
             );
 
             if status != 0 {
-                CFRelease(format_desc as *mut c_void);
+                CFRelease(format_desc.cast::<c_void>());
                 return Err(status);
             }
 
@@ -226,7 +226,7 @@ impl AppleHardwareDecoder {
                     0,
                     extent.len(),
                     0,
-                    &mut block_buffer
+                    &raw mut block_buffer
                 );
                 if status != 0 {
                     return Err(status);
@@ -243,10 +243,10 @@ impl AppleHardwareDecoder {
                     ptr::null(), // sampleTimingArray
                     0,           // numSampleSizeEntries  (0 = not provided)
                     ptr::null(), // sampleSizeArray
-                    &mut sample_buffer
+                    &raw mut sample_buffer
                 );
                 if status != 0 {
-                    CFRelease(block_buffer as *mut c_void);
+                    CFRelease(block_buffer.cast_mut());
                     return Err(status);
                 }
 
@@ -268,8 +268,8 @@ impl AppleHardwareDecoder {
 
                 // 4. Release our local references.
                 //    VideoToolbox retains whatever it still needs internally.
-                CFRelease(sample_buffer as *mut c_void);
-                CFRelease(block_buffer as *mut c_void);
+                CFRelease(sample_buffer.cast::<c_void>());
+                CFRelease(block_buffer.cast_mut());
 
                 if status != 0 {
                     return Err(status);
@@ -284,10 +284,10 @@ impl Drop for AppleHardwareDecoder {
     fn drop(&mut self) {
         unsafe {
             if !self.session.is_null() {
-                CFRelease(self.session as *mut c_void);
+                CFRelease(self.session.cast_mut());
             }
             if !self.format_desc.is_null() {
-                CFRelease(self.format_desc as *mut c_void);
+                CFRelease(self.format_desc.cast::<c_void>());
             }
         }
     }
@@ -387,7 +387,7 @@ extern "C" fn decode_callback(
     let item_id = source_frame_ref_con as usize;
 
     if status != 0 || image_buffer.is_null() {
-        let msg = format!("Hardware decode failed. Status: {}", status);
+        let msg = format!("Hardware decode failed. Status: {status}");
         unsafe {
             if let Ok(mut map) = (*tile_map_ptr).lock() {
                 map.insert(item_id as u32, Err(HeicErrors::Generic { msg }));
@@ -402,9 +402,9 @@ extern "C" fn decode_callback(
         let width = CVPixelBufferGetWidth(image_buffer);
         let height = CVPixelBufferGetHeight(image_buffer);
 
-        let y_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0) as *const u8;
+        let y_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 0).cast_const();
         let y_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 0);
-        let uv_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1) as *const u8;
+        let uv_ptr = CVPixelBufferGetBaseAddressOfPlane(image_buffer, 1).cast_const();
         let uv_stride = CVPixelBufferGetBytesPerRowOfPlane(image_buffer, 1);
 
         let y_plane = slice::from_raw_parts(y_ptr, height * y_stride);
@@ -428,15 +428,15 @@ extern "C" fn decode_callback(
 
                 // Y: one contiguous slice read
                 let y_src = &y_plane[y_row_base + x_base..][..16];
-                let y_chunk: [i16; 16] = std::array::from_fn(|i| y_src[i] as i16);
+                let y_chunk: [i16; 16] = std::array::from_fn(|i| i16::from(y_src[i]));
 
                 // UV: one 16-byte slice read, deinterleave into cb/cr in 8 iterations
                 let uv_base = uv_row_base + (x_base / 2) * 2;
                 let uv_src = &uv_plane[uv_base..][..16];
 
                 for i in 0..8 {
-                    let cb = uv_src[i * 2] as i16;
-                    let cr = uv_src[i * 2 + 1] as i16;
+                    let cb = i16::from(uv_src[i * 2]);
+                    let cr = i16::from(uv_src[i * 2 + 1]);
                     cb_chunk[i * 2] = cb;
                     cb_chunk[i * 2 + 1] = cb;
                     cr_chunk[i * 2] = cr;
@@ -457,7 +457,7 @@ extern "C" fn decode_callback(
                 let x_base = chunks_of_16 * 16;
 
                 let y_chunk: [i16; 16] = std::array::from_fn(|i| {
-                    y_plane[y_row_base + (x_base + i).min(width - 1)] as i16
+                    i16::from(y_plane[y_row_base + (x_base + i).min(width - 1)])
                 });
 
                 let mut cb_chunk = [0i16; 16];
@@ -468,10 +468,10 @@ extern "C" fn decode_callback(
                     // x0 is always even after the min clamp, but guard with & !1
                     let uv_off0 = uv_row_base + (x0 & !1);
                     let uv_off1 = uv_row_base + (x1 & !1);
-                    let cb0 = uv_plane[uv_off0] as i16;
-                    let cr0 = uv_plane[uv_off0 + 1] as i16;
-                    let cb1 = uv_plane[uv_off1] as i16;
-                    let cr1 = uv_plane[uv_off1 + 1] as i16;
+                    let cb0 = i16::from(uv_plane[uv_off0]);
+                    let cr0 = i16::from(uv_plane[uv_off0 + 1]);
+                    let cb1 = i16::from(uv_plane[uv_off1]);
+                    let cr1 = i16::from(uv_plane[uv_off1 + 1]);
                     cb_chunk[i * 2] = cb0;
                     cb_chunk[i * 2 + 1] = cb1;
                     cr_chunk[i * 2] = cr0;

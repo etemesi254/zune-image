@@ -26,7 +26,7 @@ fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.header_size) as usize),
         _ => Err(HeicErrors::ParseError {
-            box_type: box_header.box_type.clone(),
+            box_type: box_header.box_type,
             msg:      "Needs absolute size".into()
         })
     }
@@ -36,7 +36,7 @@ fn get_abs_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s as usize),
         _ => Err(HeicErrors::ParseError {
-            box_type: box_header.box_type.clone(),
+            box_type: box_header.box_type,
             msg:      "Needs absolute size".into()
         })
     }
@@ -115,7 +115,7 @@ pub fn decode_hdlr<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader
 ) -> Result<HdlrSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
-    trace!("Decoding hdlr length: {}", bytes_left);
+    trace!("Decoding hdlr length: {bytes_left}");
 
     let version_and_flags = reader.get_u32_be_err()?;
 
@@ -188,7 +188,7 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
 ) -> Result<PitmSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
-    trace!("Decoding pitm length: {}", bytes_left);
+    trace!("Decoding pitm length: {bytes_left}");
 
     let version_and_flags = reader.get_u32_be_err()?;
     let version = (version_and_flags >> 24) as u8;
@@ -196,7 +196,7 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
     bytes_left = subtract_value(bytes_left, 4)?;
 
     let item_id = if version == 0 {
-        let id = reader.get_u16_be_err()? as u32;
+        let id = u32::from(reader.get_u16_be_err()?);
         bytes_left = subtract_value(bytes_left, 2)?;
         id
     } else {
@@ -248,7 +248,7 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
 ) -> Result<IinfSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
-    trace!("Decoding iinf length: {}", bytes_left);
+    trace!("Decoding iinf length: {bytes_left}");
 
     let version_and_flags = reader.get_u32_be_err()?;
     let version = (version_and_flags >> 24) as u8;
@@ -256,7 +256,7 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
     bytes_left = subtract_value(bytes_left, 4)?;
 
     let entry_count = if version == 0 {
-        let c = reader.get_u16_be_err()? as u32;
+        let c = u32::from(reader.get_u16_be_err()?);
         bytes_left = subtract_value(bytes_left, 2)?;
         c
     } else {
@@ -349,7 +349,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
     bytes_left = subtract_value(bytes_left, 6)?;
 
     let item_count = if version < 2 {
-        let c = reader.get_u16_be_err()? as u32;
+        let c = u32::from(reader.get_u16_be_err()?);
         bytes_left = subtract_value(bytes_left, 2)?;
         c
     } else {
@@ -385,7 +385,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
 
     for _ in 0..item_count {
         let item_id = if version < 2 {
-            let id = reader.get_u16_be_err()? as u32;
+            let id = u32::from(reader.get_u16_be_err()?);
             bytes_left = subtract_value(bytes_left, 2)?;
             id
         } else {
@@ -520,7 +520,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         let mut child_bytes_left = child_size.saturating_sub(child_header.header_size as usize);
 
         let from_item_id = if version == 0 {
-            let id = reader.get_u16_be_err()? as u32;
+            let id = u32::from(reader.get_u16_be_err()?);
             child_bytes_left = subtract_value(child_bytes_left, 2)?;
             id
         } else {
@@ -536,7 +536,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
 
         for _ in 0..ref_count {
             let to_id = if version == 0 {
-                let id = reader.get_u16_be_err()? as u32;
+                let id = u32::from(reader.get_u16_be_err()?);
                 child_bytes_left = subtract_value(child_bytes_left, 2)?;
                 id
             } else {
@@ -605,7 +605,7 @@ pub fn decode_infe<R: ZByteReaderTrait>(
     };
 
     if version == 0 || version == 1 {
-        infe.item_id = reader.get_u16_be_err()? as u32;
+        infe.item_id = u32::from(reader.get_u16_be_err()?);
         infe.item_protection_index = reader.get_u16_be_err()?;
         bytes_left -= 4;
 
@@ -624,7 +624,7 @@ pub fn decode_infe<R: ZByteReaderTrait>(
         // normally you'd read two more null-terminated strings here.
     } else {
         infe.item_id = if version == 2 {
-            let id = reader.get_u16_be_err()? as u32;
+            let id = u32::from(reader.get_u16_be_err()?);
             bytes_left = subtract_value(bytes_left, 2)?;
             id
         } else {
@@ -674,7 +674,7 @@ pub fn decode_iprp<R: ZByteReaderTrait>(
 ) -> Result<IprpSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
-    trace!("Decoding IPRP section length {:?}", bytes_left);
+    trace!("Decoding IPRP section length {bytes_left:?}");
 
     let mut iprp = IprpSection::default();
 
@@ -749,7 +749,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                 let angle = reader.read_u8() & 0x03;
 
                 ipco.properties.push(ItemProperty::Irot {
-                    angle_degrees: (angle as u16) * 90
+                    angle_degrees: u16::from(angle) * 90
                 });
                 if payload_size > 1 {
                     reader.skip(payload_size - 1)?;
@@ -871,7 +871,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                 reader.read_exact_bytes(&mut payload)?;
 
                 ipco.properties.push(ItemProperty::Unknown {
-                    box_type: child_header.box_type.clone(),
+                    box_type: child_header.box_type,
                     payload
                 });
             }
@@ -924,7 +924,7 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
             bytes_left = subtract_value(bytes_left, 4)?;
             id
         } else {
-            let id = reader.get_u16_be_err()? as u32;
+            let id = u32::from(reader.get_u16_be_err()?);
             bytes_left = subtract_value(bytes_left, 2)?;
             id
         };
@@ -948,7 +948,7 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
                 bytes_left = subtract_value(bytes_left, 1)?;
                 associations.push(IpmaAssociation {
                     essential:      (val >> 7) != 0,
-                    property_index: (val & 0x7F) as u16
+                    property_index: u16::from(val & 0x7F)
                 });
             }
         }
@@ -974,7 +974,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
 ) -> Result<MetaSection, HeicErrors> {
     if &box_header.box_type.0 != b"meta" {
         return Err(HeicErrors::ParseError {
-            box_type: box_header.box_type.clone(),
+            box_type: box_header.box_type,
             msg:      "Expected META".into()
         });
     }
@@ -983,7 +983,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
 
     if bytes_left < 4 {
         return Err(HeicErrors::PayloadTooShort {
-            box_type: box_header.box_type.clone(),
+            box_type: box_header.box_type,
             needed:   4,
             have:     bytes_left
         });

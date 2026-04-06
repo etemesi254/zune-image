@@ -1,6 +1,6 @@
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
-use crate::hevc_decoder::cabac_tables::*;
+use crate::hevc_decoder::cabac_tables::{RANGE_LPS_TABLE, TRANSITION_MPS, RENORM_TABLE, TRANSITION_LPS, CONTEXT_MODEL_CU_SKIP_FLAG, INIT_CU_SKIP, CONTEXT_MODEL_PRED_MODE_FLAG, INIT_PRED_MODE, CONTEXT_MODEL_MERGE_FLAG, INIT_MERGE_FLAG, CONTEXT_MODEL_MERGE_IDX, INIT_MERGE_IDX, CONTEXT_MODEL_INTER_PRED_IDC, INIT_INTER_PRED_IDC, CONTEXT_MODEL_REF_IDX_LX, INIT_REF_IDX, CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG, INIT_ABS_MVD, CONTEXT_MODEL_MVP_LX_FLAG, INIT_MVP_LX, CONTEXT_MODEL_RQT_ROOT_CBF, INIT_RQT_ROOT, CONTEXT_MODEL_RDPCM_FLAG, CONTEXT_MODEL_RDPCM_DIR, CONTEXT_MODEL_SPLIT_CU_FLAG, INIT_SPLIT_CU, CONTEXT_MODEL_PART_MODE, INIT_PART_MODE, CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG, INIT_PREV_INTRA, CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE, INIT_CHROMA_PRED, CONTEXT_MODEL_CBF_LUMA, INIT_CBF_LUMA, CONTEXT_MODEL_CBF_CHROMA, INIT_CBF_CHROMA, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG, INIT_SPLIT_TRANS, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX, INIT_LAST_COEFF, CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG, INIT_CODED_SUB, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG, INIT_SIG_COEFF, INIT_SIG_COEFF_SKIP, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG, INIT_GTR_1, CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG, INIT_GTR_2, CONTEXT_MODEL_SAO_MERGE_FLAG, INIT_SAO_MERGE, CONTEXT_MODEL_SAO_TYPE_IDX, INIT_SAO_TYPE, CONTEXT_MODEL_CU_QP_DELTA_ABS, INIT_QP_DELTA, CONTEXT_MODEL_TRANSFORM_SKIP_FLAG, INIT_TRANSFORM_SKIP, CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG, INIT_TRANSQUANT_BYPASS, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1, CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_FLAG, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_IDX};
 
 pub const NUM_CABAC_CONTEXTS: usize = 172;
 
@@ -37,7 +37,7 @@ impl<'a> CabacDecoder<'a> {
         if self.data.len() >= self.cursor + 2 {
             // 1. Read 16 bits starting from the current cursor (byte-aligned)
             // This is the 'iv' value in the spec (Initial Value)
-            self.value = (self.data[self.cursor] as u32) << 8 | (self.data[self.cursor + 1] as u32);
+            self.value = u32::from(self.data[self.cursor]) << 8 | u32::from(self.data[self.cursor + 1]);
 
             // 2. Advance cursor by 2 bytes
             self.cursor += 2;
@@ -74,7 +74,7 @@ impl<'a> CabacDecoder<'a> {
             let byte = if self.cursor < self.data.len() {
                 let b = self.data[self.cursor];
                 self.cursor += 1;
-                b as u32
+                u32::from(b)
             } else {
                 0 // Padding for trailing bits
             };
@@ -92,10 +92,10 @@ impl<'a> CabacDecoder<'a> {
 
     fn _print_states(&self) {
         for i in 100..NUM_CABAC_CONTEXTS {
-            let state = self.contexts[i as usize];
+            let state = self.contexts[i];
             let mps = state & 1;
             let state = state >> 1;
-            println!("i={i},mps:{},state:{}", mps, state);
+            println!("i={i},mps:{mps},state:{state}");
         }
     }
     // --- Core Decoding Functions ---
@@ -115,7 +115,7 @@ impl<'a> CabacDecoder<'a> {
         );
 
         let q_idx = (self.range >> 6) & 3;
-        let lps_range = RANGE_LPS_TABLE[state][q_idx as usize] as u32;
+        let lps_range = u32::from(RANGE_LPS_TABLE[state][q_idx as usize]);
 
         self.range -= lps_range;
         let scaled_range = self.range << 7;
@@ -150,7 +150,7 @@ impl<'a> CabacDecoder<'a> {
         let bin = 1 - mps;
         self.value -= scaled_range;
 
-        let shift = RENORM_TABLE[(lps_range >> 3) as usize] as u32;
+        let shift = u32::from(RENORM_TABLE[(lps_range >> 3) as usize]);
         self.range = lps_range << shift;
         self.renorm(shift);
 
@@ -167,7 +167,7 @@ impl<'a> CabacDecoder<'a> {
         self.renorm_one();
 
         let scaled_range = self.range << 7;
-        let bit = (self.value >= scaled_range) as u8;
+        let bit = u8::from(self.value >= scaled_range);
         if bit == 1 {
             self.value -= scaled_range;
         }
@@ -209,7 +209,7 @@ impl<'a> CabacDecoder<'a> {
         }
 
         // Renorm all bits at once
-        self.renorm(n_bits as u32);
+        self.renorm(u32::from(n_bits));
 
         let scaled = self.range << 7;
         let mut res = 0u32;
@@ -254,7 +254,7 @@ impl<'a> CabacDecoder<'a> {
     }
 }
 
-impl<'a> CabacDecoder<'a> {
+impl CabacDecoder<'_> {
     pub fn init_contexts(&mut self, qp: i32, init_type: usize) {
         let qp_y = qp.clamp(0, 51);
 
@@ -264,7 +264,7 @@ impl<'a> CabacDecoder<'a> {
         // We must ensure we adjust the 'init_type' used as index for the C++ tables.
         if init_type > 0 {
             // Only for B (0) or P (1)
-            let lib_idx = if init_type == 1 { 0 } else { 1 }; // P=0, B=1 for motion tables
+            let lib_idx = usize::from(init_type != 1); // P=0, B=1 for motion tables
 
             self.set_init(qp_y, CONTEXT_MODEL_CU_SKIP_FLAG, &INIT_CU_SKIP[lib_idx], 3);
             self.set_init(
@@ -306,7 +306,7 @@ impl<'a> CabacDecoder<'a> {
             3
         );
 
-        let part_idx = if init_type != 2 { init_type } else { 5 };
+        let part_idx = if init_type == 2 { 5 } else { init_type };
         self.set_init(
             qp_y,
             CONTEXT_MODEL_PART_MODE,
@@ -432,7 +432,7 @@ impl<'a> CabacDecoder<'a> {
         let qp_clipped = qp.clamp(0, 51);
 
         for i in 0..len {
-            let iv = values[i] as i32;
+            let iv = i32::from(values[i]);
             let slope_idx = iv >> 4;
             let intersec_idx = iv & 0xF;
 

@@ -47,8 +47,8 @@ impl Serialize for ImageMetadata {
                         .display_value()
                         .with_unit(f)
                         .to_string()
-                        .trim_start_matches(|x| x == '\"')
-                        .trim_end_matches(|x| x == '\"')
+                        .trim_start_matches('\"')
+                        .trim_end_matches('\"')
                         .to_string();
 
                     if value.len() < 100 {

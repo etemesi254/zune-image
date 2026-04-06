@@ -77,7 +77,7 @@ impl OperationsTrait for ImageTransfer {
                 BitType::U8 => {
                     if let Some(lut_table) = eight_bit_lut.as_ref() {
                         let channel = input.reinterpret_as_mut::<u8>()?;
-                        channel.iter_mut().for_each(|x| *x = lut_table[*x as usize]);
+                        for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
                     } else {
                         panic!("LUT table was not made");
                     }
@@ -85,7 +85,7 @@ impl OperationsTrait for ImageTransfer {
                 BitType::U16 => {
                     if let Some(lut_table) = sixteen_bit_lut.as_ref() {
                         let channel = input.reinterpret_as_mut::<u16>()?;
-                        channel.iter_mut().for_each(|x| *x = lut_table[*x as usize]);
+                        for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
                     } else {
                         panic!("SIXTEEN_BIT table was not made");
                     }
@@ -95,14 +95,12 @@ impl OperationsTrait for ImageTransfer {
                     let channel = input.reinterpret_as_mut::<f32>()?;
                     match self.conversion_type {
                         ConversionType::GammaToLinear => {
-                            channel
-                                .iter_mut()
-                                .for_each(|x| *x = self.transfer_function.linearize(*x));
+                            for x in channel
+                                .iter_mut() { *x = self.transfer_function.linearize(*x); }
                         }
                         ConversionType::LinearToGamma => {
-                            channel
-                                .iter_mut()
-                                .for_each(|x| *x = self.transfer_function.gamma(*x));
+                            for x in channel
+                                .iter_mut() { *x = self.transfer_function.gamma(*x); }
                         }
                     }
                 }

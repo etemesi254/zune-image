@@ -56,6 +56,7 @@ pub enum Marker {
 }
 
 impl Marker {
+    #[must_use] 
     pub fn from_u8(n: u8) -> Option<Marker> {
         use self::Marker::{APP, COM, DAC, DHT, DNL, DQT, DRI, EOI, RST, SOF, SOI, SOS, UNKNOWN};
 

@@ -24,8 +24,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
     if pps.pps_id >= HEVC_MAX_PPS_COUNT {
         return Err(NalError::ParameterOutOfRange {
-            limit: HEVC_MAX_PPS_COUNT as _,
-            value: pps.pps_id as _,
+            limit: HEVC_MAX_PPS_COUNT.into(),
+            value: pps.pps_id.into(),
             field: "pps.pps_id"
         });
     }
@@ -34,8 +34,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
     if pps.sps_id >= HEVC_MAX_SPS_COUNT {
         return Err(NalError::ParameterOutOfRange {
-            limit: HEVC_MAX_PPS_COUNT as _,
-            value: pps.sps_id as _,
+            limit: HEVC_MAX_PPS_COUNT.into(),
+            value: pps.sps_id.into(),
             field: "pps.sps_id"
         });
     }
@@ -57,8 +57,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         || pps.num_ref_idx_l1_default_active >= HEVC_MAX_REFS
     {
         return Err(NalError::ParameterOutOfRange {
-            limit: HEVC_MAX_REFS as _,
-            value: pps.num_ref_idx_l0_default_active as _,
+            limit: HEVC_MAX_REFS.into(),
+            value: pps.num_ref_idx_l0_default_active.into(),
             field: "pps.num_ref_idx_l0_default_active"
         });
     }
@@ -74,8 +74,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
     if pps.diff_cu_qp_delta_depth > sps.log2_diff_max_min_luma_coding_block_size {
         return Err(NalError::ParameterOutOfRange {
-            limit: sps.log2_diff_max_min_luma_coding_block_size as _,
-            value: pps.diff_cu_qp_delta_depth as _,
+            limit: sps.log2_diff_max_min_luma_coding_block_size.into(),
+            value: pps.diff_cu_qp_delta_depth.into(),
             field: "pps.diff_cu_qp_delta_depth"
         });
     }
@@ -162,7 +162,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     if pps.pic_scaling_list_data_present_flag {
         pps.pic_scaling_lists = parse_scaling_list_data(&mut r)?;
     } else {
-        pps.pic_scaling_lists = sps.scaling_lists.clone()
+        pps.pic_scaling_lists = sps.scaling_lists.clone();
     }
     // --- Extensions ---
     pps.lists_modification_present_flag = r.read_flag();
@@ -170,8 +170,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     let log2_parallel_merge_level_minus2 = r.read_ue_u8()?;
     if log2_parallel_merge_level_minus2 > sps.log2_ctb_size_y {
         return Err(NalError::ParameterOutOfRange {
-            limit: sps.log2_ctb_size_y as _,
-            value: log2_parallel_merge_level_minus2 as _,
+            limit: sps.log2_ctb_size_y.into(),
+            value: log2_parallel_merge_level_minus2.into(),
             field: "log2_parallel_merge_level_minus2"
         });
     }
@@ -196,8 +196,8 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             let mut cr_qp_offset_list = [0; 6];
             let mut cb_qp_offset_list = [0; 6];
 
-            let log2_sao_offset_scale_luma;
-            let log2_sao_offset_scale_chroma;
+            
+            
 
             if pps.transform_skip_enabled_flag {
                 let v = r.read_ue() as u8;
@@ -218,8 +218,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             if sps.chroma_format == ChromaFormat::Yuv444 && cross_component_prediction_enabled_flag
             {
                 warn!(
-                    "Invalid PPS header(range_component), chross_component_prediction={} and format=Yuv444 ",
-                    cross_component_prediction_enabled_flag
+                    "Invalid PPS header(range_component), chross_component_prediction={cross_component_prediction_enabled_flag} and format=Yuv444 "
                 );
             }
 
@@ -237,8 +236,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
                 if v > max_v {
                     return Err(NalError::Generic(format!(
-                        "PPS header invalid diff_cu_chroma_qp_offset_depth={} should be greater than {}",
-                        max_v, v
+                        "PPS header invalid diff_cu_chroma_qp_offset_depth={max_v} should be greater than {v}"
                     )));
                 }
 
@@ -248,8 +246,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
                 if v > 5 {
                     return Err(NalError::Generic(format!(
-                        "PPS header invalid chroma_qp_offset_list_len = {} should be less than 5",
-                        v
+                        "PPS header invalid chroma_qp_offset_list_len = {v} should be less than 5"
                     )));
                 }
                 chroma_qp_offset_list_len = v + 1;
@@ -257,20 +254,18 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 for i in 0..chroma_qp_offset_list_len {
                     let s_v = r.read_se();
 
-                    if s_v < -12 || s_v > 12 {
+                    if !(-12..=12).contains(&s_v) {
                         return Err(NalError::Generic(format!(
-                            "SVLC value cb {} not in range of -12 = 12",
-                            s_v
+                            "SVLC value cb {s_v} not in range of -12 = 12"
                         )));
                     }
                     cb_qp_offset_list[i as usize] = s_v as i8;
 
                     let s_v = r.read_se();
 
-                    if s_v < -12 || s_v > 12 {
+                    if !(-12..=12).contains(&s_v) {
                         return Err(NalError::Generic(format!(
-                            "SVLC value cr {} not in range of -12 = 12",
-                            s_v
+                            "SVLC value cr {s_v} not in range of -12 = 12"
                         )));
                     }
                     cr_qp_offset_list[i as usize] = s_v as i8;
@@ -286,7 +281,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                     u
                 )));
             }
-            log2_sao_offset_scale_luma = u;
+            let log2_sao_offset_scale_luma = u;
 
             let u = r.read_ue() as u8;
 
@@ -298,7 +293,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 )));
             }
 
-            log2_sao_offset_scale_chroma = u;
+            let log2_sao_offset_scale_chroma = u;
 
             let range_ext = PpsRangeExtension {
                 cb_qp_offset_list,

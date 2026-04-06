@@ -26,7 +26,7 @@ pub(crate) enum Component {
 
 fn decode_cbf_luma(ctx: &mut DecodeSliceContext, trafo_depth: u8) -> bool {
     debug_more!("decode_cbf_luma");
-    let ctx_idx = CONTEXT_MODEL_CBF_LUMA + (if trafo_depth == 0 { 1 } else { 0 });
+    let ctx_idx = CONTEXT_MODEL_CBF_LUMA + usize::from(trafo_depth == 0);
     let bit = ctx.cabac.decode_decision(ctx_idx) == 1;
     debug_more!("  decode_cbf_luma=>{bit}");
     bit
@@ -77,9 +77,7 @@ pub fn decode_tu(
                 .get_intra_mode_chroma(x0 * sub_width_c, y0 * sub_height_c)
         };
 
-        if intra_pred_mode >= 35 {
-            panic!("intra_pred_mode cannot be more than 35");
-        }
+        assert!((intra_pred_mode < 35), "intra_pred_mode cannot be more than 35");
         debug_more!("intra_pred_mode=>{intra_pred_mode} c_idx={c_idx}");
 
         decode_intra_prediction(ctx, x0, y0, intra_pred_mode, n_t, c_idx);
@@ -88,7 +86,7 @@ pub fn decode_tu(
         let implicit_rdpcm_enabled = sps
             .range_extension
             .as_ref()
-            .map_or(false, |s| s.implicit_rdpcm_enabled_flag);
+            .is_some_and(|s| s.implicit_rdpcm_enabled_flag);
 
         if implicit_rdpcm_enabled
             && (ctx.cu_transquant_bypass_flag || ctx.transform_skip_flag[c_idx] == 1)
@@ -193,11 +191,11 @@ pub fn decode_tu(
             // --- 2. The Missing Transform Skip Shift! (Spec 8.6.2.1) ---
             // Because we bypassed the IDCT, we must manually apply the
             // post-transform bit-shift to scale the residuals back down to pixel space.
-            let shift = 20 - bit_depth as i32;
+            let shift = 20 - i32::from(bit_depth);
             let offset = if shift > 0 { 1 << (shift - 1) } else { 0 };
 
             for i in 0..(n_t * n_t) {
-                let val = ctx.math_scratchpad[i] as i32;
+                let val = i32::from(ctx.math_scratchpad[i]);
                 // Shift, and safely clamp to the 16-bit intermediate range
                 let shifted = (val + offset) >> shift;
                 ctx.math_scratchpad[i] = shifted.clamp(-32768, 32767) as i16;
@@ -279,21 +277,21 @@ pub fn read_transform_tree(
     if has_chroma {
         // Cb Component
         if cbf_cb != 0 {
-            let mut bit = decode_cbf_chroma(ctx, trafo_depth) as u8;
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
             if ctx.sps.chroma_format == ChromaFormat::Yuv422
                 && (!split_flag || log2_trafo_size == 3)
             {
-                bit |= (decode_cbf_chroma(ctx, trafo_depth) as u8) << 1;
+                bit |= decode_cbf_chroma(ctx, trafo_depth) << 1;
             }
             cbf_cb = bit;
         }
         // Cr Component
         if cbf_cr != 0 {
-            let mut bit = decode_cbf_chroma(ctx, trafo_depth) as u8;
+            let mut bit = decode_cbf_chroma(ctx, trafo_depth);
             if ctx.sps.chroma_format == ChromaFormat::Yuv422
                 && (!split_flag || log2_trafo_size == 3)
             {
-                bit |= (decode_cbf_chroma(ctx, trafo_depth) as u8) << 1;
+                bit |= decode_cbf_chroma(ctx, trafo_depth) << 1;
             }
             cbf_cr = bit;
         }
@@ -391,7 +389,7 @@ pub fn read_cross_comp_pred(ctx: &mut DecodeSliceContext, c_idx_minus_1: usize) 
         res_scale_val = 1 << (log2_res_scale_abs_plus1 - 1);
 
         // Apply sign: 0 -> *1, 1 -> *-1
-        res_scale_val *= 1 - 2 * (res_scale_sign_flag as i32);
+        res_scale_val *= 1 - 2 * i32::from(res_scale_sign_flag);
     } else {
         res_scale_val = 0;
     }
@@ -415,13 +413,12 @@ pub fn read_transform_unit(
     let chroma_format = ctx.sps.chroma_format;
 
     // 1. QP Delta Handling
-    if (cbf_luma || cbf_cb != 0 || cbf_cr != 0) && ctx.pps.cu_qp_delta_enabled_flag {
-        if !ctx.is_cu_qp_delta_coded {
+    if (cbf_luma || cbf_cb != 0 || cbf_cr != 0) && ctx.pps.cu_qp_delta_enabled_flag
+        && !ctx.is_cu_qp_delta_coded {
             ctx.cu_qp_delta = decode_cu_qp_delta(ctx)?;
             ctx.is_cu_qp_delta_coded = true;
             decode_quantization_parameters(ctx, x0, y0, log2_size);
         }
-    }
 
     // 2. Luma Path
     let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
@@ -455,7 +452,7 @@ pub fn read_transform_unit(
             .pps
             .range_extension
             .as_ref()
-            .map_or(false, |range| range.cross_component_prediction_enabled_flag);
+            .is_some_and(|range| range.cross_component_prediction_enabled_flag);
 
         let do_ccp = cross_component_prediction_enabled_flag
             && cbf_luma

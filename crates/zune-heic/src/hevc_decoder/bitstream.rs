@@ -57,7 +57,7 @@ impl<'src> BitReader<'src> {
         // We shift the 32-bit chunk so its MSB aligns with the next available slot.
 
         let shift = 64 - 32 - self.bits_left;
-        self.buffer |= (chunk as u64) << shift;
+        self.buffer |= u64::from(chunk) << shift;
 
         self.bits_left += 32;
         self.position += 4;
@@ -128,7 +128,7 @@ impl<'src> BitReader<'src> {
     pub fn peek_bits<const N: u8>(&self) -> u64 {
         debug_assert!(N > 0 && N <= 56);
         debug_assert!(self.bits_left >= N);
-        self.buffer >> (64 - N as u64)
+        self.buffer >> (64 - u64::from(N))
     }
 
     // ── Consume ───────────────────────────────────────────────────────────
@@ -150,11 +150,11 @@ impl<'src> BitReader<'src> {
     pub fn get_bits(&mut self, n: u8) -> u64 {
         debug_assert!(n > 0 && n <= 56);
         if self.bits_left < n {
-            self.refill()
+            self.refill();
         }
 
         debug_assert!(self.bits_left >= n);
-        let val = self.buffer >> (64 - n as u64);
+        let val = self.buffer >> (64 - u64::from(n));
         self.buffer <<= n;
         self.bits_left -= n;
         val
@@ -181,7 +181,7 @@ impl<'src> BitReader<'src> {
     #[inline(always)]
     pub fn read_ue(&mut self) -> u64 {
         if self.bits_left < 32 {
-            self.refill()
+            self.refill();
         }
 
         let num_zeros = self.buffer.leading_zeros() as u8;
@@ -199,10 +199,10 @@ impl<'src> BitReader<'src> {
             return 0;
         }
         if self.bits_left < 32 {
-            self.refill()
+            self.refill();
         }
 
-        let suffix = self.buffer >> (64 - num_zeros as u64);
+        let suffix = self.buffer >> (64 - u64::from(num_zeros));
         self.buffer <<= num_zeros;
         self.bits_left -= num_zeros;
 
@@ -211,9 +211,9 @@ impl<'src> BitReader<'src> {
 
     pub fn read_ue_u8(&mut self) -> Result<u8, NalError> {
         let val = self.read_ue();
-        debug_assert!(val < u8::MAX as _);
+        debug_assert!(val < u8::MAX.into());
 
-        if val > u8::MAX as _ {
+        if val > u8::MAX.into() {
             let msg =
                 format!("exp golomb decode for u8 failed, value {val} larger than u8::MAX(255)");
             return Err(NalError::Generic(msg));
@@ -226,7 +226,7 @@ impl<'src> BitReader<'src> {
         let k = self.read_ue();
         match k {
             0 => 0,
-            k if k & 1 == 1 => ((k + 1) / 2) as i64,
+            k if k & 1 == 1 => k.div_ceil(2) as i64,
             k => -((k / 2) as i64)
         }
     }
@@ -234,7 +234,7 @@ impl<'src> BitReader<'src> {
 
     #[inline(always)]
     pub fn is_byte_aligned(&self) -> bool {
-        self.bits_left % 8 == 0
+        self.bits_left.is_multiple_of(8)
     }
 
     pub fn byte_align(&mut self) {

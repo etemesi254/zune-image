@@ -22,6 +22,7 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
+#[must_use] 
 pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize, usize) {
     let angle = angle % 360.0;
 
@@ -106,7 +107,7 @@ impl OperationsTrait for Rotate {
                     new_channel.reinterpret_as_mut()?
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
-            };
+            }
             *channel = new_channel;
             Ok(())
         };
@@ -142,7 +143,7 @@ fn change_image_dims(image: &mut Image, angle: f32) {
     let new_width = (ow as f32 * cos_a + oh as f32 * sin_a).ceil() as usize;
     let new_height = (ow as f32 * sin_a + oh as f32 * cos_a).ceil() as usize;
 
-    image.set_dimensions(new_width, new_height)
+    image.set_dimensions(new_width, new_height);
 }
 
 pub fn rotate<T: Copy + NumOps<T> + Default>(
@@ -162,7 +163,7 @@ pub fn rotate<T: Copy + NumOps<T> + Default>(
     } else {
         rotate_arbitrary(
             in_image, out_image, width, height, out_width, out_height, angle
-        )
+        );
     }
 }
 

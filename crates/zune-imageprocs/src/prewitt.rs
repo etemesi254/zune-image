@@ -25,9 +25,9 @@ fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
     //   +1, 0, -1
     //
     let mut sum_a = 0.0;
-    sum_a += (f32::from(c[0]) * 1.) + (f32::from(c[2]) * -1.);
-    sum_a += (f32::from(c[3]) * 1.) + (f32::from(c[5]) * -1.);
-    sum_a += (f32::from(c[6]) * 1.) + (f32::from(c[7]) * -1.);
+    sum_a += (f32::from(c[0]) * 1.) + -f32::from(c[2]);
+    sum_a += (f32::from(c[3]) * 1.) + -f32::from(c[5]);
+    sum_a += (f32::from(c[6]) * 1.) + -f32::from(c[7]);
 
     // matrix
     //  1,  1,  1,
@@ -35,8 +35,8 @@ fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
     // -1, -1, -1
     let mut sum_b = 0.0;
     sum_b += (f32::from(c[0]) * 1.) + (f32::from(c[1]) * 1.);
-    sum_b += (f32::from(c[2]) * 1.) + (f32::from(c[6]) * -1.);
-    sum_b += (f32::from(c[7]) * -1.) + (f32::from(c[8]) * -1.);
+    sum_b += (f32::from(c[2]) * 1.) + -f32::from(c[6]);
+    sum_b += -f32::from(c[7]) + -f32::from(c[8]);
 
     T::from_f32(((sum_a * sum_a) + (sum_b * sum_b)).sqrt())
 }

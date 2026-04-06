@@ -19,7 +19,7 @@ pub fn decode_part_mode(ctx: &mut DecodeSliceContext, log2_cb_size: u8) -> PartM
     } else {
         // --- INTER CASE ---
         // Bit 0: Is it 2Nx2N?
-        let bit0 = ctx.cabac.decode_decision(CONTEXT_MODEL_PART_MODE + 0);
+        let bit0 = ctx.cabac.decode_decision(CONTEXT_MODEL_PART_MODE);
         if bit0 == 1 {
             return PartMode::Part2Nx2N;
         }
@@ -29,9 +29,7 @@ pub fn decode_part_mode(ctx: &mut DecodeSliceContext, log2_cb_size: u8) -> PartM
 
         if log2_cb_size > sps.log2_min_luma_coding_block_size {
             // Larger than minimum CU: check for AMP
-            if !sps.amp_enabled_flag {
-                if bit1 == 1 { PartMode::Part2NxN } else { PartMode::PartNx2N }
-            } else {
+            if sps.amp_enabled_flag {
                 // Bit 3: Is it a symmetric split?
                 let bit3 = ctx.cabac.decode_decision(CONTEXT_MODEL_PART_MODE + 3);
                 if bit3 == 1 {
@@ -42,9 +40,9 @@ pub fn decode_part_mode(ctx: &mut DecodeSliceContext, log2_cb_size: u8) -> PartM
                 let bit4 = ctx.cabac.decode_bypass();
                 if bit1 == 1 {
                     if bit4 == 1 { PartMode::Part2NxnD } else { PartMode::Part2NxnU }
-                } else {
-                    if bit4 == 0 { PartMode::PartnLx2N } else { PartMode::PartnRx2N }
-                }
+                } else if bit4 == 0 { PartMode::PartnLx2N } else { PartMode::PartnRx2N }
+            } else {
+                if bit1 == 1 { PartMode::Part2NxN } else { PartMode::PartNx2N }
             }
         } else {
             // Minimum CU size (usually 8x8)

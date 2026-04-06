@@ -84,7 +84,7 @@ impl OperationsTrait for Transpose {
                 d => {
                     return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                 }
-            };
+            }
             *channel = out_channel;
             Ok(())
         };

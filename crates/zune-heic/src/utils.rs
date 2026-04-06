@@ -8,11 +8,11 @@ pub(crate) fn read_sized_int<R: ZByteReaderTrait>(
 ) -> Result<u64, HeicErrors> {
     match size {
         0 => Ok(0),
-        4 => Ok(reader.get_u32_be_err()? as u64),
+        4 => Ok(u64::from(reader.get_u32_be_err()?)),
         8 => Ok(reader.get_u64_be_err()?),
         _ => Err(HeicErrors::ParseError {
             box_type: FourCC(*b"iloc"),
-            msg:      format!("Unsupported variable integer size: {}", size)
+            msg:      format!("Unsupported variable integer size: {size}")
         })
     }
 }

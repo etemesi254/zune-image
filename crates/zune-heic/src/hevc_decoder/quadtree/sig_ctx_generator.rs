@@ -39,7 +39,7 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
 
             if sb_width == 1 {
                 // 4x4 block
-                sig_ctx = CTX_IDX_MAP_4X4[(yc << 2) + xc] as i32;
+                sig_ctx = i32::from(CTX_IDX_MAP_4X4[(yc << 2) + xc]);
             } else if xc + yc == 0 {
                 // DC component of larger blocks
                 sig_ctx = 0;
@@ -52,8 +52,8 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
                 // Match libde265 switch(prevCsbf)
                 sig_ctx = match prev_csbf {
                     0 => if xp + yp >= 3 { 0 } else if xp + yp > 0 { 1 } else { 2 },
-                    1 => if yp == 0 { 2 } else if yp == 1 { 1 } else { 0 },
-                    2 => if xp == 0 { 2 } else if xp == 1 { 1 } else { 0 },
+                    1 => if yp == 0 { 2 } else { i32::from(yp == 1) },
+                    2 => if xp == 0 { 2 } else { i32::from(xp == 1) },
                     _ => 2, // default (prevCsbf == 3)
                 };
 

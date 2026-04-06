@@ -92,7 +92,7 @@ impl<'a> Composite<'a> {
     }
 }
 
-impl<'a> OperationsTrait for Composite<'a> {
+impl OperationsTrait for Composite<'_> {
     fn name(&self) -> &'static str {
         "Composite"
     }

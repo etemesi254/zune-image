@@ -12,7 +12,7 @@ use crate::hevc_decoder::ctx::DecodeSliceContext;
 #[inline(always)]
 fn check_predict_args(p: &[u8], dst: &[u8], n_t: usize) {
     assert!(
-        p.len() >= 4 * n_t + 1,
+        p.len() > 4 * n_t,
         "p too short: need {}, got {}",
         4 * n_t + 1,
         p.len()
@@ -34,31 +34,31 @@ pub fn predict_dc(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8, is_luma: b
     let top_slice = &p[2 * n_t + 1..=3 * n_t];
 
     // Left column (y = 0..n_t-1) -> indices N to 2N-1
-    let left_slice = &p[n_t..=2 * n_t - 1];
+    let left_slice = &p[n_t..(2 * n_t)];
 
     // Sum the top row and left column in a single pass
     let sum: u32 = top_slice
         .iter()
         .chain(left_slice)
-        .fold(0u32, |acc, &v| acc + v as u32);
+        .fold(0u32, |acc, &v| acc + u32::from(v));
 
     let dc_val = ((sum + n_t as u32) >> (log2_n_t + 1)) as u8;
     dst.fill(dc_val);
 
     // DC filter (luma, block sizes < 32 only — Spec 8.4.4.2.5)
     if is_luma && n_t < 32 {
-        let dc_i32 = dc_val as i32;
+        let dc_i32 = i32::from(dc_val);
 
         // Top-left corner (y=0, x=0)
         // Top(x=0) is index 2*n_t + 1. Left(y=0) is index 2*n_t - 1.
-        dst[0] = ((p[2 * n_t + 1] as i32 + 2 * dc_i32 + p[2 * n_t - 1] as i32 + 2) >> 2) as u8;
+        dst[0] = ((i32::from(p[2 * n_t + 1]) + 2 * dc_i32 + i32::from(p[2 * n_t - 1]) + 2) >> 2) as u8;
 
         // Top row (x = 1..n_t-1)
         dst[1..n_t]
             .iter_mut()
             .zip(&p[2 * n_t + 2..=3 * n_t])
             .for_each(|(d, &above)| {
-                *d = ((above as i32 + 3 * dc_i32 + 2) >> 2) as u8;
+                *d = ((i32::from(above) + 3 * dc_i32 + 2) >> 2) as u8;
             });
 
         // Left column (y = 1..n_t-1)
@@ -72,7 +72,7 @@ pub fn predict_dc(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8, is_luma: b
             // but the dst step_by goes from y=1 down to y=N-1!
             .zip(left_y1_to_n.iter().rev())
             .for_each(|(d, &lv)| {
-                *d = ((lv as i32 + 3 * dc_i32 + 2) >> 2) as u8;
+                *d = ((i32::from(lv) + 3 * dc_i32 + 2) >> 2) as u8;
             });
     }
 }
@@ -82,10 +82,10 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
     check_predict_args(p, dst, n_t);
 
     // top_right: x = n_t -> index = 2*n_t + 1 + n_t = 3*n_t + 1
-    let top_right = p[3 * n_t + 1] as i32;
+    let top_right = i32::from(p[3 * n_t + 1]);
 
     // bottom_left: y = n_t -> index = 2*n_t - 1 - n_t = n_t - 1
-    let bottom_left = p[n_t - 1] as i32;
+    let bottom_left = i32::from(p[n_t - 1]);
 
     let shift = log2_n_t + 1;
     let n = n_t as i32;
@@ -95,7 +95,7 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
         let y_i32 = y as i32;
 
         // left_val: at current y -> index = 2*n_t - 1 - y
-        let left_val = p[2 * n_t - 1 - y] as i32;
+        let left_val = i32::from(p[2 * n_t - 1 - y]);
 
         let v_weight_b = y_i32 + 1; // (y+1) * bottom_left
         let v_weight_t = n - 1 - y_i32; // (n-1-y) * top_val
@@ -104,7 +104,7 @@ pub fn predict_planar(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8) {
             let x_i32 = x as i32;
 
             // top_val: at current x -> index = 2*n_t + 1 + x
-            let top_val = p[2 * n_t + 1 + x] as i32;
+            let top_val = i32::from(p[2 * n_t + 1 + x]);
 
             // Horizontal linear interpolation
             let h = (n - 1 - x_i32) * left_val + (x_i32 + 1) * top_right;
@@ -164,8 +164,8 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
             .copy_from_slice(&p[corner_idx + 1..=4 * n_t]);
 
         if angle < 0 {
-            let inv_angle = INV_ANGLES[mode_idx] as i32;
-            let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
+            let inv_angle = i32::from(INV_ANGLES[mode_idx]);
+            let proj_len = ((n_t as i32 * i32::from(angle)) >> 5).unsigned_abs() as usize;
 
             for i in 1..=proj_len {
                 let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
@@ -187,8 +187,8 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
         }
 
         if angle < 0 {
-            let inv_angle = INV_ANGLES[mode_idx] as i32;
-            let proj_len = ((n_t as i32 * angle as i32) >> 5).abs() as usize;
+            let inv_angle = i32::from(INV_ANGLES[mode_idx]);
+            let proj_len = ((n_t as i32 * i32::from(angle)) >> 5).unsigned_abs() as usize;
 
             for i in 1..=proj_len {
                 let side_idx = ((i as i32 * inv_angle + 128) >> 8) as usize;
@@ -203,7 +203,7 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
 
     // ── 2. Project into dst (1/32-pixel interpolation) ───────────
     for y in 0..n_t {
-        let pos = ((y + 1) as i32) * (angle as i32);
+        let pos = ((y + 1) as i32) * i32::from(angle);
         let int_pos = pos >> 5;
         let frac = (pos & 31) as u32;
 
@@ -211,8 +211,8 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
             let base = (offset as i32 + x as i32 + int_pos + 1) as usize;
 
             let val = if frac != 0 {
-                let s1 = ref_main_buf[base] as u32;
-                let s2 = ref_main_buf[base + 1] as u32;
+                let s1 = u32::from(ref_main_buf[base]);
+                let s2 = u32::from(ref_main_buf[base + 1]);
                 (((32 - frac) * s1 + frac * s2 + 16) >> 5) as u8
             } else {
                 ref_main_buf[base]
@@ -238,14 +238,13 @@ pub fn decode_intra_prediction_internal_u8(
     
     if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)  {
         println!(
-            "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",
-            intra_mode, n_t, n_t, c_idx, x_b0, y_b0
+            "--- Intra Prediction Trace: Mode {intra_mode}, Size {n_t}x{n_t}, Comp {c_idx} at [{x_b0},{y_b0}] ---"
         );
     }
     match intra_mode {
         0 => predict_planar(p_slice, scratchpad, n_t, log2_n_t),
         1 => predict_dc(p_slice, scratchpad, n_t, log2_n_t, c_idx == 0),
-        2..=34 => predict_angular(&p_slice, scratchpad, ref_main_scratch, n_t, intra_mode),
+        2..=34 => predict_angular(p_slice, scratchpad, ref_main_scratch, n_t, intra_mode),
         _ => unreachable!()
     }
 

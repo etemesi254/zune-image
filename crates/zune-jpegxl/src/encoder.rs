@@ -756,8 +756,7 @@ fn process_image_area<A, BitDepth>(
     const K_PADDING: usize = 32;
     const K_ALIGN: usize = 64;
     let k_align_pixels: usize = K_ALIGN / core::mem::size_of::<BitDepth::Pixel>();
-    let k_num_px: usize = (256 + K_PADDING * 2 + k_align_pixels + k_align_pixels - 1)
-        / k_align_pixels
+    let k_num_px: usize = (256 + K_PADDING * 2 + k_align_pixels).div_ceil(k_align_pixels)
         * k_align_pixels;
 
     let g1 = vec![BitDepth::pixel_zero(); k_num_px];
@@ -1116,10 +1115,10 @@ impl<'a> JxlSimpleEncoder<'a> {
             return Err(JxlEncodeErrors::LengthMismatch(expected, found));
         }
 
-        let num_groups_x = (width + 255) / 256;
-        let num_groups_y = (height + 255) / 256;
-        let num_dc_groups_x = (width + 2047) / 2048;
-        let num_dc_groups_y = (height + 2047) / 2048;
+        let num_groups_x = width.div_ceil(256);
+        let num_groups_y = height.div_ceil(256);
+        let num_dc_groups_x = width.div_ceil(2048);
+        let num_dc_groups_y = height.div_ceil(2048);
 
         let mut raw_counts: [[u64; K_NUM_RAW_SYMBOLS]; 4] = [[0; K_NUM_RAW_SYMBOLS]; 4];
         let mut lz77_counts: [[u64; K_NUM_LZ77]; 4] = [[0; K_NUM_LZ77]; 4];
@@ -1434,7 +1433,7 @@ fn fast_lossless_output(frame_state: &FrameState) -> usize {
             sz += (writer.position * 8) + usize::from(writer.bits_in_buffer);
         }
 
-        sz = (sz + 7) / 8;
+        sz = sz.div_ceil(8);
         total_size_groups += sz;
     }
     frame_state.header.position + total_size_groups
@@ -1461,7 +1460,7 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
 
             sz += (writer.position * 8) + usize::from(writer.bits_in_buffer);
         }
-        sz = (sz + 7) / 8;
+        sz = sz.div_ceil(8);
         group_sizes[i] = sz;
     }
 

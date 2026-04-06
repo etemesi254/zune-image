@@ -107,10 +107,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                         } else {
                             error!("Unknown or unsupported format {:?}", out_file)
                         }
-                    } else {
-                        if out_file != "-" {
-                            error!("Could not determine extension from {:?}", out_file);
-                        }
+                    } else if out_file != "-" {
+                        error!("Could not determine extension from {:?}", out_file);
                     }
                 }
             }

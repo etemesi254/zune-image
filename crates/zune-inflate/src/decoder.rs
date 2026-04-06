@@ -539,9 +539,10 @@ impl<'a> DeflateDecoder<'a> {
     fn start_deflate_block(&mut self) -> Result<Vec<u8>, InflateDecodeErrors> {
         let mut out_block = vec![0; self.options.size_hint];
         self.start_deflate_block_inner(&mut out_block)?;
-        return Ok(out_block);
+        Ok(out_block)
     }
     #[allow(unused_assignments)]
+    #[allow(clippy::never_loop)]
     fn start_deflate_block_inner(
         &mut self, out_block: &mut Vec<u8>
     ) -> Result<(), InflateDecodeErrors> {

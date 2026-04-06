@@ -105,9 +105,8 @@ impl ColorMatrix {
         if slice.len() == 20 {
             let mut matrix = [[0f32; 5]; 4];
             let mut c = slice.chunks_exact(5);
-            matrix
-                .iter_mut()
-                .for_each(|x| x.copy_from_slice(c.next().unwrap()));
+            for x in matrix
+                .iter_mut() { x.copy_from_slice(c.next().unwrap()); }
             Some(ColorMatrix::new(matrix))
         } else {
             None

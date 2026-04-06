@@ -187,10 +187,10 @@ fn transform4_dst_1d_simd(input: &[i16], output: &mut [i32]) {
 
 #[inline(always)]
 fn transform4_1d_simd(input: &[i16], output: &mut [i32]) {
-    let c0 = (input[0] as i32) * 64;
-    let c2 = (input[2] as i32) * 64;
-    let c1 = input[1] as i32;
-    let c3 = input[3] as i32;
+    let c0 = i32::from(input[0]) * 64;
+    let c2 = i32::from(input[2]) * 64;
+    let c1 = i32::from(input[1]);
+    let c3 = i32::from(input[3]);
 
     let o0 = c1 * 83 + c3 * 36;
     let o1 = c1 * 36 - c3 * 83;
@@ -203,10 +203,10 @@ fn transform4_1d_simd(input: &[i16], output: &mut [i32]) {
 
 #[inline(always)]
 fn transform8_1d_simd(input: &[i16], output: &mut [i32]) {
-    let ee0 = (input[0] as i32 * 64) + (input[4] as i32 * 64);
-    let ee1 = (input[0] as i32 * 64) - (input[4] as i32 * 64);
-    let eo0 = (input[2] as i32 * 83) + (input[6] as i32 * 36);
-    let eo1 = (input[2] as i32 * 36) - (input[6] as i32 * 83);
+    let ee0 = (i32::from(input[0]) * 64) + (i32::from(input[4]) * 64);
+    let ee1 = (i32::from(input[0]) * 64) - (i32::from(input[4]) * 64);
+    let eo0 = (i32::from(input[2]) * 83) + (i32::from(input[6]) * 36);
+    let eo1 = (i32::from(input[2]) * 36) - (i32::from(input[6]) * 83);
     let e = [ee0 + eo0, ee1 + eo1, ee1 - eo1, ee0 - eo0];
 
     let odd_in = i16x4::from_array([input[1], input[3], input[5], input[7]]).cast::<i32>();
@@ -286,7 +286,7 @@ pub fn idct_2d_core<const N: usize>(
     transform_1d: fn(&[i16], &mut [i32])
 ) {
     let shift1: i32 = 7;
-    let shift2: i32 = 20 - bit_depth as i32;
+    let shift2: i32 = 20 - i32::from(bit_depth);
 
     // --- Pass 1: Vertical (columns of block → intermediate) -----------------
     for c in 0..N {
@@ -303,7 +303,7 @@ pub fn idct_2d_core<const N: usize>(
         }
 
         if !is_dst && col_in[0] != 0 && is_all_zero(&col_in[1..N]) {
-            let dc_val = shift_clip(col_in[0] as i32 * 64, shift1);
+            let dc_val = shift_clip(i32::from(col_in[0]) * 64, shift1);
             for r in 0..N {
                 intermediate[r * N + c] = dc_val;
             }
@@ -333,7 +333,7 @@ pub fn idct_2d_core<const N: usize>(
         }
 
         if !is_dst && row[0] != 0 && is_all_zero(&row[1..N]) {
-            let val = shift_clip(row[0] as i32 * DC_VERTICAL_SCALE, shift2);
+            let val = shift_clip(i32::from(row[0]) * DC_VERTICAL_SCALE, shift2);
             for c in 0..N {
                 block[r * N + c] = val;
             }

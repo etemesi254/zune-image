@@ -177,7 +177,7 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
 
         if wl % 2 == 0 {
             wl -= 1;
-        };
+        }
 
         let wu = (wl + 2) as usize;
 
@@ -226,7 +226,7 @@ pub fn gaussian_blur_u16(
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
             _ => unreachable!()
-        };
+        }
     }
     // transpose
     // we do three iterations above, so when that is done, results will always be in
@@ -239,7 +239,7 @@ pub fn gaussian_blur_u16(
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
             _ => unreachable!()
-        };
+        }
     }
     // transpose back
     transpose::transpose_u16(scratch_space, in_out_image, height, width);
@@ -269,7 +269,7 @@ pub fn gaussian_blur_f32(
                 *blur_radius
             ),
             _ => unreachable!()
-        };
+        }
     }
     // transpose
     // we do three iterations above, so when that is done, results will always be in
@@ -292,7 +292,7 @@ pub fn gaussian_blur_f32(
                 *blur_radius
             ),
             _ => unreachable!()
-        };
+        }
     }
     // transpose back
     transpose::transpose_generic(scratch_space, in_out_image, height, width);
@@ -346,7 +346,7 @@ pub fn gaussian_blur_u8(
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, width, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, width, *blur_radius),
             _ => unreachable!()
-        };
+        }
     }
     // transpose
     // we do three iterations above, so when that is done, results will always be in
@@ -359,7 +359,7 @@ pub fn gaussian_blur_u8(
             0 => crate::box_blur::box_blur_inner(in_out_image, scratch_space, height, *blur_radius),
             1 => crate::box_blur::box_blur_inner(scratch_space, in_out_image, height, *blur_radius),
             _ => unreachable!()
-        };
+        }
     }
     // transpose back
     transpose::transpose_u8(scratch_space, in_out_image, height, width);

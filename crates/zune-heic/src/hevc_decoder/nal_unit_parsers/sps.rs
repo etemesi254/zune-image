@@ -53,8 +53,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         3 => ChromaFormat::Yuv444,
         r => {
             return Err(NalError::Generic(format!(
-                "Invalid Chroma Format (>3) {}",
-                r
+                "Invalid Chroma Format (>3) {r}"
             )));
         }
     };
@@ -99,8 +98,8 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.bit_depth_luma = r.read_ue() as u8 + 8;
     if sps.bit_depth_luma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_LUMA_BITDEPTH as _,
-            value: sps.bit_depth_luma as _,
+            limit: MAX_LUMA_BITDEPTH.into(),
+            value: sps.bit_depth_luma.into(),
             field: "bit_depth (luma)"
         });
     }
@@ -108,8 +107,8 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.bit_depth_chroma = r.read_ue() as u8 + 8;
     if sps.bit_depth_chroma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
-            limit: MAX_LUMA_BITDEPTH as _,
-            value: sps.bit_depth_chroma as _,
+            limit: MAX_LUMA_BITDEPTH.into(),
+            value: sps.bit_depth_chroma.into(),
             field: "bit_depth (chroma)"
         });
     }
@@ -195,7 +194,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     if long_term_ref_pics_present_flag {
         sps.num_long_term_ref_pics_sps = r.read_ue();
         for _ in 0..(sps.num_long_term_ref_pics_sps) {
-            r.get_bits(sps.log2_max_pic_order_cnt_lsb as u8);
+            r.get_bits(sps.log2_max_pic_order_cnt_lsb);
             r.read_flag(); // used_by_curr_pic_lt_sps_flag
         }
     } else {

@@ -147,9 +147,7 @@ pub trait OperationsTrait: Send + Sync {
         let colorspace = image.colorspace();
 
         let supported = self
-            .supported_colorspaces()
-            .iter()
-            .any(|x| *x == colorspace);
+            .supported_colorspaces().contains(&colorspace);
 
         if !supported {
             match colorspace {
@@ -177,7 +175,7 @@ pub trait OperationsTrait: Send + Sync {
         // check we support the bit depth
         let bit_type = image.metadata.depth().bit_type();
 
-        let supported = self.supported_types().iter().any(|x| *x == bit_type);
+        let supported = self.supported_types().contains(&bit_type);
 
         if !supported {
             return Err(ImageErrors::OperationsError(
@@ -187,8 +185,7 @@ pub trait OperationsTrait: Send + Sync {
 
         confirm_invariants(image)?;
 
-        self.execute_impl(image)
-            .map_err(<ImageErrors as Into<ImageErrors>>::into)?;
+        self.execute_impl(image)?;
 
         confirm_invariants(image)?;
 

@@ -100,7 +100,7 @@ impl HevcDecoder {
                         self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 2));
                     }
 
-                    trace!("Decoding NAL {:?}", nal_type);
+                    trace!("Decoding NAL {nal_type:?}");
                     if let Some(f) = raw_frame.clone() {
                         decode_slice(&nal, self, f)?;
                     } else {

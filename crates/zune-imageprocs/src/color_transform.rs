@@ -32,6 +32,7 @@ pub struct ColorTransform {
 }
 
 impl ColorTransform {
+    #[must_use] 
     pub fn new(color_profiles: ColorProfiles) -> Self {
         Self {
             color: color_profiles

@@ -74,8 +74,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             mcu_width = self.mcu_x;
             mcu_height = self.mcu_y;
         } else {
-            mcu_width = (self.info.width as usize + 7) / 8;
-            mcu_height = (self.info.height as usize + 7) / 8;
+            mcu_width = (self.info.width as usize).div_ceil(8);
+            mcu_height = (self.info.height as usize).div_ceil(8);
         }
         if self.is_interleaved
             && self.input_colorspace.num_components() > 1
@@ -174,7 +174,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             if self.options.strict_mode() {
                                 return Err(msg);
                             }
-                            error!("{:?}", msg);
+                            error!("{msg:?}");
                             break 'eoi;
                         }
                     }
@@ -195,7 +195,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     if self.options.strict_mode() {
                         return Err(e);
                     }
-                    error!("{}", e);
+                    error!("{e}");
                     // If we can't get the marker, just break away
                     // allows us to decode some corrupt images
                     // e.g https://github.com/etemesi254/zune-image/issues/294
@@ -459,11 +459,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     marker
                 );
             } else {
-                warn!("RST marker was not found, where expected, image may be garbled")
+                warn!("RST marker was not found, where expected, image may be garbled");
             }
         }
         if self.todo == 0 {
-            self.handle_rst(stream)?
+            self.handle_rst(stream)?;
         }
         Ok(())
     }
@@ -638,7 +638,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.info.sample_ratio = SampleRatios::None;
         self.is_interleaved = false;
         self.components[0].vertical_sample = 1;
-        self.components[0].width_stride = (((self.info.width as usize) + 7) / 8) * 8;
+        self.components[0].width_stride = (self.info.width as usize).div_ceil(8) * 8;
         self.components[0].horizontal_sample = 1;
     }
 }

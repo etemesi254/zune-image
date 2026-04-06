@@ -254,5 +254,5 @@ pub fn paeth(a: u8, b: u8, c: u8) -> u8 {
 
     let t0 = if hi <= thresh { lo } else { c };
     let t1 = if thresh <= lo { hi } else { t0 };
-    return t1 as u8;
+    t1 as u8
 }

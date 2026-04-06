@@ -126,7 +126,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                     .iter()
                     .find(|i| i.item_id == item_id)
                     .ok_or(HeicErrors::Generic {
-                        msg: format!("Item {} missing in iloc", item_id)
+                        msg: format!("Item {item_id} missing in iloc")
                     })?;
 
             // Prepare our zero-copy vector of slices
@@ -210,43 +210,42 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
             return Err(HeicErrors::Generic {
                 msg: "No tile found for ordered tile".into()
             });
-        } else {
-            for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-                if let Some(tile_data) = tiles.get(&item_id) {
-                    match tile_data {
-                        Ok(tile_data) => {
-                            let col = (index as u32) % self.cols;
-                            let row = (index as u32) / self.cols;
+        }
+        for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
+            if let Some(tile_data) = tiles.get(&item_id) {
+                match tile_data {
+                    Ok(tile_data) => {
+                        let col = (index as u32) % self.cols;
+                        let row = (index as u32) / self.cols;
 
-                            let base_x = col * tile_w;
-                            let base_y = row * tile_h;
+                        let base_x = col * tile_w;
+                        let base_y = row * tile_h;
 
-                            for ty in 0..tile_h {
-                                let canvas_y = base_y + ty;
-                                if canvas_y >= final_h {
-                                    break;
-                                }
-
-                                if base_x >= final_w {
-                                    continue;
-                                }
-
-                                let copy_width = tile_w.min(final_w - base_x);
-                                let len = (copy_width * channels) as usize;
-
-                                let src = (ty * tile_stride) as usize;
-                                let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
-
-                                canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
+                        for ty in 0..tile_h {
+                            let canvas_y = base_y + ty;
+                            if canvas_y >= final_h {
+                                break;
                             }
+
+                            if base_x >= final_w {
+                                continue;
+                            }
+
+                            let copy_width = tile_w.min(final_w - base_x);
+                            let len = (copy_width * channels) as usize;
+
+                            let src = (ty * tile_stride) as usize;
+                            let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
+
+                            canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
                         }
-                        Err(e) => return Err(HeicErrors::Generic { msg: e.to_string() })
-                    };
-                } else {
-                    return Err(HeicErrors::Generic {
-                        msg: format!("No tile found for ordered tile {} {}", index, item_id)
-                    });
+                    }
+                    Err(e) => return Err(HeicErrors::Generic { msg: e.to_string() })
                 }
+            } else {
+                return Err(HeicErrors::Generic {
+                    msg: format!("No tile found for ordered tile {index} {item_id}")
+                });
             }
         }
         Ok(())

@@ -575,7 +575,7 @@ impl Channel {
         }
 
         // confirm we can evenly divide length
-        if self.length % size_of::<T>() != 0 {
+        if !self.length.is_multiple_of(size_of::<T>()) {
             return Err(ChannelErrors::UnevenLength(self.length, size_of::<T>()));
         }
         let converted_type_id = TypeId::of::<T>();

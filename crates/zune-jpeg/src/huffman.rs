@@ -224,7 +224,7 @@ impl HuffmanTable {
 
                         if k < m {
                             k += (!0_i16 << mag_bits) + 1;
-                        };
+                        }
 
                         // if result is small enough fit into fast ac table
                         if (-128..=127).contains(&k) {
