@@ -12,6 +12,7 @@ use std::io::BufWriter;
 use std::time::UNIX_EPOCH;
 
 use log::trace;
+use zune_core::options::{EncoderOptions, PngCompression};
 use zune_image::codecs::png::PngEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
@@ -37,7 +38,10 @@ pub fn open_in_default_app(image: &Image) {
 
     let mut buffered = BufWriter::new(file);
 
-    let size = PngEncoder::new().encode(image, &mut buffered).unwrap();
+    let options = EncoderOptions::default().set_png_compression_level(PngCompression::Fastest);
+    let size = PngEncoder::new_with_options(options)
+        .encode(image, &mut buffered)
+        .unwrap();
     trace!("Wrote {:?} bytes", size);
     #[cfg(target_os = "linux")]
     {
