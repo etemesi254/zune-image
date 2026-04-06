@@ -60,7 +60,7 @@ use crate::processor::HevcSample;
 ///
 /// Key: `item_id` (HEVC sample identifier)
 /// Value: RGB pixel buffer (`Vec<u8>`, 3 bytes per pixel)
-pub type TileMap = Arc<Mutex<HashMap<u32, Result<Vec<u8>, HeicErrors>>>>;
+pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<(Vec<u8>, usize, usize), HeicErrors>>>>;
 
 unsafe extern "C" {
     /// Creates a CMVideoFormatDescription from HEVC (H.265) parameter-set NAL units.
@@ -383,7 +383,7 @@ extern "C" fn decode_callback(
     _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
     let tile_map_ptr =
-        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<Vec<u8>, HeicErrors>>>;
+        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<(Vec<u8>,usize,usize), HeicErrors>>>;
     let item_id = source_frame_ref_con as usize;
 
     if status != 0 || image_buffer.is_null() {
@@ -497,7 +497,7 @@ extern "C" fn decode_callback(
         CVPixelBufferUnlockBaseAddress(image_buffer, 1);
 
         if let Ok(mut map) = (*tile_map_ptr).lock() {
-            map.insert(item_id as u32, Ok(rgb_data));
+            map.insert(item_id as u32, Ok((rgb_data,width,height)));
         }
     }
 }

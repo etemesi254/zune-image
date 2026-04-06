@@ -2,8 +2,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zune_core::bytestream::ZByteReaderTrait;
-
-use crate::HeicErrors::Generic;
+use zune_core::log::trace;
 use crate::apple_videotoolbox::TileMap;
 use crate::decoder::HeifDecoder;
 use crate::errors::HeicErrors;
@@ -391,71 +390,143 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
-        let final_w = self.width.unwrap();
-        let final_h = self.height.unwrap();
+        let unrotated_w = self.width.unwrap() as usize;
+        let unrotated_h = self.height.unwrap() as usize;
+        let channels = self.colorspace().unwrap().num_components();
 
-        let channels = 3;
-        let canvas_stride = final_w * channels;
-        let tile_w = 512;
-        let tile_h = 512;
-        let tile_stride = tile_w * channels;
+        let rotation_degrees = self.rotation.unwrap_or(0);
+        let is_swapped = rotation_degrees == 90 || rotation_degrees == 270;
 
-        let canvas = &mut output[0..(final_w * final_h * channels) as usize];
+        let final_w = if is_swapped { unrotated_h } else { unrotated_w };
+
         let tiles = tile_map.lock().unwrap();
 
-        if self.ordered_tile_ids.len() == 1 {
-            // no grid stitching needed. so copy to output directly
-            if let Some(tile) = tiles.get(&self.ordered_tile_ids[0]) {
-                return match tile {
-                    Ok(tile) => {
-                        canvas.copy_from_slice(tile);
-                        Ok(())
-                    }
-                    Err(e) => return Err(Generic { msg: e.to_string() })
-                };
-            }
-            return Err(HeicErrors::Generic {
-                msg: "No tile found for ordered tile".into()
-            });
-        }
+        // Intermediate buffer for the unrotated grid.
+        // If there is no rotation, we can write directly to `output` to save memory.
+        let mut unrotated_canvas = if rotation_degrees != 0 {
+            vec![0u8; unrotated_w * unrotated_h * channels]
+        } else {
+            Vec::new()
+        };
+
+        let target_canvas = if rotation_degrees != 0 {
+            &mut unrotated_canvas[..]
+        } else {
+            &mut output[..]
+        };
+
+        // --- STEP 1: Stitching ---
         for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-            if let Some(tile_data) = tiles.get(&item_id) {
-                match tile_data {
-                    Ok(tile_data) => {
-                        let col = (index as u32) % self.cols;
-                        let row = (index as u32) / self.cols;
+            if let Some(Ok((tile_data, tile_w, tile_h))) = tiles.get(&item_id) {
+                let col = (index as usize) % (self.cols as usize);
+                let row = (index as usize) / (self.cols as usize);
 
-                        let base_x = col * tile_w;
-                        let base_y = row * tile_h;
+                // Use the DYNAMIC tile width/height!
+                let base_x = col * tile_w;
+                let base_y = row * tile_h;
 
-                        for ty in 0..tile_h {
-                            let canvas_y = base_y + ty;
-                            if canvas_y >= final_h {
-                                break;
-                            }
+                let tile_stride = tile_w * channels;
+                let grid_stride = unrotated_w * channels;
 
-                            if base_x >= final_w {
-                                continue;
-                            }
+                for ty in 0..*tile_h {
+                    let canvas_y = base_y + ty;
 
-                            let copy_width = tile_w.min(final_w - base_x);
-                            let len = (copy_width * channels) as usize;
+                    // Crop bounds if tiles overflow the final target resolution
+                    if canvas_y >= unrotated_h { break; }
+                    if base_x >= unrotated_w { continue; }
 
-                            let src = (ty * tile_stride) as usize;
-                            let dst = (canvas_y * canvas_stride + base_x * channels) as usize;
+                    let copy_width = *tile_w.min(&(unrotated_w - base_x));
+                    let len = copy_width * channels;
 
-                            canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
-                        }
-                    }
-                    Err(e) => return Err(HeicErrors::Generic { msg: e.to_string() })
+                    let src = ty * tile_stride;
+                    let dst = canvas_y * grid_stride + base_x * channels;
+
+                    target_canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
                 }
             } else {
-                return Err(HeicErrors::Generic {
-                    msg: format!("No tile found for ordered tile {index} {item_id}")
-                });
+                return Err(HeicErrors::Generic { msg: format!("Tile missing or errored: {}", item_id) });
             }
         }
+
+        // --- STEP 2: Mirroring (Applied BEFORE rotation per HEIF spec) ---
+        if let Some(axis) = self.mirror {
+            trace!("Mirroring image");
+            // We do this in-place on the unrotated canvas
+            let bytes_per_row = unrotated_w * channels;
+
+            if axis == 0 {
+                // Axis 0: Mirror horizontally (Left/Right flip over Vertical axis)
+                for y in 0..unrotated_h {
+                    for x in 0..(unrotated_w / 2) {
+                        let left_idx = (y * unrotated_w + x) * channels;
+                        let right_idx = (y * unrotated_w + (unrotated_w - 1 - x)) * channels;
+
+                        for c in 0..channels {
+                            unrotated_canvas.swap(left_idx + c, right_idx + c);
+                        }
+                    }
+                }
+            } else if axis == 1 {
+                // Axis 1: Mirror vertically (Top/Bottom flip over Horizontal axis)
+                for y in 0..(unrotated_h / 2) {
+                    let top_row_idx = y * bytes_per_row;
+                    let bottom_row_idx = (unrotated_h - 1 - y) * bytes_per_row;
+
+                    let (top_half, bottom_half) = unrotated_canvas.split_at_mut(bottom_row_idx);
+                    top_half[top_row_idx..top_row_idx + bytes_per_row]
+                        .swap_with_slice(&mut bottom_half[..bytes_per_row]);
+                }
+            }
+        }
+        // --- STEP 3: Rotation ---
+        if rotation_degrees != 0 {
+            trace!("Rotation degrees: {}", rotation_degrees);
+            match rotation_degrees {
+                90 => {
+                    for y in 0..unrotated_h {
+                        for x in 0..unrotated_w {
+                            let src_idx = (y * unrotated_w + x) * channels;
+                            let dest_x = y;
+                            let dest_y = unrotated_w - 1 - x;
+                            let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                            output[dest_idx..dest_idx + channels]
+                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                        }
+                    }
+                }
+                270 => {
+                    for y in 0..unrotated_h {
+                        for x in 0..unrotated_w {
+                            let src_idx = (y * unrotated_w + x) * channels;
+                            let dest_x = unrotated_h - 1 - y;
+                            let dest_y = x;
+                            let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                            output[dest_idx..dest_idx + channels]
+                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                        }
+                    }
+                }
+                180 => {
+                    for y in 0..unrotated_h {
+                        for x in 0..unrotated_w {
+                            let src_idx = (y * unrotated_w + x) * channels;
+                            let dest_x = unrotated_w - 1 - x;
+                            let dest_y = unrotated_h - 1 - y;
+                            let dest_idx = (dest_y * final_w + dest_x) * channels;
+
+                            output[dest_idx..dest_idx + channels]
+                                .copy_from_slice(&unrotated_canvas[src_idx..src_idx + channels]);
+                        }
+                    }
+                }
+                _ => return Err(HeicErrors::Generic { msg: format!("Unsupported rotation: {}", rotation_degrees) })
+            }
+        }
+
         Ok(())
     }
 }

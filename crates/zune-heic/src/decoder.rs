@@ -259,11 +259,17 @@ where
     /// Return the width of the image
     ///
     pub fn width(&self) -> Option<usize> {
-        self.width.map(|x| x as usize)
+        let w = self.width?;
+        let h = self.height?;
+        let rot = self.rotation.unwrap_or(0);
+        if rot == 90 || rot == 270 { Some(h as usize) } else { Some(w as usize) }
     }
-    /// Return the height of the image.
+
     pub fn height(&self) -> Option<usize> {
-        self.height.map(|x| x as usize)
+        let w = self.width?;
+        let h = self.height?;
+        let rot = self.rotation.unwrap_or(0);
+        if rot == 90 || rot == 270 { Some(w as usize) } else { Some(h as usize) }
     }
 
     pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), HeicErrors> {
@@ -345,6 +351,7 @@ where
         #[cfg(target_os = "macos")]
         {
             if false && self.options.hvec_use_apple_videotoolbox() {
+                trace!("HEVC using apple video toolbox");
                 // --- APPLE SILICON PATH ---
                 let tile_map = self.decode_hardware_videotoolbox()?;
 
@@ -357,7 +364,6 @@ where
         let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
             let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
-            // parse as expected
             let vps = sample.vps.as_deref().unwrap();
             let sps = sample.sps.as_deref().unwrap();
             let pps = sample.pps.as_deref().unwrap();
@@ -368,6 +374,10 @@ where
 
             let sample_id = sample.item_id;
 
+            // Dynamically grab the REAL tile dimensions
+            let tile_w = software_decoder.width();
+            let tile_h = software_decoder.height();
+
             // then decode
             let result = software_decoder.decode(sample)?;
 
@@ -377,7 +387,10 @@ where
                 Some(frame) => {
                     frame.write_rgb_420(&mut out)?;
 
-                    tile_map.lock().unwrap().insert(sample_id, Ok(out));
+                    tile_map
+                        .lock()
+                        .unwrap()
+                        .insert(sample_id, Ok((out, tile_w, tile_h)));
                     Ok(())
                 }
                 None => {

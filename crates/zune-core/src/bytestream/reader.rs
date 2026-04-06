@@ -490,7 +490,6 @@ where
     T: ZByteReaderTrait
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        use std::io::ErrorKind;
         self.read_bytes(buf)
             .map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }

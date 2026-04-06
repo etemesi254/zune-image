@@ -12,12 +12,12 @@
 //! Represents a png image decoder and encoder
 use std::io::{BufRead, Seek};
 
-use png::{BitDepth as PngBitDepth, ColorType, Decoder, Encoder, Reader};
+use png::{BitDepth as PngBitDepth, ColorType, Compression, Decoder, Encoder, Reader};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
-use zune_core::options::EncoderOptions;
+use zune_core::options::{EncoderOptions, PngCompression};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
@@ -158,6 +158,17 @@ impl EncoderTrait for PngEncoder {
         {
             let mut encoder = Encoder::new(&mut output, width, height);
             encoder.set_color(color_type);
+
+            let compression_level = match options.png_compression_level() {
+                PngCompression::NoCompression => png::Compression::NoCompression,
+                PngCompression::Fastest => png::Compression::Fastest,
+                PngCompression::Fast => png::Compression::Fast,
+                PngCompression::Balanced => png::Compression::Balanced,
+                PngCompression::High => Compression::High
+            };
+
+            encoder.set_compression(compression_level);
+
             encoder.set_depth(match bit_depth {
                 BitDepth::Sixteen => PngBitDepth::Sixteen,
                 _ => PngBitDepth::Eight
