@@ -235,9 +235,7 @@ pub fn decode_intra_prediction_internal_u8(
 
     let p_slice = &ctx.ref_samples_p[..p_len];
     let log2_n_t = n_t.trailing_zeros() as u8;
-
-    let bit_depth = if c_idx == 0 { ctx.sps.bit_depth_luma } else { ctx.sps.bit_depth_chroma };
-
+    
     if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)  {
         println!(
             "--- Intra Prediction Trace: Mode {}, Size {}x{}, Comp {} at [{},{}] ---",

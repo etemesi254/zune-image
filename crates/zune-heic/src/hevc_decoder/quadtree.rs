@@ -198,8 +198,8 @@ pub fn finish_ctu(
     if pps.tiles_enabled_flag {
         // HEVC decodes tiles in Tile Scan order, not Raster Scan.
         // Assuming your loop handles the TS -> RS mapping:
-        let curr_tile_id = pps.tile_id_rs[curr_addr_rs];
-        let next_addr_rs = curr_addr_rs + 1; // Raster scan increment
+        let _curr_tile_id = pps.tile_id_rs[curr_addr_rs];
+        let _next_addr_rs = curr_addr_rs + 1; // Raster scan increment
 
         todo!()
         // // Peek at next CTB in Tile Scan order
@@ -221,7 +221,9 @@ pub fn finish_ctu(
         // Section 7.3.8.1: end_of_sub_stream_one_bit
         let eoss_bit = ctx.cabac.decode_terminate();
         if eoss_bit == 0 {
-            panic!("ERROR: end_of_sub_stream_one_bit was 0!");
+            // debug assert for tracing makes it easier to step into function
+            // the return looses the context
+            debug_assert!(true,"ERROR: end_of_sub_stream_one_bit was 0!");
             return Err(NalError::Generic(
                 "end_of_sub_stream_one_bit was 0!".to_string()
             ));

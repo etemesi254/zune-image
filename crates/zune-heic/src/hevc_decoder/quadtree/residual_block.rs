@@ -520,10 +520,10 @@ pub fn decode_residual_block(
     ctx.explicit_rdpcm_dir = explicit_rdpcm_dir;
 
     // sb_type for persistent_rice_adaptation_enabled_flag
-    let mut sb_type = if component == Component::Luma { 2 } else { 0 };
-    if ctx.transform_skip_flag[component as usize] == 1 || ctx.cu_transquant_bypass_flag {
-        sb_type += 1;
-    }
+    // let mut sb_type = if component == Component::Luma { 2 } else { 0 };
+    // if ctx.transform_skip_flag[component as usize] == 1 || ctx.cu_transquant_bypass_flag {
+    //     sb_type += 1;
+    // }
     let last_significant_coeff_x_prefix =
         decode_last_significant_coeff_prefix(ctx, log2_trafo_size, component, true);
     let last_significant_coeff_y_prefix =

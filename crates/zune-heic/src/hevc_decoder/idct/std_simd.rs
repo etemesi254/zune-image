@@ -170,7 +170,6 @@ fn is_all_zero(s: &[i16]) -> bool {
 // ---------------------------------------------------------------------------
 
 #[inline(always)]
-#[inline(always)]
 fn transform4_dst_1d_simd(input: &[i16], output: &mut [i32]) {
     let v = i16x4::from_slice(&input[..4]).cast::<i32>();
 
