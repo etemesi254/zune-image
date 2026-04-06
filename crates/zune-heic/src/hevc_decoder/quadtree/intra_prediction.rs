@@ -251,7 +251,6 @@ pub fn decode_intra_prediction_internal_u8(
         _ => unreachable!()
     }
 
-    ctx.write_block_scratchpad(c_idx, x_b0, y_b0, n_t, bit_depth);
 }
 pub fn decode_intra_prediction(
     ctx: &mut DecodeSliceContext,

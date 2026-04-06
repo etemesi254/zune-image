@@ -168,7 +168,7 @@ impl<'a> DecodeSliceContext<'a> {
         c_idx: usize
     ) {
         debug_more!(
-            "scale_coefficients :xT={} yT={} n_t={} cidx={}",
+            "-----------scale_coefficients :xT={} yT={} n_t={} cidx={}-----------",
             x_t,
             y_t,
             n_t,
@@ -221,6 +221,17 @@ impl<'a> DecodeSliceContext<'a> {
                 // The actual scaling math
                 let scaled = (level * fact as i64 + offset as i64) >> bd_shift;
 
+                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!(
+                        "TRACE_SCALE: i={:>2} pos={:>4} level={:>4}  fact={:>8} bdShift={:>2} final={:>5}",
+                        i,
+                        pos,
+                        level,
+                        fact,
+                        bd_shift,
+                        scaled.clamp(-32768, 32767),
+                    );
+                }
                 // Clip to 16-bit range
                 self.math_scratchpad[pos] = scaled.clamp(-32768, 32767) as _;
             }
@@ -597,7 +608,13 @@ fn write_block_and_pad(
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
             for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
-                *dst = ((bv as i32) + (pv as i32)).clamp(0, max_val) as u8;
+                let sum = (bv as i32) + (pv as i32);
+                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+                    if sum > 255 {
+                        println!("CLIPPING DETECTED: Pred={} + Residual={} = {}", pv, bv, sum);
+                    }
+                }
+                *dst = sum.clamp(0, max_val) as u8;
             }
         }
     } else {
@@ -769,6 +786,7 @@ fn perform_padding(
                     // Indices 2*nT + 1 to 4*nT: Top and Top-Right
                     (x0 as isize + (i - 2 * n_t - 1) as isize, y0 as isize - 1)
                 };
+                debug_more!("px={}, py={},v={}", px, py, get_p(px, py));
 
                 p[i] = get_p(px, py);
             }

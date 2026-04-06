@@ -141,6 +141,7 @@ pub fn decode_tu(
             // so no need to reset it every time
             let idct_scratchpad: &mut [i16; 1024] = &mut ctx.idct_scratchpad[..].try_into().unwrap();
 
+            debug_more!("idst:{}",use_dst);
             if use_dst {
                 // Luma 4x4 Intra -> Special DST path
                 let block: &mut [i16; 16] = (&mut ctx.math_scratchpad[..16])
@@ -468,6 +469,9 @@ pub fn read_transform_unit(
             _ => (1, 1)
         };
 
+        let xc = if is_420_small { x_base } else { x0 };
+        let yc = if is_420_small { y_base } else { y0 };
+
         // --- Process Cb & Cr ---
         for c_idx in 1..=2 {
             let cbf = if c_idx == 1 { cbf_cb } else { cbf_cr };
@@ -482,8 +486,8 @@ pub fn read_transform_unit(
             if (cbf & 1) != 0 {
                 decode_residual_block(
                     ctx,
-                    x_base,
-                    y_base,
+                    xc,
+                    yc,
                     log2_size_c,
                     if c_idx == 1 { Component::Cb } else { Component::Cr },
                     
@@ -491,8 +495,8 @@ pub fn read_transform_unit(
             }
             decode_tu(
                 ctx,
-                x_base / sub_w,
-                y_base / sub_h,
+                xc / sub_w,
+                yc / sub_h,
                 nt_c,
                 c_idx,
                 pred_mode,
@@ -506,8 +510,8 @@ pub fn read_transform_unit(
                     // Note: y_base + y_offset translated back to Luma coordinates
                     decode_residual_block(
                         ctx,
-                        x_base,
-                        y_base + (y_offset * sub_h),
+                        xc,
+                        xc + (y_offset * sub_h),
                         log2_size_c,
                         if c_idx == 1 { Component::Cb } else { Component::Cr },
                         
@@ -515,8 +519,8 @@ pub fn read_transform_unit(
                 }
                 decode_tu(
                     ctx,
-                    x_base / sub_w,
-                    y_base / sub_h + y_offset,
+                    xc / sub_w,
+                    yc / sub_h + y_offset,
                     nt_c,
                     c_idx,
                     pred_mode,
@@ -525,6 +529,8 @@ pub fn read_transform_unit(
             }
         }
     }
+
+    debug_more!("----read-transform-unit-done--------------");
 
     Ok(())
 }

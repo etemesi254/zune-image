@@ -469,17 +469,11 @@ impl NeighborTracker {
     /// Converts pixel coordinates to a Z-Scan address.
     /// log2_min_cb_size is usually 3 (for 8x8) or 2 (for 4x4).
     pub fn get_zscan_addr(&self, x: usize, y: usize) -> u32 {
-        let x = x >> self.log2_unit_size;
-        let y = y >> self.log2_unit_size;
-        let mut addr = 0;
+        let ux = (x >> self.log2_unit_size) as u32;
+        let uy = (y >> self.log2_unit_size) as u32;
 
-        // Interleave bits of x and y (Morton Order)
-        for i in 0..8 {
-            // Supports up to 256x256 units
-            addr |= ((x & (1 << i)) << i) as u32;
-            addr |= ((y & (1 << i)) << (i + 1)) as u32;
-        }
-        addr
+        // Interleave: spread bits of x and y, then shift y left by 1
+        spread_bits(ux) | (spread_bits(uy) << 1)
     }
 }
 
@@ -511,4 +505,12 @@ impl NeighborTracker {
             }
         }
     }
+}
+
+fn spread_bits(mut x: u32) -> u32 {
+    x = (x | (x << 8)) & 0x00FF00FF;
+    x = (x | (x << 4)) & 0x0F0F0F0F;
+    x = (x | (x << 2)) & 0x33333333;
+    x = (x | (x << 1)) & 0x55555555;
+    x
 }

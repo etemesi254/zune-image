@@ -55,7 +55,7 @@ fn decode_sao_offset_sign(ctx: &mut DecodeSliceContext) -> u8 {
 }
 fn decode_sao_band_position(ctx: &mut DecodeSliceContext) -> u8 {
     debug_more!("sao_band_position");
-    let value = ctx.cabac.decode_bypass();
+    let value = ctx.cabac.decode_fl_bypass(5) as u8;
     debug_more!("sao_band_position(value) {}", value);
     value
 }

@@ -58,6 +58,7 @@ pub fn decode_slice(
     let payload_start = &clean_rbsp[slice_header.cabac_start_position..];
     let mut cabac = CabacDecoder::new(payload_start, slice_qp as i32, init_type);
 
+
     if slice_header.dependent_slice_segment_flag {
         if let Some(saved_contexts) = &hevc_decoder.dependent_slice_contexts {
             debug_more!("Loading CABAC contexts from previous slice segment.");
@@ -220,7 +221,7 @@ pub fn finish_ctu(
         // Section 7.3.8.1: end_of_sub_stream_one_bit
         let eoss_bit = ctx.cabac.decode_terminate();
         if eoss_bit == 0 {
-            debug_more!("ERROR: end_of_sub_stream_one_bit was 0!");
+            panic!("ERROR: end_of_sub_stream_one_bit was 0!");
             return Err(NalError::Generic(
                 "end_of_sub_stream_one_bit was 0!".to_string()
             ));
