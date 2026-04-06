@@ -1,6 +1,9 @@
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
+use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps};
+use crate::hevc_decoder::utils::ycbcr_to_rgb_inner_16_scalar;
 
 pub struct SingleFrame {
     pub pixels:  Vec<u8>,
@@ -61,84 +64,147 @@ impl RawFrame {
         Self::new(width, height, sps.chroma_format)
     }
 }
-
-use std::fs::File;
-use std::io::{BufWriter, Write};
-
 impl RawFrame {
-    /// Dumps the reconstructed frame to a P6 PPM file.
-    /// This automatically strips HEVC padding and converts YCbCr to RGB.
-    pub fn dump_ppm(&self, filename: &str) -> std::io::Result<()> {
-        // Safely lock all three color planes
+    /// Converts planar YUV 4:2:0 to RGB and writes it into the provided slice.
+    /// Expects `out_rgb` to have a length of at least `width * height * 3`.
+    pub fn write_rgb_420(&self, out_rgb: &mut [u8]) -> Result<(), NalError> {
         let luma = self.luma.lock().unwrap();
         let cb = self.cb.lock().unwrap();
         let cr = self.cr.lock().unwrap();
 
         let width = luma.width;
         let height = luma.height;
+        let expected_len = width * height * 3;
 
-        // Open the file with a BufWriter for maximum write speed
-        let file = File::create(filename)?;
-        let mut writer = BufWriter::new(file);
-
-        // Write the PPM P6 Header
-        // P6 = Binary RGB, followed by Width, Height, and Max Color Value (255)
-        writeln!(writer, "P6\n{width} {height}\n255")?;
+        if out_rgb.len() < expected_len {
+            return Err(NalError::Generic(format!(
+                "Output buffer too small. Expected {}, got {}",
+                expected_len,
+                out_rgb.len()
+            )));
+        }
 
         let (sub_x, sub_y) = self.format.get_subsampling();
         let is_monochrome = cb.pixels.is_empty() || cr.pixels.is_empty();
 
-        // Pre-allocate the RGB buffer
-        let mut rgb_buf = vec![0u8; width * height * 3];
-        let mut out_idx = 0;
+        let chunks_of_16 = width / 16;
+        let remainder = width % 16;
 
-        for y in 0..height {
-            // Luma row offset (skipping top padding, moving to current row, skipping left padding)
-            let y_row_offset = (y + luma.padding) * luma.stride + luma.padding;
+        let mut out_pos = 0usize;
+        let mut cb_chunk = [0i16; 16];
+        let mut cr_chunk = [0i16; 16];
 
-            // Chroma row offset (scaled by subsampling)
-            let c_row_offset = if is_monochrome {
+        for row in 0..height {
+            // Account for top and left padding in the stride
+            let y_row_base = (row + luma.padding) * luma.stride + luma.padding;
+
+            let c_row_base = if is_monochrome {
                 0
             } else {
-                (y / sub_y + cb.padding) * cb.stride + cb.padding
+                (row / sub_y + cb.padding) * cb.stride + cb.padding
             };
 
-            for x in 0..width {
-                // 1. Fetch Y
-                let y_val = i32::from(luma.pixels[y_row_offset + x]);
+            for chunk in 0..chunks_of_16 {
+                let x_base = chunk * 16;
 
-                // 2. Fetch Cb and Cr (handling subsampling mapping)
-                let (cb_val, cr_val) = if is_monochrome {
-                    (128, 128) // Default chroma for monochrome
+                // 1. Y: One contiguous slice read
+                let y_src = &luma.pixels[y_row_base + x_base..][..16];
+                let y_chunk: [i16; 16] = std::array::from_fn(|i| i16::from(y_src[i]));
+
+                // 2. UV: Planar read, duplicate values for 4:2:0
+                if is_monochrome {
+                    cb_chunk.fill(128);
+                    cr_chunk.fill(128);
                 } else {
-                    let cx = x / sub_x;
-                    // Because Cb and Cr were created identically, they share the same stride/padding
-                    (
-                        i32::from(cb.pixels[c_row_offset + cx]),
-                        i32::from(cr.pixels[c_row_offset + cx]),
-                    )
-                };
+                    let cx_base = x_base / sub_x;
+                    let cb_src = &cb.pixels[c_row_base + cx_base..][..8];
+                    let cr_src = &cr.pixels[c_row_base + cx_base..][..8];
 
-                // 3. YCbCr to RGB Conversion (Fast Integer Approximation)
-                // Center Chroma around 0
-                let u = cb_val - 128;
-                let v = cr_val - 128;
+                    for i in 0..8 {
+                        let cb_val = i16::from(cb_src[i]);
+                        let cr_val = i16::from(cr_src[i]);
+                        // Duplicate horizontally to match 16 Y pixels
+                        cb_chunk[i * 2] = cb_val;
+                        cb_chunk[i * 2 + 1] = cb_val;
+                        cr_chunk[i * 2] = cr_val;
+                        cr_chunk[i * 2 + 1] = cr_val;
+                    }
+                }
 
-                // Full-Range BT.601 -> RGB
-                let r = y_val + ((v * 359 + 128) >> 8);
-                let g = y_val - ((u * 88 + v * 183 + 128) >> 8);
-                let b = y_val + ((u * 454 + 128) >> 8);
+                // 3. Process chunk
+                ycbcr_to_rgb_inner_16_scalar::<false>(
+                    &y_chunk,
+                    &cb_chunk,
+                    &cr_chunk,
+                    out_rgb,
+                    &mut out_pos
+                );
+            }
 
-                // 4. Clamp and Write to Buffer
-                rgb_buf[out_idx]     = r.clamp(0, 255) as u8;
-                rgb_buf[out_idx + 1] = g.clamp(0, 255) as u8;
-                rgb_buf[out_idx + 2] = b.clamp(0, 255) as u8;
+            // Remainder: clamp to avoid reading padding bytes as valid pixel data
+            if remainder > 0 {
+                let x_base = chunks_of_16 * 16;
 
-                out_idx += 3;
+                let y_chunk: [i16; 16] = std::array::from_fn(|i| {
+                    let clamped_x = (x_base + i).min(width - 1);
+                    i16::from(luma.pixels[y_row_base + clamped_x])
+                });
+
+                if is_monochrome {
+                    cb_chunk.fill(128);
+                    cr_chunk.fill(128);
+                } else {
+                    for i in 0..8 {
+                        // Carefully calculate and clamp the chroma index
+                        let x_c = ((x_base + i * 2) / sub_x).min(cb.width - 1);
+                        let cb_val = i16::from(cb.pixels[c_row_base + x_c]);
+                        let cr_val = i16::from(cr.pixels[c_row_base + x_c]);
+
+                        cb_chunk[i * 2] = cb_val;
+                        cb_chunk[i * 2 + 1] = cb_val;
+                        cr_chunk[i * 2] = cr_val;
+                        cr_chunk[i * 2 + 1] = cr_val;
+                    }
+                }
+
+                let mut temp = [0u8; 48]; // 16 pixels * 3 channels
+                let mut temp_pos = 0usize;
+
+                ycbcr_to_rgb_inner_16_scalar::<false>(
+                    &y_chunk,
+                    &cb_chunk,
+                    &cr_chunk,
+                    &mut temp,
+                    &mut temp_pos
+                );
+
+                let valid_bytes = remainder * 3;
+                out_rgb[out_pos..out_pos + valid_bytes].copy_from_slice(&temp[..valid_bytes]);
+                out_pos += valid_bytes;
             }
         }
 
-        // Blast the RGB buffer to the file
+        Ok(())
+    }
+}
+
+impl RawFrame {
+    /// Dumps the reconstructed frame to a P6 PPM file.
+    /// This automatically strips HEVC padding and converts YCbCr to RGB.
+    pub fn dump_ppm(&self, filename: &str) -> std::io::Result<()> {
+        let width = self.luma.lock().unwrap().width;
+        let height = self.luma.lock().unwrap().height;
+
+        let mut rgb_buf = vec![0u8; width * height * 3];
+
+        // Ignore the Error string for simplicity, or map it to io::Error
+        self.write_rgb_420(&mut rgb_buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+        let file = std::fs::File::create(filename)?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        writeln!(writer, "P6\n{width} {height}\n255")?;
         writer.write_all(&rgb_buf)?;
         writer.flush()?;
 
