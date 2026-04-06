@@ -52,6 +52,7 @@ fn decode_split_transform_flag(ctx: &mut DecodeSliceContext, log2_trafo_size: u8
     return flag;
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn decode_tu(
     ctx: &mut DecodeSliceContext,
     x0: usize,

@@ -17,8 +17,8 @@ video-toolbox-sys = { version = "0.2", features = ["helpers"] }
 
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8.2"
 
-[[bench]]
-name = "cabac_bench"
-harness = false
+#[[bench]]
+#name = "cabac_bench"
+#harness = false

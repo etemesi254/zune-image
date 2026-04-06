@@ -36,7 +36,9 @@ pub struct HeifDecoder<T> {
     pub(crate) ordered_tile_ids: Vec<u32>,
     pub(crate) rows:             u32,
     pub(crate) cols:             u32,
-    pub(crate) options:          DecoderOptions
+    pub(crate) options:          DecoderOptions,
+    // whether image is grid type, if true, we use parallel decoders
+    pub(crate) is_grid:          bool
 }
 impl<T> HeifDecoder<T>
 where
@@ -73,6 +75,7 @@ where
             icc_data:         None,
             ordered_tile_ids: Vec::new(),
             read_headers:     false,
+            is_grid:          false,
             rows:             0,
             cols:             0
         }
@@ -206,6 +209,7 @@ where
 
         let item_type = self.get_item_type(pitm.item_id);
         if &item_type == b"grid" {
+            self.is_grid = true;
             let extent = &grid_item.extents[0];
             let mut final_offset = grid_item.base_offset + extent.extent_offset;
 
@@ -349,9 +353,10 @@ where
             }
         }
         let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
-        let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
-        let mut processor = |sample: HevcSample| -> Result<(), HeicErrors> {
+        let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
+            let mut software_decoder: HevcDecoder = HevcDecoder::new();
+
             // parse as expected
             let vps = sample.vps.as_deref().unwrap();
             let sps = sample.sps.as_deref().unwrap();
@@ -382,7 +387,24 @@ where
                 }
             }
         };
-        self.process_hevc_samples(&mut processor)?;
+        // wasm threads not a thing
+        #[cfg(target_arch = "wasm32")]
+        {
+            trace!("Using single threaded sample processor");
+
+            self.process_hevc_samples(processor)?;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.is_grid {
+                trace!("Using parallel sample decoder");
+                self.process_hevc_samples_parallel(processor)?;
+            } else {
+                trace!("Using standard sample decoder, image is not grid so no need for parallel");
+                self.process_hevc_samples(processor)?;
+            }
+        }
         self.stitch(tile_map, &mut output)?;
         return Ok(output);
     }

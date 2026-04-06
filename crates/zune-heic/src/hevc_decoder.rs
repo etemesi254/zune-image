@@ -60,9 +60,11 @@ impl HevcDecoder {
         }
     }
 
+    #[must_use]
     pub fn width(&self) -> usize {
         self.width
     }
+    #[must_use]
     pub fn height(&self) -> usize {
         self.height
     }
@@ -75,13 +77,11 @@ impl HevcDecoder {
             match nal.nal_type {
                 // --- Metadata NALs ---
                 NalUnitType::VpsNut => {
-                    trace!("Decoding vps nal unit");
                     let vps = decode_vps(&nal)?;
                     let vps_id = vps.vps_id as usize;
                     self.vps_storage[vps_id] = Some(vps);
                 }
                 NalUnitType::SpsNut => {
-                    trace!("Decoding sps nal unit");
                     let sps = decode_sps(&nal)?;
                     let sps_id = sps.sps_id as usize;
                     self.width = sps.pic_width_in_luma_samples as usize;
@@ -89,7 +89,6 @@ impl HevcDecoder {
                     self.sps_storage[sps_id] = Some(sps);
                 }
                 NalUnitType::PpsNut => {
-                    trace!("Decoding pps nal unit");
                     let pps = decode_pps(&nal, &self.sps_storage)?;
                     let pps_id = pps.pps_id as usize;
                     self.pps_storage[pps_id] = Some(pps);
@@ -115,7 +114,6 @@ impl HevcDecoder {
                         self.neighbor_tracker = Some(NeighborTracker::new(units_w, units_h, 2));
                     }
 
-                    trace!("Decoding NAL {nal_type:?}");
                     if let Some(f) = raw_frame.clone() {
                         decode_slice(&nal, self, f)?;
                     } else {

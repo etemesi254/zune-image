@@ -7,7 +7,7 @@
 //  - Strip RBSP emulation prevention bytes from payloads
 //  - Hand zero-copy NalUnit views to a caller-supplied visitor
 // ============================================================
-
+#![allow(dead_code)]
 use std::fmt;
 
 // ── Errors ────────────────────────────────────────────────────────────────────
