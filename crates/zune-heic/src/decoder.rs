@@ -1,14 +1,22 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use zune_core::bytestream::{ZByteReaderTrait, ZReader, ZSeekFrom};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
+use crate::apple_videotoolbox::TileMap;
 use crate::bmf_reader::{BoxHeader, BoxSize};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection
 };
 use crate::headers::{decode_ftyp, decode_meta};
+use crate::hevc_decoder::HevcDecoder;
+use crate::hevc_decoder::nal_parser::NalFraming;
+use crate::processor::HevcSample;
+
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
     pub(crate) stream:           ZReader<T>,
@@ -317,39 +325,66 @@ where
         self.width = Some(final_width);
         self.height = Some(final_height);
 
-        trace!(
-            "Width and height from ispe {final_width}x{final_height}"
-        );
+        trace!("Width and height from ispe {final_width}x{final_height}");
         Ok(())
     }
 
     pub fn decode(&mut self) -> Result<Vec<u8>, HeicErrors> {
         self.decode_headers()?;
 
+        let w = self.width.unwrap() as usize;
+        let h = self.height.unwrap() as usize;
+        let colors = self.colorspace().unwrap().num_components();
+
+        let mut output = vec![0; w * h * colors];
+
         #[cfg(target_os = "macos")]
         {
-            if self.options.hvec_use_apple_videotoolbox() {
+            if false && self.options.hvec_use_apple_videotoolbox() {
                 // --- APPLE SILICON PATH ---
                 let tile_map = self.decode_hardware_videotoolbox()?;
-                let w = self.width.unwrap() as usize;
-                let h = self.height.unwrap() as usize;
-                let colors = self.colorspace().unwrap().num_components();
 
-                let mut output = vec![0; w * h * colors];
                 self.stitch(tile_map, &mut output)?;
                 return Ok(output);
             }
         }
+        let tile_map: TileMap = Arc::new(Mutex::new(HashMap::new()));
+        let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            // --- FALLBACK PATH ---
-            return Err(HeicErrors::Generic {
-                msg: "Hardware acceleration only supported on macOS".into()
-            });
-        }
+        let mut processor = |sample: HevcSample| -> Result<(), HeicErrors> {
+            // parse as expected
+            let vps = sample.vps.as_deref().unwrap();
+            let sps = sample.sps.as_deref().unwrap();
+            let pps = sample.pps.as_deref().unwrap();
 
-        panic!("Unimplemented");
+            software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
+            software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
+            software_decoder.parse_extradata(pps, NalFraming::RawBytes)?;
+
+            let sample_id = sample.item_id;
+
+            // then decode
+            let result = software_decoder.decode(sample)?;
+
+            // allocate the necessary width and height
+            let mut out = vec![0; software_decoder.height() * software_decoder.width() * colors];
+            match result {
+                Some(frame) => {
+                    frame.write_rgb_420(&mut out)?;
+
+                    tile_map.lock().unwrap().insert(sample_id, Ok(out));
+                    Ok(())
+                }
+                None => {
+                    return Err(HeicErrors::Generic {
+                        msg: "decode failure, no frame found".to_string()
+                    });
+                }
+            }
+        };
+        self.process_hevc_samples(&mut processor)?;
+        self.stitch(tile_map, &mut output)?;
+        return Ok(output);
     }
 
     /// Determines the final output color space of the primary image,
@@ -371,23 +406,24 @@ where
 
         // --- STEP 1: Find base channels via `pixi` on the primary item ---
         if let Some(iprp) = &meta.iprp
-            && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco) {
-                // Find properties assigned to the primary item
-                if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == primary_id) {
-                    for assoc in &entry.associations {
-                        if assoc.property_index == 0 {
-                            continue;
-                        }
-                        let array_index = (assoc.property_index - 1) as usize;
+            && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
+        {
+            // Find properties assigned to the primary item
+            if let Some(entry) = ipma.entries.iter().find(|e| e.item_id == primary_id) {
+                for assoc in &entry.associations {
+                    if assoc.property_index == 0 {
+                        continue;
+                    }
+                    let array_index = (assoc.property_index - 1) as usize;
 
-                        if let Some(ItemProperty::Pixi { channels, .. }) =
-                            ipco.properties.get(array_index)
-                        {
-                            base_channels = *channels;
-                        }
+                    if let Some(ItemProperty::Pixi { channels, .. }) =
+                        ipco.properties.get(array_index)
+                    {
+                        base_channels = *channels;
                     }
                 }
             }
+        }
 
         // --- STEP 2: Find Alpha channel via `iref` and `auxC` ---
         if let Some(iref) = &meta.iref {
@@ -401,26 +437,26 @@ where
                     // We found an auxiliary item. Now check if it's an Alpha Mask (auxid:1)
                     if let Some(iprp) = &meta.iprp
                         && let (Some(ipma), Some(ipco)) = (&iprp.ipma, &iprp.ipco)
-                            && let Some(entry) =
-                                ipma.entries.iter().find(|e| e.item_id == auxiliary_item_id)
-                            {
-                                for assoc in &entry.associations {
-                                    if assoc.property_index == 0 {
-                                        continue;
-                                    }
-                                    let array_index = (assoc.property_index - 1) as usize;
+                        && let Some(entry) =
+                            ipma.entries.iter().find(|e| e.item_id == auxiliary_item_id)
+                    {
+                        for assoc in &entry.associations {
+                            if assoc.property_index == 0 {
+                                continue;
+                            }
+                            let array_index = (assoc.property_index - 1) as usize;
 
-                                    if let Some(ItemProperty::AuxC { aux_type, .. }) =
-                                        ipco.properties.get(array_index)
-                                    {
-                                        // Trim null terminators just in case they were captured in the string
-                                        let clean_type = aux_type.trim_end_matches('\0');
-                                        if clean_type == "urn:mpeg:hevc:2015:auxid:1" {
-                                            has_alpha_mask = true;
-                                        }
-                                    }
+                            if let Some(ItemProperty::AuxC { aux_type, .. }) =
+                                ipco.properties.get(array_index)
+                            {
+                                // Trim null terminators just in case they were captured in the string
+                                let clean_type = aux_type.trim_end_matches('\0');
+                                if clean_type == "urn:mpeg:hevc:2015:auxid:1" {
+                                    has_alpha_mask = true;
                                 }
                             }
+                        }
+                    }
                 }
             }
         }
@@ -447,14 +483,12 @@ where
     /// Internal method to find and load EXIF data into the struct.
     /// Should be called immediately after the main headers are parsed.
     pub(crate) fn load_exif_data(&mut self) -> Result<(), HeicErrors> {
-        let meta = match &self.meta_section {
-            Some(m) => m,
-            None => return Ok(()) // No meta, so no EXIF. Fail silently.
+        let Some(meta) = &self.meta_section else {
+            return Ok(());
         };
 
-        let iinf = match &meta.iinf {
-            Some(i) => i,
-            None => return Ok(())
+        let Some(iinf) = &meta.iinf else {
+            return Ok(());
         };
 
         // 1. Find the EXIF item ID
@@ -463,15 +497,13 @@ where
             None => return Ok(()) // No Exif in this file
         };
 
-        let iloc = match &meta.iloc {
-            Some(i) => i,
-            None => return Ok(())
+        let Some(iloc) = &meta.iloc else {
+            return Ok(());
         };
 
         // 2. Find the physical location
-        let exif_iloc = match iloc.items.iter().find(|i| i.item_id == exif_item_id) {
-            Some(i) => i,
-            None => return Ok(())
+        let Some(exif_iloc) = iloc.items.iter().find(|i| i.item_id == exif_item_id) else {
+            return Ok(());
         };
 
         if exif_iloc.extents.is_empty() {
@@ -561,38 +593,38 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::fs::{File, read};
-//     use std::io::Write;
-//
-//     use zune_core::bytestream::{ZCursor, ZReader};
-//
-//     use crate::decoder::HeifDecoder;
-//
-//     #[test]
-//     fn test_decoding() {
-//         let file = read("/Users/etemesi/Downloads/heif-lines.heif").unwrap();
-//         let data = ZCursor::new(file);
-//         let mut decoder = HeifDecoder::new(data);
-//         decoder.decode_headers().unwrap();
-//         let colorspace = decoder.colorspace().unwrap();
-//         println!("{:?}", colorspace);
-//         println!("{:?}", decoder.width().unwrap());
-//         println!("{:?}", decoder.height().unwrap());
-//         let data = decoder.decode().unwrap();
-//
-//         // 4. Final Write
-//         let mut file = File::create("final_stitched_2.ppm").unwrap();
-//         file.write_all(
-//             format!(
-//                 "P6\n{} {}\n255\n",
-//                 decoder.width().unwrap(),
-//                 decoder.height.unwrap()
-//             )
-//             .as_bytes()
-//         )
-//         .unwrap();
-//         file.write_all(&data).unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use std::fs::{File, read};
+    use std::io::Write;
+
+    use zune_core::bytestream::ZCursor;
+
+    use crate::decoder::HeifDecoder;
+
+    #[test]
+    fn test_decoding() {
+        let file = read("/Users/etemesi/Downloads/classic-car.heic").unwrap();
+        let data = ZCursor::new(file);
+        let mut decoder = HeifDecoder::new(data);
+        decoder.decode_headers().unwrap();
+        let colorspace = decoder.colorspace().unwrap();
+        println!("{:?}", colorspace);
+        println!("{:?}", decoder.width().unwrap());
+        println!("{:?}", decoder.height().unwrap());
+        let data = decoder.decode().unwrap();
+
+        // 4. Final Write
+        let mut file = File::create("final_stitched_2.ppm").unwrap();
+        file.write_all(
+            format!(
+                "P6\n{} {}\n255\n",
+                decoder.width().unwrap(),
+                decoder.height.unwrap()
+            )
+            .as_bytes()
+        )
+        .unwrap();
+        file.write_all(&data).unwrap();
+    }
+}

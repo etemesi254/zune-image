@@ -4,7 +4,9 @@ use core::fmt;
 
 use zune_core::bytestream::ZByteIoError;
 
+use crate::HeicErrors::NalErrors;
 use crate::bmf_reader::FourCC;
+use crate::hevc_decoder::nal_parser::NalError;
 
 pub enum HeicErrors {
     /// Wraps an underlying I/O failure.
@@ -50,7 +52,8 @@ pub enum HeicErrors {
     },
     Generic {
         msg: String
-    }
+    },
+    NalErrors(NalError)
 }
 impl fmt::Display for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -94,6 +97,9 @@ impl fmt::Display for HeicErrors {
             }
             HeicErrors::Generic { msg } => {
                 write!(f, "{msg}")
+            }
+            HeicErrors::NalErrors(err) => {
+                write!(f, "{}", err)
             }
         }
     }
@@ -139,7 +145,8 @@ impl fmt::Debug for HeicErrors {
             HeicErrors::WouldUnderflow { a, b } => {
                 write!(f, "Would underflow ({a}-{b}) ")
             }
-            HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish()
+            HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish(),
+            HeicErrors::NalErrors(msg) => f.debug_tuple("NalErrors").field(msg).finish()
         }
     }
 }
@@ -148,5 +155,11 @@ impl core::error::Error for HeicErrors {}
 impl From<ZByteIoError> for HeicErrors {
     fn from(e: ZByteIoError) -> Self {
         HeicErrors::Io(e)
+    }
+}
+
+impl From<NalError> for HeicErrors {
+    fn from(value: NalError) -> Self {
+        Self::NalErrors(value)
     }
 }

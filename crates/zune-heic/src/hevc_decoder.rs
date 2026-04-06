@@ -2,8 +2,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use zune_core::log::trace;
+
 use crate::hevc_decoder::cabac::NUM_CABAC_CONTEXTS;
-use crate::hevc_decoder::nal_parser::{NalError, NalParser, NalUnitType};
+use crate::hevc_decoder::nal_parser::{NalError, NalFraming, NalParser, NalUnitType};
 use crate::hevc_decoder::nal_unit_headers::{Pps, Sps, Vps};
 use crate::hevc_decoder::nal_unit_parsers::{decode_pps, decode_sps, decode_vps};
 use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
@@ -19,7 +20,7 @@ mod constants;
 pub(crate) mod ctx;
 mod deblocker;
 mod macros;
-mod nal_parser;
+pub(crate) mod nal_parser;
 mod nal_unit_headers;
 mod nal_unit_parsers;
 mod neighbor_tracker;
@@ -36,11 +37,18 @@ pub struct HevcDecoder {
     width: usize,
     height: usize,
     pub(crate) neighbor_tracker: Option<NeighborTracker>,
-    pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>,
+    pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>
+}
+
+impl Default for HevcDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HevcDecoder {
-    fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             vps_storage:              vec![None; 16],
             sps_storage:              vec![None; 16],
@@ -50,6 +58,13 @@ impl HevcDecoder {
             neighbor_tracker:         None,
             dependent_slice_contexts: None
         }
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    pub fn height(&self) -> usize {
+        self.height
     }
 
     pub fn decode(&mut self, sample: HevcSample) -> Result<Option<Arc<RawFrame>>, NalError> {
@@ -104,7 +119,7 @@ impl HevcDecoder {
                     if let Some(f) = raw_frame.clone() {
                         decode_slice(&nal, self, f)?;
                     } else {
-                        panic!("No Raw frame allocated");
+                        return Err(NalError::Generic("No raw frame allocated".to_string()));
                     }
                 }
 
@@ -122,10 +137,10 @@ impl HevcDecoder {
 
     /// Call this if the container format (like HEIC or MP4) provides global
     /// parameter sets in its header (e.g., the `hvcC` box) before video samples.
-    pub fn parse_extradata(&mut self, extradata: &[u8]) -> Result<(), NalError> {
+    pub fn parse_extradata(&mut self, extradata: &[u8],nal_framing: NalFraming) -> Result<(), NalError> {
         let binding = [extradata];
 
-        let nal_parser = NalParser::new_detect(&binding);
+        let nal_parser = NalParser::new(&binding,nal_framing);
 
         nal_parser.for_each_nal(|nal| {
             match nal.nal_type {
@@ -137,6 +152,8 @@ impl HevcDecoder {
                 NalUnitType::SpsNut => {
                     let sps = decode_sps(&nal)?;
                     let sps_id = sps.sps_id as usize;
+                    self.width = sps.pic_width_in_luma_samples as usize;
+                    self.height = sps.pic_height_in_luma_samples as usize;
                     self.sps_storage[sps_id] = Some(sps);
                 }
                 NalUnitType::PpsNut => {

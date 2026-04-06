@@ -154,7 +154,9 @@ pub enum NalFraming {
     /// Used in raw bitstream files (.265, .hvc, ffmpeg output, etc.).
     ///
     ///   [0x00 0x00 0x00 0x01][NAL bytes][0x00 0x00 0x00 0x01][NAL bytes]…
-    AnnexB
+    AnnexB,
+    /// Raw NAL bytes, e.g already stripped from hvcc length
+    RawBytes
 }
 
 impl NalFraming {
@@ -171,7 +173,7 @@ impl NalFraming {
 
 // ── NalParser ────────────────────────────────────────────────────────────────
 
-pub struct NalParser<'a> {
+pub(crate) struct NalParser<'a> {
     extents: &'a [&'a [u8]],
     framing: NalFraming
 }
@@ -202,7 +204,8 @@ impl<'a> NalParser<'a> {
     {
         match self.framing {
             NalFraming::LengthPrefixed => self.walk_length_prefixed(&mut visitor),
-            NalFraming::AnnexB => self.walk_annex_b(&mut visitor)
+            NalFraming::AnnexB => self.walk_annex_b(&mut visitor),
+            NalFraming::RawBytes => self.walk_raw_bytes(&mut visitor)
         }
     }
 
@@ -316,6 +319,27 @@ impl<'a> NalParser<'a> {
                 };
             }
         }
+        Ok(())
+    }
+
+    fn walk_raw_bytes<F>(&self, visitor: &mut F) -> Result<(), NalError>
+    where
+        F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
+    {
+        for &extent in self.extents.iter() {
+            let remaining = extent;
+
+            // Calculate the absolute offset just in case we need to throw an error
+            let offset = extent.len() - remaining.len();
+
+            // if important return
+            if let Some(cont) = parse_nal_header(extent, visitor)?
+                && !cont
+            {
+               return Ok(());
+            }
+        }
+
         Ok(())
     }
 }
