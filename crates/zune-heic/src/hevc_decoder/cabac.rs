@@ -33,6 +33,9 @@ pub struct CabacDecoder<'a> {
     pub range:       u32,
     pub value:       u32,
     pub bits_needed: i32,
+    // ---  64-bit Bit Reservoir ---
+    pub cache:       u64,
+    pub cache_bytes: u32,
     pub contexts:    [u8; NUM_CABAC_CONTEXTS]
 }
 
@@ -44,6 +47,8 @@ impl<'a> CabacDecoder<'a> {
             range: 510,
             value: 0,
             bits_needed: -8,
+            cache: 0,
+            cache_bytes: 0,
             contexts: [0; NUM_CABAC_CONTEXTS]
         };
 
@@ -51,17 +56,53 @@ impl<'a> CabacDecoder<'a> {
         engine.init_cabac();
         engine
     }
+    #[inline(never)]
+    fn fill_cache(&mut self) {
+        match self.data.get(self.cursor..self.cursor + 8) {
+            None => {
+                let remaining = (self.data.len() - self.cursor).min(7);
+
+                let mut tmp = [0u8; 8];
+
+                tmp[..remaining].copy_from_slice(&self.data[self.cursor..]);
+
+                self.cache = u64::from_be_bytes(tmp);
+                self.cache_bytes = remaining as u32;
+                self.cursor = self.data.len();
+            }
+            Some(bytes) => {
+                let chunk = bytes.try_into().unwrap();
+
+                self.cache = u64::from_be_bytes(chunk);
+                self.cache_bytes = 8;
+                self.cursor += 8;
+            }
+        }
+    }
+    /// Extracts 1 byte entirely from the CPU register cache.
+    #[inline(always)]
+    fn read_byte(&mut self) -> u32 {
+        if self.cache_bytes == 0 {
+            self.fill_cache();
+            if self.cache_bytes == 0 {
+                return 0; // Padding for trailing bits
+            }
+        }
+        // Extract the highest byte from the u64
+        let b = (self.cache >> 56) as u32;
+        // Slide the window up by 8 bits
+        self.cache <<= 8;
+        self.cache_bytes -= 1;
+
+        b
+    }
 
     pub fn init_cabac(&mut self) {
         // Ensure we have at least 2 bytes available from the current cursor
         if self.data.len() >= self.cursor + 2 {
             // 1. Read 16 bits starting from the current cursor (byte-aligned)
             // This is the 'iv' value in the spec (Initial Value)
-            self.value =
-                u32::from(self.data[self.cursor]) << 8 | u32::from(self.data[self.cursor + 1]);
-
-            // 2. Advance cursor by 2 bytes
-            self.cursor += 2;
+            self.value = (self.read_byte() << 8) | self.read_byte();
 
             // 3. Reset the Arithmetic range to 510 as per Section 9.3.2.2
             self.range = 510;
@@ -90,15 +131,10 @@ impl<'a> CabacDecoder<'a> {
         self.value <<= shift;
         self.bits_needed += shift as i32;
 
+        // Refill the register from the bitstream
         if self.bits_needed >= 0 {
             // Refill the register from the bitstream
-            let byte = match self.data.get(self.cursor) {
-                Some(byte) => {
-                    self.cursor += 1;
-                    u32::from(*byte)
-                }
-                None => 0
-            };
+            let byte = self.read_byte();
 
             // Align the new byte based on how many bits were already consumed
             self.value |= byte << self.bits_needed;
@@ -110,7 +146,6 @@ impl<'a> CabacDecoder<'a> {
     fn renorm_one(&mut self) {
         self.renorm(1);
     }
-
 
     // --- Core Decoding Functions ---
 
@@ -238,12 +273,6 @@ impl<'a> CabacDecoder<'a> {
     /// Optimized: Decode `n_bits` bypass bins in one pass.
     #[inline]
     pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
-        debug_more!(
-            "bypass group r:{},v:{} (n_bits={})",
-            self.range,
-            self.value,
-            n_bits
-        );
         if n_bits == 0 {
             return 0;
         }
@@ -251,19 +280,17 @@ impl<'a> CabacDecoder<'a> {
         // Renorm all bits at once
         self.renorm(u32::from(n_bits));
 
-        let mut scaled = self.range << 7;
+        let scaled = self.range << 7;
         let mut res = 0u32;
 
         // Peel bits off from MSB to LSB
-        for _ in 0..n_bits {
-            res <<= 1;
-            if self.value >= scaled {
-                self.value -= scaled;
-                res |= 1;
+        for i in (0..n_bits).rev() {
+            if self.value >= (scaled << i) {
+                // Account for the batched shift in value
+                self.value -= scaled << i;
+                res |= 1 << i;
             }
-            scaled >>= 1;
         }
-        debug_more!("  FL: {}", res);
         res
     }
 
