@@ -14,3 +14,11 @@ default = ['simd']
 core-foundation-sys = "0.8.7"
 core-media-sys = "0.1.2"
 video-toolbox-sys = { version = "0.2", features = ["helpers"] }
+
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cabac_bench"
+harness = false

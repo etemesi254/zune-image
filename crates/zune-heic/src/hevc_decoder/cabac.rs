@@ -111,21 +111,34 @@ impl<'a> CabacDecoder<'a> {
         self.renorm(1);
     }
 
-    fn _print_states(&self) {
-        for i in 100..NUM_CABAC_CONTEXTS {
-            let state = self.contexts[i];
-            let mps = state & 1;
-            let state = state >> 1;
-            println!("i={i},mps:{mps},state:{state}");
-        }
-    }
+
     // --- Core Decoding Functions ---
 
     #[inline(always)]
     pub fn decode_decision(&mut self, ctx_idx: usize) -> u8 {
-        let state_packed = self.contexts[ctx_idx];
+        // NB: CAE this is a very hot code path, so some optimizations have been
+        // applied
+        debug_assert!(ctx_idx < NUM_CABAC_CONTEXTS, "Invalid ctx_idx");
+
+        // small optimization to fetch context once saving us a branch check below when it
+        // was in mps mode (branch check was for panic as the code does something like
+        // self.contexts[ctx_idx]=value.
+        // dummy is here to elide the value dropped before code
+        let mut dummy = 0;
+        let ctx_v = self.contexts.get_mut(ctx_idx).unwrap_or(&mut dummy);
+        let state_packed = *ctx_v;
+
         let mps = state_packed & 1;
+        let bin = 1 - mps;
         let state = (state_packed >> 1) as usize;
+
+        // another optimization
+        // Move the bit logic on top of here to better pipeline
+        // I am not sure if the compiler again is doing this
+        let next_mps = if state == 0 { 1 - mps } else { mps };
+
+        let mps_bit = (TRANSITION_MPS[state & 63] << 1) | mps;
+        let lps_bit = (TRANSITION_LPS[state & 63] << 1) | next_mps;
 
         debug_more!(
             "decodeBin range :{} value:{} state:{},ctx_idx:{}",
@@ -145,43 +158,46 @@ impl<'a> CabacDecoder<'a> {
 
         debug_more!(" sr:{} v:{}", scaled_range, self.value);
 
-        if self.value < scaled_range {
-            // --- MPS path ---
-            debug_more!(" MPS");
-            self.contexts[ctx_idx] = (TRANSITION_MPS[state] << 1) | mps;
+        let mps_side = self.value < scaled_range;
 
+        // branchless cmov  (on x86)
+        if mps_side {
+            *ctx_v = mps_bit;
+        } else {
+            *ctx_v = lps_bit;
+        }
+
+        if mps_side {
+            debug_more!("MPS");
+            // check range
             if self.range < 256 {
                 self.range <<= 1;
                 self.renorm_one();
             }
-
             debug_more!(" -> bit {}  r:{} v:{}", mps, self.range, self.value);
+
             mps
         } else {
-            // --- LPS path ---
-            // Assuming lps_decode is a helper or inline logic:
-            self.lps_decode(ctx_idx, mps, state, lps_range, scaled_range)
+            debug_more!("LPS");
+            // lps side
+            self.value -= scaled_range;
+
+            let range = (lps_range >> 3) as usize;
+            let shift = u32::from(RENORM_TABLE[range & 31]);
+            // just check that the & 31 optimization was valid but for debug builds
+            debug_assert!(
+                range < RENORM_TABLE.len(),
+                "range in LPS would panic {} {}",
+                range,
+                RENORM_TABLE.len()
+            );
+
+            self.range = lps_range << shift;
+            self.renorm(shift);
+            debug_more!(" -> bit {}  r:{} v:{}", bin, self.range, self.value);
+
+            bin
         }
-    }
-
-    /// Internal LPS logic to keep decode_decision slim
-    #[inline(never)]
-    fn lps_decode(
-        &mut self, ctx_idx: usize, mps: u8, state: usize, lps_range: u32, scaled_range: u32
-    ) -> u8 {
-        debug_more!(" LPS");
-        let bin = 1 - mps;
-        self.value -= scaled_range;
-
-        let shift = u32::from(RENORM_TABLE[(lps_range >> 3) as usize]);
-        self.range = lps_range << shift;
-        self.renorm(shift);
-
-        let next_mps = if state == 0 { 1 - mps } else { mps };
-        self.contexts[ctx_idx] = (TRANSITION_LPS[state] << 1) | next_mps;
-
-        debug_more!(" -> bit {}  r:{} v:{}", bin, self.range, self.value);
-        bin
     }
 
     #[inline(always)]
@@ -191,9 +207,9 @@ impl<'a> CabacDecoder<'a> {
 
         let scaled_range = self.range << 7;
         let bit = u8::from(self.value >= scaled_range);
-        if bit == 1 {
-            self.value -= scaled_range;
-        }
+        // CAE: (branchless, not sure if the optimizer was doing
+        // it :)
+        self.value -= scaled_range * u32::from(bit);
 
         debug_more!(" -> bit {}  r:{} v:{}", bit, self.range, self.value);
         bit
@@ -235,16 +251,17 @@ impl<'a> CabacDecoder<'a> {
         // Renorm all bits at once
         self.renorm(u32::from(n_bits));
 
-        let scaled = self.range << 7;
+        let mut scaled = self.range << 7;
         let mut res = 0u32;
 
         // Peel bits off from MSB to LSB
-        for i in (0..n_bits).rev() {
-            if self.value >= (scaled << i) {
-                // Account for the batched shift in value
-                self.value -= scaled << i;
-                res |= 1 << i;
+        for _ in 0..n_bits {
+            res <<= 1;
+            if self.value >= scaled {
+                self.value -= scaled;
+                res |= 1;
             }
+            scaled >>= 1;
         }
         debug_more!("  FL: {}", res);
         res

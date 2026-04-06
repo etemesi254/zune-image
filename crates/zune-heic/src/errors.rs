@@ -4,7 +4,6 @@ use core::fmt;
 
 use zune_core::bytestream::ZByteIoError;
 
-use crate::HeicErrors::NalErrors;
 use crate::bmf_reader::FourCC;
 use crate::hevc_decoder::nal_parser::NalError;
 

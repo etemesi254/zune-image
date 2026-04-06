@@ -609,7 +609,7 @@ pub fn decode_residual_block(
     // (Always size 2, because sub-blocks are always 4x4)
     let scan_order_pos = get_scan_order(2, scan_idx);
 
-    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+    if DEBUG_MORE {
         // libde265 style tracing
         let mut scan_pos_trace = String::from("ScanOrderPos: ");
         for n in 0..16 {

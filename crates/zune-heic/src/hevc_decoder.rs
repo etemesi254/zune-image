@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use zune_core::log::trace;
 
@@ -12,7 +11,8 @@ use crate::hevc_decoder::quadtree::decode_slice;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
-pub(crate) static DEBUG_MORE: AtomicBool = AtomicBool::new(false);
+//pub(crate) static DEBUG_MORE: AtomicBool = AtomicBool::new(false);
+pub (crate) const DEBUG_MORE:bool = false;
 mod bitstream;
 mod cabac;
 mod cabac_tables;

@@ -1,4 +1,3 @@
-
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
@@ -51,7 +50,8 @@ pub fn predict_dc(p: &[u8], dst: &mut [u8], n_t: usize, log2_n_t: u8, is_luma: b
 
         // Top-left corner (y=0, x=0)
         // Top(x=0) is index 2*n_t + 1. Left(y=0) is index 2*n_t - 1.
-        dst[0] = ((i32::from(p[2 * n_t + 1]) + 2 * dc_i32 + i32::from(p[2 * n_t - 1]) + 2) >> 2) as u8;
+        dst[0] =
+            ((i32::from(p[2 * n_t + 1]) + 2 * dc_i32 + i32::from(p[2 * n_t - 1]) + 2) >> 2) as u8;
 
         // Top row (x = 1..n_t-1)
         dst[1..n_t]
@@ -160,8 +160,7 @@ pub fn predict_angular(p: &[u8], dst: &mut [u8], ref_main_buf: &mut [u8], n_t: u
         ref_main_buf[offset] = p[corner_idx];
 
         // Top pixels are from (2*n_t + 1) to (4*n_t)
-        ref_main_buf[offset + 1..=offset + 2 * n_t]
-            .copy_from_slice(&p[corner_idx + 1..=4 * n_t]);
+        ref_main_buf[offset + 1..=offset + 2 * n_t].copy_from_slice(&p[corner_idx + 1..=4 * n_t]);
 
         if angle < 0 {
             let inv_angle = i32::from(INV_ANGLES[mode_idx]);
@@ -235,19 +234,17 @@ pub fn decode_intra_prediction_internal_u8(
 
     let p_slice = &ctx.ref_samples_p[..p_len];
     let log2_n_t = n_t.trailing_zeros() as u8;
-    
-    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)  {
-        println!(
-            "--- Intra Prediction Trace: Mode {intra_mode}, Size {n_t}x{n_t}, Comp {c_idx} at [{x_b0},{y_b0}] ---"
-        );
-    }
+
+    debug_more!(
+        "--- Intra Prediction Trace: Mode {intra_mode}, Size {n_t}x{n_t}, Comp {c_idx} at [{x_b0},{y_b0}] ---"
+    );
+
     match intra_mode {
         0 => predict_planar(p_slice, scratchpad, n_t, log2_n_t),
         1 => predict_dc(p_slice, scratchpad, n_t, log2_n_t, c_idx == 0),
         2..=34 => predict_angular(p_slice, scratchpad, ref_main_scratch, n_t, intra_mode),
         _ => unreachable!()
     }
-
 }
 pub fn decode_intra_prediction(
     ctx: &mut DecodeSliceContext,

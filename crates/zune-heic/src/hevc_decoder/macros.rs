@@ -73,7 +73,7 @@
 #[macro_export]
 macro_rules! debug_more {
     ($cond:expr => $($arg:tt)*) => {
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) && $cond {
+        if DEBUG_MORE && $cond {
             println!(
                 "{}",
                 //file!(),
@@ -84,7 +84,7 @@ macro_rules! debug_more {
             
     };
     ($($arg:tt)*) => {
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+        if DEBUG_MORE {
             println!(
                 "{}",
                 // file!(),

@@ -92,18 +92,20 @@ impl NeighborTracker {
         if x > 0 {
             let left = self.get_state(x - 1, y);
             // Neighbor is only "Available" if it's in the same slice segment
-            if left.available && left.slice_id == current_slice_id
-                && left.cqt_depth > current_depth {
-                    cond_l = 1;
-                }
+            if left.available && left.slice_id == current_slice_id && left.cqt_depth > current_depth
+            {
+                cond_l = 1;
+            }
         }
 
         if y > 0 {
             let above = self.get_state(x, y - 1);
-            if above.available && above.slice_id == current_slice_id
-                && above.cqt_depth > current_depth {
-                    cond_a = 1;
-                }
+            if above.available
+                && above.slice_id == current_slice_id
+                && above.cqt_depth > current_depth
+            {
+                cond_a = 1;
+            }
         }
 
         cond_l + cond_a
@@ -368,37 +370,45 @@ impl NeighborTracker {
         if neighbor_x < 0 || neighbor_y < 0 {
             return false;
         }
-        let nx = neighbor_x as usize;
-        let ny = neighbor_y as usize;
+        let nux = (neighbor_x as usize) >> self.log2_unit_size;
+        let nuy = (neighbor_y as usize) >> self.log2_unit_size;
 
-        if nx >= self.width_in_units << self.log2_unit_size
-            || ny >= self.height_in_units << self.log2_unit_size
-        {
+        if nux >= self.width_in_units || nuy >= self.height_in_units {
             return false;
         }
+        let cux = curr_x >> self.log2_unit_size;
+        let cuy = curr_y >> self.log2_unit_size;
 
-        // 2. Z-Scan Order Check (Crucial for HEVC)
-        let curr_z = self.get_zscan_addr(curr_x, curr_y);
-        let neigh_z = self.get_zscan_addr(nx, ny);
+        // 2. Math check BEFORE memory access (Memory access is slow, math is fast)
+        let curr_z = self.get_zscan_from_units(cux as u32, cuy as u32);
+        let neigh_z = self.get_zscan_from_units(nux as u32, nuy as u32);
 
-        // A neighbor is only available if it has already been decoded.
-        // In HEVC, this means its Z-scan address must be strictly less than ours.
         if neigh_z >= curr_z {
             return false;
         }
 
-        // 3. Metadata Lookup
-        let neighbor_unit = &self.blocks
-            [(ny >> self.log2_unit_size) * self.width_in_units + (nx >> self.log2_unit_size)];
-        let curr_unit = &self.blocks[(curr_y >> self.log2_unit_size) * self.width_in_units
-            + (curr_x >> self.log2_unit_size)];
+        // 2. Math check BEFORE memory access (Memory access is slow, math is fast)
+        let curr_z = self.get_zscan_from_units(cux as u32, cuy as u32);
+        let neigh_z = self.get_zscan_from_units(nux as u32, nuy as u32);
 
-        // 4. Slice/Tile Check
+        if neigh_z >= curr_z {
+            return false;
+        }
+        let neigh_idx = nuy * self.width_in_units + nux;
+        let curr_idx = cuy * self.width_in_units + cux;
+
+        let neighbor_unit = &self.blocks[neigh_idx];
+        let curr_unit = &self.blocks[curr_idx];
+
         if curr_unit.slice_id != neighbor_unit.slice_id {
             return false;
         }
 
         neighbor_unit.available
+    }
+    #[inline(always)]
+    pub fn get_zscan_from_units(&self, ux: u32, uy: u32) -> u32 {
+        spread_bits(ux) | (spread_bits(uy) << 1)
     }
 }
 impl NeighborTracker {
@@ -463,17 +473,7 @@ impl NeighborTracker {
         state.intra_mode_chroma
     }
 }
-impl NeighborTracker {
-    /// Converts pixel coordinates to a Z-Scan address.
-    /// log2_min_cb_size is usually 3 (for 8x8) or 2 (for 4x4).
-    pub fn get_zscan_addr(&self, x: usize, y: usize) -> u32 {
-        let ux = (x >> self.log2_unit_size) as u32;
-        let uy = (y >> self.log2_unit_size) as u32;
 
-        // Interleave: spread bits of x and y, then shift y left by 1
-        spread_bits(ux) | (spread_bits(uy) << 1)
-    }
-}
 
 impl NeighborTracker {
     pub fn update_cu_info(

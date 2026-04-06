@@ -326,11 +326,7 @@ impl<'a> NalParser<'a> {
     where
         F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
     {
-        for &extent in self.extents.iter() {
-            let remaining = extent;
-
-            // Calculate the absolute offset just in case we need to throw an error
-            let offset = extent.len() - remaining.len();
+        for &extent in self.extents {
 
             // if important return
             if let Some(cont) = parse_nal_header(extent, visitor)?

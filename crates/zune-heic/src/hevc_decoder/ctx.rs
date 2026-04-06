@@ -62,7 +62,7 @@ pub struct DecodeSliceContext<'a> {
 
     pub ctb_sao_buffer: Vec<SaoInfo>,
     // ctb contexts
-    pub ctb_context:    Vec<Option<[u8;NUM_CABAC_CONTEXTS]>>,
+    pub ctb_context:    Vec<Option<[u8; NUM_CABAC_CONTEXTS]>>
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
@@ -268,7 +268,7 @@ impl DecodeSliceContext<'_> {
                 let scaled = (level * fact + i64::from(offset)) >> bd_shift;
 
                 let final_clipped = scaled.clamp(-32768, 32767);
-                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+                if DEBUG_MORE {
                     println!(
                         "TRACE_SCALE: i={i:>2} pos={pos:>4} level={level:>4} m_x_y={m_x_y:>3} fact={fact:>8} bdShift={bd_shift:>2} final={final_clipped:>5}"
                     );
@@ -290,7 +290,7 @@ impl DecodeSliceContext<'_> {
                 // The actual scaling math
                 let scaled = (level * i64::from(fact) + i64::from(offset)) >> bd_shift;
 
-                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+                if DEBUG_MORE {
                     println!(
                         "TRACE_SCALE: i={:>2} pos={:>4} level={:>4}  fact={:>8} bdShift={:>2} final={:>5}",
                         i,
@@ -309,21 +309,18 @@ impl DecodeSliceContext<'_> {
 
         // Note: We only print if n_t is 4 or 8 to prevent overwhelming the console.
         // In a real debug session, you might remove this check.
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)
-            && n_t <= 32 {
-                println!(
-                    "coefficients OUT (cIdx:{c_idx} at {x_t},{y_t} size:{n_t}):"
-                );
-                for y in 0..n_t {
-                    print!("  ");
-                    for x in 0..n_t {
-                        // In your Rust port, coeffStride is just n_t since coeff_buffer is 1D
-                        let val = self.math_scratchpad[y * n_t + x];
-                        print!("{val:3} ");
-                    }
-                    println!();
+        if DEBUG_MORE && n_t <= 32 {
+            println!("coefficients OUT (cIdx:{c_idx} at {x_t},{y_t} size:{n_t}):");
+            for y in 0..n_t {
+                print!("  ");
+                for x in 0..n_t {
+                    // In your Rust port, coeffStride is just n_t since coeff_buffer is 1D
+                    let val = self.math_scratchpad[y * n_t + x];
+                    print!("{val:3} ");
                 }
+                println!();
             }
+        }
     }
     /// Returns true if the Chroma Intra Prediction mode is DM_CHROMA (Mode 4).
     /// This is used to gate Cross-Component Prediction (CCP).
@@ -529,19 +526,33 @@ impl DecodeSliceContext<'_> {
         let p_len = 4 * n_t + 1;
 
         // 1. Reset/Clear internal buffers
-        self.ref_samples_p.fill(0);
-        self.ref_samples_available.fill(false);
+        self.ref_samples_p[..p_len].fill(0);
+        self.ref_samples_available[..p_len].fill(false);
 
         // 2. Check Availability (Using PIXEL coordinates x0, y0)
-        check_availability(
-            self.neighbor_tracker,
-            x0,
-            y0,
-            n_t,
-            c_idx,
-            &mut self.ref_samples_available[..p_len]
-        );
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+        if true {
+            check_availability(
+                self.neighbor_tracker,
+                x0,
+                y0,
+                n_t,
+                c_idx,
+                &mut self.ref_samples_available[..p_len],
+                self.sps.pic_width_in_luma_samples as isize,
+                self.sps.pic_height_in_luma_samples as isize,
+                1 << self.sps.log2_ctb_size_y
+            );
+        } else {
+            check_availability_old(
+                self.neighbor_tracker,
+                x0,
+                y0,
+                n_t,
+                c_idx,
+                &mut self.ref_samples_available
+            );
+        }
+        if DEBUG_MORE {
             println!("--- Reference Border (N={n_t}) ---");
             print_available(&self.ref_samples_available[..p_len], n_t);
         }
@@ -556,7 +567,7 @@ impl DecodeSliceContext<'_> {
             n_t,
             c_idx
         );
-        if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+        if DEBUG_MORE {
             println!("--- Reference Border (N={n_t}) ---");
             print_border(&self.ref_samples_p[..p_len], n_t);
         }
@@ -606,10 +617,9 @@ fn write_block_and_pad(
 
             for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
                 let sum = i32::from(bv) + i32::from(pv);
-                if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed)
-                    && sum > 255 {
-                        println!("CLIPPING DETECTED: Pred={pv} + Residual={bv} = {sum}");
-                    }
+                if DEBUG_MORE && sum > 255 {
+                    println!("CLIPPING DETECTED: Pred={pv} + Residual={bv} = {sum}");
+                }
                 *dst = sum.clamp(0, max_val) as u8;
             }
         }
@@ -621,7 +631,7 @@ fn write_block_and_pad(
         }
     }
 
-    if DEBUG_MORE.load(std::sync::atomic::Ordering::Relaxed) {
+    if DEBUG_MORE {
         println!("--- Out Padding (N={n_t}) ---");
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
@@ -708,27 +718,34 @@ pub fn print_border(p: &[u8], n_t: usize) {
     println!();
 }
 
-fn check_availability(
+fn check_availability_old(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
     available: &mut [bool]
 ) {
     // 4:2:0 Scaling: Chroma pixels (c_idx 1,2) correspond to 2x2 Luma areas
+
     let scale = if c_idx == 0 { 1 } else { 2 };
 
     let sx0 = x0 * scale;
+
     let sy0 = y0 * scale;
 
     // 1. Indices 0 to 2*nT - 1: Below-Left and Left (Bottom-to-Top)
+
     // We start from the very bottom neighbor and move UP toward the corner
+
     for i in 0..(2 * n_t) {
         let px = sx0 as isize - 1; // Safely becomes -1 at the left edge
+
         // i=0 is the bottom-most pixel: (y0 + 2*nT - 1)
+
         let py = sy0 as isize + ((2 * n_t - 1 - i) * scale) as isize;
 
         available[i] = tracker.is_available(sx0, sy0, px, py);
     }
 
     // 2. Index 2*nT: Top-Left Corner
+
     available[2 * n_t] = tracker.is_available(
         sx0,
         sy0,
@@ -737,12 +754,85 @@ fn check_availability(
     );
 
     // 3. Indices 2*nT + 1 to 4*nT: Top and Top-Right (Left-to-Right)
+
     for i in 1..=(2 * n_t) {
         // i=1 is directly above x0, i=2nT is Top-Right
+
         let px = sx0 as isize + ((i - 1) * scale) as isize;
+
         let py = sy0 as isize - 1; // Safely becomes -1 at the top edge
 
         available[2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
+    }
+}
+#[allow(too_many_arguments)]
+fn check_availability(
+    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
+    available: &mut [bool], frame_width: isize, frame_height: isize, ctu_size: isize
+) {
+    let scale = if c_idx == 0 { 1 } else { 2 };
+    let sx0 = (x0 * scale) as isize;
+    let sy0 = (y0 * scale) as isize;
+
+    // HEVC neighbor availability operates on a 4x4 luma grid minimum.
+    // We scale this chunk size for chroma.
+    let chunk_size = 4 / scale;
+
+    // --- 1. Below-Left and Left (Bottom-to-Top) ---
+    // Process in chunks rather than pixel-by-pixel
+    let mut i = 0;
+    while i < 2 * n_t {
+        let px = sx0 - 1;
+        let py = sy0 + ((2 * n_t - 1 - i) * scale) as isize;
+
+        // Fast Coordinate Assumptions
+        let is_avail = if px < 0 || py >= frame_height {
+            false
+        } else if py >= ((sy0 / ctu_size) + 1) * ctu_size {
+            // CTU Rule: If py crosses into the CTU directly below, it's not decoded yet.
+            false
+        } else {
+            tracker.is_available(sx0 as usize, sy0 as usize, px, py)
+        };
+
+        // Fill the chunk
+        for j in 0..chunk_size {
+            if i + j < 2 * n_t {
+                available[i + j] = is_avail;
+            }
+        }
+        i += chunk_size;
+    }
+
+    // --- 2. Top-Left Corner ---
+    available[2 * n_t] = if sx0 - 1 < 0 || sy0 - 1 < 0 {
+        false
+    } else {
+        tracker.is_available(sx0 as usize, sy0 as usize, sx0 - 1, sy0 - 1)
+    };
+
+    // --- 3. Top and Top-Right (Left-to-Right) ---
+    let mut i = 1;
+    while i <= 2 * n_t {
+        let px = sx0 + ((i - 1) * scale) as isize;
+        let py = sy0 - 1;
+
+        let is_avail = if py < 0 || px >= frame_width {
+            false
+        } else if py >= (sy0 / ctu_size) * ctu_size && px >= ((sx0 / ctu_size) + 1) * ctu_size {
+            // CTU Rule: If py is in the current CTU row, but px crosses into the next CTU right, it's false.
+            false
+        } else {
+            tracker.is_available(sx0 as usize, sy0 as usize, px, py)
+        };
+
+        // Fill the chunk
+        for j in 0..chunk_size {
+            if i + j <= 2 * n_t {
+                available[2 * n_t + i + j] = is_avail;
+            }
+        }
+        i += chunk_size;
     }
 }
 
@@ -837,13 +927,19 @@ fn apply_reference_smoothing(p: &mut [u8], n_t: usize, mode: u8, strong_enabled:
     }
 
     if is_filtering_required(mode, n_t) {
-        let raw = p.to_vec();
+        // Store the unmodified p[0] before the loop begins
+        let mut prev = p[0];
 
-        // Because the 0..4N array traces the exact physical perimeter of the block
-        // (Bottom-Left -> Corner -> Top-Right), a single contiguous sweep
-        // applies the [1, 2, 1] filter perfectly across all edges!
+        // Sweep perfectly across the perimeter without allocating a copy
         for i in 1..(4 * n_t) {
-            p[i] = ((u16::from(raw[i - 1]) + 2 * u16::from(raw[i]) + u16::from(raw[i + 1]) + 2) >> 2) as u8;
+            let curr = p[i];
+            let next = p[i + 1];
+
+            // Apply the [1, 2, 1] filter using the original `prev` value
+            p[i] = ((u16::from(prev) + 2 * u16::from(curr) + u16::from(next) + 2) >> 2) as u8;
+
+            // The unmodified `curr` becomes the `prev` for the next iteration
+            prev = curr;
         }
     }
 }
