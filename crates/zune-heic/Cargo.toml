@@ -10,11 +10,6 @@ zune-core = { version = "0.5.1", path = "../zune-core" }
 simd = []
 default = ['simd']
 
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation-sys = "0.8.7"
-core-media-sys = "0.1.2"
-video-toolbox-sys = { version = "0.2", features = ["helpers"] }
-
 
 [dev-dependencies]
 criterion = "0.8.2"

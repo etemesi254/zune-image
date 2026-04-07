@@ -3,8 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::trace;
-use crate::apple_videotoolbox::TileMap;
-use crate::decoder::HeifDecoder;
+use crate::decoder::{HeifDecoder, TileMap};
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
@@ -391,7 +390,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
+    pub(crate) fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
         let unrotated_w = self.width.unwrap() as usize;
         let unrotated_h = self.height.unwrap() as usize;
         let channels = self.colorspace().unwrap().num_components();
@@ -419,7 +418,10 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
         // --- STEP 1: Stitching ---
         for (index, &item_id) in self.ordered_tile_ids.iter().enumerate() {
-            if let Some(Ok((tile_data, tile_w, tile_h))) = tiles.get(&item_id) {
+            if let Some(Ok(tile_data)) = tiles.get(&item_id) {
+                let tile_w =  tile_data.width;
+                let tile_h = tile_data.height;
+                
                 let col = (index as usize) % (self.cols as usize);
                 let row = (index as usize) / (self.cols as usize);
 
@@ -430,20 +432,20 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 let tile_stride = tile_w * channels;
                 let grid_stride = unrotated_w * channels;
 
-                for ty in 0..*tile_h {
+                for ty in 0..tile_h {
                     let canvas_y = base_y + ty;
 
                     // Crop bounds if tiles overflow the final target resolution
                     if canvas_y >= unrotated_h { break; }
                     if base_x >= unrotated_w { continue; }
 
-                    let copy_width = *tile_w.min(&(unrotated_w - base_x));
+                    let copy_width = tile_w.min(unrotated_w - base_x);
                     let len = copy_width * channels;
 
                     let src = ty * tile_stride;
                     let dst = canvas_y * grid_stride + base_x * channels;
 
-                    target_canvas[dst..dst + len].copy_from_slice(&tile_data[src..src + len]);
+                    target_canvas[dst..dst + len].copy_from_slice(&tile_data.pixels[src..src + len]);
                 }
             } else {
                 return Err(HeicErrors::Generic { msg: format!("Tile missing or errored: {}", item_id) });

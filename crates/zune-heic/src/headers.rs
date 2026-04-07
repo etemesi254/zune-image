@@ -6,16 +6,18 @@ use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, HdlrSection, IdatSection, IinfSection, IlocExtent, IlocItem,
     IlocSection, InfeSection, IpcoSection, IpmaAssociation, IpmaEntry, IpmaSection, IprpSection,
-    IrefEntry, IrefSection, ItemProperty, MetaSection, PitmSection
+    IrefEntry, IrefSection, ItemProperty, MetaSection, PitmSection,
 };
 use crate::utils::read_sized_int;
 
+const MAX_SIZE: usize = 10 * 1024 * 1024;
+const MAX_ENTRIES: u32 = 137;
 #[inline]
 fn subtract_value(value: usize, subtract: usize) -> Result<usize, HeicErrors> {
     match value.checked_sub(subtract) {
         None => Err(HeicErrors::WouldUnderflow {
             a: value,
-            b: subtract
+            b: subtract,
         }),
         Some(e) => Ok(e)
     }
@@ -27,7 +29,7 @@ fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
         BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.header_size) as usize),
         _ => Err(HeicErrors::ParseError {
             box_type: box_header.box_type,
-            msg:      "Needs absolute size".into()
+            msg: "Needs absolute size".into(),
         })
     }
 }
@@ -37,20 +39,20 @@ fn get_abs_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
         BoxSize::Absolute(s) => Ok(s as usize),
         _ => Err(HeicErrors::ParseError {
             box_type: box_header.box_type,
-            msg:      "Needs absolute size".into()
+            msg: "Needs absolute size".into(),
         })
     }
 }
 pub fn decode_ftyp<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<FtypHeader, HeicErrors> {
     let mut full_size = get_length(box_header)?;
 
     if full_size < 8 {
         return Err(HeicErrors::PayloadTooShort {
             box_type: box_header.box_type,
-            needed:   8,
-            have:     8 - full_size
+            needed: 8,
+            have: 8 - full_size,
         });
     }
 
@@ -74,7 +76,7 @@ pub fn decode_ftyp<R: ZByteReaderTrait>(
     Ok(FtypHeader {
         major_brand: FourCC(major_brand),
         minor_version,
-        compatible_brands
+        compatible_brands,
     })
 }
 
@@ -112,7 +114,7 @@ pub fn decode_ftyp<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_hdlr<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<HdlrSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
     trace!("Decoding hdlr length: {bytes_left}");
@@ -153,10 +155,10 @@ pub fn decode_hdlr<R: ZByteReaderTrait>(
     }
 
     Ok(HdlrSection {
-        version:      (version_and_flags >> 24) as u8,
-        flags:        version_and_flags & 0x00FF_FFFF,
+        version: (version_and_flags >> 24) as u8,
+        flags: version_and_flags & 0x00FF_FFFF,
         handler_type: FourCC(handler_type),
-        name:         String::from_utf8_lossy(&name_bytes).into_owned()
+        name: String::from_utf8_lossy(&name_bytes).into_owned(),
     })
 }
 
@@ -184,7 +186,7 @@ pub fn decode_hdlr<R: ZByteReaderTrait>(
 /// ```
 ///
 pub fn decode_pitm<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<PitmSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -212,7 +214,7 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
     Ok(PitmSection {
         version,
         flags: version_and_flags & 0x00FF_FFFF,
-        item_id
+        item_id,
     })
 }
 ///```text
@@ -244,7 +246,7 @@ pub fn decode_pitm<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_iinf<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IinfSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -264,12 +266,20 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
         bytes_left = subtract_value(bytes_left, 4)?;
         c
     };
+    if entry_count > MAX_ENTRIES {
+        // chosen by rng dice
+        return Err(HeicErrors::Generic {
+            msg: format!(
+                "Entry count for IINF section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
+            )
+        });
+    }
 
     let mut iinf = IinfSection {
         version,
         flags: version_and_flags & 0x00FF_FFFF,
         entry_count,
-        entries: Vec::with_capacity(entry_count as usize)
+        entries: Vec::with_capacity(entry_count as usize),
     };
 
     // read infe sub blocks now
@@ -330,7 +340,7 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_iloc<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IlocSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -381,6 +391,12 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
     //  │         │         │                   │ the nibbles above   │
     //  └─────────┴─────────┴───────────────────┴─────────────────────┘
 
+    if item_count > MAX_ENTRIES {
+        // chosen by rng dice
+        return Err(HeicErrors::Generic {
+            msg: format!("Entry count for ILOC section too many {item_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})")
+        });
+    }
     let mut items = Vec::with_capacity(item_count as usize);
 
     for _ in 0..item_count {
@@ -432,7 +448,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
             extents.push(IlocExtent {
                 extent_index,
                 extent_offset,
-                extent_length
+                extent_length,
             });
         }
 
@@ -441,7 +457,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
             construction_method,
             data_reference_index,
             base_offset,
-            extents
+            extents,
         });
     }
 
@@ -455,7 +471,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
         length_size,
         base_offset_size,
         index_size,
-        items
+        items,
     })
 }
 
@@ -482,7 +498,7 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_iref<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IrefSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -530,6 +546,14 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         };
 
         let ref_count = reader.get_u16_be_err()?;
+        if ref_count as u32 > MAX_ENTRIES {
+            // chosen by rng dice
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "Entry count for IREF section too many {ref_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
+                )
+            });
+        }
         let mut to_item_ids = Vec::with_capacity(ref_count as usize);
 
         child_bytes_left = subtract_value(child_bytes_left, 2)?;
@@ -550,7 +574,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         references.push(IrefEntry {
             reference_type: child_header.box_type,
             from_item_id,
-            to_item_ids
+            to_item_ids,
         });
 
         if child_bytes_left > 0 {
@@ -566,7 +590,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
     Ok(IrefSection {
         version,
         flags: version_and_flags & 0x00FF_FFFF,
-        references
+        references,
     })
 }
 ///```text
@@ -584,7 +608,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_infe<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<InfeSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -601,13 +625,13 @@ pub fn decode_infe<R: ZByteReaderTrait>(
         item_name: String::new(),
         content_type: None,
         content_encoding: None,
-        item_uri_type: None
+        item_uri_type: None,
     };
 
     if version == 0 || version == 1 {
         infe.item_id = u32::from(reader.get_u16_be_err()?);
         infe.item_protection_index = reader.get_u16_be_err()?;
-        bytes_left -= 4;
+        bytes_left = bytes_left.saturating_sub(4);
 
         // HEIF rarely uses v0/v1, but we parse strings until null to be compliant
         let mut name_bytes = Vec::new();
@@ -670,7 +694,7 @@ pub fn decode_infe<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 ///```
 pub fn decode_iprp<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IprpSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -719,8 +743,9 @@ pub fn decode_iprp<R: ZByteReaderTrait>(
 ///  │         │         │                   │ colr, irot, etc.)   │
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
+#[allow(clippy::too_many_lines)]
 pub fn decode_ipco<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IpcoSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -732,6 +757,14 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 
         let payload_size = child_size.saturating_sub(child_header.header_size as usize);
 
+        if payload_size > MAX_SIZE {
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "IPCO type {:?} with payload size {payload_size} exceeds max payload (max {MAX_SIZE} bytes)",
+                    child_header.box_type,
+                )
+            });
+        }
         match &child_header.box_type.0 {
             b"ispe" => {
                 reader.skip(4)?; // skip version/flags
@@ -781,28 +814,30 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                             colour_primaries,
                             transfer_characteristics,
                             matrix_coefficients,
-                            full_range_flag
+                            full_range_flag,
                         }
                     }
                     b"rICC" | b"prof" => {
                         let icc_size = payload_size.saturating_sub(4);
+
                         let mut profile_data = vec![0; icc_size];
                         reader.read_exact_bytes(&mut profile_data)?;
 
                         ColourInformation::IccProfile {
                             profile_type: colour_type,
-                            profile_data
+                            profile_data,
                         }
                     }
                     _ => {
                         // Fallback for unknown color types
                         let skip_size = payload_size.saturating_sub(4);
+
                         let mut payload = vec![0; skip_size];
                         reader.read_exact_bytes(&mut payload)?;
 
                         ColourInformation::Unknown {
                             colour_type,
-                            payload
+                            payload,
                         }
                     }
                 };
@@ -811,6 +846,8 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
             }
             b"hvcC" | b"av1C" => {
                 // For complex codecs, read raw bytes so decoders can use them later
+
+                let skip_size = payload_size.saturating_sub(4);
 
                 let mut payload = vec![0; payload_size];
                 reader.read_exact_bytes(&mut payload)?;
@@ -827,6 +864,13 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                 reader.skip(4)?;
                 let channels = reader.read_u8();
 
+                if channels > 4 {
+                    return Err(
+                        HeicErrors::Generic {
+                            msg: format!("Too many image channels {channels} exceeding 4")
+                        }
+                    );
+                }
                 let mut bits_per_channel = Vec::with_capacity(channels as usize);
                 for _ in 0..channels {
                     bits_per_channel.push(reader.read_u8());
@@ -834,13 +878,15 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 
                 ipco.properties.push(ItemProperty::Pixi {
                     channels,
-                    bits_per_channel
+                    bits_per_channel,
                 });
 
                 // Check if there are padding bytes left and skip them
             }
             b"auxC" => {
                 reader.skip(4)?;
+
+                let skip_size = payload_size.saturating_sub(4);
 
                 // Read null-terminated string for the aux_type
                 let mut type_bytes = Vec::new();
@@ -852,6 +898,14 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                     if b == 0 {
                         break;
                     }
+                    if type_bytes.len() > MAX_SIZE {
+                        return Err(HeicErrors::Generic {
+                            msg: format!(
+                                "Null terminated value with len {} exceeds max size ({MAX_SIZE} bytes))",
+                                type_bytes.len()
+                            )
+                        });
+                    }
                     type_bytes.push(b);
                 }
 
@@ -859,6 +913,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 
                 // Read the remaining payload as the subtype (usually empty for Alpha)
                 let subtype_size = payload_size.saturating_sub(bytes_read);
+
                 let mut subtype = vec![0; subtype_size];
                 reader.read_exact_bytes(&mut subtype)?;
 
@@ -872,7 +927,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 
                 ipco.properties.push(ItemProperty::Unknown {
                     box_type: child_header.box_type,
-                    payload
+                    payload,
                 });
             }
         }
@@ -904,7 +959,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
 ///  └─────────┴─────────┴───────────────────┴─────────────────────┘
 /// ```
 pub fn decode_ipma<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<IpmaSection, HeicErrors> {
     let mut bytes_left = get_length(box_header)?;
 
@@ -915,6 +970,14 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
 
     let version = (version_and_flags >> 24) as u8;
     let flags = version_and_flags & 0x00FF_FFFF;
+    if entry_count > MAX_ENTRIES {
+        // chosen by rng dice
+        return Err(HeicErrors::Generic {
+            msg: format!(
+                "Entry count for IPMA section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
+            )
+        });
+    }
 
     let mut entries = Vec::with_capacity(entry_count as usize);
 
@@ -933,6 +996,15 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
 
         bytes_left = subtract_value(bytes_left, 1)?;
 
+        if entry_count > MAX_ENTRIES {
+            // chosen by rng dice
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "Entry count for IPMA sub-section too many {entry_count} (possibly corrupt) (max library supported entries {MAX_ENTRIES})"
+                )
+            });
+        }
+
         let mut associations = Vec::with_capacity(assoc_count as usize);
 
         for _ in 0..assoc_count {
@@ -940,21 +1012,21 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
                 let val = reader.get_u16_be_err()?;
                 bytes_left = subtract_value(bytes_left, 2)?;
                 associations.push(IpmaAssociation {
-                    essential:      (val >> 15) != 0,
-                    property_index: val & 0x7FFF
+                    essential: (val >> 15) != 0,
+                    property_index: val & 0x7FFF,
                 });
             } else {
                 let val = reader.read_u8();
                 bytes_left = subtract_value(bytes_left, 1)?;
                 associations.push(IpmaAssociation {
-                    essential:      (val >> 7) != 0,
-                    property_index: u16::from(val & 0x7F)
+                    essential: (val >> 7) != 0,
+                    property_index: u16::from(val & 0x7F),
                 });
             }
         }
         entries.push(IpmaEntry {
             item_id,
-            associations
+            associations,
         });
     }
 
@@ -964,18 +1036,18 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
     Ok(IpmaSection {
         version,
         flags,
-        entries
+        entries,
     })
 }
 
 #[track_caller]
 pub fn decode_meta<R: ZByteReaderTrait>(
-    reader: &mut ZReader<R>, box_header: &BoxHeader
+    reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<MetaSection, HeicErrors> {
     if &box_header.box_type.0 != b"meta" {
         return Err(HeicErrors::ParseError {
             box_type: box_header.box_type,
-            msg:      "Expected META".into()
+            msg: "Expected META".into(),
         });
     }
 
@@ -984,8 +1056,8 @@ pub fn decode_meta<R: ZByteReaderTrait>(
     if bytes_left < 4 {
         return Err(HeicErrors::PayloadTooShort {
             box_type: box_header.box_type,
-            needed:   4,
-            have:     bytes_left
+            needed: 4,
+            have: bytes_left,
         });
     }
 
@@ -1004,7 +1076,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
         if child_size > bytes_left {
             return Err(HeicErrors::ParseError {
                 box_type: child_header.box_type,
-                msg:      "Child box exceeds meta bounds".into()
+                msg: "Child box exceeds meta bounds".into(),
             });
         }
 

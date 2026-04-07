@@ -153,15 +153,19 @@ pub struct DecoderOptions {
     ///
     /// - Default value:100
     /// - Respected by: `jpeg`
-    max_scans:     usize,
+    max_scans:          usize,
     /// Maximum size for deflate.
     /// Respected by all decoders that use inflate/deflate
-    deflate_limit: usize,
+    deflate_limit:      usize,
     /// Boolean flags that influence decoding
-    flags:         DecoderFlags,
+    flags:              DecoderFlags,
     /// The byte endian of the returned bytes will be stored in
     /// in case a single pixel spans more than a byte
-    endianness:    ByteEndian
+    endianness:         ByteEndian,
+    /// Maximum MDAT size.
+    ///
+    /// We read this to memory so thats why it is a configurable parameter
+    hevc_max_mdat_size: usize
 }
 
 /// Initializers
@@ -645,6 +649,21 @@ impl DecoderOptions {
         self.flags.hvec_use_videotoolbox = yes;
         self
     }
+
+    /// Return the size in bytes the maximum allowed size of the MDAT section
+    /// in HEIC images, the section is read to memory so a cap is important
+    ///
+    /// Default is 16 MB
+    pub const fn hevc_max_mdat_size(&self) -> usize {
+        self.hevc_max_mdat_size
+    }
+    /// Set the maximum size in bytes for the MDAT section for HEIC images.
+    ///
+    /// The section is read into memory so important to have it with an upper limit
+    pub  fn set_hevc_max_mdat_size(mut self, max_size: usize) -> Self {
+        self.hevc_max_mdat_size = max_size;
+        self
+    }
 }
 impl Default for DecoderOptions {
     /// Create a default and sane option for decoders
@@ -671,15 +690,21 @@ impl Default for DecoderOptions {
     ///  - JXL
     ///    - decode_animated: True: All frames in an animated image are decoded
     ///
+    /// - HEVC
+    ///   - max_hevc_mdat_size: Maximum MDAT size, the value is read to memory so it prevents OOM
+    ///     value is 16 MB, which is valid for almost 99.999999% of HEIC images there
+    ///
     fn default() -> Self {
         Self {
-            out_colorspace: ColorSpace::RGB,
-            max_width:      1 << 14,
-            max_height:     1 << 14,
-            max_scans:      100,
-            deflate_limit:  1 << 30,
-            flags:          decoder_error_tolerance_mode(),
-            endianness:     ByteEndian::BE
+            out_colorspace:     ColorSpace::RGB,
+            max_width:          1 << 14,
+            max_height:         1 << 14,
+            max_scans:          100,
+            deflate_limit:      1 << 30,
+            flags:              decoder_error_tolerance_mode(),
+            // 16 mb
+            hevc_max_mdat_size: 1 << 24,
+            endianness:         ByteEndian::BE
         }
     }
 }

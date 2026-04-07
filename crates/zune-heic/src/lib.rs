@@ -32,5 +32,7 @@ pub mod hevc_decoder;
 mod processor;
 mod utils;
 
+pub extern crate zune_core;
+
 pub use decoder::HeifDecoder;
 pub use errors::HeicErrors;

@@ -6,7 +6,6 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
-use crate::apple_videotoolbox::TileMap;
 use crate::bmf_reader::{BoxHeader, BoxSize};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
@@ -16,6 +15,13 @@ use crate::headers::{decode_ftyp, decode_meta};
 use crate::hevc_decoder::HevcDecoder;
 use crate::hevc_decoder::nal_parser::NalFraming;
 use crate::processor::HevcSample;
+
+pub(crate) struct SingleDecodedTile {
+    pub pixels: Vec<u8>,
+    pub width:  usize,
+    pub height: usize
+}
+pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>>;
 
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
@@ -101,7 +107,17 @@ where
                     // skip to the next section
                     match header.total_size {
                         BoxSize::Absolute(total_size) => {
-                            let payload_size = total_size - header.header_size;
+                            let payload_size = total_size.saturating_sub(header.header_size);
+
+                            if payload_size > self.options.hevc_max_mdat_size() as u64 {
+                                return Err(HeicErrors::Generic {
+                                    msg: format!(
+                                        "MDAT {} size exceeds HEIC max configured size {}",
+                                        payload_size,
+                                        self.options.hevc_max_mdat_size()
+                                    )
+                                });
+                            }
                             let mut output = vec![0; payload_size as usize];
 
                             self.stream.read_exact_bytes(&mut output)?;
@@ -128,8 +144,20 @@ where
                 // skip to another section
                 _ => match header.total_size {
                     BoxSize::Absolute(total_size) => {
-                        let payload_size = total_size - header.header_size;
-                        self.stream.skip(payload_size as usize)?;
+                        let payload_size_opt = total_size.checked_sub(header.header_size);
+                        match payload_size_opt {
+                            Some(payload_size) => {
+                                self.stream.skip(payload_size as usize)?;
+                            }
+                            None => {
+                                return Err(HeicErrors::Generic {
+                                    msg: format!(
+                                        "Payload size {total_size} larger than header size {}",
+                                        header.header_size
+                                    )
+                                });
+                            }
+                        }
                     }
                     BoxSize::ToEnd => {
                         trace!("Skipping to end, found a section with skip_to_end flag");
@@ -184,8 +212,13 @@ where
             .unwrap_or([0, 0, 0, 0]) // Return null if not found
     }
     fn handle_grid_items(&mut self) -> Result<(), HeicErrors> {
-        let pitm = self.meta_section.as_ref().unwrap().pitm.as_ref().unwrap();
-        let meta = self.meta_section.as_ref().unwrap();
+        let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
+            msg: "no meta section".to_string()
+        })?;
+
+        let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
+            msg: "no pitm section".to_string()
+        })?;
 
         if let Some(iref) = &meta.iref {
             for rel in &iref.references {
@@ -199,7 +232,9 @@ where
         let grid_item = meta
             .iloc
             .as_ref()
-            .unwrap()
+            .ok_or(HeicErrors::Generic {
+                msg: "no iloc section".to_string()
+            })?
             .items
             .iter()
             .find(|item| item.item_id == pitm.item_id)
@@ -332,6 +367,29 @@ where
             }
         }
 
+        if final_height == 0 || final_width == 0 {
+            return Err(HeicErrors::Generic {
+                msg: format!("Width or height is zero (w={final_width},h={final_height})",)
+            });
+        }
+        if final_width as usize > self.options.max_width() {
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "Width of image {} greater than configured maximum width {}",
+                    final_width,
+                    self.options.max_width()
+                )
+            });
+        }
+        if final_height as usize > self.options.max_height() {
+            return Err(HeicErrors::Generic {
+                msg: format!(
+                    "Height of image {} greater than configured maximum height {}",
+                    final_height,
+                    self.options.max_height()
+                )
+            });
+        }
         self.width = Some(final_width);
         self.height = Some(final_height);
 
@@ -350,7 +408,7 @@ where
 
         #[cfg(target_os = "macos")]
         {
-            if false && self.options.hvec_use_apple_videotoolbox() {
+            if self.options.hvec_use_apple_videotoolbox() {
                 trace!("HEVC using apple video toolbox");
                 // --- APPLE SILICON PATH ---
                 let tile_map = self.decode_hardware_videotoolbox()?;
@@ -364,9 +422,15 @@ where
         let processor = |sample: HevcSample| -> Result<(), HeicErrors> {
             let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
-            let vps = sample.vps.as_deref().unwrap();
-            let sps = sample.sps.as_deref().unwrap();
-            let pps = sample.pps.as_deref().unwrap();
+            let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
+                msg: "vps not found".to_owned()
+            })?;
+            let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
+                msg: "sps not found".to_owned()
+            })?;
+            let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
+                msg: "pps not found".to_owned()
+            })?;
 
             software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
             software_decoder.parse_extradata(sps, NalFraming::RawBytes)?;
@@ -386,11 +450,13 @@ where
             match result {
                 Some(frame) => {
                     frame.write_rgb_420(&mut out)?;
+                    let tile = SingleDecodedTile {
+                        pixels: out,
+                        width:  tile_w,
+                        height: tile_h
+                    };
 
-                    tile_map
-                        .lock()
-                        .unwrap()
-                        .insert(sample_id, Ok((out, tile_w, tile_h)));
+                    tile_map.lock().unwrap().insert(sample_id, Ok(tile));
                     Ok(())
                 }
                 None => {
