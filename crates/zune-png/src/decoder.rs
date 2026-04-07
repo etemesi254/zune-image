@@ -817,7 +817,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                         if let Some(e) = out.get_mut(final_start..final_start + out_bytes) {
                             e.copy_from_slice(&final_out[out_start..out_start + out_bytes]);
                         } else {
-                            warn!("Malformed image, interlace cannot be placed correctly")
+                            warn!("Malformed image, interlace cannot be placed correctly");
                         }
                     }
                 }
