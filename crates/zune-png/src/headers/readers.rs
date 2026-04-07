@@ -305,7 +305,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                     "[strict-mode]: Invalid exif chunk"
                 ));
             } else {
-                warn!("Invalid exif chunk, it doesn't start with the magic bytes")
+                warn!("Invalid exif chunk, it doesn't start with the magic bytes");
             }
             // do not parse
             self.stream.skip(chunk.length + 4)?;
