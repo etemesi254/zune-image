@@ -33,34 +33,24 @@
 //! ## Platform
 //!
 //! Only available on **macOS**.
-
+mod types;
 use core::ffi::c_void;
 use core::{ptr, slice};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use core_foundation_sys::base::{CFAllocatorRef, CFRelease, OSStatus, kCFAllocatorNull};
-use core_media_sys::{
-    CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef, CMSampleBufferRef, CMTime,
-    CMVideoFormatDescriptionRef
-};
-use video_toolbox_sys::cv_types::CVImageBufferRef;
-use video_toolbox_sys::decompression::{
-    VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate,
-    VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
-    VTDecompressionSessionWaitForAsynchronousFrames
-};
 use zune_core::bytestream::ZByteReaderTrait;
 
-use crate::decoder::HeifDecoder;
+use crate::apple_videotoolbox::types::{
+    CFAllocatorRef, CFRelease, CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef,
+    CMSampleBufferRef, CMTime, CMVideoFormatDescriptionRef, CVImageBufferRef, OSStatus,
+    VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate,
+    VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
+    VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull
+};
+use crate::decoder::{HeifDecoder, SingleDecodedTile, TileMap};
 use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
-
-/// Thread-safe storage for decoded tiles.
-///
-/// Key: `item_id` (HEVC sample identifier)
-/// Value: RGB pixel buffer (`Vec<u8>`, 3 bytes per pixel)
-pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<(Vec<u8>, usize, usize), HeicErrors>>>>;
 
 unsafe extern "C" {
     /// Creates a CMVideoFormatDescription from HEVC (H.265) parameter-set NAL units.
@@ -246,7 +236,7 @@ impl AppleHardwareDecoder {
                     &raw mut sample_buffer
                 );
                 if status != 0 {
-                    CFRelease(block_buffer.cast_mut());
+                    CFRelease(block_buffer as _);
                     return Err(status);
                 }
 
@@ -269,7 +259,7 @@ impl AppleHardwareDecoder {
                 // 4. Release our local references.
                 //    VideoToolbox retains whatever it still needs internally.
                 CFRelease(sample_buffer.cast::<c_void>());
-                CFRelease(block_buffer.cast_mut());
+                CFRelease(block_buffer as _);
 
                 if status != 0 {
                     return Err(status);
@@ -284,7 +274,7 @@ impl Drop for AppleHardwareDecoder {
     fn drop(&mut self) {
         unsafe {
             if !self.session.is_null() {
-                CFRelease(self.session.cast_mut());
+                CFRelease(self.session as _);
             }
             if !self.format_desc.is_null() {
                 CFRelease(self.format_desc.cast::<c_void>());
@@ -382,8 +372,8 @@ extern "C" fn decode_callback(
     _info_flags: VTDecodeInfoFlags, image_buffer: CVImageBufferRef,
     _presentation_time_stamp: CMTime, _presentation_duration: CMTime
 ) {
-    let tile_map_ptr =
-        decompression_output_ref_con as *const Mutex<HashMap<u32, Result<(Vec<u8>,usize,usize), HeicErrors>>>;
+    let tile_map_ptr = decompression_output_ref_con
+        as *const Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>;
     let item_id = source_frame_ref_con as usize;
 
     if status != 0 || image_buffer.is_null() {
@@ -497,7 +487,12 @@ extern "C" fn decode_callback(
         CVPixelBufferUnlockBaseAddress(image_buffer, 1);
 
         if let Ok(mut map) = (*tile_map_ptr).lock() {
-            map.insert(item_id as u32, Ok((rgb_data,width,height)));
+            let tile = SingleDecodedTile {
+                width:  width,
+                height: height,
+                pixels: rgb_data
+            };
+            map.insert(item_id as u32, Ok(tile));
         }
     }
 }
@@ -529,14 +524,22 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         let mut processor = |sample: HevcSample| -> Result<(), HeicErrors> {
             if hardware_decoder.is_none() {
                 // Initialize with a pointer to our tile_map
-                let vps = sample.vps.as_deref().unwrap();
-                let sps = sample.sps.as_deref().unwrap();
-                let pps = sample.pps.as_deref().unwrap();
+                let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "vps not found".to_owned()
+                })?;
+                let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "sps not found".to_owned()
+                })?;
+                let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
+                    msg: "pps not found".to_owned()
+                })?;
 
                 // Pass the RAW POINTER of the mutex to the callback
                 let context_ptr = Arc::as_ptr(&tile_map) as *mut c_void;
                 hardware_decoder =
-                    Some(AppleHardwareDecoder::new(vps, sps, pps, context_ptr).unwrap());
+                    Some(AppleHardwareDecoder::new(vps, sps, pps, context_ptr).map_err(|d| HeicErrors::Generic {
+                        msg:format!("Error when initializing apple hardware decoder: os-status:{d}")
+                    })?);
             }
 
             if let Some(decoder) = hardware_decoder.as_ref() {
