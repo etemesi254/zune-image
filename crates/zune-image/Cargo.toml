@@ -15,7 +15,6 @@ description = "An image library, containing necessary capabilities to decode, ma
 log = ["zune-core/log"]
 ppm = ["zune-ppm"]
 jpeg = ["zune-jpeg", "jpeg-encoder"]
-png = ["zune-png"]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
@@ -35,7 +34,7 @@ default = ["all"]
 # Whether to use threads or not for some operations
 threads = ["zune-jpegxl?/threads", "jxl-oxide?/rayon"]
 # Simd support
-simd = ["zune-jpeg?/x86", "zune-png?/sse", "avx2", "sse41"]
+simd = ["zune-jpeg?/x86", "avx2", "sse41"]
 benchmarks = []
 avx2 = []
 sse41 = []
@@ -49,7 +48,6 @@ all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
 # Core primitives
 zune-core = { path = "../zune-core", version = "^0.5.1", features = ["std"] }
 # Images
-zune-png = { path = "../zune-png", version = "^0.5.1", optional = true, features = ["std"] }
 zune-jpeg = { path = "../zune-jpeg", version = "^0.5.11", optional = true }
 zune-ppm = { path = "../zune-ppm", version = "^0.5.1", optional = true }
 zune-psd = { path = "../zune-psd", version = "^0.5.1", optional = true }
@@ -68,9 +66,9 @@ jpeg-encoder = { version = "0.7.0", optional = true, features = ["simd", "std"] 
 jxl-oxide = { version = "0.12.5", optional = true }
 # metadata
 kamadak-exif = { version = "0.6.1", optional = true }
-
+# Extra decoders and encoders from image-rs
 image-webp = { version = "0.2.4", optional = true }
-png = "0.18.0"
+png = { version = "0.18.1", optional = true }
 
 [dev-dependencies]
 num-complex = "0.4.3" # Runs generate-fractals

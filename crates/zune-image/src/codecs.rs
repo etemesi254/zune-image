@@ -270,6 +270,9 @@ impl ImageFormat {
                         data, options
                     )))
                 }
+                #[cfg(not(feature = "heic"))]{
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
             }
             ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
         }
