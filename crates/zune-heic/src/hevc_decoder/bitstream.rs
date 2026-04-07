@@ -211,7 +211,7 @@ impl<'src> BitReader<'src> {
 
         let suffix = self.buffer >> (64 - u64::from(num_zeros));
         self.buffer <<= num_zeros;
-        self.bits_left -= num_zeros;
+        self.bits_left = self.bits_left.saturating_sub(num_zeros);
 
         Ok((1 << num_zeros) - 1 + suffix)
     }

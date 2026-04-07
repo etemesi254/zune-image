@@ -5,7 +5,7 @@ use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
-use crate::hevc_decoder::nal_unit_headers::{ SliceType};
+use crate::hevc_decoder::nal_unit_headers::SliceType;
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
 use crate::hevc_decoder::raw_frame::RawFrame;
@@ -39,7 +39,14 @@ pub fn decode_slice(
 
     let slice_header = decode_slice_header(nal, pps_storage, sps_storage, &clean_rbsp)?;
 
-    let pps = pps_storage[slice_header.slice_pic_parameter_set_id as usize]
+    let pps = pps_storage
+        .get(slice_header.slice_pic_parameter_set_id as usize)
+        .ok_or_else(|| {
+            NalError::Generic(format!(
+                "no pps found for slice header {}",
+                slice_header.slice_pic_parameter_set_id
+            ))
+        })?
         .as_ref()
         .unwrap();
     let sps = sps_storage[pps.sps_id as usize].as_ref().unwrap();
@@ -58,13 +65,14 @@ pub fn decode_slice(
     let payload_start = &clean_rbsp[slice_header.cabac_start_position..];
     let mut cabac = CabacDecoder::new(payload_start, i32::from(slice_qp), init_type);
 
-
     if slice_header.dependent_slice_segment_flag {
         if let Some(saved_contexts) = &hevc_decoder.dependent_slice_contexts {
             debug_more!("Loading CABAC contexts from previous slice segment.");
-            cabac.contexts = saved_contexts.clone();
+            cabac.contexts.clone_from(saved_contexts);
         } else {
-            panic!("Stream Error: Dependent slice flag is set, but no previous contexts exist!");
+            return Err(NalError::GenericStr(
+                "Stream Error: Dependent slice flag is set, but no previous contexts exist!"
+            ));
         }
     } else {
         hevc_decoder.dependent_slice_contexts = None;
@@ -132,7 +140,7 @@ pub fn decode_slice(
         match finish_ctu(&mut ctx, ctu_x, ctu_y)? {
             CtuStatus::EndOfSliceSegment => {
                 debug_more!("Slice Segment Finished at CTU {}", ctu_addr);
-                debug_more!("cursor:{} len:{}",ctx.cabac.cursor,ctx.cabac.data.len());
+                debug_more!("cursor:{} len:{}", ctx.cabac.cursor, ctx.cabac.data.len());
 
                 // If it's a dependent slice, save the state for the next one
                 if pps.dependent_slice_segments_enabled_flag {
@@ -161,16 +169,20 @@ pub fn finish_ctu(
     // --- 1. WPP Context Storage (Section 6.3.3) ---
     // If Wavefront Parallel Processing is enabled, we save the context state
     // after the second CTU of a row to initialize the first CTU of the next row.
-    if pps.entropy_coding_sync_enabled_flag && ctbx == 1
-        && ctby + 1 < sps.pic_height_in_ctbs_y as usize {
-            debug_more!("Saving WPP Context for row {}", ctby);
-            // We clone the current context model state (the "decouple" in libde265)
-            ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone());
-        }
+    if pps.entropy_coding_sync_enabled_flag
+        && ctbx == 1
+        && ctby + 1 < sps.pic_height_in_ctbs_y as usize
+    {
+        debug_more!("Saving WPP Context for row {}", ctby);
+        // We clone the current context model state (the "decouple" in libde265)
+        ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone());
+    }
 
     debug_more!(
         "Cabac EOC range:{} value:{},position:{}",
-        ctx.cabac.range, ctx.cabac.value, ctx.cabac.cursor
+        ctx.cabac.range,
+        ctx.cabac.value,
+        ctx.cabac.cursor
     );
     // --- 2. Decode Terminal Bit (end_of_slice_segment_flag) ---
     // This bit is mandatory after every CTU (Section 7.3.8.1)
@@ -222,7 +234,7 @@ pub fn finish_ctu(
         if eoss_bit == 0 {
             // debug assert for tracing makes it easier to step into function
             // the return looses the context
-            debug_assert!(true,"ERROR: end_of_sub_stream_one_bit was 0!");
+            debug_assert!(true, "ERROR: end_of_sub_stream_one_bit was 0!");
             return Err(NalError::Generic(
                 "end_of_sub_stream_one_bit was 0!".to_string()
             ));
@@ -252,7 +264,9 @@ fn read_coding_quadtree(
 
     debug_more!(
         "before split range:{},value:{},pos:{}",
-        ctx.cabac.range, ctx.cabac.value, ctx.cabac.cursor
+        ctx.cabac.range,
+        ctx.cabac.value,
+        ctx.cabac.cursor
     );
 
     // if x0 == 408 && y0 == 112 && (1_u64 << log_2_cb_size) == 8 && ct_depth == 2 {
@@ -329,7 +343,6 @@ fn read_coding_quadtree(
             y0,
             ctx.last_qp_in_slice
         );
-
 
         // 3. Commit ONLY the CU-level properties to the tracker!
         // The Prediction Unit modes were already set safely inside read_coding_unit.

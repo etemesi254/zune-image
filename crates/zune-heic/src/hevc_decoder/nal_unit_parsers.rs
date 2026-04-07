@@ -83,7 +83,7 @@ fn decode_profile_data(
         28, 21, 14,  7, 57, 50, 43, 36, 29, 22, 15, 58, 51, 44, 37, 30,
         23, 59, 52, 45, 38, 31, 60, 53, 46, 39, 61, 54, 47, 62, 55, 63
     ];
-pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists,&'static str> {
+pub fn parse_scaling_list_data(r: &mut BitReader) -> Result<ScalingLists, &'static str> {
     let mut sl = ScalingLists::default();
 
     for size_id in 0..4 {
@@ -240,7 +240,7 @@ fn parse_vui(r: &mut BitReader, max_sub_layers_minus1: u64) -> Result<Vui, NalEr
         }
     }
 
-    if r.read_flag()?{
+    if r.read_flag()? {
         // chroma_loc_info_present_flag
         v.chroma_loc_info_present_flag = true;
         v.chroma_sample_loc_type_top_field = r.read_ue()?;
@@ -259,7 +259,7 @@ fn parse_vui(r: &mut BitReader, max_sub_layers_minus1: u64) -> Result<Vui, NalEr
         r.read_ue()?;
     }
 
-    if r.read_flag() ?{
+    if r.read_flag()? {
         // vui_timing_info_present_flag
         r.get_bits(32)?; // num_units_in_tick
         r.get_bits(32)?; // time_scale
@@ -388,11 +388,24 @@ pub fn decode_slice_header(
     // 3. PPS/SPS Lookup (The most critical part for bit-alignment)
     sh.slice_pic_parameter_set_id = r.read_ue()?;
 
-    let pps = pps_storage[sh.slice_pic_parameter_set_id as usize]
+    let pps = pps_storage
+        .get(sh.slice_pic_parameter_set_id as usize)
+        .ok_or_else(|| {
+            NalError::Generic(format!(
+                "no pps found for slice header {}",
+                sh.slice_pic_parameter_set_id
+            ))
+        })?
         .as_ref()
         .ok_or_else(|| NalError::Generic("PPS not found".into()))?;
 
-    let sps = sps_storage[pps.sps_id as usize]
+    let sps = sps_storage.get(pps.sps_id as usize)
+        .ok_or_else(|| {
+            NalError::Generic(format!(
+                "no sps found pps with id {}",
+                pps.sps_id
+            ))
+        })?
         .as_ref()
         .ok_or_else(|| NalError::Generic("SPS not found".into()))?;
 
