@@ -160,6 +160,7 @@ impl DecodeSliceContext<'_> {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn scale_coefficients(
         &mut self,
         x_t: usize,
@@ -167,6 +168,8 @@ impl DecodeSliceContext<'_> {
         n_t: usize, // TU size (4, 8, 16, 32)
         c_idx: usize
     ) {
+        const LEVEL_SCALE: [i32; 6] = [40, 45, 51, 57, 64, 72];
+
         debug_more!(
             "-----------scale_coefficients :xT={} yT={} n_t={} cidx={}-----------",
             x_t,
@@ -174,16 +177,15 @@ impl DecodeSliceContext<'_> {
             n_t,
             c_idx
         );
-        const LEVEL_SCALE: [i32; 6] = [40, 45, 51, 57, 64, 72];
 
         let sps = self.sps;
         let pps = self.pps;
 
         // 1. Get the QP for this component
         let qp = match c_idx {
-            0 => self.qp_y_prime,
-            1 => self.qp_cb_prime,
-            2 => self.qp_cr_prime,
+            0 => self.qp_y_prime.abs(),
+            1 => self.qp_cb_prime.abs(),
+            2 => self.qp_cr_prime.abs(),
             _ => unreachable!()
         };
         debug_more!("qp:{}", qp);

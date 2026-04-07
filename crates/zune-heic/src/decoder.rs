@@ -408,7 +408,7 @@ where
 
         #[cfg(target_os = "macos")]
         {
-            if self.options.hvec_use_apple_videotoolbox() {
+            if false && self.options.hvec_use_apple_videotoolbox() {
                 trace!("HEVC using apple video toolbox");
                 // --- APPLE SILICON PATH ---
                 let tile_map = self.decode_hardware_videotoolbox()?;
