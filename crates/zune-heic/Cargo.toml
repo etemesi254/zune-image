@@ -13,7 +13,9 @@ default = ['simd']
 
 [dev-dependencies]
 criterion = "0.8.2"
-libheif-rs = "2.7.0"
+libheif-rs = "1.1.0" # Standard safe wrapper for libheif
+
+
 
 [[bench]]
 name = "heif_bench"
