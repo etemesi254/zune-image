@@ -12,13 +12,14 @@ use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::processor::HevcSample;
 
 //pub(crate) static DEBUG_MORE: AtomicBool = AtomicBool::new(false);
-pub (crate) const DEBUG_MORE:bool = false;
+pub(crate) const DEBUG_MORE: bool = false;
 mod bitstream;
 mod cabac;
 mod cabac_tables;
 mod constants;
 pub(crate) mod ctx;
 mod deblocker;
+mod idct;
 mod macros;
 pub(crate) mod nal_parser;
 mod nal_unit_headers;
@@ -28,14 +29,13 @@ mod quadtree;
 mod raw_frame;
 mod utils;
 
-mod idct;
-
 pub struct HevcDecoder {
     vps_storage: Vec<Option<Vps>>,
     sps_storage: Vec<Option<Sps>>,
     pps_storage: Vec<Option<Pps>>,
     width: usize,
     height: usize,
+    pps_id: usize,
     pub(crate) neighbor_tracker: Option<NeighborTracker>,
     pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>
 }
@@ -55,6 +55,7 @@ impl HevcDecoder {
             pps_storage:              vec![None; 16],
             width:                    0,
             height:                   0,
+            pps_id:                   0,
             neighbor_tracker:         None,
             dependent_slice_contexts: None
         }
@@ -91,6 +92,7 @@ impl HevcDecoder {
                 NalUnitType::PpsNut => {
                     let pps = decode_pps(&nal, &self.sps_storage)?;
                     let pps_id = pps.pps_id as usize;
+                    self.pps_id = pps.pps_id as usize;
                     self.pps_storage[pps_id] = Some(pps);
                 }
 
@@ -128,17 +130,19 @@ impl HevcDecoder {
 
             Ok(true)
         })?;
-        // apply deblocking
+
 
         Ok(raw_frame)
     }
 
     /// Call this if the container format (like HEIC or MP4) provides global
     /// parameter sets in its header (e.g., the `hvcC` box) before video samples.
-    pub fn parse_extradata(&mut self, extradata: &[u8],nal_framing: NalFraming) -> Result<(), NalError> {
+    pub fn parse_extradata(
+        &mut self, extradata: &[u8], nal_framing: NalFraming
+    ) -> Result<(), NalError> {
         let binding = [extradata];
 
-        let nal_parser = NalParser::new(&binding,nal_framing);
+        let nal_parser = NalParser::new(&binding, nal_framing);
 
         nal_parser.for_each_nal(|nal| {
             match nal.nal_type {

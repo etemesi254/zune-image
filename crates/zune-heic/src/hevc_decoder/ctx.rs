@@ -8,7 +8,7 @@ use crate::hevc_decoder::neighbor_tracker::NeighborTracker;
 use crate::hevc_decoder::quadtree::sao::SaoInfo;
 use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
-
+#[allow(clippy::struct_excessive_bools)]
 pub struct DecodeSliceContext<'a> {
     pub sps:                    &'a Sps,
     pub pps:                    &'a Pps,
@@ -532,28 +532,18 @@ impl DecodeSliceContext<'_> {
         self.ref_samples_available[..p_len].fill(false);
 
         // 2. Check Availability (Using PIXEL coordinates x0, y0)
-        if true {
-            check_availability(
-                self.neighbor_tracker,
-                x0,
-                y0,
-                n_t,
-                c_idx,
-                &mut self.ref_samples_available[..p_len],
-                self.sps.pic_width_in_luma_samples as isize,
-                self.sps.pic_height_in_luma_samples as isize,
-                1 << self.sps.log2_ctb_size_y
-            );
-        } else {
-            check_availability_old(
-                self.neighbor_tracker,
-                x0,
-                y0,
-                n_t,
-                c_idx,
-                &mut self.ref_samples_available
-            );
-        }
+        check_availability(
+            self.neighbor_tracker,
+            x0,
+            y0,
+            n_t,
+            c_idx,
+            &mut self.ref_samples_available[..p_len],
+            self.sps.pic_width_in_luma_samples as isize,
+            self.sps.pic_height_in_luma_samples as isize,
+            1 << self.sps.log2_ctb_size_y
+        );
+
         if DEBUG_MORE {
             println!("--- Reference Border (N={n_t}) ---");
             print_available(&self.ref_samples_available[..p_len], n_t);
@@ -602,7 +592,7 @@ fn write_block_and_pad(
     let frame_ox = p;
     let frame_oy = p;
 
-    if let Some(b) = residual {
+    if let Some(residual) = residual {
         // --- 1. Reconstruct directly into the padded buffer ---
         //
         // for dy in 0..n_t {
@@ -613,14 +603,21 @@ fn write_block_and_pad(
         //         buf[dst_row + dx] = (b[i] + pred[i] as i32).clamp(0, max_val) as u8;
         //     }
         // }
-        for (dy, (b_row, pred_row)) in b.chunks(n_t).zip(pred.chunks(n_t)).take(n_t).enumerate() {
+        for (dy, (residual_row, pred_row)) in residual
+            .chunks(n_t)
+            .zip(pred.chunks(n_t))
+            .take(n_t)
+            .enumerate()
+        {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
-            for (dst, (&bv, &pv)) in dst_slice.iter_mut().zip(b_row.iter().zip(pred_row)) {
-                let sum = i32::from(bv) + i32::from(pv);
+            for (dst, (&bv, &residual_value)) in
+                dst_slice.iter_mut().zip(residual_row.iter().zip(pred_row))
+            {
+                let sum = i32::from(bv) + i32::from(residual_value);
                 if DEBUG_MORE && sum > 255 {
-                    println!("CLIPPING DETECTED: Pred={pv} + Residual={bv} = {sum}");
+                    println!("CLIPPING DETECTED: Pred={residual_value} + Residual={bv} = {sum}");
                 }
                 *dst = sum.clamp(0, max_val) as u8;
             }
@@ -719,54 +716,6 @@ pub fn print_border(p: &[u8], n_t: usize) {
     }
     println!();
 }
-
-fn check_availability_old(
-    tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
-    available: &mut [bool]
-) {
-    // 4:2:0 Scaling: Chroma pixels (c_idx 1,2) correspond to 2x2 Luma areas
-
-    let scale = if c_idx == 0 { 1 } else { 2 };
-
-    let sx0 = x0 * scale;
-
-    let sy0 = y0 * scale;
-
-    // 1. Indices 0 to 2*nT - 1: Below-Left and Left (Bottom-to-Top)
-
-    // We start from the very bottom neighbor and move UP toward the corner
-
-    for i in 0..(2 * n_t) {
-        let px = sx0 as isize - 1; // Safely becomes -1 at the left edge
-
-        // i=0 is the bottom-most pixel: (y0 + 2*nT - 1)
-
-        let py = sy0 as isize + ((2 * n_t - 1 - i) * scale) as isize;
-
-        available[i] = tracker.is_available(sx0, sy0, px, py);
-    }
-
-    // 2. Index 2*nT: Top-Left Corner
-
-    available[2 * n_t] = tracker.is_available(
-        sx0,
-        sy0,
-        sx0 as isize - 1, // Safely becomes -1
-        sy0 as isize - 1  // Safely becomes -1
-    );
-
-    // 3. Indices 2*nT + 1 to 4*nT: Top and Top-Right (Left-to-Right)
-
-    for i in 1..=(2 * n_t) {
-        // i=1 is directly above x0, i=2nT is Top-Right
-
-        let px = sx0 as isize + ((i - 1) * scale) as isize;
-
-        let py = sy0 as isize - 1; // Safely becomes -1 at the top edge
-
-        available[2 * n_t + i] = tracker.is_available(sx0, sy0, px, py);
-    }
-}
 #[allow(clippy::too_many_arguments)]
 fn check_availability(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
@@ -794,7 +743,7 @@ fn check_availability(
             // CTU Rule: If py crosses into the CTU directly below, it's not decoded yet.
             false
         } else {
-            tracker.is_available(sx0 as usize, sy0 as usize, px, py)
+            tracker.is_available(sx0 as usize, sy0 as usize, px, py, ctu_size as usize)
         };
 
         // Fill the chunk
@@ -810,7 +759,13 @@ fn check_availability(
     available[2 * n_t] = if sx0 - 1 < 0 || sy0 - 1 < 0 {
         false
     } else {
-        tracker.is_available(sx0 as usize, sy0 as usize, sx0 - 1, sy0 - 1)
+        tracker.is_available(
+            sx0 as usize,
+            sy0 as usize,
+            sx0 - 1,
+            sy0 - 1,
+            ctu_size as usize
+        )
     };
 
     // --- 3. Top and Top-Right (Left-to-Right) ---
@@ -825,7 +780,7 @@ fn check_availability(
             // CTU Rule: If py is in the current CTU row, but px crosses into the next CTU right, it's false.
             false
         } else {
-            tracker.is_available(sx0 as usize, sy0 as usize, px, py)
+            tracker.is_available(sx0 as usize, sy0 as usize, px, py, ctu_size as usize)
         };
 
         // Fill the chunk
