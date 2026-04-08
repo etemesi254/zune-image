@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0020.hvc").unwrap();
+        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0048.hvc").unwrap();
 
         let sample = HevcSample {
             item_id: 0,

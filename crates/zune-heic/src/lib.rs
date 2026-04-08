@@ -17,7 +17,8 @@
     clippy::doc_markdown,
     clippy::module_name_repetitions,
     clippy::missing_panics_doc,
-    clippy::missing_errors_doc
+    clippy::missing_errors_doc,
+    clippy::too_many_lines
 )]
 extern crate alloc;
 extern crate core;

@@ -82,6 +82,20 @@ impl<'a> CabacDecoder<'a> {
     /// Extracts 1 byte entirely from the CPU register cache.
     #[inline(always)]
     fn read_byte(&mut self) -> u32 {
+        if true{
+           return match self.data.get(self.cursor) {
+                Some(b)=>{
+
+                    self.cursor += 1;
+                    *b as u32
+                }
+                None=>{
+                    panic!("Cabac decoder read_byte called on invalid data");
+                    0_u32
+                }
+
+            }
+        }
         if self.cache_bytes == 0 {
             self.fill_cache();
             if self.cache_bytes == 0 {
@@ -270,29 +284,54 @@ impl<'a> CabacDecoder<'a> {
 
     // --- Specialized bypass decoders ---
 
-    /// Optimized: Decode `n_bits` bypass bins in one pass.
-    #[inline]
-    pub fn decode_fl_bypass(&mut self, n_bits: u8) -> u32 {
-        if n_bits == 0 {
-            return 0;
-        }
 
-        // Renorm all bits at once
-        self.renorm(u32::from(n_bits));
 
-        let scaled = self.range << 7;
-        let mut res = 0u32;
-
-        // Peel bits off from MSB to LSB
-        for i in (0..n_bits).rev() {
-            if self.value >= (scaled << i) {
-                // Account for the batched shift in value
-                self.value -= scaled << i;
-                res |= 1 << i;
+        /// Optimized: Decode `n_bits` bypass bins. Safely handles n_bits > 8.
+        #[inline]
+        pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
+            if n_bits == 0 {
+                return 0;
             }
+
+            // Fast path: renorm() safely handles up to 8 bits in one go.
+            if n_bits <= 8 {
+                return self.decode_fl_bypass_batched(n_bits);
+            }
+
+            // Fallback for n_bits > 8: Batch the first 8, loop the rest.
+            let mut res = self.decode_fl_bypass_batched(8);
+            n_bits -= 8;
+
+            while n_bits > 0 {
+                res <<= 1;
+                res |= u32::from(self.decode_bypass());
+                n_bits -= 1;
+            }
+
+            res
         }
-        res
-    }
+
+        /// Internal helper that strictly expects n_bits <= 8
+        #[inline(always)]
+        fn decode_fl_bypass_batched(&mut self, n_bits: u8) -> u32 {
+            debug_assert!(n_bits <= 8, "Batched bypass exceeds 8 bits!");
+
+            // Renorm all bits at once
+            self.renorm(u32::from(n_bits));
+
+            let scaled = self.range << 7;
+            let mut res = 0u32;
+
+            // Peel bits off from MSB to LSB
+            for i in (0..n_bits).rev() {
+                if self.value >= (scaled << i) {
+                    self.value -= scaled << i;
+                    res |= 1 << i;
+                }
+            }
+            res
+        }
+    
 
     pub fn decode_bypass_eg0(&mut self) -> u32 {
         let mut prefix = 0u32;

@@ -710,7 +710,7 @@ mod tests {
         let mut decoder = HeifDecoder::new(data);
         decoder.decode_headers().unwrap();
         let colorspace = decoder.colorspace().unwrap();
-        println!("{:?}", colorspace);
+        println!("{colorspace:?}");
         println!("{:?}", decoder.width().unwrap());
         println!("{:?}", decoder.height().unwrap());
         let data = decoder.decode().unwrap();
