@@ -476,7 +476,7 @@ where
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if self.is_grid {
+            if  self.is_grid {
                 trace!("Using parallel sample decoder");
                 self.process_hevc_samples_parallel(processor)?;
             } else {
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn test_decoding() {
-        let file = read("/Users/etemesi/Downloads/classic-car.heic").unwrap();
+        let file = read("/Users/etemesi/rust/zune-image/crates/zune-heic/fuzz-samples/IMG_4862.HEIC").unwrap();
         let data = ZCursor::new(file);
         let mut decoder = HeifDecoder::new(data);
         decoder.decode_headers().unwrap();

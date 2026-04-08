@@ -128,7 +128,7 @@ impl<'a> CabacDecoder<'a> {
     /// -8, a single byte always covers the demand.
     #[inline(always)]
     fn renorm(&mut self, shift: u32) {
-        self.value <<= shift;
+        self.value =  self.value.wrapping_shl(shift);
         self.bits_needed += shift as i32;
 
         // Refill the register from the bitstream
