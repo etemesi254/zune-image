@@ -45,11 +45,11 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         .as_ref()
         .ok_or_else(|| NalError::Generic(format!("PPS references missing SPS {}", pps.sps_id)))?;
 
-    pps.dependent_slice_segments_enabled_flag = r.read_flag()?;
-    pps.output_flag_present_flag = r.read_flag()?;
-    pps.num_extra_slice_header_bits = r.get_bits(3)? as u8;
-    pps.sign_data_hiding_enabled_flag = r.read_flag()?;
-    pps.cabac_init_present_flag = r.read_flag()?;
+    pps.dependent_slice_segments_enabled_flag = r.read_flag();
+    pps.output_flag_present_flag = r.read_flag();
+    pps.num_extra_slice_header_bits = r.get_bits(3) as u8;
+    pps.sign_data_hiding_enabled_flag = r.read_flag();
+    pps.cabac_init_present_flag = r.read_flag();
 
     pps.num_ref_idx_l0_default_active = r.read_ue_u8()? + 1;
     pps.num_ref_idx_l1_default_active = r.read_ue_u8()? + 1;
@@ -64,13 +64,13 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         });
     }
 
-    pps.init_qp_minus26 = r.read_se()?;
-    pps.constrained_intra_pred_flag = r.read_flag()?;
-    pps.transform_skip_enabled_flag = r.read_flag()?;
-    pps.cu_qp_delta_enabled_flag = r.read_flag()?;
+    pps.init_qp_minus26 = r.read_se();
+    pps.constrained_intra_pred_flag = r.read_flag();
+    pps.transform_skip_enabled_flag = r.read_flag();
+    pps.cu_qp_delta_enabled_flag = r.read_flag();
 
     if pps.cu_qp_delta_enabled_flag {
-        pps.diff_cu_qp_delta_depth = r.read_ue()? as u8;
+        pps.diff_cu_qp_delta_depth = r.read_ue() as u8;
     }
 
     if pps.diff_cu_qp_delta_depth > sps.log2_diff_max_min_luma_coding_block_size {
@@ -81,7 +81,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         });
     }
 
-    pps.cb_qp_offset = r.read_se()?;
+    pps.cb_qp_offset = r.read_se();
 
     if pps.cb_qp_offset < -12 || pps.cb_qp_offset > 12 {
         return Err(NalError::Generic(format!(
@@ -90,7 +90,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         )));
     }
 
-    pps.cr_qp_offset = r.read_se()?;
+    pps.cr_qp_offset = r.read_se();
 
     if pps.cr_qp_offset < -12 || pps.cr_qp_offset > 12 {
         return Err(NalError::Generic(format!(
@@ -99,32 +99,32 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         )));
     }
 
-    pps.slice_chroma_qp_offsets_present_flag = r.read_flag()?;
-    pps.weighted_pred_flag = r.read_flag()?;
-    pps.weighted_bipred_flag = r.read_flag()?;
-    pps.transquant_bypass_enabled_flag = r.read_flag()?;
+    pps.slice_chroma_qp_offsets_present_flag = r.read_flag();
+    pps.weighted_pred_flag = r.read_flag();
+    pps.weighted_bipred_flag = r.read_flag();
+    pps.transquant_bypass_enabled_flag = r.read_flag();
 
     // --- Tiles Setup ---
-    pps.tiles_enabled_flag = r.read_flag()?;
-    pps.entropy_coding_sync_enabled_flag = r.read_flag()?;
+    pps.tiles_enabled_flag = r.read_flag();
+    pps.entropy_coding_sync_enabled_flag = r.read_flag();
 
     if pps.tiles_enabled_flag {
-        pps.num_tile_columns = r.read_ue()? + 1;
-        pps.num_tile_rows = r.read_ue()? + 1;
-        pps.uniform_spacing_flag = r.read_flag()?;
+        pps.num_tile_columns = r.read_ue() + 1;
+        pps.num_tile_rows = r.read_ue() + 1;
+        pps.uniform_spacing_flag = r.read_flag();
 
         if !pps.uniform_spacing_flag {
             pps.column_width.reserve(pps.num_tile_columns as _);
             pps.row_height.reserve(pps.num_tile_rows as _);
 
             for _ in 0..(pps.num_tile_columns - 1) {
-                pps.column_width.push(r.read_ue()? + 1);
+                pps.column_width.push(r.read_ue() + 1);
             }
             for _ in 0..(pps.num_tile_rows - 1) {
-                pps.row_height.push(r.read_ue()? + 1);
+                pps.row_height.push(r.read_ue() + 1);
             }
         }
-        pps.loop_filter_across_tiles_enabled_flag = r.read_flag()?;
+        pps.loop_filter_across_tiles_enabled_flag = r.read_flag();
     } else {
         // Defaults when tiles are disabled
         pps.num_tile_columns = 1;
@@ -133,15 +133,15 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     }
 
     // --- Deblocking & Loop Filter ---
-    pps.loop_filter_across_slices_enabled_flag = r.read_flag()?;
-    pps.deblocking_filter_control_present_flag = r.read_flag()?;
+    pps.loop_filter_across_slices_enabled_flag = r.read_flag();
+    pps.deblocking_filter_control_present_flag = r.read_flag();
 
     if pps.deblocking_filter_control_present_flag {
-        pps.deblocking_filter_override_enabled_flag = r.read_flag()?;
-        pps.deblocking_filter_disabled_flag = r.read_flag()?;
+        pps.deblocking_filter_override_enabled_flag = r.read_flag();
+        pps.deblocking_filter_disabled_flag = r.read_flag();
         if !pps.deblocking_filter_disabled_flag {
-            pps.beta_offset_div2 = r.read_se()?;
-            pps.tc_offset_div2 = r.read_se()?;
+            pps.beta_offset_div2 = r.read_se();
+            pps.tc_offset_div2 = r.read_se();
 
             if pps.beta_offset_div2 < -6 || pps.beta_offset_div2 > 6 {
                 return Err(NalError::Generic(format!(
@@ -158,15 +158,15 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
         }
     }
 
-    pps.pic_scaling_list_data_present_flag = r.read_flag()?;
+    pps.pic_scaling_list_data_present_flag = r.read_flag();
     // reading scaling lists
     if pps.pic_scaling_list_data_present_flag {
-        pps.pic_scaling_lists = parse_scaling_list_data(&mut r)?;
+        pps.pic_scaling_lists = parse_scaling_list_data(&mut r);
     } else {
         pps.pic_scaling_lists = sps.scaling_lists.clone();
     }
     // --- Extensions ---
-    pps.lists_modification_present_flag = r.read_flag()?;
+    pps.lists_modification_present_flag = r.read_flag();
 
     let log2_parallel_merge_level_minus2 = r.read_ue_u8()?;
     if log2_parallel_merge_level_minus2 > sps.log2_ctb_size_y {
@@ -178,13 +178,13 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     }
     pps.log2_parallel_merge_level = log2_parallel_merge_level_minus2 + 2;
 
-    pps.slice_segment_header_extension_present_flag = r.read_flag()?;
+    pps.slice_segment_header_extension_present_flag = r.read_flag();
 
-    let pps_extension_present_flag = r.read_flag()?;
+    let pps_extension_present_flag = r.read_flag();
 
     if pps_extension_present_flag {
-        let range_extension_flag = r.read_flag()?;
-        let _multilayer_extension_flag = r.read_flag()?;
+        let range_extension_flag = r.read_flag();
+        let _multilayer_extension_flag = r.read_flag();
         // skips
         // 3d extension flag => 1 bit
         // scc extension flag => 1 bit
@@ -201,7 +201,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             
 
             if pps.transform_skip_enabled_flag {
-                let v = r.read_ue()? as u8;
+                let v = r.read_ue() as u8;
                 let log_2_max_transform_size = (sps.log2_min_transform_block_size
                     + sps.log2_diff_max_min_transform_block_size)
                     - 2;
@@ -214,7 +214,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 log2_max_transform_skip_block_size = v + 2;
             }
 
-            let cross_component_prediction_enabled_flag = r.read_flag()?;
+            let cross_component_prediction_enabled_flag = r.read_flag();
 
             if sps.chroma_format == ChromaFormat::Yuv444 && cross_component_prediction_enabled_flag
             {
@@ -223,7 +223,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 );
             }
 
-            let chroma_qp_offset_list_enabled_flag = r.read_flag()?;
+            let chroma_qp_offset_list_enabled_flag = r.read_flag();
 
             if sps.chroma_format == ChromaFormat::Monochrome && chroma_qp_offset_list_enabled_flag {
                 warn!(
@@ -233,7 +233,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
             if chroma_qp_offset_list_enabled_flag {
                 let max_v = sps.log2_diff_max_min_luma_coding_block_size;
-                let v = r.read_ue()? as u8;
+                let v = r.read_ue() as u8;
 
                 if v > max_v {
                     return Err(NalError::Generic(format!(
@@ -243,7 +243,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
 
                 diff_cu_chroma_qp_offset_depth = v;
 
-                let v = r.read_ue()? as u8;
+                let v = r.read_ue() as u8;
 
                 if v > 5 {
                     return Err(NalError::Generic(format!(
@@ -253,7 +253,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 chroma_qp_offset_list_len = v + 1;
 
                 for i in 0..chroma_qp_offset_list_len {
-                    let s_v = r.read_se()?;
+                    let s_v = r.read_se();
 
                     if !(-12..=12).contains(&s_v) {
                         return Err(NalError::Generic(format!(
@@ -262,7 +262,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                     }
                     cb_qp_offset_list[i as usize] = s_v as i8;
 
-                    let s_v = r.read_se()?;
+                    let s_v = r.read_se();
 
                     if !(-12..=12).contains(&s_v) {
                         return Err(NalError::Generic(format!(
@@ -273,7 +273,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
                 }
             }
 
-            let u = r.read_ue()? as u8;
+            let u = r.read_ue() as u8;
 
             if u > sps.bit_depth_luma.saturating_sub(10) {
                 return Err(NalError::Generic(format!(
@@ -284,7 +284,7 @@ pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
             }
             let log2_sao_offset_scale_luma = u;
 
-            let u = r.read_ue()? as u8;
+            let u = r.read_ue() as u8;
 
             if u > sps.bit_depth_chroma.saturating_sub(10) {
                 return Err(NalError::Generic(format!(

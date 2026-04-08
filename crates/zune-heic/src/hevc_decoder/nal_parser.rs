@@ -28,8 +28,7 @@ pub enum NalError {
         value: i64,
         field: &'static str
     },
-    Generic(String),
-    GenericStr(&'static str)
+    Generic(String)
 }
 
 impl fmt::Display for NalError {
@@ -54,14 +53,8 @@ impl fmt::Display for NalError {
                     "NAL header parameter_out_of_bounds (param:{field}) limit={limit} value={value}"
                 )
             }
-            Self::Generic(msg) => write!(f, "{msg}"),
-            Self::GenericStr(msg) => write!(f, "{msg}")
+            Self::Generic(msg) => write!(f, "{msg}")
         }
-    }
-}
-impl From<&'static str> for NalError {
-    fn from(value: &'static str) -> Self {
-        NalError::GenericStr(value)
     }
 }
 
@@ -334,11 +327,12 @@ impl<'a> NalParser<'a> {
         F: FnMut(NalUnit<'a>) -> Result<bool, NalError>
     {
         for &extent in self.extents {
+
             // if important return
             if let Some(cont) = parse_nal_header(extent, visitor)?
                 && !cont
             {
-                return Ok(());
+               return Ok(());
             }
         }
 
