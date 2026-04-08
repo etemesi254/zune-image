@@ -1,6 +1,6 @@
-#![cfg(target_arch = "aarch64")]
+#![cfg(all(target_arch = "aarch64",target_feature = "neon"))]
 #![allow(unreachable_code)]
-
+#![allow(unsafe_op_in_unsafe_fn)]
 use core::arch::aarch64::*;
 
 const DC_VERTICAL_SCALE: i32 = 64;
@@ -58,7 +58,8 @@ fn shift_clip(val: i32, shift: i32) -> i16 {
     ((val + offset) >> shift).clamp(-32768, 32767) as i16
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn shift_clip_x4(vals: &[i32; 4], shift: i32) -> [i16; 4] {
     let v = vld1q_s32(vals.as_ptr());
     let offset = vdupq_n_s32((1i32 << shift) >> 1);
@@ -70,7 +71,8 @@ unsafe fn shift_clip_x4(vals: &[i32; 4], shift: i32) -> [i16; 4] {
     out
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn shift_clip_x8(vals: &[i32; 8], shift: i32) -> [i16; 8] {
     let lo = vld1q_s32(vals.as_ptr());
     let hi = vld1q_s32(vals.as_ptr().add(4));
@@ -89,7 +91,8 @@ unsafe fn shift_clip_x8(vals: &[i32; 8], shift: i32) -> [i16; 8] {
     out
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn shift_clip_x16(vals: &[i32; 16], shift: i32) -> [i16; 16] {
     let mut out = [0i16; 16];
     let o1 = shift_clip_x8(vals[0..8].try_into().unwrap(), shift);
@@ -99,7 +102,8 @@ unsafe fn shift_clip_x16(vals: &[i32; 16], shift: i32) -> [i16; 16] {
     out
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn shift_clip_x32(vals: &[i32; 32], shift: i32) -> [i16; 32] {
     let mut out = [0i16; 32];
     let o1 = shift_clip_x16(vals[0..16].try_into().unwrap(), shift);
@@ -122,7 +126,8 @@ fn shift_clip_slice<const N: usize>(vals: &[i32; 32], shift: i32, out: &mut [i16
     }
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn is_all_zero_impl(s: &[i16]) -> bool {
     let mut chunks = s.chunks_exact(8);
     let mut acc = vdupq_n_s16(0);
@@ -137,19 +142,19 @@ unsafe fn is_all_zero_impl(s: &[i16]) -> bool {
     chunks.remainder().iter().all(|&v| v == 0)
 }
 
-#[inline(always)]
 fn is_all_zero(s: &[i16]) -> bool {
     unsafe { is_all_zero_impl(s) }
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn dot4(a: &[i16; 4], b: &[i16; 4]) -> i32 {
     let va = vld1_s16(a.as_ptr());
     let vb = vld1_s16(b.as_ptr());
     vaddvq_s32(vmull_s16(va, vb))
 }
-
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn dot8(a: &[i16; 8], b: &[i16; 8]) -> i32 {
     let va = vld1q_s16(a.as_ptr());
     let vb = vld1q_s16(b.as_ptr());
@@ -158,7 +163,8 @@ unsafe fn dot8(a: &[i16; 8], b: &[i16; 8]) -> i32 {
     vaddvq_s32(m)
 }
 
-#[inline(always)]
+#[inline]
+#[target_feature(enable = "neon")]
 unsafe fn dot16(a: &[i16; 16], b: &[i16; 16]) -> i32 {
     let va1 = vld1q_s16(a.as_ptr());
     let vb1 = vld1q_s16(b.as_ptr());
@@ -177,8 +183,9 @@ unsafe fn dot16(a: &[i16; 16], b: &[i16; 16]) -> i32 {
 // 1D Kernels
 // ---------------------------------------------------------------------------
 
-#[inline(always)]
-fn transform4_dst_1d_simd(input: &[i16], output: &mut [i32]) {
+#[inline]
+#[target_feature(enable = "neon")]
+unsafe fn transform4_dst_1d_simd_inner(input: &[i16], output: &mut [i32]) {
     unsafe {
         let va = vld1_s16(input.as_ptr());
 
@@ -191,6 +198,12 @@ fn transform4_dst_1d_simd(input: &[i16], output: &mut [i32]) {
         output[1] = vaddvq_s32(vmull_s16(va, vld1_s16(c1.as_ptr())));
         output[2] = vaddvq_s32(vmull_s16(va, vld1_s16(c2.as_ptr())));
         output[3] = vaddvq_s32(vmull_s16(va, vld1_s16(c3.as_ptr())));
+    }
+}
+#[inline]
+fn transform4_dst_1d_simd(input: &[i16], output: &mut [i32]) {
+    unsafe {
+        transform4_dst_1d_simd_inner(input, output);
     }
 }
 
@@ -213,7 +226,7 @@ fn transform4_1d_simd(input: &[i16], output: &mut [i32]) {
     }
 }
 
-#[inline(always)]
+#[inline]
 fn transform8_1d_simd(input: &[i16], output: &mut [i32]) {
     let ee0 = (i32::from(input[0]) * 64) + (i32::from(input[4]) * 64);
     let ee1 = (i32::from(input[0]) * 64) - (i32::from(input[4]) * 64);
@@ -235,7 +248,7 @@ fn transform8_1d_simd(input: &[i16], output: &mut [i32]) {
     }
 }
 
-#[inline(always)]
+#[inline]
 fn transform16_1d_simd(input: &[i16], output: &mut [i32]) {
     let mut even_in = [0i16; 8];
     for i in 0..8 {
