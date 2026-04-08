@@ -234,7 +234,7 @@ pub fn finish_ctu(
         if eoss_bit == 0 {
             // debug assert for tracing makes it easier to step into function
             // the return looses the context
-            debug_assert!(true, "ERROR: end_of_sub_stream_one_bit was 0!");
+            debug_assert!(false, "ERROR: end_of_sub_stream_one_bit was 0!");
             return Err(NalError::Generic(
                 "end_of_sub_stream_one_bit was 0!".to_string()
             ));
