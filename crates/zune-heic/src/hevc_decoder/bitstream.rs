@@ -404,8 +404,8 @@ mod tests {
         let src = padded(vec![0xFF]);
         let mut r = BitReader::new(&src);
         r.refill();
-        r.get_bits(3);
-        r.byte_align();
+        r.get_bits(3).unwrap();
+        r.byte_align().unwrap();
         assert!(r.is_byte_aligned());
     }
 }

@@ -41,7 +41,16 @@ use std::sync::{Arc, Mutex};
 
 use zune_core::bytestream::ZByteReaderTrait;
 
-use crate::apple_videotoolbox::types::{CFAllocatorRef, CFRelease, CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef, CMSampleBufferRef, CMTime, CMVideoFormatDescriptionRef, CVImageBufferRef, OSStatus, VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate, VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef, VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull, CMVideoFormatDescriptionCreateFromHEVCParameterSets, CMSampleBufferCreateReady, CVPixelBufferLockBaseAddress, CVPixelBufferGetWidth, CVPixelBufferGetHeight, CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferUnlockBaseAddress};
+use crate::apple_videotoolbox::types::{
+    CFRelease, CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef, CMSampleBufferCreateReady,
+    CMSampleBufferRef, CMTime, CMVideoFormatDescriptionCreateFromHEVCParameterSets,
+    CMVideoFormatDescriptionRef, CVImageBufferRef, CVPixelBufferGetBaseAddressOfPlane,
+    CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetHeight, CVPixelBufferGetWidth,
+    CVPixelBufferLockBaseAddress, CVPixelBufferUnlockBaseAddress, OSStatus, VTDecodeInfoFlags,
+    VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate,
+    VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
+    VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull
+};
 use crate::decoder::{HeifDecoder, SingleDecodedTile, TileMap};
 use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
@@ -491,10 +500,15 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
                 // Pass the RAW POINTER of the mutex to the callback
                 let context_ptr = Arc::as_ptr(&tile_map) as *mut c_void;
-                hardware_decoder =
-                    Some(AppleHardwareDecoder::new(vps, sps, pps, context_ptr).map_err(|d| HeicErrors::Generic {
-                        msg:format!("Error when initializing apple hardware decoder: os-status:{d}")
-                    })?);
+                hardware_decoder = Some(
+                    AppleHardwareDecoder::new(vps, sps, pps, context_ptr).map_err(|d| {
+                        HeicErrors::Generic {
+                            msg: format!(
+                                "Error when initializing apple hardware decoder: os-status:{d}"
+                            )
+                        }
+                    })?
+                );
             }
 
             if let Some(decoder) = hardware_decoder.as_ref() {

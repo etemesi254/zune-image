@@ -82,20 +82,6 @@ impl<'a> CabacDecoder<'a> {
     /// Extracts 1 byte entirely from the CPU register cache.
     #[inline(always)]
     fn read_byte(&mut self) -> u32 {
-        if true{
-           return match self.data.get(self.cursor) {
-                Some(b)=>{
-
-                    self.cursor += 1;
-                    *b as u32
-                }
-                None=>{
-                    panic!("Cabac decoder read_byte called on invalid data");
-                    0_u32
-                }
-
-            }
-        }
         if self.cache_bytes == 0 {
             self.fill_cache();
             if self.cache_bytes == 0 {
