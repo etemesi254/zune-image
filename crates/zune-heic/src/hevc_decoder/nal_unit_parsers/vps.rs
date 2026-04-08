@@ -12,9 +12,9 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
     let mut r = BitReader::new(nal.payload);
     r.refill();
 
-    let vps_id = r.get_bits(4) as usize;
+    let vps_id = r.get_bits(4) ?as usize;
     r.skip_bits(2);
-    let max_layers = r.get_bits(6) + 1;
+    let max_layers = r.get_bits(6)? + 1;
 
     if max_layers > VPS_MAX_LAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
@@ -24,7 +24,7 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
         });
     }
 
-    let max_sub_layers = r.get_bits(3) + 1;
+    let max_sub_layers = r.get_bits(3)? + 1;
     if max_sub_layers > VPS_MAX_SUBLAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
             limit: VPS_MAX_LAYERS_LIMIT as _,
@@ -34,7 +34,7 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
     }
     r.skip_bits(1);
 
-    r.get_bits(16); // reserved_ffff
+    r.get_bits(16)?; // reserved_ffff
 
     // --- Profile Tier Level ---
     let ptl_info = decode_profile_data(true, true, &mut r)?;
@@ -43,12 +43,12 @@ pub fn decode_vps(nal: &NalUnit) -> Result<Vps, NalError> {
     let mut max_dec_pic_buffering = Vec::with_capacity(max_sub_layers as usize);
     let mut max_num_reorder_pics = Vec::with_capacity(max_sub_layers as usize);
 
-    let sub_layer_ordering_info_present = r.read_flag();
+    let sub_layer_ordering_info_present = r.read_flag()?;
     for _ in 0..max_sub_layers as usize {
         if sub_layer_ordering_info_present {
-            max_dec_pic_buffering.push(r.read_ue() as u32);
-            max_num_reorder_pics.push(r.read_ue() as u32);
-            let _max_latency_increase = r.read_ue();
+            max_dec_pic_buffering.push(r.read_ue()? as u32);
+            max_num_reorder_pics.push(r.read_ue()? as u32);
+            let _max_latency_increase = r.read_ue()?;
         } else {
             // Derive from index 0 if not present for this sub-layer
             let prev_dec = *max_dec_pic_buffering.first().unwrap_or(&0);

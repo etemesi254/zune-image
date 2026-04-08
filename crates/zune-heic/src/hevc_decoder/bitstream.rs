@@ -140,37 +140,43 @@ impl<'src> BitReader<'src> {
         self.bits_left -= n;
     }
     pub fn skip_bits(&mut self, n: u8) {
-        self.get_bits(n);
+        let _ = self.get_bits(n);
     }
 
     // ── Read ──────────────────────────────────────────────────────────────
 
     /// Read and consume `n` bits, returned right-aligned in a u64.
     #[inline(always)]
-    pub fn get_bits(&mut self, n: u8) -> u64 {
+    pub fn get_bits(&mut self, n: u8) -> Result<u64, &'static str> {
         debug_assert!(n > 0 && n <= 56);
         if self.bits_left < n {
             self.refill();
         }
 
-        debug_assert!(self.bits_left >= n);
-        let val = self.buffer >> (64 - u64::from(n));
+        if self.bits_left < n {
+            return Err("BitReader exhausted");
+        }
+
+        let shift = 64_u64.saturating_sub(u64::from(n));
+        let val = self.buffer >> shift;
         self.buffer <<= n;
-        self.bits_left -= n;
-        val
+        self.bits_left = self.bits_left.saturating_sub(n);
+        Ok(val)
     }
 
     /// Read a single bit as a bool.
     #[inline(always)]
-    pub fn read_flag(&mut self) -> bool {
+    pub fn read_flag(&mut self) -> Result<bool, &'static str> {
         if self.bits_left < 1 {
             self.refill();
         }
-        debug_assert!(self.bits_left >= 1);
+        if self.bits_left < 1 {
+            return Err("Bit reader exhausted");
+        }
         let v = self.buffer >> 63;
         self.buffer <<= 1;
         self.bits_left -= 1;
-        v == 1
+        Ok(v == 1)
     }
 
     // ── HEVC Exp-Golomb ───────────────────────────────────────────────────
@@ -179,24 +185,25 @@ impl<'src> BitReader<'src> {
     ///
     ///
     #[inline(always)]
-    pub fn read_ue(&mut self) -> u64 {
+    pub fn read_ue(&mut self) -> Result<u64, &'static str> {
         if self.bits_left < 32 {
             self.refill();
         }
 
         let num_zeros = self.buffer.leading_zeros() as u8;
+        // HEVC (ITU-T H.265, E.3.3) allows ue(v) values up to 2^32-2 (e.g. bit_rate_value_minus1),
+        // which requires 31 leading zeros in the exp-Golomb code. 32 leading zeros would give a
+        // minimum codeNum of 2^32-1, which exceeds every syntax element's valid range.
+        if num_zeros > 31 {
+            return Err("ue num zeros is wrong");
+        }
 
         // Consume prefix zeros + stop bit.
         self.buffer <<= num_zeros + 1;
         self.bits_left -= num_zeros + 1;
 
-        // HEVC (ITU-T H.265, E.3.3) allows ue(v) values up to 2^32-2 (e.g. bit_rate_value_minus1),
-        // which requires 31 leading zeros in the exp-Golomb code. 32 leading zeros would give a
-        // minimum codeNum of 2^32-1, which exceeds every syntax element's valid range.
-        debug_assert!(num_zeros <= 32);
-
         if num_zeros == 0 {
-            return 0;
+            return Ok(0);
         }
         if self.bits_left < 32 {
             self.refill();
@@ -206,11 +213,11 @@ impl<'src> BitReader<'src> {
         self.buffer <<= num_zeros;
         self.bits_left = self.bits_left.saturating_sub(num_zeros);
 
-        (1 << num_zeros) - 1 + suffix
+        Ok((1 << num_zeros) - 1 + suffix)
     }
 
     pub fn read_ue_u8(&mut self) -> Result<u8, NalError> {
-        let val = self.read_ue();
+        let val = self.read_ue()?;
         debug_assert!(val < u8::MAX.into());
 
         if val > u8::MAX.into() {
@@ -222,29 +229,29 @@ impl<'src> BitReader<'src> {
     }
     /// Decode one signed Exp-Golomb codeword `se(v)`.
     #[inline(always)]
-    pub fn read_se(&mut self) -> i64 {
-        let k = self.read_ue();
-        match k {
+    pub fn read_se(&mut self) -> Result<i64, &'static str> {
+        let k = self.read_ue()?;
+        Ok(match k {
             0 => 0,
             k if k & 1 == 1 => k.div_ceil(2) as i64,
             k => -((k / 2) as i64)
-        }
+        })
     }
-
 
     #[inline(always)]
     pub fn is_byte_aligned(&self) -> bool {
         self.bits_left.is_multiple_of(8)
     }
 
-    pub fn byte_align(&mut self) {
+    pub fn byte_align(&mut self) -> Result<(), &'static str> {
         // Read the "1" bit and then all "0" bits until alignment
-        let bit = self.read_flag();
+        let bit = self.read_flag()?;
         if bit {
             // Only align if we actually found the stop bit
             let rem = self.bits_left % 8;
             self.drop_bits(rem);
         }
+        Ok(())
     }
 
     /// Returns the absolute bit position in the stream.
@@ -261,7 +268,6 @@ impl<'src> BitReader<'src> {
     pub fn byte_position(&self) -> usize {
         self.tell() / 8
     }
-
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -280,8 +286,8 @@ mod tests {
         let src = padded(vec![0xAB]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.get_bits(4), 0xA);
-        assert_eq!(r.get_bits(4), 0xB);
+        assert_eq!(r.get_bits(4).unwrap(), 0xA);
+        assert_eq!(r.get_bits(4).unwrap(), 0xB);
     }
 
     #[test]
@@ -289,8 +295,8 @@ mod tests {
         let src = padded(vec![0xFF, 0x00]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.get_bits(8), 0xFF);
-        assert_eq!(r.get_bits(8), 0x00);
+        assert_eq!(r.get_bits(8), Ok(0xFF));
+        assert_eq!(r.get_bits(8), Ok(0x00));
     }
 
     #[test]
@@ -299,7 +305,7 @@ mod tests {
         let src = padded(vec![0xAA, 0xF0]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.get_bits(12), 0xAAF);
+        assert_eq!(r.get_bits(12), Ok(0xAAF));
     }
 
     #[test]
@@ -310,7 +316,7 @@ mod tests {
         assert_eq!(r.peek_bits::<4>(), 0xC);
         assert_eq!(r.peek_bits::<4>(), 0xC);
         r.drop_bits(4);
-        assert_eq!(r.get_bits(4), 0x0);
+        assert_eq!(r.get_bits(4), Ok(0x0));
     }
 
     #[test]
@@ -318,10 +324,10 @@ mod tests {
         let src = padded(vec![0b1010_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_flag(), true);
-        assert_eq!(r.read_flag(), false);
-        assert_eq!(r.read_flag(), true);
-        assert_eq!(r.read_flag(), false);
+        assert_eq!(r.read_flag(), Ok(true));
+        assert_eq!(r.read_flag(), Ok(false));
+        assert_eq!(r.read_flag(), Ok(true));
+        assert_eq!(r.read_flag(), Ok(false));
     }
 
     #[test]
@@ -329,7 +335,7 @@ mod tests {
         let src = padded(vec![0b1000_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 0);
+        assert_eq!(r.read_ue(), Ok(0));
     }
 
     #[test]
@@ -337,7 +343,7 @@ mod tests {
         let src = padded(vec![0b0100_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 1);
+        assert_eq!(r.read_ue(), Ok(1));
     }
 
     #[test]
@@ -345,7 +351,7 @@ mod tests {
         let src = padded(vec![0b0110_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 2);
+        assert_eq!(r.read_ue(), Ok(2));
     }
 
     #[test]
@@ -353,7 +359,7 @@ mod tests {
         let src = padded(vec![0b0010_1000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 4);
+        assert_eq!(r.read_ue(), Ok(4));
     }
 
     #[test]
@@ -361,7 +367,7 @@ mod tests {
         let src = padded(vec![0b0001_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 7);
+        assert_eq!(r.read_ue(), Ok(7));
     }
 
     #[test]
@@ -370,9 +376,9 @@ mod tests {
         let src = padded(vec![0b1010_0110]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_ue(), 0);
-        assert_eq!(r.read_ue(), 1);
-        assert_eq!(r.read_ue(), 2);
+        assert_eq!(r.read_ue(), Ok(0));
+        assert_eq!(r.read_ue(), Ok(1));
+        assert_eq!(r.read_ue(), Ok(2));
     }
 
     #[test]
@@ -381,8 +387,8 @@ mod tests {
         let src = padded(vec![0b0100_1100]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_se(), 1);
-        assert_eq!(r.read_se(), -1);
+        assert_eq!(r.read_se(), Ok(1));
+        assert_eq!(r.read_se(), Ok(-1));
     }
 
     #[test]
@@ -390,7 +396,7 @@ mod tests {
         let src = padded(vec![0b1000_0000]);
         let mut r = BitReader::new(&src);
         r.refill();
-        assert_eq!(r.read_se(), 0);
+        assert_eq!(r.read_se(), Ok(0));
     }
 
     #[test]

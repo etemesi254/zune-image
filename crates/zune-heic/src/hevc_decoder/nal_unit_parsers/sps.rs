@@ -20,8 +20,8 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     let mut sps = Sps::default();
 
-    sps.vps_id = r.get_bits(4);
-    sps.max_sub_layers = r.get_bits(3) + 1;
+    sps.vps_id = r.get_bits(4)?;
+    sps.max_sub_layers = r.get_bits(3)? + 1;
 
     if sps.max_sub_layers > SPS_MAX_LAYERS_LIMIT {
         return Err(NalError::ParameterOutOfRange {
@@ -31,12 +31,12 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         });
     }
 
-    let _sps_temporal_id_nesting_flag = r.read_flag();
+    let _sps_temporal_id_nesting_flag = r.read_flag()?;
 
     // Passing true for profile_present_flag, and max_sub_layers - 1
     sps.ptl = decode_profile_data(true, true, &mut r)?;
 
-    let vlc = r.read_ue();
+    let vlc = r.read_ue()?;
     if vlc >= SPS_MAX_SETS_LIMITS {
         return Err(NalError::ParameterOutOfRange {
             limit: SPS_MAX_SETS_LIMITS as _,
@@ -47,7 +47,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     sps.sps_id = vlc;
 
     // --- Decode Chroma type ---
-    sps.chroma_format = match r.read_ue() {
+    sps.chroma_format = match r.read_ue()? {
         0 => ChromaFormat::Monochrome,
         1 => ChromaFormat::Yuv420,
         2 => ChromaFormat::Yuv422,
@@ -60,11 +60,11 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     };
 
     sps.separate_color_plane_flag =
-        if sps.chroma_format == ChromaFormat::Yuv444 { r.read_flag() } else { false };
+        if sps.chroma_format == ChromaFormat::Yuv444 { r.read_flag()? } else { false };
 
     // --- Picture Size ---
-    sps.pic_width_in_luma_samples = r.read_ue();
-    sps.pic_height_in_luma_samples = r.read_ue();
+    sps.pic_width_in_luma_samples = r.read_ue()?;
+    sps.pic_height_in_luma_samples = r.read_ue()?;
 
     if sps.pic_width_in_luma_samples > MAX_PICTURE_WIDTH {
         return Err(NalError::ParameterOutOfRange {
@@ -82,12 +82,12 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- Conformance Window (Crop Info) ---
-    sps.conformance_window_flag = r.read_flag();
+    sps.conformance_window_flag = r.read_flag()?;
     if sps.conformance_window_flag {
-        sps.conf_win_left_offset = r.read_ue();
-        sps.conf_win_right_offset = r.read_ue();
-        sps.conf_win_top_offset = r.read_ue();
-        sps.conf_win_bottom_offset = r.read_ue();
+        sps.conf_win_left_offset = r.read_ue()?;
+        sps.conf_win_right_offset = r.read_ue()?;
+        sps.conf_win_top_offset = r.read_ue()?;
+        sps.conf_win_bottom_offset = r.read_ue()?;
     } else {
         sps.conf_win_left_offset = 0;
         sps.conf_win_right_offset = 0;
@@ -96,7 +96,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- Bit Depth ---
-    sps.bit_depth_luma = r.read_ue() as u8 + 8;
+    sps.bit_depth_luma = r.read_ue()? as u8 + 8;
     if sps.bit_depth_luma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
             limit: MAX_LUMA_BITDEPTH.into(),
@@ -105,7 +105,7 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         });
     }
 
-    sps.bit_depth_chroma = r.read_ue() as u8 + 8;
+    sps.bit_depth_chroma = r.read_ue()? as u8 + 8;
     if sps.bit_depth_chroma > MAX_LUMA_BITDEPTH {
         return Err(NalError::ParameterOutOfRange {
             limit: MAX_LUMA_BITDEPTH.into(),
@@ -120,10 +120,10 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         )));
     }
 
-    sps.log2_max_pic_order_cnt_lsb = (r.read_ue() as u8) + 4;
+    sps.log2_max_pic_order_cnt_lsb = (r.read_ue()? as u8) + 4;
 
     // --- Sub-layer ordering info ---
-    let sps_sub_layer_ordering_info_present_flag = r.read_flag();
+    let sps_sub_layer_ordering_info_present_flag = r.read_flag()?;
     let first_layer = if sps_sub_layer_ordering_info_present_flag {
         0
     } else {
@@ -132,9 +132,9 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
 
     for i in first_layer..sps.max_sub_layers {
         let idx = i as usize;
-        sps.max_dec_pic_buffering[idx] = r.read_ue() + 1;
-        sps.max_num_reorder_pics[idx] = r.read_ue();
-        sps.max_latency_increase_plus1[idx] = r.read_ue();
+        sps.max_dec_pic_buffering[idx] = r.read_ue()? + 1;
+        sps.max_num_reorder_pics[idx] = r.read_ue()?;
+        sps.max_latency_increase_plus1[idx] = r.read_ue()?;
     }
 
     // Copy info to all layers if only specified once
@@ -148,36 +148,36 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     }
 
     // --- CTB & Transform Sizes ---
-    sps.log2_min_luma_coding_block_size = (r.read_ue() + 3) as u8;
-    sps.log2_diff_max_min_luma_coding_block_size = r.read_ue() as u8;
-    sps.log2_min_transform_block_size = (r.read_ue() + 2) as u8;
-    sps.log2_diff_max_min_transform_block_size = (r.read_ue()) as u8;
-    sps.max_transform_hierarchy_depth_inter = r.read_ue();
-    sps.max_transform_hierarchy_depth_intra = r.read_ue();
+    sps.log2_min_luma_coding_block_size = (r.read_ue()? + 3) as u8;
+    sps.log2_diff_max_min_luma_coding_block_size = r.read_ue()? as u8;
+    sps.log2_min_transform_block_size = (r.read_ue()? + 2) as u8;
+    sps.log2_diff_max_min_transform_block_size = (r.read_ue()?) as u8;
+    sps.max_transform_hierarchy_depth_inter = r.read_ue()?;
+    sps.max_transform_hierarchy_depth_intra = r.read_ue()?;
 
     // --- Scaling List ---
-    sps.scaling_list_enabled_flag = r.read_flag();
+    sps.scaling_list_enabled_flag = r.read_flag()?;
     if sps.scaling_list_enabled_flag {
-        let sps_scaling_list_data_present_flag = r.read_flag();
+        let sps_scaling_list_data_present_flag = r.read_flag()?;
         if sps_scaling_list_data_present_flag {
-            sps.scaling_lists = parse_scaling_list_data(&mut r);
+            sps.scaling_lists = parse_scaling_list_data(&mut r)?;
         }
     }
 
-    sps.amp_enabled_flag = r.read_flag();
-    sps.sample_adaptive_offset_enabled_flag = r.read_flag();
-    sps.pcm_enabled_flag = r.read_flag();
+    sps.amp_enabled_flag = r.read_flag()?;
+    sps.sample_adaptive_offset_enabled_flag = r.read_flag()?;
+    sps.pcm_enabled_flag = r.read_flag()?;
 
     if sps.pcm_enabled_flag {
-        sps.pcm_sample_bit_depth_luma = (r.get_bits(4) + 1) as u8;
-        sps.pcm_sample_bit_depth_chroma = (r.get_bits(4) + 1) as u8;
-        sps.log2_min_pcm_luma_coding_block_size = (r.read_ue() + 3) as u8;
-        sps.log2_diff_max_min_pcm_luma_coding_block_size = r.read_ue() as u8;
-        sps.pcm_loop_filter_disable_flag = r.read_flag();
+        sps.pcm_sample_bit_depth_luma = (r.get_bits(4)? + 1) as u8;
+        sps.pcm_sample_bit_depth_chroma = (r.get_bits(4)? + 1) as u8;
+        sps.log2_min_pcm_luma_coding_block_size = (r.read_ue()? + 3) as u8;
+        sps.log2_diff_max_min_pcm_luma_coding_block_size = r.read_ue()? as u8;
+        sps.pcm_loop_filter_disable_flag = r.read_flag()?;
     }
 
     // --- Reference Picture Sets ---
-    sps.num_short_term_ref_pic_sets = r.read_ue();
+    sps.num_short_term_ref_pic_sets = r.read_ue()?;
 
     // Track POC deltas across loop iterations for inter-RPS prediction
     let mut num_delta_pocs = [0usize; 65];
@@ -191,40 +191,40 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         )?;
     }
 
-    let long_term_ref_pics_present_flag = r.read_flag();
+    let long_term_ref_pics_present_flag = r.read_flag()?;
     if long_term_ref_pics_present_flag {
-        sps.num_long_term_ref_pics_sps = r.read_ue();
+        sps.num_long_term_ref_pics_sps = r.read_ue()?;
         for _ in 0..(sps.num_long_term_ref_pics_sps) {
-            r.get_bits(sps.log2_max_pic_order_cnt_lsb);
-            r.read_flag(); // used_by_curr_pic_lt_sps_flag
+            r.get_bits(sps.log2_max_pic_order_cnt_lsb)?;
+            r.read_flag()?; // used_by_curr_pic_lt_sps_flag
         }
     } else {
         sps.num_long_term_ref_pics_sps = 0;
     }
 
-    sps.sps_temporal_mvp_enabled_flag = r.read_flag();
-    sps.strong_intra_smoothing_enable_flag = r.read_flag();
+    sps.sps_temporal_mvp_enabled_flag = r.read_flag()?;
+    sps.strong_intra_smoothing_enable_flag = r.read_flag()?;
 
     // --- VUI Parameters ---
-    let vui_parameters_present_flag = r.read_flag();
+    let vui_parameters_present_flag = r.read_flag()?;
     if vui_parameters_present_flag {
         sps.vui = Some(parse_vui(&mut r, sps.max_sub_layers - 1)?);
     }
 
-    let sps_extension_present_flag = r.read_flag();
+    let sps_extension_present_flag = r.read_flag()?;
 
     if sps_extension_present_flag {
         let mut sps_range_ext = SpsRangeExtension::default();
 
-        sps_range_ext.transform_skip_rotation_enabled_flag = r.read_flag();
-        sps_range_ext.transform_skip_context_enabled_flag = r.read_flag();
-        sps_range_ext.implicit_rdpcm_enabled_flag = r.read_flag();
-        sps_range_ext.explicit_rdpcm_enabled_flag = r.read_flag();
-        sps_range_ext.extended_precision_processing_flag = r.read_flag();
-        sps_range_ext.intra_smoothing_disabled_flag = r.read_flag();
-        sps_range_ext.high_precision_offsets_enabled_flag = r.read_flag();
-        sps_range_ext.persistent_rice_adaptation_enabled_flag = r.read_flag();
-        sps_range_ext.cabac_bypass_alignment_enabled_flag = r.read_flag();
+        sps_range_ext.transform_skip_rotation_enabled_flag = r.read_flag()?;
+        sps_range_ext.transform_skip_context_enabled_flag = r.read_flag()?;
+        sps_range_ext.implicit_rdpcm_enabled_flag = r.read_flag()?;
+        sps_range_ext.explicit_rdpcm_enabled_flag = r.read_flag()?;
+        sps_range_ext.extended_precision_processing_flag = r.read_flag()?;
+        sps_range_ext.intra_smoothing_disabled_flag = r.read_flag()?;
+        sps_range_ext.high_precision_offsets_enabled_flag = r.read_flag()?;
+        sps_range_ext.persistent_rice_adaptation_enabled_flag = r.read_flag()?;
+        sps_range_ext.cabac_bypass_alignment_enabled_flag = r.read_flag()?;
 
         sps.range_extension = Some(sps_range_ext);
     }
