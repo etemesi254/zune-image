@@ -364,47 +364,59 @@ impl NeighborTracker {
 
 impl NeighborTracker {
     pub fn is_available(
-        &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize
+        &self, curr_x: usize, curr_y: usize, neighbor_x: isize, neighbor_y: isize, ctu_size: usize
     ) -> bool {
-        // 1. Hard Boundary Check
         if neighbor_x < 0 || neighbor_y < 0 {
             return false;
         }
+
         let nux = (neighbor_x as usize) >> self.log2_unit_size;
         let nuy = (neighbor_y as usize) >> self.log2_unit_size;
-
         if nux >= self.width_in_units || nuy >= self.height_in_units {
             return false;
         }
+
         let cux = curr_x >> self.log2_unit_size;
         let cuy = curr_y >> self.log2_unit_size;
 
-        // 2. Math check BEFORE memory access (Memory access is slow, math is fast)
-        let curr_z = self.get_zscan_from_units(cux as u32, cuy as u32);
-        let neigh_z = self.get_zscan_from_units(nux as u32, nuy as u32);
+        // 1. Calculate CTU Addresses
+        let log2_ctu_units = ctu_size
+            .trailing_zeros()
+            .saturating_sub(u32::from(self.log2_unit_size));
 
-        if neigh_z >= curr_z {
+        let ctu_curr_x = cux >> log2_ctu_units;
+        let ctu_curr_y = cuy >> log2_ctu_units;
+        let ctu_neigh_x = nux >> log2_ctu_units;
+        let ctu_neigh_y = nuy >> log2_ctu_units;
+
+        let width_in_ctus = self.width_in_units.div_ceil(1 << log2_ctu_units);
+        let ctu_curr_addr = ctu_curr_y * width_in_ctus + ctu_curr_x;
+        let ctu_neigh_addr = ctu_neigh_y * width_in_ctus + ctu_neigh_x;
+
+        // 2. Raster Scan CTU Check
+        if ctu_neigh_addr > ctu_curr_addr {
             return false;
         }
 
-        // 2. Math check BEFORE memory access (Memory access is slow, math is fast)
-        let curr_z = self.get_zscan_from_units(cux as u32, cuy as u32);
-        let neigh_z = self.get_zscan_from_units(nux as u32, nuy as u32);
+        // 3. Local Z-Scan Check (Only if in the exact same CTU)
+        if ctu_neigh_addr == ctu_curr_addr {
+            let mask = (1 << log2_ctu_units) - 1;
+            let local_curr_z = self.get_zscan_from_units((cux & mask) as u32, (cuy & mask) as u32);
+            let local_neigh_z = self.get_zscan_from_units((nux & mask) as u32, (nuy & mask) as u32);
 
-        if neigh_z >= curr_z {
-            return false;
+            if local_neigh_z >= local_curr_z {
+                return false;
+            }
         }
+
         let neigh_idx = nuy * self.width_in_units + nux;
         let curr_idx = cuy * self.width_in_units + cux;
 
-        let neighbor_unit = &self.blocks[neigh_idx];
-        let curr_unit = &self.blocks[curr_idx];
-
-        if curr_unit.slice_id != neighbor_unit.slice_id {
+        if self.blocks[curr_idx].slice_id != self.blocks[neigh_idx].slice_id {
             return false;
         }
 
-        neighbor_unit.available
+        self.blocks[neigh_idx].available
     }
     #[inline(always)]
     pub fn get_zscan_from_units(&self, ux: u32, uy: u32) -> u32 {
@@ -473,7 +485,6 @@ impl NeighborTracker {
         state.intra_mode_chroma
     }
 }
-
 
 impl NeighborTracker {
     pub fn update_cu_info(
