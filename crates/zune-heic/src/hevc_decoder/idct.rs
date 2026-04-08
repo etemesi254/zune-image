@@ -1,6 +1,10 @@
 #![allow(unreachable_code)]
 
+use std::arch::is_aarch64_feature_detected;
+
+mod aarch64;
 mod std_simd;
+mod x86_64;
 
 // ---------------------------------------------------------------------------
 // Tuning Knob: DC Vertical Scale Factor
@@ -158,7 +162,10 @@ fn transform16_1d(input: &[i16], output: &mut [i32]) {
     let odds: [i32; 8] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
     let o: [i32; 8] = std::array::from_fn(|i| {
         let r = &T16[i];
-        odds.iter().zip(r.iter()).map(|(&x, &b)| x * i32::from(b)).sum()
+        odds.iter()
+            .zip(r.iter())
+            .map(|(&x, &b)| x * i32::from(b))
+            .sum()
     });
 
     for i in 0..8 {
@@ -178,7 +185,10 @@ fn transform32_1d(input: &[i16], output: &mut [i32]) {
     let odds: [i32; 16] = std::array::from_fn(|j| i32::from(input[j * 2 + 1]));
     let o: [i32; 16] = std::array::from_fn(|i| {
         let r = &T32[i];
-        odds.iter().zip(r.iter()).map(|(&x, &b)| x * i32::from(b)).sum()
+        odds.iter()
+            .zip(r.iter())
+            .map(|(&x, &b)| x * i32::from(b))
+            .sum()
     });
 
     for i in 0..16 {
@@ -206,13 +216,17 @@ pub fn idct_2d_scalar<const N: usize>(
         }
 
         if is_all_zero(&col[..N]) {
-            for r in 0..N { intermediate[r * N + c] = 0; }
+            for r in 0..N {
+                intermediate[r * N + c] = 0;
+            }
             continue;
         }
 
         if !is_dst && col[0] != 0 && is_all_zero(&col[1..N]) {
             let dc_val = shift_clip(i32::from(col[0]) * 64, shift1);
-            for r in 0..N { intermediate[r * N + c] = dc_val; }
+            for r in 0..N {
+                intermediate[r * N + c] = dc_val;
+            }
             continue;
         }
 
@@ -231,13 +245,17 @@ pub fn idct_2d_scalar<const N: usize>(
         let row = &intermediate[row_start..row_start + N];
 
         if is_all_zero(row) {
-            for c in 0..N { block[r * N + c] = 0; }
+            for c in 0..N {
+                block[r * N + c] = 0;
+            }
             continue;
         }
 
         if !is_dst && row[0] != 0 && is_all_zero(&row[1..N]) {
             let val = shift_clip(i32::from(row[0]) * DC_VERTICAL_SCALE, shift2);
-            for c in 0..N { block[r * N + c] = val; }
+            for c in 0..N {
+                block[r * N + c] = val;
+            }
             continue;
         }
 
@@ -258,6 +276,17 @@ pub fn idst_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idst_4x4_hevc(block, scratchpad, bit_depth);
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            return x86_64::idst_4x4_hevc(block, scratchpad, bit_depth);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return aarch64::idst_4x4_hevc(block, scratchpad, bit_depth);
+    }
+
     idct_2d_scalar::<4>(block, scratchpad, bit_depth, true, transform4_dst_1d);
 }
 
@@ -266,6 +295,17 @@ pub fn idct_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idct_4x4_hevc(block, scratchpad, bit_depth);
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            return x86_64::idct_4x4_hevc(block, scratchpad, bit_depth);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return aarch64::idct_4x4_hevc(block, scratchpad, bit_depth);
+    }
+
     idct_2d_scalar::<4>(block, scratchpad, bit_depth, false, transform4_1d);
 }
 
@@ -274,6 +314,17 @@ pub fn idct_8x8_hevc(block: &mut [i16; 64], scratchpad: &mut [i16; 1024], bit_de
     {
         return std_simd::idct_8x8_hevc(block, scratchpad, bit_depth);
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            return x86_64::idct_8x8_hevc(block, scratchpad, bit_depth);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return aarch64::idct_8x8_hevc(block, scratchpad, bit_depth);
+    }
+
     idct_2d_scalar::<8>(block, scratchpad, bit_depth, false, transform8_1d);
 }
 
@@ -282,6 +333,17 @@ pub fn idct_16x16_hevc(block: &mut [i16; 256], scratchpad: &mut [i16; 1024], bit
     {
         return std_simd::idct_16x16_hevc(block, scratchpad, bit_depth);
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            return x86_64::idct_16x16_hevc(block, scratchpad, bit_depth);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return aarch64::idct_16x16_hevc(block, scratchpad, bit_depth);
+    }
+
     idct_2d_scalar::<16>(block, scratchpad, bit_depth, false, transform16_1d);
 }
 
@@ -290,5 +352,16 @@ pub fn idct_32x32_hevc(block: &mut [i16; 1024], scratchpad: &mut [i16; 1024], bi
     {
         return std_simd::idct_32x32_hevc(block, scratchpad, bit_depth);
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            return x86_64::idct_32x32_hevc(block, scratchpad, bit_depth);
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return aarch64::idct_32x32_hevc(block, scratchpad, bit_depth);
+    }
+
     idct_2d_scalar::<32>(block, scratchpad, bit_depth, false, transform32_1d);
 }
