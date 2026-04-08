@@ -22,11 +22,16 @@ pub fn decoder_options(options: &ArgMatches) -> DecoderOptions {
     let strict_mode = *options.get_one::<bool>("strict").unwrap();
     let jpeg_grayscale = *options.get_one::<bool>("jpeg-grayscale").unwrap_or(&false);
 
+    let hevc_software = *options
+        .get_one::<bool>("hevc-software-decode")
+        .unwrap_or(&false);
+
     let mut options = DecoderOptions::new_cmd()
         .set_max_height(max_height)
         .set_max_width(max_width)
         .set_use_unsafe(use_unsafe)
-        .set_strict_mode(strict_mode);
+        .set_strict_mode(strict_mode)
+        .hvec_set_use_videotoolbox(!hevc_software);
 
     if jpeg_grayscale {
         options = options.jpeg_set_out_colorspace(ColorSpace::Luma);
