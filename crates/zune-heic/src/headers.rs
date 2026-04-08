@@ -846,9 +846,6 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
             }
             b"hvcC" | b"av1C" => {
                 // For complex codecs, read raw bytes so decoders can use them later
-
-                let skip_size = payload_size.saturating_sub(4);
-
                 let mut payload = vec![0; payload_size];
                 reader.read_exact_bytes(&mut payload)?;
 
@@ -885,8 +882,6 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
             }
             b"auxC" => {
                 reader.skip(4)?;
-
-                let skip_size = payload_size.saturating_sub(4);
 
                 // Read null-terminated string for the aux_type
                 let mut type_bytes = Vec::new();

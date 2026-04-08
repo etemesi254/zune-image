@@ -41,56 +41,11 @@ use std::sync::{Arc, Mutex};
 
 use zune_core::bytestream::ZByteReaderTrait;
 
-use crate::apple_videotoolbox::types::{
-    CFAllocatorRef, CFRelease, CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef,
-    CMSampleBufferRef, CMTime, CMVideoFormatDescriptionRef, CVImageBufferRef, OSStatus,
-    VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate,
-    VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef,
-    VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull
-};
+use crate::apple_videotoolbox::types::{CFAllocatorRef, CFRelease, CMBlockBufferCreateWithMemoryBlock, CMBlockBufferRef, CMSampleBufferRef, CMTime, CMVideoFormatDescriptionRef, CVImageBufferRef, OSStatus, VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord, VTDecompressionSessionCreate, VTDecompressionSessionDecodeFrame, VTDecompressionSessionRef, VTDecompressionSessionWaitForAsynchronousFrames, kCFAllocatorNull, CMVideoFormatDescriptionCreateFromHEVCParameterSets, CMSampleBufferCreateReady, CVPixelBufferLockBaseAddress, CVPixelBufferGetWidth, CVPixelBufferGetHeight, CVPixelBufferGetBytesPerRowOfPlane, CVPixelBufferGetBaseAddressOfPlane, CVPixelBufferUnlockBaseAddress};
 use crate::decoder::{HeifDecoder, SingleDecodedTile, TileMap};
 use crate::errors::HeicErrors;
 use crate::processor::HevcSample;
 
-unsafe extern "C" {
-    /// Creates a CMVideoFormatDescription from HEVC (H.265) parameter-set NAL units.
-    fn CMVideoFormatDescriptionCreateFromHEVCParameterSets(
-        allocator: CFAllocatorRef,
-        parameter_set_count: usize,
-        parameter_set_pointers: *const *const u8,
-        parameter_set_sizes: *const usize,
-        nal_unit_header_length: i32,
-        extensions: *const c_void, // CFDictionaryRef — pass NULL
-        format_description_out: *mut CMVideoFormatDescriptionRef
-    ) -> OSStatus;
-
-    /// Creates a ready-to-use CMSampleBuffer wrapping an existing CMBlockBuffer.
-    fn CMSampleBufferCreateReady(
-        allocator: CFAllocatorRef,
-        data_buffer: CMBlockBufferRef,
-        format_description: CMVideoFormatDescriptionRef,
-        num_samples: isize,
-        num_sample_timing_entries: isize,
-        sample_timing_array: *const c_void, // CMSampleTimingInfo* — pass NULL
-        num_sample_size_entries: isize,
-        sample_size_array: *const usize, // pass NULL
-        sample_buffer_out: *mut CMSampleBufferRef
-    ) -> OSStatus;
-
-}
-#[link(name = "CoreVideo", kind = "framework")]
-unsafe extern "C" {
-    fn CVPixelBufferLockBaseAddress(pixelBuffer: CVImageBufferRef, lockFlags: u32) -> i32;
-    fn CVPixelBufferUnlockBaseAddress(pixelBuffer: CVImageBufferRef, lockFlags: u32) -> i32;
-    fn CVPixelBufferGetWidth(pixelBuffer: CVImageBufferRef) -> usize;
-    fn CVPixelBufferGetHeight(pixelBuffer: CVImageBufferRef) -> usize;
-    fn CVPixelBufferGetBaseAddressOfPlane(
-        pixelBuffer: CVImageBufferRef, planeIndex: usize
-    ) -> *mut u8;
-    fn CVPixelBufferGetBytesPerRowOfPlane(
-        pixelBuffer: CVImageBufferRef, planeIndex: usize
-    ) -> usize;
-}
 // ---------------------------------------------------------------------------
 /// Hardware HEVC decoder backed by VideoToolbox.
 ///

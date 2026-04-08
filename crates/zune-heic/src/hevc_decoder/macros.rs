@@ -11,54 +11,6 @@
 /// - Includes `file!()` and `line!()` automatically
 /// - Zero-cost when `DEBUG_MORE` is `false` (optimized out in release if const)
 ///
-/// # Examples
-///
-/// Basic usage:
-///
-/// ```rust
-/// debug_more!("value = {}", 42);
-/// ```
-///
-/// With multiple arguments:
-///
-/// ```rust
-/// let x = 10;
-/// let y = 20;
-/// debug_more!("x = {}, y = {}", x, y);
-/// ```
-///
-/// Multiline formatting:
-///
-/// ```rust
-/// debug_more!(
-///     "coords: x={}, y={}, z={}",
-///     1,
-///     2,
-///     3
-/// );
-/// ```
-///
-/// Named formatting:
-///
-/// ```rust
-/// let size = 64;
-/// debug_more!("block size: {size}");
-/// ```
-///
-/// Conditional logging:
-///
-/// ```rust
-/// let is_visible = false;
-/// debug_more!(is_visible => "this will not print");
-/// ```
-///
-/// Conditional with values:
-///
-/// ```rust
-/// let x = 5;
-/// debug_more!(x > 0 => "x is positive: {}", x);
-/// ```
-///
 /// # Output Format
 ///
 /// ```text

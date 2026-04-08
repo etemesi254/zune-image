@@ -4,13 +4,6 @@ use std::simd::cmp::SimdOrd;
 use std::simd::num::SimdInt;
 use std::simd::{i16x4, i16x8, i16x16, i32x4, i32x8};
 
-// ---------------------------------------------------------------------------
-// Tuning Knob: DC Vertical Scale Factor
-// ---------------------------------------------------------------------------
-// The horizontal DC path multiplies by 64 before shift1=7, which is correct
-// (64 >> 7 = 0.5 rounding). For the vertical pass the intermediate values
-// are already scaled, so the multiplier should likely be 1, not 64.
-// Set to 64 to match original behaviour; change to 1 after confirming output.
 const DC_VERTICAL_SCALE: i32 = 64;
 
 // ---------------------------------------------------------------------------
