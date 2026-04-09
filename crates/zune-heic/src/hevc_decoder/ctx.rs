@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use crate::debug_more;
@@ -528,7 +529,7 @@ impl DecodeSliceContext<'_> {
         let p_len = 4 * n_t + 1;
 
         // 1. Reset/Clear internal buffers
-        self.ref_samples_p[..p_len].fill(0);
+        self.ref_samples_p[..p_len].fill(128);
         self.ref_samples_available[..p_len].fill(false);
 
         // 2. Check Availability (Using PIXEL coordinates x0, y0)
@@ -594,15 +595,6 @@ fn write_block_and_pad(
 
     if let Some(residual) = residual {
         // --- 1. Reconstruct directly into the padded buffer ---
-        //
-        // for dy in 0..n_t {
-        //     let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
-        //     let i_start = dy * n_t;
-        //     for dx in 0..n_t {
-        //         let i = i_start + dx;
-        //         buf[dst_row + dx] = (b[i] + pred[i] as i32).clamp(0, max_val) as u8;
-        //     }
-        // }
         for (dy, (residual_row, pred_row)) in residual
             .chunks(n_t)
             .zip(pred.chunks(n_t))
@@ -687,11 +679,9 @@ fn write_block_and_pad(
 pub fn print_available(available: &[bool], n_t: usize) {
     let total = 4 * n_t;
 
-    // We loop strictly forward through the linear 0..4N array
     for i in 0..=total {
         print!("{}", u8::from(available[i]));
 
-        // Print libde265-style separators at the segment boundaries
         if i == n_t - 1 || i == 2 * n_t - 1 || i == 2 * n_t || i == 3 * n_t {
             println!("|");
         } else if i != total {
@@ -704,7 +694,6 @@ pub fn print_available(available: &[bool], n_t: usize) {
 pub fn print_border(p: &[u8], n_t: usize) {
     let total = 4 * n_t;
 
-    // Exact same linear sweep for the values
     for i in 0..=total {
         print!("{}", p[i]);
 
@@ -798,62 +787,82 @@ fn perform_padding(
     c_idx: usize
 ) {
     let total = 4 * n_t + 1;
-    let bit_depth = 8;
 
     // 1. Fetch available pixels into the strictly linear 0..4N array
-    {
-        let plane = match c_idx {
-            0 => frame.luma.lock().unwrap(),
-            1 => frame.cb.lock().unwrap(),
-            2 => frame.cr.lock().unwrap(),
-            _ => unreachable!()
-        };
-        let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
+    // and
+    // 2. HEVC Reference Sample Substitution (Spec 8.4.4.2.2)
 
-        // SAFE GET_P: Add pad as isize FIRST to prevent usize::MAX overflow
-        let pad_i = pad as isize;
-        let get_p = |px: isize, py: isize| {
-            pixels[((py + pad_i) as usize) * stride + ((px + pad_i) as usize)]
-        };
+    let plane = match c_idx {
+        0 => frame.luma.lock().unwrap(),
+        1 => frame.cb.lock().unwrap(),
+        2 => frame.cr.lock().unwrap(),
+        _ => unreachable!()
+    };
+    let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
 
-        for i in 0..total {
-            if available[i] {
-                // Map the 1D linear index 'i' back to 2D image coordinates
-                let (px, py) = if i < 2 * n_t {
-                    // Indices 0 to 2*nT - 1: Below-Left and Left
-                    (x0 as isize - 1, y0 as isize + (2 * n_t - 1 - i) as isize)
-                } else if i == 2 * n_t {
-                    // Index 2*nT: Top-Left Corner
-                    (x0 as isize - 1, y0 as isize - 1)
-                } else {
-                    // Indices 2*nT + 1 to 4*nT: Top and Top-Right
-                    (x0 as isize + (i - 2 * n_t - 1) as isize, y0 as isize - 1)
-                };
-                debug_more!("px={}, py={},v={}", px, py, get_p(px, py));
+    let mut first_availability = -1;
+    // SAFE GET_P: Add pad as isize FIRST to prevent usize::MAX overflow
+    let pad_i = pad as isize;
+    let get_p =
+        |px: isize, py: isize| pixels[((py + pad_i) as usize) * stride + ((px + pad_i) as usize)];
 
-                p[i] = get_p(px, py);
+    for i in 0..total {
+        if available[i] {
+            if first_availability == -1 {
+                // first available item
+                first_availability = i as i32;
             }
+            // Map the 1D linear index 'i' back to 2D image coordinates
+            let (px, py) = {
+                let other = 2 * n_t;
+                let comparision = i.cmp(&other);
+                match comparision {
+                    Ordering::Less => {
+                        // Indices 0 to 2*nT - 1: Below-Left and Left
+                        (x0 as isize - 1, y0 as isize + (other - 1 - i) as isize)
+                    }
+                    Ordering::Equal => {
+                        // Index 2*nT: Top-Left Corner
+
+                        (x0 as isize - 1, y0 as isize - 1)
+                    }
+                    Ordering::Greater => {
+                        // Indices 2*nT + 1 to 4*nT: Top and Top-Right
+                        (x0 as isize + (i - other - 1) as isize, y0 as isize - 1)
+                    }
+                }
+            };
+            debug_more!("px={}, py={},v={}", px, py, get_p(px, py));
+
+            p[i] = get_p(px, py);
         }
     }
+    // if all items are not availalbe aka its -1, spec says
+    // we prefill with 128/mid grey, so that was already done when
+    // initializing this (check where it is called) so no need
+    // to do anything. like fill(128)
+    if first_availability != -1 {
 
-    // 2. HEVC Reference Sample Substitution (Spec 8.4.4.2.2)
-    let n_avail = available.iter().filter(|&&a| a).count();
+        // something is present, and its position is first_idx,
+        // optimistically check if the whole array is available
+        let available_len = available.len();
 
-    if n_avail == 0 {
-        // Case 1: No samples available at all -> Fill with mid-grey
-        p.fill(1 << (bit_depth - 1));
-    } else if n_avail < total {
-        // Case 2: Partial availability -> Substitution sweep
-
-        // Find the very first available sample starting from the bottom-left
-        let first_idx = available.iter().position(|&a| a).unwrap();
-        let first_value = p[first_idx];
-
-        // Backfill: If the first available sample isn't at index 0, fill backwards
-        for i in 0..first_idx {
-            p[i] = first_value;
+        // this bool check optimistically checks corners/boundaries which are a good indicator of
+        // all neighbours being available
+        if available[0] && available[available_len / 2] && available[available_len - 1] {
+            // optimistic of their availability, so confirm that its all values present
+            let first_unavailable = available.iter().find(|&a| !a);
+            if first_unavailable.is_none() {
+                // no unavailable item, so no need for the reference sweep, return
+                return;
+            }
         }
-
+        let first_idx = first_availability as usize;
+        // partial availability, some present some are not, mainly in edges. so pad the items
+        if first_availability > 0 {
+            let first_value = p[first_availability as usize];
+            p[0..first_idx].fill(first_value);
+        }
         // Forward fill: Propagate the previous valid value into any remaining gaps
         for i in (first_idx + 1)..total {
             if !available[i] {

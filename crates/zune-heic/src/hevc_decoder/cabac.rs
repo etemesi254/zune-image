@@ -170,7 +170,7 @@ impl<'a> CabacDecoder<'a> {
         // another optimization
         // Move the bit logic on top of here to better pipeline
         // I am not sure if the compiler again is doing this
-        let next_mps = if state == 0 { 1 - mps } else { mps };
+        let next_mps = mps ^ u8::from(state == 0);
 
         let mps_bit = (TRANSITION_MPS[state & 63] << 1) | mps;
         let lps_bit = (TRANSITION_LPS[state & 63] << 1) | next_mps;
@@ -195,14 +195,9 @@ impl<'a> CabacDecoder<'a> {
 
         let mps_side = self.value < scaled_range;
 
-        // branchless cmov  (on x86)
         if mps_side {
             *ctx_v = mps_bit;
-        } else {
-            *ctx_v = lps_bit;
-        }
 
-        if mps_side {
             debug_more!("MPS");
             // check range
             if self.range < 256 {
@@ -213,6 +208,8 @@ impl<'a> CabacDecoder<'a> {
 
             mps
         } else {
+            *ctx_v = lps_bit;
+
             debug_more!("LPS");
             // lps side
             self.value -= scaled_range;
@@ -267,7 +264,7 @@ impl<'a> CabacDecoder<'a> {
             0
         }
     }
-    /// Optimized: Decode `n_bits` bypass bins. 
+    /// Optimized: Decode `n_bits` bypass bins.
     #[inline]
     pub fn decode_fl_bypass(&mut self, mut n_bits: u8) -> u32 {
         if n_bits == 0 {

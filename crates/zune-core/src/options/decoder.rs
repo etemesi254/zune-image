@@ -165,7 +165,10 @@ pub struct DecoderOptions {
     /// Maximum MDAT size.
     ///
     /// We read this to memory so thats why it is a configurable parameter
-    hevc_max_mdat_size: usize
+    hevc_max_mdat_size: usize,
+    /// Number of threads used for decoding
+    ///
+    num_threads:        u8
 }
 
 /// Initializers
@@ -319,6 +322,24 @@ impl DecoderOptions {
     /// be treated
     pub const fn byte_endian(&self) -> ByteEndian {
         self.endianness
+    }
+    
+    
+    /// Set the number of threads used to decode images
+    /// 
+    /// This can be used e.g to implement threads used in 
+    /// heic tile decoding  
+    pub  fn set_num_threads(mut self, num_threads: u8) -> Self {
+        self.num_threads = num_threads.min(1);
+        self
+    }
+    
+    /// Get the number of threads used to decode images
+    /// 
+    /// This can be used e.g to tell you how many threads the heic
+    /// decoder will used when decoding tiles
+    pub const fn num_threads(&self) -> u8 {
+        self.num_threads
     }
 }
 
@@ -660,7 +681,7 @@ impl DecoderOptions {
     /// Set the maximum size in bytes for the MDAT section for HEIC images.
     ///
     /// The section is read into memory so important to have it with an upper limit
-    pub  fn set_hevc_max_mdat_size(mut self, max_size: usize) -> Self {
+    pub fn set_hevc_max_mdat_size(mut self, max_size: usize) -> Self {
         self.hevc_max_mdat_size = max_size;
         self
     }
@@ -704,6 +725,7 @@ impl Default for DecoderOptions {
             flags:              decoder_error_tolerance_mode(),
             // 16 mb
             hevc_max_mdat_size: 1 << 24,
+            num_threads:        4,
             endianness:         ByteEndian::BE
         }
     }

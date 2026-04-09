@@ -568,7 +568,6 @@ pub fn decode_residual_block(
         0 // Inter is always Diagonal
     };
 
-    // Match libde265 tracing logic
     if pred_mode == PredMode::ModeIntra {
         if component == Component::Luma {
             debug_more!(

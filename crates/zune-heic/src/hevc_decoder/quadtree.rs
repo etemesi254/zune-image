@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
@@ -11,6 +10,7 @@ use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_cod
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
+use crate::{ debug_more};
 
 mod transform_unit;
 
@@ -55,7 +55,6 @@ pub fn decode_slice(
     let slice_qp = (26 + pps.init_qp_minus26 + slice_header.slice_qp_delta) as i8;
 
     // 2. CABAC Initialization (Section 9.3.2.2)
-
     let init_type = match slice_header.slice_type {
         SliceType::I => 0,
         SliceType::P => 1,
@@ -123,10 +122,10 @@ pub fn decode_slice(
                     debug_more!("WPP: Inheriting CABAC contexts from row {}", ctu_y - 1);
                     ctx.cabac.contexts = wpp_contexts;
                 } else {
-                    panic!(
+                    return Err(NalError::Generic(format!(
                         "WPP Error: Expected saved CABAC context for row {}, but found None!",
                         ctu_y - 1
-                    );
+                    )));
                 }
             } else {
                 // Edge Case: Video is only 1 CTU wide. There was no ctu_x == 1 to save from.
@@ -136,7 +135,6 @@ pub fn decode_slice(
         }
         read_coding_tree_unit(&mut ctx, ctu_x, ctu_y)?;
 
-        // finish_ctu handles the end_of_slice_segment_flag terminal bit
         match finish_ctu(&mut ctx, ctu_x, ctu_y)? {
             CtuStatus::EndOfSliceSegment => {
                 debug_more!("Slice Segment Finished at CTU {}", ctu_addr);
@@ -144,7 +142,7 @@ pub fn decode_slice(
 
                 // If it's a dependent slice, save the state for the next one
                 if pps.dependent_slice_segments_enabled_flag {
-                    hevc_decoder.dependent_slice_contexts = Some(ctx.cabac.contexts.clone());
+                    hevc_decoder.dependent_slice_contexts = Some(ctx.cabac.contexts);
                 }
                 break; // Exit loop, slice is done
             }
@@ -175,7 +173,7 @@ pub fn finish_ctu(
     {
         debug_more!("Saving WPP Context for row {}", ctby);
         // We clone the current context model state (the "decouple" in libde265)
-        ctx.ctb_context[ctby] = Some(ctx.cabac.contexts.clone());
+        ctx.ctb_context[ctby] = Some(ctx.cabac.contexts);
     }
 
     debug_more!(
@@ -243,11 +241,7 @@ pub fn finish_ctu(
         return Ok(CtuStatus::EndOfSubstream);
     }
 
-    ctx.math_scratchpad.fill(0);
     ctx.n_coeff.fill(0);
-    ctx.ref_samples_p.fill(0);
-    ctx.ref_main_buf.fill(0);
-    ctx.ref_samples_available.fill(false);
     Ok(CtuStatus::Continue)
 }
 fn read_coding_quadtree(
@@ -297,14 +291,6 @@ fn read_coding_quadtree(
         ctx.is_cu_qp_delta_coded = false;
         ctx.cu_qp_delta = 0;
     }
-    // TODO: libde265 has some flags we are not reading
-    //      so investigate
-    //    Code
-    //
-    //      if (tctx->shdr->cu_chroma_qp_offset_enabled_flag &&
-    //         log2CbSize >= pps.Log2MinCuChromaQpOffsetSize) {
-    //         tctx->IsCuChromaQpOffsetCoded = 0;
-    //     }
 
     if split_cu_flag {
         let cb_size_min_1 = 1 << (log_2_cb_size - 1);

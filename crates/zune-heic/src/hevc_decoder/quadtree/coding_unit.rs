@@ -82,8 +82,6 @@ pub fn read_coding_unit(
     debug_more!("read_coding_unit x0={}, y0={}, size={}", x0, y0, cb_size);
 
     // 1. Initial Quantization Setup
-    // Note: Actual QP delta decoding is moved into TU for some profiles,
-    // but we'll keep your call here for base parameters.
     decode_quantization_parameters(ctx, x0, y0, log_2_cb_size);
 
     if ctx.pps.transquant_bypass_enabled_flag {
@@ -100,7 +98,7 @@ pub fn read_coding_unit(
         ctx.is_intra = false;
         ctx.neighbor_tracker
             .set_pred_mode(x0, y0, log_2_cb_size, PredMode::ModeSkip);
-        // Inter skip MV logic (Merge/Skip) would be handled here
+        todo!("Inter decoding");
         return Ok(());
     }
 
@@ -201,7 +199,6 @@ pub fn read_coding_unit(
 
             // START TRANSFORM TREE
             // x_base/y_base are set to the current CU origin (x0, y0)
-            // blk_idx starts at 0. cbf_cb/cr start as u8 (value 1)
             read_transform_tree(
                 ctx,
                 x0,

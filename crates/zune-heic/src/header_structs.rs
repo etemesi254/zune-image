@@ -14,13 +14,13 @@ pub struct MDatSection {
 }
 #[derive(Debug, Clone, Default)]
 pub struct MetaSection {
-    pub hdlr:    Option<HdlrSection>,
-    pub pitm:    Option<PitmSection>,
-    pub iinf:    Option<IinfSection>,
-    pub iloc:    Option<IlocSection>,
-    pub iprp:    Option<IprpSection>,
-    pub iref:    Option<IrefSection>,
-    pub idat:    Option<IdatSection>
+    pub hdlr: Option<HdlrSection>,
+    pub pitm: Option<PitmSection>,
+    pub iinf: Option<IinfSection>,
+    pub iloc: Option<IlocSection>,
+    pub iprp: Option<IprpSection>,
+    pub iref: Option<IrefSection>,
+    pub idat: Option<IdatSection>
 }
 #[derive(Debug, Clone)]
 pub struct HdlrSection {
@@ -34,7 +34,7 @@ pub struct HdlrSection {
 pub struct PitmSection {
     pub version: u8,
     pub flags:   u32,
-    pub item_id: u32 // The ID of the primary photo (e.g., the grid)
+    pub item_id: u32
 }
 
 #[derive(Debug, Clone)]
@@ -171,10 +171,7 @@ pub struct IpmaEntry {
 
 #[derive(Debug, Clone)]
 pub struct IpmaAssociation {
-    pub essential: bool, // If true, a decoder MUST understand this property to render the item.
-
-    // This is a 1-BASED index into the `IpcoSection.properties` vector.
-    // When resolving traits, remember to subtract 1 to get the actual array index!
+    pub essential:      bool, // If true, a decoder MUST understand this property to render the item.
     pub property_index: u16
 }
 #[derive(Debug, Clone)]
@@ -188,7 +185,7 @@ pub enum ColourInformation {
         colour_primaries:         u16, // e.g., 1 = BT.709 (sRGB), 9 = BT.2020, 12 = Display P3
         transfer_characteristics: u16, // e.g., 1 = BT.709, 16 = PQ (HDR), 18 = HLG (HDR)
         matrix_coefficients:      u16, // e.g., 1 = BT.709, 6 = BT.601
-        full_range_flag:          bool  // True = 0-255 (PC), False = 16-235 (TV/Studio)
+        full_range_flag:          bool // True = 0-255 (PC), False = 16-235 (TV/Studio)
     },
     IccProfile {
         profile_type: FourCC,  // 'rICC' or 'prof'

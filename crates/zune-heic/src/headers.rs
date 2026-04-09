@@ -644,8 +644,7 @@ pub fn decode_infe<R: ZByteReaderTrait>(
             name_bytes.push(b);
         }
         infe.item_name = String::from_utf8_lossy(&name_bytes).into_owned();
-        // Skip content_type/encoding strings to save space in this snippet,
-        // normally you'd read two more null-terminated strings here.
+      
     } else {
         infe.item_id = if version == 2 {
             let id = u32::from(reader.get_u16_be_err()?);
@@ -878,7 +877,6 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                     bits_per_channel,
                 });
 
-                // Check if there are padding bytes left and skip them
             }
             b"auxC" => {
                 reader.skip(4)?;

@@ -9,7 +9,6 @@ use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
 // The maximum number of threads allowed to decode tiles simultaneously.
-// 4 to 8 is usually the sweet spot for HEVC grids before memory bandwidth bottlenecks.
 pub const MAX_IN_FLIGHT_DECODES: usize = 4;
 pub struct ParameterSets {
     pub vps: Option<Vec<u8>>,
@@ -348,7 +347,9 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         let first_error = Mutex::new(None);
 
         // Don't spawn 8 threads if there are only 2 tiles
-        let num_threads = MAX_IN_FLIGHT_DECODES.min(samples_to_decode.len()).max(1);
+        let num_threads = (self.options.num_threads() as usize)
+            .min(samples_to_decode.len())
+            .max(1);
 
         std::thread::scope(|scope| {
             for _ in 0..num_threads {
