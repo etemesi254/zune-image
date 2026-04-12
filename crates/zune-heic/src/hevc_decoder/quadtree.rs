@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
+use crate::debug_more;
 use crate::hevc_decoder::cabac::CabacDecoder;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SPLIT_CU_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
+use crate::hevc_decoder::deblocker::deblock_frame;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::SliceType;
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
+use crate::hevc_decoder::quadtree::sao::apply_sao_frame;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
-use crate::{ debug_more};
 
 mod transform_unit;
 
@@ -95,7 +97,7 @@ pub fn decode_slice(
         neighbor_tracker,
         //&mut hevc_decoder.neighbor_tracker, // Borrow the persistent tracker
         slice_qp,
-        raw_frame
+        raw_frame.clone()
     );
 
     // 5. The CTU Loop (starts at slice address)
@@ -154,6 +156,25 @@ pub fn decode_slice(
         }
     }
 
+    // apply deblocking
+    if false {
+        let rf_clone = raw_frame.clone();
+        deblock_frame(
+            &rf_clone,
+            hevc_decoder.width,
+            hevc_decoder.height,
+            ctx.neighbor_tracker,
+            pps.cb_qp_offset as i8,
+            pps.cr_qp_offset as i8
+        );
+        apply_sao_frame(
+            &raw_frame,
+            hevc_decoder.width,
+            hevc_decoder.height,
+            1 << sps.log2_ctb_size_y,
+            &ctx.ctb_sao_buffer
+        )
+    }
     Ok(())
 }
 pub fn finish_ctu(
@@ -177,10 +198,9 @@ pub fn finish_ctu(
     }
 
     debug_more!(
-        "Cabac EOC range:{} value:{},position:{}",
+        "Cabac EOC range:{} value:{}",
         ctx.cabac.range,
         ctx.cabac.value,
-        ctx.cabac.cursor
     );
     // --- 2. Decode Terminal Bit (end_of_slice_segment_flag) ---
     // This bit is mandatory after every CTU (Section 7.3.8.1)
@@ -341,6 +361,8 @@ fn read_coding_quadtree(
             ctx.is_skip,
             ctx.slice_header.slice_segment_address as u16
         );
+
+
         Ok(())
     }
 }
