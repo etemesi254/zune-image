@@ -157,7 +157,6 @@ impl EncoderTrait for PngEncoder {
         })?;
 
         let mut output: Vec<u8> = Vec::new();
-        let mut info = png::Info::default();
 
         {
             let mut encoder = Encoder::new(&mut output, width, height);
@@ -205,7 +204,6 @@ impl EncoderTrait for PngEncoder {
                                     ))
                                 })?;
                             trace!("Added eXIF chunk")
-
                         } else {
                             warn!("Writing exif failed {:?}", result);
                         }
@@ -213,14 +211,18 @@ impl EncoderTrait for PngEncoder {
                 }
             }
             if !options.strip_metadata() {
+                //todo:  CAE:Support ICC chunk, image-png has no support as of now
+
                 if let Some(icc) = image.metadata().icc_chunk.as_ref() {
-                    writer.write_chunk(ChunkType(*b"iCCP"), icc).map_err(|e| {
-                        ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string()))
-                    })?;
+                    warn!("ICC chunk will not be saved in image");
+                    //
+                    // writer.write_chunk(ChunkType(*b"iCCP"), icc).map_err(|e| {
+                    //     ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string()))
+                    // })?;
                     trace!("Added ICC chunk")
                 }
             }
-            
+
             writer
                 .write_image_data(frame_data)
                 .map_err(|e| ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string())))?;
