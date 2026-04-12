@@ -8,8 +8,6 @@ use crate::decoder::{HeifDecoder, TileMap};
 use crate::errors::HeicErrors;
 use crate::header_structs::ItemProperty;
 
-// The maximum number of threads allowed to decode tiles simultaneously.
-pub const MAX_IN_FLIGHT_DECODES: usize = 4;
 pub struct ParameterSets {
     pub vps: Option<Vec<u8>>,
     pub sps: Option<Vec<u8>>,

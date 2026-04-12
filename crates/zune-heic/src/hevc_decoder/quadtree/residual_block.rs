@@ -244,13 +244,7 @@ pub fn get_intra_scan_idx(
             2
         }
         // Horizontal Scan (1)
-        else if (22..=30).contains(&intra_mode) {
-            1
-        }
-        // Diagonal Scan (0)
-        else {
-            0
-        };
+        else { u8::from((22..=30).contains(&intra_mode)) };
     }
     // Larger blocks always use Diagonal Scan
     0

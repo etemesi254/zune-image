@@ -107,7 +107,7 @@ impl<'a> DecodeSliceContext<'a> {
             coeff_list: [[0; 32 * 32]; 3],
             coeff_pos: [[0; 32 * 32]; 3],
             n_coeff: [0; 3],
-            raw_frame,
+            raw_frame: raw_frame.clone(),
             pixel_scratchpad: vec![0; 1024],
             ref_main_buf: vec![0; 97],
             ref_samples_p: vec![0; 129],
@@ -604,6 +604,7 @@ fn write_block_and_pad(
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
+
             for (dst, (&bv, &residual_value)) in
                 dst_slice.iter_mut().zip(residual_row.iter().zip(pred_row))
             {
@@ -615,6 +616,7 @@ fn write_block_and_pad(
             }
         }
     } else {
+
         // just copy-paste residual into the buffer
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
@@ -832,7 +834,6 @@ fn perform_padding(
                     }
                 }
             };
-            debug_more!("px={}, py={},v={}", px, py, get_p(px, py));
 
             p[i] = get_p(px, py);
         }

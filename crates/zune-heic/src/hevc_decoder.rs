@@ -36,6 +36,7 @@ pub struct HevcDecoder {
     width: usize,
     height: usize,
     pps_id: usize,
+    sps_id: usize,
     pub(crate) neighbor_tracker: Option<NeighborTracker>,
     pub(crate) dependent_slice_contexts: Option<[u8; NUM_CABAC_CONTEXTS]>
 }
@@ -56,6 +57,7 @@ impl HevcDecoder {
             width:                    0,
             height:                   0,
             pps_id:                   0,
+            sps_id:                   0,
             neighbor_tracker:         None,
             dependent_slice_contexts: None
         }
@@ -87,6 +89,7 @@ impl HevcDecoder {
                     let sps_id = sps.sps_id as usize;
                     self.width = sps.pic_width_in_luma_samples as usize;
                     self.height = sps.pic_height_in_luma_samples as usize;
+                    self.sps_id = sps_id;
                     self.sps_storage[sps_id] = Some(sps);
                 }
                 NalUnitType::PpsNut => {
@@ -183,7 +186,7 @@ mod tests {
 
     #[test]
     fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0048.hvc").unwrap();
+        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0021.hvc").unwrap();
 
         let sample = HevcSample {
             item_id: 0,
@@ -196,6 +199,6 @@ mod tests {
 
         let frame = decoder.decode(sample).unwrap();
 
-        frame.unwrap().dump_ppm("item_0002.ppm").unwrap();
+        frame.unwrap().dump_ppm("item_0021.ppm").unwrap();
     }
 }

@@ -476,7 +476,7 @@ where
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if  self.is_grid {
+            if self.is_grid {
                 trace!("Using parallel sample decoder");
                 self.process_hevc_samples_parallel(processor)?;
             } else {
@@ -694,38 +694,41 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs::{File, read};
-    use std::io::Write;
-
-    use zune_core::bytestream::ZCursor;
-
-    use crate::decoder::HeifDecoder;
-
-    #[test]
-    fn test_decoding() {
-        let file = read("/Users/etemesi/rust/zune-image/crates/zune-heic/fuzz-samples/IMG_4862.HEIC").unwrap();
-        let data = ZCursor::new(file);
-        let mut decoder = HeifDecoder::new(data);
-        decoder.decode_headers().unwrap();
-        let colorspace = decoder.colorspace().unwrap();
-        println!("{colorspace:?}");
-        println!("{:?}", decoder.width().unwrap());
-        println!("{:?}", decoder.height().unwrap());
-        let data = decoder.decode().unwrap();
-
-        // 4. Final Write
-        let mut file = File::create("final_stitched_2.ppm").unwrap();
-        file.write_all(
-            format!(
-                "P6\n{} {}\n255\n",
-                decoder.width().unwrap(),
-                decoder.height.unwrap()
-            )
-            .as_bytes()
-        )
-        .unwrap();
-        file.write_all(&data).unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use std::fs::{File, read};
+//     use std::io::Write;
+//     use zune_core::bytestream::ZCursor;
+//     use zune_core::options::DecoderOptions;
+//
+//     use crate::decoder::HeifDecoder;
+//
+//     pub(crate) fn write_ppm(name: &str, data: &[u8], w: usize, h: usize) {
+//         // 4. Final Write
+//         let mut file = File::create(name).unwrap();
+//         file.write_all(format!("P6\n{} {}\n255\n", w, h).as_bytes())
+//             .unwrap();
+//         file.write_all(&data).unwrap();
+//     }
+//     #[test]
+//     fn test_decoding() {
+//         let file = read("/Users/etemesi/Downloads/IMG_4909.HEIC").unwrap();
+//         let data = ZCursor::new(file);
+//         let opt = DecoderOptions::default().hvec_set_use_videotoolbox(false);
+//         let mut decoder = HeifDecoder::new_with_options(data, opt);
+//         decoder.decode_headers().unwrap();
+//         let colorspace = decoder.colorspace().unwrap();
+//         println!("{colorspace:?}");
+//         println!("{:?}", decoder.width().unwrap());
+//         println!("{:?}", decoder.height().unwrap());
+//         let data = decoder.decode().unwrap();
+//
+//         // 4. Final Write
+//         write_ppm(
+//             "final_stitched_px.ppm",
+//             data.as_ref(),
+//             decoder.width().unwrap(),
+//             decoder.height().unwrap()
+//         );
+//     }
+// }

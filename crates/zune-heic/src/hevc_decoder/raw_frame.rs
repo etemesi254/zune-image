@@ -12,6 +12,13 @@ pub struct SingleFrame {
     pub stride:  usize,
     pub padding: usize
 }
+/// Gets the absolute 1D index for a logical x,y coordinate
+#[inline(always)]
+pub fn offset_plane(frame: &SingleFrame, x: usize, y: usize) -> usize {
+    let physical_y = y + frame.padding;
+    let physical_x = x + frame.padding;
+    physical_y * frame.stride + physical_x
+}
 
 pub struct RawFrame {
     pub format: ChromaFormat,

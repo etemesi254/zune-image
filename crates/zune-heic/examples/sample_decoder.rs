@@ -2102,7 +2102,7 @@ fn main() {
     let path = if args.len() == 2 {
         args[1].clone()
     } else {
-        String::from("/Users/etemesi/rust/zune-image/crates/zune-heic/fuzz-samples/IMG_4862.HEIC")
+        String::from("/Users/etemesi/Downloads/IMG_4909.HEIC")
     };
 
     let file = File::open(&path).unwrap_or_else(|e| {
