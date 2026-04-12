@@ -122,7 +122,14 @@
     "hash": 109677255988131284084676849366241145140,
     "comment": "SOS interleaved with markers"
   },
-  {"name": "synthetic_image.jpg",
-  "hash": 227404429493772307321352105035704751995,
-  "comment": "Tripped up MCU decoding, see https://github.com/etemesi254/zune-image/pull/346"}
+  {
+    "name": "synthetic_image.jpg",
+    "hash": 227404429493772307321352105035704751995,
+    "comment": "Tripped up MCU decoding, see https://github.com/etemesi254/zune-image/pull/346"
+  },
+  {
+    "name": "weird_sampling_3.jpg",
+    "hash": 26455814955148065345062877821233328526,
+    "comment": "First two components 4x2 subsampled, last not subsampled"
+  }
 ]
