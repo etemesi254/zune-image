@@ -139,8 +139,9 @@ const INTRA_ANGLES: [i16; 35] = [
 /// Required for all negative-angle modes: 2-9 (Horizontal) and 18-25 (Vertical).
 const INV_ANGLES: [i16; 35] = [
     0, 0,                                         // 0: Planar, 1: DC
-    256, 315, 390, 482, 630, 910, 1638, 4096,     // 2-9:   Negative Horizontal
-    0, 0, 0, 0, 0, 0, 0, 0,                       // 10-17: Positive Horizontal
+    0, 0, 0, 0, 0, 0, 0, 0,                       // 2-9:   Positive Horizontal
+    0,                                            // 10:    Pure Horizontal
+    4096, 1638, 910, 630, 482, 390, 315,          // 11-17: Negative Horizontal
     256, 315, 390, 482, 630, 910, 1638, 4096,     // 18-25: Negative Vertical
     0, 0, 0, 0, 0, 0, 0, 0, 0                     // 26-34: Positive Vertical
 ];
