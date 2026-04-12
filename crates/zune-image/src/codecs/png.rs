@@ -10,13 +10,16 @@
 #![allow(unused_variables)]
 
 //! Represents a png image decoder and encoder
+
+use std::borrow::Cow;
 use std::io::{BufRead, Seek};
 
+use png::chunk::ChunkType;
 use png::{BitDepth as PngBitDepth, ColorType, Compression, Decoder, Encoder, Reader};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::warn;
+use zune_core::log::{trace, warn};
 use zune_core::options::{EncoderOptions, PngCompression};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
@@ -154,6 +157,7 @@ impl EncoderTrait for PngEncoder {
         })?;
 
         let mut output: Vec<u8> = Vec::new();
+        let mut info = png::Info::default();
 
         {
             let mut encoder = Encoder::new(&mut output, width, height);
@@ -180,31 +184,46 @@ impl EncoderTrait for PngEncoder {
 
             let frame_data = &image.to_u8_be()[0];
 
-            writer
-                .write_image_data(frame_data)
-                .map_err(|e| ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string())))?;
-        }
+            #[cfg(feature = "metadata")]
+            {
+                use exif::experimental::Writer;
 
-        #[cfg(feature = "metadata")]
-        {
-            use exif::experimental::Writer;
+                if !options.strip_metadata() {
+                    if let Some(fields) = &image.metadata.exif {
+                        let mut buf = std::io::Cursor::new(Vec::new());
+                        let mut exif_writer = Writer::new();
+                        for metadatum in fields {
+                            exif_writer.push_field(metadatum);
+                        }
+                        let result = exif_writer.write(&mut buf, false);
+                        if result.is_ok() {
+                            writer
+                                .write_chunk(ChunkType(*b"eXIf"), &buf.into_inner())
+                                .map_err(|e| {
+                                    ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(
+                                        e.to_string()
+                                    ))
+                                })?;
+                            trace!("Added eXIF chunk")
 
-            if !options.strip_metadata() {
-                if let Some(fields) = &image.metadata.exif {
-                    let mut buf = std::io::Cursor::new(Vec::new());
-                    let mut writer = Writer::new();
-                    for metadatum in fields {
-                        writer.push_field(metadatum);
-                    }
-                    let result = writer.write(&mut buf, false);
-                    if result.is_ok() {
-                        // image-png has no direct exif chunk injection API
-                        warn!("Exif embedding is not supported with image-png encoder");
-                    } else {
-                        warn!("Writing exif failed {:?}", result);
+                        } else {
+                            warn!("Writing exif failed {:?}", result);
+                        }
                     }
                 }
             }
+            if !options.strip_metadata() {
+                if let Some(icc) = image.metadata().icc_chunk.as_ref() {
+                    writer.write_chunk(ChunkType(*b"iCCP"), icc).map_err(|e| {
+                        ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string()))
+                    })?;
+                    trace!("Added ICC chunk")
+                }
+            }
+            
+            writer
+                .write_image_data(frame_data)
+                .map_err(|e| ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string())))?;
         }
 
         sink.write_all_bytes(output.as_ref())?;
