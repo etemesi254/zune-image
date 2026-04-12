@@ -18,7 +18,8 @@
     clippy::module_name_repetitions,
     clippy::missing_panics_doc,
     clippy::missing_errors_doc,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    clippy::struct_excessive_bools
 )]
 extern crate alloc;
 extern crate core;
