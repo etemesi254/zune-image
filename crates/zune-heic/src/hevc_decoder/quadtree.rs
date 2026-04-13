@@ -9,7 +9,6 @@ use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::SliceType;
 use crate::hevc_decoder::nal_unit_parsers::decode_slice_header;
 use crate::hevc_decoder::quadtree::coding_unit::{read_coding_tree_unit, read_coding_unit};
-use crate::hevc_decoder::quadtree::sao::apply_sao_frame;
 use crate::hevc_decoder::raw_frame::RawFrame;
 use crate::hevc_decoder::utils::extract_rbsp;
 use crate::hevc_decoder::{DEBUG_MORE, HevcDecoder};
@@ -157,23 +156,27 @@ pub fn decode_slice(
     }
 
     // apply deblocking
-    if false {
+    if true {
+        // perf wise
+        // with deblocking     139.33 ms
+        // without deblocking  129.64 ms
+        //
+        // So deblocking does have a speed hit
+        // but its negligible imo
         let rf_clone = raw_frame.clone();
         deblock_frame(
             &rf_clone,
-            hevc_decoder.width,
-            hevc_decoder.height,
             ctx.neighbor_tracker,
             pps.cb_qp_offset as i8,
             pps.cr_qp_offset as i8
         );
-        apply_sao_frame(
-            &raw_frame,
-            hevc_decoder.width,
-            hevc_decoder.height,
-            1 << sps.log2_ctb_size_y,
-            &ctx.ctb_sao_buffer
-        )
+        // apply_sao_frame(
+        //     &raw_frame,
+        //     hevc_decoder.width,
+        //     hevc_decoder.height,
+        //     1 << sps.log2_ctb_size_y,
+        //     &ctx.ctb_sao_buffer
+        // )
     }
     Ok(())
 }
@@ -361,7 +364,6 @@ fn read_coding_quadtree(
             ctx.is_skip,
             ctx.slice_header.slice_segment_address as u16
         );
-
 
         Ok(())
     }
