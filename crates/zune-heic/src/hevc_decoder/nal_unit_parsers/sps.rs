@@ -4,7 +4,7 @@ use crate::hevc_decoder::bitstream::BitReader;
 use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Sps, SpsRangeExtension};
 use crate::hevc_decoder::nal_unit_parsers::{
-    decode_profile_data, parse_scaling_list_data, parse_short_term_ref_pic_set, parse_vui,
+    decode_profile_data, parse_scaling_list_data, parse_short_term_ref_pic_set, parse_vui
 };
 
 #[allow(clippy::too_many_lines)]
@@ -13,7 +13,10 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     const SPS_MAX_SETS_LIMITS: u64 = 16;
     const MAX_PICTURE_WIDTH: u64 = 2 << 15;
     const MAX_PICTURE_HEIGHT: u64 = 2 << 15;
-    const MAX_LUMA_BITDEPTH: u8 = 16;
+    // max depth we support, this limits us to 8 bit heic images
+    // which is what it was currently tested on
+    // TODO: Now add support for 10 and 12 bit images
+    const MAX_LUMA_BITDEPTH: u8 = 8;
 
     let mut r = BitReader::new(nal.payload);
     r.refill();
@@ -53,11 +56,17 @@ pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
         2 => ChromaFormat::Yuv422,
         3 => ChromaFormat::Yuv444,
         r => {
-            return Err(NalError::Generic(format!(
-                "Invalid Chroma Format (>3) {r}"
-            )));
+            return Err(NalError::Generic(format!("Invalid Chroma Format (>3) {r}")));
         }
     };
+    // for now do not allow other format types, probably won't work
+    // this will be relaxed as more formats are tested
+    if sps.chroma_format != ChromaFormat::Yuv420 {
+        return Err(NalError::Generic(format!(
+            "Currently unsupported Chroma Format {:?}",
+            sps.chroma_format
+        )));
+    }
 
     sps.separate_color_plane_flag =
         if sps.chroma_format == ChromaFormat::Yuv444 { r.read_flag()? } else { false };
