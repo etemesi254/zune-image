@@ -13,6 +13,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{debug, error, info};
+use zune_core::options::DecoderOptions;
 // use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
 use zune_image::core_filters::colorspace::ColorspaceConv;
@@ -27,6 +28,7 @@ use zune_imageprocs::blend::Blend;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::color_matrix::ColorMatrix;
+use zune_imageprocs::color_transform::ColorTransform;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
@@ -37,12 +39,13 @@ use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
 use zune_imageprocs::premul_alpha::PremultiplyAlpha;
+use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 
-use crate::enums::{WasmColorspace, WasmImageFormats, WasmSpatialOperations};
+use crate::enums::{WasmColorProfiles, WasmColorspace, WasmImageFormats, WasmSpatialOperations};
 use crate::utils::set_panic_hook;
 
 mod enums;
@@ -475,7 +478,8 @@ impl WasmImage {
     ///
     /// @param format - The image format, not all formats have encoders, but most have.
     pub fn save_to(&self, format: WasmImageFormats) -> Result<Vec<u8>, JsError> {
-        let mut dest = Vec::with_capacity(1000); // arbitrary number of how many
+        let mut dest = Vec::with_capacity(1000); // arbitrary number of how many bytes
+                                                 // will be encoded
 
         self.image
             .encode(format.to_format(), &mut dest)
@@ -484,18 +488,35 @@ impl WasmImage {
         Ok(dest)
     }
 
-    // /// Create a new image from in memory bytes of a compressed image
-    // ///
-    // /// @param bytes The bytes containing encoded pixels in a specific format.
-    // /// The library will infer the image format from the bytes themselves
-    // ///
-    // /// @returns An image representation if everything goes well, otherwise panics
-    // pub fn from_bytes(bytes: &[u8]) -> Result<WasmImage, JsError> {
-    //     let c = Image::read(ZCursor::from(bytes), DecoderOptions::new_fast())
-    //         .map_err(<ImageErrors as Into<JsError>>::into)?;
-    //
-    //     Ok(WasmImage { image: c })
-    // }
+    /// Create a new image from in memory bytes of a compressed image
+    ///
+    /// @param bytes The bytes containing encoded pixels in a specific format.
+    /// The library will infer the image format from the bytes themselves
+    ///
+    /// @returns An image representation if everything goes well, otherwise panics
+    #[wasm_bindgen(constructor)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<WasmImage, JsError> {
+        let c = Image::read(ZCursor::from(bytes), DecoderOptions::new_fast())
+            .map_err(<ImageErrors as Into<JsError>>::into)?;
+
+        Ok(WasmImage { image: c })
+    }
+
+    /// Carry out color transform
+    ///
+    /// This reads the ICC chunk, parses the color profiles and transform the
+    /// current image based on that transform (so if no ICC chunk it's a no-op)
+    ///
+    pub fn color_transform(&mut self, to_format: WasmColorProfiles) -> Result<(), JsError> {
+        let ops = ColorTransform::new(to_format.into());
+        self.execute_ops(&ops)
+    }
+    /// Carry out a sobel transform
+    pub fn sobel(&mut self) -> Result<(), JsError> {
+        self.execute_ops(&Sobel::new())
+    }
+
+
 }
 
 /// Decode an image returning the pixels if the image is decodable

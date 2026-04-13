@@ -11,6 +11,7 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 use zune_core::colorspace::ColorSpace;
 use zune_image::codecs::ImageFormat;
+use zune_imageprocs::color_transform::ColorProfiles;
 use zune_imageprocs::pad::PadMethod;
 use zune_imageprocs::spatial_ops::SpatialOperations;
 
@@ -176,6 +177,37 @@ impl From<PadMethod> for WasmPadMethod {
         match value {
             PadMethod::Constant => WasmPadMethod::Constant,
             PadMethod::Replicate => WasmPadMethod::Replicate
+        }
+    }
+}
+
+#[wasm_bindgen(js_name=ColorProfiles)]
+pub enum WasmColorProfiles {
+    sRGB,
+    AdobeRgb,
+    DisplayP3,
+    Bt2020,
+    DciP3
+}
+impl From<ColorProfiles> for WasmColorProfiles {
+    fn from(value: ColorProfiles) -> Self {
+        match value {
+            ColorProfiles::sRGB => WasmColorProfiles::sRGB,
+            ColorProfiles::AdobeRgb => WasmColorProfiles::AdobeRgb,
+            ColorProfiles::DisplayP3 => WasmColorProfiles::DisplayP3,
+            ColorProfiles::Bt2020 => WasmColorProfiles::Bt2020,
+            ColorProfiles::DciP3 => WasmColorProfiles::DciP3
+        }
+    }
+}
+impl Into<ColorProfiles> for WasmColorProfiles {
+    fn into(self) -> ColorProfiles {
+        match self {
+            WasmColorProfiles::sRGB => ColorProfiles::sRGB,
+            WasmColorProfiles::AdobeRgb => ColorProfiles::AdobeRgb,
+            WasmColorProfiles::DisplayP3 => ColorProfiles::DisplayP3,
+            WasmColorProfiles::Bt2020 => ColorProfiles::Bt2020,
+            WasmColorProfiles::DciP3 => ColorProfiles::DciP3
         }
     }
 }
