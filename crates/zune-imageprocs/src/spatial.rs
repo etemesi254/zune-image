@@ -86,7 +86,7 @@ use zune_image::traits::OperationsTrait;
 use crate::spatial_ops::{spatial_ops, SpatialOperations};
 use crate::utils::{execute_on, z_prefetch};
 
-/// Go through image neighbord, execute a function on it and return the result
+/// Go through image neighbourhood, execute a function on it and return the result
 /// The parameter `function` is the function that receives the list of neighbors and returns the selected
 /// neighbor to be used for the resulting image.
 ///

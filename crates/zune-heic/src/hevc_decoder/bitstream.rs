@@ -195,7 +195,7 @@ impl<'src> BitReader<'src> {
         // which requires 31 leading zeros in the exp-Golomb code. 32 leading zeros would give a
         // minimum codeNum of 2^32-1, which exceeds every syntax element's valid range.
         if num_zeros > 31 {
-            return Err("ue num zeros is wrong");
+            return Err("ue num zeros code Num greater than 31 (max allowed)");
         }
 
         // Consume prefix zeros + stop bit.
