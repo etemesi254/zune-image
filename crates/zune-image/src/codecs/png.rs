@@ -20,7 +20,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{trace, warn};
-use zune_core::options::{EncoderOptions, PngCompression};
+use zune_core::options::{DecoderOptions, EncoderOptions, PngCompression};
 
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::{ImageErrors, ImgEncodeErrors};
@@ -34,7 +34,17 @@ pub struct PngDecoder<T: BufRead + Seek> {
 
 impl<T: BufRead + Seek> PngDecoder<T> {
     pub fn new(r: T) -> Result<Self, ImageErrors> {
-        let reader = Decoder::new(r)
+        Self::new_with_options(r, DecoderOptions::default())
+    }
+    pub fn new_with_options(r: T, options: DecoderOptions) -> Result<Self, ImageErrors> {
+        let mut opts = png::DecodeOptions::default();
+
+        opts.set_ignore_adler32(options.inflate_get_confirm_adler());
+
+        opts.set_ignore_checksums(!options.png_get_confirm_crc());
+        opts.set_ignore_crc(!options.png_get_confirm_crc());
+
+        let reader = Decoder::new_with_options(r, opts)
             .read_info()
             .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
 
@@ -170,6 +180,8 @@ impl EncoderTrait for PngEncoder {
                 PngCompression::High => Compression::High
             };
 
+            trace!("Compression level: {:?}", compression_level);
+
             encoder.set_compression(compression_level);
 
             encoder.set_depth(match bit_depth {
@@ -219,7 +231,7 @@ impl EncoderTrait for PngEncoder {
                     // writer.write_chunk(ChunkType(*b"iCCP"), icc).map_err(|e| {
                     //     ImageErrors::EncodeErrors(ImgEncodeErrors::Generic(e.to_string()))
                     // })?;
-                    trace!("Added ICC chunk")
+                    //trace!("Added ICC chunk")
                 }
             }
 

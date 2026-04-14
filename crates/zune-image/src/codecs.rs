@@ -154,8 +154,8 @@ impl ImageFormat {
             ImageFormat::PNG => {
                 #[cfg(feature = "png")]
                 {
-                    Ok(Box::new(codecs::png::PngDecoder::new(
-                        data
+                    Ok(Box::new(codecs::png::PngDecoder::new_with_options(
+                        data, options
                     )?))
                 }
                 #[cfg(not(feature = "png"))]
