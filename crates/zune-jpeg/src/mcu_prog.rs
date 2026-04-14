@@ -98,8 +98,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         mcu_width *= 64;
 
-        for i in 0..self.input_colorspace.num_components() {
-            let comp = &self.components[i];
+        for (i, comp) in self.components.iter().enumerate() {
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
 
             block[i] = vec![0; len];

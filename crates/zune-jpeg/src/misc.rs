@@ -301,7 +301,15 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
 
     // check colorspace matches
     if img.input_colorspace.num_components() > img.components.len() {
-        if img.input_colorspace == ColorSpace::YCCK {
+        if img.options.strict_mode() {
+            let msg = format!(
+                "Expected {} number of components but found {}",
+                img.input_colorspace.num_components(),
+                img.components.len()
+            );
+
+            return Err(DecodeErrors::Format(msg));
+        } else if img.input_colorspace == ColorSpace::YCCK {
             // Some images may have YCCK format (from adobe app14 segment) which is supposed to be 4 components
             // but only 3 components, see issue https://github.com/etemesi254/zune-image/issues/275
             // So this is the behaviour of other decoders
@@ -309,8 +317,17 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             // - libjpeg_turbo: Does not know how to parse YCCK images (transform 2 app14) so treats
             // it as YCbCr
             // So I will match that to match existing ones
-            warn!("Treating YCCK colorspace as YCbCr as component length does not match");
-            img.input_colorspace = ColorSpace::YCbCr
+            if img.components.len() == 3 {
+                warn!("Treating YCCK colorspace as YCbCr because component count is 3");
+                img.input_colorspace = ColorSpace::YCbCr;
+            } else {
+                warn!(
+                    "Treating YCCK colorspace as multiband because component count is {}",
+                    img.components.len()
+                );
+                img.input_colorspace =
+                    ColorSpace::MultiBand(NonZeroU32::new(img.components.len() as u32).unwrap());
+            }
         } else {
             // Note, translated this to a warning to handle valid images of the sort
             // See https://github.com/etemesi254/zune-image/issues/288 where there
@@ -320,30 +337,19 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             //
             // djpeg fails to render an image from that also probably because it does not
             // understand the expected format.
-            if !img.options.strict_mode() {
-                warn!(
-                    "Expected {} number of components but found {}",
-                    img.input_colorspace.num_components(),
-                    img.components.len()
-                );
-                warn!("Defaulting to multisample to decode");
+            warn!(
+                "Expected {} number of components but found {}",
+                img.input_colorspace.num_components(),
+                img.components.len()
+            );
+            warn!("Defaulting to multisample to decode");
 
-                // N/B: We do not post process the color of such, treating it as multiband
-                // is the best option since I am not aware of grayscale+alpha which is the most common
-                // two band format in jpeg.
-                if img.components.len() > 0 {
-                    img.input_colorspace = ColorSpace::MultiBand(
-                        NonZeroU32::new(img.components.len() as u32).unwrap()
-                    );
-                }
-            } else {
-                let msg = format!(
-                    "Expected {} number of components but found {}",
-                    img.input_colorspace.num_components(),
-                    img.components.len()
-                );
-
-                return Err(DecodeErrors::Format(msg));
+            // N/B: We do not post process the color of such, treating it as multiband
+            // is the best option since I am not aware of grayscale+alpha which is the most common
+            // two band format in jpeg.
+            if img.components.len() > 0 {
+                img.input_colorspace =
+                    ColorSpace::MultiBand(NonZeroU32::new(img.components.len() as u32).unwrap());
             }
         }
     }
