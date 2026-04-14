@@ -578,6 +578,7 @@ fn add_image_specific_settings() -> (Vec<Arg>, ArgGroup) {
             .action(ArgAction::SetTrue)
             .help_heading(GROUP)
             .group(GROUP)
+
     ];
 
     let arg_group = ArgGroup::new(GROUP)

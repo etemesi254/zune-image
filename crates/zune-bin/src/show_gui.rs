@@ -9,15 +9,18 @@
 use std::env::temp_dir;
 use std::fs::OpenOptions;
 use std::io::BufWriter;
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, UNIX_EPOCH};
 
-use log::trace;
+use log::{log_enabled, trace};
 use zune_core::options::{EncoderOptions, PngCompression};
 use zune_image::codecs::png::PngEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
 pub fn open_in_default_app(image: &Image) {
+    if log_enabled!(log::Level::Trace) {
+        println!()
+    }
     let time = format!(
         "{}.png",
         std::time::SystemTime::now()
@@ -38,11 +41,12 @@ pub fn open_in_default_app(image: &Image) {
 
     let mut buffered = BufWriter::new(file);
 
+    let start = Instant::now();
     let options = EncoderOptions::default().set_png_compression_level(PngCompression::Fastest);
     let size = PngEncoder::new_with_options(options)
         .encode(image, &mut buffered)
         .unwrap();
-    trace!("Wrote {:?} bytes", size);
+    trace!("Wrote {:?} bytes to {:?} in {:?}", size,path,start.elapsed());
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")

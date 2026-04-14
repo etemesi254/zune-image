@@ -5,16 +5,15 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read};
+use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::string::String;
 use std::time::Instant;
 
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
-use log::{debug, error, info, trace};
+use log::{error, info, log_enabled, trace};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
@@ -28,7 +27,7 @@ use crate::show_gui::open_in_default_app;
 
 struct CmdPipeline {
     inner:   Pipeline,
-    formats: Vec<ImageFormat>
+    formats: Vec<(ImageFormat, std::ffi::OsString)>
 }
 impl CmdPipeline {
     pub fn new() -> CmdPipeline {
@@ -53,6 +52,9 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
     info!("Creating workflows from input");
 
+    if log_enabled!(log::Level::Trace) {
+        println!()
+    }
     let decoder_options = decoder_options(args);
     let mut buf = [0; 30];
 
@@ -98,16 +100,44 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         if let Some(source) = args.value_source("out") {
             if source == CommandLine {
                 for out_file in args.get_raw("out").unwrap() {
-                    if let Some(ext) = Path::new(out_file).extension() {
+                    let path = Path::new(out_file);
+                    if path.exists() && !cmd_opts.override_files && path.is_file() {
+                        let msg = format!("File {:?} already exists overwrite [y/N]?", path);
+                        eprintln!("{}", msg);
+                        let _ = std::io::stdout().flush();
+                        let mut response = String::new();
+                        let _ = std::io::stdin()
+                            .read_line(&mut response)
+                            .expect("Unable to read from stdin");
+
+                        if !response.to_lowercase().starts_with("y") {
+                            return Err(ImageErrors::GenericStr(
+                                "Aborting due to file existence"
+                            ));
+                        }
+                    }
+
+                    if let Some(ext) = path.extension() {
                         if let Some(encode_type) =
                             ImageFormat::encoder_for_extension(ext.to_str().unwrap())
                         {
-                            debug!("Treating {:?} as a {:?} format", out_file, encode_type);
-                            workflow.formats.push(encode_type);
+                            info!("Treating {:?} as a {:?} format", out_file, encode_type);
+                            workflow
+                                .formats
+                                .push((encode_type, out_file.to_os_string()));
                         } else {
                             error!("Unknown or unsupported format {:?}", out_file)
                         }
-                    } else if out_file != "-" {
+                        // check for path details before even carrying out operations
+                        // this
+                    } else if out_file == "-" {
+                        if let Some(cmd_format) = args.get_one::<CmdImageFormats>("output-format") {
+                            let CmdImageFormats::Format(format) = cmd_format;
+
+                            workflow.formats.push((*format, out_file.to_os_string()))
+                        } else {
+                            return Err(ImageErrors::GenericStr("You must specify the image format to be used while using output as '-` via the --output-format flag "));
+                        }
                         error!("Could not determine extension from {:?}", out_file);
                     }
                 }
@@ -120,62 +150,38 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
         //  We support multiple format writes per invocation
         // i.e it's perfectly valid to do -o a.ppm , -o a.png
-        if let Some(source) = args.value_source("out") {
-            if source == CommandLine {
-                for out_file in args.get_raw("out").unwrap() {
-                    if out_file == "-" {
-                        if let Some(cmd_format) = args.get_one::<CmdImageFormats>("output-format") {
-                            // test on jpeg only
-                            let mut out_file = std::io::stdout();
-
-                            let CmdImageFormats::Format(format) = cmd_format;
-                            for image in workflow.inner.images() {
-                                format.encode(image, options, &mut out_file)?;
-                            }
-                        } else {
-                            error!("You must specify the image format to be used while using output as '-` via the --output-format flag ");
+        for (format, out_file) in &workflow.formats {
+            if format.has_encoder() {
+                if log_enabled!(log::Level::Trace) {
+                    println!();
+                    trace!("Encoding to format {:?} to file {:?} ", format, out_file);
+                }
+                for image in workflow.inner.images() {
+                    let fd = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(out_file);
+                    match fd {
+                        Ok(file) => {
+                            let mut file_c = BufWriter::new(file);
+                            let start = Instant::now();
+                            let bytes = format.encode(image, options, &mut file_c)?;
+                            let end = Instant::now();
+                            trace!(
+                                "Took {:?} to encode {} bytes to {:?}",
+                                end - start,
+                                bytes,
+                                out_file
+                            );
                         }
-                    } else {
-                        //write to file
-                        if let Some(ext) = Path::new(out_file).extension() {
-                            for format in &workflow.formats {
-                                if format.has_encoder() {
-                                    for image in workflow.inner.images() {
-                                        let fd = OpenOptions::new()
-                                            .create(true)
-                                            .write(true)
-                                            .truncate(true)
-                                            .open(out_file);
-                                        match fd {
-                                            Ok(file) => {
-                                                let mut file_c = BufWriter::new(file);
-                                                let start = Instant::now();
-                                                let bytes =
-                                                    format.encode(image, options, &mut file_c)?;
-                                                let end = Instant::now();
-                                                trace!(
-                                                    "Took {:?} to encode {} bytes to {:?}",
-                                                    end - start,
-                                                    bytes,
-                                                    out_file
-                                                );
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    "Cannot encode to file, error opening {:?}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        Err(e) => {
+                            error!("Cannot encode to file, error opening {:?}", e);
                         }
                     }
                 }
             }
         }
-
         if let Some(view) = args.value_source("view") {
             if view == CommandLine {
                 for image in workflow.inner.images() {

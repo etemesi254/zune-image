@@ -21,6 +21,7 @@ pub fn decoder_options(options: &ArgMatches) -> DecoderOptions {
     let use_unsafe = !*options.get_one::<bool>("safe").unwrap();
     let strict_mode = *options.get_one::<bool>("strict").unwrap();
     let jpeg_grayscale = *options.get_one::<bool>("jpeg-grayscale").unwrap_or(&false);
+    let png_ignore_crc = *options.get_one::<bool>("png-ignore-crc").unwrap();
 
     let hevc_software = *options
         .get_one::<bool>("hevc-software-decode")
@@ -31,7 +32,8 @@ pub fn decoder_options(options: &ArgMatches) -> DecoderOptions {
         .set_max_width(max_width)
         .set_use_unsafe(use_unsafe)
         .set_strict_mode(strict_mode)
-        .hvec_set_use_videotoolbox(!hevc_software);
+        .hvec_set_use_videotoolbox(!hevc_software)
+        .png_set_confirm_crc(!png_ignore_crc);
 
     if jpeg_grayscale {
         options = options.jpeg_set_out_colorspace(ColorSpace::Luma);
@@ -52,4 +54,5 @@ pub fn encoder_options(options: &ArgMatches) -> EncoderOptions {
         .set_effort(effort)
         .set_strip_metadata(strip_metadata)
         .set_jpeg_encode_progressive(progressive)
+
 }
