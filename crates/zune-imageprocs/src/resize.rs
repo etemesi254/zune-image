@@ -207,7 +207,7 @@ impl OperationsTrait for Resize {
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
             trace!(
-                "Image conversion to linear successfully completed in {duration:.2?}"
+                "Image conversion to gamma successfully completed in {duration:.2?}"
             );
         }
 

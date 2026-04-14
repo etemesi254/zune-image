@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::cmp::min;
 use std::sync::Arc;
 use crate::debug_more;

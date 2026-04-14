@@ -1,5 +1,5 @@
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
-use zune_core::log::trace;
+use zune_core::log::{trace, warn};
 
 use crate::bmf_reader::{BoxHeader, BoxSize, FourCC};
 use crate::errors::HeicErrors;
@@ -1087,7 +1087,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
                 reader.skip(size)?;
             }
             _ => {
-                trace!(
+                warn!(
                     "Unknown meta child type: {:?} skipping",
                     child_header.box_type.as_str()
                 );

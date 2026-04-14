@@ -600,14 +600,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn luma_filter_output_in_range() {
-        let mut block = make_block_luma(0, 255);
-        filter_luma_block(&mut block, 4, 1, 8, 2, 51);
-        for &v in &block {
-            assert!(v <= 255);
-        }
-    }
+
 
     // -----------------------------------------------------------------------
     // Chroma filter
@@ -620,14 +613,6 @@ mod tests {
         filter_chroma_samples(&mut line, 2, 1, 32);
         assert!(line[1] > 50, "p0 should increase");
         assert!(line[2] < 200, "q0 should decrease");
-    }
-
-    #[test]
-    fn chroma_filter_output_in_range() {
-        let mut line = vec![0u8, 0, 255, 255];
-        filter_chroma_samples(&mut line, 2, 1, 51);
-        assert!(line[1] <= 255);
-        assert!(line[2] <= 255);
     }
 
     // -----------------------------------------------------------------------

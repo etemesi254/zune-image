@@ -99,7 +99,7 @@ pub fn read_coding_unit(
         ctx.neighbor_tracker
             .set_pred_mode(x0, y0, log_2_cb_size, PredMode::ModeSkip);
         todo!("Inter decoding");
-        return Ok(());
+        //return Ok(());
     }
 
     // 3. Prediction Mode
