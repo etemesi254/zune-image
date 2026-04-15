@@ -397,7 +397,7 @@ impl BitStream {
         self.decode_dc(reader, dc_table, dc_prediction)?;
 
         // set dc to be the dc prediction.
-        block[0] = *dc_prediction * qt_table[0];
+        block[0] = dc_prediction.wrapping_mul(qt_table[0]);
 
         while pos < 64 {
             self.refill(reader)?;
