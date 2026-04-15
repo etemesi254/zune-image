@@ -448,9 +448,14 @@ where
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors> {
-        if self.headers_decoded {
-            trace!("Headers decoded!");
-            return Ok(());
+        match self.state {
+            DecodingState::DecodeScan { .. } => {
+                return Ok(());
+            }
+            DecodingState::DecodeHeaders => {
+                // Reset any partial state from a prior incomplete attempt.
+                self.reset_header_state();
+            }
         }
 
         // match output colorspace here
@@ -561,6 +566,14 @@ where
                         // Image is RGB, change colorspace
                         if is_rgb {
                             self.input_colorspace = ColorSpace::RGB;
+                        }
+
+                        // Transition to scan phase, remembering where scan data starts.
+                        if self.state == DecodingState::DecodeHeaders {
+                            let pos = self.stream.position()?;
+                            self.state = DecodingState::DecodeScan {
+                                scan_start_position: pos,
+                            };
                         }
 
                         return Ok(());
@@ -899,13 +912,14 @@ where
     ///
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
-        // Ensure headers are decoded (idempotent if already done).
-        self.decode_headers()?;
-
-        // At this point state is guaranteed to be DecodeScan.
-        if let DecodingState::DecodeScan { scan_start_position } = self.state {
-            // Seek back to scan start (needed for retry after more data arrived).
-            self.stream.set_position(scan_start_position as usize)?;
+        match self.state {
+            DecodingState::DecodeHeaders => {
+                self.decode_headers_internal()?;
+            }
+            DecodingState::DecodeScan { scan_start_position } => {
+                // Seek back to scan start (needed for retry after more data arrived).
+                self.stream.set_position(scan_start_position as usize)?;
+            }
         }
 
         let expected_size = self.output_buffer_size().unwrap();
@@ -959,26 +973,10 @@ where
     ///
     /// If the reader runs out of data the error will satisfy
     /// [`is_recoverable_eof()`](crate::errors::DecodeErrors::is_recoverable_eof);
-    /// the decoder resets and the caller may retry after providing more data.
+    /// the caller may retry after providing more data.
     pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
-        match self.decode_headers_internal() {
-            Ok(()) => {
-                // Transition to scan phase, remembering where scan data starts.
-                if self.state == DecodingState::DecodeHeaders {
-                    let pos = self.stream.position()?;
-                    self.state = DecodingState::DecodeScan {
-                        scan_start_position: pos,
-                    };
-                }
-                Ok(())
-            }
-            Err(e) => {
-                if e.is_recoverable_eof() {
-                    self.reset_header_state();
-                }
-                Err(e)
-            }
-        }
+        self.decode_headers_internal()?;
+        Ok(())
     }
 
     /// Reset all state set during header parsing so that
