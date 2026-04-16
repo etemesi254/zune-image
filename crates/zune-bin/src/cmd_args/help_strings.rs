@@ -67,3 +67,24 @@ The implementation does not produce a true gaussian blur which involves convolvi
 a 2D kernel over the image as that is really slow, but we approximate it using very
 fast 1D box blurs.
 ";
+
+pub static RESIZE_HELP: &str = "Resizes the image based on exact pixel dimensions or a percentage.
+
+SUPPORTED FORMATS:
+  1. Exact Dimensions (WxH)
+     Provide the exact width and height in pixels separated by an 'x'.
+     Example: \"800x600\" (Resizes the image to 800 pixels wide and 600 pixels tall)
+
+  2. Uniform Percentage (P%)
+     Provide a single percentage to scale both the width and height equally.
+     Example: \"50%\" (Shrinks the image to half its original size)
+     Example: \"200%\" (Doubles the size of the image)
+
+  3. Independent Percentages (W%xH%)
+     Provide separate percentages for width and height separated by an 'x'.
+     Example: \"50%x75%\" (Scales width to 50% and height to 75% of their original sizes)
+
+USAGE EXAMPLES:
+  --resize 1920x1080
+  --resize 75%
+  --resize 100%x50%";

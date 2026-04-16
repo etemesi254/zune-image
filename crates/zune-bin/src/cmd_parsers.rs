@@ -45,8 +45,9 @@ pub fn encoder_options(options: &ArgMatches) -> EncoderOptions {
     let quality = *options.get_one::<u8>("quality").unwrap();
     let encode_threads = *options.get_one::<u8>("encode-threads").unwrap();
     let effort = *options.get_one::<u8>("effort").unwrap();
-    let progressive = options.contains_id("progressive");
-    let strip_metadata = options.contains_id("strip");
+
+    let progressive = *options.get_one::<bool>("progressive").unwrap_or(&false);
+    let strip_metadata = *options.get_one::<bool>("strip").unwrap_or(&false);
 
     EncoderOptions::default()
         .set_quality(quality)

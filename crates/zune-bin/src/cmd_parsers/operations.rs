@@ -8,6 +8,7 @@
 
 use clap::ArgMatches;
 use log::debug;
+use regex::Regex;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
@@ -23,7 +24,7 @@ use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::mirror::{Mirror, MirrorMode};
-use zune_imageprocs::resize::{Resize, ResizeMethod};
+use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
@@ -145,19 +146,19 @@ pub fn parse_options(
             .map(|c| c.to_resize_method())
             .unwrap_or(ResizeMethod::Bicubic);
 
-        // split on width x height
-        if values.contains("x") {
-            let split: Vec<&str> = values.split('x').collect();
-
-            let width = str::parse::<usize>(split[0]).map_err(|x| x.to_string())?;
-            let height = str::parse::<usize>(split[1]).map_err(|x| x.to_string())?;
-
-            let func = Resize::new(width, height, resizing_method);
-            debug!(
-                "Added resize operation with width:{}, height:{},using resizing method=>{:?}",
-                width, height, resizing_method,
-            );
-            workflow.chain_operations(Box::new(func));
+        // Parse the geometry string
+        match parse_geometry(values) {
+            Ok(resize_dims) => {
+                let func = Resize::new(resize_dims, resizing_method);
+                debug!(
+                    "Added resize operation with parameters: {}, using resizing method=>{:?}",
+                    values, resizing_method,
+                );
+                workflow.chain_operations(Box::new(func));
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
     } else if argument == "depth" {
         let value = *args.get_one::<u8>(argument).unwrap();
@@ -212,4 +213,76 @@ pub fn parse_options(
     }
 
     Ok(())
+}
+
+/// Parses an ImageMagick-style geometry string into a ResizeDimensions enum.
+pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
+    // 1. Trim whitespace or hidden newlines that CLI environments sometimes pass
+    let values = values.trim();
+
+    // 2. Updated Regex: Added (x|X) to support uppercase X safely
+    let re = Regex::new(r"^([0-9]+)?(%)?([xX])?([0-9]+)?(%)?([!><@\^])?$")
+        .map_err(|e| format!("Failed to compile regex: {}", e))?;
+
+    let caps = re.captures(values).ok_or_else(|| {
+        format!("Invalid format: '{}'. Use WxH, WxH^, WxH!, W, xH, P%, P%xP%, or Area@.", values)
+    })?;
+
+    // Safely extract capture groups (using .ok() to return None if parsing fails)
+    let w = caps.get(1).and_then(|m| m.as_str().parse::<usize>().ok());
+    let w_pct = caps.get(2).is_some();
+    let has_x = caps.get(3).is_some();
+    let h = caps.get(4).and_then(|m| m.as_str().parse::<usize>().ok());
+    let h_pct = caps.get(5).is_some();
+    let modifier = caps.get(6).map(|m| m.as_str());
+
+    // Handle Percentages (e.g., "50%" or "50%x75%")
+    if w_pct || h_pct {
+        let width_pct = w.ok_or("Missing width percentage.")?;
+        let height_pct = if has_x { h.ok_or("Missing height percentage.")? } else { width_pct };
+        return Ok(ResizeDimensions::Percentage(width_pct, height_pct));
+    }
+
+    // Handle Area '@' (e.g., "40000@")
+    if modifier == Some("@") {
+        if let Some(area) = w {
+            if !has_x && h.is_none() {
+                return Ok(ResizeDimensions::Area(area));
+            }
+        }
+        return Err("Area modifier '@' requires a single number (e.g., '40000@').".into());
+    }
+
+    // Handle standard dimensions and bounds
+    match (w, has_x, h) {
+        // Both Width and Height provided (e.g., "1920x1080", "800x600^")
+        (Some(width), true, Some(height)) => match modifier {
+            Some("!") => Ok(ResizeDimensions::IgnoreAspectRatio(width, height)),
+            Some("^") => Ok(ResizeDimensions::Fill(width, height)),
+            Some(">") => Ok(ResizeDimensions::ShrinkToFit(width, height)),
+            Some("<") => Ok(ResizeDimensions::EnlargeToFit(width, height)),
+            None => Ok(ResizeDimensions::FitWithin(width, height)),
+            _ => Err(format!("Invalid modifier applied to WxH: {:?}", modifier)),
+        },
+        // Width only without 'x' (e.g., "1920")
+        (Some(width), false, None) => {
+            if modifier.is_some() { return Err("Modifiers require both Width and Height.".into()); }
+            Ok(ResizeDimensions::WidthOnly(width))
+        }
+        // Width only WITH trailing 'x' (e.g., "1920x" - ImageMagick supports this)
+        (Some(width), true, None) => {
+            if modifier.is_some() { return Err("Modifiers require both Width and Height.".into()); }
+            Ok(ResizeDimensions::WidthOnly(width))
+        }
+        // Height only (e.g., "x1080")
+        (None, true, Some(height)) => {
+            if modifier.is_some() { return Err("Modifiers require both Width and Height.".into()); }
+            Ok(ResizeDimensions::HeightOnly(height))
+        }
+        // Diagnostic fallback: If it falls through, tell the user exactly what variables caused it
+        _ => Err(format!(
+            "Invalid geometry format. Input: '{}' | Extracted -> width:{:?}, has_x:{}, height:{:?}, modifier:{:?}",
+            values, w, has_x, h, modifier
+        )),
+    }
 }

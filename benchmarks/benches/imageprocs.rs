@@ -19,7 +19,7 @@ use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::premul_alpha::PremultiplyAlpha;
-use zune_imageprocs::resize::{Resize, ResizeMethod};
+use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::sobel::Sobel;
 
@@ -137,7 +137,7 @@ fn vips_resize_bench(input: &VipsImage, kernel: Kernel) {
 
 fn zune_image_resize_bench(input: &Image, resize_method: ResizeMethod) {
     let (w, h) = input.dimensions();
-    let im = Resize::new(w / 2, h / 2, resize_method)
+    let im = Resize::new(ResizeDimensions::Percentage(50, 50), resize_method)
         .clone_and_execute(input)
         .unwrap();
     im.flatten_frames::<u8>();
