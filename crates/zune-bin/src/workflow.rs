@@ -185,7 +185,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         if let Some(view) = args.value_source("view") {
             if view == CommandLine {
                 for image in workflow.inner.images() {
-                    open_in_default_app(image);
+                    open_in_default_app(image,options);
                 }
             }
         }

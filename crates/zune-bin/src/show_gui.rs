@@ -17,7 +17,7 @@ use zune_image::codecs::png::PngEncoder;
 use zune_image::image::Image;
 use zune_image::traits::EncoderTrait;
 
-pub fn open_in_default_app(image: &Image) {
+pub fn open_in_default_app(image: &Image, options: EncoderOptions) {
     if log_enabled!(log::Level::Trace) {
         println!()
     }
@@ -42,11 +42,16 @@ pub fn open_in_default_app(image: &Image) {
     let mut buffered = BufWriter::new(file);
 
     let start = Instant::now();
-    let options = EncoderOptions::default().set_png_compression_level(PngCompression::Fastest);
+    let options = options.set_png_compression_level(PngCompression::Fastest);
     let size = PngEncoder::new_with_options(options)
         .encode(image, &mut buffered)
         .unwrap();
-    trace!("Wrote {:?} bytes to {:?} in {:?}", size,path,start.elapsed());
+    trace!(
+        "Wrote {:?} bytes to {:?} in {:?}",
+        size,
+        path,
+        start.elapsed()
+    );
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
