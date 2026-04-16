@@ -217,7 +217,7 @@ impl EncoderOptions {
     /// The default value is false, and encoders that respect this try to preserve as much
     /// data as possible from one image to another
     pub const fn strip_metadata(&self) -> bool {
-        !self.flags.image_strip_metadata
+        self.flags.image_strip_metadata
     }
 }
 
