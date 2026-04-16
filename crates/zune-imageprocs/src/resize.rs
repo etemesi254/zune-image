@@ -47,17 +47,33 @@ pub enum ResizeMethod {
     Sinc,       // Sinc with window radius 3
     Bilinear    // Bilinear (for completeness, 2x2 kernel)
 }
-
-// pub enum ResizeDimensions{
-//     Exact(usize,usize),
-//     Percentage()
-// }
+/// Resize dimensions
+#[derive(Copy, Clone, Debug)]
+pub enum ResizeDimensions {
+    /// e.g., "50%" or "50%x75%"
+    Percentage(usize, usize),
+    /// e.g., "800x600!" (Ignore aspect ratio entirely)
+    IgnoreAspectRatio(usize, usize),
+    /// e.g., "800x600" (Fit within bounds, keep aspect ratio)
+    FitWithin(usize, usize),
+    /// e.g., "800x600^" (Fill bounds, keep aspect ratio)
+    Fill(usize, usize),
+    /// e.g., "800" (Width only)
+    WidthOnly(usize),
+    /// e.g., "x600" (Height only)
+    HeightOnly(usize),
+    /// e.g., "800x600>"
+    ShrinkToFit(usize, usize),
+    /// e.g., "800x600<"
+    EnlargeToFit(usize, usize),
+    /// e.g., "40000@"
+    Area(usize)
+}
 /// Resize an image to a new width and height
 /// using the resize method specified
 #[derive(Copy, Clone)]
 pub struct Resize {
-    new_width:  usize,
-    new_height: usize,
+    dimensions: ResizeDimensions,
     method:     ResizeMethod
 }
 
@@ -65,17 +81,12 @@ impl Resize {
     /// Create a new resize operation
     ///
     /// # Argument
-    /// - new_width: The new image width
-    /// - new_height: The new image height.
+    /// - dims: Resize dimensions, either fixed or a percentage
     /// - method: The resize method to use
-    /// - linearize: Whether or not to convert the image to linear colorspace , resizing is better
-    /// in linear colorspace as it has less artefacts
-    ///
     #[must_use]
-    pub fn new(new_width: usize, new_height: usize, method: ResizeMethod) -> Resize {
+    pub fn new(dims: ResizeDimensions, method: ResizeMethod) -> Resize {
         Resize {
-            new_width,
-            new_height,
+            dimensions: dims,
             method
         }
     }
@@ -107,9 +118,7 @@ impl OperationsTrait for Resize {
             );
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
-            trace!(
-                "Image conversion to linear successfully completed in {duration:.2?}"
-            );
+            trace!("Image conversion to linear successfully completed in {duration:.2?}");
         }
         // if alpha is present premultiply
         let is_premultiplied = image.metadata().is_premultiplied_alpha();
@@ -127,7 +136,11 @@ impl OperationsTrait for Resize {
         let (old_w, old_h) = image.dimensions();
         let depth = image.depth().bit_type();
 
-        let new_length = self.new_width * self.new_height * image.depth().size_of();
+        let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, &image);
+
+        trace!("Resize dims :{} {}", new_w, new_h);
+
+        let new_length = new_w * new_h * image.depth().size_of();
 
         let precomputed_kernels = if self.method == ResizeMethod::Bilinear {
             None
@@ -135,8 +148,8 @@ impl OperationsTrait for Resize {
             Some(PrecomputedKernels::new(
                 old_w,
                 old_h,
-                self.new_width,
-                self.new_height,
+                new_w,
+                new_h,
                 self.method
             ))
         };
@@ -150,8 +163,8 @@ impl OperationsTrait for Resize {
                     self.method,
                     old_w,
                     old_h,
-                    self.new_width,
-                    self.new_height,
+                    new_w,
+                    new_h,
                     precomputed_kernels.as_ref()
                 ),
                 BitType::U16 => resize::<u16>(
@@ -160,8 +173,8 @@ impl OperationsTrait for Resize {
                     self.method,
                     old_w,
                     old_h,
-                    self.new_width,
-                    self.new_height,
+                    new_w,
+                    new_h,
                     precomputed_kernels.as_ref()
                 ),
 
@@ -172,8 +185,8 @@ impl OperationsTrait for Resize {
                         self.method,
                         old_w,
                         old_h,
-                        self.new_width,
-                        self.new_height,
+                        new_w,
+                        new_h,
                         precomputed_kernels.as_ref()
                     );
                 }
@@ -183,7 +196,7 @@ impl OperationsTrait for Resize {
             Ok(())
         };
         execute_on(resize_fn, image, false)?;
-        image.set_dimensions(self.new_width, self.new_height);
+        image.set_dimensions(new_w, new_h);
 
         // convert back from premultiplied if we did not get the
         // image as premultiplied
@@ -206,9 +219,7 @@ impl OperationsTrait for Resize {
             );
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
-            trace!(
-                "Image conversion to gamma successfully completed in {duration:.2?}"
-            );
+            trace!("Image conversion to gamma successfully completed in {duration:.2?}");
         }
 
         Ok(())
@@ -303,6 +314,98 @@ fn resize<T>(
     }
 }
 
+fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (usize, usize) {
+    let (orig_w, orig_h) = image.dimensions();
+
+    // Prevent division by zero panics on empty/invalid images
+    if orig_w == 0 || orig_h == 0 {
+        return (orig_w, orig_h);
+    }
+
+    let orig_w_f = orig_w as f64;
+    let orig_h_f = orig_h as f64;
+
+    let (new_w, new_h) = match resize_dims {
+        // Force exact dimensions (ImageMagick `!`)
+        ResizeDimensions::IgnoreAspectRatio(w, h) => (w, h),
+
+        // Percentage math
+        ResizeDimensions::Percentage(percent_w, percent_h) => (
+            orig_w.saturating_mul(percent_w) / 100,
+            orig_h.saturating_mul(percent_h) / 100
+        ),
+
+        // Provide width, calculate height to keep aspect ratio
+        ResizeDimensions::WidthOnly(target_w) => {
+            let ratio = target_w as f64 / orig_w_f;
+            (target_w, (orig_h_f * ratio).round() as usize)
+        }
+
+        // Provide height, calculate width to keep aspect ratio
+        ResizeDimensions::HeightOnly(target_h) => {
+            let ratio = target_h as f64 / orig_h_f;
+            ((orig_w_f * ratio).round() as usize, target_h)
+        }
+
+        // Fit entirely inside the target box (ImageMagick default)
+        ResizeDimensions::FitWithin(target_w, target_h) => {
+            let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
+            (
+                (orig_w_f * ratio).round() as usize,
+                (orig_h_f * ratio).round() as usize
+            )
+        }
+
+        // Scale to completely cover the target box (ImageMagick `^`)
+        ResizeDimensions::Fill(target_w, target_h) => {
+            let ratio = f64::max(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
+            (
+                (orig_w_f * ratio).round() as usize,
+                (orig_h_f * ratio).round() as usize
+            )
+        }
+
+        // Fit within box, but only if the image is larger (ImageMagick `>`)
+        ResizeDimensions::ShrinkToFit(target_w, target_h) => {
+            if orig_w > target_w || orig_h > target_h {
+                let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
+                (
+                    (orig_w_f * ratio).round() as usize,
+                    (orig_h_f * ratio).round() as usize
+                )
+            } else {
+                (orig_w, orig_h)
+            }
+        }
+
+        // Fit within box, but only if the image is smaller (ImageMagick `<`)
+        ResizeDimensions::EnlargeToFit(target_w, target_h) => {
+            if orig_w < target_w || orig_h < target_h {
+                let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
+                (
+                    (orig_w_f * ratio).round() as usize,
+                    (orig_h_f * ratio).round() as usize
+                )
+            } else {
+                (orig_w, orig_h)
+            }
+        }
+
+        // Target a specific total pixel count (ImageMagick `@`)
+        ResizeDimensions::Area(target_area) => {
+            let orig_area = (orig_w * orig_h) as f64;
+            let ratio = f64::sqrt(target_area as f64 / orig_area);
+            (
+                (orig_w_f * ratio).round() as usize,
+                (orig_h_f * ratio).round() as usize
+            )
+        }
+    };
+
+    // Failsafe: Ensure we never return a width or height of 0
+    // (unless the original image was somehow 0, caught early above).
+    (new_w.max(1), new_h.max(1))
+}
 // #[cfg(feature = "benchmarks")]
 // #[cfg(test)]
 // mod benchmarks {
