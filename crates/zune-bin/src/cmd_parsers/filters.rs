@@ -20,7 +20,7 @@ use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
-use zune_imageprocs::unsharpen::Unsharpen;
+use zune_imageprocs::sharpen::Sharpen;
 //use zune_opencl::ocl_sobel::OclSobel;
 
 pub fn parse_options(
@@ -51,7 +51,7 @@ pub fn parse_options(
             sigma_f32, threshold_u16
         );
 
-        let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, percentage);
+        let unsharpen = Sharpen::new(sigma_f32, threshold_u16 as u16, percentage);
         workflow.chain_operations(Box::new(unsharpen));
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();

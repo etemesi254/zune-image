@@ -89,5 +89,5 @@ pub mod stretch_contrast;
 pub mod threshold;
 pub mod traits;
 pub mod transpose;
-pub mod unsharpen;
+pub mod sharpen;
 mod utils;

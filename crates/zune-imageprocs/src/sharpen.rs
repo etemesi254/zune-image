@@ -5,7 +5,6 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-//! (BROKEN): Do not use
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
@@ -14,18 +13,18 @@ use zune_image::traits::OperationsTrait;
 
 use crate::gaussian_blur::{gaussian_blur_u16, gaussian_blur_u8};
 
-/// Perform an unsharpen mask
+/// Sharpen an image
 ///
 /// This uses the result of a gaussian filter and thresholding to
 /// perform the mask calculation
 #[derive(Default)]
-pub struct Unsharpen {
+pub struct Sharpen {
     sigma:      f32,
     threshold:  u16,
     percentage: u8
 }
 
-impl Unsharpen {
+impl Sharpen {
     /// Create a new unsharp mask
     ///
     /// # Arguments
@@ -37,8 +36,8 @@ impl Unsharpen {
     ///  - percentage: `threshold*percentage`
     ///
     #[must_use]
-    pub fn new(sigma: f32, threshold: u16, percentage: u8) -> Unsharpen {
-        Unsharpen {
+    pub fn new(sigma: f32, threshold: u16, percentage: u8) -> Sharpen {
+        Sharpen {
             sigma,
             threshold,
             percentage
@@ -46,7 +45,7 @@ impl Unsharpen {
     }
 }
 
-impl OperationsTrait for Unsharpen {
+impl OperationsTrait for Sharpen {
     fn name(&self) -> &'static str {
         "Unsharpen"
     }
@@ -158,95 +157,65 @@ impl OperationsTrait for Unsharpen {
     }
 }
 
-///  Sharpen an image
-///
-///  The underlying algorithm applies a gaussian blur
-/// to a copy of the image and compare it with the image,
-/// if difference is greater than threshold, we add it to the
-/// image
-///
-/// The formula is
-///
-/// sharpened = original + (original − blurred);
-///
-///
-/// # Arguments
-/// - channel: Incoming pixels, output will be written to the same location
-/// - blur_buffer: Temporary location we use to store blur coefficients
-/// - blur_scratch_buffer: Temporary location we use during blurring to store blur coefficients
-/// - sigma: Radius of blur
-/// - threshold: If the difference between original and blurred is greater than this, add the diff to
-/// the pixel
-///- width,height: Image dimensions.
 #[allow(clippy::too_many_arguments)]
-pub fn unsharpen_u16(
-    channel: &mut [u16], blur_buffer: &mut [u16], blur_scratch_buffer: &mut [u16], sigma: f32,
-    threshold: u16, _percentage: u16, width: usize, height: usize
-) {
-    // copy channel to scratch space
-    blur_buffer.copy_from_slice(channel);
-    // carry out gaussian blur
-    gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma);
-    // blur buffer now contains gaussian blurred pixels
-    // so iterate replacing them
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let diff = in_pix.saturating_sub(*blur_pix);
-        // pull some branchless tricks to help the optimizer
-        // here
-
-        // We conditionally take the added version or whatever we had based on this mask
-        //  godbolt link: https://godbolt.org/z/YYnEaPedM
-
-        let threshold_mask = u16::from(diff > threshold).wrapping_sub(1);
-
-        // let diff = (diff * percentage) / 100;
-
-        // if diff > threshold { pix = (diff + pix) } else { pix }
-        *in_pix = (in_pix.wrapping_add(diff) & !threshold_mask) | (*in_pix & threshold_mask);
-    }
-}
-
-///  Sharpen an image
-///
-///  The underlying algorithm applies a gaussian blur
-/// to a copy of the image and compare it with the image,
-/// if difference is greater than threshold, we add it to the
-/// image
-///
-/// The formula is
-///
-/// sharpened = original + (original − blurred);
-///
-///
-/// # Arguments
-/// - channel: Incoming pixels, output will be written to the same location
-/// - blur_buffer: Temporary location we use to store blur coefficients
-/// - blur_scratch_buffer: Temporary location we use during blurring to store blur coefficients
-/// - sigma: Radius of blur
-/// - threshold: If the difference between original and blurred is greater than this, add the diff to
-/// the pixel
-///- width,height: Image dimensions.
-#[allow(clippy::too_many_arguments)]
-pub fn unsharpen_u8(
+fn unsharpen_u8(
     channel: &mut [u8], blur_buffer: &mut [u8], blur_scratch_buffer: &mut [u8], sigma: f32,
-    threshold: u8, _percentage: u8, width: usize, height: usize
+    threshold: u8, percentage: u8, width: usize, height: usize
 ) {
     // copy channel to scratch space
     blur_buffer.copy_from_slice(channel);
     // carry out gaussian blur
     gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma);
-    // blur buffer now contains gaussian blurred pixels
-    // so iterate replacing them
+
+    let pct = percentage as i32;
+    let thresh = threshold as i32;
+
     for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let diff = in_pix.wrapping_sub(*blur_pix);
-        // pull some branchless tricks to help the optimizer
-        // here
+        let orig = *in_pix as i32;
+        let blurred = *blur_pix as i32;
 
-        // We conditionally take the added version or whatever we had based on this mask
-        //  godbolt link: https://godbolt.org/z/YYnEaPedM
-        let threshold_mask = u8::from(diff > threshold).wrapping_sub(1);
+        // Signed difference allows us to lighten OR darken the pixel
+        let diff = orig - blurred;
 
-        // if diff > threshold { pix = (diff + pix) } else { pix }
-        *in_pix = (in_pix.saturating_add(diff) & !threshold_mask) | (*in_pix & threshold_mask);
+        // Check against threshold using absolute magnitude
+        if diff.abs() > thresh {
+            // Apply the percentage intensity
+            let scaled_diff = (diff * pct) / 100;
+
+            // Add back to original and clamp to valid u8 range
+            let new_val = orig + scaled_diff;
+            *in_pix = new_val.clamp(0, 255) as u8;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn unsharpen_u16(
+    channel: &mut [u16], blur_buffer: &mut [u16], blur_scratch_buffer: &mut [u16], sigma: f32,
+    threshold: u16, percentage: u16, width: usize, height: usize
+) {
+    // copy channel to scratch space
+    blur_buffer.copy_from_slice(channel);
+    // carry out gaussian blur
+    gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma);
+
+    let pct = percentage as i32;
+    let thresh = threshold as i32;
+
+    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
+        let orig = *in_pix as i32;
+        let blurred = *blur_pix as i32;
+
+        // Signed difference allows us to lighten OR darken the pixel
+        let diff = orig - blurred;
+
+        if diff.abs() > thresh {
+            // Apply the percentage intensity
+            let scaled_diff = (diff * pct) / 100;
+
+            // Add back to original and clamp to valid u16 range
+            let new_val = orig + scaled_diff;
+            *in_pix = new_val.clamp(0, 65535) as u16;
+        }
     }
 }
