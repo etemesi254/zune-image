@@ -24,7 +24,7 @@ where
     T: ZByteReaderTrait
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
-        let metadata = self.read_headers()?.unwrap();
+        let mut metadata = self.read_headers()?.unwrap();
 
         let pixels = self.decode()?;
         let w = self.width().unwrap();
@@ -32,6 +32,28 @@ where
         let colorspace = self.colorspace().unwrap();
 
         let mut image = Image::from_u8(&pixels, w, h, colorspace);
+
+        #[cfg(feature = "metadata")]
+        {
+            use exif::{Tag, Value};
+            // apple heic can have rotated params, which usually stated in
+            // the nested  itemproperty::irot and also in exif,
+            // the decoder rotates the image to keep it that the decoder produces
+            // what one sees but if there is exif data, it is not modified
+            // so the pipeline is
+            // decode->rotate->encode
+            // but on encoding, the exif rotate still points it at whatever the rotated
+            // value was meaning that it looks wrong, so to fix we need to indicate in the
+            // exif that this image is not rotated, so doing that here
+            if let Some(exif) = &mut metadata.exif {
+                for field in exif {
+                    // set orientation to do nothing
+                    if field.tag == Tag::Orientation {
+                        field.value = Value::Byte(vec![1]);
+                    }
+                }
+            }
+        }
         image.metadata = metadata;
 
         Ok(image)
