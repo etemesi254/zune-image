@@ -7,9 +7,10 @@
  */
 
 use clap::ArgMatches;
-use log::{debug, trace};
+use log::debug;
 use zune_image::pipelines::Pipeline;
 use zune_imageprocs::affine::AffineTransform;
+use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
@@ -42,13 +43,15 @@ pub fn parse_options(
         let values: Vec<f32> = args.get_many::<f32>(argument).unwrap().copied().collect();
         let sigma_f32 = values[0];
         let threshold_u16 = values[1];
+        let percentage = values[2].clamp(0.0, 100.0) as u8;
+
 
         debug!(
             "Added unsharpen filter with sigma={} and threshold={}",
             sigma_f32, threshold_u16
         );
 
-        let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, 0);
+        let unsharpen = Unsharpen::new(sigma_f32, threshold_u16 as u16, percentage);
         workflow.chain_operations(Box::new(unsharpen));
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
@@ -90,7 +93,7 @@ pub fn parse_options(
             "bt-2020" => ColorProfiles::DisplayP3,
             _ => Err(format!("Unknown color profile: {}", value))?
         };
-        trace!("Added color transform operation");
+        debug!("Added color transform operation");
 
         let transform = ColorTransform::new(color_profile);
         workflow.chain_operations(Box::new(transform));
@@ -99,7 +102,7 @@ pub fn parse_options(
             .get_many::<f32>(argument)
             .unwrap()
             .collect::<Vec<&f32>>();
-        trace!("Added affine transform operation");
+        debug!("Added affine transform operation");
         if value.len() != 6 {
             return Err(format!("Invalid transform length: {}", value.len()));
         }
@@ -107,7 +110,51 @@ pub fn parse_options(
             *value[0], *value[1], *value[2], *value[3], *value[4], *value[5]
         );
         workflow.chain_operations(Box::new(transform));
+    } else if argument == "bilateral" {
+        let values = args.get_one::<String>(argument).unwrap();
+        match parse_bilateral(values) {
+            Ok(filter) => {
+                debug!("Added bilateral filter operation",);
+                workflow.chain_operations(Box::new(filter));
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Parses a comma-separated string into a BilateralFilter.
+/// Expected format: "d,sigma_color,sigma_space"
+pub fn parse_bilateral(values: &str) -> Result<BilateralFilter, String> {
+    let parts: Vec<&str> = values.split(',').collect();
+
+    if parts.len() != 3 {
+        return Err("Invalid format. Expected exactly 3 comma-separated values: d,sigma_color,sigma_space (e.g., '9,75.0,75.0').".to_string());
+    }
+
+    let d = parts[0].trim().parse::<i32>().map_err(|_| {
+        format!(
+            "Failed to parse 'd' (diameter) from '{}' as an integer.",
+            parts[0]
+        )
+    })?;
+
+    let sigma_color = parts[1].trim().parse::<f32>().map_err(|_| {
+        format!(
+            "Failed to parse 'sigma_color' from '{}' as a float.",
+            parts[1]
+        )
+    })?;
+
+    let sigma_space = parts[2].trim().parse::<f32>().map_err(|_| {
+        format!(
+            "Failed to parse 'sigma_space' from '{}' as a float.",
+            parts[2]
+        )
+    })?;
+
+    Ok(BilateralFilter::new(d, sigma_color, sigma_space))
 }
