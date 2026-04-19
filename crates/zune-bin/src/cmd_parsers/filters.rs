@@ -38,7 +38,7 @@ pub fn parse_options(
 
         let gaussian_blur = GaussianBlur::new(sigma);
         workflow.chain_operations(Box::new(gaussian_blur));
-    } else if argument == "unsharpen" {
+    } else if argument == "sharpen" {
         // parse first one as threshold
         let values: Vec<f32> = args.get_many::<f32>(argument).unwrap().copied().collect();
         let sigma_f32 = values[0];
@@ -51,8 +51,8 @@ pub fn parse_options(
             sigma_f32, threshold_u16
         );
 
-        let unsharpen = Sharpen::new(sigma_f32, threshold_u16 as u16, percentage);
-        workflow.chain_operations(Box::new(unsharpen));
+        let sharpen = Sharpen::new(sigma_f32, threshold_u16 as u16, percentage);
+        workflow.chain_operations(Box::new(sharpen));
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
         debug!("Added mean blur filter with radius {}", radius);
