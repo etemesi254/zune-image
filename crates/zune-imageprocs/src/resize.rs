@@ -136,9 +136,9 @@ impl OperationsTrait for Resize {
         let (old_w, old_h) = image.dimensions();
         let depth = image.depth().bit_type();
 
-        let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, &image);
+        let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, image);
 
-        trace!("Resize dims :{} {}", new_w, new_h);
+        trace!("Resize dims -> width:{new_w} height:{new_h}" );
 
         let new_length = new_w * new_h * image.depth().size_of();
 
@@ -281,6 +281,7 @@ pub fn ratio_dimensions_larger(
 /// # Panics
 /// - `in_width*in_height` do not match `in_image.len()`.
 /// - `out_width*out_height` do not match `out_image.len()`.
+#[allow(clippy::too_many_arguments)]
 fn resize<T>(
     in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
     out_width: usize, out_height: usize, precomputed_kernels: Option<&PrecomputedKernels>
