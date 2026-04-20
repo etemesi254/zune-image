@@ -118,6 +118,24 @@ impl From<&'static str> for ZByteIoError {
     }
 }
 
+impl ZByteIoError {
+    /// Returns `true` when this error indicates the reader ran out of
+    /// data, as opposed to a format or data-corruption error.
+    ///
+    /// **Retry contract:** on `NotEnoughBytes`, the stream position is already
+    /// rewound to where the failed read began, so the caller can append more
+    /// data and retry the same operation without repositioning.
+    #[must_use]
+    pub fn is_recoverable_eof(&self) -> bool {
+        match self {
+            ZByteIoError::NotEnoughBytes(_, _) => true,
+            #[cfg(feature = "std")]
+            ZByteIoError::StdIoError(e) => e.kind() == std::io::ErrorKind::UnexpectedEof,
+            _ => false,
+        }
+    }
+}
+
 /// The image reader wrapper
 ///
 /// This wraps anything that implements [ZByteReaderTrait] and
@@ -460,5 +478,37 @@ where
         use std::io::ErrorKind;
         self.read_bytes(buf)
             .map_err(|e| std::io::Error::new(ErrorKind::Other, format!("{:?}", e)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn not_enough_bytes_is_recoverable() {
+        let err = ZByteIoError::NotEnoughBytes(0, 10);
+        assert!(err.is_recoverable_eof());
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn std_unexpected_eof_is_recoverable() {
+        let err =
+            ZByteIoError::StdIoError(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, ""));
+        assert!(err.is_recoverable_eof());
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn std_other_io_error_is_not_recoverable() {
+        let err = ZByteIoError::StdIoError(std::io::Error::new(std::io::ErrorKind::Other, ""));
+        assert!(!err.is_recoverable_eof());
+    }
+
+    #[test]
+    fn seek_error_is_not_recoverable() {
+        let err = ZByteIoError::SeekError("seek failed");
+        assert!(!err.is_recoverable_eof());
     }
 }
