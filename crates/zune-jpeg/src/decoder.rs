@@ -80,7 +80,7 @@ pub(crate) enum DecodingState {
     /// Headers not yet fully decoded.
     DecodeHeaders,
     /// Headers decoded; scan data starts at `scan_start_position`.
-    DecodeScan { scan_start_position: u64 },
+    DecodeScan { scan_start_position: usize },
 }
 
 /// An encapsulation of an ICC chunk
@@ -570,7 +570,8 @@ where
 
                         // Transition to scan phase, remembering where scan data starts.
                         if self.state == DecodingState::DecodeHeaders {
-                            let pos = self.stream.position()?;
+                            #[allow(clippy::cast_possible_truncation)]
+                            let pos = self.stream.position()? as usize;
                             self.state = DecodingState::DecodeScan {
                                 scan_start_position: pos,
                             };
@@ -918,7 +919,7 @@ where
             }
             DecodingState::DecodeScan { scan_start_position } => {
                 // Seek back to scan start (needed for retry after more data arrived).
-                self.stream.set_position(scan_start_position as usize)?;
+                self.stream.set_position(scan_start_position)?;
             }
         }
 
@@ -985,8 +986,8 @@ where
     fn reset_header_state(&mut self) {
         self.info = ImageInfo::default();
         self.qt_tables = [None, None, None, None];
-        self.dc_huffman_tables = [None, None, None, None];
-        self.ac_huffman_tables = [None, None, None, None];
+        self.entropy_tables.dc_huffman = [None, None, None, None];
+        self.entropy_tables.ac_huffman = [None, None, None, None];
         self.components.clear();
         self.h_max = 1;
         self.v_max = 1;
