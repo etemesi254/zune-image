@@ -67,16 +67,7 @@ impl DecodeErrors {
     pub fn is_recoverable_eof(&self) -> bool {
         match self {
             DecodeErrors::ExhaustedData => true,
-            DecodeErrors::IoErrors(io) => {
-                if matches!(io, ZByteIoError::NotEnoughBytes(_, _)) {
-                    return true;
-                }
-                #[cfg(feature = "std")]
-                if let ZByteIoError::StdIoError(e) = io {
-                    return e.kind() == std::io::ErrorKind::UnexpectedEof;
-                }
-                false
-            }
+            DecodeErrors::IoErrors(io) => io.is_recoverable_eof(),
             _ => false,
         }
     }
