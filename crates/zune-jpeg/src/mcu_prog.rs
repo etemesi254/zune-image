@@ -30,7 +30,7 @@ use zune_core::log::{debug, error, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{JpegDecoder, PostProcessFn, MAX_COMPONENTS};
+use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
@@ -52,7 +52,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, pixels: &mut [u8], post_process_fn: F
     ) -> Result<(), DecodeErrors>
     where
-        F: Fn(
+        F: FnMut(
             &mut JpegDecoder<T>,
             &mut [u8],
             usize,
@@ -484,10 +484,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding<F>(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8], post_process_fn: F
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8], mut post_process_fn: F
     ) -> Result<(), DecodeErrors>
     where
-        F: Fn(
+        F: FnMut(
             &mut JpegDecoder<T>,
             &mut [u8],
             usize,

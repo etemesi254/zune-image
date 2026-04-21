@@ -873,17 +873,33 @@ where
         }
     }
 
-    pub fn decode_planar(&mut self, out: &[&mut [u8]; MAX_COMPONENTS]) -> Result<(), DecodeErrors> {
+    pub fn decode_planar(&mut self, out: &mut [&mut [u8]; MAX_COMPONENTS]) -> Result<(), DecodeErrors> {
         let mut temp_out = [];
-        let this_post_process_fn =
-            |decoder: &mut JpegDecoder<T>,
-             pixels: &mut [u8],
-             i: usize,
-             mcu_height: usize,
-             width: usize,
-             padded_width: usize,
-             pixels_written: &mut usize,
-             upsampler_scratch_space: &mut [i16]| { todo!() };
+
+        let this_post_process_fn = |decoder: &mut JpegDecoder<T>,
+                                    _pixels: &mut [u8],
+                                    _i: usize,
+                                    _mcu_height: usize,
+                                    _width: usize,
+                                    _padded_width: usize,
+                                    _pixels_written: &mut usize,
+                                    _scratch: &mut [i16]| {
+            for (comp_idx, component) in decoder.components.iter().enumerate() {
+                if !component.needed {
+                    continue;
+                }
+                let source = &component.raw_coeff;
+
+                let mut destination =  &mut out[comp_idx];
+
+                for (dst, src) in destination.iter_mut().zip(source.iter()) {
+                    // idct already clamps it for me
+                    *dst = *src as u8;
+                }
+            }
+
+            Ok(())
+        };
 
         if self.is_progressive {
             self.decode_mcu_ycbcr_progressive(&mut temp_out, this_post_process_fn)

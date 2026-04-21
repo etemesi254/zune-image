@@ -85,10 +85,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline<F>(
-        &mut self, pixels: &mut [u8], post_process_fn: F
+        &mut self, pixels: &mut [u8], mut post_process_fn: F
     ) -> Result<(), DecodeErrors>
     where
-        F: Fn(
+        F: FnMut(
             &mut JpegDecoder<T>,
             &mut [u8],
             usize,
@@ -345,10 +345,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn finish_baseline_decoding<F>(
         &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
-        post_process_fn: F
+        mut post_process_fn: F
     ) -> Result<(), DecodeErrors>
     where
-        F: Fn(
+        F: FnMut(
             &mut JpegDecoder<T>,
             &mut [u8],
             usize,
