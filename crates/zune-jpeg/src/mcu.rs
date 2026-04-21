@@ -257,7 +257,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
-                    self.post_process(
+                    post_process(
+                        self,
                         pixels,
                         i,
                         mcu_height,
@@ -337,7 +338,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         // Size of our output image(width*height)
         let is_hv = usize::from(self.is_interleaved);
-        let upsampler_scratch_size = is_hv * self.components.iter().map(|x| x.width_stride).max().unwrap_or(0) * 8;
+        let upsampler_scratch_size = is_hv
+            * self
+                .components
+                .iter()
+                .map(|x| x.width_stride)
+                .max()
+                .unwrap_or(0)
+            * 8;
         let width = usize::from(self.info.width);
         let padded_width = calculate_padded_width(width, self.info.sample_ratio);
 
@@ -381,7 +389,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that whole stripe of MCUs
-            self.post_process(
+            post_process(
+                self,
                 pixels,
                 i,
                 mcu_height,
@@ -778,167 +787,167 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
         Ok(())
     }
-    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-    pub(crate) fn post_process(
-        &mut self, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
-        padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
-    ) -> Result<(), DecodeErrors> {
-        let out_colorspace_components = self.options.jpeg_get_out_colorspace().num_components();
+}
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+pub(crate) fn post_process<Z: ZByteReaderTrait>(
+    decoder: &mut JpegDecoder<Z>, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,
+    padded_width: usize, pixels_written: &mut usize, upsampler_scratch_space: &mut [i16]
+) -> Result<(), DecodeErrors> {
+    let out_colorspace_components = decoder.options.jpeg_get_out_colorspace().num_components();
 
-        let mut px = *pixels_written;
-        // indicates whether image is vertically up-sampled
-        let is_vertically_sampled = self
+    let mut px = *pixels_written;
+    // indicates whether image is vertically up-sampled
+    let is_vertically_sampled = decoder
+        .components
+        .iter()
+        .any(|c| c.sample_ratio == SampleRatios::HV || c.sample_ratio == SampleRatios::V);
+
+    let mut comp_len = decoder.components.len();
+
+    // If we are moving from YCbCr -> Luma, we do not allocate storage for other components, so we
+    // will panic when we are trying to read samples, so for that case,
+    // hardcode it so that we  don't panic when doing
+    //   *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
+    if out_colorspace_components < comp_len && decoder.options.jpeg_get_out_colorspace() == Luma {
+        comp_len = out_colorspace_components;
+    }
+    let mut color_conv_function =
+        |num_iters: usize, samples: [&[i16]; 4]| -> Result<(), DecodeErrors> {
+            for (pos, output) in pixels[px..]
+                .chunks_exact_mut(width * out_colorspace_components)
+                .take(num_iters)
+                .enumerate()
+            {
+                let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                // iterate over each line, since color-convert needs only
+                // one line
+                for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                    let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
+                    if temp.is_none() {
+                        return Err(DecodeErrors::FormatStatic("Missing samples"));
+                    }
+                    *samp = temp.unwrap();
+                }
+                color_convert(
+                    &raw_samples,
+                    decoder.color_convert_16,
+                    decoder.input_colorspace,
+                    decoder.options.jpeg_get_out_colorspace(),
+                    output,
+                    width,
+                    padded_width
+                )?;
+                px += width * out_colorspace_components;
+            }
+            Ok(())
+        };
+
+    let comps = &mut decoder.components[..];
+
+    if decoder.is_interleaved && decoder.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
+        for comp in comps.iter_mut() {
+            upsample(
+                comp,
+                mcu_height,
+                i,
+                upsampler_scratch_space,
+                is_vertically_sampled
+            )?;
+        }
+
+        if is_vertically_sampled {
+            if i > 0 {
+                // write the last line, it wasn't  up-sampled as we didn't have row_down
+                // yet
+                let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+                for (samp, component) in samples.iter_mut().zip(comps.iter()) {
+                    *samp = &component.first_row_upsample_dest;
+                }
+
+                // ensure length matches for all samples
+                let _first_len = samples[0].len();
+
+                // This was a good check, but can be caused to panic, esp on invalid/corrupt images.
+                // See one in issue https://github.com/etemesi254/zune-image/issues/262, so for now
+                // we just ignore and generate invalid images at the end.
+
+                //
+                //
+                // for samp in samples.iter().take(comp_len) {
+                //     assert_eq!(first_len, samp.len());
+                // }
+                let num_iters = decoder.coeff * decoder.v_max;
+
+                color_conv_function(num_iters, samples)?;
+            }
+
+            // After up-sampling the last row, save  any row that can be used for
+            // a later up-sampling,
+            //
+            // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
+            // the previous mcu, since we don't have the down row, so save it
+            for component in comps.iter_mut() {
+                if component.sample_ratio != SampleRatios::H {
+                    // We don't care about H sampling factors, since it's copied in the workers function
+
+                    // copy last row to be used for the  next color conversion
+                    let size = component.vertical_sample
+                        * component.width_stride
+                        * component.sample_ratio.sample();
+
+                    let last_bytes = component.raw_coeff.rchunks_exact_mut(size).next().unwrap();
+
+                    component
+                        .first_row_upsample_dest
+                        .copy_from_slice(last_bytes);
+                }
+            }
+        }
+
+        let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+
+        for (samp, component) in samples.iter_mut().zip(comps.iter()) {
+            *samp = if component.sample_ratio == SampleRatios::None {
+                &component.raw_coeff
+            } else {
+                &component.upsample_dest
+            };
+        }
+
+        // we either do 7 or 8 MCU's depending on the state, this only applies to
+        // vertically sampled images
+        //
+        // for rows up until the last MCU, we do not upsample the last stride of the MCU
+        // which means that the number of iterations should take that into account is one less the
+        // up-sampled size
+        //
+        // For the last MCU, we upsample the last stride, meaning that if we hit the last MCU, we
+        // should sample full raw coeffs
+        let is_last_considered = is_vertically_sampled && (i != mcu_height.saturating_sub(1));
+
+        let num_iters = (8 - usize::from(is_last_considered)) * decoder.coeff * decoder.v_max;
+
+        color_conv_function(num_iters, samples)?;
+    } else {
+        let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
+
+        decoder
             .components
             .iter()
-            .any(|c| c.sample_ratio == SampleRatios::HV || c.sample_ratio == SampleRatios::V);
+            .enumerate()
+            .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
 
-        let mut comp_len = self.components.len();
-
-        // If we are moving from YCbCr -> Luma, we do not allocate storage for other components, so we
-        // will panic when we are trying to read samples, so for that case,
-        // hardcode it so that we  don't panic when doing
-        //   *samp = &samples[j][pos * padded_width..(pos + 1) * padded_width]
-        if out_colorspace_components < comp_len && self.options.jpeg_get_out_colorspace() == Luma {
-            comp_len = out_colorspace_components;
-        }
-        let mut color_conv_function =
-            |num_iters: usize, samples: [&[i16]; 4]| -> Result<(), DecodeErrors> {
-                for (pos, output) in pixels[px..]
-                    .chunks_exact_mut(width * out_colorspace_components)
-                    .take(num_iters)
-                    .enumerate()
-                {
-                    let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-                    // iterate over each line, since color-convert needs only
-                    // one line
-                    for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                        let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
-                        if temp.is_none() {
-                            return Err(DecodeErrors::FormatStatic("Missing samples"));
-                        }
-                        *samp = temp.unwrap();
-                    }
-                    color_convert(
-                        &raw_samples,
-                        self.color_convert_16,
-                        self.input_colorspace,
-                        self.options.jpeg_get_out_colorspace(),
-                        output,
-                        width,
-                        padded_width
-                    )?;
-                    px += width * out_colorspace_components;
-                }
-                Ok(())
-            };
-
-        let comps = &mut self.components[..];
-
-        if self.is_interleaved && self.options.jpeg_get_out_colorspace() != ColorSpace::Luma {
-            for comp in comps.iter_mut() {
-                upsample(
-                    comp,
-                    mcu_height,
-                    i,
-                    upsampler_scratch_space,
-                    is_vertically_sampled
-                )?;
-            }
-
-            if is_vertically_sampled {
-                if i > 0 {
-                    // write the last line, it wasn't  up-sampled as we didn't have row_down
-                    // yet
-                    let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-                    for (samp, component) in samples.iter_mut().zip(comps.iter()) {
-                        *samp = &component.first_row_upsample_dest;
-                    }
-
-                    // ensure length matches for all samples
-                    let _first_len = samples[0].len();
-
-                    // This was a good check, but can be caused to panic, esp on invalid/corrupt images.
-                    // See one in issue https://github.com/etemesi254/zune-image/issues/262, so for now
-                    // we just ignore and generate invalid images at the end.
-
-                    //
-                    //
-                    // for samp in samples.iter().take(comp_len) {
-                    //     assert_eq!(first_len, samp.len());
-                    // }
-                    let num_iters = self.coeff * self.v_max;
-
-                    color_conv_function(num_iters, samples)?;
-                }
-
-                // After up-sampling the last row, save  any row that can be used for
-                // a later up-sampling,
-                //
-                // E.g the Y sample is not sampled but we haven't finished upsampling the last row of
-                // the previous mcu, since we don't have the down row, so save it
-                for component in comps.iter_mut() {
-                    if component.sample_ratio != SampleRatios::H {
-                        // We don't care about H sampling factors, since it's copied in the workers function
-
-                        // copy last row to be used for the  next color conversion
-                        let size = component.vertical_sample
-                            * component.width_stride
-                            * component.sample_ratio.sample();
-
-                        let last_bytes =
-                            component.raw_coeff.rchunks_exact_mut(size).next().unwrap();
-
-                        component
-                            .first_row_upsample_dest
-                            .copy_from_slice(last_bytes);
-                    }
-                }
-            }
-
-            let mut samples: [&[i16]; 4] = [&[], &[], &[], &[]];
-
-            for (samp, component) in samples.iter_mut().zip(comps.iter()) {
-                *samp = if component.sample_ratio == SampleRatios::None {
-                    &component.raw_coeff
-                } else {
-                    &component.upsample_dest
-                };
-            }
-
-            // we either do 7 or 8 MCU's depending on the state, this only applies to
-            // vertically sampled images
-            //
-            // for rows up until the last MCU, we do not upsample the last stride of the MCU
-            // which means that the number of iterations should take that into account is one less the
-            // up-sampled size
-            //
-            // For the last MCU, we upsample the last stride, meaning that if we hit the last MCU, we
-            // should sample full raw coeffs
-            let is_last_considered = is_vertically_sampled && (i != mcu_height.saturating_sub(1));
-
-            let num_iters = (8 - usize::from(is_last_considered)) * self.coeff * self.v_max;
-
-            color_conv_function(num_iters, samples)?;
+        if let SampleRatios::Generic(_, v) = decoder.info.sample_ratio {
+            color_conv_function(8 * v * decoder.coeff, channels_ref)?;
         } else {
-            let mut channels_ref: [&[i16]; MAX_COMPONENTS] = [&[]; MAX_COMPONENTS];
-
-            self.components
-                .iter()
-                .enumerate()
-                .for_each(|(pos, x)| channels_ref[pos] = &x.raw_coeff);
-
-            if let SampleRatios::Generic(_, v) = self.info.sample_ratio {
-                color_conv_function(8 * v * self.coeff, channels_ref)?;
-            } else {
-                color_conv_function(8 * self.coeff, channels_ref)?;
-            }
+            color_conv_function(8 * decoder.coeff, channels_ref)?;
         }
-
-        *pixels_written = px;
-        Ok(())
     }
+
+    *pixels_written = px;
+    Ok(())
 }
 
 enum McuContinuation {
