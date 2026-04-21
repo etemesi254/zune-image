@@ -41,4 +41,4 @@ cms = ["moxcms"]
 
 
 [dev-dependencies]
-nanorand = { version = "0.8.0", default-features = false, features = ["wyrand"] } # testing purposes.
+nanorand = { version = "0.8.0", default-features = false, features = ["wyrand","entropy"] } # testing purposes.
