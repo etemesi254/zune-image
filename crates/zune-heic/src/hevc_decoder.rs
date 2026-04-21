@@ -177,28 +177,28 @@ impl HevcDecoder {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs::read;
-
-    use crate::hevc_decoder::HevcDecoder;
-    use crate::processor::HevcSample;
-
-    #[test]
-    fn tests_load_hvec() {
-        let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0021.hvc").unwrap();
-
-        let sample = HevcSample {
-            item_id: 0,
-            vps:     None,
-            sps:     None,
-            pps:     None,
-            extents: vec![&data]
-        };
-        let mut decoder = HevcDecoder::new();
-
-        let frame = decoder.decode(sample).unwrap();
-
-        frame.unwrap().dump_ppm("item_0021.ppm").unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use std::fs::read;
+//
+//     use crate::hevc_decoder::HevcDecoder;
+//     use crate::processor::HevcSample;
+//
+//     #[test]
+//     fn tests_load_hvec() {
+//         let data = read("/Users/etemesi/rust/zune-image/output_dirs/item_0021.hvc").unwrap();
+//
+//         let sample = HevcSample {
+//             item_id: 0,
+//             vps:     None,
+//             sps:     None,
+//             pps:     None,
+//             extents: vec![&data]
+//         };
+//         let mut decoder = HevcDecoder::new();
+//
+//         let frame = decoder.decode(sample).unwrap();
+//
+//         frame.unwrap().dump_ppm("item_0021.ppm").unwrap();
+//     }
+// }
