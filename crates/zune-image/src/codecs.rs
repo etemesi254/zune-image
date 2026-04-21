@@ -31,9 +31,10 @@
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
 
+use std::collections::HashMap;
 use std::io::{BufRead, Cursor, Seek};
 use std::path::Path;
-
+use std::sync::{LazyLock, RwLock};
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait, ZCursor, ZReader};
 use zune_core::log::trace;
 use zune_core::options::{DecoderOptions, EncoderOptions};
@@ -57,8 +58,97 @@ pub mod qoi;
 
 pub mod heic;
 pub mod webp;
+
+/// The 'for<'a>' means this function pointer can handle a reader
+/// with ANY lifetime and return a decoder tied to THAT same lifetime.
+///
+/// Dope stuff ngl
+type DecoderFactory = for<'a> fn(
+    Box<dyn BoxableReader + 'a>,
+    DecoderOptions,
+) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>;
+
+pub trait BoxableReader: ZByteReaderTrait + BufRead + Seek {}
+impl<T: ZByteReaderTrait + BufRead + Seek> BoxableReader for T {}
+static REGISTRY: LazyLock<RwLock<HashMap<ImageFormat, DecoderFactory>>> = LazyLock::new(|| {
+    let mut map: HashMap<ImageFormat, DecoderFactory> = HashMap::new();
+
+    // Populate the registry with the "built-in" decoders
+    register_builtins(&mut map);
+
+    RwLock::new(map)
+});
+/// Register a decoder to be used to decode to an image
+///
+/// This can be used to register any custom decoder one may want to
+/// use/prefer to decode over using either built in ones or unsupported
+///
+/// # Example
+/// ```
+/// use zune_image::image::Image;
+/// use zune_image::traits::DecoderTrait;
+/// use zune_image::codecs::BoxableReader;
+/// use zune_image::errors::ImageErrors;
+///use zune_core::colorspace::ColorSpace;
+///  use zune_core::options::DecoderOptions;
+/// use zune_image::codecs::ImageFormat;
+///use zune_image::codecs::register_decoder;
+/// // Mock decoder
+/// struct ZxyDecoder<R> {
+///     reader: R,
+/// }
+///
+/// impl<R: BoxableReader> DecoderTrait for ZxyDecoder<R> {
+///     fn decode(&mut self) -> Result<Image, ImageErrors> {
+///         // Mock decoding logic
+///         Ok(Image::fill::<u8>(200,zune_core::colorspace::ColorSpace::RGB, 100, 100))
+///     }
+///
+///     fn dimensions(&self) -> Option<(usize, usize)> {
+///         Some((100, 100))
+///     }
+///
+///     fn out_colorspace(&self) -> ColorSpace {
+///         ColorSpace::RGB
+///     }
+///
+///     fn name(&self) -> &'static str {
+///         "ZXY-Exotic"
+///     }
+/// }
+/// // Next, we create the factory function.
+/// fn zxy_factory<'a>(
+///     data: Box<dyn BoxableReader + 'a>,
+///     _options: DecoderOptions
+/// ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors> {
+///     // We simply wrap the reader in our new decoder and box it back up
+///     Ok(Box::new(ZxyDecoder { reader: data }))
+/// }
+/// // then register the decoder
+/// let my_format = ImageFormat::Custom("ZXY");
+/// register_decoder(my_format, zxy_factory);
+///
+/// // 2. Prepare some data (a local slice!)
+/// let raw_bytes = [0u8; 10];
+/// let reader = std::io::Cursor::new(&raw_bytes);
+/// let options = DecoderOptions::default();
+///
+/// // 3. Use the generic entry point
+/// // This looks exactly the same as calling it for a JPEG!
+/// let mut decoder = my_format.decoder_with_options(reader, options)?;
+///
+/// let image = decoder.decode()?;
+/// assert_eq!(image.dimensions(),(100,100));
+/// Ok::<(),ImageErrors>(())
+/// ```
+///
+///
+pub fn register_decoder(format: ImageFormat, factory: DecoderFactory) {
+    let mut lock = REGISTRY.write().unwrap();
+    lock.insert(format, factory);
+}
 pub(crate) fn create_options_for_encoder(
-    options: Option<EncoderOptions>, image: &Image
+    options: Option<EncoderOptions>, image: &Image,
 ) -> EncoderOptions {
     // choose if we take options from pre-configured , or we create default options
     let start_options = options.unwrap_or_default();
@@ -74,7 +164,7 @@ pub(crate) fn create_options_for_encoder(
 ///
 /// This enum contains supported image formats, either
 /// encoders or decoders for a particular image
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[non_exhaustive]
 pub enum ImageFormat {
     /// Joint Photographic Experts Group
@@ -99,8 +189,12 @@ pub enum ImageFormat {
     WEBP,
     /// Apple HEIC/HEIF file
     HEIC,
+    /// Custom register hooked decoders,
+    ///
+    /// To use this see the example on [crate::codecs::register_decoder]
+    Custom(&'static str),
     /// Any unknown format
-    Unknown
+    Unknown,
 }
 
 impl ImageFormat {
@@ -126,157 +220,37 @@ impl ImageFormat {
     }
     pub fn decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteReaderTrait + 'a + BufRead + Seek
+        T: ZByteReaderTrait + 'a + BufRead + Seek,
     {
         self.decoder_with_options(data, DecoderOptions::default())
     }
 
     pub fn decoder_with_options<'a, T>(
-        &self, data: T, options: DecoderOptions
+        &self, data: T, options: DecoderOptions,
     ) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
     where
-        T: ZByteReaderTrait + 'a + BufRead + Seek
+        T: ZByteReaderTrait + 'a + BufRead + Seek,
     {
-        match self {
-            ImageFormat::JPEG => {
-                #[cfg(feature = "jpeg")]
-                {
-                    Ok(Box::new(zune_jpeg::JpegDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "jpeg"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-
-            ImageFormat::PNG => {
-                #[cfg(feature = "png")]
-                {
-                    Ok(Box::new(codecs::png::PngDecoder::new_with_options(
-                        data, options
-                    )?))
-                }
-                #[cfg(not(feature = "png"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::PPM => {
-                #[cfg(feature = "ppm")]
-                {
-                    Ok(Box::new(zune_ppm::PPMDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "ppm"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::PSD => {
-                #[cfg(feature = "psd")]
-                {
-                    Ok(Box::new(zune_psd::PSDDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "psd"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-
-            ImageFormat::Farbfeld => {
-                #[cfg(feature = "farbfeld")]
-                {
-                    Ok(Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "farbfeld"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-
-            ImageFormat::QOI => {
-                #[cfg(feature = "qoi")]
-                {
-                    Ok(Box::new(zune_qoi::QoiDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "qoi"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::HDR => {
-                #[cfg(feature = "hdr")]
-                {
-                    Ok(Box::new(zune_hdr::HdrDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "hdr"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::BMP => {
-                #[cfg(feature = "bmp")]
-                {
-                    Ok(Box::new(zune_bmp::BmpDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "bmp"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::JPEG_XL => {
-                #[cfg(feature = "jpeg-xl")]
-                {
-                    // use a ZByteReader which implements read, this prevents unnecessary
-                    // copy
-
-                    let reader = ZReader::new(data);
-                    Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(
-                        reader, options
-                    )?))
-                }
-                #[cfg(not(feature = "jpeg-xl"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::WEBP => {
-                #[cfg(feature = "webp")]
-                {
-                    Ok(Box::new(codecs::webp::ZuneWebpDecoder::new(data)?))
-                }
-                #[cfg(not(feature = "webp"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::HEIC => {
-                #[cfg(feature = "heic")]
-                {
-                    Ok(Box::new(codecs::heic::HeifDecoder::new_with_options(
-                        data, options
-                    )))
-                }
-                #[cfg(not(feature = "webp"))]
-                {
-                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
-                }
-            }
-            ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
+        if let ImageFormat::Unknown = self {
+            return Err(ImageErrors::ImageDecoderNotImplemented(*self));
         }
+
+        // 2. Lock and Lookup
+        let registry = REGISTRY.read().unwrap();
+
+        if let Some(factory) = registry.get(self) {
+            // Erase T into Box<dyn BoxableReader>
+            let boxed_data = Box::new(data);
+
+            // Call the factory (this handles the specific new/try_new logic)
+            let decoder = (factory)(boxed_data, options)?;
+
+            return Ok(decoder);
+        }
+
+        // 3. If it's not in the map, it's either not included (feature off)
+        // or not implemented.
+        Err(ImageErrors::ImageDecoderNotIncluded(*self))
     }
     /// Return true if an image format has an encoder that can convert the image
     /// into that format
@@ -292,11 +266,11 @@ impl ImageFormat {
             ImageFormat::JPEG_XL => cfg!(feature = "jpeg-xl"),
             ImageFormat::HDR => cfg!(feature = "hdr"),
             ImageFormat::WEBP => cfg!(feature = "webp"),
-            _ => false
+            _ => false,
         }
     }
     pub fn encode<T: ZByteWriterTrait>(
-        &self, image: &Image, encoder_options: EncoderOptions, sink: T
+        &self, image: &Image, encoder_options: EncoderOptions, sink: T,
     ) -> Result<usize, ImageErrors> {
         match self {
             ImageFormat::JPEG => {
@@ -360,13 +334,13 @@ impl ImageFormat {
             _ => {}
         }
         Err(ImageErrors::EncodeErrors(
-            ImgEncodeErrors::NoEncoderForFormat(*self)
+            ImgEncodeErrors::NoEncoderForFormat(*self),
         ))
     }
 
     pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
     where
-        T: ZByteReaderTrait
+        T: ZByteReaderTrait,
     {
         guess_format(bytes)
     }
@@ -430,7 +404,7 @@ impl ImageFormat {
                 }
                 None
             }
-            _ => None
+            _ => None,
         }
     }
 }
@@ -517,7 +491,7 @@ impl Image {
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open(file)?
+                .open(file)?,
         );
         self.encode(format, &mut file)?;
         Ok(())
@@ -559,7 +533,7 @@ impl Image {
             // encode
         } else {
             Err(ImageErrors::EncodeErrors(
-                crate::errors::ImgEncodeErrors::NoEncoderForFormat(format)
+                crate::errors::ImgEncodeErrors::NoEncoderForFormat(format),
             ))
         }
     }
@@ -598,7 +572,7 @@ impl Image {
     /// let contents = image.write_with_encoder(encoder, &mut output).unwrap();
     /// ```
     pub fn write_with_encoder<T: ZByteWriterTrait>(
-        &self, mut encoder: impl EncoderTrait, sink: T
+        &self, mut encoder: impl EncoderTrait, sink: T,
     ) -> Result<usize, ImageErrors> {
         encoder.encode(self, sink)
     }
@@ -636,7 +610,7 @@ impl Image {
     /// let image = Image::open_with_options("/a/file.jpeg",options).unwrap();
     /// ```
     pub fn open_with_options<P: AsRef<Path>>(
-        file: P, options: DecoderOptions
+        file: P, options: DecoderOptions,
     ) -> Result<Image, ImageErrors> {
         let reader = std::io::BufReader::new(std::fs::File::open(file)?);
         Self::read(reader, options)
@@ -658,7 +632,7 @@ impl Image {
     ///```
     pub fn read<T>(src: T, options: DecoderOptions) -> Result<Image, ImageErrors>
     where
-        T: ZByteReaderTrait + Seek + BufRead
+        T: ZByteReaderTrait + Seek + BufRead,
     {
         let decoder = ImageFormat::guess_format(src);
 
@@ -670,7 +644,7 @@ impl Image {
             Ok(image)
         } else {
             Err(ImageErrors::ImageDecoderNotImplemented(
-                ImageFormat::Unknown
+                ImageFormat::Unknown,
             ))
         }
     }
@@ -686,7 +660,7 @@ impl Image {
     ///  - The size of bytes written to sink or an error if it occurs
     ///
     pub fn encode<T: ZByteWriterTrait>(
-        &self, format: ImageFormat, sink: T
+        &self, format: ImageFormat, sink: T,
     ) -> Result<usize, ImageErrors> {
         self.encode_with_options(format, EncoderOptions::default(), sink)
     }
@@ -701,7 +675,7 @@ impl Image {
     ///  - The size of bytes written to sink or an error if it occurs
     ///
     fn encode_with_options<T: ZByteWriterTrait>(
-        &self, format: ImageFormat, encoder_options: EncoderOptions, sink: T
+        &self, format: ImageFormat, encoder_options: EncoderOptions, sink: T,
     ) -> Result<usize, ImageErrors> {
         format.encode(self, encoder_options, sink)
     }
@@ -738,7 +712,7 @@ impl Image {
 /// - None: Indicates the format isn't known/understood by the library
 pub fn guess_format<T>(bytes: T) -> Option<(ImageFormat, T)>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     let mut reader = ZReader::new(bytes);
     // stolen from imagers
@@ -760,9 +734,9 @@ where
         (b"#?RGBE\n", ImageFormat::HDR),
         (
             &[
-                0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A
+                0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
             ],
-            ImageFormat::JPEG_XL
+            ImageFormat::JPEG_XL,
         ),
         (&[0xFF, 0x0A], ImageFormat::JPEG_XL),
     ];
@@ -833,7 +807,7 @@ pub fn is_heif(bytes: &[u8]) -> bool {
         b"mif1", // Multi-image (standard HEIF)
         b"msf1", // Multi-image sequence
         b"hevc", // Generic HEVC
-        b"hevx"  // Generic HEVC
+        b"hevx", // Generic HEVC
     ];
 
     // Check Major Brand (bytes 8..12)
@@ -858,4 +832,72 @@ pub fn is_heif(bytes: &[u8]) -> bool {
     }
 
     false
+}
+/// Register built in decoders
+fn register_builtins(map: &mut HashMap<ImageFormat, DecoderFactory>) {
+    #[cfg(feature = "jpeg")]
+    map.insert(ImageFormat::JPEG, |data, opts| {
+        Ok(Box::new(zune_jpeg::JpegDecoder::new_with_options(
+            data, opts,
+        )))
+    });
+
+    #[cfg(feature = "png")]
+    map.insert(ImageFormat::PNG, |data, opts| {
+        Ok(Box::new(codecs::png::PngDecoder::new_with_options(
+            data, opts,
+        )?))
+    });
+
+    #[cfg(feature = "ppm")]
+    map.insert(ImageFormat::PPM, |data, opts| {
+        Ok(Box::new(zune_ppm::PPMDecoder::new_with_options(data, opts)))
+    });
+
+    #[cfg(feature = "psd")]
+    map.insert(ImageFormat::PSD, |data, opts| {
+        Ok(Box::new(zune_psd::PSDDecoder::new_with_options(data, opts)))
+    });
+
+    #[cfg(feature = "farbfeld")]
+    map.insert(ImageFormat::Farbfeld, |data, opts| {
+        Ok(Box::new(zune_farbfeld::FarbFeldDecoder::new_with_options(
+            data, opts,
+        )))
+    });
+
+    #[cfg(feature = "qoi")]
+    map.insert(ImageFormat::QOI, |data, opts| {
+        Ok(Box::new(zune_qoi::QoiDecoder::new_with_options(data, opts)))
+    });
+
+    #[cfg(feature = "hdr")]
+    map.insert(ImageFormat::HDR, |data, opts| {
+        Ok(Box::new(zune_hdr::HdrDecoder::new_with_options(data, opts)))
+    });
+
+    #[cfg(feature = "bmp")]
+    map.insert(ImageFormat::BMP, |data, opts| {
+        Ok(Box::new(zune_bmp::BmpDecoder::new_with_options(data, opts)))
+    });
+
+    #[cfg(feature = "jpeg-xl")]
+    map.insert(ImageFormat::JPEG_XL, |data, opts| {
+        let reader = ZReader::new(data);
+        Ok(Box::new(codecs::jpeg_xl::JxlDecoder::try_new(
+            reader, opts,
+        )?))
+    });
+
+    #[cfg(feature = "webp")]
+    map.insert(ImageFormat::WEBP, |data, _opts| {
+        Ok(Box::new(codecs::webp::ZuneWebpDecoder::new(data)?))
+    });
+
+    #[cfg(feature = "heic")]
+    map.insert(ImageFormat::HEIC, |data, opts| {
+        Ok(Box::new(codecs::heic::HeifDecoder::new_with_options(
+            data, opts,
+        )))
+    });
 }
