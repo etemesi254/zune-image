@@ -35,7 +35,7 @@ use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
-use crate::misc::{calculate_padded_width, setup_component_params};
+use crate::misc::calculate_padded_width;
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode a progressive image
@@ -63,8 +63,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             &mut [i16]
         ) -> Result<(), DecodeErrors>
     {
-        setup_component_params(self)?;
-
         let mut mcu_height;
 
         // memory location for decoded pixels for components

@@ -29,7 +29,7 @@ use crate::huffman::HuffmanTable;
 use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
 use crate::marker::Marker;
 use crate::mcu::post_process;
-use crate::misc::SOFMarkers;
+use crate::misc::{setup_component_params, SOFMarkers};
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
     generic_sampler, upsample_no_op
@@ -180,11 +180,13 @@ pub struct JpegDecoder<T> {
     pub(crate) seen_sof:         bool,
 
     // exif data, lifted from app2
-    pub(crate) icc_data:              Vec<ICCChunk>,
-    pub(crate) is_mjpeg:              bool,
-    pub(crate) coeff:                 usize, // Solves some weird bug :)
+    pub(crate) icc_data: Vec<ICCChunk>,
+    pub(crate) is_mjpeg: bool,
+    pub(crate) coeff: usize, // Solves some weird bug :)
     /// Extended XMP segments
-    pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>
+    pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
+    // check that upsampling buffers have been initialized
+    pub(crate) setup_component_params_called: bool
 }
 
 impl<T> JpegDecoder<T>
@@ -195,42 +197,43 @@ where
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info:                  ImageInfo::default(),
-            qt_tables:             [None, None, None, None],
-            dc_huffman_tables:     [None, None, None, None],
-            ac_huffman_tables:     [None, None, None, None],
-            components:            vec![],
+            info: ImageInfo::default(),
+            qt_tables: [None, None, None, None],
+            dc_huffman_tables: [None, None, None, None],
+            ac_huffman_tables: [None, None, None, None],
+            components: vec![],
             // Interleaved information
-            h_max:                 1,
-            v_max:                 1,
-            mcu_height:            0,
-            mcu_width:             0,
-            mcu_x:                 0,
-            mcu_y:                 0,
-            is_interleaved:        false,
-            is_progressive:        false,
-            spec_start:            0,
-            spec_end:              0,
-            succ_high:             0,
-            succ_low:              0,
-            num_scans:             0,
-            scan_subsampled:       false,
-            idct_func:             choose_idct_func(&options),
-            idct_4x4_func:         choose_idct_4x4_func(&options),
-            idct_1x1_func:         choose_idct_1x1_func(&options),
-            color_convert_16:      color_convert,
-            input_colorspace:      ColorSpace::YCbCr,
-            z_order:               [0; MAX_COMPONENTS],
-            restart_interval:      0,
-            todo:                  0x7fff_ffff,
-            options:               options,
-            stream:                ZReader::new(buffer),
-            headers_decoded:       false,
-            seen_sof:              false,
-            icc_data:              vec![],
-            is_mjpeg:              false,
-            coeff:                 1,
-            extended_xmp_segments: vec![]
+            h_max: 1,
+            v_max: 1,
+            mcu_height: 0,
+            mcu_width: 0,
+            mcu_x: 0,
+            mcu_y: 0,
+            is_interleaved: false,
+            is_progressive: false,
+            spec_start: 0,
+            spec_end: 0,
+            succ_high: 0,
+            succ_low: 0,
+            num_scans: 0,
+            scan_subsampled: false,
+            idct_func: choose_idct_func(&options),
+            idct_4x4_func: choose_idct_4x4_func(&options),
+            idct_1x1_func: choose_idct_1x1_func(&options),
+            color_convert_16: color_convert,
+            input_colorspace: ColorSpace::YCbCr,
+            z_order: [0; MAX_COMPONENTS],
+            restart_interval: 0,
+            todo: 0x7fff_ffff,
+            options: options,
+            stream: ZReader::new(buffer),
+            headers_decoded: false,
+            seen_sof: false,
+            icc_data: vec![],
+            is_mjpeg: false,
+            coeff: 1,
+            extended_xmp_segments: vec![],
+            setup_component_params_called: false
         }
     }
     /// Decode a buffer already in memory
@@ -242,6 +245,7 @@ where
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_headers()?;
+
         let size = self.output_buffer_size().unwrap();
         let mut out = vec![0; size];
         self.decode_into(&mut out)?;
@@ -543,7 +547,7 @@ where
                         if is_rgb {
                             self.input_colorspace = ColorSpace::RGB;
                         }
-
+                        self.set_upsampling()?;
                         return Ok(());
                     }
                 } else {
@@ -866,6 +870,8 @@ where
 
         let post_process_fn = post_process::<T>;
 
+        setup_component_params(self)?;
+
         if self.is_progressive {
             self.decode_mcu_ycbcr_progressive(out, post_process_fn)
         } else {
@@ -873,7 +879,10 @@ where
         }
     }
 
-    pub fn decode_planar(&mut self, out: &mut [&mut [u8]; MAX_COMPONENTS]) -> Result<(), DecodeErrors> {
+    pub fn decode_planar_scanline(
+        &mut self, out: &mut [&mut [u8]],
+        out_function: fn(output: &mut [&mut [u8]]) -> Result<(), DecodeErrors>
+    ) -> Result<(), DecodeErrors> {
         let mut temp_out = [];
 
         let this_post_process_fn = |decoder: &mut JpegDecoder<T>,
@@ -890,13 +899,15 @@ where
                 }
                 let source = &component.raw_coeff;
 
-                let mut destination =  &mut out[comp_idx];
+                debug_assert_eq!(source.len(), out[comp_idx].len());
+                let destination = &mut out[comp_idx][..component.raw_coeff.len()];
 
                 for (dst, src) in destination.iter_mut().zip(source.iter()) {
                     // idct already clamps it for me
                     *dst = *src as u8;
                 }
             }
+            out_function(out)?;
 
             Ok(())
         };
@@ -906,6 +917,29 @@ where
         } else {
             self.decode_mcu_ycbcr_baseline(&mut temp_out, this_post_process_fn)
         }
+    }
+    /// Calculate the default planar sizes
+    pub fn planar_out_size(&mut self) -> Result<[usize; MAX_COMPONENTS], DecodeErrors> {
+        setup_component_params(self)?;
+
+        let mut comps = [0; MAX_COMPONENTS];
+
+        for (comp_idx, component) in self.components.iter().enumerate() {
+            // allocate enough space to hold a whole MCU width
+            // this means we should take into account sampling ratios
+            // `*8` is because each MCU spans 8 widths.
+            if self.is_interleaved {
+                let len = component.width_stride * component.vertical_sample * 8;
+
+                comps[comp_idx] = len;
+            } else {
+                // For non-interleaved images( (1*1) subsampling)
+                // number of MCU's are the widths (+7 to account for paddings) divided bu 8.
+                let mcu_width = (self.info.width as usize).div_ceil(8) * 64;
+                comps[comp_idx] = mcu_width;
+            }
+        }
+        Ok(comps)
     }
     /// Read only headers from a jpeg image buffer
     ///
@@ -943,6 +977,11 @@ where
 
     /// Set up-sampling routines in case an image is down sampled
     pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors> {
+
+        // Image not interleaved
+        if !self.is_interleaved {
+            return Ok(());
+        }
         // no sampling, return early
         // check if horizontal max ==1
         if self.h_max == self.v_max && self.h_max == 1 {

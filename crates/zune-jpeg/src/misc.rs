@@ -191,9 +191,14 @@ impl fmt::Debug for SOFMarkers {
 ///
 /// This modifies the components in place setting up details needed by other
 /// parts fo the decoder.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
+    // params called before so do not run it again
+    if img.setup_component_params_called {
+        return Ok(());
+    }
     let img_width = img.width();
     let img_height = img.height();
 
@@ -250,7 +255,7 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
         component.y = y;
         component.quantization_table = qt_table;
         // initially stride contains its horizontal sub-sampling
-        component.width_stride *= img.mcu_x * 8;
+        component.width_stride = component.horizontal_sample * img.mcu_x * 8;
     }
     {
         // Sampling factors are one thing that suck
@@ -353,6 +358,10 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             }
         }
     }
+    if img.is_interleaved {
+        img.set_upsampling()?;
+    }
+    img.setup_component_params_called = true;
     Ok(())
 }
 
