@@ -8,7 +8,7 @@ zune-core = { version = "0.5.1", path = "../zune-core" }
 
 [features]
 simd = []
-default = ['simd']
+default = []
 
 
 [dev-dependencies]
