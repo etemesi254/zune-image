@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables)]
 // sample_decoder — HEIF container decoder
 //
 // All code is in one file, organised as inline modules that mirror the
@@ -154,7 +155,7 @@ mod isobmff {
     pub mod reader {
         use std::io::{Read, Seek, SeekFrom};
 
-        use super::error::{Error, Result};
+        use super::error::Result;
 
         /// Typed big-endian reads over any `Read + Seek` source.
         pub struct IsobmffReader<R: Read + Seek> {
@@ -687,10 +688,10 @@ mod isobmff {
 
     // ── boxes ─────────────────────────────────────────────────────────────────
     pub mod boxes {
-        use std::io::{Cursor, Read, Seek};
+        use std::io::Cursor;
 
         use super::error::{Error, Result};
-        use super::reader::{IsobmffReader, fourcc_str, u8_at, u16_be_at, u32_be_at, u64_be_at};
+        use super::reader::{fourcc_str, u16_be_at, u32_be_at, u64_be_at, u8_at, IsobmffReader};
 
         // ── ftyp — File Type Box (ISO 14496-12 §4.3) ──────────────────────────
 
@@ -1125,7 +1126,7 @@ mod heif {
     // ── boxes ─────────────────────────────────────────────────────────────────
     pub mod boxes {
         use crate::isobmff::error::{Error, Result};
-        use crate::isobmff::reader::{fourcc_str, u8_at, u16_be_at, u32_be_at};
+        use crate::isobmff::reader::{fourcc_str, u16_be_at, u32_be_at, u8_at};
 
         // ── ispe — Image Spatial Extents (ISO 23008-12 §6.5.3) ───────────────
 
@@ -1557,7 +1558,7 @@ mod heif {
         use crate::isobmff::boxes::{FtypBox, IlocBox, InfeBox, IpmaBox, PitmBox};
         use crate::isobmff::error::{Error, Result};
         use crate::isobmff::reader::IsobmffReader;
-        use crate::isobmff::tree::{BoxTree, RawBox, is_standard_container, parse_file};
+        use crate::isobmff::tree::{is_standard_container, parse_file, BoxTree, RawBox};
 
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub enum ItemKind {
@@ -2093,7 +2094,7 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use std::{env, fs};
 
-use heif::file::{HeifFile, ImageItem, ItemKind};
+use heif::file::{HeifFile, ImageItem};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
