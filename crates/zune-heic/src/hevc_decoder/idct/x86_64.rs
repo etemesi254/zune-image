@@ -59,7 +59,7 @@ fn shift_clip(val: i32, shift: i32) -> i16 {
 }
 
 #[inline(always)]
-unsafe fn shift_clip_x4(vals: &[i32; 4], shift: i32) -> [i16; 4] {
+unsafe fn shift_clip_x4<const shift: i32>(vals: &[i32; 4]) -> [i16; 4] {
     let v = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
     let offset = _mm_set1_epi32((1 << shift) >> 1);
     let shifted = _mm_srai_epi32(_mm_add_epi32(v, offset), shift);
@@ -70,7 +70,7 @@ unsafe fn shift_clip_x4(vals: &[i32; 4], shift: i32) -> [i16; 4] {
 }
 
 #[inline(always)]
-unsafe fn shift_clip_x8(vals: &[i32; 8], shift: i32) -> [i16; 8] {
+unsafe fn shift_clip_x8<const shift: i32>(vals: &[i32; 8]) -> [i16; 8] {
     let lo = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
     let hi = _mm_loadu_si128(vals.as_ptr().add(4) as *const __m128i);
     let offset = _mm_set1_epi32((1 << shift) >> 1);
@@ -85,34 +85,38 @@ unsafe fn shift_clip_x8(vals: &[i32; 8], shift: i32) -> [i16; 8] {
 }
 
 #[inline(always)]
-unsafe fn shift_clip_x16(vals: &[i32; 16], shift: i32) -> [i16; 16] {
+unsafe fn shift_clip_x16<const shift: i32>(vals: &[i32; 16]) -> [i16; 16] {
     let mut out = [0i16; 16];
-    let o1 = shift_clip_x8(vals[0..8].try_into().unwrap(), shift);
-    let o2 = shift_clip_x8(vals[8..16].try_into().unwrap(), shift);
+    let o1 = shift_clip_x8::<shift>(vals[0..8].try_into().unwrap());
+    let o2 = shift_clip_x8::<shift>(vals[8..16].try_into().unwrap());
     out[0..8].copy_from_slice(&o1);
     out[8..16].copy_from_slice(&o2);
     out
 }
 
 #[inline(always)]
-unsafe fn shift_clip_x32(vals: &[i32; 32], shift: i32) -> [i16; 32] {
+unsafe fn shift_clip_x32<const shift: i32>(vals: &[i32; 32]) -> [i16; 32] {
     let mut out = [0i16; 32];
-    let o1 = shift_clip_x16(vals[0..16].try_into().unwrap(), shift);
-    let o2 = shift_clip_x16(vals[16..32].try_into().unwrap(), shift);
+    let o1 = shift_clip_x16::<shift>(vals[0..16].try_into().unwrap());
+    let o2 = shift_clip_x16::<shift>(vals[16..32].try_into().unwrap());
     out[0..16].copy_from_slice(&o1);
     out[16..32].copy_from_slice(&o2);
     out
 }
 
 #[inline(always)]
-fn shift_clip_slice<const N: usize>(vals: &[i32; 32], shift: i32, out: &mut [i16]) {
+fn shift_clip_slice<const N: usize, const shift: i32>(vals: &[i32; 32], out: &mut [i16]) {
     unsafe {
         match N {
-            4 => out[..4].copy_from_slice(&shift_clip_x4(vals[..4].try_into().unwrap(), shift)),
-            8 => out[..8].copy_from_slice(&shift_clip_x8(vals[..8].try_into().unwrap(), shift)),
-            16 => out[..16].copy_from_slice(&shift_clip_x16(vals[..16].try_into().unwrap(), shift)),
-            32 => out[..32].copy_from_slice(&shift_clip_x32(vals[..32].try_into().unwrap(), shift)),
-            _ => unreachable!(),
+            4 => out[..4].copy_from_slice(&shift_clip_x4::<shift>(vals[..4].try_into().unwrap())),
+            8 => out[..8].copy_from_slice(&shift_clip_x8::<shift>(vals[..8].try_into().unwrap())),
+            16 => {
+                out[..16].copy_from_slice(&shift_clip_x16::<shift>(vals[..16].try_into().unwrap()))
+            }
+            32 => {
+                out[..32].copy_from_slice(&shift_clip_x32::<shift>(vals[..32].try_into().unwrap()))
+            }
+            _ => unreachable!()
         }
     }
 }
@@ -298,8 +302,9 @@ pub fn idct_2d_core<const N: usize>(
     block: &mut [i16], intermediate: &mut [i16; 1024], bit_depth: u8, is_dst: bool,
     transform_1d: fn(&[i16], &mut [i32])
 ) {
-    let shift1: i32 = 7;
-    let shift2: i32 = 20 - i32::from(bit_depth);
+    const shift1: i32 = 7;
+    const shift2: i32 = 20 - 8; /*todo, use genercis for newer bit depths passing it as const generics i32::from(bit_depth) */
+    
 
     for c in 0..N {
         let mut col_in = [0i16; 32];
@@ -326,7 +331,7 @@ pub fn idct_2d_core<const N: usize>(
         transform_1d(&col_in[..N], &mut col_out);
 
         let mut clipped = [0i16; 32];
-        shift_clip_slice::<N>(&col_out, shift1, &mut clipped);
+        shift_clip_slice::<N, shift1>(&col_out, &mut clipped);
         for r in 0..N {
             intermediate[r * N + c] = clipped[r];
         }
@@ -354,7 +359,7 @@ pub fn idct_2d_core<const N: usize>(
         transform_1d(row, &mut row_out);
 
         let mut clipped = [0i16; 32];
-        shift_clip_slice::<N>(&row_out, shift2, &mut clipped);
+        shift_clip_slice::<N, shift2>(&row_out, &mut clipped);
         for c in 0..N {
             block[r * N + c] = clipped[c];
         }
