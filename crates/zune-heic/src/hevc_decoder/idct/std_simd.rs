@@ -1,8 +1,8 @@
 #![allow(unreachable_code)]
 #![cfg(feature = "simd")]
-use std::simd::cmp::SimdOrd;
-use std::simd::num::SimdInt;
-use std::simd::{i16x4, i16x8, i16x16, i32x4, i32x8};
+use core::simd::cmp::SimdOrd;
+use core::simd::num::SimdInt;
+use core::simd::{i16x4, i16x8, i16x16, i32x4, i32x8};
 
 const DC_VERTICAL_SCALE: i32 = 64;
 

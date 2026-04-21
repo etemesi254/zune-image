@@ -2,7 +2,6 @@
 
 use core::simd::prelude::*;
 use std::mem::size_of;
-use core::simd::Select;
 use crate::premul_alpha::unpremultiply_f32_scalar;
 
 /// Divides input by alpha, on encountering zero in alpha, stores zero in output
