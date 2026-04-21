@@ -11,12 +11,12 @@ simd = []
 default = []
 
 
-[dev-dependencies]
-criterion = "0.8.2"
-libheif-rs = { version = "2.7.0",features = ["embedded-libheif"] } # Standard safe wrapper for libheif
-
-
-
-[[bench]]
-name = "heif_bench"
-harness = false
+#[dev-dependencies]
+#criterion = "0.8.2"
+#libheif-rs = { version = "2.7.0", features = [] } # Standard safe wrapper for libheif
+#
+#
+#
+#[[bench]]
+#name = "heif_bench"
+#harness = false
