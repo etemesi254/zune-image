@@ -48,9 +48,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::too_many_lines
     )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_progressive(
-        &mut self, pixels: &mut [u8], post_process_fn: PostProcessFn<T>
-    ) -> Result<(), DecodeErrors> {
+    pub(crate) fn decode_mcu_ycbcr_progressive<F>(
+        &mut self, pixels: &mut [u8], post_process_fn: F
+    ) -> Result<(), DecodeErrors>
+    where
+        F: Fn(
+            &mut JpegDecoder<T>,
+            &mut [u8],
+            usize,
+            usize,
+            usize,
+            usize,
+            &mut usize,
+            &mut [i16]
+        ) -> Result<(), DecodeErrors>
+    {
         setup_component_params(self)?;
 
         let mut mcu_height;
@@ -471,10 +483,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
-    fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
-        post_process_fn: PostProcessFn<T>
-    ) -> Result<(), DecodeErrors> {
+    fn finish_progressive_decoding<F>(
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8], post_process_fn: F
+    ) -> Result<(), DecodeErrors>
+    where
+        F: Fn(
+            &mut JpegDecoder<T>,
+            &mut [u8],
+            usize,
+            usize,
+            usize,
+            usize,
+            &mut usize,
+            &mut [i16]
+        ) -> Result<(), DecodeErrors>
+    {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
         //

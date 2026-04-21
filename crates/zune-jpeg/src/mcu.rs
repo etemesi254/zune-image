@@ -17,7 +17,7 @@ use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{PostProcessFn, MAX_COMPONENTS};
+use crate::decoder::MAX_COMPONENTS;
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::mcu_prog::get_marker;
@@ -84,9 +84,21 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::cast_possible_truncation
     )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, pixels: &mut [u8], post_process_fn: PostProcessFn<T>
-    ) -> Result<(), DecodeErrors> {
+    pub(crate) fn decode_mcu_ycbcr_baseline<F>(
+        &mut self, pixels: &mut [u8], post_process_fn: F
+    ) -> Result<(), DecodeErrors>
+    where
+        F: Fn(
+            &mut JpegDecoder<T>,
+            &mut [u8],
+            usize,
+            usize,
+            usize,
+            usize,
+            &mut usize,
+            &mut [i16]
+        ) -> Result<(), DecodeErrors>
+    {
         setup_component_params(self)?;
 
         // check dc and AC tables
@@ -331,10 +343,22 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// of an interleaved baseline decoding would use.
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
-    pub(crate) fn finish_baseline_decoding(
+    pub(crate) fn finish_baseline_decoding<F>(
         &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
-        post_process_fn: PostProcessFn<T>
-    ) -> Result<(), DecodeErrors> {
+        post_process_fn: F
+    ) -> Result<(), DecodeErrors>
+    where
+        F: Fn(
+            &mut JpegDecoder<T>,
+            &mut [u8],
+            usize,
+            usize,
+            usize,
+            usize,
+            &mut usize,
+            &mut [i16]
+        ) -> Result<(), DecodeErrors>
+    {
         let mcu_height = self.mcu_y;
 
         // Size of our output image(width*height)

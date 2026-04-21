@@ -869,10 +869,28 @@ where
         if self.is_progressive {
             self.decode_mcu_ycbcr_progressive(out, post_process_fn)
         } else {
-            self.decode_mcu_ycbcr_baseline(out,post_process_fn)
+            self.decode_mcu_ycbcr_baseline(out, post_process_fn)
         }
     }
 
+    pub fn decode_planar(&mut self, out: &[&mut [u8]; MAX_COMPONENTS]) -> Result<(), DecodeErrors> {
+        let mut temp_out = [];
+        let this_post_process_fn =
+            |decoder: &mut JpegDecoder<T>,
+             pixels: &mut [u8],
+             i: usize,
+             mcu_height: usize,
+             width: usize,
+             padded_width: usize,
+             pixels_written: &mut usize,
+             upsampler_scratch_space: &mut [i16]| { todo!() };
+
+        if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive(&mut temp_out, this_post_process_fn)
+        } else {
+            self.decode_mcu_ycbcr_baseline(&mut temp_out, this_post_process_fn)
+        }
+    }
     /// Read only headers from a jpeg image buffer
     ///
     /// This allows you to extract important information like
