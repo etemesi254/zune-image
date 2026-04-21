@@ -13,7 +13,7 @@ default = ['simd']
 
 [dev-dependencies]
 criterion = "0.8.2"
-libheif-rs = "2.7.0" # Standard safe wrapper for libheif
+libheif-rs = { version = "2.7.0",features = ["embedded-libheif"] } # Standard safe wrapper for libheif
 
 
 
