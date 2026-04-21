@@ -270,6 +270,10 @@ impl ImageFormat {
                         data, options
                     )))
                 }
+                #[cfg(not(feature = "webp"))]
+                {
+                    Err(ImageErrors::ImageDecoderNotIncluded(*self))
+                }
             }
             ImageFormat::Unknown => Err(ImageErrors::ImageDecoderNotImplemented(*self))
         }
