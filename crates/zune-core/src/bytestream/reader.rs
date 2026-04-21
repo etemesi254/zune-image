@@ -239,7 +239,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     #[inline(always)]
     pub fn read_u8_err(&mut self) -> Result<u8, ZByteIoError> {
         let mut buf = [0];
-        self.inner.read_const_bytes(&mut buf)?;
+        self.inner.read_bytes(&mut buf)?;
         Ok(buf[0])
     }
 
@@ -290,7 +290,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     #[inline(always)]
     pub fn read_fixed_bytes_or_error<const N: usize>(&mut self) -> Result<[u8; N], ZByteIoError> {
         let mut byte_store: [u8; N] = [0; N];
-        match self.inner.read_const_bytes(&mut byte_store) {
+        match self.inner.read_bytes(&mut byte_store) {
             Ok(_) => Ok(byte_store),
             Err(e) => Err(e)
         }
@@ -302,7 +302,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     #[inline(always)]
     pub fn read_fixed_bytes_or_zero<const N: usize>(&mut self) -> [u8; N] {
         let mut byte_store: [u8; N] = [0; N];
-        self.inner.read_const_bytes_no_error(&mut byte_store);
+        let _ = self.inner.read_bytes(&mut byte_store);
         byte_store
     }
 
@@ -399,7 +399,7 @@ macro_rules! get_single_type {
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                self.inner.read_const_bytes_no_error(&mut space);
+                let  _ =self.inner.read_bytes(&mut space);
 
                 match mode {
                     Mode::BE => $int_type::from_be_bytes(space),
@@ -414,7 +414,7 @@ macro_rules! get_single_type {
 
                 let mut space = [0; SIZE_OF_VAL];
 
-                match self.inner.read_const_bytes(&mut space)
+                match self.inner.read_bytes(&mut space)
                 {
                     Ok(_) => match mode {
                         Mode::BE => Ok($int_type::from_be_bytes(space)),

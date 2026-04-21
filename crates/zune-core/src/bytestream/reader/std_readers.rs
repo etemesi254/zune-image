@@ -40,14 +40,14 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
         Ok(())
     }
 
-    #[inline]
-    fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError> {
-        self.read_exact_bytes(buf)
-    }
-
-    fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]) {
-        let _ = self.read_const_bytes(buf);
-    }
+    //#[inline]
+    // fn read_const_bytes<const N: usize>(&mut self, buf: &mut [u8; N]) -> Result<(), ZByteIoError> {
+    //     self.read_exact_bytes(buf)
+    // }
+    //
+    // fn read_const_bytes_no_error<const N: usize>(&mut self, buf: &mut [u8; N]) {
+    //     let _ = self.read_const_bytes(buf);
+    // }
 
     #[inline(always)]
     fn read_bytes(&mut self, buf: &mut [u8]) -> Result<usize, ZByteIoError> {
