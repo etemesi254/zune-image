@@ -17,7 +17,7 @@ use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::MAX_COMPONENTS;
+use crate::decoder::{PostProcessFn, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::mcu_prog::get_marker;
@@ -85,7 +85,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_baseline(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8], post_process_fn: PostProcessFn<T>
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -257,7 +257,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
-                    post_process(
+                    post_process_fn(
                         self,
                         pixels,
                         i,
@@ -301,7 +301,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         if !all_components_in_first_scan {
-            self.finish_baseline_decoding(&progressive_mcus, mcu_width, pixels)?;
+            self.finish_baseline_decoding(&progressive_mcus, mcu_width, pixels, post_process_fn)?;
         }
 
         // it may happen that some images don't have the whole buffer
@@ -332,7 +332,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn finish_baseline_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8]
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], _mcu_width: usize, pixels: &mut [u8],
+        post_process_fn: PostProcessFn<T>
     ) -> Result<(), DecodeErrors> {
         let mcu_height = self.mcu_y;
 
@@ -389,7 +390,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that whole stripe of MCUs
-            post_process(
+            post_process_fn(
                 self,
                 pixels,
                 i,
@@ -788,6 +789,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(())
     }
 }
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub(crate) fn post_process<Z: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<Z>, pixels: &mut [u8], i: usize, mcu_height: usize, width: usize,

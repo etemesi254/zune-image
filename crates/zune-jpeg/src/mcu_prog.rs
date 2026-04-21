@@ -30,11 +30,11 @@ use zune_core::log::{debug, error, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{JpegDecoder, MAX_COMPONENTS};
+use crate::decoder::{JpegDecoder, PostProcessFn, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
-use crate::mcu::{post_process, DCT_BLOCK};
+use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -49,7 +49,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_progressive(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8], post_process_fn: PostProcessFn<T>
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -115,7 +115,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             } else {
                 error!("{}", result.err().unwrap());
                 // Go process it and return as much as we can, exiting here
-                return self.finish_progressive_decoding(&block, pixels);
+                return self.finish_progressive_decoding(&block, pixels, post_process_fn);
             };
         }
 
@@ -204,7 +204,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
 
-        self.finish_progressive_decoding(&block, pixels)
+        self.finish_progressive_decoding(&block, pixels, post_process_fn)
     }
 
     /// Reset progressive parameters
@@ -472,7 +472,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8]
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        post_process_fn: PostProcessFn<T>
     ) -> Result<(), DecodeErrors> {
         // This function is complicated because we need to replicate
         // the function in mcu.rs
@@ -611,7 +612,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that width up until it's impossible
-            post_process(
+            post_process_fn(
                 self,
                 pixels,
                 i,

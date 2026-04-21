@@ -26,8 +26,9 @@ use crate::headers::{
     parse_start_of_frame
 };
 use crate::huffman::HuffmanTable;
-use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
+use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
 use crate::marker::Marker;
+use crate::mcu::post_process;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
@@ -69,7 +70,34 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 /// Multiply each 64 element block of `&mut [i16]` with `&Aligned32<[i32;64]>`
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
-
+/// The function is generic over the byte reader type `Z`, but must be
+/// monomorphized (e.g. `post_process::<Z>`) before being used as a
+/// function pointer.
+///
+/// # Parameters
+/// - `decoder`: The active [`JpegDecoder`] instance containing decoding state.
+/// - `pixels`: Output buffer where processed pixel data is written.
+/// - `i`: Current MCU index or iteration position.
+/// - `mcu_height`: Height of the MCU block being processed.
+/// - `width`: Image width (non-padded).
+/// - `padded_width`: Width including any alignment padding.
+/// - `pixels_written`: Running count of how many pixels have been written.
+/// - `upsampler_scratch_space`: Temporary buffer used for intermediate
+///   upsampling computations.
+///
+/// Some fields can be ignored based on the operations you are running
+/// e.g if you want raw planar sub-sampled you can skip utilizing items like scratch space
+///
+pub(crate) type PostProcessFn<Z> = fn(
+    &mut JpegDecoder<Z>,
+    &mut [u8],
+    usize,
+    usize,
+    usize,
+    usize,
+    &mut usize,
+    &mut [i16]
+) -> Result<(), DecodeErrors>;
 /// An encapsulation of an ICC chunk
 pub(crate) struct ICCChunk {
     pub(crate) seq_no:      u8,
@@ -135,8 +163,8 @@ pub struct JpegDecoder<T> {
     /// Specialized IDCT when we can guarantee only few coefficients are non-zero.
     ///
     /// **The callee must uphold a contract**. See [`choose_idct_4x4_func`].
-    pub(crate) idct_4x4_func: IDCTPtr,
-    pub(crate) idct_1x1_func: IDCTPtr,
+    pub(crate) idct_4x4_func:    IDCTPtr,
+    pub(crate) idct_1x1_func:    IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
     pub(crate) z_order:          [usize; MAX_COMPONENTS],
@@ -152,11 +180,11 @@ pub struct JpegDecoder<T> {
     pub(crate) seen_sof:         bool,
 
     // exif data, lifted from app2
-    pub(crate) icc_data: Vec<ICCChunk>,
-    pub(crate) is_mjpeg: bool,
-    pub(crate) coeff:    usize, // Solves some weird bug :)
+    pub(crate) icc_data:              Vec<ICCChunk>,
+    pub(crate) is_mjpeg:              bool,
+    pub(crate) coeff:                 usize, // Solves some weird bug :)
     /// Extended XMP segments
-    pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
+    pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>
 }
 
 impl<T> JpegDecoder<T>
@@ -167,42 +195,42 @@ where
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info:              ImageInfo::default(),
-            qt_tables:         [None, None, None, None],
-            dc_huffman_tables: [None, None, None, None],
-            ac_huffman_tables: [None, None, None, None],
-            components:        vec![],
+            info:                  ImageInfo::default(),
+            qt_tables:             [None, None, None, None],
+            dc_huffman_tables:     [None, None, None, None],
+            ac_huffman_tables:     [None, None, None, None],
+            components:            vec![],
             // Interleaved information
-            h_max:             1,
-            v_max:             1,
-            mcu_height:        0,
-            mcu_width:         0,
-            mcu_x:             0,
-            mcu_y:             0,
-            is_interleaved:    false,
-            is_progressive:    false,
-            spec_start:        0,
-            spec_end:          0,
-            succ_high:         0,
-            succ_low:          0,
-            num_scans:         0,
-            scan_subsampled:   false, 
-            idct_func:         choose_idct_func(&options),
-            idct_4x4_func:     choose_idct_4x4_func(&options),
-            idct_1x1_func:     choose_idct_1x1_func(&options),
-            color_convert_16:  color_convert,
-            input_colorspace:  ColorSpace::YCbCr,
-            z_order:           [0; MAX_COMPONENTS],
-            restart_interval:  0,
-            todo:              0x7fff_ffff,
-            options:           options,
-            stream:            ZReader::new(buffer),
-            headers_decoded:   false,
-            seen_sof:          false,
-            icc_data:          vec![],
-            is_mjpeg:          false,
-            coeff:             1,
-            extended_xmp_segments: vec![],
+            h_max:                 1,
+            v_max:                 1,
+            mcu_height:            0,
+            mcu_width:             0,
+            mcu_x:                 0,
+            mcu_y:                 0,
+            is_interleaved:        false,
+            is_progressive:        false,
+            spec_start:            0,
+            spec_end:              0,
+            succ_high:             0,
+            succ_low:              0,
+            num_scans:             0,
+            scan_subsampled:       false,
+            idct_func:             choose_idct_func(&options),
+            idct_4x4_func:         choose_idct_4x4_func(&options),
+            idct_1x1_func:         choose_idct_1x1_func(&options),
+            color_convert_16:      color_convert,
+            input_colorspace:      ColorSpace::YCbCr,
+            z_order:               [0; MAX_COMPONENTS],
+            restart_interval:      0,
+            todo:                  0x7fff_ffff,
+            options:               options,
+            stream:                ZReader::new(buffer),
+            headers_decoded:       false,
+            seen_sof:              false,
+            icc_data:              vec![],
+            is_mjpeg:              false,
+            coeff:                 1,
+            extended_xmp_segments: vec![]
         }
     }
     /// Decode a buffer already in memory
@@ -344,7 +372,8 @@ where
         }
 
         // Sort by offset
-        self.extended_xmp_segments.sort_by(|a, b| a.offset.cmp(&b.offset));
+        self.extended_xmp_segments
+            .sort_by(|a, b| a.offset.cmp(&b.offset));
 
         let guid = &self.extended_xmp_segments[0].guid;
         let total_size = self.extended_xmp_segments[0].total_size;
@@ -636,9 +665,7 @@ where
                 parse_app13(self)?;
             }
             _ => {
-                warn!(
-                    "Capabilities for processing marker \"{m:?}\" not implemented"
-                );
+                warn!("Capabilities for processing marker \"{m:?}\" not implemented");
 
                 let length = self.stream.get_u16_be_err()?;
 
@@ -837,10 +864,12 @@ where
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
 
+        let post_process_fn = post_process::<T>;
+
         if self.is_progressive {
-            self.decode_mcu_ycbcr_progressive(out)
+            self.decode_mcu_ycbcr_progressive(out, post_process_fn)
         } else {
-            self.decode_mcu_ycbcr_baseline(out)
+            self.decode_mcu_ycbcr_baseline(out,post_process_fn)
         }
     }
 
@@ -957,10 +986,10 @@ pub struct GainMapInfo {
 
 #[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct ExtendedXmpSegment {
-    pub(crate) offset: u32,
+    pub(crate) offset:     u32,
     pub(crate) total_size: u32,
-    pub(crate) guid: Vec<u8>,
-    pub(crate) data: Vec<u8>,
+    pub(crate) guid:       Vec<u8>,
+    pub(crate) data:       Vec<u8>
 }
 
 /// A struct representing Image Information
@@ -1000,7 +1029,7 @@ pub struct ImageInfo {
     /// Image sub-sampling ratio
     pub sample_ratio: SampleRatios,
     /// The offset at which Multi picture information was found
-    pub multi_picture_information_offset: Option<u64>,
+    pub multi_picture_information_offset: Option<u64>
 }
 
 impl ImageInfo {
