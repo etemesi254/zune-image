@@ -582,7 +582,7 @@ where
                 // choose marker
                 let marker =
                     match m {
-                        Marker::SOF(0) | Marker::SOF(1) =>
+                        Marker::SOF(0 | 1) =>
                             SOFMarkers::BaselineDct,
                         Marker::SOF(2) => {
                             self.is_progressive = true;
@@ -591,7 +591,7 @@ where
                         _ => unreachable!(),
                     };
 
-                trace!("Image encoding scheme =`{:?}`", marker);
+                trace!("Image encoding scheme =`{marker:?}`");
                 // get components
                 parse_start_of_frame(marker, self)?;
             }
@@ -911,12 +911,10 @@ where
             }
             #[cfg(not(feature = "arith"))]
             unreachable!();
+        } else if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out)
         } else {
-            if self.is_progressive {
-                self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out)
-            } else {
-                self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out)
-            }
+            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out)
         }
     }
 

@@ -50,7 +50,7 @@ impl Debug for FarbFeldEncoderErrors {
                 )
             }
             FarbFeldEncoderErrors::IOErrors(err) => {
-                writeln!(f, "I/O error {:?}", err)
+                writeln!(f, "I/O error {err:?}")
             }
         }
     }

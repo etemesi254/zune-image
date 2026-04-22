@@ -102,8 +102,8 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 for out_file in args.get_raw("out").unwrap() {
                     let path = Path::new(out_file);
                     if path.exists() && !cmd_opts.override_files && path.is_file() {
-                        let msg = format!("File {:?} already exists overwrite [y/N]?", path);
-                        eprintln!("{}", msg);
+                        let msg = format!("File {path:?} already exists overwrite [y/N]?");
+                        eprintln!("{msg}");
                         let _ = std::io::stdout().flush();
                         let mut response = String::new();
                         let _ = std::io::stdin()
@@ -121,12 +121,12 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                         if let Some(encode_type) =
                             ImageFormat::encoder_for_extension(ext.to_str().unwrap())
                         {
-                            info!("Treating {:?} as a {:?} format", out_file, encode_type);
+                            info!("Treating {out_file:?} as a {encode_type:?} format");
                             workflow
                                 .formats
                                 .push((encode_type, out_file.to_os_string()));
                         } else {
-                            error!("Unknown or unsupported format {:?}", out_file)
+                            error!("Unknown or unsupported format {out_file:?}")
                         }
                         // check for path details before even carrying out operations
                         // this
@@ -138,7 +138,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                         } else {
                             return Err(ImageErrors::GenericStr("You must specify the image format to be used while using output as '-` via the --output-format flag "));
                         }
-                        error!("Could not determine extension from {:?}", out_file);
+                        error!("Could not determine extension from {out_file:?}");
                     }
                 }
             }
@@ -154,7 +154,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             if format.has_encoder() {
                 if log_enabled!(log::Level::Trace) {
                     println!();
-                    trace!("Encoding to format {:?} to file {:?} ", format, out_file);
+                    trace!("Encoding to format {format:?} to file {out_file:?} ");
                 }
                 for image in workflow.inner.images() {
                     let fd = OpenOptions::new()
@@ -176,7 +176,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                             );
                         }
                         Err(e) => {
-                            error!("Cannot encode to file, error opening {:?}", e);
+                            error!("Cannot encode to file, error opening {e:?}");
                         }
                     }
                 }

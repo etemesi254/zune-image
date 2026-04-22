@@ -79,7 +79,7 @@ impl Debug for QoiErrors {
                 )
             }
             QoiErrors::IoErrors(value) => {
-                writeln!(f, "I/O error {:?}", value)
+                writeln!(f, "I/O error {value:?}")
             }
         }
     }
@@ -127,10 +127,10 @@ impl Debug for QoiEncodeErrors {
                 )
             }
             QoiEncodeErrors::Generic(val) => {
-                writeln!(f, "{}", val)
+                writeln!(f, "{val}")
             }
             QoiEncodeErrors::IoError(v) => {
-                writeln!(f, "I/O error {:?}", v)
+                writeln!(f, "I/O error {v:?}")
             }
         }
     }
@@ -138,12 +138,12 @@ impl Debug for QoiEncodeErrors {
 
 impl Display for QoiEncodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "{:?}", self)
+        writeln!(f, "{self:?}")
     }
 }
 impl Display for QoiErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "{:?}", self)
+        writeln!(f, "{self:?}")
     }
 }
 

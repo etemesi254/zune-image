@@ -27,8 +27,8 @@ where
         )));
     }
 
-    trace!("Encountered unknown chunk {:?}", chunk_name);
-    trace!("Length of chunk {}", length);
+    trace!("Encountered unknown chunk {chunk_name:?}");
+    trace!("Length of chunk {length}");
     trace!("Skipping {} bytes", length + 4);
 
     reader.skip(length + 4)?;

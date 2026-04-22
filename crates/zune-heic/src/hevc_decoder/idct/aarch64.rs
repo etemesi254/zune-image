@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "aarch64",target_feature = "neon"))]
 #![allow(unreachable_code)]
 #![allow(unsafe_op_in_unsafe_fn)]
-use core::arch::aarch64::*;
+use core::arch::aarch64::{vld1q_s32, vdupq_n_s32, vshlq_s32, vaddq_s32, vqmovn_s32, vst1_s16, vcombine_s16, vst1q_s16, vdupq_n_s16, vld1q_s16, vorrq_s16, vmaxvq_u16, vreinterpretq_u16_s16, vld1_s16, vaddvq_s32, vmull_s16, vget_low_s16, vmlal_s16, vget_high_s16, vst1q_s32};
 
 const DC_VERTICAL_SCALE: i32 = 64;
 

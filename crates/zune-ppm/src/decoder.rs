@@ -74,7 +74,7 @@ impl Debug for PPMDecodeErrors {
                 )
             }
             Self::IoErrors(err) => {
-                writeln!(f, "{:?}", err)
+                writeln!(f, "{err:?}")
             }
         }
     }
@@ -364,7 +364,7 @@ where
             b'6' => ColorSpace::RGB,
             _ => unreachable!()
         };
-        trace!("Colorspace: {:?}", colorspace);
+        trace!("Colorspace: {colorspace:?}");
 
         self.colorspace = colorspace;
 

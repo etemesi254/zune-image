@@ -206,7 +206,7 @@ impl RawFrame {
 
         // Ignore the Error string for simplicity, or map it to io::Error
         self.write_rgb_420(&mut rgb_buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let file = std::fs::File::create(filename)?;
         let mut writer = std::io::BufWriter::new(file);

@@ -375,7 +375,7 @@ where
     }
 
     let nal_type = NalUnitType::from_u8(raw_type)
-        .map_err(|e| NalError::Generic(format!("Unknown nal type: {}", e)))?;
+        .map_err(|e| NalError::Generic(format!("Unknown nal type: {e}")))?;
 
     let nal_unit = NalUnit {
         nal_type,
@@ -393,7 +393,7 @@ mod tests {
 
     fn make_extent(nal_type: u8, layer_id: u8, temporal_id_plus1: u8, payload: &[u8]) -> Vec<u8> {
         let header = u16::to_be_bytes(
-            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | (temporal_id_plus1 as u16)
+            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | u16::from(temporal_id_plus1)
         );
         let nal_len = (2 + payload.len()) as u32;
         let mut out = nal_len.to_be_bytes().to_vec();
@@ -494,7 +494,7 @@ mod tests {
 
     fn make_annex_b(nal_type: u8, layer_id: u8, temporal_id_plus1: u8, payload: &[u8]) -> Vec<u8> {
         let header = u16::to_be_bytes(
-            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | (temporal_id_plus1 as u16)
+            (u16::from(nal_type) << 9) | (u16::from(layer_id) << 3) | u16::from(temporal_id_plus1)
         );
         let mut out = vec![0x00, 0x00, 0x00, 0x01];
         out.extend_from_slice(&header);

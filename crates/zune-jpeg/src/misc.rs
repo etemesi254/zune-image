@@ -242,7 +242,7 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
                 ))
             })?;
 
-        let x = (usize::from(img_width) * component.horizontal_sample + img.h_max - 1) / img.h_max;
+        let x = (usize::from(img_width) * component.horizontal_sample).div_ceil(img.h_max);
         let y = (usize::from(img_height) * component.horizontal_sample + img.h_max - 1) / img.v_max;
         component.x = x;
         component.w2 = img.mcu_x * component.horizontal_sample * 8;
@@ -347,7 +347,7 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
             // N/B: We do not post process the color of such, treating it as multiband
             // is the best option since I am not aware of grayscale+alpha which is the most common
             // two band format in jpeg.
-            if img.components.len() > 0 {
+            if !img.components.is_empty() {
                 img.input_colorspace =
                     ColorSpace::MultiBand(NonZeroU32::new(img.components.len() as u32).unwrap());
             }
@@ -373,11 +373,11 @@ pub fn calculate_padded_width(actual_width: usize, sub_sample: SampleRatios) -> 
     match sub_sample {
         SampleRatios::None | SampleRatios::V => {
             // None+V sends one MCU row, so that's a simple calculation
-            ((actual_width + 7) / 8) * 8
+            actual_width.div_ceil(8) * 8
         }
         SampleRatios::H | SampleRatios::HV => {
             // sends two rows, width can be expanded by up to 15 more bytes
-            ((actual_width + 15) / 16) * 16
+            actual_width.div_ceil(16) * 16
         }
         SampleRatios::Generic(h, _) => {
             ((actual_width + ((h * 8).saturating_sub(1))) / (h * 8)) * (h * 8)

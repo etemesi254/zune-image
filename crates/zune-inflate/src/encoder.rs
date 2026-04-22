@@ -265,7 +265,7 @@ pub fn v_hash(bytes: &[u8], num_bits: usize, min_length: usize) -> usize {
         }
 
         _ => {
-            debug_assert!(false, "Unknown min length {}", min_length);
+            debug_assert!(false, "Unknown min length {min_length}");
             0
         }
     }

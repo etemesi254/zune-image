@@ -546,7 +546,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         };
 
         let ref_count = reader.get_u16_be_err()?;
-        if ref_count as u32 > MAX_ENTRIES {
+        if u32::from(ref_count) > MAX_ENTRIES {
             // chosen by rng dice
             return Err(HeicErrors::Generic {
                 msg: format!(

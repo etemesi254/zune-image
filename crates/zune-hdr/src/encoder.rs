@@ -157,7 +157,7 @@ impl<'a> HdrEncoder<'a> {
             writer.write_all(b"SOFTWARE=zune-hdr\n")?;
             if let Some(headers) = self.headers {
                 for (k, v) in headers {
-                    writer.write_all(format!("{}={}\n", k, v).as_bytes())?;
+                    writer.write_all(format!("{k}={v}\n").as_bytes())?;
                 }
             }
             writer.write_all(b"FORMAT=32-bit_rle_rgbe\n\n")?;

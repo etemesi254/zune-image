@@ -14,7 +14,7 @@ impl Debug for FarbFeldErrors {
                 writeln!(f, "Generic: {e}")
             }
             FarbFeldErrors::IoError(e) => {
-                writeln!(f, "IO error: {:?}", e)
+                writeln!(f, "IO error: {e:?}")
             }
         }
     }

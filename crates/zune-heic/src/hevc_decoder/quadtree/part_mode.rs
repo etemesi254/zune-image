@@ -41,9 +41,7 @@ pub fn decode_part_mode(ctx: &mut DecodeSliceContext, log2_cb_size: u8) -> PartM
                 if bit1 == 1 {
                     if bit4 == 1 { PartMode::Part2NxnD } else { PartMode::Part2NxnU }
                 } else if bit4 == 0 { PartMode::PartnLx2N } else { PartMode::PartnRx2N }
-            } else {
-                if bit1 == 1 { PartMode::Part2NxN } else { PartMode::PartNx2N }
-            }
+            } else if bit1 == 1 { PartMode::Part2NxN } else { PartMode::PartNx2N }
         } else {
             // Minimum CU size (usually 8x8)
             if bit1 == 1 {

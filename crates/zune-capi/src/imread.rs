@@ -65,7 +65,7 @@ pub extern "C" fn zil_imread(
                 if output.is_null() {
                     unsafe {
                         *status = ZStatus::new(
-                            format!("Malloc failed to allocate buffer with size of {}", new_size),
+                            format!("Malloc failed to allocate buffer with size of {new_size}"),
                             ZStatusType::ZilMallocFailed
                         )
                     };
@@ -259,7 +259,7 @@ pub extern "C" fn zil_imdecode(
             if output.is_null() {
                 unsafe {
                     *status = ZStatus::new(
-                        format!("Malloc failed to allocate buffer with size of {}", size),
+                        format!("Malloc failed to allocate buffer with size of {size}"),
                         ZStatusType::ZilMallocFailed
                     )
                 };
@@ -450,7 +450,7 @@ where
                 }
                 decoder
                     .decode_into(output_buf)
-                    .map_err(|x| ImageErrors::GenericString(format!("{:?}", x)))?;
+                    .map_err(|x| ImageErrors::GenericString(format!("{x:?}")))?;
             }
             ImageFormat::QOI => {
                 // just write into buffer

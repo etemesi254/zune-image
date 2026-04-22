@@ -278,7 +278,7 @@ impl BitStreamHuffman {
 
         if self.bits_left < 32 {
             self.refill(reader)?;
-        };
+        }
         // look a head HUFF_LOOKAHEAD bits into the bitstream
         symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
         symbol = dc_table.lookup[symbol as usize];
@@ -307,7 +307,7 @@ impl BitStreamHuffman {
 
         if self.bits_left < 32 {
             self.refill(reader)?;
-        };
+        }
         // look a head HUFF_LOOKAHEAD bits into the bitstream
         symbol = self.peek_bits::<HUFF_LOOKAHEAD>();
         symbol = dc_table.lookup[symbol as usize];

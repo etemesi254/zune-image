@@ -1101,10 +1101,10 @@ impl<'a> JxlSimpleEncoder<'a> {
 
         if log_enabled!(Level::Trace) {
             trace!("JXL details");
-            trace!("Width: {}", width);
-            trace!("Height: {}", height);
-            trace!("Colorspace: {:?}", colorspace);
-            trace!("Depth: {:?}", depth);
+            trace!("Width: {width}");
+            trace!("Height: {height}");
+            trace!("Colorspace: {colorspace:?}");
+            trace!("Depth: {depth:?}");
             trace!("Configured threads: {:?}", self.options.num_threads());
         }
 

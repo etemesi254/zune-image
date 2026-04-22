@@ -316,9 +316,11 @@ mod tests {
 
             for i in 0..8 {
                 for j in 0..i {
-                    let orig = vals[i * 8 + j];
-                    vals[i * 8 + j] = vals[j * 8 + i];
-                    vals[j * 8 + i] = orig;
+                    let i = i;
+                    let j = j;
+                    let j = j;
+                    let i = i;
+                    vals.swap(i * 8 + j, j * 8 + i);
                 }
             }
 

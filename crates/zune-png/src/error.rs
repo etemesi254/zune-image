@@ -35,7 +35,7 @@ pub enum PngDecodeErrors {
 
 impl Display for PngDecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -65,7 +65,7 @@ impl Debug for PngDecodeErrors {
                 write!(f, "Too small output, expected buffer with at least {expected} bytes but got one with {found} bytes")
             }
             Self::IoErrors(e) => {
-                writeln!(f, "I/O error {:?}", e)
+                writeln!(f, "I/O error {e:?}")
             }
         }
     }

@@ -188,7 +188,7 @@ pub fn resample_separable_precomputed<T>(
                     }
                 }
                 1 => {
-                    if let Some(e) = in_row.get(start_idx..start_idx + 1) {
+                    if let Some(e) = in_row.get(start_idx..=start_idx) {
                         e.iter()
                             .zip(weights.iter())
                             .map(|(&pixel, &weight)| f32::from(pixel) * weight)
@@ -329,7 +329,7 @@ fn resample_horizontal_only_precomputed<T>(
                     }
                 }
                 1 => {
-                    if let Some(e) = in_row.get(start_idx..start_idx + 1) {
+                    if let Some(e) = in_row.get(start_idx..=start_idx) {
                         e.iter()
                             .zip(weights.iter())
                             .map(|(&pixel, &weight)| f32::from(pixel) * weight)
@@ -506,7 +506,7 @@ mod tests {
         let w = 7680;
         let h = 4320;
         let kernel = PrecomputedKernels::new(w, h, w / 2, h / 2, ResizeMethod::Bicubic);
-        let values = kernel.vertical.unwrap().iter().last().unwrap().clone();
+        let values = *kernel.vertical.unwrap().iter().last().unwrap();
         let subtracted = (values.end_idx - values.start_idx) + 1;
         println!("{},{} ,{}", values.start_idx, values.end_idx, subtracted);
     }

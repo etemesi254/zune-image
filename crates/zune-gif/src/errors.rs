@@ -24,7 +24,7 @@ impl Debug for GifDecoderErrors {
                 writeln!(f, "Not a gif, magic bytes didn't match")
             }
             GifDecoderErrors::Static(v) => {
-                writeln!(f, "{}", v)
+                writeln!(f, "{v}")
             }
             GifDecoderErrors::TooLargeDimensions(a, b, c) => {
                 writeln!(
@@ -42,7 +42,7 @@ impl Debug for GifDecoderErrors {
                 writeln!(f, "Expected a size of {at_least} but found {present}")
             }
             Self::IoErrors(err) => {
-                writeln!(f, "{:?}", err)
+                writeln!(f, "{err:?}")
             }
         }
     }

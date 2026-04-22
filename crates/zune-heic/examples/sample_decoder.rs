@@ -59,22 +59,20 @@ mod isobmff {
         impl fmt::Display for Error {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 match self {
-                    Error::Io(e) => write!(f, "I/O error: {}", e),
+                    Error::Io(e) => write!(f, "I/O error: {e}"),
                     Error::InvalidBoxSize { offset, size } => {
-                        write!(f, "Box at offset {} has invalid size {}", offset, size)
+                        write!(f, "Box at offset {offset} has invalid size {size}")
                     }
                     Error::UnexpectedEof { offset, needed } => write!(
                         f,
-                        "Unexpected end of data: need {} bytes at offset {}",
-                        needed, offset
+                        "Unexpected end of data: need {needed} bytes at offset {offset}"
                     ),
                     Error::InvalidBoxType(bytes) => {
-                        write!(f, "Box type contains non-ASCII bytes: {:?}", bytes)
+                        write!(f, "Box type contains non-ASCII bytes: {bytes:?}")
                     }
                     Error::UnsupportedVersion { offset, version } => write!(
                         f,
-                        "FullBox at offset {} has unsupported version {}",
-                        offset, version
+                        "FullBox at offset {offset} has unsupported version {version}"
                     ),
                     Error::PayloadTooShort {
                         box_type,
@@ -82,11 +80,10 @@ mod isobmff {
                         have
                     } => write!(
                         f,
-                        "Payload too short for box '{}': need {}, have {}",
-                        box_type, needed, have
+                        "Payload too short for box '{box_type}': need {needed}, have {have}"
                     ),
                     Error::ParseError { box_type, msg } => {
-                        write!(f, "Parse error in box '{}': {}", box_type, msg)
+                        write!(f, "Parse error in box '{box_type}': {msg}")
                     }
                 }
             }
@@ -176,7 +173,7 @@ mod isobmff {
             }
 
             pub fn pos(&mut self) -> Result<u64> {
-                Ok(self.inner.seek(SeekFrom::Current(0))?)
+                Ok(self.inner.stream_position()?)
             }
 
             pub fn read_u8(&mut self) -> Result<u8> {
@@ -597,7 +594,7 @@ mod isobmff {
 
 
             while pos + 8 <= end {
-                println!("Box type: {}",pos);
+                println!("Box type: {pos}");
                 reader.seek_to(pos)?;
                 let header = match BoxHeader::read(reader, end)? {
                     Some(h) => h,
@@ -1036,7 +1033,7 @@ mod isobmff {
                 _ => {
                     return Err(Error::ParseError {
                         box_type: "iloc".into(),
-                        msg:      format!("unsupported size field: {}", size)
+                        msg:      format!("unsupported size field: {size}")
                     });
                 }
             };
@@ -1284,7 +1281,7 @@ mod heif {
                     other => {
                         return Err(Error::ParseError {
                             box_type: "colr".into(),
-                            msg:      format!("unknown colour_type '{}'", other)
+                            msg:      format!("unknown colour_type '{other}'")
                         });
                     }
                 };
@@ -1626,7 +1623,7 @@ mod heif {
                     meta,
                     &mut reader,
                     &mut items,
-                    idat_offset.and_then(|x| Some(x.payload_offset()))
+                    idat_offset.map(|x| x.payload_offset())
                 )?;
                 parse_iref(meta, &mut reader, &mut items)?;
                 apply_item_properties(meta, &mut reader, &mut items)?;
@@ -1713,7 +1710,7 @@ mod heif {
                             }
                         );
                     }
-                    Err(e) => eprintln!("[WARN] Failed to parse infe: {}", e)
+                    Err(e) => eprintln!("[WARN] Failed to parse infe: {e}")
                 }
             }
             Ok(items)
@@ -1758,7 +1755,7 @@ mod heif {
                         let data = reader.read_bytes(length.min(16) as usize)?;
                         match GridBox::parse(&data) {
                             Ok(g) => item.grid = Some(g),
-                            Err(e) => eprintln!("[WARN] grid payload: {}", e)
+                            Err(e) => eprintln!("[WARN] grid payload: {e}")
                         }
                     }
                 }
@@ -1844,7 +1841,7 @@ mod heif {
                     let payload = match read_payload(prop, reader) {
                         Ok(p) => p,
                         Err(e) => {
-                            eprintln!("[WARN] ipco: {}", e);
+                            eprintln!("[WARN] ipco: {e}");
                             continue;
                         }
                     };
@@ -1923,7 +1920,7 @@ fn extract_items(heif: &HeifFile, input_path: &str, output_dir: &str) -> std::io
 
         let is_hevc = item.item_type == "hvc1" || item.item_type == "hev1";
         let ext = if is_hevc { "hvc" } else { "bin" };
-        let out_path = format!("{}/item_{:04}.{}", output_dir, id, ext);
+        let out_path = format!("{output_dir}/item_{id:04}.{ext}");
         let mut out_file = File::create(&out_path)?;
         let mut total_bytes = 0;
 
@@ -2004,8 +2001,7 @@ fn extract_items(heif: &HeifFile, input_path: &str, output_dir: &str) -> std::io
         }
 
         println!(
-            "  Extracted item #{:<3} -> {} ({} bytes)",
-            id, out_path, total_bytes
+            "  Extracted item #{id:<3} -> {out_path} ({total_bytes} bytes)"
         );
     }
 
@@ -2028,23 +2024,23 @@ fn print_item(item: &ImageItem) {
 
     let p = &item.properties;
     if let (Some(w), Some(h)) = (p.width, p.height) {
-        println!("  size     : {}×{}", w, h);
+        println!("  size     : {w}×{h}");
     }
     if let Some(rot) = p.rotation {
-        println!("  rotation : {}°", rot);
+        println!("  rotation : {rot}°");
     }
     if let Some(ref m) = p.mirror {
-        println!("  mirror   : {}", m);
+        println!("  mirror   : {m}");
     }
     // if let Some(ref c) = p.colour_info { println!("  colour   : {}", c); }
     if let Some(ref a) = p.aux_type {
-        println!("  aux type : {}", a);
+        println!("  aux type : {a}");
     }
     if let (Some(prof), Some(lvl)) = (p.hevc_profile, p.hevc_level) {
-        println!("  HEVC     : profile={} level={}", prof, lvl);
+        println!("  HEVC     : profile={prof} level={lvl}");
     }
     if let (Some(prof), Some(lvl)) = (p.av1_profile, p.av1_level) {
-        println!("  AV1      : profile={} level={}", prof, lvl);
+        println!("  AV1      : profile={prof} level={lvl}");
     }
     if !p.applied_property_types.is_empty() {
         println!("  ipco     : [{}]", p.applied_property_types.join(", "));
@@ -2052,7 +2048,7 @@ fn print_item(item: &ImageItem) {
     if !item.extents.is_empty() {
         println!("  extents  :");
         for (off, len) in &item.extents {
-            println!("    offset={} length={}", off, len);
+            println!("    offset={off} length={len}");
         }
     }
     if !item.derived_from.is_empty() {
@@ -2060,7 +2056,7 @@ fn print_item(item: &ImageItem) {
             "  dimg→    : {}",
             item.derived_from
                 .iter()
-                .map(|i| format!("#{}", i))
+                .map(|i| format!("#{i}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -2070,7 +2066,7 @@ fn print_item(item: &ImageItem) {
             "  thumbs   : {}",
             item.thumbnails
                 .iter()
-                .map(|i| format!("#{}", i))
+                .map(|i| format!("#{i}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -2080,7 +2076,7 @@ fn print_item(item: &ImageItem) {
             "  aux items: {}",
             item.auxiliary
                 .iter()
-                .map(|i| format!("#{}", i))
+                .map(|i| format!("#{i}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -2107,12 +2103,12 @@ fn main() {
     };
 
     let file = File::open(&path).unwrap_or_else(|e| {
-        eprintln!("Cannot open '{}': {}", path, e);
+        eprintln!("Cannot open '{path}': {e}");
         std::process::exit(1);
     });
 
     let heif = HeifFile::parse(file).unwrap_or_else(|e| {
-        eprintln!("Parse error: {}", e);
+        eprintln!("Parse error: {e}");
         std::process::exit(1);
     });
 
@@ -2120,11 +2116,11 @@ fn main() {
     println!("║          HEIF Container Decoder          ║");
     println!("╚══════════════════════════════════════════╝");
     println!();
-    println!("File         : {}", path);
+    println!("File         : {path}");
     println!("Major brand  : {}", heif.major_brand);
     println!("Compatible   : {}", heif.compatible_brands.join(", "));
     if let Some(id) = heif.primary_item_id {
-        println!("Primary item : #{}", id);
+        println!("Primary item : #{id}");
     }
     println!();
 
@@ -2145,13 +2141,13 @@ fn main() {
                 );
                 let p = &tile.properties;
                 if let (Some(w), Some(h)) = (p.width, p.height) {
-                    println!("  │  tile size : {}×{}", w, h);
+                    println!("  │  tile size : {w}×{h}");
                 }
                 if let (Some(prof), Some(lvl)) = (p.hevc_profile, p.hevc_level) {
-                    println!("  │  HEVC      : profile={} level={}", prof, lvl);
+                    println!("  │  HEVC      : profile={prof} level={lvl}");
                 }
                 if let (Some(prof), Some(lvl)) = (p.av1_profile, p.av1_level) {
-                    println!("  │  AV1       : profile={} level={}", prof, lvl);
+                    println!("  │  AV1       : profile={prof} level={lvl}");
                 }
                 println!(
                     "  │  tiles     : {} total ({} col × {} row)",
@@ -2175,16 +2171,16 @@ fn main() {
         let item = &heif.items[&id];
         let marker = if heif.primary_item_id == Some(id) { " ◀ primary" } else { "" };
         println!();
-        println!("  Item #{}{}", id, marker);
+        println!("  Item #{id}{marker}");
         print_item(item);
     }
 
     // NEW: Extract the payloads to the output directory
     let output_dir = "output_dirs";
-    println!("\n━━━ Extracting Payloads to '{}' ━━━━━━━━━━━━", output_dir);
+    println!("\n━━━ Extracting Payloads to '{output_dir}' ━━━━━━━━━━━━");
 
     if let Err(e) = extract_items(&heif, &path, output_dir) {
-        eprintln!("Failed to extract items: {}", e);
+        eprintln!("Failed to extract items: {e}");
     } else {
         println!("\nExtraction complete!");
     }

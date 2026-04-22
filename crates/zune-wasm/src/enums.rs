@@ -50,7 +50,7 @@ impl WasmColorspace {
             ColorSpace::ARGB => Self::ARGB,
             ColorSpace::HSL => Self::HSL,
             ColorSpace::HSV => Self::HSV,
-            e => panic!("Unknown colorspace {:?}", e)
+            e => panic!("Unknown colorspace {e:?}")
         }
     }
     pub fn to_colorspace(&self) -> ColorSpace {
@@ -200,9 +200,9 @@ impl From<ColorProfiles> for WasmColorProfiles {
         }
     }
 }
-impl Into<ColorProfiles> for WasmColorProfiles {
-    fn into(self) -> ColorProfiles {
-        match self {
+impl From<WasmColorProfiles> for ColorProfiles {
+    fn from(val: WasmColorProfiles) -> Self {
+        match val {
             WasmColorProfiles::sRGB => ColorProfiles::sRGB,
             WasmColorProfiles::AdobeRgb => ColorProfiles::AdobeRgb,
             WasmColorProfiles::DisplayP3 => ColorProfiles::DisplayP3,

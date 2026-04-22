@@ -167,12 +167,12 @@ fn unsharpen_u8(
     // carry out gaussian blur
     gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma);
 
-    let pct = percentage as i32;
-    let thresh = threshold as i32;
+    let pct = i32::from(percentage);
+    let thresh = i32::from(threshold);
 
     for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let orig = *in_pix as i32;
-        let blurred = *blur_pix as i32;
+        let orig = i32::from(*in_pix);
+        let blurred = i32::from(*blur_pix);
 
         // Signed difference allows us to lighten OR darken the pixel
         let diff = orig - blurred;
@@ -199,12 +199,12 @@ fn unsharpen_u16(
     // carry out gaussian blur
     gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma);
 
-    let pct = percentage as i32;
-    let thresh = threshold as i32;
+    let pct = i32::from(percentage);
+    let thresh = i32::from(threshold);
 
     for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let orig = *in_pix as i32;
-        let blurred = *blur_pix as i32;
+        let orig = i32::from(*in_pix);
+        let blurred = i32::from(*blur_pix);
 
         // Signed difference allows us to lighten OR darken the pixel
         let diff = orig - blurred;

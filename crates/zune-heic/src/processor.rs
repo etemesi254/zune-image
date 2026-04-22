@@ -427,8 +427,8 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 let tile_w = tile_data.width;
                 let tile_h = tile_data.height;
 
-                let col = (index as usize) % (self.cols as usize);
-                let row = (index as usize) / (self.cols as usize);
+                let col = index % (self.cols as usize);
+                let row = index / (self.cols as usize);
 
                 // Use the DYNAMIC tile width/height!
                 let base_x = col * tile_w;
@@ -459,7 +459,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 }
             } else {
                 return Err(HeicErrors::Generic {
-                    msg: format!("Tile missing or errored: {}", item_id)
+                    msg: format!("Tile missing or errored: {item_id}")
                 });
             }
         }
@@ -496,7 +496,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
         }
         // --- STEP 3: Rotation ---
         if rotation_degrees != 0 {
-            trace!("Rotation degrees: {}", rotation_degrees);
+            trace!("Rotation degrees: {rotation_degrees}");
             match rotation_degrees {
                 90 => {
                     for y in 0..unrotated_h {
@@ -539,7 +539,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 }
                 _ => {
                     return Err(HeicErrors::Generic {
-                        msg: format!("Unsupported rotation: {}", rotation_degrees)
+                        msg: format!("Unsupported rotation: {rotation_degrees}")
                     });
                 }
             }

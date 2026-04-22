@@ -53,18 +53,18 @@ const CHROMA_QP_TABLE: [i8; 52] = [
 
 #[inline]
 fn beta(qp: i32) -> i32 {
-    BETA_TABLE[qp.clamp(0, 51) as usize] as i32
+    i32::from(BETA_TABLE[qp.clamp(0, 51) as usize])
 }
 
 #[inline]
 fn tc(qp: i32, bs: u8) -> i32 {
-    let idx = (qp + 2 * (bs as i32 - 1)).clamp(0, 53) as usize;
+    let idx = (qp + 2 * (i32::from(bs) - 1)).clamp(0, 53) as usize;
     i32::from(TC_TABLE[idx])
 }
 
 #[inline]
 fn chroma_qp(luma_qp: i32, offset: i8) -> i32 {
-    let qp_i = (luma_qp + offset as i32).clamp(0, 51);
+    let qp_i = (luma_qp + i32::from(offset)).clamp(0, 51);
     i32::from(CHROMA_QP_TABLE[qp_i as usize])
 }
 
@@ -273,12 +273,12 @@ pub fn filter_luma_block(
                 (p0 + q0 + q1 + (3 * q2) + (2 * q3) + 4) >> 3,
             ) as u8;
 
-            plane[(rb - 1 * es) as usize] = p0n;
+            plane[(rb - es) as usize] = p0n;
             plane[(rb - 2 * es) as usize] = p1n;
             plane[(rb - 3 * es) as usize] = p2n;
 
             plane[(rb + 0 * es) as usize] = q0n;
-            plane[(rb + 1 * es) as usize] = q1n;
+            plane[(rb + es) as usize] = q1n;
             plane[(rb + 2 * es) as usize] = q2n;
         } else {
             // Normal filter
@@ -337,7 +337,7 @@ fn filter_chroma_samples(plane: &mut [u8], base: usize, stride: isize, qp_c: i32
 // ---------------------------------------------------------------------------
 
 fn edge_qp(p: &BlockState, q: &BlockState) -> i32 {
-    (p.qp as i32 + q.qp as i32 + 1) >> 1
+    (i32::from(p.qp) + i32::from(q.qp) + 1) >> 1
 }
 
 /// Deblock one complete frame.
@@ -560,7 +560,7 @@ mod tests {
     // Layout: 4 rows of [p3,p2,p1,p0,q0,q1,q2,q3], each 8 bytes wide.
     // base=4 (q0 of row 0), edge_stride=1, row_stride=8.
     fn make_block_luma(p_val: u8, q_val: u8) -> Vec<u8> {
-        let row = vec![p_val, p_val, p_val, p_val, q_val, q_val, q_val, q_val];
+        let row = [p_val, p_val, p_val, p_val, q_val, q_val, q_val, q_val];
         row.repeat(4)
     }
 
@@ -590,11 +590,11 @@ mod tests {
         filter_luma_block(&mut block, 4, 1, 8, 2, 51);
         for i in 0..4 {
             assert!(
-                block[i * 8 + 3] as i32 >= saved[i * 8 + 3] as i32,
+                i32::from(block[i * 8 + 3]) >= i32::from(saved[i * 8 + 3]),
                 "p0 row {i} should increase"
             );
             assert!(
-                block[i * 8 + 4] as i32 <= saved[i * 8 + 4] as i32,
+                i32::from(block[i * 8 + 4]) <= i32::from(saved[i * 8 + 4]),
                 "q0 row {i} should decrease"
             );
         }

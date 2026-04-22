@@ -40,12 +40,11 @@ impl Debug for BmpDecoderErrors {
             Self::TooSmallBuffer(expected, found) => {
                 writeln!(
                     f,
-                    "Too small of buffer, expected {} but found {}",
-                    expected, found
+                    "Too small of buffer, expected {expected} but found {found}"
                 )
             }
             Self::GenericStatic(header) => {
-                writeln!(f, "{}", header)
+                writeln!(f, "{header}")
             }
             Self::TooLargeDimensions(dimension, expected, found) => {
                 writeln!(
@@ -54,13 +53,13 @@ impl Debug for BmpDecoderErrors {
                 )
             }
             Self::Generic(message) => {
-                writeln!(f, "{}", message)
+                writeln!(f, "{message}")
             }
             Self::OverFlowOccurred => {
                 writeln!(f, "Overflow occurred")
             }
             Self::IoErrors(err) => {
-                writeln!(f, "{:?}", err)
+                writeln!(f, "{err:?}")
             }
         }
     }

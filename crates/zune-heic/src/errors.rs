@@ -98,7 +98,7 @@ impl fmt::Display for HeicErrors {
                 write!(f, "{msg}")
             }
             HeicErrors::NalErrors(err) => {
-                write!(f, "{}", err)
+                write!(f, "{err}")
             }
         }
     }

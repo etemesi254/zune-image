@@ -28,13 +28,13 @@ pub fn parse_options(
 ) -> Result<(), String> {
     if argument == "box-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
-        debug!("Added box blur filter with radius {}", radius);
+        debug!("Added box blur filter with radius {radius}");
 
         let box_blur = BoxBlur::new(radius);
         workflow.chain_operations(Box::new(box_blur));
     } else if argument == "blur" {
         let sigma = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added gaussian blur filter with radius {}", sigma);
+        debug!("Added gaussian blur filter with radius {sigma}");
 
         let gaussian_blur = GaussianBlur::new(sigma);
         workflow.chain_operations(Box::new(gaussian_blur));
@@ -47,15 +47,14 @@ pub fn parse_options(
 
 
         debug!(
-            "Added unsharpen filter with sigma={} and threshold={}",
-            sigma_f32, threshold_u16
+            "Added unsharpen filter with sigma={sigma_f32} and threshold={threshold_u16}"
         );
 
         let sharpen = Sharpen::new(sigma_f32, threshold_u16 as u16, percentage);
         workflow.chain_operations(Box::new(sharpen));
     } else if argument == "mean-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
-        debug!("Added mean blur filter with radius {}", radius);
+        debug!("Added mean blur filter with radius {radius}");
 
         let mean_blur = SpatialOps::new(radius, SpatialOperations::Mean);
         workflow.chain_operations(Box::new(mean_blur));
@@ -91,7 +90,7 @@ pub fn parse_options(
             "adobe-rgb" => ColorProfiles::AdobeRgb,
             "display-p3" => ColorProfiles::DisplayP3,
             "bt-2020" => ColorProfiles::DisplayP3,
-            _ => Err(format!("Unknown color profile: {}", value))?
+            _ => Err(format!("Unknown color profile: {value}"))?
         };
         debug!("Added color transform operation");
 

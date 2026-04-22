@@ -67,8 +67,7 @@ fn test_sample_ratios() {
         let info = decoder.info().unwrap();
         assert_eq!(
             info.sample_ratio, expected,
-            "Expected sample ratio {:?} for image",
-            expected
+            "Expected sample ratio {expected:?} for image"
         );
     }
 }

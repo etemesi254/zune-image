@@ -41,7 +41,7 @@ pub fn parse_options(options: &ArgMatches) -> CmdOptions {
         if mmap_opt == CommandLine {
             info!("Mmap option present");
             let mmap = *options.get_one::<MmapOptions>("mmap").unwrap();
-            info!("Setting mmap to be {:?}", mmap);
+            info!("Setting mmap to be {mmap:?}");
             cmd_options.mmap = mmap;
         }
     }
@@ -83,6 +83,6 @@ pub fn setup_logger(options: &ArgMatches) {
         simple_logger::init_with_level(log_level).unwrap();
 
         info!("Initialized logger");
-        info!("Log level :{}", log_level);
+        info!("Log level :{log_level}");
     }
 }

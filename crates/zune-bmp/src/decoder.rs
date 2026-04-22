@@ -339,11 +339,11 @@ where
                     let color_used = self.bytes.get_u32_le_err()?;
                     let important_colors = self.bytes.get_u32_le_err()?;
 
-                    trace!("Image size {}", size);
-                    trace!("X Pixels: {}", x_pixels);
-                    trace!("Y Pixels: {}", y_pixels);
-                    trace!("Color used : {}", color_used);
-                    trace!("Important Colors: {}", important_colors);
+                    trace!("Image size {size}");
+                    trace!("X Pixels: {x_pixels}");
+                    trace!("Y Pixels: {y_pixels}");
+                    trace!("Color used : {color_used}");
+                    trace!("Important Colors: {important_colors}");
 
                     self.rgb_bitfields[0] = self.bytes.get_u32_le_err()?;
                     self.rgb_bitfields[1] = self.bytes.get_u32_le_err()?;
@@ -389,11 +389,11 @@ where
                             8 => intent = Some(RenderingIntent::Perceptual),
                             _ => {}
                         }
-                        trace!("Intent :{:?}", intent);
+                        trace!("Intent :{intent:?}");
                         let profile_data = self.bytes.get_u32_le_err()?;
                         let profile_size = self.bytes.get_u32_le_err()?;
-                        trace!("ICC profile Data Offset: {}", profile_data);
-                        trace!("ICC profile data size: {}", profile_size);
+                        trace!("ICC profile Data Offset: {profile_data}");
+                        trace!("ICC profile data size: {profile_size}");
                         // The offset, in bytes, from the beginning of the
                         // BITMAPV5HEADER structure to the start of the profile data.
                         let true_position = beginning_of_header + profile_data as u64;
@@ -431,7 +431,7 @@ where
                                 }
                             }
                             Err(e) => {
-                                error!("Error reading ICC profile. {:?}", e);
+                                error!("Error reading ICC profile. {e:?}");
                             }
                         }
                     }
@@ -534,11 +534,11 @@ where
                 let t = self.bytes.get_u32_le_err()? as i32;
 
                 if t < 0 || t > (1 << bpp) {
-                    let msg = format!("Incorrect number of colors {} for depth {}", t, bpp);
+                    let msg = format!("Incorrect number of colors {t} for depth {bpp}");
                     if self.options.strict_mode() {
                         return Err(BmpDecoderErrors::Generic(msg));
                     }
-                    warn!("{}", msg);
+                    warn!("{msg}");
                 } else if t != 0 {
                     colors = t as u32;
                 }
@@ -586,8 +586,8 @@ where
         }
 
         trace!("Pixel format : {:?}", self.pix_fmt);
-        trace!("Compression  : {:?}", compression);
-        trace!("Bit depth: {:?}", bpp);
+        trace!("Compression  : {compression:?}");
+        trace!("Bit depth: {bpp:?}");
         self.comp = compression;
         self.depth = bpp;
         self.ihszie = ihsize;

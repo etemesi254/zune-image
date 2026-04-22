@@ -102,7 +102,7 @@ impl<T: io::BufRead + io::Seek> ZByteReaderTrait for T {
 impl<T: AsRef<[u8]>> std::io::Read for ZCursor<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.read_bytes_impl(buf)
-            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))
     }
 }
 

@@ -82,7 +82,7 @@ impl Debug for PSDDecodeErrors {
                 writeln!(f, "Zero found where not expected")
             }
             PSDDecodeErrors::IoErrors(e) => {
-                writeln!(f, "I/O error :{:?}", e)
+                writeln!(f, "I/O error :{e:?}")
             }
         }
     }

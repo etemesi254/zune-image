@@ -452,8 +452,8 @@ extern "C" fn decode_callback(
 
         if let Ok(mut map) = (*tile_map_ptr).lock() {
             let tile = SingleDecodedTile {
-                width:  width,
-                height: height,
+                width,
+                height,
                 pixels: rgb_data
             };
             map.insert(item_id as u32, Ok(tile));

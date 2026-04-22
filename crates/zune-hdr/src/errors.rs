@@ -42,7 +42,7 @@ impl Debug for HdrDecodeErrors {
                 )
             }
             HdrDecodeErrors::ParseError(err) => {
-                writeln!(f, "Could not parse integer {:?}", err)
+                writeln!(f, "Could not parse integer {err:?}")
             }
             HdrDecodeErrors::UnsupportedOrientation(x, y) => {
                 writeln!(f, "Unsupported image orientation of {x} {y}")
@@ -57,10 +57,10 @@ impl Debug for HdrDecodeErrors {
                 writeln!(f, "{error}")
             }
             HdrDecodeErrors::TooSmallOutputArray(expected, found) => {
-                writeln!(f, "Too small of an output array, expected array of at least length {} but found {}", expected, found)
+                writeln!(f, "Too small of an output array, expected array of at least length {expected} but found {found}")
             }
             HdrDecodeErrors::IoErrors(err) => {
-                writeln!(f, "{:?}", err)
+                writeln!(f, "{err:?}")
             }
         }
     }
@@ -79,14 +79,14 @@ impl From<ZByteIoError> for HdrDecodeErrors {
 }
 impl Display for HdrDecodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "{:?}", self)
+        writeln!(f, "{self:?}")
     }
 }
 impl std::error::Error for HdrDecodeErrors {}
 
 impl Display for HdrEncodeErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "{:?}", self)
+        writeln!(f, "{self:?}")
     }
 }
 
@@ -112,8 +112,8 @@ impl Debug for HdrEncodeErrors {
             HdrEncodeErrors::WrongInputSize(expected, found) => {
                 writeln!(f, "Input array length {found} doesn't match {expected}")
             }
-            HdrEncodeErrors::Static(err) => writeln!(f, "{}", err),
-            HdrEncodeErrors::IoErrors(err) => writeln!(f, "I/O error {:?}", err)
+            HdrEncodeErrors::Static(err) => writeln!(f, "{err}"),
+            HdrEncodeErrors::IoErrors(err) => writeln!(f, "I/O error {err:?}")
         }
     }
 }

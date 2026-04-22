@@ -78,14 +78,14 @@ pub fn parse_options(
             return Err(format!("Unknown mirror mode {value:?}"));
         }
 
-        debug!("Added mirror with direction {:?}", value);
+        debug!("Added mirror with direction {value:?}");
         workflow.chain_operations(Box::new(Mirror::new(direction)));
     } else if argument == "invert" {
         debug!("Added invert operation");
         workflow.chain_operations(Box::new(Invert::new()));
     } else if argument == "brighten" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added brighten operation with {:?}", value);
+        debug!("Added brighten operation with {value:?}");
         workflow.chain_operations(Box::new(Brighten::new(value)));
     } else if argument == "crop" {
         let crop_args = args
@@ -112,8 +112,7 @@ pub fn parse_options(
         workflow.chain_operations(Box::new(threshold));
 
         debug!(
-            "Added threshold operation with mode {:?}  and value {:?}",
-            thresh_mode, radius
+            "Added threshold operation with mode {thresh_mode:?}  and value {radius:?}"
         )
     } else if argument == "stretch-contrast" {
         let values = args
@@ -126,18 +125,17 @@ pub fn parse_options(
         let upper = *values[1];
 
         debug!(
-            "Added stretch contrast filter with lower={} and upper={}",
-            lower, upper
+            "Added stretch contrast filter with lower={lower} and upper={upper}"
         );
         let stretch_contrast = StretchContrast::new(lower, upper);
         workflow.chain_operations(Box::new(stretch_contrast));
     } else if argument == "gamma" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added gamma filter with value {}", value);
+        debug!("Added gamma filter with value {value}");
         workflow.chain_operations(Box::new(Gamma::new(value)));
     } else if argument == "contrast" {
         let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added contrast filter with value {},", value);
+        debug!("Added contrast filter with value {value},");
         workflow.chain_operations(Box::new(Contrast::new(value)));
     } else if argument == "resize" {
         let values = args.get_one::<String>("resize").unwrap();
@@ -151,8 +149,7 @@ pub fn parse_options(
             Ok(resize_dims) => {
                 let func = Resize::new(resize_dims, resizing_method);
                 debug!(
-                    "Added resize operation with parameters: {}, using resizing method=>{:?}",
-                    values, resizing_method,
+                    "Added resize operation with parameters: {values}, using resizing method=>{resizing_method:?}",
                 );
                 workflow.chain_operations(Box::new(func));
             }
@@ -190,26 +187,26 @@ pub fn parse_options(
         let exposure = *args.get_one::<f32>(argument).unwrap();
 
         workflow.chain_operations(Box::new(Exposure::new(exposure, 0.)));
-        debug!("Adding exposure argument with value {}", exposure);
+        debug!("Adding exposure argument with value {exposure}");
     } else if argument == "v-flip" {
         debug!("Added v-flip argument");
         workflow.chain_operations(Box::new(Flip::new(FlipDirection::Vertical)));
     } else if argument == "huerotate" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(value, 1f32, 1f32)));
-        debug!("Added hue-rotate argument with value {}", value);
+        debug!("Added hue-rotate argument with value {value}");
     } else if argument == "saturate" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(0f32, value, 1f32)));
-        debug!("Added saturate argument with value {}", value);
+        debug!("Added saturate argument with value {value}");
     } else if argument == "lightness" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(HsvAdjust::new(0f32, 1f32, value)));
-        debug!("Added lightness argument with value {}", value);
+        debug!("Added lightness argument with value {value}");
     } else if argument == "rotate" {
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(Rotate::new(value)));
-        debug!("Added rotate argument with value {}", value);
+        debug!("Added rotate argument with value {value}");
     }
 
     Ok(())
@@ -222,10 +219,10 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
 
     // 2. Updated Regex: Added (x|X) to support uppercase X safely
     let re = Regex::new(r"^([0-9]+)?(%)?([xX])?([0-9]+)?(%)?([!><@\^])?$")
-        .map_err(|e| format!("Failed to compile regex: {}", e))?;
+        .map_err(|e| format!("Failed to compile regex: {e}"))?;
 
     let caps = re.captures(values).ok_or_else(|| {
-        format!("Invalid format: '{}'. Use WxH, WxH^, WxH!, W, xH, P%, P%xP%, or Area@.", values)
+        format!("Invalid format: '{values}'. Use WxH, WxH^, WxH!, W, xH, P%, P%xP%, or Area@.")
     })?;
 
     // Safely extract capture groups (using .ok() to return None if parsing fails)
@@ -262,7 +259,7 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
             Some(">") => Ok(ResizeDimensions::ShrinkToFit(width, height)),
             Some("<") => Ok(ResizeDimensions::EnlargeToFit(width, height)),
             None => Ok(ResizeDimensions::FitWithin(width, height)),
-            _ => Err(format!("Invalid modifier applied to WxH: {:?}", modifier)),
+            _ => Err(format!("Invalid modifier applied to WxH: {modifier:?}")),
         },
         // Width only without 'x' (e.g., "1920")
         (Some(width), false, None) => {
@@ -281,8 +278,7 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
         }
         // Diagnostic fallback: If it falls through, tell the user exactly what variables caused it
         _ => Err(format!(
-            "Invalid geometry format. Input: '{}' | Extracted -> width:{:?}, has_x:{}, height:{:?}, modifier:{:?}",
-            values, w, has_x, h, modifier
+            "Invalid geometry format. Input: '{values}' | Extracted -> width:{w:?}, has_x:{has_x}, height:{h:?}, modifier:{modifier:?}"
         )),
     }
 }

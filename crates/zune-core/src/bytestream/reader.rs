@@ -72,10 +72,10 @@ impl core::fmt::Debug for ZByteIoError {
         match self {
             #[cfg(feature = "std")]
             ZByteIoError::StdIoError(err) => {
-                writeln!(f, "Underlying I/O error {}", err)
+                writeln!(f, "Underlying I/O error {err}")
             }
             ZByteIoError::TryFromIntError(err) => {
-                writeln!(f, "Cannot convert to int {}", err)
+                writeln!(f, "Cannot convert to int {err}")
             }
             ZByteIoError::NotEnoughBytes(found, expected) => {
                 writeln!(f, "Not enough bytes, expected {expected} but found {found}")
@@ -491,7 +491,7 @@ where
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.read_bytes(buf)
-            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))
     }
 }
 
@@ -516,7 +516,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     fn std_other_io_error_is_not_recoverable() {
-        let err = ZByteIoError::StdIoError(std::io::Error::new(std::io::ErrorKind::Other, ""));
+        let err = ZByteIoError::StdIoError(std::io::Error::other(""));
         assert!(!err.is_recoverable_eof());
     }
 

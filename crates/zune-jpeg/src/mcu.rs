@@ -691,7 +691,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     return Ok(false);
                 }
                 Marker::DAC | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
-                    trace!("Parsing inter-scan marker {:?}", marker);
+                    trace!("Parsing inter-scan marker {marker:?}");
                     self.parse_marker_inner(marker)?;
                 }
                 Marker::APP(_) => {

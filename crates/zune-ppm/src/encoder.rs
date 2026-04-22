@@ -35,7 +35,7 @@ impl Debug for PPMEncodeErrors {
                 writeln!(f, "Unsupported colorspace {colorspace:?} for ppm")
             }
             PPMEncodeErrors::IoError(err) => {
-                writeln!(f, "I/O error: {:?}", err)
+                writeln!(f, "I/O error: {err:?}")
             }
         }
     }
