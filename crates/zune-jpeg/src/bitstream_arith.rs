@@ -241,20 +241,18 @@ impl Default for ArithACTables {
 pub(crate) struct BitStreamArithmetic {
     /// Have the first two bytes been fed in?
     initialized: bool,
-
     /// `A` register. 0x10000 is initial/max value
     a: u32,
     /// `C` register, both high and low parts
     c: u32,
     /// Number of compressed bits in low part of C, range 0-7 (8 temporarily)
     ct: u8,
-
     /// Did we find a marker(RST/EOF) during decoding?
     marker:              Option<Marker>,
     /// An i16 with the bit corresponding to successive_low set to 1, others 0.
     successive_low_mask: i16, // progressive mode control
-    spec_start:              u8, // progressive mode control
-    spec_end:                u8, // progressive mode control
+    spec_start:          u8, // progressive mode control
+    spec_end:            u8, // progressive mode control
     eob_run:             i32,
     overread_by:         usize,
     /// True if we have seen end of image marker.
@@ -291,7 +289,7 @@ impl BitStreamArithmetic {
         };
 
         if b == 0xFF {
-            let b2 = reader.read_u8();
+            let b2 = reader.read_u8_err()?;
             if b2 == 0 {
                 self.c |= 0xFF00;
             } else {

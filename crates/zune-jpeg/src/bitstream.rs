@@ -133,6 +133,7 @@ pub(crate) trait BitStream {
     where
         T: ZByteReaderTrait;
 
+    #[allow(clippy::too_many_arguments)]
     fn decode_mcu_block<T>(
         &mut self, reader: &mut ZReader<T>, dc_table: &mut Self::DCEntropyTable,
         ac_table: &mut Self::ACEntropyTable, qt_table: &[i32; DCT_BLOCK], block: &mut [i32; 64],
