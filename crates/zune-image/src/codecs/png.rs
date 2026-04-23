@@ -90,6 +90,7 @@ impl<T: BufRead + Seek> DecoderTrait for PngDecoder<T> {
             _ => Image::from_u8(&raw_pixels, width, height, colorspace)
         };
 
+        trace!("png image: (w={},h={},colorspace={:?},depth={:?})",width, height, colorspace, depth);
         img.metadata.format = Some(ImageFormat::PNG);
 
         Ok(img)
