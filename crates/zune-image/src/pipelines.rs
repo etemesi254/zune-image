@@ -210,6 +210,9 @@ impl Pipeline {
                             "Finished running `{operation_name}` in {} ms",
                             (stop - start).as_millis()
                         );
+
+                        if let Some(output) = operation.printable_result() {
+                            eprintln!("[{}] {}", operation_name, output);                        }
                     }
 
                     self.state = state.next();

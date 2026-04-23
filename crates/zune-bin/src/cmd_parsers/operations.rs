@@ -31,6 +31,7 @@ use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
+use zune_imageprocs::ssim::SsimDetection;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 use zune_imageprocs::transpose::Transpose;
@@ -262,6 +263,9 @@ pub fn parse_options(
             info!("Added append with direction {:?}", direction);
             workflow.chain_operations(Box::new(Append::new(direction)));
         }
+    } else if argument == "ssim" {
+        info!("Added ssim operation");
+        workflow.chain_operations(Box::new(SsimDetection::new()));
     }
 
     Ok(())

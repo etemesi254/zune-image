@@ -221,6 +221,14 @@ pub trait OperationsTrait: Send + Sync {
         }
         Ok(())
     }
+    /// Returns a printable result string after the operation has executed.
+    ///
+    /// By default, image operations do not produce text output, so this returns `None`.
+    /// Metric-based operations (like SSIM or image statistics) can override this
+    /// to format and return their results.
+    fn printable_result(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Confirm that image invariants have been respected across image
