@@ -210,6 +210,17 @@ pub trait OperationsTrait: Send + Sync {
         self.execute(&mut c_img)?;
         Ok(c_img)
     }
+    /// Execute the operation on a stack of images.
+    ///
+    /// By default, this iterates through all images in the stack and applies
+    /// the single-image operation to each one. Multi-image operations
+    /// (like Composite) should override this to manipulate the stack directly.
+    fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
+        for image in images.iter_mut() {
+            self.execute(image)?;
+        }
+        Ok(())
+    }
 }
 
 /// Confirm that image invariants have been respected across image
