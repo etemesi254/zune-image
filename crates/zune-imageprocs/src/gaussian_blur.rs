@@ -5,9 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-//! (BROKEN): An implementation of a gaussian-blur.
-//!
-//! Do not use it, not ready for production
+//! An implementation of a gaussian-blur.
 //!
 //! This module implements a gaussian blur functions for images
 //!
@@ -172,7 +170,7 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
         let n_float = 3.0;
 
         // Ideal averaging filter width
-        let w_ideal = (12.0 * sigma * sigma / n_float).sqrt() + 1.0;
+        let w_ideal = ((12.0 * sigma * sigma / n_float) + 1.0).sqrt();
         let mut wl: i32 = w_ideal.floor() as i32;
 
         if wl % 2 == 0 {
@@ -192,15 +190,14 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
         let m: usize = m_ideal.round() as usize;
 
         for i in 0..3 {
-            if i < m {
-                radii[i] = wl as usize;
-            } else {
-                radii[i] = wu;
-            }
+            let diameter = if i < m { wl as usize } else { wu };
+
+            // A diameter of 3 means a radius of 1. A diameter of 5 means a radius of 2.
+            radii[i] = (diameter - 1) / 2;
         }
     }
     // convert even to odd if there exists such values
-    return radii.map(|c| if (c % 2) == 0 { c + 1 } else { c });
+    return radii
 }
 
 /// Carry out a gaussian blur on bytes that represent a single image channel
@@ -209,7 +206,7 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
 /// # Arguments
 /// - in_out_image: A single image channel, we will store blurred pixels in that same buffer
 /// - scratch_space: Buffer used to store intermediate components, dimensions must be equal to
-///    `in_out_image`
+///   `in_out_image`
 ///  - width,height: Dimensions of the image
 ///  - sigma: A measure of how much to blur the image by.
 pub fn gaussian_blur_u16(
