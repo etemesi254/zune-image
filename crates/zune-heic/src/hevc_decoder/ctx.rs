@@ -48,9 +48,7 @@ pub struct DecodeSliceContext<'a> {
     // --- scratch buffers
     // --- High-Speed Fixed Buffers ---
     pub pixel_scratchpad:          Vec<u8>,
-    // Use i32 so it's large enough for Scaling, IDCT, and RDPCM
     pub math_scratchpad:           Vec<i16>,
-    // idct scratchpad instead of allocating
     pub idct_scratchpad:           Vec<i16>,
     // Reference Wall buffers
     pub ref_samples_p:             Vec<u8>,

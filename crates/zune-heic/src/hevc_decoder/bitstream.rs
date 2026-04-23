@@ -89,8 +89,8 @@ impl<'src> BitReader<'src> {
     fn has_emulation_prevention(&self, chunk: u32) -> bool {
         // SWAR check for 0x03 bytes.
         // This is a heuristic; if true, we go to the slow path.
-        let m = chunk ^ 0x03030303;
-        ((m.wrapping_sub(0x01010101)) & !m & 0x80808080) != 0
+        let m = chunk ^ 0x0303_0303;
+        ((m.wrapping_sub(0x0101_0101)) & !m & 0x8080_8080) != 0
     }
 
     fn refill_one_byte_at_a_time(&mut self) {

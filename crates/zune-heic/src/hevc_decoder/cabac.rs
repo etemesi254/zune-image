@@ -20,7 +20,7 @@ use crate::hevc_decoder::cabac_tables::{
     INIT_PART_MODE, INIT_PRED_MODE, INIT_PREV_INTRA, INIT_QP_DELTA, INIT_REF_IDX, INIT_RQT_ROOT,
     INIT_SAO_MERGE, INIT_SAO_TYPE, INIT_SIG_COEFF, INIT_SIG_COEFF_SKIP, INIT_SPLIT_CU,
     INIT_SPLIT_TRANS, INIT_TRANSFORM_SKIP, INIT_TRANSQUANT_BYPASS, RANGE_LPS_TABLE_1D,
-    RENORM_TABLE, TRANSITION_LPS, TRANSITION_MPS
+    RENORM_TABLE, TRANSITION_LPS, TRANSITION_MPS,
 };
 
 pub const NUM_CABAC_CONTEXTS: usize = 172;
@@ -28,15 +28,15 @@ pub const NUM_CABAC_CONTEXTS: usize = 172;
 // --- ENGINE IMPLEMENTATION ---
 
 pub struct CabacDecoder<'a> {
-    pub data:        &'a [u8],
-    pub cursor:      usize,
-    pub range:       u32,
-    pub value:       u32,
+    pub data: &'a [u8],
+    pub cursor: usize,
+    pub range: u32,
+    pub value: u32,
     pub bits_needed: i32,
     // ---  64-bit Bit Reservoir ---
-    pub cache:       u64,
+    pub cache: u64,
     pub cache_bytes: u32,
-    pub contexts:    [u8; NUM_CABAC_CONTEXTS]
+    pub contexts: [u8; NUM_CABAC_CONTEXTS],
 }
 
 impl<'a> CabacDecoder<'a> {
@@ -49,7 +49,7 @@ impl<'a> CabacDecoder<'a> {
             bits_needed: -8,
             cache: 0,
             cache_bytes: 0,
-            contexts: [0; NUM_CABAC_CONTEXTS]
+            contexts: [0; NUM_CABAC_CONTEXTS],
         };
 
         engine.init_contexts(slice_qp, init_type);
@@ -58,6 +58,7 @@ impl<'a> CabacDecoder<'a> {
     }
     #[inline(never)]
     fn fill_cache(&mut self) {
+        debug_assert!(self.cache_bytes == 0);
         match self.data.get(self.cursor..self.cursor + 8) {
             None => {
                 let remaining = (self.data.len() - self.cursor).min(7);
@@ -345,8 +346,6 @@ impl CabacDecoder<'_> {
 
         // --- 1. MOTION CONTEXTS (P/B Slices Only) ---
         // libde265 initType: 0=I, 1=P, 2=B.
-        // Based on your code, your mapping is: 0=B, 1=P, 2=I.
-        // We must ensure we adjust the 'init_type' used as index for the C++ tables.
         if init_type > 0 {
             // Only for B (0) or P (1)
             let lib_idx = usize::from(init_type != 1); // P=0, B=1 for motion tables
@@ -356,13 +355,13 @@ impl CabacDecoder<'_> {
                 qp_y,
                 CONTEXT_MODEL_PRED_MODE_FLAG,
                 &[INIT_PRED_MODE[lib_idx]],
-                1
+                1,
             );
             self.set_init(
                 qp_y,
                 CONTEXT_MODEL_MERGE_FLAG,
                 &[INIT_MERGE_FLAG[lib_idx]],
-                1
+                1,
             );
             self.set_init(qp_y, CONTEXT_MODEL_MERGE_IDX, &[INIT_MERGE_IDX[lib_idx]], 1);
             self.set_init(qp_y, CONTEXT_MODEL_INTER_PRED_IDC, &INIT_INTER_PRED_IDC, 5);
@@ -373,7 +372,7 @@ impl CabacDecoder<'_> {
                 qp_y,
                 CONTEXT_MODEL_ABS_MVD_GREATER01_FLAG,
                 &INIT_ABS_MVD[mvd_idx..],
-                2
+                2,
             );
 
             self.set_init(qp_y, CONTEXT_MODEL_MVP_LX_FLAG, &INIT_MVP_LX, 1);
@@ -388,7 +387,7 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_SPLIT_CU_FLAG,
             &INIT_SPLIT_CU[init_type],
-            3
+            3,
         );
 
         let part_idx = if init_type == 2 { 5 } else { init_type };
@@ -396,20 +395,20 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_PART_MODE,
             &INIT_PART_MODE[part_idx..],
-            4
+            4,
         );
 
         self.set_init(
             qp_y,
             CONTEXT_MODEL_PREV_INTRA_LUMA_PRED_FLAG,
             &[INIT_PREV_INTRA[init_type]],
-            1
+            1,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_INTRA_CHROMA_PRED_MODE,
             &[INIT_CHROMA_PRED[init_type]],
-            1
+            1,
         );
 
         let cbf_l_idx = if init_type == 0 { 0 } else { 2 };
@@ -418,13 +417,13 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_CBF_CHROMA,
             &INIT_CBF_CHROMA[init_type * 4..],
-            4
+            4,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG,
             &INIT_SPLIT_TRANS[init_type * 3..],
-            3
+            3,
         );
 
         // --- 3. RESIDUALS / COEFFICIENTS ---
@@ -432,19 +431,19 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
             &INIT_LAST_COEFF[init_type * 18..],
-            18
+            18,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX,
             &INIT_LAST_COEFF[init_type * 18..],
-            18
+            18,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_CODED_SUB_BLOCK_FLAG,
             &INIT_CODED_SUB[init_type * 4..],
-            4
+            4,
         );
 
         // Significance flags (42 + 2)
@@ -452,13 +451,13 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
             &INIT_SIG_COEFF[init_type],
-            42
+            42,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG + 42,
             &INIT_SIG_COEFF_SKIP[init_type],
-            2
+            2,
         );
 
         // !!! START OF MISSING DATA (i=109+) !!!
@@ -468,13 +467,13 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER1_FLAG,
             &INIT_GTR_1[init_type * 24..],
-            24
+            24,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_COEFF_ABS_LEVEL_GREATER2_FLAG,
             &INIT_GTR_2[init_type * 6..],
-            6
+            6,
         );
 
         // SAO
@@ -482,13 +481,13 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_SAO_MERGE_FLAG,
             &[INIT_SAO_MERGE[init_type]],
-            1
+            1,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_SAO_TYPE_IDX,
             &[INIT_SAO_TYPE[init_type]],
-            1
+            1,
         );
 
         // Quantization and Transform
@@ -497,13 +496,13 @@ impl CabacDecoder<'_> {
             qp_y,
             CONTEXT_MODEL_TRANSFORM_SKIP_FLAG,
             &INIT_TRANSFORM_SKIP,
-            2
+            2,
         );
         self.set_init(
             qp_y,
             CONTEXT_MODEL_CU_TRANSQUANT_BYPASS_FLAG,
             &[INIT_TRANSQUANT_BYPASS[init_type]],
-            1
+            1,
         );
 
         // Constant Initializations (Standard HEVC values, usually 154)
@@ -513,7 +512,6 @@ impl CabacDecoder<'_> {
         self.set_init_const(qp_y, CONTEXT_MODEL_CU_CHROMA_QP_OFFSET_IDX, 154, 1);
     }
     fn set_init(&mut self, qp: i32, start_idx: usize, values: &[u8], len: usize) {
-        // libde265 does Clip3(0, 51, SliceQPY)
         let qp_clipped = qp.clamp(0, 51);
 
         for i in 0..len {
@@ -524,7 +522,6 @@ impl CabacDecoder<'_> {
             let m = slope_idx * 5 - 45;
             let n = (intersec_idx << 3) - 16;
 
-            // Using arithmetic shift >> 4 on i32 is equivalent to C's signed shift
             let pre = ((m * qp_clipped) >> 4) + n;
             let pre = pre.clamp(1, 126);
 
