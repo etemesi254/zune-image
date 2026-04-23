@@ -89,6 +89,28 @@ impl OperationsTrait for Composite {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 
+    /// Executes the composite operation on the current image stack.
+    ///
+    /// It requires at least two images to be present in the pipeline's image queue.
+    ///
+    /// # Stack Manipulation
+    /// **Note: This operation removes an item from the image stack.**
+    ///
+    /// The workflow is as follows:
+    /// 1. **Pop:** The last (top) image is completely removed from the stack. This
+    ///    becomes the `source` (overlay) image.
+    /// 2. **Peek:** The next image in the stack (the new top) is accessed mutably.
+    ///    This becomes the `destination` (background) image.
+    /// 3. **Composite:** The `source` image is drawn onto the `destination` image
+    ///    according to the configured geometry/gravity and composite method.
+    ///
+    /// As a result, the total number of images in the pipeline will decrease by one
+    /// after this operation successfully executes.
+    ///
+    /// # Errors
+    /// * Returns an error if the image stack contains fewer than 2 images.
+    /// * Returns an error if the source and destination images have incompatible
+    ///   bit depths or colorspaces.
     #[allow(clippy::too_many_lines)]
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.len() < 2 {
