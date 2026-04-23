@@ -8,14 +8,12 @@
 #![cfg_attr(feature = "docs", doc(cfg(feature = "png")))]
 #![cfg(feature = "png")]
 #![allow(unused_variables)]
-
 //! Represents a png image decoder and encoder
-
 use std::borrow::Cow;
 use std::io::{BufRead, Seek};
 
 use png::chunk::ChunkType;
-use png::{BitDepth as PngBitDepth, ColorType, Compression, Decoder, Encoder, Reader};
+use png::{BitDepth as PngBitDepth, ColorType, Compression, Decoder, Encoder, Reader, Transformations};
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteWriterTrait;
 use zune_core::colorspace::ColorSpace;
@@ -43,9 +41,17 @@ impl<T: BufRead + Seek> PngDecoder<T> {
 
         opts.set_ignore_checksums(!options.png_get_confirm_crc());
         opts.set_ignore_crc(!options.png_get_confirm_crc());
+        let expand = Transformations::EXPAND;
 
-        let reader = Decoder::new_with_options(r, opts)
-            .read_info()
+        let mut decoder = Decoder::new_with_options(r, opts);
+
+        decoder.set_transformations(expand);
+        // note: can't set width and height limits
+        let limits = png::Limits::default();
+        decoder.set_limits(limits);
+
+
+         let reader = decoder.read_info()
             .map_err(|e| ImageErrors::ImageDecodeErrors(e.to_string()))?;
 
         Ok(PngDecoder { inner: reader })

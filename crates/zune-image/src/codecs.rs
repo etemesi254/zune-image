@@ -216,6 +216,12 @@ impl ImageFormat {
                 return true;
             }
         }
+        #[cfg(feature = "png")]
+        {
+            if self == ImageFormat::PNG {
+                return true;
+            }
+        }
         return self.decoder(Cursor::new(&[])).is_ok();
     }
     pub fn decoder<'a, T>(&self, data: T) -> Result<Box<dyn DecoderTrait + 'a>, ImageErrors>
@@ -843,11 +849,13 @@ fn register_builtins(map: &mut HashMap<ImageFormat, DecoderFactory>) {
     });
 
     #[cfg(feature = "png")]
-    map.insert(ImageFormat::PNG, |data, opts| {
-        Ok(Box::new(codecs::png::PngDecoder::new_with_options(
-            data, opts,
-        )?))
-    });
+    {
+        map.insert(ImageFormat::PNG, |data, opts| {
+            Ok(Box::new(codecs::png::PngDecoder::new_with_options(
+                data, opts,
+            )?))
+        });
+    }
 
     #[cfg(feature = "ppm")]
     map.insert(ImageFormat::PPM, |data, opts| {
