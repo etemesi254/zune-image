@@ -27,8 +27,8 @@ impl ImageMetadata {
             Ok(exif) => {
                 self.exif = Some(exif.0);
             }
-            Err(exif) => {
-                error!("Error while parsing exif chunk {:?}", exif)
+            Err(_exif) => {
+                error!("Error while parsing exif chunk {:?}", _exif);
             }
         };
     }
