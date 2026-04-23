@@ -7,11 +7,7 @@
  */
 //! Rotate an image
 //!
-//! # WARNING
-//! - This only works  for rotating 180 degrees.
-//!
-//! It doesn't work for other rotate angles, this will be fixed later
-//!
+//! The andlge can  be any arbitrary angle including normal 90,180 260.. and 
 
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;

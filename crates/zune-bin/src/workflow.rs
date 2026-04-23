@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufWriter, IsTerminal, Read, Write};
 use std::path::Path;
 use std::string::String;
 use std::time::Instant;
@@ -56,20 +56,23 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
         println!()
     }
     let decoder_options = decoder_options(args);
-    let mut buf = [0; 30];
 
+    // Initialize a single workflow for the entire batch of images
+    let mut workflow: CmdPipeline = CmdPipeline::new();
+    let options = encoder_options(args);
+
+    // ==========================================
+    // PHASE 1: INGEST ALL INPUTS
+    // ==========================================
     for in_file in args.get_raw("in").unwrap() {
-        let mut workflow: CmdPipeline = CmdPipeline::new();
-
         if in_file == "-" {
-            // handle stdin
+            // Handle stdin completely in memory
             let mut data = Vec::new();
-            let bytes_read = std::io::stdin().read_to_end(&mut data)?;
+            std::io::stdin().read_to_end(&mut data)?;
+
             if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&data)) {
                 if format.has_decoder() {
-                    workflow
-                        .inner
-                        .chain_decoder(Box::new(ZuneMem::new(data, decoder_options)));
+                    workflow.inner.chain_decoder(Box::new(ZuneMem::new(data, decoder_options)));
                 } else {
                     return Err(ImageErrors::ImageDecoderNotImplemented(format));
                 }
@@ -77,12 +80,15 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
             }
         } else {
-            File::open(in_file)?.read(&mut buf)?;
+            // Read just enough bytes to guess the format without loading the whole file into RAM
+            let mut file = File::open(in_file)?;
+            let mut header = [0; 32];
+            let bytes_read = file.read(&mut header)?;
 
-            add_operations(args, &mut workflow.inner)?;
-
-            if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&buf)) {
+            if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&header[..bytes_read])) {
                 if format.has_decoder() {
+                    // ZuneFile likely handles reading the file from the path,
+                    // so we don't need to pass a full buffer to it.
                     workflow.inner.chain_decoder(Box::new(ZuneFile::new(
                         in_file.to_os_string(),
                         decoder_options
@@ -94,102 +100,106 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
             }
         }
+    }
+    add_operations(args, &mut workflow.inner)?;
+    workflow.inner.advance_to_end()?;
 
-        let options = encoder_options(args);
+    if let Some(source) = args.value_source("out") {
+        if source == clap::parser::ValueSource::CommandLine {
+            for out_file in args.get_raw("out").unwrap() {
+                let path = Path::new(out_file);
 
-        if let Some(source) = args.value_source("out") {
-            if source == CommandLine {
-                for out_file in args.get_raw("out").unwrap() {
-                    let path = Path::new(out_file);
-                    if path.exists() && !cmd_opts.override_files && path.is_file() {
-                        let msg = format!("File {path:?} already exists overwrite [y/N]?");
-                        eprintln!("{msg}");
+                // Check for file overwrite safely
+                if path.exists() && !cmd_opts.override_files && path.is_file() {
+                    // IMPORTANT: Only prompt if stdin is a terminal.
+                    // If they piped an image in, `read_line` will try to read the image!
+                    if std::io::stdin().is_terminal() {
+                        eprint!("File {path:?} already exists. Overwrite? [y/N]: ");
                         let _ = std::io::stdout().flush();
                         let mut response = String::new();
-                        let _ = std::io::stdin()
+                        std::io::stdin()
                             .read_line(&mut response)
                             .expect("Unable to read from stdin");
 
-                        if !response.to_lowercase().starts_with("y") {
-                            return Err(ImageErrors::GenericStr(
-                                "Aborting due to file existence"
-                            ));
+                        if !response.to_lowercase().starts_with('y') {
+                            return Err(ImageErrors::GenericStr("Aborting due to file existence"));
                         }
-                    }
-
-                    if let Some(ext) = path.extension() {
-                        if let Some(encode_type) =
-                            ImageFormat::encoder_for_extension(ext.to_str().unwrap())
-                        {
-                            info!("Treating {out_file:?} as a {encode_type:?} format");
-                            workflow
-                                .formats
-                                .push((encode_type, out_file.to_os_string()));
-                        } else {
-                            error!("Unknown or unsupported format {out_file:?}")
-                        }
-                        // check for path details before even carrying out operations
-                        // this
-                    } else if out_file == "-" {
-                        if let Some(cmd_format) = args.get_one::<CmdImageFormats>("output-format") {
-                            let CmdImageFormats::Format(format) = cmd_format;
-
-                            workflow.formats.push((*format, out_file.to_os_string()))
-                        } else {
-                            return Err(ImageErrors::GenericStr("You must specify the image format to be used while using output as '-` via the --output-format flag "));
-                        }
-                        error!("Could not determine extension from {out_file:?}");
+                    } else {
+                        return Err(ImageErrors::GenericStr("File exists and cannot prompt for overwrite in non-interactive mode. Use --force."));
                     }
                 }
-            }
-        }
 
-        workflow.inner.advance_to_end()?;
-
-        // write to output
-
-        //  We support multiple format writes per invocation
-        // i.e it's perfectly valid to do -o a.ppm , -o a.png
-        for (format, out_file) in &workflow.formats {
-            if format.has_encoder() {
-                if log_enabled!(log::Level::Trace) {
-                    println!();
-                    trace!("Encoding to format {format:?} to file {out_file:?} ");
-                }
-                for image in workflow.inner.images() {
-                    let fd = OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(out_file);
-                    match fd {
-                        Ok(file) => {
-                            let mut file_c = BufWriter::new(file);
-                            let start = Instant::now();
-                            let bytes = format.encode(image, options, &mut file_c)?;
-                            let end = Instant::now();
-                            trace!(
-                                "Took {:?} to encode {} bytes to {:?}",
-                                end - start,
-                                bytes,
-                                out_file
-                            );
-                        }
-                        Err(e) => {
-                            error!("Cannot encode to file, error opening {e:?}");
-                        }
+                // Determine output format
+                if out_file == "-" {
+                    if let Some(cmd_format) = args.get_one::<CmdImageFormats>("output-format") {
+                        let CmdImageFormats::Format(format) = cmd_format;
+                        workflow.formats.push((*format, out_file.to_os_string()));
+                    } else {
+                        return Err(ImageErrors::GenericStr("You must specify the image format via --output-format when outputting to stdout ('-')"));
                     }
-                }
-            }
-        }
-        if let Some(view) = args.value_source("view") {
-            if view == CommandLine {
-                for image in workflow.inner.images() {
-                    open_in_default_app(image,options);
+                } else if let Some(ext) = path.extension() {
+                    if let Some(encode_type) = ImageFormat::encoder_for_extension(ext.to_str().unwrap()) {
+                        info!("Treating {out_file:?} as a {encode_type:?} format");
+                        workflow.formats.push((encode_type, out_file.to_os_string()));
+                    } else {
+                        error!("Unknown or unsupported format for {out_file:?}");
+                        return Err(ImageErrors::GenericStr("Unsupported output format"));
+                    }
+                } else {
+                    error!("Could not determine extension from {out_file:?}");
+                    return Err(ImageErrors::GenericStr("Output file missing extension"));
                 }
             }
         }
     }
+
+    // Write generated images to output formats
+    for (format, out_file) in &workflow.formats {
+        if format.has_encoder() {
+            if log_enabled!(log::Level::Trace) {
+                println!();
+                trace!("Encoding to format {format:?} to file {out_file:?}");
+            }
+
+            for image in workflow.inner.images() {
+                // Write to stdout or file
+                let mut writer: Box<dyn Write> = if out_file == "-" {
+                    Box::new(BufWriter::new(std::io::stdout()))
+                } else {
+                    let file = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(out_file)
+                        .map_err(|e| {
+                            error!("Cannot encode to file, error opening {e:?}");
+                            ImageErrors::GenericStr("File open error")
+                        })?;
+                    Box::new(BufWriter::new(file))
+                };
+
+                let start = Instant::now();
+                let bytes = format.encode(image, options, &mut writer)?;
+                let end = Instant::now();
+
+                trace!(
+                "Took {:?} to encode {} bytes to {:?}",
+                end - start,
+                bytes,
+                out_file
+            );
+            }
+        }
+    }
+    // View if requested
+    if let Some(view) = args.value_source("view") {
+        if view == clap::parser::ValueSource::CommandLine {
+            for image in workflow.inner.images() {
+                open_in_default_app(image, options);
+            }
+        }
+    }
+
 
     Ok(())
 }

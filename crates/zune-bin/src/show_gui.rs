@@ -26,7 +26,7 @@ pub fn open_in_default_app(image: &Image, options: EncoderOptions) {
         std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs()
+            .as_millis()
     );
     let mut path = temp_dir();
 

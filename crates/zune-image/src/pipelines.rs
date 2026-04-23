@@ -7,8 +7,7 @@
 //!
 #![allow(unused_variables)]
 use std::time::Instant;
-
-use zune_core::log::Level::Trace;
+use zune_core::log;
 use zune_core::log::{log_enabled, trace};
 
 use crate::codecs::ImageFormat;
@@ -74,7 +73,7 @@ impl EncodeResult {
 ///  [`images_mut`](crate::pipelines::Pipeline::images_mut)
 pub struct Pipeline {
     state:      Option<PipelineState>,
-    decode:     Option<Box<dyn IntoImage>>,
+    decoders:   Vec<Box<dyn IntoImage>>,
     image:      Vec<Image>,
     operations: Vec<Box<dyn OperationsTrait>>
 }
@@ -86,7 +85,7 @@ impl Pipeline {
         Pipeline {
             image:      vec![],
             state:      Some(PipelineState::Initialized),
-            decode:     None,
+            decoders:     vec![],
             operations: vec![]
         }
     }
@@ -96,13 +95,12 @@ impl Pipeline {
         self.image.push(image);
     }
 
-    /// Override the decoder present in the pipeline with a different
-    /// decoder.
+    /// Add a decoder to the pipeline queue.
     ///
-    /// There can only be one decoder in a pipeline, so the last decoder
-    /// is the one that will be considered.
+    /// You can chain multiple decoders to load multiple images into the pipeline
+    /// before operations are run.
     pub fn chain_decoder(&mut self, decoder: Box<dyn IntoImage>) -> &mut Pipeline {
-        self.decode = Some(decoder);
+        self.decoders.push(decoder);
         self
     }
     /// Add a new operation to the workflow.
@@ -157,42 +155,39 @@ impl Pipeline {
             match state {
                 PipelineState::Decode => {
                     let start = Instant::now();
-                    // do the actual decode
-                    if self.decode.is_none() {
-                        // we have an image, no need to decode a new one
+
+                    // If no decoders are queued
+                    if self.decoders.is_empty() {
                         if self.image.is_empty() {
-                            trace!("Image already present, no need to decode");
-                            // move to the next state
-                            self.state = state.next();
-
-                            return Ok(());
+                            return Err(ImageErrors::NoImageForOperations);
                         }
-                        return Err(ImageErrors::NoImageForOperations);
+                        trace!("Image already present, no need to decode");
+                    } else {
+                        if log_enabled!(log::Level::Trace) {
+                            println!();
+                            trace!("Current state: {:?}\n", state);
+                        }
+
+                        // CHANGED: Drain and process ALL queued decoders
+                        for mut decode_op in self.decoders.drain(..) {
+                            let img = decode_op.into_image()?;
+                            self.image.push(img);
+                        }
+
+                        let stop = Instant::now();
+                        trace!("Finished decoding in {} ms", (stop - start).as_millis());
                     }
 
-                    if log_enabled!(Trace) {
-                        println!();
-                        trace!("Current state: {:?}\n", state);
-                    }
-
-                    let mut decode_op = self.decode.take().unwrap();
-
-                    let img = decode_op.into_image()?;
-
-                    self.image.push(img);
-
-                    let stop = Instant::now();
-
+                    // Advance state once after all decodes
                     self.state = state.next();
-
-                    trace!("Finished decoding in {} ms", (stop - start).as_millis());
                 }
+
                 PipelineState::Operations => {
                     if self.image.is_empty() {
                         return Err(ImageErrors::NoImageForOperations);
                     }
 
-                    if log_enabled!(Trace) && !self.operations.is_empty() {
+                    if log_enabled!(log::Level::Trace) && !self.operations.is_empty() {
                         println!();
                         trace!("Current state: {:?}\n", state);
                     }
@@ -200,13 +195,10 @@ impl Pipeline {
                     for image in self.image.iter_mut() {
                         for operation in &self.operations {
                             let operation_name = operation.name();
-
                             trace!("Running {}", operation_name);
 
                             let start = Instant::now();
-
                             operation.execute(image)?;
-
                             let stop = Instant::now();
 
                             trace!(
@@ -214,15 +206,15 @@ impl Pipeline {
                                 (stop - start).as_millis()
                             );
                         }
-                        self.state = state.next();
                     }
+                    self.state = state.next();
                 }
+
                 PipelineState::Finished => {
                     trace!("Finished operations for this workflow");
-
                     self.state = state.next();
-                    return Ok(());
                 }
+
                 _ => {
                     self.state = state.next();
                 }

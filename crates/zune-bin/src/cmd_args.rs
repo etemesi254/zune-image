@@ -20,7 +20,7 @@ use crate::cmd_args::help_strings::{
     GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP,
     MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP,
     RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, STATISTIC_HELP,
-    STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP
+    STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP,
 };
 
 pub mod arg_parsers;
@@ -30,7 +30,7 @@ pub mod help_strings;
 pub enum MmapOptions {
     No,
     Always,
-    Auto
+    Auto,
 }
 
 impl ValueEnum for MmapOptions {
@@ -42,14 +42,14 @@ impl ValueEnum for MmapOptions {
         Some(match self {
             Self::No => PossibleValue::new("no"),
             Self::Always => PossibleValue::new("always"),
-            Self::Auto => PossibleValue::new("auto")
+            Self::Auto => PossibleValue::new("auto"),
         })
     }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum CmdImageFormats {
-    Format(ImageFormat)
+    Format(ImageFormat),
 }
 impl ValueEnum for CmdImageFormats {
     fn value_variants<'a>() -> &'a [Self] {
@@ -62,7 +62,7 @@ impl ValueEnum for CmdImageFormats {
             Self::Format(ImageFormat::PNG),
             Self::Format(ImageFormat::PPM),
             Self::Format(ImageFormat::PSD),
-            Self::Format(ImageFormat::QOI)
+            Self::Format(ImageFormat::QOI),
         ]
     }
 
@@ -78,8 +78,8 @@ impl ValueEnum for CmdImageFormats {
                 ImageFormat::JPEG_XL => Some(PossibleValue::new("jxl")),
                 ImageFormat::HDR => Some(PossibleValue::new("hdr")),
                 ImageFormat::BMP => Some(PossibleValue::new("bmp")),
-                _ => None
-            }
+                _ => None,
+            },
         }
     }
 }
@@ -100,7 +100,7 @@ pub fn create_cmd_args() -> Command {
             .short('i')
             .help("Input file to read data from")
             .long("input")
-            .action(ArgAction::Set)
+            .action(ArgAction::Append)
             .value_parser(value_parser!(OsString))
             .required(true))
         .arg(Arg::new("out")
@@ -177,7 +177,7 @@ fn add_logging_options() -> [Arg; 5] {
             .long("no-log")
             .action(ArgAction::SetTrue)
             .help_heading("Logging")
-            .help("No Logging, do not log anything")
+            .help("No Logging, do not log anything"),
     ]
 }
 
@@ -384,7 +384,7 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .allow_negative_numbers(false)
             .help("Rotate image by 90, 180 or 270")
             .long_help(ROTATE_HELP)
-            .value_parser(value_parser!(f32))
+            .value_parser(value_parser!(f32)),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
@@ -438,7 +438,7 @@ fn add_encode_options() -> (Vec<Arg>, ArgGroup) {
             .long_help(STRIP_HELP)
             .action(ArgAction::SetTrue)
             .group(GROUP)
-            .help_heading(HELP_HEADING)
+            .help_heading(HELP_HEADING),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     let arg_group = ArgGroup::new(GROUP)
@@ -577,8 +577,7 @@ fn add_image_specific_settings() -> (Vec<Arg>, ArgGroup) {
             .help("Ignore CRC errors on decoding PNG images")
             .action(ArgAction::SetTrue)
             .help_heading(GROUP)
-            .group(GROUP)
-
+            .group(GROUP),
     ];
 
     let arg_group = ArgGroup::new(GROUP)
