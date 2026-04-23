@@ -92,4 +92,4 @@ pub mod traits;
 pub mod transpose;
 pub mod sharpen;
 mod utils;
-
+pub mod ssim;

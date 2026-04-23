@@ -20,8 +20,8 @@ use crate::cmd_args::help_strings::{
     ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP,
     GRAYSCALE_HELP, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP,
     MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP,
-    SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP,
-    THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP,
+    SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP,
+    STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP,
 };
 
 pub mod arg_parsers;
@@ -230,158 +230,118 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
     let mut args = [
         Arg::new("grayscale")
             .long("grayscale")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Convert the image to grayscale")
-            .long_help(GRAYSCALE_HELP)
-            .group(GROUP),
+            .long_help(GRAYSCALE_HELP),
         Arg::new("transpose")
             .long("transpose")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Transpose an image")
-            .long_help(TRANSPOSE_HELP)
-            .group(GROUP),
+            .long_help(TRANSPOSE_HELP),
         Arg::new("flip")
             .long("flip")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flip an image on the vertical axis")
-            .long_help(FLIP_HELP)
-            .group(GROUP),
+            .long_help(FLIP_HELP),
         Arg::new("flop")
             .long("flop")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flop an image")
-            .long_help(FLOP_HELP)
-            .group(GROUP),
+            .long_help(FLOP_HELP),
         Arg::new("v-flip")
             .long("v-flip")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Flip an image on the vertical axis")
-            .long_help(V_FLIP_HELP)
-            .group(GROUP),
+            .long_help(V_FLIP_HELP),
         Arg::new("mirror")
             .long("mirror")
-            .help_heading(HELP_HEADING)
             .value_parser(["north", "south", "east", "west"])
             .help("Mirror the image")
-            .long_help(MIRROR_HELP)
-            .group(GROUP),
+            .long_help(MIRROR_HELP),
         Arg::new("invert")
             .long("invert")
-            .help_heading(HELP_HEADING)
             .action(ArgAction::SetTrue)
             .help("Invert image pixels")
-            .long_help(INVERT_HELP)
-            .group(GROUP),
+            .long_help(INVERT_HELP),
         Arg::new("brighten")
             .long("brighten")
-            .help_heading(HELP_HEADING)
             .help("Brighten (or darken) an image.")
             .long_help(BRIGHTEN_HELP)
             .allow_negative_numbers(true)
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("crop")
             .long("crop")
-            .help_heading(HELP_HEADING)
             .value_names(["width", "height", "x", "y"])
             .help("Crop an image ")
-            .long_help(CROP_HELP)
-            .group(GROUP),
+            .long_help(CROP_HELP),
         Arg::new("threshold")
             .long("threshold")
             .value_names(["threshold", "mode"])
-            .help_heading(HELP_HEADING)
             .help("Replace pixels in an image depending on intensity of the pixel.")
-            .long_help(THRESHOLD_HELP)
-            .group(GROUP),
+            .long_help(THRESHOLD_HELP),
         Arg::new("gamma")
             .long("gamma")
             .help("Gamma adjust an image")
-            .help_heading(HELP_HEADING)
             .long_help(GAMMA_HELP)
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("stretch-contrast")
             .long("stretch-contrast")
             .value_parser(value_parser!(f32))
             .value_names(["lower", "upper"])
-            .help_heading(HELP_HEADING)
             .help("Linearly stretch contrast in an image")
-            .long_help(STRETCH_CONTRAST_HELP)
-            .group(GROUP),
+            .long_help(STRETCH_CONTRAST_HELP),
         Arg::new("contrast")
             .long("contrast")
             .value_name("contrast")
-            .help_heading(HELP_HEADING)
             .help("Adjust contrast of the image")
             .long_help(CONTRAST_HELP)
             .allow_negative_numbers(true)
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("resize")
             .long("resize")
             .value_names(["value"])
-            .help_heading(HELP_HEADING)
             .long_help(RESIZE_HELP)
-            .help("Resize an image (e.g., 800x600, 50%, or 50%x75%)")
-            .group(GROUP),
+            .help("Resize an image (e.g., 800x600, 50%, or 50%x75%)"),
         Arg::new("resize-method")
             .long("resize-method")
-            .help_heading(HELP_HEADING)
             .value_parser(value_parser!(IResizeMethod))
             .help("Resizing method to use")
-            .long_help(RESIZE_METHOD_HELP)
-            .group(GROUP),
+            .long_help(RESIZE_METHOD_HELP),
         Arg::new("depth")
             .long("depth")
-            .help_heading(HELP_HEADING)
             .help("Change image depth")
             .long_help(DEPTH_HELP)
-            .value_parser(value_parser!(u8))
-            .group(GROUP),
+            .value_parser(value_parser!(u8)),
         Arg::new("auto-orient")
             .long("auto-orient")
-            .help_heading(HELP_HEADING)
             .help("Automatically orient the image based on exif tag")
             .long_help(AUTO_ORIENT_HELP)
-            .action(ArgAction::SetTrue)
-            .group(GROUP),
+            .action(ArgAction::SetTrue),
         Arg::new("exposure")
             .long("exposure")
-            .help_heading(HELP_HEADING)
             .help("Adjust exposure of image, value is capped between -3 and 3")
             .long_help(EXPOSURE_HELP)
             .allow_negative_numbers(true)
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("huerotate")
             .long("huerotate")
-            .help_heading(HELP_HEADING)
             .help("Hue rotate the image by certain degrees, (between 0 and 360)")
             .long_help(HUEROTATE_HELP)
             .value_parser(value_parser!(f32)),
         Arg::new("saturate")
             .long("saturate")
-            .help_heading(HELP_HEADING)
             .help("Adjust image saturation")
             .long_help(SATURATE_HELP)
             .allow_negative_numbers(true)
             .value_parser(value_parser!(f32)),
         Arg::new("lightness")
             .long("lightness")
-            .help_heading(HELP_HEADING)
             .allow_negative_numbers(true)
             .help("Adjust image brightness")
             .long_help(LIGHTNESS_HELP)
             .value_parser(value_parser!(f32)),
         Arg::new("rotate")
             .long("rotate")
-            .help_heading(HELP_HEADING)
             .allow_negative_numbers(false)
             .help("Rotate image by 90, 180 or 270")
             .long_help(ROTATE_HELP)
@@ -391,8 +351,6 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help("Composite the last two loaded images. Usage: --composite <Method>")
             .action(ArgAction::Set)
             .long_help(COMPOSITE_HELP)
-            .help_heading(HELP_HEADING)
-
             .value_parser([
                 "Over", "Src", "Dst", "DstIn", "DstOut", "SrcIn", "SrcOut", "Xor", "Multiply",
                 "Screen",
@@ -401,25 +359,24 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .long("geometry")
             .help("Position for composite (e.g., 100,50)")
             .action(ArgAction::Set)
-            .help_heading(HELP_HEADING)
-
             .requires("composite"),
         Arg::new("blend")
             .long("blend")
             .help("Blend the last two loaded images together using an alpha value (0.0 to 1.0).")
             .long_help(BLEND_HELP)
-            .help_heading(HELP_HEADING)
-
             .action(ArgAction::Set)
             .value_parser(clap::value_parser!(f32)),
         Arg::new("append")
             .long("append")
             .help("Append the last two images (horizontal or vertical).")
             .long_help(APPEND_HELP)
-            .help_heading(HELP_HEADING)
-
             .action(ArgAction::Set)
             .value_parser(["horizontal", "vertical"]),
+        Arg::new("ssim")
+            .long("ssim")
+            .help("Calculate the SSIM metric between the last two loaded images.")
+            .long_help(SSIM_HELP)
+            .action(ArgAction::SetTrue),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
@@ -427,7 +384,11 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
         .args(args.iter().map(|x| x.get_id()))
         .multiple(true);
 
-    (args.to_vec(), arg_group)
+    (
+        args.map(|f| f.help_heading(HELP_HEADING).group(GROUP))
+            .to_vec(),
+        arg_group,
+    )
 }
 
 fn add_encode_options() -> (Vec<Arg>, ArgGroup) {

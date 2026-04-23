@@ -397,3 +397,15 @@ OPTIONS:
 
 EXAMPLE:
   zune -i left.png -i right.png --append horizontal -o wide_output.png"#;
+
+pub const SSIM_HELP:&str = r#"Calculate the Structural Similarity Index Measure (SSIM).
+
+This compares the last two images loaded onto the stack and prints their
+similarity score (MSSIM). A score of 1.0 means the images are perfectly identical.
+
+STACK MECHANICS:
+This operation is NON-DESTRUCTIVE. It peeks at the top two images but leaves them on the stack.
+
+EXAMPLE:
+  zune -i reference.png -i compressed.jpg --ssim
+"#;
