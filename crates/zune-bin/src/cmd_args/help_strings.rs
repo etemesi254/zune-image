@@ -330,3 +330,28 @@ USAGE EXAMPLES:
   
   --affine-transform 2.0 0.0 0.0 2.0 0.0 0.0     
   (Scales the image by 2x in both directions)";
+
+pub const COMPOSITE_HELP: &str = r#"Composite the last two loaded images together.
+
+This operation uses a stack-based architecture. It requires at least two 
+input images (-i) to be loaded into the pipeline. 
+
+STACK MECHANICS:
+When --composite is called, it removes the last loaded image from the 
+pipeline stack to use as the "Source" (overlay). It then composites this 
+onto the previously loaded image, which acts as the "Destination" (background).
+
+AVAILABLE METHODS:
+  Over    - Standard alpha blending. Places the source over the destination.
+  Src     - Replaces the destination completely with the source image.
+  Dst     - Does nothing (leaves the destination image unchanged).
+  DstIn   - Masks the background using the source's alpha channel.
+
+EXAMPLES:
+1. Basic overlay (defaults to top-left corner 0,0):
+   zune -i background.png -i logo.png --composite Over -o final.png
+
+2. Offset the overlay using --geometry (x,y):
+   zune -i bg.png -i logo.png --composite Over --geometry 150,50 -o final.png
+
+Note: Both images must have the same bit depth and colorspace."#;

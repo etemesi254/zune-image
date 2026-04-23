@@ -16,6 +16,7 @@ use zune_image::core_filters::depth::Depth;
 use zune_image::pipelines::Pipeline;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::brighten::Brighten;
+use zune_imageprocs::composite::{Composite, CompositeMethod};
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
@@ -35,7 +36,7 @@ use zune_imageprocs::transpose::Transpose;
 use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
 
 pub fn parse_options(
-    workflow: &mut Pipeline, argument: &str, args: &ArgMatches
+    workflow: &mut Pipeline, argument: &str, args: &ArgMatches,
 ) -> Result<(), String> {
     if argument == "flip" {
         debug!("Added flip operation");
@@ -111,9 +112,7 @@ pub fn parse_options(
 
         workflow.chain_operations(Box::new(threshold));
 
-        debug!(
-            "Added threshold operation with mode {thresh_mode:?}  and value {radius:?}"
-        )
+        debug!("Added threshold operation with mode {thresh_mode:?}  and value {radius:?}")
     } else if argument == "stretch-contrast" {
         let values = args
             .get_many::<f32>(argument)
@@ -124,9 +123,7 @@ pub fn parse_options(
 
         let upper = *values[1];
 
-        debug!(
-            "Added stretch contrast filter with lower={lower} and upper={upper}"
-        );
+        debug!("Added stretch contrast filter with lower={lower} and upper={upper}");
         let stretch_contrast = StretchContrast::new(lower, upper);
         workflow.chain_operations(Box::new(stretch_contrast));
     } else if argument == "gamma" {
@@ -207,6 +204,33 @@ pub fn parse_options(
         let value = *args.get_one::<f32>(argument).unwrap();
         workflow.chain_operations(Box::new(Rotate::new(value)));
         debug!("Added rotate argument with value {value}");
+    } else if argument == "composite" {
+        if let Some(method_str) = args.get_one::<String>("composite") {
+            let method = match method_str.as_str() {
+                "Over" => CompositeMethod::Over,
+                "Src" => CompositeMethod::Src,
+                "Dst" => CompositeMethod::Dst,
+                "DstIn" => CompositeMethod::DstIn,
+                _ => return Err("Unknown composite method".to_string()),
+            };
+
+            // Parse geometry (defaulting to 0,0 if not provided)
+            let position = if let Some(geo_str) = args.get_one::<String>("geometry") {
+                let parts: Vec<&str> = geo_str.split(',').collect();
+                if parts.len() == 2 {
+                    let x = parts[0].parse().unwrap_or(0);
+                    let y = parts[1].parse().unwrap_or(0);
+                    (x, y)
+                } else {
+                    return Err("Geometry must be in format x,y".to_string());
+                }
+            } else {
+                (0, 0)
+            };
+
+            // Chain the operation!
+            workflow.chain_operations(Box::new(Composite::new(method, position)));
+        }
     }
 
     Ok(())
