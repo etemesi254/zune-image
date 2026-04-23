@@ -13,16 +13,7 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
 use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
-use crate::cmd_args::help_strings::{
-    AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP,
-    BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP,
-    COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP,
-    ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP,
-    GRAYSCALE_HELP, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP,
-    MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP,
-    SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP,
-    STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP,
-};
+use crate::cmd_args::help_strings::{AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP, BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HALD_CLUT, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP};
 
 pub mod arg_parsers;
 pub mod help_strings;
@@ -452,61 +443,45 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform a box blur")
             .value_name("radius")
             .long_help(BOX_BLUR_HELP)
-            .help_heading(GROUP)
-            .value_parser(value_parser!(usize))
-            .group(GROUP),
+            .value_parser(value_parser!(usize)),
         Arg::new("blur")
             .long("blur")
             .help("Perform a gaussian blur")
             .value_name("sigma")
             .long_help(GAUSSIAN_BLUR_HELP)
-            .help_heading(GROUP)
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("sharpen")
             .long("sharpen")
             .help("Perform an unsharp mask")
             .long_help(UNSHARPEN_HELP)
-            .help_heading(GROUP)
             .value_names(["sigma", "threshold", "percentage"])
-            .value_parser(value_parser!(f32))
-            .group(GROUP),
+            .value_parser(value_parser!(f32)),
         Arg::new("statistic")
             .long("statistic")
             .help("Replace each pixel with corresponding statistic from the neighbourhood")
             .long_help(STATISTIC_HELP)
-            .help_heading(GROUP)
-            .value_names(["radius", "statistic"])
-            .group(GROUP),
+            .value_names(["radius", "statistic"]),
         Arg::new("mean-blur")
             .long("mean-blur")
             .help("Perform a mean blur")
             .long_help(MEAN_BLUR_HELP)
             .value_name("radius")
-            .help_heading(GROUP)
-            .value_parser(value_parser!(usize))
-            .group(GROUP),
+            .value_parser(value_parser!(usize)),
         Arg::new("sobel")
             .long("sobel")
             .help("Perform a 3x3 sobel convolution operation")
             .long_help(SOBEL_HELP)
-            .action(ArgAction::SetTrue)
-            .help_heading(GROUP)
-            .group(GROUP),
+            .action(ArgAction::SetTrue),
         Arg::new("scharr")
             .long("scharr")
             .help("Perform a 3x3 scharr convolution operation")
             .long_help(SCHARR_HELP)
-            .action(ArgAction::SetTrue)
-            .help_heading(GROUP)
-            .group(GROUP),
+            .action(ArgAction::SetTrue),
         Arg::new("convolve")
             .long("convolve")
             .allow_hyphen_values(true)
             .help("Perform a 2D NxN convolution. N can be either of 3, 5 or 7")
             .long_help(CONVOLVE_HELP)
-            .group(GROUP)
-            .help_heading(GROUP)
             .num_args(..=49)
             .action(ArgAction::Append)
             .value_parser(value_parser!(f32)),
@@ -515,41 +490,41 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform a median blur on an image, this replaces a pixel with the median of it's neighbours")
             .long_help(MEDIAN_BLUR_HELP)
             .value_name("radius")
-            .help_heading(GROUP)
-            .value_parser(value_parser!(usize))
-            .group(GROUP),
+            .value_parser(value_parser!(usize)),
         Arg::new("color-transform")
             .long("color-transform")
             .help("Parse the ICC chunk of an image and perform a color transform")
             .long_help(COLOR_TRANSFORM_HELP)
             .default_missing_value("rgb")
             .value_parser(PossibleValuesParser::new(["rgb", "adobe-rgb", "display-p3", "bt-2020"]))
-            .value_name("color-transform")
-            .help_heading(GROUP)
-            .group(GROUP),
+            .value_name("color-transform"),
         Arg::new("affine-transform")
             .long("affine-transform")
-            .help_heading(GROUP)
             .allow_hyphen_values(true)
             .value_names(["a", "b", "c", "d", "tx", "ty"])
             .value_parser(value_parser!(f32))
             .help("Affine transform an image")
-            .long_help(AFFINE_TRANSFORM_HELP)
-            .group(GROUP),
+            .long_help(AFFINE_TRANSFORM_HELP),
         Arg::new("bilateral")
             .long("bilateral")
             .value_name("D,COLOR,SPACE")
             .help("Apply a bilateral filter/edge smoothing (e.g., '9,75.0,75.0')")
-            .long_help(BILATERAL_FILTER_HELP)
-            .help_heading(GROUP)
-            .group(GROUP),
+            .long_help(BILATERAL_FILTER_HELP),
+        Arg::new("hald-clut")
+            .long("hald-clut")
+            .help("Apply a Hald-CLUT color grade using the last two loaded images.")
+            .long_help(HALD_CLUT)
+            .action(ArgAction::SetTrue)
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
     let arg_group = ArgGroup::new(GROUP)
         .args(args.iter().map(|x| x.get_id()))
         .multiple(true);
 
-    (args.to_vec(), arg_group)
+    (
+        args.map(|f| f.help_heading(GROUP).group(GROUP)).to_vec(),
+        arg_group,
+    )
 }
 
 fn add_image_specific_settings() -> (Vec<Arg>, ArgGroup) {

@@ -93,3 +93,5 @@ pub mod transpose;
 pub mod sharpen;
 mod utils;
 pub mod ssim;
+pub mod hald_clut;
+pub mod average;

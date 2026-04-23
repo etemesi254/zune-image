@@ -15,16 +15,17 @@ use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::hald_clut::HaldClut;
 use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
+use zune_imageprocs::sharpen::Sharpen;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
-use zune_imageprocs::sharpen::Sharpen;
 //use zune_opencl::ocl_sobel::OclSobel;
 
 pub fn parse_options(
-    workflow: &mut Pipeline, argument: &str, args: &ArgMatches
+    workflow: &mut Pipeline, argument: &str, args: &ArgMatches,
 ) -> Result<(), String> {
     if argument == "box-blur" {
         let radius = *args.get_one::<usize>(argument).unwrap();
@@ -45,10 +46,7 @@ pub fn parse_options(
         let threshold_u16 = values[1];
         let percentage = values[2].clamp(0.0, 100.0) as u8;
 
-
-        debug!(
-            "Added unsharpen filter with sigma={sigma_f32} and threshold={threshold_u16}"
-        );
+        debug!("Added unsharpen filter with sigma={sigma_f32} and threshold={threshold_u16}");
 
         let sharpen = Sharpen::new(sigma_f32, threshold_u16 as u16, percentage);
         workflow.chain_operations(Box::new(sharpen));
@@ -90,7 +88,7 @@ pub fn parse_options(
             "adobe-rgb" => ColorProfiles::AdobeRgb,
             "display-p3" => ColorProfiles::DisplayP3,
             "bt-2020" => ColorProfiles::DisplayP3,
-            _ => Err(format!("Unknown color profile: {value}"))?
+            _ => Err(format!("Unknown color profile: {value}"))?,
         };
         debug!("Added color transform operation");
 
@@ -106,7 +104,7 @@ pub fn parse_options(
             return Err(format!("Invalid transform length: {}", value.len()));
         }
         let transform = AffineTransform::new(
-            *value[0], *value[1], *value[2], *value[3], *value[4], *value[5]
+            *value[0], *value[1], *value[2], *value[3], *value[4], *value[5],
         );
         workflow.chain_operations(Box::new(transform));
     } else if argument == "bilateral" {
@@ -120,6 +118,8 @@ pub fn parse_options(
                 return Err(e);
             }
         }
+    } else if argument == "hald-clut" {
+        workflow.chain_operations(Box::new(HaldClut::new()));
     }
 
     Ok(())

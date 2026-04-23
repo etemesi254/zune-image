@@ -409,3 +409,19 @@ This operation is NON-DESTRUCTIVE. It peeks at the top two images but leaves the
 EXAMPLE:
   zune -i reference.png -i compressed.jpg --ssim
 "#;
+
+pub const HALD_CLUT:&str =r#"Apply a Hald-CLUT color grade to an image.
+
+This operation uses a stack-based architecture. It requires exactly two 
+input images (-i) to be loaded into the pipeline. 
+
+STACK MECHANICS:
+1. Load your target image (the photo you want to color grade).
+2. Load your Hald-CLUT image (the 3D color lookup table, usually a 512x512 PNG).
+3. Call --hald-clut. 
+
+The CLUT image is popped from the stack, its color mappings are applied to 
+the target image, and the target image remains on the stack for saving.
+
+EXAMPLE:
+  zune -i raw_photo.jpg -i cinematic_clut.png --hald-clut -o graded_photo.jpg"#;
