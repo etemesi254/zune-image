@@ -192,21 +192,20 @@ impl Pipeline {
                         trace!("Current state: {:?}\n", state);
                     }
 
-                    for image in self.image.iter_mut() {
-                        for operation in &self.operations {
-                            let operation_name = operation.name();
-                            trace!("Running {}", operation_name);
+                    for operation in &self.operations {
+                        let operation_name = operation.name();
+                        trace!("Running {}", operation_name);
 
-                            let start = Instant::now();
-                            operation.execute(image)?;
-                            let stop = Instant::now();
+                        let start = Instant::now();
+                        operation.execute_multiple(&mut self.image)?;
+                        let stop = Instant::now();
 
-                            trace!(
-                                "Finished running `{operation_name}` in {} ms",
-                                (stop - start).as_millis()
-                            );
-                        }
+                        trace!(
+                            "Finished running `{operation_name}` in {} ms",
+                            (stop - start).as_millis()
+                        );
                     }
+
                     self.state = state.next();
                 }
 
