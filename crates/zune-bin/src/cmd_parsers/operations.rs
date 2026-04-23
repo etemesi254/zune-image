@@ -211,6 +211,12 @@ pub fn parse_options(
                 "Src" => CompositeMethod::Src,
                 "Dst" => CompositeMethod::Dst,
                 "DstIn" => CompositeMethod::DstIn,
+                "DstOut" => CompositeMethod::DstOut,
+                "Screen" => CompositeMethod::Screen,
+                "Xor" => CompositeMethod::Xor,
+                "Multiply" => CompositeMethod::Multiply,
+                "SrcIn" => CompositeMethod::SrcIn,
+                "SrcOut" => CompositeMethod::SrcOut,
                 _ => return Err("Unknown composite method".to_string()),
             };
 

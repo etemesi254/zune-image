@@ -13,7 +13,16 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
 use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
-use crate::cmd_args::help_strings::{AFFINE_TRANSFORM_HELP, AFTER_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP};
+use crate::cmd_args::help_strings::{
+    AFFINE_TRANSFORM_HELP, AFTER_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP, BOX_BLUR_HELP,
+    BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP,
+    CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP,
+    FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HUEROTATE_HELP,
+    INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP,
+    QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP,
+    SOBEL_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
+    UNSHARPEN_HELP, V_FLIP_HELP,
+};
 
 pub mod arg_parsers;
 pub mod help_strings;
@@ -382,7 +391,10 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help("Composite the last two loaded images. Usage: --composite <Method>")
             .action(ArgAction::Set)
             .long_help(COMPOSITE_HELP)
-            .value_parser(["Over", "Src", "Dst", "DstIn"]),
+            .value_parser([
+                "Over", "Src", "Dst", "DstIn", "DstOut", "SrcIn", "SrcOut", "Xor", "Multiply",
+                "Screen",
+            ]),
         Arg::new("geometry")
             .long("geometry")
             .help("Position for composite (e.g., 100,50)")
