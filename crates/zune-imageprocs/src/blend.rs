@@ -3,11 +3,10 @@
 //! This can be used to combine two or more images based on an alpha value
 //! which is used to determine the `opacity` of pixels during blending
 //!
-//!
 //! The formula for blending is
 //!
 //! ```text
-//! dest =(src_alpha) * src  + (1-src_alpha) * dest
+//! dest = (src_alpha) * src + (1 - src_alpha) * dest
 //! ```
 //! `src_alpha` is expected to be between 0.0 and 1.0
 //!
@@ -24,13 +23,16 @@ use crate::traits::NumOps;
 /// Alpha must be between 0.0 and 1.0 for the images
 /// and it's clamped to that range.
 ///
-///
 /// # Alpha channel
-/// - Alpha  channel is ignored
+/// - Alpha channel is ignored
+///
+/// # Stack Mechanics
+/// This operation pops the last image off the stack to use as the `source`,
+/// and blends it onto the new top of the stack (`destination`).
 ///
 /// # Examples
-///  
-/// Blend two images with an alpha of 0.5 which divides the soruce and destination pixel by half and adds them
+///
+/// Blend two images with an alpha of 0.5 which divides the source and destination pixel by half and adds them
 /// ```
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_image::image::Image;
@@ -38,72 +40,97 @@ use crate::traits::NumOps;
 /// use zune_imageprocs::blend::Blend;
 ///
 /// // create a gradient from luma using addition
-/// let im1 =Image::from_fn::<u8,_>(100,100,ColorSpace::Luma,|x,y,pix|{
+/// let im1 = Image::from_fn::<u8,_>(100, 100, ColorSpace::Luma, |x, y, pix| {
 ///     pix[0] = ((x + y) % 256) as u8;
 /// });
 /// // create a reverse gradient
-/// let mut im2 =  Image::from_fn::<u8,_>(100,100,ColorSpace::Luma,|x,y,pix|{
-///   pix[0] = (x.wrapping_sub(y) % 256) as u8;
+/// let im2 = Image::from_fn::<u8,_>(100, 100, ColorSpace::Luma, |x, y, pix| {
+///     pix[0] = (x.wrapping_sub(y) % 256) as u8;
 /// });
+///
+/// // Load them into a stack
+/// let mut stack = vec![im1, im2];
+///
 /// // blend them with 0.5, which picks equal from forward and reverse gradient
-/// let im3 = Blend::new(&im1,0.5).clone_and_execute(&im2).unwrap();
+/// Blend::new(0.5).execute_multiple(&mut stack).unwrap();
+///
+/// // The stack now contains 1 blended image
+/// assert_eq!(stack.len(), 1);
 /// ```
 ///
-pub struct Blend<'src> {
-    image: &'src Image,
+pub struct Blend {
     alpha: f32
 }
 
-impl<'src> Blend<'src> {
+impl Blend {
     /// Create a new blend filter
     ///
     /// # Arguments
-    /// - src_alpha: Range is 0-1 If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified
-    /// - image: Source image, this is the image to be overlaid on top of the other image
-    /// It must match in dimensions, number of frames,depth and color.
+    /// - src_alpha: Range is 0.0-1.0. If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified.
     #[must_use]
-    pub fn new(image: &'src Image, src_alpha: f32) -> Blend<'src> {
+    pub fn new(src_alpha: f32) -> Blend {
         Blend {
-            image,
             alpha: src_alpha
         }
     }
 }
 
-impl OperationsTrait for Blend<'_> {
+impl OperationsTrait for Blend {
     fn name(&self) -> &'static str {
         "Blend"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        // confirm invariants
+    // Not in use, use execute_multiple
+    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
+        Err(ImageErrors::GenericStr(
+            "Blend requires multiple images; it must be called via execute_multiple"
+        ))
+    }
+
+    fn supported_types(&self) -> &'static [BitType] {
+        &[BitType::U8, BitType::U16, BitType::F32]
+    }
+
+    fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
+        if images.len() < 2 {
+            return Err(ImageErrors::GenericStr(
+                "Blend requires at least two images in the pipeline"
+            ));
+        }
+
         if self.alpha != 0.0 && !self.alpha.is_normal() {
             return Err(ImageErrors::GenericStr("Alpha is not normal"));
         }
-        if image.dimensions() != self.image.dimensions() {
+
+        // Pop the overlay image off the stack
+        let src_image = images.pop().unwrap();
+
+        // The background image is now the top of the stack
+        let dst_image = images.last_mut().unwrap();
+
+        // Confirm invariants between the two images
+        if dst_image.dimensions() != src_image.dimensions() {
             return Err(ImageErrors::GenericStr(
                 "Image dimensions are incompatible for blend"
             ));
         }
-        if image.depth() != self.image.depth() {
+        if dst_image.depth() != src_image.depth() {
             return Err(ImageErrors::GenericStr(
                 "Image depths do not match for blend"
             ));
         }
-
-        if image.colorspace() != self.image.colorspace() {
+        if dst_image.colorspace() != src_image.colorspace() {
             return Err(ImageErrors::GenericStr(
                 "Image colorspace does not match for blend"
             ));
         }
 
-        let b_type = image.depth().bit_type();
+        let b_type = dst_image.depth().bit_type();
 
-        for (src_chan, d_chan) in self
-            .image
+        for (src_chan, d_chan) in src_image
             .channels_ref(true)
             .iter()
-            .zip(image.channels_mut(true))
+            .zip(dst_image.channels_mut(true))
         {
             match b_type {
                 BitType::U8 => blend_single_channel::<u8>(
@@ -121,17 +148,12 @@ impl OperationsTrait for Blend<'_> {
                     d_chan.reinterpret_as_mut()?,
                     self.alpha
                 ),
-
                 d => {
                     return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
                 }
             }
         }
         Ok(())
-    }
-
-    fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 
