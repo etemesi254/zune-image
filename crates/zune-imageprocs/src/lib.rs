@@ -52,6 +52,7 @@
 
 pub use zune_image;
 
+pub mod append;
 pub mod affine;
 pub mod auto_orient;
 pub mod bilateral_filter;
@@ -91,3 +92,4 @@ pub mod traits;
 pub mod transpose;
 pub mod sharpen;
 mod utils;
+

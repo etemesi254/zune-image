@@ -26,7 +26,7 @@ enum PipelineState {
     /// The pipeline is ready to carry out image encoding
     Encode,
     /// The pipeline is done.
-    Finished
+    Finished,
 }
 
 impl PipelineState {
@@ -36,7 +36,7 @@ impl PipelineState {
             PipelineState::Decode => Some(PipelineState::Operations),
             PipelineState::Operations => Some(PipelineState::Encode),
             PipelineState::Encode => Some(PipelineState::Finished),
-            PipelineState::Finished => None
+            PipelineState::Finished => None,
         }
     }
 }
@@ -46,7 +46,7 @@ impl PipelineState {
 /// It contains the image format the data is in
 pub struct EncodeResult {
     pub(crate) format: ImageFormat,
-    pub(crate) data:   Vec<u8>
+    pub(crate) data: Vec<u8>,
 }
 
 impl EncodeResult {
@@ -72,10 +72,10 @@ impl EncodeResult {
 /// via  [`images`](crate::pipelines::Pipeline::images) and
 ///  [`images_mut`](crate::pipelines::Pipeline::images_mut)
 pub struct Pipeline {
-    state:      Option<PipelineState>,
-    decoders:   Vec<Box<dyn IntoImage>>,
-    image:      Vec<Image>,
-    operations: Vec<Box<dyn OperationsTrait>>
+    state: Option<PipelineState>,
+    decoders: Vec<Box<dyn IntoImage>>,
+    image: Vec<Image>,
+    operations: Vec<Box<dyn OperationsTrait>>,
 }
 
 impl Pipeline {
@@ -83,10 +83,10 @@ impl Pipeline {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Pipeline {
         Pipeline {
-            image:      vec![],
-            state:      Some(PipelineState::Initialized),
-            decoders:     vec![],
-            operations: vec![]
+            image: vec![],
+            state: Some(PipelineState::Initialized),
+            decoders: vec![],
+            operations: vec![],
         }
     }
 
@@ -168,10 +168,16 @@ impl Pipeline {
                             trace!("Current state: {:?}\n", state);
                         }
 
-                        // CHANGED: Drain and process ALL queued decoders
+                        //  Drain and process ALL queued decoders
                         for mut decode_op in self.decoders.drain(..) {
+                            if log_enabled!(log::Level::Trace) {
+                                println!();
+                            }
                             let img = decode_op.into_image()?;
                             self.image.push(img);
+                            if log_enabled!(log::Level::Trace) {
+                                println!();
+                            }
                         }
 
                         let stop = Instant::now();

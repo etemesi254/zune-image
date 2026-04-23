@@ -322,25 +322,7 @@ impl WasmImage {
         self.execute_ops(&BilateralFilter::new(d, sigma_color, sigma_space))
     }
 
-    /// Combine two or more images based on an alpha value
-    /// which is used to determine the `opacity` of pixels during blending
-    ///
-    ///
-    /// The formula for blending is
-    ///
-    /// ```text
-    /// dest = (src_alpha) * src  + (1-src_alpha) * dest
-    /// ```
-    /// `src_alpha` is expected to be between 0.0 and 1.0
-    ///
-    /// Images must have same width, height, colorspace and depth
-    ///
-    /// @param other: The secondary image
-    ///
-    /// @param src_alpha The source alpha parameter, range is between 0-1, and it's clamped there
-    pub fn blend(&mut self, other: &WasmImage, src_alpha: f32) -> Result<(), JsError> {
-        self.execute_ops(&Blend::new(&other.image, src_alpha))
-    }
+
     /// Perform a mean/box blur of the image
     ///
     /// This returns the average pixels of a radius `radius` around a pixel

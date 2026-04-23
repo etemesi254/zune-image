@@ -7,14 +7,16 @@
  */
 
 use clap::ArgMatches;
-use log::debug;
+use log::{debug, info};
 use regex::Regex;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
 use zune_image::pipelines::Pipeline;
+use zune_imageprocs::append::{Append, AppendDirection};
 use zune_imageprocs::auto_orient::AutoOrient;
+use zune_imageprocs::blend::Blend;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::composite::{Composite, CompositeMethod};
 use zune_imageprocs::contrast::Contrast;
@@ -236,6 +238,29 @@ pub fn parse_options(
 
             // Chain the operation!
             workflow.chain_operations(Box::new(Composite::new(method, position)));
+        }
+    } else if argument == "blend" {
+        if let Some(&alpha) = args.get_one::<f32>("blend") {
+            // Ensure alpha is within the reasonable 0.0-1.0 bounds for logging/warnings
+            if !(0.0..=1.0).contains(&alpha) {
+                log::warn!(
+                    "Blend alpha {} is outside the standard 0.0-1.0 range",
+                    alpha
+                );
+            }
+
+            workflow.chain_operations(Box::new(Blend::new(alpha)));
+        }
+    } else if argument == "append" {
+        if let Some(direction_str) = args.get_one::<String>("append") {
+            let direction = match direction_str.as_str() {
+                "horizontal" => AppendDirection::Horizontal,
+                "vertical" => AppendDirection::Vertical,
+                _ => unreachable!(), // Clap's value_parser guarantees it's one of the two
+            };
+
+            info!("Added append with direction {:?}", direction);
+            workflow.chain_operations(Box::new(Append::new(direction)));
         }
     }
 

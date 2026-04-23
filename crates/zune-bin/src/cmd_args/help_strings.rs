@@ -149,14 +149,16 @@ USAGE EXAMPLES:
 
 pub const STRETCH_CONTRAST_HELP: &str = "Linearly stretch the contrast of an image.
 
-Expects a lower and upper bound to stretch between, effectively redistributing the pixel intensities to fill the available dynamic range.
+Expects a lower and upper bound to stretch between,
+effectively redistributing the pixel intensities to fill the available dynamic range.
 
 USAGE EXAMPLES:
   --stretch-contrast 10.0 245.0";
 
 pub const CONTRAST_HELP: &str = "Adjust the contrast of the image.
 
-Positive values increase contrast (making brights brighter and darks darker), while negative values decrease it (washing out the image).
+Positive values increase contrast (making brights brighter and darks darker),
+while negative values decrease it (washing out the image).
 
 USAGE EXAMPLES:
   --contrast 20.0   (Increase contrast)
@@ -197,7 +199,8 @@ USAGE EXAMPLES:
 
 pub const SATURATE_HELP: &str = "Adjust the color saturation of the image.
 
-Positive values increase saturation (making colors more vibrant), while negative values decrease it (pushing the image closer to grayscale).
+Positive values increase saturation (making colors more vibrant),
+while negative values decrease it (pushing the image closer to grayscale).
 
 USAGE EXAMPLES:
   --saturate 2.0    (Double the saturation)
@@ -205,7 +208,8 @@ USAGE EXAMPLES:
 
 pub const LIGHTNESS_HELP: &str = "Adjust the overall lightness of the image.
 
-Unlike exposure (which acts multiplicatively) or brighten (which adds raw pixel values), lightness adjusts the L-channel in an HSL/LAB context. Accepts both positive and negative float values.
+Unlike exposure (which acts multiplicatively) or brighten (which adds raw pixel values),
+lightness adjusts the L-channel in an HSL/LAB context. Accepts both positive and negative float values.
 
 USAGE EXAMPLES:
   --lightness 10.0  (Lighten the image)
@@ -214,7 +218,10 @@ USAGE EXAMPLES:
 pub const ROTATE_HELP: &str = "Rotate the image clockwise by a specific angle in degrees.
 
 NOTE ON AFFINE TRANSFORMATIONS:
-For angles that are not exact right angles (e.g., 90, 180, 270), the rotation is performed using an affine transformation. This means the resulting image bounding box will grow to accommodate the tilted image, and the empty triangular areas at the corners will be filled with a background padding color.
+For angles that are not exact right angles (e.g., 90, 180, 270),
+the rotation is performed using an affine transformation.
+This means the resulting image bounding box will grow to accommodate the tilted image,
+ and the empty triangular areas at the corners will be filled with a background padding color.
 
 USAGE EXAMPLES:
   --rotate 90     (Perfect right-angle rotation, keeps exact bounds)
@@ -243,7 +250,10 @@ pub const STRIP_HELP: &str =
 Useful for reducing file size and removing sensitive information.";
 
 pub const UNSHARPEN_HELP: &str = "Apply an unsharp mask to sharpen the image.
-This algorithm works by comparing the image to a blurred version of itself. If the brightness difference between the two exceeds the threshold, the contrast at that edge is increased.
+
+This algorithm works by comparing the image to a blurred version of itself.
+If the brightness difference between the two exceeds the threshold,
+the contrast at that edge is increased.
 
 FORMAT:
   <sigma> <threshold> <percentage>
@@ -294,7 +304,8 @@ USAGE EXAMPLES:
 
 pub const MEDIAN_BLUR_HELP: &str = "Perform a median blur on the image.
 
-Replaces each pixel with the median value of its neighbors within the specified radius. Excellent for removing salt-and-pepper noise without destroying sharp edges.
+Replaces each pixel with the median value of its neighbors within the specified radius.
+Excellent for removing salt-and-pepper noise without destroying sharp edges.
 
 USAGE EXAMPLES:
   --median-blur 3";
@@ -310,7 +321,8 @@ USAGE EXAMPLES:
 
 pub const AFFINE_TRANSFORM_HELP: &str = "Apply a 2D affine transformation to the image.
 
-An affine transformation is a linear mapping method that preserves points, straight lines, and planes. It requires 6 parameters representing a 3x3 matrix.
+An affine transformation is a linear mapping method that preserves points,
+ straight lines, and planes. It requires 6 parameters representing a 3x3 matrix.
 
 FORMAT:
   <a> <b> <c> <d> <tx> <ty>
@@ -355,3 +367,33 @@ EXAMPLES:
    zune -i bg.png -i logo.png --composite Over --geometry 150,50 -o final.png
 
 Note: Both images must have the same bit depth and colorspace."#;
+
+pub const BLEND_HELP: &str = "Blend the last two loaded images together.
+
+This operation uses a stack-based architecture. It requires at least two 
+input images (-i) to be loaded into the pipeline. 
+
+STACK MECHANICS:
+It removes the last loaded image from the stack (Source) and blends it onto 
+the previously loaded image (Destination) based on the provided alpha.
+
+ALPHA:
+A float between 0.0 and 1.0. 
+  - 0.0 keeps only the destination image.
+  - 0.5 mixes them equally.
+  - 1.0 keeps only the source image.
+
+EXAMPLE:
+  zune -i background.png -i overlay.png --blend 0.5 -o output.png";
+
+pub const APPEND_HELP: &str = r#"Append (stitch) the last two loaded images together.
+
+This removes the last two images from the stack, combines them into a 
+single larger image, and pushes the new image back onto the stack.
+
+OPTIONS:
+  horizontal - Stitches side-by-side (First image on Left, Second on Right)
+  vertical   - Stitches top-to-bottom (First image on Top, Second on Bottom)
+
+EXAMPLE:
+  zune -i left.png -i right.png --append horizontal -o wide_output.png"#;

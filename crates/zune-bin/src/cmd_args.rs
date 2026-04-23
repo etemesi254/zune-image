@@ -14,14 +14,14 @@ use zune_image::codecs::ImageFormat;
 
 use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
 use crate::cmd_args::help_strings::{
-    AFFINE_TRANSFORM_HELP, AFTER_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP, BOX_BLUR_HELP,
-    BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP,
-    CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP,
-    FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HUEROTATE_HELP,
-    INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP,
-    QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP,
-    SOBEL_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
-    UNSHARPEN_HELP, V_FLIP_HELP,
+    AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP,
+    BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP,
+    COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP,
+    ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP,
+    GRAYSCALE_HELP, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP,
+    MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP,
+    SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP,
+    THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP,
 };
 
 pub mod arg_parsers;
@@ -391,6 +391,8 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help("Composite the last two loaded images. Usage: --composite <Method>")
             .action(ArgAction::Set)
             .long_help(COMPOSITE_HELP)
+            .help_heading(HELP_HEADING)
+
             .value_parser([
                 "Over", "Src", "Dst", "DstIn", "DstOut", "SrcIn", "SrcOut", "Xor", "Multiply",
                 "Screen",
@@ -399,7 +401,25 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .long("geometry")
             .help("Position for composite (e.g., 100,50)")
             .action(ArgAction::Set)
+            .help_heading(HELP_HEADING)
+
             .requires("composite"),
+        Arg::new("blend")
+            .long("blend")
+            .help("Blend the last two loaded images together using an alpha value (0.0 to 1.0).")
+            .long_help(BLEND_HELP)
+            .help_heading(HELP_HEADING)
+
+            .action(ArgAction::Set)
+            .value_parser(clap::value_parser!(f32)),
+        Arg::new("append")
+            .long("append")
+            .help("Append the last two images (horizontal or vertical).")
+            .long_help(APPEND_HELP)
+            .help_heading(HELP_HEADING)
+
+            .action(ArgAction::Set)
+            .value_parser(["horizontal", "vertical"]),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
@@ -487,7 +507,7 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform an unsharp mask")
             .long_help(UNSHARPEN_HELP)
             .help_heading(GROUP)
-            .value_names(["sigma", "threshold","percentage"])
+            .value_names(["sigma", "threshold", "percentage"])
             .value_parser(value_parser!(f32))
             .group(GROUP),
         Arg::new("statistic")
@@ -542,7 +562,7 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Parse the ICC chunk of an image and perform a color transform")
             .long_help(COLOR_TRANSFORM_HELP)
             .default_missing_value("rgb")
-            .value_parser(PossibleValuesParser::new(["rgb","adobe-rgb","display-p3","bt-2020"]))
+            .value_parser(PossibleValuesParser::new(["rgb", "adobe-rgb", "display-p3", "bt-2020"]))
             .value_name("color-transform")
             .help_heading(GROUP)
             .group(GROUP),
@@ -550,7 +570,7 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .long("affine-transform")
             .help_heading(GROUP)
             .allow_hyphen_values(true)
-            .value_names(["a","b","c","d","tx","ty"])
+            .value_names(["a", "b", "c", "d", "tx", "ty"])
             .value_parser(value_parser!(f32))
             .help("Affine transform an image")
             .long_help(AFFINE_TRANSFORM_HELP)

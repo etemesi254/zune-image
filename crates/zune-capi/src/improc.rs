@@ -96,39 +96,6 @@ pub extern "C" fn zil_imgproc_bilateral_filter(
     );
 }
 
-/// \brief Blend two images together based an alpha value
-/// which is used to determine the `opacity` of pixels during blending
-///
-///
-/// The formula for blending is
-///
-/// \code
-/// dest =(src_alpha) * src  + (1-src_alpha) * dest
-/// \endcode
-///
-/// `src_alpha` is expected to be between 0.0 and 1.0
-///
-/// \param image1: Image to which another image will be overlaid
-/// \param image2: Image which will be overlaid on image 1, must have same dimensions,depth and colorspace
-/// \param src_alpha: Source alpha, between 0 and 1, 1-> copy src to dest, 0 leave as is
-/// \param status Image operation status, query this to tell you if the operation succeded
-#[no_mangle]
-pub extern "C" fn zil_imgproc_blend(
-    image1: *mut ZImage, image2: *const ZImage, src_alpha: f32, status: *mut ZStatus
-) {
-    if status.is_null() {
-        return;
-    }
-    if image2.is_null() {
-        unsafe {
-            *status = ZStatus::new("Image2 is null", ZStatusType::ZilImageIsNull);
-        }
-        return;
-    }
-    let blend_src = unsafe { &*image2 };
-    let filter = Blend::new(blend_src, src_alpha);
-    exec_imgproc(image1, filter, status);
-}
 
 /// Adjust image exposure
 ///
