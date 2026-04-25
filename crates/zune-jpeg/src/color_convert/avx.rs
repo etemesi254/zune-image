@@ -98,6 +98,9 @@ pub fn ycbcr_to_rgb_avx2(
 unsafe fn ycbcr_to_rgb_avx2_1(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
+    // check if we have enough space to write.
+    let out: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+
     let (mut r, mut g, mut b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
 
     r = _mm256_packus_epi16(r, _mm256_setzero_si256());
@@ -314,10 +317,10 @@ mod safety_tests {
     /// unchecked OOB writes when misused. AddressSanitizer detects the
     /// overflow when the function is called with a too-small slice.
     #[test]
+    #[should_panic]
     fn ycbcr_to_rgb_avx2_oob_write() {
         if !is_x86_feature_detected!("avx2") {
-            eprintln!("AVX2 not available, skipping");
-            return;
+            panic!("AVX2 not available, skipping");
         }
         let y = [128i16; 16];
         let cb = [128i16; 16];
@@ -329,16 +332,11 @@ mod safety_tests {
         ycbcr_to_rgb_avx2(&y, &cb, &cr, &mut out, &mut offset);
     }
 
-    /// `ycbcr_to_rgb_avx2` ignores the `offset` argument when computing the
-    /// write address. It always writes to the *start* of `out` rather than
+    /// `ycbcr_to_rgb_avx2` used to ignore the `offset` argument when computing the
+    /// write address. It always wrote to the *start* of `out` rather than
     /// at `out[*offset..]`, even though it then increments `*offset` by 48.
     /// The sibling `ycbcr_to_rgba_avx2` function does the right thing
     /// (writes at `out[*offset..*offset+64]`).
-    ///
-    /// This is a logic bug rather than direct UB. It does not bite the
-    /// in-tree callers in `worker.rs` because they all pass a fresh
-    /// `&mut 0`, but it is a latent footgun for any new caller that
-    /// follows the implied API contract.
     #[test]
     fn ycbcr_to_rgb_avx2_ignores_offset() {
         if !is_x86_feature_detected!("avx2") {
@@ -353,8 +351,8 @@ mod safety_tests {
         // Function writes at out.as_mut_ptr() (offset 0) regardless of `offset`.
         // The first 48 bytes of `out` are now overwritten; bytes 50..98 are still 0xAA.
         // This demonstrates the function ignores its `offset` argument.
-        assert_ne!(out[0], 0xAA, "function wrote at start of buffer (offset 0)");
-        assert_eq!(
+        assert_eq!(out[0], 0xAA, "function wrote at start of buffer (offset 0)");
+        assert_ne!(
             out[50], 0xAA,
             "function did NOT write at offset=50 as the API implies"
         );
