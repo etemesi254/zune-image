@@ -125,22 +125,26 @@ unsafe fn ycbcr_to_rgb_baseline_no_clamp(
 pub fn ycbcr_to_rgb_neon(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
-    // call this in another function to tell RUST to vectorize this
-    // storing
+    // check if we have enough space to write.
+    let out: &mut [u8; 48] = out.get_mut(*offset..*offset + 48).expect("Slice to small cannot write").try_into().unwrap();
+
     unsafe {
         let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
         vst3q_u8(out.as_mut_ptr(), uint8x16x3_t(r, g, b));
-        *offset += 48;
     }
+    *offset += 48;
 }
 
 #[inline(always)]
 pub fn ycbcr_to_rgba_neon(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], out: &mut [u8], offset: &mut usize
 ) {
+    // check if we have enough space to write.
+    let out: &mut [u8; 64] = out.get_mut(*offset..*offset + 64).expect("Slice to small cannot write").try_into().unwrap();
+
     unsafe {
         let (r, g, b) = ycbcr_to_rgb_baseline_no_clamp(y, cb, cr);
         vst4q_u8(out.as_mut_ptr(), uint8x16x4_t(r, g, b, vdupq_n_u8(255)));
-        *offset += 64;
     }
+    *offset += 64;
 }
