@@ -295,3 +295,69 @@ unsafe fn ycbcr_to_rgba_unsafe(
 const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     (z << 6) | (y << 4) | (x << 2) | w
 }
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+
+    /// Demonstrates buffer overflow in `ycbcr_to_rgb_avx2`.
+    ///
+    /// The function takes a `&mut [u8]` output slice but performs no bounds
+    /// check. It writes 48 bytes via raw pointer stores
+    /// (`_mm256_storeu_si256` and `_mm_storeu_si128`) starting at
+    /// `out.as_mut_ptr()` regardless of the output's length.
+    ///
+    /// Note: although `ycbcr_to_rgb_avx2` is `pub`, the containing
+    /// `color_convert` module is private (`mod color_convert;` in lib.rs),
+    /// so this is NOT a soundness hole in the crate's public API. It is a
+    /// crate-internal footgun: a `safe`-callable function that performs
+    /// unchecked OOB writes when misused. AddressSanitizer detects the
+    /// overflow when the function is called with a too-small slice.
+    #[test]
+    fn ycbcr_to_rgb_avx2_oob_write() {
+        if !is_x86_feature_detected!("avx2") {
+            eprintln!("AVX2 not available, skipping");
+            return;
+        }
+        let y = [128i16; 16];
+        let cb = [128i16; 16];
+        let cr = [128i16; 16];
+        // Output buffer of 32 bytes - smaller than the 48 bytes the function writes.
+        // We use a Vec to ensure ASan can detect the overflow.
+        let mut out: Vec<u8> = vec![0u8; 32];
+        let mut offset = 0usize;
+        ycbcr_to_rgb_avx2(&y, &cb, &cr, &mut out, &mut offset);
+    }
+
+    /// `ycbcr_to_rgb_avx2` ignores the `offset` argument when computing the
+    /// write address. It always writes to the *start* of `out` rather than
+    /// at `out[*offset..]`, even though it then increments `*offset` by 48.
+    /// The sibling `ycbcr_to_rgba_avx2` function does the right thing
+    /// (writes at `out[*offset..*offset+64]`).
+    ///
+    /// This is a logic bug rather than direct UB. It does not bite the
+    /// in-tree callers in `worker.rs` because they all pass a fresh
+    /// `&mut 0`, but it is a latent footgun for any new caller that
+    /// follows the implied API contract.
+    #[test]
+    fn ycbcr_to_rgb_avx2_ignores_offset() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let y = [128i16; 16];
+        let cb = [128i16; 16];
+        let cr = [128i16; 16];
+        let mut out = vec![0xAAu8; 100];
+        let mut offset = 50usize;
+        ycbcr_to_rgb_avx2(&y, &cb, &cr, &mut out, &mut offset);
+        // Function writes at out.as_mut_ptr() (offset 0) regardless of `offset`.
+        // The first 48 bytes of `out` are now overwritten; bytes 50..98 are still 0xAA.
+        // This demonstrates the function ignores its `offset` argument.
+        assert_ne!(out[0], 0xAA, "function wrote at start of buffer (offset 0)");
+        assert_eq!(
+            out[50], 0xAA,
+            "function did NOT write at offset=50 as the API implies"
+        );
+    }
+
+}
