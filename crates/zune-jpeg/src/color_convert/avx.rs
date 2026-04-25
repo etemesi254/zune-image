@@ -299,7 +299,7 @@ const fn shuffle(z: i32, y: i32, x: i32, w: i32) -> i32 {
     (z << 6) | (y << 4) | (x << 2) | w
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod safety_tests {
     use super::*;
 
