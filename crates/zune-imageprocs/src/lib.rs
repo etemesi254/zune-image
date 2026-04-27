@@ -95,3 +95,4 @@ mod utils;
 pub mod ssim;
 pub mod hald_clut;
 pub mod average;
+pub mod swap;

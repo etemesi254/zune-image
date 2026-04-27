@@ -386,19 +386,19 @@ A float between 0.0 and 1.0.
 EXAMPLE:
   zune -i background.png -i overlay.png --blend 0.5 -o output.png";
 
-pub const APPEND_HELP: &str = r#"Append (stitch) the last two loaded images together.
+pub const APPEND_HELP: &str = r#"Append (stitch) the last N loaded images together.
 
-This removes the last two images from the stack, combines them into a 
+This removes the last n images from the stack, combines them into a
 single larger image, and pushes the new image back onto the stack.
 
 OPTIONS:
-  horizontal - Stitches side-by-side (First image on Left, Second on Right)
-  vertical   - Stitches top-to-bottom (First image on Top, Second on Bottom)
+  horizontal - Stitches side-by-side (First image on Left, N on Right)
+  vertical   - Stitches top-to-bottom (First image on Top, N on Bottom)
 
 EXAMPLE:
   zune -i left.png -i right.png --append horizontal -o wide_output.png"#;
 
-pub const SSIM_HELP:&str = r#"Calculate the Structural Similarity Index Measure (SSIM).
+pub const SSIM_HELP: &str = r#"Calculate the Structural Similarity Index Measure (SSIM).
 
 This compares the last two images loaded onto the stack and prints their
 similarity score (MSSIM). A score of 1.0 means the images are perfectly identical.
@@ -410,7 +410,7 @@ EXAMPLE:
   zune -i reference.png -i compressed.jpg --ssim
 "#;
 
-pub const HALD_CLUT:&str =r#"Apply a Hald-CLUT color grade to an image.
+pub const HALD_CLUT: &str = r#"Apply a Hald-CLUT color grade to an image.
 
 This operation uses a stack-based architecture. It requires exactly two 
 input images (-i) to be loaded into the pipeline. 
@@ -425,3 +425,15 @@ the target image, and the target image remains on the stack for saving.
 
 EXAMPLE:
   zune -i raw_photo.jpg -i cinematic_clut.png --hald-clut -o graded_photo.jpg"#;
+
+pub const AVERAGE_HELP: &str = r#"Average all currently loaded images into a single image.
+
+This operation consumes the ENTIRE stack. It calculates the mean value 
+for every pixel across all loaded images to generate a single output image. 
+This is highly effective for reducing high ISO noise in low-light photography.
+
+STACK MECHANICS:
+Pops all N images from the stack. Pushes 1 averaged image back.
+
+EXAMPLE (Averaging 3 noisy photos):
+  zune -i photo1.jpg -i photo2.jpg -i photo3.jpg --average -o clean_photo.jpg"#;

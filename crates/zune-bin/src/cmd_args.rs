@@ -13,7 +13,17 @@ use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
 use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
-use crate::cmd_args::help_strings::{AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, BILATERAL_FILTER_HELP, BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP, COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP, EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP, GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HALD_CLUT, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP, MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP, RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP, STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP, UNSHARPEN_HELP, V_FLIP_HELP};
+use crate::cmd_args::help_strings::{
+    AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, AVERAGE_HELP,
+    BILATERAL_FILTER_HELP, BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP,
+    COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP,
+    EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP,
+    GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HALD_CLUT, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP,
+    MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP,
+    RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP,
+    STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
+    UNSHARPEN_HELP, V_FLIP_HELP,
+};
 
 pub mod arg_parsers;
 pub mod help_strings;
@@ -359,7 +369,7 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .value_parser(clap::value_parser!(f32)),
         Arg::new("append")
             .long("append")
-            .help("Append the last two images (horizontal or vertical).")
+            .help("Append the loaded images (horizontal or vertical).")
             .long_help(APPEND_HELP)
             .action(ArgAction::Set)
             .value_parser(["horizontal", "vertical"]),
@@ -368,6 +378,17 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .help("Calculate the SSIM metric between the last two loaded images.")
             .long_help(SSIM_HELP)
             .action(ArgAction::SetTrue),
+        Arg::new("average")
+            .long("average")
+            .help("Average all currently loaded images into a single image.")
+            .long_help(AVERAGE_HELP)
+            .action(ArgAction::SetTrue),
+        Arg::new("swap")
+            .long("swap")
+            .help("Swap two images in the stack")
+            .action(ArgAction::Append)
+            .value_names(["a","b"])
+            .value_parser(value_parser!(usize)),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 

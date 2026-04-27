@@ -16,6 +16,7 @@ use zune_image::core_filters::depth::Depth;
 use zune_image::pipelines::Pipeline;
 use zune_imageprocs::append::{Append, AppendDirection};
 use zune_imageprocs::auto_orient::AutoOrient;
+use zune_imageprocs::average::AverageSequence;
 use zune_imageprocs::blend::Blend;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::composite::{Composite, CompositeMethod};
@@ -33,6 +34,7 @@ use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::ssim::SsimDetection;
 use zune_imageprocs::stretch_contrast::StretchContrast;
+use zune_imageprocs::swap::Swap;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 use zune_imageprocs::transpose::Transpose;
 
@@ -266,6 +268,20 @@ pub fn parse_options(
     } else if argument == "ssim" {
         info!("Added ssim operation");
         workflow.chain_operations(Box::new(SsimDetection::new()));
+    } else if argument == "average" {
+        info!("Added average operation");
+        workflow.chain_operations(Box::new(AverageSequence::new()));
+    } else if argument == "swap" {
+        let v = args
+            .get_many::<usize>("swap")
+            .unwrap()
+            .cloned()
+            .collect::<Vec<usize>>();
+        if v.len() != 2 {
+            return Err("Swap requires exactly two arguments".to_string());
+        }
+        info!("Added swap operation");
+        workflow.chain_operations(Box::new(Swap::new(v[0], v[1])));
     }
 
     Ok(())
@@ -276,7 +292,6 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
     // 1. Trim whitespace or hidden newlines that CLI environments sometimes pass
     let values = values.trim();
 
-    // 2. Updated Regex: Added (x|X) to support uppercase X safely
     let re = Regex::new(r"^([0-9]+)?(%)?([xX])?([0-9]+)?(%)?([!><@\^])?$")
         .map_err(|e| format!("Failed to compile regex: {e}"))?;
 
