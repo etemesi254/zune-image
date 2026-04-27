@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use alloc::{format, vec};
 use core::num::NonZeroU32;
+use core::ptr::NonNull;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
@@ -29,7 +30,7 @@ use crate::bitstream::{BitstreamStateSnapshot, BitStreamHuffman};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
-use crate::components::{Components, SampleRatios};
+use crate::components::{ComponentID, Components, SampleRatios};
 use crate::errors::{DecodeErrors, UnsupportedSchemes};
 #[cfg(feature = "arith")]
 use crate::headers::parse_dac;
@@ -49,8 +50,58 @@ use crate::upsampler::{
 /// Maximum components
 pub(crate) const MAX_COMPONENTS: usize = 4;
 
+/// DCT block side, in samples. JPEG always uses 8x8 blocks.
+pub(crate) const DCT_BLOCK_SIZE: usize = 8;
+
 /// Maximum image dimensions supported.
 pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
+
+/// Geometry of a single component plane for raw post-IDCT output.
+///
+/// Mirrors the padded buffer layout libjpeg-turbo's `jpeg_read_raw_data` expects:
+/// each component owns a plane sized to `stride * allocated_height` bytes,
+/// with both dimensions rounded up to DCT-block boundaries
+/// (`DCTSIZE = 8`). The logical `width`/`height` describe the meaningful
+/// sample area inside that buffer; trailing padding columns and rows
+/// contain implementation-defined data and should be ignored by the
+/// caller.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct PlaneInfo {
+    /// Logical component width in samples.
+    /// `ceil(image_width * h_samp / h_max)`.
+    pub width:            usize,
+    /// Logical component height in samples.
+    /// `ceil(image_height * v_samp / v_max)`.
+    pub height:           usize,
+    /// Allocated plane width (row stride) in bytes.
+    /// `ceil(width / 8) * 8`.
+    pub stride:           usize,
+    /// Allocated plane height in rows.
+    /// `ceil(height / 8) * 8`.
+    pub allocated_height: usize,
+    /// Required slice length for this plane: `stride * allocated_height`.
+    pub byte_size:        usize
+}
+
+/// Ceiling division: `ceil(a / b)` without overflow on the addition.
+#[inline]
+fn ceil_div(a: usize, b: usize) -> usize {
+    debug_assert!(b != 0);
+    a / b + usize::from(a % b != 0)
+}
+
+/// Round `n` up to the next multiple of `align` (which must be non-zero).
+/// Returns `None` on overflow.
+#[inline]
+fn round_up_pow2(n: usize, align: usize) -> Option<usize> {
+    debug_assert!(align != 0);
+    let rem = n % align;
+    if rem == 0 {
+        Some(n)
+    } else {
+        n.checked_add(align - rem)
+    }
+}
 
 /// Color conversion function that can convert YCbCr colorspace to RGB(A/X) for
 /// 16 values
@@ -398,7 +449,28 @@ pub struct JpegDecoder<T> {
     /// scan's entropy data. The MCU decode loop will intercept that marker
     /// and store the real height; if it never arrives, decoding returns an
     /// error.
-    pub(crate) expects_dnl: bool
+    pub(crate) expects_dnl: bool,
+    /// When `Some`, the decoder is in raw planar output mode and
+    /// `post_process()` is bypassed in favour of copying each component's
+    /// post-IDCT samples directly into the caller-provided plane buffers.
+    ///
+    /// Always set/cleared inside [`JpegDecoder::decode_raw`]; `None`
+    /// during normal interleaved-pixel decoding.
+    pub(crate) raw_planes_sink: Option<RawPlanesSink>
+}
+
+/// Internal sink for one raw planar decode call.
+pub(crate) struct RawPlanesSink {
+    /// Per-component plane base pointer (only `0..n_components` are valid).
+    pub(crate) ptrs:           [*mut u8; MAX_COMPONENTS],
+    /// Bytes between successive destination rows.
+    pub(crate) target_strides: [usize; MAX_COMPONENTS],
+    /// Maximum bytes to write per destination row.
+    pub(crate) target_widths:  [usize; MAX_COMPONENTS],
+    /// Number of destination rows the caller's buffer can accept.
+    pub(crate) target_heights: [usize; MAX_COMPONENTS],
+    /// Number of valid components in `ptrs`.
+    pub(crate) n_components:   usize
 }
 
 impl<T> JpegDecoder<T>
@@ -716,7 +788,8 @@ where
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
-            expects_dnl:                 false
+                expects_dnl:                 false,
+                raw_planes_sink:             None
         }
     }
     /// Decode a buffer already in memory
@@ -931,6 +1004,84 @@ where
         }
 
         Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
+    }
+
+    /// Number of components present in the JPEG scan (1..=4).
+    ///
+    /// Valid only after [`decode_headers`](Self::decode_headers).
+    ///
+    /// # Returns
+    /// - `Some(n)`: number of components in the input scan
+    /// - `None`: headers have not been decoded yet
+    #[must_use]
+    pub fn num_components(&self) -> Option<usize> {
+        if self.headers_decoded {
+            Some(self.components.len())
+        } else {
+            None
+        }
+    }
+
+    /// Per-component plane geometry for raw planar output.
+    ///
+    /// Returns one [`PlaneInfo`] per component in declaration order
+    /// (Y, Cb, Cr for YCbCr; Y for grayscale; C, M, Y, K for CMYK; etc.).
+    /// Indices `0..num_components()` are populated; trailing entries are
+    /// the default zero-sized [`PlaneInfo`].
+    ///
+    /// Plane dimensions are computed using the same rules as libjpeg-turbo's
+    /// `jpeg_read_raw_data`:
+    ///
+    /// ```text
+    /// comp_width       = ceil(image_width  * h_samp / h_max)
+    /// comp_height      = ceil(image_height * v_samp / v_max)
+    /// stride           = ceil(comp_width  / 8) * 8
+    /// allocated_height = ceil(comp_height / 8) * 8
+    /// byte_size        = stride * allocated_height
+    /// ```
+    ///
+    /// Valid only after [`decode_headers`](Self::decode_headers).
+    ///
+    /// # Returns
+    /// - `Some([PlaneInfo; MAX_COMPONENTS])`: per-component layout
+    /// - `None`: headers have not been decoded yet, or layout overflows `usize`
+    #[must_use]
+    pub fn planar_layout(&self) -> Option<[PlaneInfo; MAX_COMPONENTS]> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        let img_w = usize::from(self.width());
+        let img_h = usize::from(self.height());
+        // `self.h_max` / `self.v_max` aren't populated until `decode()` runs
+        // `setup_component_params`, so derive the maxima directly from the
+        // parsed component list (which is available right after
+        // `decode_headers`).
+        let mut h_max = 1usize;
+        let mut v_max = 1usize;
+        for comp in &self.components {
+            if comp.horizontal_sample > h_max {
+                h_max = comp.horizontal_sample;
+            }
+            if comp.vertical_sample > v_max {
+                v_max = comp.vertical_sample;
+            }
+        }
+        let mut out = [PlaneInfo::default(); MAX_COMPONENTS];
+        for (slot, comp) in out.iter_mut().zip(self.components.iter()) {
+            let comp_w = ceil_div(img_w.checked_mul(comp.horizontal_sample)?, h_max);
+            let comp_h = ceil_div(img_h.checked_mul(comp.vertical_sample)?, v_max);
+            let stride = round_up_pow2(comp_w, DCT_BLOCK_SIZE)?;
+            let allocated_height = round_up_pow2(comp_h, DCT_BLOCK_SIZE)?;
+            let byte_size = stride.checked_mul(allocated_height)?;
+            *slot = PlaneInfo {
+                width: comp_w,
+                height: comp_h,
+                stride,
+                allocated_height,
+                byte_size
+            };
+        }
+        Some(out)
     }
 
     /// Get an immutable reference to the decoder options
@@ -1956,6 +2107,290 @@ where
         }
     }
 
+    /// Decode the image into per-component raw planes, skipping upsampling
+    /// and color conversion.
+    ///
+    /// Mirrors libjpeg-turbo's `jpeg_read_raw_data`: each component's
+    /// post-IDCT samples are written directly into its own plane buffer.
+    /// A 4:2:0 YCbCr image yields a full-resolution Y plane and
+    /// half-resolution Cb / Cr planes, each rounded up to DCT-block
+    /// boundaries.
+    ///
+    /// Plane order matches `self.components[i]` declaration order, i.e.
+    /// the order from the SOF marker (`[Y, Cb, Cr]` for YCbCr,
+    /// `[Y]` for grayscale, `[C, M, Y, K]` for CMYK, etc.). The configured
+    /// output colorspace is **ignored** in raw mode.
+    ///
+    /// Each `planes[i]` must be at least
+    /// [`PlaneInfo::byte_size`](`PlaneInfo::byte_size`) bytes
+    /// (`stride * allocated_height`), i.e. dimensions rounded up to
+    /// 8-sample DCT-block boundaries. For a 388×477 4:2:0 image:
+    /// `392 * 480 = 188_160` for Y and `200 * 240 = 48_000` for Cb / Cr.
+    /// See [`decode_raw_strided`](Self::decode_raw_strided) for accepting
+    /// logically-sized buffers.
+    ///
+    /// Samples within `[0, width) × [0, height)` of each plane are
+    /// meaningful; trailing padding columns / rows contain
+    /// implementation-defined data.
+    ///
+    /// # Errors
+    /// - [`DecodeErrors::TooSmallOutput`]: a plane buffer is shorter than
+    ///   its `byte_size`.
+    /// - [`DecodeErrors::Format`]: `planes.len()` does not match the number
+    ///   of components.
+    /// - Any error from the underlying decode pipeline.
+    pub fn decode_raw(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
+        self.decode_headers_internal()?;
+
+        let n = self.components.len();
+        if planes.len() != n {
+            return Err(DecodeErrors::Format(format!(
+                "decode_raw expected {n} plane buffer(s), got {}",
+                planes.len()
+            )));
+        }
+        let layout = self.planar_layout().ok_or(DecodeErrors::FormatStatic(
+            "planar_layout unavailable after decode_headers"
+        ))?;
+        for (i, plane) in planes.iter().enumerate() {
+            let need = layout[i].byte_size;
+            if plane.len() < need {
+                return Err(DecodeErrors::TooSmallOutput(need, plane.len()));
+            }
+        }
+
+        // Each plane is mutably borrowed for this call; the guard clears the
+        // raw pointers before returning.
+        let mut ptrs: [*mut u8; MAX_COMPONENTS] = [core::ptr::null_mut(); MAX_COMPONENTS];
+        let mut target_strides = [0usize; MAX_COMPONENTS];
+        let mut target_widths = [0usize; MAX_COMPONENTS];
+        let mut target_heights = [0usize; MAX_COMPONENTS];
+        for (i, plane) in planes.iter_mut().enumerate() {
+            ptrs[i] = plane.as_mut_ptr();
+            target_strides[i] = layout[i].stride;
+            target_widths[i] = layout[i].stride;
+            target_heights[i] = layout[i].allocated_height;
+        }
+        self.raw_planes_sink = Some(RawPlanesSink {
+            ptrs,
+            target_strides,
+            target_widths,
+            target_heights,
+            n_components: n
+        });
+        let _guard = RawPlanesGuard {
+            dec: NonNull::from(&mut *self)
+        };
+
+        // Raw mode writes into the plane sink; downstream pixel bookkeeping
+        // only needs a placeholder slice.
+        let mut sink: [u8; 0] = [];
+        let result = if self.is_arithmetic {
+            #[cfg(feature = "arith")]
+            {
+                if self.is_progressive {
+                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(&mut sink)
+                } else {
+                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(&mut sink)
+                }
+            }
+            #[cfg(not(feature = "arith"))]
+            unreachable!();
+        } else if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
+        } else {
+            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
+        };
+
+        // Guard clears `raw_planes_sink` on drop.
+        result
+    }
+
+    /// Decode raw planes using caller-supplied row strides.
+    ///
+    /// For each component `i` the caller must supply:
+    /// - `planes[i]`: a mutable byte slice of length at least
+    ///   `strides[i] * planar_layout()[i].height` bytes.
+    /// - `strides[i]`: the destination row stride in bytes. Must satisfy
+    ///   `strides[i] >= planar_layout()[i].width`.
+    ///
+    /// Only the logical plane area is written. Padding columns in the caller's
+    /// stride and trailing DCT rows are left untouched.
+    ///
+    /// # Errors
+    /// - [`DecodeErrors::Format`] if `planes.len()` or `strides.len()`
+    ///   doesn't match the number of components, or if any
+    ///   `strides[i] < width[i]`.
+    /// - [`DecodeErrors::TooSmallOutput`] if any plane buffer is shorter
+    ///   than `strides[i] * height[i]`.
+    /// - Any error from the underlying decode pipeline.
+    pub fn decode_raw_strided(
+        &mut self, planes: &mut [&mut [u8]], strides: &[usize]
+    ) -> Result<(), DecodeErrors> {
+        self.decode_headers_internal()?;
+
+        let n = self.components.len();
+        if planes.len() != n {
+            return Err(DecodeErrors::Format(format!(
+                "decode_raw_strided expected {n} plane buffer(s), got {}",
+                planes.len()
+            )));
+        }
+        if strides.len() != n {
+            return Err(DecodeErrors::Format(format!(
+                "decode_raw_strided expected {n} stride(s), got {}",
+                strides.len()
+            )));
+        }
+        let layout = self.planar_layout().ok_or(DecodeErrors::FormatStatic(
+            "planar_layout unavailable after decode_headers"
+        ))?;
+        for (i, plane) in planes.iter().enumerate() {
+            if strides[i] < layout[i].width {
+                return Err(DecodeErrors::Format(format!(
+                    "stride[{i}] = {} is smaller than logical width {}",
+                    strides[i], layout[i].width
+                )));
+            }
+            let need = strides[i]
+                .checked_mul(layout[i].height)
+                .ok_or(DecodeErrors::FormatStatic("plane size overflow"))?;
+            if plane.len() < need {
+                return Err(DecodeErrors::TooSmallOutput(need, plane.len()));
+            }
+        }
+
+        // Each plane is mutably borrowed for this call; the guard clears the
+        // raw pointers before returning.
+        let mut ptrs: [*mut u8; MAX_COMPONENTS] = [core::ptr::null_mut(); MAX_COMPONENTS];
+        let mut target_strides = [0usize; MAX_COMPONENTS];
+        let mut target_widths = [0usize; MAX_COMPONENTS];
+        let mut target_heights = [0usize; MAX_COMPONENTS];
+        for (i, plane) in planes.iter_mut().enumerate() {
+            ptrs[i] = plane.as_mut_ptr();
+            target_strides[i] = strides[i];
+            target_widths[i] = layout[i].width;
+            target_heights[i] = layout[i].height;
+        }
+        self.raw_planes_sink = Some(RawPlanesSink {
+            ptrs,
+            target_strides,
+            target_widths,
+            target_heights,
+            n_components: n
+        });
+        let _guard = RawPlanesGuard {
+            dec: NonNull::from(&mut *self)
+        };
+
+        let mut sink: [u8; 0] = [];
+        let result = if self.is_arithmetic {
+            #[cfg(feature = "arith")]
+            {
+                if self.is_progressive {
+                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(&mut sink)
+                } else {
+                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(&mut sink)
+                }
+            }
+            #[cfg(not(feature = "arith"))]
+            unreachable!();
+        } else if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
+        } else {
+            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
+        };
+
+        result
+    }
+
+    /// Per-component [`ComponentID`] in declaration order
+    /// (`Y, Cb, Cr` for YCbCr; `Y` for grayscale; `Y, Cb, Cr, Q` for
+    /// 4-component scans, etc.).
+    ///
+    /// Useful when consuming the planes returned by
+    /// [`decode_raw`](Self::decode_raw) /
+    /// [`decode_raw_strided`](Self::decode_raw_strided) on non-conforming
+    /// JPEGs whose component order differs from the canonical layout.
+    ///
+    /// Valid only after [`decode_headers`](Self::decode_headers).
+    #[must_use]
+    pub fn component_ids(&self) -> Option<Vec<ComponentID>> {
+        if !self.headers_decoded || self.components.is_empty() {
+            return None;
+        }
+        Some(self.components.iter().map(|c| c.component_id).collect())
+    }
+
+    /// Copy one MCU stripe (`mcu_stripe_index`) of post-IDCT samples from
+    /// each component's `raw_coeff` into the caller-provided plane buffers.
+    ///
+    /// Called from the baseline / progressive paths in place of
+    /// `post_process()` when [`raw_planes_sink`](Self::raw_planes_sink)
+    /// is `Some` (i.e. inside [`decode_raw`](Self::decode_raw)).
+    ///
+    /// The IDCT outputs are already clamped to `[0, 255]` so the `i16 -> u8`
+    /// truncation here is exact.
+    pub(crate) fn copy_raw_planes_for_mcu_stripe(
+        &mut self, mcu_stripe_index: usize
+    ) -> Result<(), DecodeErrors> {
+        let sink = self
+            .raw_planes_sink
+            .as_ref()
+            .expect("copy_raw_planes_for_mcu_stripe called without active sink");
+
+        for (idx, comp) in self.components.iter().enumerate() {
+            if idx >= sink.n_components {
+                break;
+            }
+            let plane_ptr = sink.ptrs[idx];
+            if plane_ptr.is_null() {
+                continue;
+            }
+            let target_stride = sink.target_strides[idx];
+            let target_width = sink.target_widths[idx];
+            let target_height = sink.target_heights[idx];
+
+            let stripe_rows = comp.vertical_sample * DCT_BLOCK_SIZE;
+            let row_start = mcu_stripe_index * stripe_rows;
+            // Clip rows to the caller-provided plane height.
+            if row_start >= target_height {
+                continue;
+            }
+            let rows_to_copy = core::cmp::min(stripe_rows, target_height - row_start);
+
+            let src_stride = comp.width_stride;
+            let copy_w = core::cmp::min(src_stride, core::cmp::min(target_width, target_stride));
+
+            for r in 0..rows_to_copy {
+                let src_row_start = r * src_stride;
+                let src_row_end = src_row_start + copy_w;
+                if src_row_end > comp.raw_coeff.len() {
+                    return Err(DecodeErrors::FormatStatic(
+                        "raw_coeff shorter than expected for MCU stripe"
+                    ));
+                }
+                let src = &comp.raw_coeff[src_row_start..src_row_end];
+
+                // SAFETY: `plane_ptr` came from a `&mut [u8]` of length at
+                // least `target_stride * target_height` (validated in
+                // `decode_raw` / `decode_raw_strided`). `(row_start + r) <
+                // target_height` and `copy_w <= target_stride`, so
+                // `dst_offset + copy_w <= target_stride * target_height`.
+                // No other code path borrows the plane buffer while
+                // `raw_planes_sink` is set.
+                unsafe {
+                    let dst_offset = (row_start + r) * target_stride;
+                    let dst = plane_ptr.add(dst_offset);
+                    for (i, sample) in src.iter().enumerate() {
+                        *dst.add(i) = *sample as u8;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Read only headers from a jpeg image buffer
     ///
     /// This allows you to extract important information like
@@ -2171,5 +2606,61 @@ impl ImageInfo {
     #[allow(dead_code)]
     pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
+    }
+}
+
+// SAFETY: `RawPlanesSink` only ever holds raw pointers into caller-owned
+// buffers for the duration of a single `decode_raw` call (which takes
+// `&mut self`). No other code path can observe or alias the pointers, so
+// these auto-trait restorations are defensive — they let `JpegDecoder<T>`
+// retain whatever Send/Sync it would have had without this field, when
+// `T: Send + Sync`.
+unsafe impl Send for RawPlanesSink {}
+unsafe impl Sync for RawPlanesSink {}
+
+/// RAII guard that clears [`JpegDecoder::raw_planes_sink`] when dropped,
+/// including on panic / early `?` returns from inside `decode_raw`.
+pub(crate) struct RawPlanesGuard<T: ZByteReaderTrait> {
+    pub(crate) dec: NonNull<JpegDecoder<T>>
+}
+
+impl<T: ZByteReaderTrait> Drop for RawPlanesGuard<T> {
+    fn drop(&mut self) {
+        // SAFETY: `dec` was created from `&mut *self` inside `decode_raw`
+        // and the guard does not outlive that borrow.
+        unsafe {
+            self.dec.as_mut().raw_planes_sink = None;
+        }
+    }
+}
+
+#[cfg(test)]
+mod planar_layout_helpers {
+    use super::{ceil_div, round_up_pow2};
+
+    #[test]
+    fn ceil_div_basic() {
+        assert_eq!(ceil_div(0, 8), 0);
+        assert_eq!(ceil_div(1, 8), 1);
+        assert_eq!(ceil_div(8, 8), 1);
+        assert_eq!(ceil_div(9, 8), 2);
+        assert_eq!(ceil_div(64, 8), 8);
+        assert_eq!(ceil_div(65, 8), 9);
+        assert_eq!(ceil_div(101, 8), 13);
+    }
+
+    #[test]
+    fn round_up_pow2_basic() {
+        assert_eq!(round_up_pow2(0, 8), Some(0));
+        assert_eq!(round_up_pow2(1, 8), Some(8));
+        assert_eq!(round_up_pow2(8, 8), Some(8));
+        assert_eq!(round_up_pow2(9, 8), Some(16));
+        assert_eq!(round_up_pow2(64, 8), Some(64));
+        assert_eq!(round_up_pow2(101, 8), Some(104));
+    }
+
+    #[test]
+    fn round_up_pow2_overflow() {
+        assert_eq!(round_up_pow2(usize::MAX, 8), None);
     }
 }

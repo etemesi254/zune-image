@@ -950,15 +950,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
+        let raw_mode = self.raw_planes_sink.is_some();
+
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
             // For special colorspaces i.e YCCK and CMYK, just allocate all of the needed
             // components.
-            if min(
-                self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
-            ) == pos
+            //
+            // Raw output needs every component regardless of output colorspace.
+            if raw_mode
+                || min(
+                    self.options.jpeg_get_out_colorspace().num_components() - 1,
+                    pos
+                ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK
             {
@@ -1048,15 +1053,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that width up until it's impossible
-            self.post_process(
-                pixels,
-                i,
-                mcu_height,
-                width,
-                padded_width,
-                &mut pixels_written,
-                &mut upsampler_scratch_space,
-            )?;
+            if self.raw_planes_sink.is_some() {
+                self.copy_raw_planes_for_mcu_stripe(i)?;
+            } else {
+                self.post_process(
+                    pixels,
+                    i,
+                    mcu_height,
+                    width,
+                    padded_width,
+                    &mut pixels_written,
+                    &mut upsampler_scratch_space
+                )?;
+            }
         }
 
         trace!("Finished decoding image");

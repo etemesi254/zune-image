@@ -153,15 +153,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // must not be re-zeroed. On a fresh decode they are (re-)allocated.
         let resuming = self.scan_checkpoint().is_some();
 
+        let raw_mode = self.raw_planes_sink.is_some();
+
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
             //
             // For special colorspaces i.e YCCK and CMYK, just allocate all of the needed
             // components.
-            if min(
-                self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
-            ) == pos
+            //
+            // Raw output needs every component regardless of output colorspace.
+            if raw_mode
+                || min(
+                    self.options.jpeg_get_out_colorspace().num_components() - 1,
+                    pos,
+                ) == pos
                 || comp_len == 4
             // Special colorspace
             {
@@ -382,16 +387,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // process that width up until it's impossible. This is faster than allocation the
                 // full components, which we skipped earlier.
                 if all_components_in_first_scan {
-                    self.post_process(
-                        pixels,
-                        i,
-                        mcu_height,
-                        width,
-                        padded_width,
-                        &mut pixels_written,
-                        &mut upsampler_scratch_space,
-                    )?;
-                    self.pixels_decoded = pixels_written;
+                    if self.raw_planes_sink.is_some() {
+                        self.copy_raw_planes_for_mcu_stripe(i)?;
+                    } else {
+                        self.post_process(
+                            pixels,
+                            i,
+                            mcu_height,
+                            width,
+                            padded_width,
+                            &mut pixels_written,
+                            &mut upsampler_scratch_space,
+                        )?;
+                        self.pixels_decoded = pixels_written;
+                    }
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
                     self.invalidate_scan_checkpoint();
@@ -569,12 +578,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
 
+        let raw_mode = self.raw_planes_sink.is_some();
+
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Mark only needed components for computing output colors.
-            comp.needed = min(
-                self.options.jpeg_get_out_colorspace().num_components() - 1,
-                pos,
-            ) == pos
+            //
+            // Raw output needs every component regardless of output colorspace.
+            comp.needed = raw_mode
+                || min(
+                    self.options.jpeg_get_out_colorspace().num_components() - 1,
+                    pos,
+                ) == pos
                 || self.input_colorspace == ColorSpace::YCCK
                 || self.input_colorspace == ColorSpace::CMYK;
         }
@@ -611,15 +625,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that whole stripe of MCUs
-            self.post_process(
-                pixels,
-                i,
-                mcu_height,
-                width,
-                padded_width,
-                &mut pixels_written,
-                &mut upsampler_scratch_space,
-            )?;
+            if self.raw_planes_sink.is_some() {
+                self.copy_raw_planes_for_mcu_stripe(i)?;
+            } else {
+                self.post_process(
+                    pixels,
+                    i,
+                    mcu_height,
+                    width,
+                    padded_width,
+                    &mut pixels_written,
+                    &mut upsampler_scratch_space,
+                )?;
+            }
         }
 
         return Ok(());
