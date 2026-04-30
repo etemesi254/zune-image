@@ -26,26 +26,17 @@ pub struct AffineTransform {
     pub d: f32,
     pub tx: f32,
     pub ty: f32,
-    pub method: ResizeMethod,
 }
 
 impl AffineTransform {
     #[must_use]
-    pub fn new(a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32, method: ResizeMethod) -> Self {
-        Self {
-            a,
-            b,
-            c,
-            d,
-            tx,
-            ty,
-            method,
-        }
+    pub fn new(a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) -> Self {
+        Self { a, b, c, d, tx, ty }
     }
 
     /// Identity transform (no change)
     #[must_use]
-    pub fn identity(method: ResizeMethod) -> Self {
+    pub fn identity() -> Self {
         Self {
             a: 1.0,
             b: 0.0,
@@ -53,13 +44,12 @@ impl AffineTransform {
             d: 1.0,
             tx: 0.0,
             ty: 0.0,
-            method,
         }
     }
 
     /// Rotation around origin
     #[must_use]
-    pub fn rotation(angle: f32, method: ResizeMethod) -> Self {
+    pub fn rotation(angle: f32) -> Self {
         let rad = angle.to_radians();
         let cos = rad.cos();
         let sin = rad.sin();
@@ -70,13 +60,12 @@ impl AffineTransform {
             d: cos,
             tx: 0.0,
             ty: 0.0,
-            method,
         }
     }
 
     /// Translation
     #[must_use]
-    pub fn translation(tx: f32, ty: f32, method: ResizeMethod) -> Self {
+    pub fn translation(tx: f32, ty: f32) -> Self {
         Self {
             a: 1.0,
             b: 0.0,
@@ -84,13 +73,12 @@ impl AffineTransform {
             d: 1.0,
             tx,
             ty,
-            method,
         }
     }
 
     /// Scaling
     #[must_use]
-    pub fn scale(sx: f32, sy: f32, method: ResizeMethod) -> Self {
+    pub fn scale(sx: f32, sy: f32) -> Self {
         Self {
             a: sx,
             b: 0.0,
@@ -98,7 +86,6 @@ impl AffineTransform {
             d: sy,
             tx: 0.0,
             ty: 0.0,
-            method,
         }
     }
 
@@ -112,7 +99,6 @@ impl AffineTransform {
             d: 1.0,
             tx: 0.0,
             ty: 0.0,
-            method,
         }
     }
 
@@ -126,7 +112,6 @@ impl AffineTransform {
             d: self.c * other.b + self.d * other.d,
             tx: self.a * other.tx + self.b * other.ty + self.tx,
             ty: self.c * other.tx + self.d * other.ty + self.ty,
-            method: self.method, // Retain current method
         }
     }
 
@@ -155,7 +140,6 @@ impl AffineTransform {
             d: self.a * inv_det,
             tx: (self.b * self.ty - self.d * self.tx) * inv_det,
             ty: (self.c * self.tx - self.a * self.ty) * inv_det,
-            method: self.method,
         })
     }
 }
@@ -375,40 +359,30 @@ pub fn affine_transform_channel<T: Copy + Default + NumOps<T>>(
                 && src_y >= 0.0
                 && src_y < (in_height - 1) as f32
             {
-                match transform.method {
-                    ResizeMethod::Bilinear => {
-                        let x0 = src_x.floor() as usize;
-                        let y0 = src_y.floor() as usize;
-                        let x1 = x0 + 1;
-                        let y1 = y0 + 1;
+                let x0 = src_x.floor() as usize;
+                let y0 = src_y.floor() as usize;
+                let x1 = x0 + 1;
+                let y1 = y0 + 1;
 
-                        let fx = src_x - x0 as f32;
-                        let fy = src_y - y0 as f32;
+                let fx = src_x - x0 as f32;
+                let fy = src_y - y0 as f32;
 
-                        let p00 = f32::from(in_channel[y0 * in_width + x0]);
-                        let p10 = f32::from(in_channel[y0 * in_width + x1]);
-                        let p01 = f32::from(in_channel[y1 * in_width + x0]);
-                        let p11 = f32::from(in_channel[y1 * in_width + x1]);
+                let p00 = f32::from(in_channel[y0 * in_width + x0]);
+                let p10 = f32::from(in_channel[y0 * in_width + x1]);
+                let p01 = f32::from(in_channel[y1 * in_width + x0]);
+                let p11 = f32::from(in_channel[y1 * in_width + x1]);
 
-                        let result = p00 * (1.0 - fx) * (1.0 - fy)
-                            + p10 * fx * (1.0 - fy)
-                            + p01 * (1.0 - fx) * fy
-                            + p11 * fx * fy;
+                let result = p00 * (1.0 - fx) * (1.0 - fy)
+                    + p10 * fx * (1.0 - fy)
+                    + p01 * (1.0 - fx) * fy
+                    + p11 * fx * fy;
 
-                        out_channel[out_y * out_width + out_x] = T::from_f32(result);
-                    }
-                    // Fallback for Nearest or any non-Bilinear enum variants
-                    _ => {
-                        let x0 = src_x.round() as usize;
-                        let y0 = src_y.round() as usize;
-                        out_channel[out_y * out_width + out_x] = in_channel[y0 * in_width + x0];
-                    }
-                }
+                out_channel[out_y * out_width + out_x] = T::from_f32(result);
             }
-
-            // Step forward spatially by 1 pixel in the output
-            src_x += a;
-            src_y += c;
         }
+
+        // Step forward spatially by 1 pixel in the output
+        src_x += a;
+        src_y += c;
     }
 }
