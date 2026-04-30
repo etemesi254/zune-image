@@ -571,6 +571,44 @@ impl Image {
         }
         Ok(())
     }
+
+    /// Iterate over the pixels 
+    pub fn iter_pixels<T, F>(&self, func: F) -> Result<(), ChannelErrors>
+    where
+        T: ZuneInts<T> + Default + Copy + 'static + Pod,
+        F: Fn(usize, usize, [T; MAX_CHANNELS]),
+    {
+        let colorspace = self.colorspace();
+
+        let (width, height) = self.dimensions();
+
+        for frame in self.frames.iter() {
+            let mut pixel_muts: Vec<&[T]> = vec![];
+
+            // convert all channels to type T
+            for channel in frame.channels_ref(colorspace, false) {
+                pixel_muts.push(channel.reinterpret_as()?)
+            }
+            for y in 0..height {
+                for x in 0..width {
+                    let position = y * width + x;
+
+                    // This must be kept in sync with
+                    // MAX_CHANNELS, we can't do it another way
+                    // since they are references
+                    let mut output: [T; MAX_CHANNELS] =
+                        [T::default(), T::default(), T::default(), T::default()];
+                    // push pixels from channel to temporary output
+                    for (i, j) in (pixel_muts.iter_mut()).zip(output.iter_mut()) {
+                        *j = i[position]
+                    }
+
+                    (func)(y, x, output);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Image conversion routines
