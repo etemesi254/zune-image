@@ -6,14 +6,100 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
+/// Apply a custom mathematical expression to every pixel in an image.
+///
+/// The `Fx` operator uses a JIT-compiled expression evaluator to perform
+/// per-pixel calculations. It is highly optimized for planar image data
+/// and supports multi-threaded execution.
+///
+/// This uses the [exmex] library for parsing and evaluation
+///
+/// # Variables
+///
+/// The following variables are available within the expression:
+///
+/// | Variable | Description |
+/// | :--- | :--- |
+/// | `val` | The value of the current channel being processed. |
+/// | `r, g, b, a` , `h, s, l` | Specific channel values (mapped dynamically to the image colorspace). This, is dynamically mapped based on channel, so for RGB image, it will be r,g,b, for hsl it will be h,s,l |
+/// | `i, j` | Current pixel coordinates (x, y). |
+/// | `w, h` | Image width and height. |
+/// | `rand` | A random float between `0.0` and `1.0`, unique per pixel. |
+/// | `img_min` | Global minimum normalized value in the image. |
+/// | `img_max` | Global maximum normalized value in the image. |
+/// | `img_mean`| Global average value of all pixels. |
+///
+///
+/// # Channel mapping
+///
+/// COLORSPACE VARIABLES (Dynamically mapped based on active Colorspace):
+///
+/// - r, g, b, a   : RGB, RGBA, BGR, BGRA, ARGB
+/// -  h, s, l      : HSL
+/// -  h, s, v      : HSV
+/// -  c, m, y, k   : CMYK
+/// -  y, cb, cr    : YCbCr, YCCK
+/// -  luma (or y)  : Luma / Grayscale
+///
+/// GENERIC CHANNELS:
+///  - c0, c1... cN : Target an exact channel index instead of using color channels
+///
+/// # Channel Targeting
+///
+/// You can target a specific channel by prefixing the expression with the channel name
+/// and a colon. If no prefix is provided, the expression is applied to all color channels.
+///
+/// * `r: r * 1.5` - Only affects the Red channel.
+/// * `val * 0.5` - Darkens all color channels.
+///
+/// # Examples
+///
+/// ### Basic Adjustments
+/// ```rust
+/// // Increase brightness of all channels by 20%
+/// let fx = Fx::new("val * 1.2");
+///
+/// // Boost red channel only
+/// let fx_red = Fx::new("r: r * 1.5");
+/// ```
+///
+/// ### Procedural Gradients
+/// You can create a linear horizontal gradient by using the `i` (x-coordinate)
+/// and `w` (width) variables.
+/// ```rust
+/// // Create a horizontal fade from black to original color
+/// let fx = Fx::new("val * (i / w)");
+/// ```
+///
+///
+/// ### Artistic Effects
+/// ```rust
+/// // CRT Scanlines: Multiply by a sine wave based on vertical position
+/// let scanlines = Fx::new("val * (0.8 + 0.2 * sin(j * 1.5))");
+///
+/// // Film Grain: Mix 90% of the image with 10% random noise
+/// let grain = Fx::new("(val * 0.9) + (rand * 0.1)");
+/// ```
+///
+/// ### Color Balancing
+/// Stretch the contrast of the image to the full 0.0-1.0 range.
+/// ```rust
+/// let contrast = Fx::new("(val - img_min) / (img_max - img_min)");
+/// ```
+///
+/// [exmex]: https://crates.io/crates/exmex
 pub struct Fx {
     expression: String,
 }
 
 impl Fx {
-    #[must_use]
-    pub fn new(expression: impl Into<String>) -> Self {
-        Fx {
+    /// Create a new Fx operation with the given mathematical expression.
+    ///
+    /// # Panics
+    /// The constructor does not panic, but the `execute` method will return an error
+    /// if the expression string is mathematically invalid or contains unknown variables.
+    pub fn new<S: Into<String>>(expression: S) -> Self {
+        Self {
             expression: expression.into(),
         }
     }
@@ -45,7 +131,7 @@ impl OperationsTrait for Fx {
 
         // 2. Parse the expression using the cleaned string (without the prefix)
         let expr = exmex::parse::<f64>(expr_str)
-            .map_err(|e| ImageErrors::GenericString(format!("FX Parse Error: {}", e)))?;
+            .map_err(|e| ImageErrors::GenericString(format!("FX Parse Error: {e}")))?;
 
         let expected_vars = expr.var_names();
         let num_vars = expected_vars.len();
@@ -146,7 +232,7 @@ impl OperationsTrait for Fx {
                         for ch in channels.iter() {
                             let slice = ch.reinterpret_as::<$type>().unwrap();
                             for &val in slice.iter() {
-                                let v = val as f64 / max_val;
+                                let v = f64::from(val) / max_val;
                                 if v < overall_min { overall_min = v; }
                                 if v > overall_max { overall_max = v; }
                                 overall_sum += v;
@@ -157,7 +243,7 @@ impl OperationsTrait for Fx {
                     }
 
                     let mut args_template = args.clone();
-                    // Inject stats into the template (It's harmless to inject 0.0 if they aren't used)
+                    // Inject stats into the template
                     if let Some(idx) = img_min_idx { args_template[idx] = overall_min; }
                     if let Some(idx) = img_max_idx { args_template[idx] = overall_max; }
                     if let Some(idx) = img_mean_idx { args_template[idx] = overall_mean; }
@@ -175,7 +261,7 @@ impl OperationsTrait for Fx {
                         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
                     };
 
-                    let chunk_height = (height + num_threads - 1) / num_threads;
+                    let chunk_height = height.div_ceil(num_threads);
                     let pixels_per_chunk = chunk_height * width;
 
                     // 3. SAFE SLICING: We split every channel array into `num_threads` disjoint pieces.
@@ -220,7 +306,7 @@ impl OperationsTrait for Fx {
                                 // Read targeted channels
                                 for &(ch_idx, arg_idx) in &channel_mappings {
                                     if ch_idx < num_channels {
-                                        local_args[arg_idx] = slices[ch_idx][px_idx] as f64 / max_val;
+                                        local_args[arg_idx] = f64::from(slices[ch_idx][px_idx]) / max_val;
                                     }
                                 }
 
@@ -242,7 +328,7 @@ impl OperationsTrait for Fx {
 
                                     for c in 0..target_channels_count {
                                         if let Some(idx) = val_idx {
-                                            local_args[idx] = slices[c][px_idx] as f64 / max_val;
+                                            local_args[idx] = f64::from(slices[c][px_idx]) / max_val;
                                         }
 
                                         let result = expr.eval(&local_args).unwrap_or(0.0);
@@ -290,7 +376,12 @@ impl OperationsTrait for Fx {
                 BitType::U8 => eval_loop!(u8, false),
                 BitType::U16 => eval_loop!(u16, false),
                 BitType::F32 => eval_loop!(f32, true),
-                _ => unreachable!(),
+                _ => {
+                    return Err(ImageErrors::ImageOperationNotImplemented(
+                        self.name(),
+                        depth,
+                    ))
+                }
             }
         }
         Ok(())
