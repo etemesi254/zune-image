@@ -15,7 +15,7 @@
 /// Software: Practice and Experience  49 (6), 2019.
 #[inline(always)]
 #[must_use]
-pub fn compute_mod_u32(d: u64) -> u128 {
+pub (crate) fn compute_mod_u32(d: u64) -> u128 {
     // operator precedence will be the end of me,,
     return (u128::from(0xFFFF_FFFF_FFFF_FFFF_u64) / u128::from(d)) + 1;
 }

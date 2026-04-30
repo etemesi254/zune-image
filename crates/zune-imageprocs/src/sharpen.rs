@@ -165,7 +165,7 @@ fn unsharpen_u8(
     // copy channel to scratch space
     blur_buffer.copy_from_slice(channel);
     // carry out gaussian blur
-    gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma);
+    gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma,4);
 
     let pct = i32::from(percentage);
     let thresh = i32::from(threshold);
@@ -197,7 +197,7 @@ fn unsharpen_u16(
     // copy channel to scratch space
     blur_buffer.copy_from_slice(channel);
     // carry out gaussian blur
-    gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma);
+    gaussian_blur_u16(blur_buffer, blur_scratch_buffer, width, height, sigma,4);
 
     let pct = i32::from(percentage);
     let thresh = i32::from(threshold);

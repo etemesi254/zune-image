@@ -126,24 +126,24 @@ impl OperationsTrait for SsimDetection {
 
                 // 1. Calculate Means
                 let mut mu_x = x_cow.to_vec();
-                gaussian_blur_f32(&mut mu_x, &mut scratch, width, height, sigma);
+                gaussian_blur_f32(&mut mu_x, &mut scratch, width, height, sigma,4);
 
                 let mut mu_y = y_cow.to_vec();
-                gaussian_blur_f32(&mut mu_y, &mut scratch, width, height, sigma);
+                gaussian_blur_f32(&mut mu_y, &mut scratch, width, height, sigma,4);
 
                 // 2. Calculate Variances & Covariance
                 let mut x_sq = x_cow.iter().map(|&v| v * v).collect::<Vec<_>>();
-                gaussian_blur_f32(&mut x_sq, &mut scratch, width, height, sigma);
+                gaussian_blur_f32(&mut x_sq, &mut scratch, width, height, sigma,4);
 
                 let mut y_sq = y_cow.iter().map(|&v| v * v).collect::<Vec<_>>();
-                gaussian_blur_f32(&mut y_sq, &mut scratch, width, height, sigma);
+                gaussian_blur_f32(&mut y_sq, &mut scratch, width, height, sigma,4);
 
                 let mut xy = x_cow
                     .iter()
                     .zip(y_cow.iter())
                     .map(|(&a, &b)| a * b)
                     .collect::<Vec<_>>();
-                gaussian_blur_f32(&mut xy, &mut scratch, width, height, sigma);
+                gaussian_blur_f32(&mut xy, &mut scratch, width, height, sigma,4);
 
                 // 3. Compute SSIM
                 let mut ssim_sum = 0.0;
