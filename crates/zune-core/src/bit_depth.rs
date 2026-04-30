@@ -8,7 +8,7 @@
 
 //! Image bit depth, information and manipulations
 
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 /// The image bit depth.
 ///
