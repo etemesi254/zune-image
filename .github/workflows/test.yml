@@ -28,9 +28,9 @@ jobs:
         toolchain: [stable, nightly]
         include:
           - os: ubuntu-latest
-            toolchain: 1.88 # MSRV
+            toolchain: 1.89 # MSRV
           - os: ubuntu-24.04-arm
-            toolchain: 1.88 # MSRV (aarch64 — catches NEON compilation issues)
+            toolchain: 1.89 # MSRV (aarch64 — catches NEON compilation issues)
             extra_rustflags: -D unsafe_op_in_unsafe_fn
           - os: windows-latest
             toolchain: stable
