@@ -16,11 +16,11 @@ use std::fs::read;
 
 fn main()->Result<(),DecoderErrors> {
     // load some jpeg data
-    let data = read("cat.jpg").unwrap();
-    // create a decoder
-    let mut decoder = JpegDecoder::new(&data);
-    // decode the file
-    let pixels = decoder.decode()?;
+    let file_contents = BufReader::new(std::fs::File::open("a_jpeg.file").unwrap());
+    // load the decoder
+    let mut decoder = JpegDecoder::new(file_contents);
+    // decode to pixels
+    let mut pixels = decoder.decode().unwrap();
 }
 ```
 
