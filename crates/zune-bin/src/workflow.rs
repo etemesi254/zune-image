@@ -17,7 +17,7 @@ use log::{error, info, log_enabled, trace};
 use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
-
+use zune_image::traits::OperationsTrait;
 use crate::cmd_args::CmdImageFormats;
 use crate::cmd_parsers::global_options::CmdOptions;
 use crate::cmd_parsers::{decoder_options, encoder_options};
@@ -205,14 +205,19 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 }
 
 pub fn add_operations(args: &ArgMatches, workflow: &mut Pipeline) -> Result<(), String> {
+    // A master list to hold every operation and its CLI position
+    let mut all_operations: Vec<(usize, Box<dyn OperationsTrait>)> = Vec::new();
+
     for id in args.ids() {
-        if args.try_get_many::<clap::Id>(id.as_str()).is_ok() {
+        let id_str = id.as_str();
+
+        if args.try_get_many::<clap::Id>(id_str).is_ok() {
             // ignore groups
             continue;
         }
 
         let value_source = args
-            .value_source(id.as_str())
+            .value_source(id_str)
             .expect("id came from matches");
 
         if value_source != clap::parser::ValueSource::CommandLine {
@@ -220,8 +225,22 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut Pipeline) -> Result<(), 
             continue;
         }
 
-        crate::cmd_parsers::operations::parse_options(workflow, id.as_str(), args)?;
-        crate::cmd_parsers::filters::parse_options(workflow, id.as_str(), args)?;
+        // Collect operations from your parsers
+        // (Assuming you update cmd_parsers::filters::parse_options to match the new signature too)
+
+        let mut ops = crate::cmd_parsers::operations::parse_options(id_str, args)?;
+        all_operations.append(&mut ops);
+
+        let mut filters = crate::cmd_parsers::filters::parse_options(id_str, args)?;
+        all_operations.append(&mut filters);
+    }
+
+    // THE MAGIC STEP: Sort all operations chronologically by their command line index
+    all_operations.sort_by_key(|(index, _)| *index);
+
+    // Chain them into the workflow in the exact order the user typed them
+    for (_, operation) in all_operations {
+        workflow.chain_operations(operation);
     }
 
     Ok(())
