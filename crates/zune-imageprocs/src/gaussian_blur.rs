@@ -20,6 +20,7 @@ use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
+use crate::mathops::{compute_mod_u32, fastdiv_u32};
 
 #[derive(Default)]
 pub struct GaussianBlur {
@@ -341,7 +342,7 @@ fn box_blur_vertical_u8_chunk(
 
     let diameter = (radius * 2 + 1) as u32;
     let diameter = diameter.min(height as u32);
-    let m_radius = crate::box_blur::compute_mod_u32(diameter as u64);
+    let m_radius = compute_mod_u32(diameter as u64);
 
     let mut sums = vec![0u32; width];
 
@@ -363,7 +364,7 @@ fn box_blur_vertical_u8_chunk(
     // Write the very first row of this chunk
     let out_row = &mut output_chunk[0..width];
     for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = crate::box_blur::fastdiv_u32(*sum, m_radius) as u8;
+        out_row[x] = fastdiv_u32(*sum, m_radius) as u8;
     }
 
     // Slide window safely down the rest of the chunk
@@ -378,7 +379,7 @@ fn box_blur_vertical_u8_chunk(
 
         for (((sum, &top), &bottom), out) in sums.iter_mut().zip(top_row.iter()).zip(bottom_row.iter()).zip(out_row.iter_mut()) {
             *sum = sum.wrapping_add(bottom as u32).wrapping_sub(top as u32);
-            *out = crate::box_blur::fastdiv_u32(*sum, m_radius) as u8;
+            *out = fastdiv_u32(*sum, m_radius) as u8;
         }
     }
 }
@@ -401,7 +402,7 @@ fn box_blur_vertical_u16_chunk(
 
     let diameter = (radius * 2 + 1) as u32;
     let diameter = diameter.min(height as u32);
-    let m_radius = crate::box_blur::compute_mod_u32(diameter as u64);
+    let m_radius = compute_mod_u32(diameter as u64);
 
     let mut sums = vec![0u32; width];
 
@@ -421,7 +422,7 @@ fn box_blur_vertical_u16_chunk(
 
     let out_row = &mut output_chunk[0..width];
     for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = crate::box_blur::fastdiv_u32(*sum, m_radius) as u16;
+        out_row[x] = fastdiv_u32(*sum, m_radius) as u16;
     }
 
     for y in 1..chunk_height {
@@ -435,7 +436,7 @@ fn box_blur_vertical_u16_chunk(
 
         for (((sum, &top), &bottom), out) in sums.iter_mut().zip(top_row.iter()).zip(bottom_row.iter()).zip(out_row.iter_mut()) {
             *sum = sum.wrapping_add(bottom as u32).wrapping_sub(top as u32);
-            *out = crate::box_blur::fastdiv_u32(*sum, m_radius) as u16;
+            *out = fastdiv_u32(*sum, m_radius) as u16;
         }
     }
 }
