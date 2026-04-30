@@ -437,3 +437,57 @@ Pops all N images from the stack. Pushes 1 averaged image back.
 
 EXAMPLE (Averaging 3 noisy photos):
   zune -i photo1.jpg -i photo2.jpg -i photo3.jpg --average -o clean_photo.jpg"#;
+
+
+pub const FX_HELP:&str = r#"Apply a mathematical expression to the image using a fast JIT evaluator.
+
+All pixel values are normalized to a 0.0 - 1.0 range during evaluation and 
+clamped automatically before saving. 
+
+SPATIAL VARIABLES:
+  w, h         : Image width and height in pixels
+  i, j         : Current X and Y pixel coordinates
+
+CONSTANTS & BOUNDARIES (Must be uppercase!):
+  MAX          : Maximum normalized value (e.g., 255.0 for U8, 65535.0 for U16, 1.0 for F32)
+  MIN          : Minimum normalized value (0.0)
+  PI, E        : Standard mathematical constants
+
+COLORSPACE VARIABLES (Dynamically mapped based on active Colorspace):
+  r, g, b, a   : RGB, RGBA, BGR, BGRA, ARGB 
+  h, s, l      : HSL
+  h, s, v      : HSV
+  c, m, y, k   : CMYK
+  y, cb, cr    : YCbCr, YCCK
+  luma (or y)  : Luma / Grayscale
+
+GENERIC CHANNELS:
+  c0, c1... cN : Target an exact channel index (Required for MultiBand images)
+
+CHANNEL TARGETING:
+    By default, the result of the expression is applied to all color channels.
+    To modify ONLY a specific channel, prefix your expression with the channel name and a colon.
+
+PER CHANNEL APPLICATION
+    To apply operations per channel, e.g increase exposure by 1.3 you can use the special operator `val`
+    e.g --fx '1.3*val` will multiply r by 1.3,g by 1.3 and b by 1.3 and write them back into the channel.
+
+
+EXAMPLES:
+  Invert an image:
+    zune -i photo.jpg --fx "1.0 -val" -o inverted.jpg
+
+  Increase brightness by exactly 10 units (Safely handles 8-bit or 16-bit):
+    zune -i photo.jpg --fx "val + (10 / MAX)" -o brighter.jpg
+
+  Boost Saturation by 50% using HSL colorspace:
+    zune -i photo.jpg --colorspace HSL --fx "s: s * 1.5" --colorspace RGB -o vivid.jpg
+
+  Vignette effect (Darken corners based on distance from center):
+    zune -i photo.jpg --fx "val * (1.0 - sqrt((i - w/2)^2 + (j - h/2)^2) / w)" -o vignette.jpg
+  Boost only the Red channel by 30%:
+    zune -i photo.jpg --fx "r: r * 1.3" -o boosted_reds.jpg
+
+  Increase Saturation by 50% without affecting Hue or Lightness:
+    zune -i photo.jpg --colorspace HSL --fx "s: s * 1.5" --colorspace RGB -o saturated.jpg
+"#;

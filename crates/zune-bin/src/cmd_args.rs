@@ -12,12 +12,12 @@ use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{value_parser, Arg, ArgAction, ArgGroup, Command, ValueEnum};
 use zune_image::codecs::ImageFormat;
 
-use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
+use crate::cmd_args::arg_parsers::IResizeMethod;
 use crate::cmd_args::help_strings::{
     AFFINE_TRANSFORM_HELP, AFTER_HELP, APPEND_HELP, AUTO_ORIENT_HELP, AVERAGE_HELP,
     BILATERAL_FILTER_HELP, BLEND_HELP, BOX_BLUR_HELP, BRIGHTEN_HELP, COLORSPACE_HELP,
     COLOR_TRANSFORM_HELP, COMPOSITE_HELP, CONTRAST_HELP, CONVOLVE_HELP, CROP_HELP, DEPTH_HELP,
-    EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, GAMMA_HELP,
+    EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, FX_HELP, GAMMA_HELP,
     GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HALD_CLUT, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP,
     MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP,
     RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP,
@@ -191,8 +191,8 @@ fn add_settings() -> Vec<Arg> {
             .help_heading(HELP_HEADING)
             .help("Change the image colorspace")
             .long_help(COLORSPACE_HELP)
-            .value_parser(value_parser!(IColorSpace))
-            .hide_possible_values(true),
+            .hide_possible_values(true)
+            .action(ArgAction::Append),
         Arg::new("max-width")
             .long("max-width")
             .help_heading(HELP_HEADING)
@@ -387,8 +387,12 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .long("swap")
             .help("Swap two images in the stack")
             .action(ArgAction::Append)
-            .value_names(["a","b"])
+            .value_names(["a", "b"])
             .value_parser(value_parser!(usize)),
+        Arg::new("fx")
+            .long("fx")
+            .help("Apply a custom mathematical expression to every pixel.")
+            .long_help(FX_HELP),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
@@ -397,7 +401,7 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
         .multiple(true);
 
     (
-        args.map(|f| f.help_heading(HELP_HEADING).group(GROUP))
+        args.map(|f| f.help_heading(HELP_HEADING).group(GROUP).action(ArgAction::Append))
             .to_vec(),
         arg_group,
     )
@@ -543,7 +547,7 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
         .multiple(true);
 
     (
-        args.map(|f| f.help_heading(GROUP).group(GROUP)).to_vec(),
+        args.map(|f| f.help_heading(GROUP).group(GROUP).action(ArgAction::Append)).to_vec(),
         arg_group,
     )
 }
