@@ -18,6 +18,7 @@ use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 
 use crate::channel::{Channel, ChannelErrors};
+use crate::colors::Color;
 use crate::core_filters::colorspace::ColorspaceConv;
 use crate::core_filters::depth::Depth;
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
@@ -32,6 +33,9 @@ pub const MAX_CHANNELS: usize = 4;
 /// Represents a single image
 #[derive(Clone)]
 pub struct Image {
+    // background color to use for operations, set as white
+    // for default
+    pub(crate) background_color: Color,
     pub(crate) frames: Vec<Frame>,
     pub(crate) metadata: ImageMetadata,
 }
@@ -62,6 +66,7 @@ impl Image {
 
         Image {
             frames: vec![Frame::new(channels)],
+            background_color: Color::white(),
             metadata: meta,
         }
     }
@@ -79,6 +84,7 @@ impl Image {
         Image {
             frames,
             metadata: meta,
+            background_color: Color::white(),
         }
     }
 
@@ -386,6 +392,12 @@ impl Image {
 
         Image::new(channels, T::depth(), width, height, colorspace)
     }
+    pub fn background_color(&self) -> Color {
+        self.background_color
+    }
+    pub fn set_background_color(&mut self, color: Color) {
+        self.background_color = color;
+    }
 }
 
 /// Pixel constructors
@@ -572,7 +584,7 @@ impl Image {
         Ok(())
     }
 
-    /// Iterate over the pixels 
+    /// Iterate over the pixels
     pub fn iter_pixels<T, F>(&self, func: F) -> Result<(), ChannelErrors>
     where
         T: ZuneInts<T> + Default + Copy + 'static + Pod,
