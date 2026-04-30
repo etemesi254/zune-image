@@ -16,13 +16,13 @@ description = "Common image processing routines for zune-image"
 zune-core = { path = "../zune-core", version = "^0.5.1" }
 kamadak-exif = { version = "0.6.1", optional = true }
 moxcms = { version = "0.8.0", optional = true }
+exmex = { version = "0.20.5", optional = true }
 
 [dependencies.zune-image]
 version = "^0.5.0"
 path = "../zune-image"
 default-features = false
-#features = ["jpeg"]
-#features = ["all"]
+
 
 [features]
 avx2 = []
@@ -36,9 +36,10 @@ portable-simd = []
 log = ["zune-core/log"]
 exif = ["zune-image/metadata", "kamadak-exif"]
 threads = []
-default = ["avx2", "sse2", "sse3", "sse41", "threads", "cms"]
+default = ["avx2", "sse2", "sse3", "sse41", "threads", "cms","fx"]
 cms = ["moxcms"]
+fx = ["exmex"]
 
 
 [dev-dependencies]
-nanorand = { version = "0.8.0", default-features = false, features = ["wyrand","entropy"] } # testing purposes.
+nanorand = { version = "0.8.0", default-features = false, features = ["wyrand", "entropy"] } # testing purposes.
