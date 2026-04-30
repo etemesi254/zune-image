@@ -119,20 +119,17 @@ impl Default for FilterMethod {
 /// Default is `Unknown` but should change it to
 /// the image interlace when headers are decoded
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Default)]
 pub enum InterlaceMethod {
     /// Standard/ No interlacing
     Standard,
     /// Adam7 interlacing
     Adam7,
     /// The interlacing of the image is currently unknown
+    #[default]
     Unknown
 }
 
-impl Default for InterlaceMethod {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 impl InterlaceMethod {
     pub fn from_int(int: u8) -> Option<InterlaceMethod> {
@@ -145,20 +142,17 @@ impl InterlaceMethod {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Default)]
 pub enum PngColor {
     Luma,
     Palette,
     LumaA,
     RGB,
     RGBA,
+    #[default]
     Unknown
 }
 
-impl Default for PngColor {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 impl PngColor {
     pub(crate) fn num_components(self) -> u8 {

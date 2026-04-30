@@ -5,7 +5,6 @@ use zune_image::core_filters::depth::Depth;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
-use zune_imageprocs::blend::Blend;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;

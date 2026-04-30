@@ -700,7 +700,7 @@ pub fn decode_residual_block(
 
             let log2w = log2_trafo_size - 2;
             let prev_csbf =
-                coded_sub_block_neighbors[((s.x as usize) + ((s.y as usize) * sb_width)) as usize];
+                coded_sub_block_neighbors[(((s.x as usize) + ((s.y as usize) * sb_width)))];
 
             let size_idx = (log2_trafo_size - 2) as usize;
             let chroma_idx = usize::from(component != Component::Luma);

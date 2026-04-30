@@ -273,9 +273,11 @@ pub struct SliceHeader {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SliceType {
     B = 0,
     P = 1,
+    #[default]
     I = 2
 }
 
@@ -292,11 +294,6 @@ impl TryFrom<u64> for SliceType {
     }
 }
 
-impl Default for SliceType {
-    fn default() -> Self {
-        Self::I // Defaulting to I-slice is safest for initialization
-    }
-}
 
 const DEFAULT_SCALING_8X8_INTRA: [u8; 64] = [
     16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 17, 16, 17, 16, 17, 18, 17, 18, 18, 17, 18, 21, 19, 20,

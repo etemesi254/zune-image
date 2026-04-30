@@ -369,7 +369,7 @@ where
 
         if final_height == 0 || final_width == 0 {
             return Err(HeicErrors::Generic {
-                msg: format!("Width or height is zero (w={final_width},h={final_height})",)
+                msg: format!("Width or height is zero (w={final_width},h={final_height})")
             });
         }
         if final_width as usize > self.options.max_width() {

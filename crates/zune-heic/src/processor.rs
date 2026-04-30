@@ -598,21 +598,18 @@ pub fn extract_hevc_parameter_sets(hvcc_payload: &[u8]) -> ParameterSets {
 
             // HEVC NAL Unit Types: 32 = VPS, 33 = SPS, 34 = PPS
             match nal_unit_type {
-                32 => {
-                    if vps.is_none() {
+                32
+                    if vps.is_none() => {
                         vps = Some(nalu);
                     }
-                }
-                33 => {
-                    if sps.is_none() {
+                33
+                    if sps.is_none() => {
                         sps = Some(nalu);
                     }
-                }
-                34 => {
-                    if pps.is_none() {
+                34
+                    if pps.is_none() => {
                         pps = Some(nalu);
                     }
-                }
                 _ => {} // We ignore SEI messages or other arrays for basic decoding
             }
         }

@@ -12,6 +12,7 @@ pub struct Swap {
     b: usize,
 }
 impl Swap {
+    #[must_use] 
     pub fn new(a: usize, b: usize) -> Self {
         Self { a, b }
     }

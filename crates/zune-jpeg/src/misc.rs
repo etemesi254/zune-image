@@ -103,8 +103,10 @@ where
 /// lossless compression and whether we use Huffman or arithmetic coding schemes
 #[derive(Eq, PartialEq, Copy, Clone)]
 #[allow(clippy::upper_case_acronyms)]
+#[derive(Default)]
 pub enum SOFMarkers {
     /// Baseline DCT markers
+    #[default]
     BaselineDct,
     /// SOF_1 Extended sequential DCT,Huffman coding
     ExtendedSequentialHuffman,
@@ -120,11 +122,6 @@ pub enum SOFMarkers {
     LosslessArithmetic
 }
 
-impl Default for SOFMarkers {
-    fn default() -> Self {
-        Self::BaselineDct
-    }
-}
 
 impl SOFMarkers {
     /// Check if a certain marker is sequential DCT or not

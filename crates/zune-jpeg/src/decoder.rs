@@ -380,7 +380,7 @@ where
         }
 
         // Sort by offset
-        self.extended_xmp_segments.sort_by(|a, b| a.offset.cmp(&b.offset));
+        self.extended_xmp_segments.sort_by_key(|a| a.offset);
 
         let guid = &self.extended_xmp_segments[0].guid;
         let total_size = self.extended_xmp_segments[0].total_size;

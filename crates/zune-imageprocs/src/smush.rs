@@ -66,7 +66,7 @@ impl OperationsTrait for Smush {
         "Smush"
     }
 
-    fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+    fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
         // Typically Smush requires at least two images.
         // If this is called on a single image, it's a no-op or error.
         Err(ImageErrors::GenericStr(
@@ -172,7 +172,7 @@ impl OperationsTrait for Smush {
 
             match self.direction {
                 SmushDirection::Horizontal => {
-                    curr_x += (img_w as i32 + self.offset).max(0) as usize
+                    curr_x += (img_w as i32 + self.offset).max(0) as usize;
                 }
                 SmushDirection::Vertical => curr_y += (img_h as i32 + self.offset).max(0) as usize,
             }

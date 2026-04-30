@@ -152,7 +152,7 @@ impl HevcDecoder {
                 NalUnitType::VpsNut => {
                     let vps = decode_vps(&nal)?;
                     let vps_id = vps.vps_id as usize;
-                    self.vps_storage[vps_id as usize] = Some(vps);
+                    self.vps_storage[vps_id] = Some(vps);
                 }
                 NalUnitType::SpsNut => {
                     let sps = decode_sps(&nal)?;

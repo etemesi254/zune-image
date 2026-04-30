@@ -122,7 +122,7 @@ impl OperationsTrait for Fx {
         let (target_channel, expr_str) =
             if let Some((prefix, rest)) = self.expression.split_once(':') {
                 let ch_idx = get_channel_index(prefix.trim(), colorspace).ok_or_else(|| {
-                    ImageErrors::GenericString(format!("Unknown target channel '{}'", prefix))
+                    ImageErrors::GenericString(format!("Unknown target channel '{prefix}'"))
                 })?;
                 (Some(ch_idx), rest.trim())
             } else {

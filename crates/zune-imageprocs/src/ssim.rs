@@ -27,6 +27,7 @@ impl SsimDetection {
         }
     }
 
+    #[must_use] 
     pub fn get_output_ptr(&self) -> Arc<Mutex<Option<(Vec<f32>, f32)>>> {
         Arc::clone(&self.output_scores)
     }
