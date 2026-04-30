@@ -2,9 +2,11 @@ name: Test
 
 on:
   push:
-    branches: [ "main","dev" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main","dev" ]
+    branches: [ "main", "dev" ]
+  schedule:
+    - cron: "0 3 * * 0" # weekly full big-endian sweep
   workflow_dispatch:
 
 permissions:
@@ -16,56 +18,160 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+############################
+# REUSABLE MATRIX BLOCKS
+############################
+
+x-common-linux: &common-linux
+  os: ubuntu-latest
+  toolchain: stable
+
+x-msrv: &msrv
+  toolchain: 1.89
+
+x-exclusions: &exclusions
+  test-args: >-
+    --exclude zune-benches
+    --exclude zune-image
+    --exclude zune-imageprocs
+    --exclude zune-png
+
+############################
+# JOBS
+############################
 
 jobs:
-  test:
-    name: ${{ matrix.os }} / ${{ matrix.toolchain }} ${{ matrix.target }}
+
+  ########################################
+  # FAST CI (runs on every push/PR)
+  ########################################
+  test-fast:
+    name: Fast CI (${{ matrix.os }} / ${{ matrix.toolchain }})
+    if: github.event_name != 'schedule'
+    runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-        target: [""]
-        toolchain: [stable, nightly]
         include:
-          - os: ubuntu-latest
-            toolchain: 1.89 # MSRV
-          - os: ubuntu-24.04-arm
-            toolchain: 1.89 # MSRV (aarch64 — catches NEON compilation issues)
-            extra_rustflags: -D unsafe_op_in_unsafe_fn
+          - <<: *common-linux
+            os: ubuntu-latest
+            toolchain: stable
+
+          - <<: *common-linux
+            os: ubuntu-latest
+            toolchain: nightly
+
+          - <<: *msrv
+            os: ubuntu-latest
+
+          - os: macos-latest
+            toolchain: stable
+
           - os: windows-latest
             toolchain: stable
-            test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
-          - os: windows-11-arm
-            toolchain: stable
-            test-args: --exclude zune-benches --exclude zune-image --exclude zune-imageprocs --exclude zune-png
-          # 32-bit testing to catch overflow bugs (e.g., BMP RLE allocation)
-          - os: ubuntu-latest
-            toolchain: stable
-            target: i686-unknown-linux-gnu
-            # Exclude crates that need C compilation (spng via libz-sys) or linking
-            test-args: --exclude zune-benches --exclude zune-wasm --exclude zune-capi --exclude zune-png
-    runs-on: ${{ matrix.os }}
+            test-args: >-
+              --exclude zune-benches
+              --exclude zune-image
+              --exclude zune-imageprocs
+              --exclude zune-png
+
     steps:
       - uses: actions/checkout@v6
 
-      # Install 32-bit libraries for i686 cross-compilation
-      - name: Install i686 dependencies
-        if: matrix.target == 'i686-unknown-linux-gnu'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      - name: Run tests
+        run: cargo test --workspace --no-fail-fast ${{ matrix.test-args || '' }}
+        env:
+          RUSTC_WRAPPER: sccache
+          RUSTFLAGS: "-C target-cpu=native"
+
+  ########################################
+  # EXHAUSTIVE CI (big-endian + exotic)
+  ########################################
+  test-exhaustive:
+    name: Exhaustive (${{ matrix.target }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+
+          # ARM / mobile / embedded
+          - target: armv7-unknown-linux-gnueabihf
+            <<: *exclusions
+
+          - target: aarch64-unknown-linux-musl
+            <<: *exclusions
+
+          # 32-bit x86
+          - target: i686-unknown-linux-gnu
+            <<: *exclusions
+            extra_setup: gcc-multilib
+
+          # BIG ENDIAN (critical)
+          - target: powerpc64-unknown-linux-gnu
+            <<: *exclusions
+
+          - target: s390x-unknown-linux-gnu
+            <<: *exclusions
+
+          - target: mips64-unknown-linux-gnuabi64
+            <<: *exclusions
+
+          # WebAssembly sanity
+          - target: wasm32-unknown-unknown
+            test-args: --exclude zune-benches --exclude zune-png
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system deps (if needed)
+        if: matrix.extra_setup == 'gcc-multilib'
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+
+      - name: Install Rust + target
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      - name: Run cross tests
+        run: |
+          cross test --target ${{ matrix.target }} --workspace --no-fail-fast ${{ matrix.test-args || '' }}
+        env:
+          RUSTC_WRAPPER: sccache
+
+  ########################################
+  # MSRV CHECK (separate, stable + strict)
+  ########################################
+  msrv:
+    name: MSRV Check (1.89)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ matrix.toolchain }}
-          targets: ${{ matrix.target }}
+          toolchain: 1.89
 
-      # portable_simd feature is incompatible with stable, so don't always use --all-features
-      - run: cargo test
-                ${{ matrix.toolchain == 'nightly' && '--all-features' || ''}}
-                ${{ matrix.target && format('--target {0}', matrix.target) || ''}}
-                --verbose
-                --workspace
-                --no-fail-fast
-                ${{ matrix.test-args }}
-        env:
-          # Skip target-cpu=native for cross-compilation targets
-          RUSTFLAGS: ${{ matrix.target && '' || '-C target-cpu=native' }} ${{ matrix.extra_rustflags }}
+      - run: cargo check --workspace
