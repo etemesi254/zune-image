@@ -709,7 +709,6 @@ mod tests {
     #[test]
     fn test_weights_sum_to_one() {
         for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(100, 100, 37, 37, method);
             // Only horizontal kernels exist here (width changed, height same)
             // Use asymmetric sizes to exercise non-trivial resampling
             let kernels = PrecomputedKernels::new(100, 80, 37, 53, method);

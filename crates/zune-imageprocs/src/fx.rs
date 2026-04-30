@@ -56,6 +56,7 @@ use zune_image::traits::OperationsTrait;
 ///
 /// ### Basic Adjustments
 /// ```rust
+/// use zune_imageprocs::fx::Fx;
 /// // Increase brightness of all channels by 20%
 /// let fx = Fx::new("val * 1.2");
 ///
@@ -67,6 +68,7 @@ use zune_image::traits::OperationsTrait;
 /// You can create a linear horizontal gradient by using the `i` (x-coordinate)
 /// and `w` (width) variables.
 /// ```rust
+/// use zune_imageprocs::fx::Fx;
 /// // Create a horizontal fade from black to original color
 /// let fx = Fx::new("val * (i / w)");
 /// ```
@@ -74,6 +76,7 @@ use zune_image::traits::OperationsTrait;
 ///
 /// ### Artistic Effects
 /// ```rust
+/// use zune_imageprocs::fx::Fx;
 /// // CRT Scanlines: Multiply by a sine wave based on vertical position
 /// let scanlines = Fx::new("val * (0.8 + 0.2 * sin(j * 1.5))");
 ///
@@ -84,6 +87,7 @@ use zune_image::traits::OperationsTrait;
 /// ### Color Balancing
 /// Stretch the contrast of the image to the full 0.0-1.0 range.
 /// ```rust
+/// use zune_imageprocs::fx::Fx;
 /// let contrast = Fx::new("(val - img_min) / (img_max - img_min)");
 /// ```
 ///
@@ -471,7 +475,7 @@ mod tests {
         let expression = Fx::new("r + (2 / MAX)");
         expression.execute(&mut img).unwrap();
 
-        img.iter_pixels::<u8, _>(|w, h, pix| {
+        img.iter_pixels::<u8, _>(|_, _, pix| {
             assert_eq!(pix[0], 130);
             assert_eq!(pix[1], 130);
             assert_eq!(pix[2], 130);
@@ -484,7 +488,7 @@ mod tests {
         let mut img = Image::fill::<u8>(100, ColorSpace::RGB, 10, 10);
 
         // Testing that built-in constants (pi) and functions (sin) map correctly
-        let expression = Fx::new("r + sin(pi)");
+        let expression = Fx::new("r + sin(PI)");
         expression.execute(&mut img).unwrap();
 
         // sin(PI) is 0.0, so the pixel should remain exactly 100

@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
-use crate::resize::ResizeMethod;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 use zune_core::bit_depth::{BitDepth, BitType};
@@ -91,7 +90,7 @@ impl AffineTransform {
 
     /// Shear
     #[must_use]
-    pub fn shear(shx: f32, shy: f32, method: ResizeMethod) -> Self {
+    pub fn shear(shx: f32, shy: f32) -> Self {
         Self {
             a: 1.0,
             b: shx,
@@ -379,10 +378,10 @@ pub fn affine_transform_channel<T: Copy + Default + NumOps<T>>(
 
                 out_channel[out_y * out_width + out_x] = T::from_f32(result);
             }
-        }
 
-        // Step forward spatially by 1 pixel in the output
-        src_x += a;
-        src_y += c;
+            // Step forward spatially by 1 pixel in the output
+            src_x += a;
+            src_y += c;
+        }
     }
 }

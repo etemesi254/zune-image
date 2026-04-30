@@ -272,7 +272,7 @@ mod tests {
     /// Test that the operation rejects stacks with fewer than 2 images
     #[test]
     fn test_hald_clut_requires_two_images() {
-        let mut target = Image::from_fn::<u8, _>(10, 10, ColorSpace::RGB, |_, _, px| {
+        let target = Image::from_fn::<u8, _>(10, 10, ColorSpace::RGB, |_, _, px| {
             px[0] = 255;
             px[1] = 0;
             px[2] = 0;

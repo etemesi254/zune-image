@@ -37,7 +37,8 @@ impl From<&str> for SmushDirection {
 /// # Examples
 ///
 /// ```rust
-/// use crate::smush::{Smush, SmushDirection};
+///
+/// use zune_imageprocs::smush::{Smush, SmushDirection};
 ///
 /// // Create a horizontal strip with a 10-pixel gap between images
 /// let op = Smush::new(SmushDirection::Horizontal, 10);
