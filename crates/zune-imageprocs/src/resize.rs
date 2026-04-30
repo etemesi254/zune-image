@@ -9,11 +9,6 @@
 //! Resize an image to a new width and height
 //!
 //!
-//! Currently only implements a simple bilinear resizer, future plans are to have
-//! more complicated resizers implemented.
-//!
-//!
-
 use std::cmp::PartialEq;
 use std::time::Instant;
 
@@ -28,7 +23,7 @@ use zune_image::traits::OperationsTrait;
 
 use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
-use crate::resize::seperable_kernel::PrecomputedKernels;
+use crate::resize::seperable_kernel::{resample_separable_u8, PrecomputedKernels};
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
@@ -45,7 +40,7 @@ pub enum ResizeMethod {
     BSpline,    // B-Spline (B=1, C=0)
     Hermite,    // Hermite filter (B=0, C=0)
     Sinc,       // Sinc with window radius 3
-    Bilinear    // Bilinear (for completeness, 2x2 kernel)
+    Bilinear,   // Bilinear (for completeness, 2x2 kernel)
 }
 /// Resize dimensions
 #[derive(Copy, Clone, Debug)]
@@ -67,14 +62,14 @@ pub enum ResizeDimensions {
     /// e.g., "800x600<"
     EnlargeToFit(usize, usize),
     /// e.g., "40000@"
-    Area(usize)
+    Area(usize),
 }
 /// Resize an image to a new width and height
 /// using the resize method specified
 #[derive(Copy, Clone)]
 pub struct Resize {
     dimensions: ResizeDimensions,
-    method:     ResizeMethod
+    method: ResizeMethod,
 }
 
 impl Resize {
@@ -87,7 +82,7 @@ impl Resize {
     pub fn new(dims: ResizeDimensions, method: ResizeMethod) -> Resize {
         Resize {
             dimensions: dims,
-            method
+            method,
         }
     }
 }
@@ -114,7 +109,7 @@ impl OperationsTrait for Resize {
             trace!("Converting image to linear along resize method");
             let transfers = ImageTransfer::new(
                 TransferFunction::from(transfer_function),
-                ConversionType::GammaToLinear
+                ConversionType::GammaToLinear,
             );
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
@@ -138,7 +133,7 @@ impl OperationsTrait for Resize {
 
         let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, image);
 
-        trace!("Resize dims -> width:{new_w} height:{new_h}" );
+        trace!("Resize dims -> width:{new_w} height:{new_h}");
 
         let new_length = new_w * new_h * image.depth().size_of();
 
@@ -150,23 +145,38 @@ impl OperationsTrait for Resize {
                 old_h,
                 new_w,
                 new_h,
-                self.method
+                self.method,
             ))
         };
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut new_channel = Channel::new_with_bit_type(new_length, depth);
             match depth {
-                BitType::U8 => resize::<u8>(
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?,
-                    self.method,
-                    old_w,
-                    old_h,
-                    new_w,
-                    new_h,
-                    precomputed_kernels.as_ref()
-                ),
+                BitType::U8 => {
+                    if self.method == ResizeMethod::Bilinear {
+                        // will short circuit to the right one
+                        resize::<u8>(
+                            channel.reinterpret_as()?,
+                            new_channel.reinterpret_as_mut()?,
+                            self.method,
+                            old_w,
+                            old_h,
+                            new_w,
+                            new_h,
+                            precomputed_kernels.as_ref(),
+                        );
+                    } else {
+                        resample_separable_u8(
+                            channel.reinterpret_as()?,
+                            new_channel.reinterpret_as_mut()?,
+                            old_w,
+                            old_h,
+                            new_w,
+                            new_h,
+                            precomputed_kernels.as_ref().unwrap(),
+                        );
+                    }
+                }
                 BitType::U16 => resize::<u16>(
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
@@ -175,7 +185,7 @@ impl OperationsTrait for Resize {
                     old_h,
                     new_w,
                     new_h,
-                    precomputed_kernels.as_ref()
+                    precomputed_kernels.as_ref(),
                 ),
 
                 BitType::F32 => {
@@ -187,10 +197,10 @@ impl OperationsTrait for Resize {
                         old_h,
                         new_w,
                         new_h,
-                        precomputed_kernels.as_ref()
+                        precomputed_kernels.as_ref(),
                     );
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d)),
             }
             *channel = new_channel;
             Ok(())
@@ -215,7 +225,7 @@ impl OperationsTrait for Resize {
             trace!("Converting image back to gamma along resize method");
             let transfers = ImageTransfer::new(
                 TransferFunction::from(transfer_function),
-                ConversionType::LinearToGamma
+                ConversionType::LinearToGamma,
             );
             transfers.execute_impl(image)?;
             let duration = start.elapsed();
@@ -238,7 +248,7 @@ impl OperationsTrait for Resize {
     clippy::cast_sign_loss
 )]
 pub fn ratio_dimensions_smaller(
-    old_w: usize, old_h: usize, new_w: usize, new_h: usize
+    old_w: usize, old_h: usize, new_w: usize, new_h: usize,
 ) -> (usize, usize) {
     let ratio_w = old_w as f64 / new_w as f64;
     let ratio_h = old_h as f64 / new_h as f64;
@@ -258,7 +268,7 @@ pub fn ratio_dimensions_smaller(
     clippy::cast_sign_loss
 )]
 pub fn ratio_dimensions_larger(
-    old_w: usize, old_h: usize, new_w: usize, new_h: usize
+    old_w: usize, old_h: usize, new_w: usize, new_h: usize,
 ) -> (usize, usize) {
     let ratio_w = old_w as f64 / new_w as f64;
     let ratio_h = old_h as f64 / new_h as f64;
@@ -284,15 +294,15 @@ pub fn ratio_dimensions_larger(
 #[allow(clippy::too_many_arguments)]
 fn resize<T>(
     in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
-    out_width: usize, out_height: usize, precomputed_kernels: Option<&PrecomputedKernels>
+    out_width: usize, out_height: usize, precomputed_kernels: Option<&PrecomputedKernels>,
 ) where
     T: Copy + NumOps<T> + Default,
-    f32: std::convert::From<T>
+    f32: std::convert::From<T>,
 {
     match method {
         ResizeMethod::Bilinear => {
             bilinear::bilinear_impl(
-                in_image, out_image, in_width, in_height, out_width, out_height
+                in_image, out_image, in_width, in_height, out_width, out_height,
             );
         }
 
@@ -305,13 +315,13 @@ fn resize<T>(
                     in_height,
                     out_width,
                     out_height,
-                    precomputed_kernels
+                    precomputed_kernels,
                 );
             }
             None => {
                 panic!("Precomputed kernels not loaded");
             }
-        }
+        },
     }
 }
 
@@ -333,7 +343,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
         // Percentage math
         ResizeDimensions::Percentage(percent_w, percent_h) => (
             orig_w.saturating_mul(percent_w) / 100,
-            orig_h.saturating_mul(percent_h) / 100
+            orig_h.saturating_mul(percent_h) / 100,
         ),
 
         // Provide width, calculate height to keep aspect ratio
@@ -353,7 +363,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
             let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
             (
                 (orig_w_f * ratio).round() as usize,
-                (orig_h_f * ratio).round() as usize
+                (orig_h_f * ratio).round() as usize,
             )
         }
 
@@ -362,7 +372,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
             let ratio = f64::max(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
             (
                 (orig_w_f * ratio).round() as usize,
-                (orig_h_f * ratio).round() as usize
+                (orig_h_f * ratio).round() as usize,
             )
         }
 
@@ -372,7 +382,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
                 let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
                 (
                     (orig_w_f * ratio).round() as usize,
-                    (orig_h_f * ratio).round() as usize
+                    (orig_h_f * ratio).round() as usize,
                 )
             } else {
                 (orig_w, orig_h)
@@ -385,7 +395,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
                 let ratio = f64::min(target_w as f64 / orig_w_f, target_h as f64 / orig_h_f);
                 (
                     (orig_w_f * ratio).round() as usize,
-                    (orig_h_f * ratio).round() as usize
+                    (orig_h_f * ratio).round() as usize,
                 )
             } else {
                 (orig_w, orig_h)
@@ -398,7 +408,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
             let ratio = f64::sqrt(target_area as f64 / orig_area);
             (
                 (orig_w_f * ratio).round() as usize,
-                (orig_h_f * ratio).round() as usize
+                (orig_h_f * ratio).round() as usize,
             )
         }
     };
