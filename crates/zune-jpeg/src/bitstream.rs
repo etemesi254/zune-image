@@ -643,7 +643,7 @@ impl BitStream for BitStreamHuffman {
                 pos += ((fast_ac >> 4) & 15) as usize; // run
                 let t_pos = UN_ZIGZAG[min(pos, 63)] & 63;
 
-                block[t_pos] = i32::from(fast_ac >> 8) * (qt_table[t_pos]); // Value
+                block[t_pos] = i32::from(fast_ac >> 8).wrapping_mul (qt_table[t_pos]); // Value
                 self.drop_bits((fast_ac & 15) as u8);
                 pos += 1;
             } else {
@@ -658,7 +658,7 @@ impl BitStream for BitStreamHuffman {
                     symbol = huff_extend(r, symbol);
                     let t_pos = UN_ZIGZAG[pos & 63] & 63;
 
-                    block[t_pos] = symbol * qt_table[t_pos];
+                    block[t_pos] = symbol .wrapping_mul( qt_table[t_pos]);
 
                     pos += 1;
                 } else if r != 15 {
