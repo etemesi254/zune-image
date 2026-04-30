@@ -341,7 +341,9 @@ pub fn idct_2d_core<const N: usize>(
         transform_1d(&col_in[..N], &mut col_out);
 
         let mut clipped = [0i16; 32];
-        shift_clip_slice::<N, shift1>(&col_out, &mut clipped);
+        unsafe {
+            shift_clip_slice::<N, shift1>(&col_out, &mut clipped);
+        }
         for r in 0..N {
             intermediate[r * N + c] = clipped[r];
         }
@@ -369,7 +371,9 @@ pub fn idct_2d_core<const N: usize>(
         transform_1d(row, &mut row_out);
 
         let mut clipped = [0i16; 32];
-        shift_clip_slice::<N, shift2>(&row_out, &mut clipped);
+        unsafe {
+            shift_clip_slice::<N, shift2>(&row_out, &mut clipped);
+        }
         for c in 0..N {
             block[r * N + c] = clipped[c];
         }
