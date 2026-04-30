@@ -7,7 +7,7 @@
  */
 //! Rotate an image
 //!
-//! The andlge can  be any arbitrary angle including normal 90,180 260.. and 
+//! The andlge can  be any arbitrary angle including normal 90,180 260.. and
 
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
@@ -18,7 +18,7 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
-#[must_use] 
+#[must_use]
 pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize, usize) {
     let angle = angle % 360.0;
 
@@ -42,7 +42,7 @@ pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize
 }
 
 pub struct Rotate {
-    angle: f32
+    angle: f32,
 }
 
 impl Rotate {
@@ -63,12 +63,15 @@ impl OperationsTrait for Rotate {
         let (width, height) = image.dimensions();
 
         let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
+        let depth = image.depth();
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let (new_width, new_height) = get_rotated_dimensions(width, height, self.angle);
 
-            let mut new_channel =
-                Channel::new_with_length_and_type(new_width * new_height, channel.type_id());
+            let mut new_channel = Channel::new_with_length_and_type(
+                new_width * new_height * depth.size_of(),
+                channel.type_id(),
+            );
 
             match im_type {
                 BitType::U8 => {
@@ -79,7 +82,7 @@ impl OperationsTrait for Rotate {
                         new_width,
                         new_height,
                         channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?
+                        new_channel.reinterpret_as_mut()?,
                     );
                 }
                 BitType::U16 => {
@@ -90,7 +93,7 @@ impl OperationsTrait for Rotate {
                         new_width,
                         new_height,
                         channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?
+                        new_channel.reinterpret_as_mut()?,
                     );
                 }
                 BitType::F32 => rotate::<f32>(
@@ -100,9 +103,9 @@ impl OperationsTrait for Rotate {
                     new_width,
                     new_height,
                     channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?
+                    new_channel.reinterpret_as_mut()?,
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             *channel = new_channel;
             Ok(())
@@ -144,7 +147,7 @@ fn change_image_dims(image: &mut Image, angle: f32) {
 
 pub fn rotate<T: Copy + NumOps<T> + Default>(
     angle: f32, width: usize, height: usize, out_width: usize, out_height: usize, in_image: &[T],
-    out_image: &mut [T]
+    out_image: &mut [T],
 ) {
     let angle = angle % 360.0;
 
@@ -158,7 +161,7 @@ pub fn rotate<T: Copy + NumOps<T> + Default>(
         rotate_270(in_image, out_image, width, height);
     } else {
         rotate_arbitrary(
-            in_image, out_image, width, height, out_width, out_height, angle
+            in_image, out_image, width, height, out_width, out_height, angle,
         );
     }
 }
@@ -179,7 +182,7 @@ fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
 
 fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
     in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, angle: f32
+    out_height: usize, angle: f32,
 ) {
     let angle_rad = angle.to_radians();
     let cos_a = angle_rad.cos();
@@ -257,21 +260,32 @@ fn rotate_270<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use zune_image::image::Image;
-//     use zune_image::traits::OperationsTrait;
-//
-//     use crate::rotate::Rotate;
-//
-//     #[test]
-//     fn rotate_over() {
-//         let mut dst_image = Image::open("/home/caleb/Pictures/ANIME/418724.png").unwrap();
-//         println!("{:?}", dst_image.dimensions());
-//
-//         Rotate::new(270.0).execute(&mut dst_image).unwrap();
-//
-//         println!("{:?}", dst_image.dimensions());
-//         dst_image.save("./composite.jpg").unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use zune_core::colorspace::ColorSpace;
+    use zune_image::image::Image;
+    use zune_image::traits::OperationsTrait;
+
+    use crate::rotate::Rotate;
+
+    #[test]
+    fn rotate_over() {
+        let mut dst_image = Image::fill(0_u8, ColorSpace::RGB, 100, 120);
+
+        Rotate::new(270.0).execute(&mut dst_image).unwrap();
+        assert_eq!(dst_image.dimensions(), (120, 100));
+    }
+    #[test]
+    fn rotate_over_u16() {
+        let mut dst_image = Image::fill(0_u16, ColorSpace::RGB, 100, 120);
+
+        Rotate::new(270.0).execute(&mut dst_image).unwrap();
+        assert_eq!(dst_image.dimensions(), (120, 100));
+    }
+    #[test]
+    fn rotate_over_f32() {
+        let mut dst_image = Image::fill(0_f32, ColorSpace::RGB, 100, 120);
+        Rotate::new(270.0).execute(&mut dst_image).unwrap();
+        assert_eq!(dst_image.dimensions(), (120, 100));
+    }
+}
