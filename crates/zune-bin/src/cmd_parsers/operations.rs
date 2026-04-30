@@ -40,6 +40,7 @@ use zune_imageprocs::transpose::Transpose;
 use crate::cmd_args::arg_parsers::IResizeMethod;
 
 use zune_image::traits::OperationsTrait;
+use zune_imageprocs::smush::{Smush, SmushDirection};
 
 pub fn parse_options(
     argument: &str, args: &clap::ArgMatches,
@@ -338,6 +339,18 @@ pub fn parse_options(
         for (expression, idx) in values.zip(indices) {
             info!("Parsed fx operation at {idx}");
             parsed_ops.push((idx, Box::new(Fx::new(expression))));
+        }
+    } else if argument == "smush" {
+        let values = args.get_many::<i32>("smush").unwrap();
+        let indices = args.indices_of("smush").unwrap();
+        let dir_str = args
+            .get_one::<String>("smush-dir")
+            .map(|s| s.as_str())
+            .unwrap_or("h");
+        for (expression, idx) in values.zip(indices) {
+            info!("Parsed smush operation at {idx}");
+            let direction = SmushDirection::from(dir_str);
+            parsed_ops.push((idx, Box::new(Smush::new(direction, *expression))));
         }
     }
 

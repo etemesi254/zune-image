@@ -20,7 +20,7 @@ use crate::cmd_args::help_strings::{
     EFFORT_HELP, ENCODE_THREADS_HELP, EXPOSURE_HELP, FLIP_HELP, FLOP_HELP, FX_HELP, GAMMA_HELP,
     GAUSSIAN_BLUR_HELP, GRAYSCALE_HELP, HALD_CLUT, HUEROTATE_HELP, INVERT_HELP, LIGHTNESS_HELP,
     MEAN_BLUR_HELP, MEDIAN_BLUR_HELP, MIRROR_HELP, PROGRESSIVE_HELP, QUALITY_HELP, RESIZE_HELP,
-    RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SOBEL_HELP, SSIM_HELP,
+    RESIZE_METHOD_HELP, ROTATE_HELP, SATURATE_HELP, SCHARR_HELP, SMUSH_HELP, SOBEL_HELP, SSIM_HELP,
     STATISTIC_HELP, STRETCH_CONTRAST_HELP, STRIP_HELP, THRESHOLD_HELP, TRANSPOSE_HELP,
     UNSHARPEN_HELP, V_FLIP_HELP,
 };
@@ -393,6 +393,19 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
             .long("fx")
             .help("Apply a custom mathematical expression to every pixel.")
             .long_help(FX_HELP),
+        Arg::new("smush")
+            .long("smush")
+            .help("Smush images together with a defined offset")
+            .long_help(SMUSH_HELP)
+            .value_name("OFFSET")
+            .value_parser(clap::value_parser!(i32)),
+        Arg::new("smush-dir")
+            .long("smush-dir")
+            .help("Direction for the smush operation")
+            .value_name("DIR")
+            .value_parser(["h", "v", "horizontal", "vertical"])
+            .default_value("h")
+            .requires("smush"),
     ];
     args.sort_unstable_by(|x, y| x.get_id().cmp(y.get_id()));
 
@@ -401,8 +414,12 @@ fn add_operations() -> (Vec<Arg>, ArgGroup) {
         .multiple(true);
 
     (
-        args.map(|f| f.help_heading(HELP_HEADING).group(GROUP).action(ArgAction::Append))
-            .to_vec(),
+        args.map(|f| {
+            f.help_heading(HELP_HEADING)
+                .group(GROUP)
+                .action(ArgAction::Append)
+        })
+        .to_vec(),
         arg_group,
     )
 }
@@ -547,7 +564,8 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
         .multiple(true);
 
     (
-        args.map(|f| f.help_heading(GROUP).group(GROUP).action(ArgAction::Append)).to_vec(),
+        args.map(|f| f.help_heading(GROUP).group(GROUP).action(ArgAction::Append))
+            .to_vec(),
         arg_group,
     )
 }

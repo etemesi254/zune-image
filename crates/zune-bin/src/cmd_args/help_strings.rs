@@ -491,3 +491,8 @@ EXAMPLES:
   Increase Saturation by 50% without affecting Hue or Lightness:
     zune -i photo.jpg --colorspace HSL --fx "s: s * 1.5" --colorspace RGB -o saturated.jpg
 "#;
+pub const SMUSH_HELP:&str = r#"Joins all images in the current stack into a single image. 
+A positive offset creates a gap between images, while a negative offset creates an overlap. 
+        
+Example: --smush -20 (Overlaps images by 20 pixels)"           
+"#;
