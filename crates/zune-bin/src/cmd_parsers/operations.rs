@@ -6,14 +6,12 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use clap::ArgMatches;
 use log::{debug, info};
 use regex::Regex;
 use zune_core::bit_depth::BitDepth;
 use zune_core::colorspace::ColorSpace;
 use zune_image::core_filters::colorspace::ColorspaceConv;
 use zune_image::core_filters::depth::Depth;
-use zune_image::pipelines::Pipeline;
 use zune_imageprocs::append::{Append, AppendDirection};
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::average::AverageSequence;
@@ -24,6 +22,7 @@ use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
+use zune_imageprocs::fx::Fx;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
@@ -38,253 +37,311 @@ use zune_imageprocs::swap::Swap;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
 use zune_imageprocs::transpose::Transpose;
 
-use crate::cmd_args::arg_parsers::{IColorSpace, IResizeMethod};
+use crate::cmd_args::arg_parsers::IResizeMethod;
+
+use zune_image::traits::OperationsTrait;
 
 pub fn parse_options(
-    workflow: &mut Pipeline, argument: &str, args: &ArgMatches,
-) -> Result<(), String> {
+    argument: &str, args: &clap::ArgMatches,
+) -> Result<Vec<(usize, Box<dyn OperationsTrait>)>, String> {
+    let mut parsed_ops: Vec<(usize, Box<dyn OperationsTrait>)> = Vec::new();
+
     if argument == "flip" {
-        debug!("Added flip operation");
-        workflow.chain_operations(Box::new(Flip::new(FlipDirection::MirrorXAxis)));
-    } else if argument == "grayscale" {
-        debug!("Added grayscale operation");
-        workflow.chain_operations(Box::new(ColorspaceConv::new(ColorSpace::Luma)));
-    } else if argument == "transpose" {
-        debug!("Added transpose operation");
-        workflow.chain_operations(Box::new(Transpose::new()));
-    } else if argument == "flop" {
-        debug!("Added flop operation");
-        workflow.chain_operations(Box::new(Flip::new(FlipDirection::Horizontal)));
-    } else if argument == "median" {
-        //let radius = *args.get_one::<usize>("median").unwrap();
-        // workflow.add_operation(Box::new(Median::new(radius)));
-        debug!("Added Median operation");
-    } else if argument == "statistic" {
-        let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
-
-        // parse first one as radius
-        let radius = str::parse::<usize>(val[0]).map_err(|x| x.to_string())?;
-        let stats_mode = SpatialOperations::from_string_result(val[1])?;
-
-        workflow.chain_operations(Box::new(SpatialOps::new(radius, stats_mode)));
-        debug!("Added StatisticsOps operation");
-    } else if argument == "mirror" {
-        let value = args.get_one::<String>("mirror").unwrap().trim();
-        let direction;
-
-        if value == "north" {
-            direction = MirrorMode::North;
-        } else if value == "south" {
-            direction = MirrorMode::South;
-        } else if value == "east" {
-            direction = MirrorMode::East;
-        } else if value == "west" {
-            direction = MirrorMode::West;
-        } else {
-            return Err(format!("Unknown mirror mode {value:?}"));
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed flip operation at {idx}");
+                parsed_ops.push((idx, Box::new(Flip::new(FlipDirection::MirrorXAxis))));
+            }
         }
+    } else if argument == "grayscale" {
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed grayscale operation at {idx}");
+                parsed_ops.push((idx, Box::new(ColorspaceConv::new(ColorSpace::Luma))));
+            }
+        }
+    } else if argument == "transpose" {
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed transpose operation at {idx}");
+                parsed_ops.push((idx, Box::new(Transpose::new())));
+            }
+        }
+    } else if argument == "flop" {
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed flop operation at {idx}");
+                parsed_ops.push((idx, Box::new(Flip::new(FlipDirection::Horizontal))));
+            }
+        }
+    } else if argument == "median" {
+        // Just logging for median as in your original snippet
+        debug!("Parsed Median operation");
+    } else if argument == "statistic" {
+        let values: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
+        let indices: Vec<usize> = args.indices_of(argument).unwrap().collect();
 
-        debug!("Added mirror with direction {value:?}");
-        workflow.chain_operations(Box::new(Mirror::new(direction)));
+        for (chunk, idx_chunk) in values.chunks(2).zip(indices.chunks(2)) {
+            let radius = str::parse::<usize>(chunk[0]).map_err(|x| x.to_string())?;
+            let stats_mode = SpatialOperations::from_string_result(chunk[1])?;
+            debug!("Parsed StatisticsOps operation at {}", idx_chunk[0]);
+            parsed_ops.push((idx_chunk[0], Box::new(SpatialOps::new(radius, stats_mode))));
+        }
+    } else if argument == "mirror" {
+        let values = args.get_many::<String>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+
+        for (value, idx) in values.zip(indices) {
+            let val = value.trim();
+            let direction = match val {
+                "north" => MirrorMode::North,
+                "south" => MirrorMode::South,
+                "east" => MirrorMode::East,
+                "west" => MirrorMode::West,
+                _ => return Err(format!("Unknown mirror mode {val:?}")),
+            };
+            debug!("Parsed mirror with direction {val:?} at {idx}");
+            parsed_ops.push((idx, Box::new(Mirror::new(direction))));
+        }
     } else if argument == "invert" {
-        debug!("Added invert operation");
-        workflow.chain_operations(Box::new(Invert::new()));
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed invert operation at {idx}");
+                parsed_ops.push((idx, Box::new(Invert::new())));
+            }
+        }
     } else if argument == "brighten" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added brighten operation with {value:?}");
-        workflow.chain_operations(Box::new(Brighten::new(value)));
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed brighten operation with {value:?} at {idx}");
+            parsed_ops.push((idx, Box::new(Brighten::new(*value))));
+        }
     } else if argument == "crop" {
-        let crop_args = args
-            .get_many::<usize>(argument)
-            .unwrap()
-            .collect::<Vec<&usize>>();
+        let values: Vec<&usize> = args.get_many::<usize>(argument).unwrap().collect();
+        let indices: Vec<usize> = args.indices_of(argument).unwrap().collect();
 
-        let crop = Crop::new(*crop_args[0], *crop_args[1], *crop_args[2], *crop_args[3]);
-
-        debug!(
-            "Added crop with arguments width={} height={} x={} y={}",
-            crop_args[0], crop_args[1], crop_args[2], crop_args[3]
-        );
-
-        workflow.chain_operations(Box::new(crop));
+        for (chunk, idx_chunk) in values.chunks(4).zip(indices.chunks(4)) {
+            debug!(
+                "Parsed crop with arguments width={} height={} x={} y={} at {}",
+                chunk[0], chunk[1], chunk[2], chunk[3], idx_chunk[0]
+            );
+            parsed_ops.push((idx_chunk[0], Box::new(Crop::new(*chunk[0], *chunk[1], *chunk[2], *chunk[3]))));
+        }
     } else if argument == "threshold" {
-        let val: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
+        let values: Vec<&String> = args.get_many::<String>(argument).unwrap().collect();
+        let indices: Vec<usize> = args.indices_of(argument).unwrap().collect();
 
-        // parse first one as radius
-        let radius = str::parse::<f32>(val[0]).map_err(|x| x.to_string())?;
-        let thresh_mode = ThresholdMethod::from_string_result(val[1])?;
-        let threshold = Threshold::new(radius, thresh_mode);
-
-        workflow.chain_operations(Box::new(threshold));
-
-        debug!("Added threshold operation with mode {thresh_mode:?}  and value {radius:?}")
+        for (chunk, idx_chunk) in values.chunks(2).zip(indices.chunks(2)) {
+            let radius = str::parse::<f32>(chunk[0]).map_err(|x| x.to_string())?;
+            let thresh_mode = ThresholdMethod::from_string_result(chunk[1])?;
+            debug!("Parsed threshold operation with mode {thresh_mode:?} and value {radius:?} at {}", idx_chunk[0]);
+            parsed_ops.push((idx_chunk[0], Box::new(Threshold::new(radius, thresh_mode))));
+        }
     } else if argument == "stretch-contrast" {
-        let values = args
-            .get_many::<f32>(argument)
-            .unwrap()
-            .collect::<Vec<&f32>>();
+        let values: Vec<&f32> = args.get_many::<f32>(argument).unwrap().collect();
+        let indices: Vec<usize> = args.indices_of(argument).unwrap().collect();
 
-        let lower = *values[0];
-
-        let upper = *values[1];
-
-        debug!("Added stretch contrast filter with lower={lower} and upper={upper}");
-        let stretch_contrast = StretchContrast::new(lower, upper);
-        workflow.chain_operations(Box::new(stretch_contrast));
+        for (chunk, idx_chunk) in values.chunks(2).zip(indices.chunks(2)) {
+            let lower = *chunk[0];
+            let upper = *chunk[1];
+            debug!("Parsed stretch contrast filter with lower={lower} and upper={upper} at {}", idx_chunk[0]);
+            parsed_ops.push((idx_chunk[0], Box::new(StretchContrast::new(lower, upper))));
+        }
     } else if argument == "gamma" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added gamma filter with value {value}");
-        workflow.chain_operations(Box::new(Gamma::new(value)));
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed gamma filter with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(Gamma::new(*value))));
+        }
     } else if argument == "contrast" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        debug!("Added contrast filter with value {value},");
-        workflow.chain_operations(Box::new(Contrast::new(value)));
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed contrast filter with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(Contrast::new(*value))));
+        }
     } else if argument == "resize" {
-        let values = args.get_one::<String>("resize").unwrap();
+        let values = args.get_many::<String>("resize").unwrap();
+        let indices = args.indices_of("resize").unwrap();
+
         let resizing_method = args
             .get_one::<IResizeMethod>("resize-method")
             .map(|c| c.to_resize_method())
             .unwrap_or(ResizeMethod::Bicubic);
 
-        // Parse the geometry string
-        match parse_geometry(values) {
-            Ok(resize_dims) => {
-                let func = Resize::new(resize_dims, resizing_method);
-                debug!(
-                    "Added resize operation with parameters: {values}, using resizing method=>{resizing_method:?}",
-                );
-                workflow.chain_operations(Box::new(func));
-            }
-            Err(e) => {
-                return Err(e);
+        for (value, idx) in values.zip(indices) {
+            match parse_geometry(value) {
+                Ok(resize_dims) => {
+                    debug!("Parsed resize op with params: {value}, method: {resizing_method:?} at {idx}");
+                    parsed_ops.push((idx, Box::new(Resize::new(resize_dims, resizing_method))));
+                }
+                Err(e) => return Err(e),
             }
         }
     } else if argument == "depth" {
-        let value = *args.get_one::<u8>(argument).unwrap();
-        let depth = match value {
-            8 => BitDepth::Eight,
-            16 => BitDepth::Sixteen,
-            _ => {
-                return Err(format!(
-                    "Unknown depth value {value}, supported depths are 8 and 16"
-                ))
-            }
-        };
-        debug!("Added depth operation with depth of {value}");
-
-        workflow.chain_operations(Box::new(Depth::new(depth)));
+        let values = args.get_many::<u8>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            let depth = match value {
+                8 => BitDepth::Eight,
+                16 => BitDepth::Sixteen,
+                32 => BitDepth::Float32,
+                _ => return Err(format!("Unknown depth value {value}, supported depths are 8 and 16")),
+            };
+            debug!("Parsed depth operation with depth of {value} at {idx}");
+            parsed_ops.push((idx, Box::new(Depth::new(depth))));
+        }
     } else if argument == "colorspace" {
-        let colorspace = args
-            .get_one::<IColorSpace>("colorspace")
-            .unwrap()
-            .to_colorspace();
-
-        debug!("Added colorspace conversion from source colorspace to {colorspace:?}");
-
-        workflow.chain_operations(Box::new(ColorspaceConv::new(colorspace)));
+        let values = args.get_many::<String>("colorspace").unwrap();
+        let indices = args.indices_of("colorspace").unwrap();
+        for (colorspace_str, idx) in values.zip(indices) {
+            let colorspace = parse_colorspace(colorspace_str)?;
+            debug!("Parsed colorspace conversion to {colorspace:?} at {idx}");
+            parsed_ops.push((idx, Box::new(ColorspaceConv::new(colorspace))));
+        }
     } else if argument == "auto-orient" {
-        debug!("Add auto orient operation");
-        workflow.chain_operations(Box::new(AutoOrient));
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed auto orient operation at {idx}");
+                parsed_ops.push((idx, Box::new(AutoOrient)));
+            }
+        }
     } else if argument == "exposure" {
-        let exposure = *args.get_one::<f32>(argument).unwrap();
-
-        workflow.chain_operations(Box::new(Exposure::new(exposure, 0.)));
-        debug!("Adding exposure argument with value {exposure}");
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (exposure, idx) in values.zip(indices) {
+            debug!("Parsed exposure argument with value {exposure} at {idx}");
+            parsed_ops.push((idx, Box::new(Exposure::new(*exposure, 0.))));
+        }
     } else if argument == "v-flip" {
-        debug!("Added v-flip argument");
-        workflow.chain_operations(Box::new(Flip::new(FlipDirection::Vertical)));
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                debug!("Parsed v-flip argument at {idx}");
+                parsed_ops.push((idx, Box::new(Flip::new(FlipDirection::Vertical))));
+            }
+        }
     } else if argument == "huerotate" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.chain_operations(Box::new(HsvAdjust::new(value, 1f32, 1f32)));
-        debug!("Added hue-rotate argument with value {value}");
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed hue-rotate argument with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(HsvAdjust::new(*value, 1f32, 1f32))));
+        }
     } else if argument == "saturate" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.chain_operations(Box::new(HsvAdjust::new(0f32, value, 1f32)));
-        debug!("Added saturate argument with value {value}");
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed saturate argument with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(HsvAdjust::new(0f32, *value, 1f32))));
+        }
     } else if argument == "lightness" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.chain_operations(Box::new(HsvAdjust::new(0f32, 1f32, value)));
-        debug!("Added lightness argument with value {value}");
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed lightness argument with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(HsvAdjust::new(0f32, 1f32, *value))));
+        }
     } else if argument == "rotate" {
-        let value = *args.get_one::<f32>(argument).unwrap();
-        workflow.chain_operations(Box::new(Rotate::new(value)));
-        debug!("Added rotate argument with value {value}");
+        let values = args.get_many::<f32>(argument).unwrap();
+        let indices = args.indices_of(argument).unwrap();
+        for (value, idx) in values.zip(indices) {
+            debug!("Parsed rotate argument with value {value} at {idx}");
+            parsed_ops.push((idx, Box::new(Rotate::new(*value))));
+        }
     } else if argument == "composite" {
-        if let Some(method_str) = args.get_one::<String>("composite") {
-            let method = match method_str.as_str() {
-                "Over" => CompositeMethod::Over,
-                "Src" => CompositeMethod::Src,
-                "Dst" => CompositeMethod::Dst,
-                "DstIn" => CompositeMethod::DstIn,
-                "DstOut" => CompositeMethod::DstOut,
-                "Screen" => CompositeMethod::Screen,
-                "Xor" => CompositeMethod::Xor,
-                "Multiply" => CompositeMethod::Multiply,
-                "SrcIn" => CompositeMethod::SrcIn,
-                "SrcOut" => CompositeMethod::SrcOut,
-                _ => return Err("Unknown composite method".to_string()),
-            };
+        if let Some(values) = args.get_many::<String>("composite") {
+            let indices = args.indices_of("composite").unwrap();
+            for (method_str, idx) in values.zip(indices) {
+                let method = match method_str.as_str() {
+                    "Over" => CompositeMethod::Over,
+                    "Src" => CompositeMethod::Src,
+                    "Dst" => CompositeMethod::Dst,
+                    "DstIn" => CompositeMethod::DstIn,
+                    "DstOut" => CompositeMethod::DstOut,
+                    "Screen" => CompositeMethod::Screen,
+                    "Xor" => CompositeMethod::Xor,
+                    "Multiply" => CompositeMethod::Multiply,
+                    "SrcIn" => CompositeMethod::SrcIn,
+                    "SrcOut" => CompositeMethod::SrcOut,
+                    _ => return Err("Unknown composite method".to_string()),
+                };
 
-            // Parse geometry (defaulting to 0,0 if not provided)
-            let position = if let Some(geo_str) = args.get_one::<String>("geometry") {
-                let parts: Vec<&str> = geo_str.split(',').collect();
-                if parts.len() == 2 {
-                    let x = parts[0].parse().unwrap_or(0);
-                    let y = parts[1].parse().unwrap_or(0);
-                    (x, y)
+                // NOTE: Grabs single global geometry for simplicity
+                let position = if let Some(geo_str) = args.get_one::<String>("geometry") {
+                    let parts: Vec<&str> = geo_str.split(',').collect();
+                    if parts.len() == 2 {
+                        let x = parts[0].parse().unwrap_or(0);
+                        let y = parts[1].parse().unwrap_or(0);
+                        (x, y)
+                    } else {
+                        return Err("Geometry must be in format x,y".to_string());
+                    }
                 } else {
-                    return Err("Geometry must be in format x,y".to_string());
-                }
-            } else {
-                (0, 0)
-            };
+                    (0, 0)
+                };
 
-            // Chain the operation!
-            workflow.chain_operations(Box::new(Composite::new(method, position)));
+                debug!("Parsed composite {method_str} at {idx}");
+                parsed_ops.push((idx, Box::new(Composite::new(method, position))));
+            }
         }
     } else if argument == "blend" {
-        if let Some(&alpha) = args.get_one::<f32>("blend") {
-            // Ensure alpha is within the reasonable 0.0-1.0 bounds for logging/warnings
-            if !(0.0..=1.0).contains(&alpha) {
-                log::warn!(
-                    "Blend alpha {} is outside the standard 0.0-1.0 range",
-                    alpha
-                );
+        if let Some(values) = args.get_many::<f32>("blend") {
+            let indices = args.indices_of("blend").unwrap();
+            for (&alpha, idx) in values.zip(indices) {
+                if !(0.0..=1.0).contains(&alpha) {
+                    log::warn!("Blend alpha {} is outside the standard 0.0-1.0 range", alpha);
+                }
+                debug!("Parsed blend at {idx}");
+                parsed_ops.push((idx, Box::new(Blend::new(alpha))));
             }
-
-            workflow.chain_operations(Box::new(Blend::new(alpha)));
         }
     } else if argument == "append" {
-        if let Some(direction_str) = args.get_one::<String>("append") {
-            let direction = match direction_str.as_str() {
-                "horizontal" => AppendDirection::Horizontal,
-                "vertical" => AppendDirection::Vertical,
-                _ => unreachable!(), // Clap's value_parser guarantees it's one of the two
-            };
-
-            info!("Added append with direction {:?}", direction);
-            workflow.chain_operations(Box::new(Append::new(direction)));
+        if let Some(values) = args.get_many::<String>("append") {
+            let indices = args.indices_of("append").unwrap();
+            for (direction_str, idx) in values.zip(indices) {
+                let direction = match direction_str.as_str() {
+                    "horizontal" => AppendDirection::Horizontal,
+                    "vertical" => AppendDirection::Vertical,
+                    _ => unreachable!(),
+                };
+                info!("Parsed append with direction {:?} at {}", direction, idx);
+                parsed_ops.push((idx, Box::new(Append::new(direction))));
+            }
         }
     } else if argument == "ssim" {
-        info!("Added ssim operation");
-        workflow.chain_operations(Box::new(SsimDetection::new()));
-    } else if argument == "average" {
-        info!("Added average operation");
-        workflow.chain_operations(Box::new(AverageSequence::new()));
-    } else if argument == "swap" {
-        let v = args
-            .get_many::<usize>("swap")
-            .unwrap()
-            .cloned()
-            .collect::<Vec<usize>>();
-        if v.len() != 2 {
-            return Err("Swap requires exactly two arguments".to_string());
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                info!("Parsed ssim operation at {idx}");
+                parsed_ops.push((idx, Box::new(SsimDetection::new())));
+            }
         }
-        info!("Added swap operation");
-        workflow.chain_operations(Box::new(Swap::new(v[0], v[1])));
+    } else if argument == "average" {
+        if let Some(indices) = args.indices_of(argument) {
+            for idx in indices {
+                info!("Parsed average operation at {idx}");
+                parsed_ops.push((idx, Box::new(AverageSequence::new())));
+            }
+        }
+    } else if argument == "swap" {
+        let values: Vec<&usize> = args.get_many::<usize>("swap").unwrap().collect();
+        let indices: Vec<usize> = args.indices_of("swap").unwrap().collect();
+
+        for (chunk, idx_chunk) in values.chunks(2).zip(indices.chunks(2)) {
+            info!("Parsed swap operation at {}", idx_chunk[0]);
+            parsed_ops.push((idx_chunk[0], Box::new(Swap::new(*chunk[0], *chunk[1]))));
+        }
+    } else if argument == "fx" {
+        let values = args.get_many::<String>("fx").unwrap();
+        let indices = args.indices_of("fx").unwrap();
+        for (expression, idx) in values.zip(indices) {
+            info!("Parsed fx operation at {idx}");
+            parsed_ops.push((idx, Box::new(Fx::new(expression))));
+        }
     }
 
-    Ok(())
+    Ok(parsed_ops)
 }
 
 /// Parses an ImageMagick-style geometry string into a ResizeDimensions enum.
@@ -354,5 +411,45 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
         _ => Err(format!(
             "Invalid geometry format. Input: '{values}' | Extracted -> width:{w:?}, has_x:{has_x}, height:{h:?}, modifier:{modifier:?}"
         )),
+    }
+}
+
+/// Parses a string directly into a zune_core ColorSpace.
+fn parse_colorspace(s: &str) -> Result<ColorSpace, String> {
+    use std::num::NonZeroU32;
+
+    let lower = s.trim().to_lowercase();
+
+    match lower.as_str() {
+        "rgb" => Ok(ColorSpace::RGB),
+        "rgba" => Ok(ColorSpace::RGBA),
+        "argb" => Ok(ColorSpace::ARGB),
+        "bgr" => Ok(ColorSpace::BGR),
+        "bgra" => Ok(ColorSpace::BGRA),
+        "hsl" => Ok(ColorSpace::HSL),
+        "hsv" => Ok(ColorSpace::HSV),
+        "cmyk" => Ok(ColorSpace::CMYK),
+        "ycbcr" => Ok(ColorSpace::YCbCr),
+        "ycck" => Ok(ColorSpace::YCCK),
+
+        // Multiple aliases for grayscale to make it user-friendly
+        "luma" | "grayscale" | "gray" => Ok(ColorSpace::Luma),
+        "lumaa" | "graya" => Ok(ColorSpace::LumaA),
+
+        _ => {
+            // Dynamic parsing for MultiBand images (e.g., "multiband8" or "multiband-4")
+            if let Some(num_str) = lower
+                .strip_prefix("multiband")
+                .map(|s| s.trim_start_matches('-'))
+            {
+                if let Ok(n) = num_str.parse::<u32>() {
+                    if let Some(nz) = NonZeroU32::new(n) {
+                        return Ok(ColorSpace::MultiBand(nz));
+                    }
+                }
+            }
+
+            Err(format!("Unknown or unsupported colorspace: '{s}'"))
+        }
     }
 }
