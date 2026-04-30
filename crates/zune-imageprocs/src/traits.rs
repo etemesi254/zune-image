@@ -113,11 +113,11 @@ macro_rules! numops_for_int {
             }
             #[inline(always)]
             fn from_f64(x: f64) -> $int {
-                x as $int
+                (x + 0.5)  as $int
             }
             #[inline(always)]
             fn from_f32(x: f32) -> $int {
-                x as $int
+                (x + 0.5)  as $int
             }
             #[inline(always)]
             fn one() -> $int {
