@@ -13,9 +13,16 @@ use crate::gaussian_blur::gaussian_blur_f32;
 ///
 /// A non-destructive metric operation. Computes the MSSIM between the top
 /// two images on the stack and stores the result in `output_score`.
+#[allow(clippy::type_complexity)]
 pub struct SsimDetection {
     sigma: f32,
     pub output_scores: Arc<Mutex<Option<(Vec<f32>, f32)>>>,
+}
+
+impl Default for SsimDetection {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SsimDetection {
@@ -23,11 +30,12 @@ impl SsimDetection {
     pub fn new() -> Self {
         SsimDetection {
             sigma: 1.5,
-            output_scores: Default::default(),
+            output_scores: Arc::default(),
         }
     }
 
     #[must_use] 
+    #[allow(clippy::type_complexity)]
     pub fn get_output_ptr(&self) -> Arc<Mutex<Option<(Vec<f32>, f32)>>> {
         Arc::clone(&self.output_scores)
     }

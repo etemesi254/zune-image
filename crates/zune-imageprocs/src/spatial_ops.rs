@@ -148,7 +148,7 @@ pub fn spatial_ops<T>(
         + NumOps<T>
         + Sub<Output = T>
         + Add<Output = T>
-        + Div<Output = T>,
+        + Div<Output = T> + Send +Sync,
     u32: std::convert::From<T>
 {
     //pad here

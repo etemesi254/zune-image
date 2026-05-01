@@ -42,9 +42,9 @@ use crate::utils::execute_on;
 /// # Ok::<(),ImageErrors>(())
 /// ```
 pub struct BilateralFilter {
-    d:           i32,
+    d: i32,
     sigma_color: f32,
-    sigma_space: f32
+    sigma_space: f32,
 }
 
 impl BilateralFilter {
@@ -54,18 +54,18 @@ impl BilateralFilter {
     /// - `d`:Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
     ///
     /// - `sigma_color`:Filter sigma in the color space.
-    ///  A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
-    ///  will be mixed together, resulting in larger areas of semi-equal color.
+    ///   A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
+    ///   will be mixed together, resulting in larger areas of semi-equal color.
     ///- `sigma_space`: Filter sigma in the coordinate space.
     ///  A larger value of the parameter means that farther pixels will influence each other as
-    ///   long as their colors are close enough (see sigma_color ).
-    ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
+    ///  long as their colors are close enough (see sigma_color ).
+    ///  When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
     #[must_use]
     pub fn new(d: i32, sigma_color: f32, sigma_space: f32) -> BilateralFilter {
         BilateralFilter {
             d,
             sigma_color,
-            sigma_space
+            sigma_space,
         }
     }
 }
@@ -87,7 +87,7 @@ impl OperationsTrait for BilateralFilter {
             self.d,
             self.sigma_color,
             self.sigma_space,
-            usize::from(depth.max_value()) + 1
+            usize::from(depth.max_value()) + 1,
         );
 
         let bilateral_fn = |channel: &mut Channel| {
@@ -99,14 +99,14 @@ impl OperationsTrait for BilateralFilter {
                     new_channel.reinterpret_as_mut()?,
                     w,
                     h,
-                    &coeffs
+                    &coeffs,
                 ),
                 BitType::U16 => bilateral_filter_int::<u16>(
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
                     w,
                     h,
-                    &coeffs
+                    &coeffs,
                 ),
 
                 d => {
@@ -128,13 +128,13 @@ impl OperationsTrait for BilateralFilter {
 struct BilateralCoeffs {
     color_weight: Vec<f64>,
     space_weight: Vec<f64>,
-    radius:       usize,
-    makx:         usize
+    radius: usize,
+    makx: usize,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 fn init_bilateral(
-    d: i32, sigma_color: f32, mut sigma_space: f32, color_range: usize
+    d: i32, sigma_color: f32, mut sigma_space: f32, color_range: usize,
 ) -> BilateralCoeffs {
     let gauss_color_coeff = f64::from(-0.5 / (sigma_color * sigma_color));
     let gauss_space_coeff = f64::from(-0.5 / (sigma_space * sigma_space));
@@ -173,15 +173,15 @@ fn init_bilateral(
         color_weight,
         space_weight,
         radius: usize::try_from(radius).unwrap_or_default(),
-        makx
+        makx,
     };
 }
 
 fn bilateral_filter_int<T>(
-    src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs
+    src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs,
 ) where
-    T: Copy + NumOps<T> + Default,
-    i32: std::convert::From<T>
+    T: Copy + NumOps<T> + Default + Send+Sync,
+    i32: std::convert::From<T>,
 {
     let radius = coeffs.radius;
 
