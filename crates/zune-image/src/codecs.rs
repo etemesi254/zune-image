@@ -509,8 +509,8 @@ impl Image {
     /// # Arguments
     ///
     /// * `format`: The format to use for encoding, it's an error if the
-    /// relevant encoder is not present either because it's not supported, or it's not
-    /// included as a feature.
+    ///   relevant encoder is not present either because it's not supported, or it's not
+    ///   included as a feature.
     ///
     /// returns: `Result<Vec<u8, Global>, ImageErrors>`
     ///

@@ -640,7 +640,7 @@ where
     /// # Returns
     /// - `Some(colorspace)`: The colorspace of the image
     /// - `None`: Indicates headers weren't decoded or an error occured
-    /// during decoding of headers
+    ///   during decoding of headers
     pub fn colorspace(&self) -> Option<ColorSpace> {
         if !self.decoded_headers {
             return None;

@@ -13,7 +13,7 @@
 //!
 //! There are 2 reasons why we have the avx one
 //! 1. No one compiles with -C target-features=avx2 hence binaries won't probably take advantage(even
-//! if it exists).
+//!    if it exists).
 //! 2. AVX employs zero short circuit in a way the scalar code cannot employ it.
 //!     - AVX does this by checking for MCU's whose 63 AC coefficients are zero and if true, it writes
 //!       values directly, if false, it goes the long way of calculating.

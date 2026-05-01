@@ -46,7 +46,7 @@ impl<'a> HdrEncoder<'a> {
     ///
     /// # Arguments:
     /// - headers: A hashmap containing keys and values, the values will be encoded as key=value
-    /// in the hdr header before encoding
+    ///   in the hdr header before encoding
     pub fn add_headers(&mut self, headers: &'a HashMap<String, String>) {
         self.headers = Some(headers)
     }

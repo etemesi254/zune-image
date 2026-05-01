@@ -52,7 +52,7 @@ pub(crate) struct FrameState {
 ///
 ///  # Encoding 16 bit data
 /// - To encode a 16-bit image, each element needs to be re-interpreted as 2 `u8`'s in native endian
-/// the library will do the appropriate clamping
+///   the library will do the appropriate clamping
 ///
 /// # Multithreading support
 /// Via the `thread` feature, the library can use multiple threads to speed up compression, one can

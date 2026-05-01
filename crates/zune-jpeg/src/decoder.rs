@@ -726,7 +726,7 @@ where
     /// # Returns
     /// - `Some(Vec<u8>)`: The raw ICC profile of the image
     /// - `None`: May indicate an error  in the ICC profile , non-existence of
-    /// an ICC profile, or that the headers weren't decoded.
+    ///   an ICC profile, or that the headers weren't decoded.
     ///
     /// [`decode_headers`]:Self::decode_headers
     #[must_use]
@@ -844,13 +844,13 @@ where
     /// output is, if this is called after `decode` it indicates the colorspace
     /// the output is currently in
     ///
-    /// Additionally not all input->output colorspace mappings are supported
+    /// Additionally, not all input->output colorspace mappings are supported
     /// but all input colorspaces can map to RGB colorspace, so that's a safe bet
     /// if one is handling image formats
     ///
     ///# Returns
     /// - `Some(Colorspace)`: If headers have been decoded, the colorspace the
-    ///output array will be in
+    ///   output array will be in
     ///- `None
     #[must_use]
     pub fn output_colorspace(&self) -> Option<ColorSpace> {

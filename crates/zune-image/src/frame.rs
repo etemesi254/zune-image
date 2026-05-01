@@ -306,7 +306,7 @@ impl Frame {
     /// # Arguments
     ///
     /// * `index`: The index to which we are inserting the
-    /// channel
+    ///   channel
     /// * `channel`: The channel to insert at that specific index
     ///
     pub fn insert(&mut self, index: usize, channel: Channel) {
@@ -594,7 +594,7 @@ impl Frame {
     /// # Arguments
     ///
     /// * `color_space`: The frame colorspace, should be derived from the
-    /// image from which this frame is part of, otherwise bad things will happen
+    ///   image from which this frame is part of, otherwise bad things will happen
     ///
     /// # Returns
     ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the
@@ -638,7 +638,7 @@ impl Frame {
     /// # Arguments
     ///
     /// * `color_space`: The frame colorspace, should be derived from the
-    /// image from which this frame is part of, otherwise bad things will happen
+    ///   image from which this frame is part of, otherwise bad things will happen
     ///
     /// # Returns
     ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the

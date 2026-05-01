@@ -136,7 +136,7 @@ where
     /// - `()` : On successful decode, items can be accessed by accessors
     ///
     /// - `Err(PPMDecodeErrors)`: This will return an `InvalidHeader`  enum, the string
-    /// will more information about what went wrong
+    ///   will more information about what went wrong
     ///
     /// [`get_dimensions`]:Self::dimensions
     pub fn decode_headers(&mut self) -> Result<(), PPMDecodeErrors> {
@@ -446,7 +446,7 @@ where
     /// # Returns
     /// - `Some(BitDepth)`: The image bit depth, can be Eight or Sixteen, or F32 for (.pfm files)
     /// - `None`: Indicates the header wasn't decoded or there was an unhandled error
-    /// in parsing
+    ///   in parsing
     ///
     pub const fn bit_depth(&self) -> Option<BitDepth> {
         if self.decoded_headers {
@@ -461,7 +461,7 @@ where
     /// # Returns
     /// - `Some(ColorSpace)`: The colorspace of the input image
     /// - None: Indicates headers weren't decoded or an unhandled error occurred
-    /// during header decoding
+    ///   during header decoding
     pub const fn colorspace(&self) -> Option<ColorSpace> {
         if self.decoded_headers {
             Some(self.colorspace)

@@ -13,16 +13,16 @@
 //!
 //!
 //! # The implementation
-//! The implementation is neatly broken down into two operations.
+//! - The implementation is neatly broken down into two operations.
 //!
 //! 1. Test for zeroes
 //! > There is a shortcut method for idct  where when all AC values are zero, we can get the answer really quickly.
 //! > by scaling the 1/8th of the DCT coefficient of the block to the whole block and level shifting.
 //!
 //! 2. If above fails, we proceed to carry out IDCT as a two pass one dimensional algorithm.
-//! IT does two whole scans where it carries out IDCT on all items
-//! After each successive scan, data is transposed in register(thank you x86 SIMD powers). and the second
-//! pass is carried out.
+//!    IT does two whole scans where it carries out IDCT on all items
+//!    After each successive scan, data is transposed in register(thank you x86 SIMD powers). and the second
+//!    pass is carried out.
 //!
 //! The code is not super optimized, it produces bit identical results with scalar code hence it's
 //! `mm256_add_epi16`

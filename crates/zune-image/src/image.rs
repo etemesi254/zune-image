@@ -417,7 +417,7 @@ impl Image {
     ///
     /// # Panics
     /// - In case calculating image dimensions overflows a [`usize`]
-    /// this indicates that the array cannot be indexed by usize,hence values are invalid
+    ///   this indicates that the array cannot be indexed by usize,hence values are invalid
     ///
     /// - If the length of pixels doesn't match the expected length
     pub fn from_u8(pixels: &[u8], width: usize, height: usize, colorspace: ColorSpace) -> Image {

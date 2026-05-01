@@ -60,7 +60,7 @@ impl BitWriter {
     ///
     /// # Arguments
     /// - maximum_bit_size: Maximum expected bits which will
-    /// be stored in this decoder
+    ///   be stored in this decoder
     pub fn allocate(&mut self, maximum_bit_size: usize) {
         assert!(self.dest.is_empty());
         self.dest.resize(maximum_bit_size / 8 + 64, 0);

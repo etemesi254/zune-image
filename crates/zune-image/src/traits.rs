@@ -134,8 +134,7 @@ pub trait OperationsTrait: Send + Sync {
     ///
     /// # Arguments
     /// - image: A mutable reference to an image which
-    /// this operation will manipulate
-    ///
+    ///   this operation will manipulate
     ///
     /// # Errors
     /// Any operations error will be propagated to the caller
@@ -277,14 +276,14 @@ pub trait EncoderTrait {
     /// by asking for it during initialization
     ///
     /// - Note: Callers should use the [encode] function and not this function
-    /// as that does some necessary conversions for an image to prepare it for encoding
+    ///   as that does some necessary conversions for an image to prepare it for encoding
     ///
     /// # Arguments
     /// - image: An image which we are trying to encode.
     ///
     /// # Returns
     /// - `Ok(usize)`: The number of bytes written into `sink`
-    /// in the format [ImageFormat]
+    ///   in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
     ///
@@ -313,7 +312,7 @@ pub trait EncoderTrait {
     /// # Returns
     ///
     /// - `Ok(usize)`: The number of bytes written into `sink`
-    /// in the format [ImageFormat]
+    ///   in the format [ImageFormat]
     ///
     /// - Err : An unrecoverable error occurred
     ///

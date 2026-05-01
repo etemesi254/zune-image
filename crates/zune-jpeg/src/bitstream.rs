@@ -36,7 +36,7 @@
 //! 1. Fast refills from libjpeg-turbo
 //! 2. As few as possible branches in decoder fast paths.
 //! 3. Accelerated AC table decoding borrowed from stb_image.h written by Fabian Gissen (@ rygorous),
-//! improved by me to handle more cases.
+//!    improved by me to handle more cases.
 //! 4. Safe and extensible routines(e.g. cool ways to eliminate bounds check)
 //! 5. No unsafe here
 //!

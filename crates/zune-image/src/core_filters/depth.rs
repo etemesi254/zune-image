@@ -43,7 +43,7 @@ use crate::traits::OperationsTrait;
 /// # Arguments
 ///  - `from`: A reference to pixels in 16 bit format
 ///  - `to`: A mutable reference to pixels in 8 bit format where we will
-/// write our pixels
+///    write our pixels
 /// - `max_value`: Maximum value we expect this pixel to store.
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16) {
@@ -74,7 +74,7 @@ pub(crate) fn depth_u16_to_u8(from: &[u16], to: &mut [u8], max_value: u16) {
 /// # Arguments
 ///  - `from`: A reference to pixels in 16 bit format
 ///  - `to`: A mutable reference to pixels in 8 bit format where we will
-/// write our pixels
+///    write our pixels
 /// - `max_value`: Maximum value we expect this pixel to store.
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub(crate) fn depth_u8_to_u16(from: &[u8], to: &mut [u16], max_value: u16) {

@@ -110,9 +110,9 @@ impl Pipeline {
     ///
     /// # Example
     /// - This operation will decode a jpeg image pointed by buf,
-    /// which is added to the workflow via add_buffer, then
+    ///   which is added to the workflow via add_buffer, then
     /// 1. It de-interleaves the image channels, separating them into
-    /// separate RGB channels
+    ///    separate RGB channels
     /// 2. Convert RGB data to grayscale
     /// 3. Change the depth to be float32 (f32 in range 0..2)
     /// ```no_run

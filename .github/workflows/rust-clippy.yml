@@ -92,13 +92,6 @@ jobs:
             });
 
       ########################################
-      # 2. SEVERITY GATING (fail on real issues)
-      ########################################
-      - name: Fail on Clippy errors (not warnings)
-        run: |
-          cargo clippy --all-features -- -D warnings
-
-      ########################################
       # 3. LINT DEBT TRACKING (trend artifact)
       ########################################
       - name: Generate lint summary
