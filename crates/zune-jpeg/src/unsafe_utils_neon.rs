@@ -274,6 +274,7 @@ mod tests {
 
     #[test]
     fn test_transpose() {
+        #[allow(clippy::cast_possible_wrap,clippy::cast_possible_truncation)]
         fn get_val(i: usize, j: usize) -> i32 {
             ((i * 8) / (j + 1)) as i32
         }
@@ -316,10 +317,6 @@ mod tests {
 
             for i in 0..8 {
                 for j in 0..i {
-                    let i = i;
-                    let j = j;
-                    let j = j;
-                    let i = i;
                     vals.swap(i * 8 + j, j * 8 + i);
                 }
             }

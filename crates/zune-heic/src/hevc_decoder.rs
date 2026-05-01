@@ -72,7 +72,7 @@ impl HevcDecoder {
         self.height
     }
 
-    pub fn decode(&mut self, sample: HevcSample) -> Result<Option<Arc<RawFrame>>, NalError> {
+    pub fn decode(&mut self, sample: &HevcSample) -> Result<Option<Arc<RawFrame>>, NalError> {
         let nal_parser = NalParser::new_detect(&sample.extents);
 
         let mut raw_frame = None;
@@ -120,7 +120,7 @@ impl HevcDecoder {
                     }
 
                     if let Some(f) = raw_frame.clone() {
-                        decode_slice(&nal, self, f)?;
+                        decode_slice(&nal, self, &f)?;
                     } else {
                         return Err(NalError::Generic("No raw frame allocated".to_string()));
                     }

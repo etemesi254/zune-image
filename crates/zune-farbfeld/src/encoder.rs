@@ -115,7 +115,7 @@ impl<'a> FarbFeldEncoder<'a> {
     /// # Arguments
     /// - data: The data to encode
     /// - options: Meta information about the image
-    ///  contains image width, color and depth
+    ///   contains image width, color and depth
     pub fn new(data: &'a [u8], options: EncoderOptions) -> FarbFeldEncoder<'a> {
         FarbFeldEncoder { data, options }
     }

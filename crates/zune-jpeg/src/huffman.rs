@@ -15,12 +15,10 @@ use alloc::string::ToString;
 use crate::errors::DecodeErrors;
 
 /// Determines how many bits of lookahead we have for our bitstream decoder.
-
 pub const HUFF_LOOKAHEAD: u8 = 9;
 
 /// A struct which contains necessary tables for decoding a JPEG
 /// huffman encoded bitstream
-
 pub struct HuffmanTable {
     // element `[0]` of each array is unused
     /// largest code of length k
@@ -84,7 +82,8 @@ impl HuffmanTable {
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss,
         clippy::too_many_lines,
-        clippy::needless_range_loop
+        clippy::needless_range_loop,
+        clippy::explicit_counter_loop,
     )]
     fn make_derived_table(
         &mut self, is_dc: bool, _is_progressive: bool, bits: &[u8; 17]

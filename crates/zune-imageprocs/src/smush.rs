@@ -79,6 +79,7 @@ impl OperationsTrait for Smush {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.is_empty() {
             return Err(ImageErrors::GenericStr("No images provided to smush"));

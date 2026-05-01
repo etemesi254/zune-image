@@ -11,8 +11,8 @@ use crate::traits::NumOps;
 /// Calculate prewitt for f32 images
 ///
 /// # Arguments
-/// -  in_values: An array which is expected to contain 9 elements 
-///  that represents a 3x3 window for which we are to calculate the sobel 
+/// - in_values: An array which is expected to contain 9 elements
+///   that represents a 3x3 window for which we are to calculate the sobel
 #[rustfmt::skip]
 fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
     where
@@ -44,8 +44,8 @@ fn prewitt_inner_f32<T>(c: &[T; 9]) -> T
 /// Calculate prewitt for int  images
 ///
 /// # Arguments
-/// -  in_values: An array which is expected to contain 9 elements 
-///  that represents a 3x3 window for which we are to calculate the sobel values
+/// - in_values: An array which is expected to contain 9 elements
+///   that represents a 3x3 window for which we are to calculate the sobel values
 #[allow(clippy::neg_multiply, clippy::identity_op, clippy::zero_prefixed_literal)]
 #[rustfmt::skip]
 fn prewitt_inner_i32<T>(c: &[T; 9]) -> T

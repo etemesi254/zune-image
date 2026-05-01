@@ -298,11 +298,11 @@ impl Image {
     ///  - height: The height of the new image
     ///  - colorspace: The new colorspace of the image
     ///  - func: A function which will be called for every pixel position
-    ///   the function is supposed to return pixels for that position
+    ///    the function is supposed to return pixels for that position
     ///      - y: The position in the y-axis, starts at 0, ends at image height
     ///      - x: The position in the x-axis, starts at 0, ends at image width
     ///      - pixels: A mutable region where you can write pixels to. The results
-    ///         will be copied to the pixel positions at pixel x,y for image channels
+    ///        will be copied to the pixel positions at pixel x,y for image channels
     ///     
     /// # Limitations.
     ///
@@ -509,14 +509,14 @@ impl Image {
     ///
     /// # Arguments
     /// - func: Function which will modify the pixels
-    ///     The arguments used are
+    ///   The arguments used are
     ///     - `y: usize`, the current position of the height we are currently in
     ///     - `x: usize`, the current position on the x axis we are in
     ///     - `[&mut T;MAX_CHANNELS]`, the pixels at `[y,x]` from the channels which
-    ///        can be modified.
-    ///        Even though it returns `MAX_CHANNELS`, only the image colorspace components
-    ///        considered, so for Luma colorspace, we only use the first element in the array and the rest are
-    ///         ignored
+    ///       can be modified.
+    ///       Even though it returns `MAX_CHANNELS`, only the image colorspace components
+    ///       considered, so for Luma colorspace, we only use the first element in the array and the rest are
+    ///       ignored
     ///
     /// # Returns
     ///  - Ok(()): Successful manipulation of image

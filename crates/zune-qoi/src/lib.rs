@@ -10,7 +10,7 @@
 //!
 //! # Features
 //! - Decoding and encoding
-//! -`no_std`
+//! - `no_std`
 //! - Fast
 //! - Fuzz tested
 //!

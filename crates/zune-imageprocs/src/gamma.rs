@@ -103,14 +103,14 @@ impl OperationsTrait for Gamma {
                     if let Some(lut_u16) = gamma_u16.as_ref() {
                         gamma(channel.reinterpret_as_mut::<u16>()?, lut_u16);
                     } else {
-                        panic!("LUT not built")
+                        return  Err(ImageErrors::GenericStr("LUT not built"))
                     }
                 }
                 BitType::U8 => {
                     if let Some(lut_u8) = gamma_u8.as_ref() {
                         gamma(channel.reinterpret_as_mut::<u8>()?, lut_u8);
                     } else {
-                        panic!("LUT not built")
+                        return  Err(ImageErrors::GenericStr("LUT not built"))
                     }
                 }
                 BitType::F32 => {

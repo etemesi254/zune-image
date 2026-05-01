@@ -192,7 +192,6 @@ pub fn spatial<T, F>(
 
                 for local_iy in 0..chunk_rows {
                     let iy = iy_start + local_iy;
-                    let y = iy + radius_loop;
 
                     for x in radius_loop..padded_width - radius_loop {
                         let ix = x - radius_loop;

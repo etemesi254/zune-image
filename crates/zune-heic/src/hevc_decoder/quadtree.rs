@@ -32,7 +32,7 @@ pub enum CtuStatus {
 }
 
 pub fn decode_slice(
-    nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: Arc<RawFrame>
+    nal: &NalUnit, hevc_decoder: &mut HevcDecoder, raw_frame: &Arc<RawFrame>
 ) -> Result<(), NalError> {
     let clean_rbsp = extract_rbsp(nal.payload);
     let sps_storage = &hevc_decoder.sps_storage;
@@ -96,7 +96,7 @@ pub fn decode_slice(
         neighbor_tracker,
         //&mut hevc_decoder.neighbor_tracker, // Borrow the persistent tracker
         slice_qp,
-        raw_frame.clone()
+        &raw_frame.clone()
     );
 
     // 5. The CTU Loop (starts at slice address)
@@ -224,14 +224,14 @@ pub fn finish_ctu(
     let mut end_of_sub_stream = false;
 
     // We need the next CTU address to check for transitions
-    let curr_addr_rs = ctby * (sps.pic_width_in_ctbs_y as usize) + ctbx;
+    // let curr_addr_rs = ctby * (sps.pic_width_in_ctbs_y as usize) + ctbx;
 
     // Check for Tile Change (Section 7.3.8.1)
     if pps.tiles_enabled_flag {
         // HEVC decodes tiles in Tile Scan order, not Raster Scan.
         // Assuming your loop handles the TS -> RS mapping:
-        let _curr_tile_id = pps.tile_id_rs[curr_addr_rs];
-        let _next_addr_rs = curr_addr_rs + 1; // Raster scan increment
+        // let _curr_tile_id = pps.tile_id_rs[curr_addr_rs];
+        // let _next_addr_rs = curr_addr_rs + 1; // Raster scan increment
 
         todo!()
         // // Peek at next CTB in Tile Scan order

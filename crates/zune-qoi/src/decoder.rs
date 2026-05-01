@@ -63,7 +63,7 @@ where
     ///
     /// # Returns
     /// - A decoder instance which will on calling `decode` will decode
-    /// data
+    ///   data
     /// # Example
     ///
     /// ```no_run
@@ -113,7 +113,7 @@ where
     ///
     /// - On success: Nothing
     /// - On error: The error encountered when decoding headers
-    ///     error type will be an instance of [QoiErrors]
+    ///   error type will be an instance of [QoiErrors]
     ///
     /// [QoiErrors]:crate::errors::QoiErrors
     pub fn decode_headers(&mut self) -> Result<(), QoiErrors> {
@@ -342,7 +342,7 @@ where
     ///
     /// # Returns
     /// - `Some(Colorspace)`: The colorspace present
-    /// -  `None` : This indicates the image header wasn't decoded hence
+    /// - `None` : This indicates the image header wasn't decoded hence
     ///   colorspace is unknown
     ///
     /// [RGB]: zune_core::colorspace::ColorSpace::RGB

@@ -54,13 +54,13 @@
 ///
 /// 1. Limit depth search to prevent O(n^2) behaviour
 /// 2. Store first match byte in `hc_tab` and `next_tab` entries, this helps us
-/// to ensure that we may have a potential match and not a hash collision when checking for a potential match
-/// useful because checking for matches incur cache costs
+///    to ensure that we may have a potential match and not a hash collision when checking for a potential match
+///    useful because checking for matches incur cache costs
 ///
 /// 3. In case a match is found, and we are still looking for a better match,  check if current match length will go past
-///  the previous match length by looking at the byte in current length plus 1
-///  if they match, then this has the potential to beat the previous ML, better than reading
-///  recalculating the new length if it will just be shorter.
+///    the previous match length by looking at the byte in current length plus 1
+///    if they match, then this has the potential to beat the previous ML, better than reading
+///    recalculating the new length if it will just be shorter.
 ///                    
 use alloc::boxed::Box;
 use alloc::vec;

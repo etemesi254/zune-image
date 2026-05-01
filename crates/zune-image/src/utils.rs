@@ -88,7 +88,7 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// # Arguments:
 ///  - channels: A Slice of channels , the count must be less than 4 anf greater than 1.
 /// -  output: Output array of type `T`, the length should be greater or equal to
-///   `channels[0].len()/size_of::<T> * channels.len()`, but the library doesn't check this is held
+///    `channels[0].len()/size_of::<T> * channels.len()`, but the library doesn't check this is held
 ///    In case it's smaller, the function will ignore
 ///
 /// # Returns:

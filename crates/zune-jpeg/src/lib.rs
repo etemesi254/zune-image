@@ -152,7 +152,6 @@
     clippy::needless_return,
     clippy::similar_names,
     clippy::inline_always,
-    clippy::similar_names,
     clippy::doc_markdown,
     clippy::module_name_repetitions,
     clippy::missing_panics_doc,

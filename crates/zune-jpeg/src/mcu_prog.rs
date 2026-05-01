@@ -67,7 +67,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         if self.is_interleaved {
             // this helps us catch component errors.
-            self.set_upsampling()?;
+            self.set_upsampling();
         }
         if self.is_interleaved {
             mcu_width = self.mcu_x;
@@ -392,6 +392,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         return Ok(());
     }
 
+    #[allow(clippy::used_underscore_binding)]
     pub(crate) fn handle_rst_main<B: BitStream>(
         &mut self, stream: &mut B
     ) -> Result<(), DecodeErrors> {

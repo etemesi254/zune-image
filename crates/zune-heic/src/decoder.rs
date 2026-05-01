@@ -9,7 +9,7 @@ use zune_core::options::DecoderOptions;
 use crate::bmf_reader::{BoxHeader, BoxSize};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
-    ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection
+    ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection,
 };
 use crate::headers::{decode_ftyp, decode_meta};
 use crate::hevc_decoder::HevcDecoder;
@@ -18,37 +18,37 @@ use crate::processor::HevcSample;
 
 pub(crate) struct SingleDecodedTile {
     pub pixels: Vec<u8>,
-    pub width:  usize,
-    pub height: usize
+    pub width: usize,
+    pub height: usize,
 }
 pub(crate) type TileMap = Arc<Mutex<HashMap<u32, Result<SingleDecodedTile, HeicErrors>>>>;
 
 /// A HEIF/Heic Decoder Instance
 pub struct HeifDecoder<T> {
-    pub(crate) stream:           ZReader<T>,
-    pub(crate) ftyp_section:     Option<FtypHeader>,
-    pub(crate) meta_section:     Option<MetaSection>,
-    pub(crate) mdat_section:     Option<MDatSection>,
-    pub(crate) width:            Option<u32>,
-    pub(crate) height:           Option<u32>,
-    pub(crate) colorspace:       Option<ColorSpace>,
+    pub(crate) stream: ZReader<T>,
+    pub(crate) ftyp_section: Option<FtypHeader>,
+    pub(crate) meta_section: Option<MetaSection>,
+    pub(crate) mdat_section: Option<MDatSection>,
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
+    pub(crate) colorspace: Option<ColorSpace>,
     // Derived from itemproperty::irot
-    pub(crate) rotation:         Option<u16>,
+    pub(crate) rotation: Option<u16>,
     // Derived from itemproperty::imir
-    pub(crate) mirror:           Option<u8>,
-    pub(crate) read_headers:     bool,
-    pub(crate) exif_data:        Option<Vec<u8>>,
-    pub(crate) icc_data:         Option<Vec<u8>>,
+    pub(crate) mirror: Option<u8>,
+    pub(crate) read_headers: bool,
+    pub(crate) exif_data: Option<Vec<u8>>,
+    pub(crate) icc_data: Option<Vec<u8>>,
     pub(crate) ordered_tile_ids: Vec<u32>,
-    pub(crate) rows:             u32,
-    pub(crate) cols:             u32,
-    pub(crate) options:          DecoderOptions,
+    pub(crate) rows: u32,
+    pub(crate) cols: u32,
+    pub(crate) options: DecoderOptions,
     // whether image is grid type, if true, we use parallel decoders
-    pub(crate) is_grid:          bool
+    pub(crate) is_grid: bool,
 }
 impl<T> HeifDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     /// Create a new Decoder instance
     ///
@@ -67,23 +67,23 @@ where
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(stream: T, options: DecoderOptions) -> Self {
         Self {
-            stream:           ZReader::new(stream),
-            options:          options,
-            ftyp_section:     None,
-            mdat_section:     None,
-            meta_section:     None,
-            width:            None,
-            height:           None,
-            rotation:         None,
-            mirror:           None,
-            colorspace:       None,
-            exif_data:        None,
-            icc_data:         None,
+            stream: ZReader::new(stream),
+            options: options,
+            ftyp_section: None,
+            mdat_section: None,
+            meta_section: None,
+            width: None,
+            height: None,
+            rotation: None,
+            mirror: None,
+            colorspace: None,
+            exif_data: None,
+            icc_data: None,
             ordered_tile_ids: Vec::new(),
-            read_headers:     false,
-            is_grid:          false,
-            rows:             0,
-            cols:             0
+            read_headers: false,
+            is_grid: false,
+            rows: 0,
+            cols: 0,
         }
     }
 
@@ -115,15 +115,15 @@ where
                                         "MDAT {} size exceeds HEIC max configured size {}",
                                         payload_size,
                                         self.options.hevc_max_mdat_size()
-                                    )
+                                    ),
                                 });
                             }
                             let mut output = vec![0; payload_size as usize];
 
                             self.stream.read_exact_bytes(&mut output)?;
                             self.mdat_section = Some(MDatSection {
-                                raw_data:     output,
-                                start_offset: payload_start_offset
+                                raw_data: output,
+                                start_offset: payload_start_offset,
                             });
                         }
                         BoxSize::ToEnd => {
@@ -131,8 +131,8 @@ where
                             let mut output = Vec::with_capacity(1024);
                             self.stream.read_all(&mut output)?;
                             self.mdat_section = Some(MDatSection {
-                                raw_data:     output,
-                                start_offset: payload_start_offset
+                                raw_data: output,
+                                start_offset: payload_start_offset,
                             });
                         }
                     }
@@ -154,7 +154,7 @@ where
                                     msg: format!(
                                         "Payload size {total_size} larger than header size {}",
                                         header.header_size
-                                    )
+                                    ),
                                 });
                             }
                         }
@@ -163,7 +163,7 @@ where
                         trace!("Skipping to end, found a section with skip_to_end flag");
                         break;
                     }
-                }
+                },
             }
 
             if self.stream.eof()? {
@@ -174,12 +174,12 @@ where
         // invalid file
         if self.meta_section.is_none() {
             return Err(HeicErrors::Generic {
-                msg: "no meta section".to_string()
+                msg: "no meta section".to_string(),
             });
         }
         if self.mdat_section.is_none() {
             return Err(HeicErrors::Generic {
-                msg: "no mdat section".to_string()
+                msg: "no mdat section".to_string(),
             });
         }
 
@@ -213,11 +213,11 @@ where
     }
     fn handle_grid_items(&mut self) -> Result<(), HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no meta section".to_string()
+            msg: "no meta section".to_string(),
         })?;
 
         let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no pitm section".to_string()
+            msg: "no pitm section".to_string(),
         })?;
 
         if let Some(iref) = &meta.iref {
@@ -233,25 +233,25 @@ where
             .iloc
             .as_ref()
             .ok_or(HeicErrors::Generic {
-                msg: "no iloc section".to_string()
+                msg: "no iloc section".to_string(),
             })?
             .items
             .iter()
             .find(|item| item.item_id == pitm.item_id)
             .ok_or(HeicErrors::Generic {
-                msg: "Grid item location not found".into()
+                msg: "Grid item location not found".into(),
             })?;
 
         let item_type = self.get_item_type(pitm.item_id);
         if &item_type == b"grid" {
             self.is_grid = true;
             let extent = &grid_item.extents[0];
-            let mut final_offset = grid_item.base_offset + extent.extent_offset;
+            let mut final_offset = grid_item.base_offset + extent.offset;
 
             // Construction Method 1 means the offset is relative to the 'idat' box
             if grid_item.construction_method == 1 {
                 let idat_offset = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                    msg: "Item uses idat construction but idat box not found".into()
+                    msg: "Item uses idat construction but idat box not found".into(),
                 })?;
                 final_offset += idat_offset.position;
             }
@@ -309,21 +309,21 @@ where
 
     pub(crate) fn calc_internal_dims_via_ispe(&mut self) -> Result<(), HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No meta section parsed".to_string()
+            msg: "No meta section parsed".to_string(),
         })?;
         // now try extracting width and height.
         // 1. Ensure the properties sections exist
         let iprp = meta.iprp.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no iprp section found".to_string()
+            msg: "no iprp section found".to_string(),
         })?;
         let ipma = iprp.ipma.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no ipma section found".to_string()
+            msg: "no ipma section found".to_string(),
         })?;
         let ipco = iprp.ipco.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no ipco section found".to_string()
+            msg: "no ipco section found".to_string(),
         })?;
         let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "no pitm section found".to_string()
+            msg: "no pitm section found".to_string(),
         })?;
 
         let mut final_width = 0;
@@ -369,7 +369,7 @@ where
 
         if final_height == 0 || final_width == 0 {
             return Err(HeicErrors::Generic {
-                msg: format!("Width or height is zero (w={final_width},h={final_height})")
+                msg: format!("Width or height is zero (w={final_width},h={final_height})"),
             });
         }
         if final_width as usize > self.options.max_width() {
@@ -378,7 +378,7 @@ where
                     "Width of image {} greater than configured maximum width {}",
                     final_width,
                     self.options.max_width()
-                )
+                ),
             });
         }
         if final_height as usize > self.options.max_height() {
@@ -387,7 +387,7 @@ where
                     "Height of image {} greater than configured maximum height {}",
                     final_height,
                     self.options.max_height()
-                )
+                ),
             });
         }
         self.width = Some(final_width);
@@ -413,7 +413,7 @@ where
                 // --- APPLE SILICON PATH ---
                 let tile_map = self.decode_hardware_videotoolbox()?;
 
-                self.stitch(tile_map, &mut output)?;
+                self.stitch(&tile_map, &mut output)?;
                 return Ok(output);
             }
         }
@@ -423,13 +423,13 @@ where
             let mut software_decoder: HevcDecoder = HevcDecoder::new();
 
             let vps = sample.vps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "vps not found".to_owned()
+                msg: "vps not found".to_owned(),
             })?;
             let sps = sample.sps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "sps not found".to_owned()
+                msg: "sps not found".to_owned(),
             })?;
             let pps = sample.pps.as_deref().ok_or(HeicErrors::Generic {
-                msg: "pps not found".to_owned()
+                msg: "pps not found".to_owned(),
             })?;
 
             software_decoder.parse_extradata(vps, NalFraming::RawBytes)?;
@@ -443,7 +443,7 @@ where
             let tile_h = software_decoder.height();
 
             // then decode
-            let result = software_decoder.decode(sample)?;
+            let result = software_decoder.decode(&sample)?;
 
             // allocate the necessary width and height
             let mut out = vec![0; software_decoder.height() * software_decoder.width() * colors];
@@ -452,8 +452,8 @@ where
                     frame.write_rgb_420(&mut out)?;
                     let tile = SingleDecodedTile {
                         pixels: out,
-                        width:  tile_w,
-                        height: tile_h
+                        width: tile_w,
+                        height: tile_h,
                     };
 
                     tile_map.lock().unwrap().insert(sample_id, Ok(tile));
@@ -461,7 +461,7 @@ where
                 }
                 None => {
                     return Err(HeicErrors::Generic {
-                        msg: "decode failure, no frame found".to_string()
+                        msg: "decode failure, no frame found".to_string(),
                     });
                 }
             }
@@ -484,7 +484,7 @@ where
                 self.process_hevc_samples(processor)?;
             }
         }
-        self.stitch(tile_map, &mut output)?;
+        self.stitch(&tile_map, &mut output)?;
         return Ok(output);
     }
 
@@ -492,11 +492,11 @@ where
     /// accounting for grayscale encoded images and separate Alpha mask channels.
     pub(crate) fn internal_colorspace(&mut self) -> Result<(), HeicErrors> {
         let meta = self.meta_section.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No meta section parsed".to_string()
+            msg: "No meta section parsed".to_string(),
         })?;
 
         let pitm = meta.pitm.as_ref().ok_or(HeicErrors::Generic {
-            msg: "No primary item (pitm) found".to_string()
+            msg: "No primary item (pitm) found".to_string(),
         })?;
 
         let primary_id = pitm.item_id;
@@ -567,8 +567,7 @@ where
             (1, false) => ColorSpace::Luma,
             (1, true) => ColorSpace::LumaA,
             (3, false) => ColorSpace::RGB,
-            (3, true) => ColorSpace::RGBA,
-            (4, _) => ColorSpace::RGBA, // 4 native channels is usually RGBA
+            (3, true) | (4, _) => ColorSpace::RGBA, // 4 native channels is usually RGBA
             (n, _) => {
                 if let Some(nz) = core::num::NonZeroU32::new(u32::from(n)) {
                     ColorSpace::MultiBand(nz)
@@ -595,7 +594,7 @@ where
         // 1. Find the EXIF item ID
         let exif_item_id = match iinf.entries.iter().find(|e| &e.item_type.0 == b"Exif") {
             Some(infe) => infe.item_id,
-            None => return Ok(()) // No Exif in this file
+            None => return Ok(()), // No Exif in this file
         };
 
         let Some(iloc) = &meta.iloc else {
@@ -614,16 +613,16 @@ where
 
         // 3. Calculate absolute file offset
         let absolute_offset = match exif_iloc.construction_method {
-            0 => exif_iloc.base_offset + position.extent_offset,
+            0 => exif_iloc.base_offset + position.offset,
             1 => {
                 let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
-                    msg: "idat offset required for EXIF but not found".into()
+                    msg: "idat offset required for EXIF but not found".into(),
                 })?;
-                idat_off.position + exif_iloc.base_offset + position.extent_offset
+                idat_off.position + exif_iloc.base_offset + position.offset
             }
             _ => {
                 return Err(HeicErrors::Generic {
-                    msg: "Unsupported construction method".into()
+                    msg: "Unsupported construction method".into(),
                 });
             }
         };
@@ -639,7 +638,7 @@ where
             self.stream.skip(tiff_header_offset)?;
         }
 
-        let exif_data_length = (position.extent_length as usize)
+        let exif_data_length = (position.length as usize)
             .saturating_sub(4)
             .saturating_sub(tiff_header_offset);
 
@@ -670,23 +669,20 @@ where
     pub fn icc_data(&self) -> Option<&Vec<u8>> {
         self.icc_data.as_ref()
     }
+    #[allow(clippy::collapsible_if,clippy::collapsible_match)]
     fn extract_icc_profile_inner(&mut self) -> Option<()> {
         let iprp = self.meta_section.as_ref()?.iprp.as_ref()?;
 
         // 2. Iterate through the properties in 'ipco'
         for item in &iprp.ipco.as_ref().unwrap().properties {
             if let ItemProperty::Colr(c) = item {
-                match c {
-                    ColourInformation::Nclx { .. } => {}
-                    ColourInformation::IccProfile {
-                        profile_type: _,
-                        profile_data
-                    } => {
-                        trace!("Icc profile ({} bytes)", profile_data.len());
-                        self.icc_data = Some(profile_data.clone());
-                        break;
-                    }
-                    ColourInformation::Unknown { .. } => {}
+                if let ColourInformation::IccProfile {
+                    profile_type: _,
+                    profile_data,
+                } = c {
+                    trace!("Icc profile ({} bytes)", profile_data.len());
+                    self.icc_data = Some(profile_data.clone());
+                    break;
                 }
             }
         }

@@ -319,7 +319,7 @@ fn resize<T>(
                 );
             }
             None => {
-                panic!("Precomputed kernels not loaded");
+                unreachable!("Precomputed kernels not loaded");
             }
         },
     }

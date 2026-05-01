@@ -79,7 +79,7 @@ impl OperationsTrait for ImageTransfer {
                         let channel = input.reinterpret_as_mut::<u8>()?;
                         for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
                     } else {
-                        panic!("LUT table was not made");
+                        return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
                 }
                 BitType::U16 => {
@@ -87,7 +87,7 @@ impl OperationsTrait for ImageTransfer {
                         let channel = input.reinterpret_as_mut::<u16>()?;
                         for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
                     } else {
-                        panic!("SIXTEEN_BIT table was not made");
+                        return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
                 }
                 BitType::F32 => {

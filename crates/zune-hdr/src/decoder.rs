@@ -244,7 +244,7 @@ where
     /// # Returns
     /// - `Ok(Vec<f32>)`: The actual decoded coefficients
     /// - `Err(HdrDecodeErrors)`: Indicates an unrecoverable
-    ///  error occurred during decoding.
+    ///   error occurred during decoding.
     pub fn decode(&mut self) -> Result<Vec<f32>, HdrDecodeErrors> {
         self.decode_headers()?;
         let mut buffer = vec![0.0f32; self.width * self.height * 3];
@@ -489,22 +489,7 @@ fn ldexp_pos(x: f32, exp: u32) -> f32 {
 fn ldexp_neg(x: f32, exp: u32) -> f32 {
     let pow = 1_u32.wrapping_shl(exp) as f32;
     x / pow
-}
-/// Fast calculation of  x*(2^exp).
-///
-/// exp is assumed to be integer
-// #[inline]
-// fn ldxep(x: f32, exp: i32) -> f32 {
-//     let pow = (1_i32 << (exp.abs() & 31)) as f32;
-//     if exp.is_negative() {
-//         // if negative 2 ^ exp is the same as 1 / (1<<exp.abs()) since
-//         // 2^(-exp) is sexpressed as 1/(2^exp)
-//         x / pow
-//     } else {
-//         // 2^exp is same as 1<<exp, but latter is way faster
-//         x * pow
-//     }
-// }
+} 
 
 #[inline]
 fn convert_pos(val: i32, exponent: i32) -> f32 {

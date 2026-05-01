@@ -13,10 +13,10 @@ use zune_core::colorspace::ColorCharacteristics;
 pub fn srgb_to_linear(gamma: f32) -> f32 {
     if gamma < 0f32 {
         0f32
-    } else if gamma < 12.92f32 * 0.0030412825601275209f32 {
+    } else if gamma < 12.92f32 * 0.003_041_282_560_127_520_9_f32 {
         gamma * (1f32 / 12.92f32)
     } else if gamma < 1.0f32 {
-        ((gamma + 0.0550107189475866f32) / 1.0550107189475866f32).powf(2.4f32)
+        ((gamma + 0.055_010_718_947_586_6_f32) / 1.055_010_718_947_586_6_f32).powf(2.4f32)
     } else {
         1.0f32
     }
@@ -27,10 +27,10 @@ pub fn srgb_to_linear(gamma: f32) -> f32 {
 pub fn srgb_from_linear(linear: f32) -> f32 {
     if linear < 0.0f32 {
         0.0f32
-    } else if linear < 0.0030412825601275209f32 {
+    } else if linear < 0.003_041_282_560_127_520_9_f32 {
         linear * 12.92f32
     } else if linear < 1.0f32 {
-        1.0550107189475866f32 * linear.powf(1.0f32 / 2.4f32) - 0.0550107189475866f32
+        1.055_010_718_947_586_6_f32 * linear.powf(1.0f32 / 2.4f32) - 0.055_010_718_947_586_6_f32
     } else {
         1.0f32
     }
@@ -41,10 +41,10 @@ pub fn srgb_from_linear(linear: f32) -> f32 {
 pub fn rec709_to_linear(gamma: f32) -> f32 {
     if gamma < 0.0f32 {
         0.0f32
-    } else if gamma < 4.5f32 * 0.018053968510807f32 {
+    } else if gamma < 4.5f32 * 0.018_053_968_510_807_f32 {
         gamma * (1f32 / 4.5f32)
     } else if gamma < 1.0f32 {
-        ((gamma + 0.09929682680944f32) / 1.09929682680944f32).powf(1.0f32 / 0.45f32)
+        ((gamma + 0.099_296_826_809_44_f32) / 1.099_296_826_809_44_f32).powf(1.0f32 / 0.45f32)
     } else {
         1.0f32
     }
@@ -55,10 +55,10 @@ pub fn rec709_to_linear(gamma: f32) -> f32 {
 pub fn rec709_from_linear(linear: f32) -> f32 {
     if linear < 0.0f32 {
         0.0f32
-    } else if linear < 0.018053968510807f32 {
+    } else if linear < 0.018_053_968_510_807_f32 {
         linear * 4.5f32
     } else if linear < 1.0f32 {
-        1.09929682680944f32 * linear.powf(0.45f32) - 0.09929682680944f32
+        1.099_296_826_809_44_f32 * linear.powf(0.45f32) - 0.099_296_826_809_44_f32
     } else {
         1.0f32
     }
@@ -67,7 +67,7 @@ pub fn rec709_from_linear(linear: f32) -> f32 {
 #[inline]
 /// Linear transfer function for Smpte 428
 pub fn smpte428_to_linear(gamma: f32) -> f32 {
-    const SCALE: f32 = 1. / 0.91655527974030934f32;
+    const SCALE: f32 = 1. / 0.916_555_279_740_309_34_f32;
     gamma.max(0.).powf(2.6f32) * SCALE
 }
 
@@ -75,7 +75,7 @@ pub fn smpte428_to_linear(gamma: f32) -> f32 {
 /// Gamma transfer function for Smpte 428
 pub fn smpte428_from_linear(linear: f32) -> f32 {
     const POWER_VALUE: f32 = 1.0f32 / 2.6f32;
-    (0.91655527974030934f32 * linear.max(0.)).powf(POWER_VALUE)
+    (0.916_555_279_740_309_34_f32 * linear.max(0.)).powf(POWER_VALUE)
 }
 
 #[inline]
@@ -83,10 +83,10 @@ pub fn smpte428_from_linear(linear: f32) -> f32 {
 pub fn smpte240_to_linear(gamma: f32) -> f32 {
     if gamma < 0.0 {
         0.0
-    } else if gamma < 4.0 * 0.022821585529445 {
+    } else if gamma < 4.0 * 0.022_821_585_529_445 {
         gamma / 4.0
     } else if gamma < 1.0 {
-        f32::powf((gamma + 0.111572195921731) / 1.111572195921731, 1.0 / 0.45)
+        f32::powf((gamma + 0.111_572_195_921_731) / 1.111_572_195_921_731, 1.0 / 0.45)
     } else {
         1.0
     }
@@ -97,10 +97,10 @@ pub fn smpte240_to_linear(gamma: f32) -> f32 {
 pub fn smpte240_from_linear(linear: f32) -> f32 {
     if linear < 0.0 {
         0.0
-    } else if linear < 0.022821585529445 {
+    } else if linear < 0.022_821_585_529_445 {
         linear * 4.0
     } else if linear < 1.0 {
-        1.111572195921731 * f32::powf(linear, 0.45) - 0.111572195921731
+        1.111_572_195_921_731 * f32::powf(linear, 0.45) - 0.111_572_195_921_731
     } else {
         1.0
     }
@@ -132,7 +132,7 @@ pub fn log100_to_linear(gamma: f32) -> f32 {
 /// Linear transfer function for Log100Sqrt10
 pub fn log100_sqrt10_to_linear(gamma: f32) -> f32 {
     // The function is non-bijective so choose the middle of [0, 0.00316227766f].
-    const MID_INTERVAL: f32 = 0.00316227766 / 2.;
+    const MID_INTERVAL: f32 = 0.003_162_277_66 / 2.;
     if gamma <= 0. {
         MID_INTERVAL
     } else {
@@ -143,7 +143,7 @@ pub fn log100_sqrt10_to_linear(gamma: f32) -> f32 {
 #[inline]
 /// Gamma transfer function for Log100Sqrt10
 pub fn log100_sqrt10_from_linear(linear: f32) -> f32 {
-    if linear <= 0.00316227766 {
+    if linear <= 0.003_162_277_66 {
         0.0
     } else {
         1.0 + linear.min(1.).log10() / 2.5
@@ -156,11 +156,11 @@ pub fn bt1361_from_linear(linear: f32) -> f32 {
     if linear < -0.25 {
         -0.25
     } else if linear < 0.0 {
-        -0.27482420670236 * f32::powf(-4.0 * linear, 0.45) + 0.02482420670236
-    } else if linear < 0.018053968510807 {
+        -0.274_824_206_702_36 * f32::powf(-4.0 * linear, 0.45) + 0.024_824_206_702_36
+    } else if linear < 0.018_053_968_510_807 {
         linear * 4.5
     } else if linear < 1.0 {
-        1.09929682680944 * f32::powf(linear, 0.45) - 0.09929682680944
+        1.099_296_826_809_44 * f32::powf(linear, 0.45) - 0.099_296_826_809_44
     } else {
         1.0
     }
@@ -172,11 +172,11 @@ pub fn bt1361_to_linear(gamma: f32) -> f32 {
     if gamma < -0.25 {
         -0.25
     } else if gamma < 0.0 {
-        f32::powf((gamma - 0.02482420670236) / -0.27482420670236, 1.0 / 0.45) / -4.0
-    } else if gamma < 4.5 * 0.018053968510807 {
+        f32::powf((gamma - 0.024_824_206_702_36) / -0.274_824_206_702_36, 1.0 / 0.45) / -4.0
+    } else if gamma < 4.5 * 0.018_053_968_510_807 {
         gamma / 4.5
     } else if gamma < 1.0 {
-        f32::powf((gamma + 0.09929682680944) / 1.09929682680944, 1.0 / 0.45)
+        f32::powf((gamma + 0.099_296_826_809_44) / 1.099_296_826_809_44, 1.0 / 0.45)
     } else {
         1.0
     }
@@ -227,16 +227,16 @@ pub fn trc_linear(v: f32) -> f32 {
 #[inline]
 /// Linear transfer function for Iec61966
 pub fn iec61966_to_linear(gamma: f32) -> f32 {
-    if gamma < -4.5 * 0.018053968510807 {
+    if gamma < -4.5 * 0.018_053_968_510_807 {
         f32::powf(
-            (-gamma + 0.09929682680944f32) / -1.09929682680944f32,
+            (-gamma + 0.099_296_826_809_44_f32) / -1.099_296_826_809_44_f32,
             1.0f32 / 0.45f32
         )
-    } else if gamma < 4.5f32 * 0.018053968510807f32 {
+    } else if gamma < 4.5f32 * 0.018_053_968_510_807_f32 {
         gamma / 4.5f32
     } else {
         f32::powf(
-            (gamma + 0.09929682680944f32) / 1.09929682680944f32,
+            (gamma + 0.099_296_826_809_44_f32) / 1.099_296_826_809_44_f32,
             1.0f32 / 0.45f32
         )
     }
@@ -245,12 +245,12 @@ pub fn iec61966_to_linear(gamma: f32) -> f32 {
 #[inline]
 /// Pure gamma transfer function for Iec61966
 pub fn iec619662_from_linear(linear: f32) -> f32 {
-    if linear < -0.018053968510807f32 {
-        -1.09929682680944f32 * f32::powf(-linear, 0.45f32) + 0.09929682680944f32
-    } else if linear < 0.018053968510807f32 {
+    if linear < -0.018_053_968_510_807_f32 {
+        -1.099_296_826_809_44_f32 * f32::powf(-linear, 0.45f32) + 0.099_296_826_809_44_f32
+    } else if linear < 0.018_053_968_510_807_f32 {
         linear * 4.5f32
     } else {
-        1.09929682680944f32 * f32::powf(linear, 0.45f32) - 0.09929682680944f32
+        1.099_296_826_809_44_f32 * f32::powf(linear, 0.45f32) - 0.099_296_826_809_44_f32
     }
 }
 
@@ -288,7 +288,6 @@ impl From<u8> for TransferFunction {
     #[inline]
     fn from(value: u8) -> Self {
         match value {
-            0 => TransferFunction::Srgb,
             1 => TransferFunction::Rec709,
             2 => TransferFunction::Gamma2p2,
             3 => TransferFunction::Gamma2p8,
@@ -323,7 +322,7 @@ impl From<ColorCharacteristics> for TransferFunction {
 }
 impl TransferFunction {
     #[inline]
-    pub fn linearize(&self, v: f32) -> f32 {
+    pub fn linearize(self, v: f32) -> f32 {
         match self {
             TransferFunction::Srgb => srgb_to_linear(v),
             TransferFunction::Rec709 => rec709_to_linear(v),
@@ -340,7 +339,7 @@ impl TransferFunction {
     }
 
     #[inline]
-    pub fn gamma(&self, v: f32) -> f32 {
+    pub fn gamma(self, v: f32) -> f32 {
         match self {
             TransferFunction::Srgb => srgb_from_linear(v),
             TransferFunction::Rec709 => rec709_from_linear(v),

@@ -42,7 +42,7 @@ impl<'src> BitReader<'src> {
             let first_byte = (chunk >> 24) as u8;
             let creates_boundary_epb = self.zero_count == 2 && first_byte == 0x03;
 
-            if !self.has_emulation_prevention(chunk) && !creates_boundary_epb {
+            if !Self::has_emulation_prevention(chunk) && !creates_boundary_epb {
                 self.load_4_bytes(chunk);
                 return;
             }
@@ -86,7 +86,7 @@ impl<'src> BitReader<'src> {
     }
 
     #[inline(always)]
-    fn has_emulation_prevention(&self, chunk: u32) -> bool {
+    fn has_emulation_prevention( chunk: u32) -> bool {
         // SWAR check for 0x03 bytes.
         // This is a heuristic; if true, we go to the slow path.
         let m = chunk ^ 0x0303_0303;
@@ -233,8 +233,8 @@ impl<'src> BitReader<'src> {
         let k = self.read_ue()?;
         Ok(match k {
             0 => 0,
-            k if k & 1 == 1 => k.div_ceil(2) as i64,
-            k => -((k / 2) as i64)
+            k if k & 1 == 1 => k.div_ceil(2).cast_signed(),
+            k => -(k / 2).cast_signed()
         })
     }
 

@@ -266,7 +266,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// # Returns
     ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
     ///  - `None`: If the image headers haven't been decoded, or there was an error
-    ///     during decoding
+    ///    during decoding
     pub const fn colorspace(&self) -> Option<ColorSpace> {
         if !self.seen_hdr {
             return None;
@@ -570,7 +570,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///
     /// # Arguments
     /// - `out`: The slice which we will write our values into.
-    ///         If the slice length is smaller than [`output_buffer_size`](Self::output_buffer_size), it's an error
+    ///   If the slice length is smaller than [`output_buffer_size`](Self::output_buffer_size), it's an error
     ///
     /// # Converting 16 bit to 8 bit images
     /// When indicated by  [`DecoderOptions::png_set_strip_to_8bit`](zune_core::options::DecoderOptions::png_get_strip_to_8bit)

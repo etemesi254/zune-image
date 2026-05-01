@@ -79,7 +79,7 @@ impl CompositeMethod {
         }
     }
 }
-
+#[allow(clippy::struct_field_names)]
 pub struct Composite {
     geometry: Option<(usize, usize)>,
     composite_method: CompositeMethod,
@@ -528,7 +528,6 @@ fn composite_alpha_channel<T>(
     }
 }
 
-
 /// Apply a Porter-Duff operator that requires both source **and** destination
 /// alpha to compute the output colour channels.
 #[allow(clippy::too_many_arguments)]
@@ -614,11 +613,10 @@ fn composite_alpha_channel_masked<T>(
 
                 let out_alpha = match method {
                     // DstIn:  α_dst · α_src
-                    CompositeMethod::DstIn => a_dst * a_src,
+                    // SrcIn:  α_src · α_dst
+                    CompositeMethod::DstIn | CompositeMethod::SrcIn => a_dst * a_src,
                     // DstOut: α_dst · (1 − α_src)
                     CompositeMethod::DstOut => a_dst * (1.0 - a_src),
-                    // SrcIn:  α_src · α_dst
-                    CompositeMethod::SrcIn => a_src * a_dst,
                     // SrcOut: α_src · (1 − α_dst)
                     CompositeMethod::SrcOut => a_src * (1.0 - a_dst),
                     // Xor:    α_src + α_dst − 2·α_src·α_dst
@@ -1040,7 +1038,7 @@ mod tests {
         let src = rgb_pixel(0x80, 0xC0, 0x80);
         let src_r = 0xC0_u8;
         let dst_r = 0x80_u8;
-        let expected_r = ((src_r as f32 / 255.0) * (dst_r as f32 / 255.0) * 255.0).round() as u8;
+        let expected_r = ((f32::from(src_r) / 255.0) * (f32::from(dst_r) / 255.0) * 255.0).round() as u8;
 
         let mut images = vec![dst, src];
         Composite::new(CompositeMethod::Multiply, (0, 0))
@@ -1052,7 +1050,7 @@ mod tests {
             "Multiply should be ≤ both inputs; got {result_r}"
         );
         assert!(
-            (result_r as i16 - expected_r as i16).abs() <= 1,
+            (i16::from(result_r) - i16::from(expected_r)).abs() <= 1,
             "Expected ~{expected_r}, got {result_r}"
         );
     }
@@ -1093,7 +1091,7 @@ mod tests {
         let src_r = 0xC0_u8;
         let dst_r = 0x80_u8;
         let expected_r = (255.0
-            - (1.0 - src_r as f32 / 255.0) * (1.0 - dst_r as f32 / 255.0) * 255.0)
+            - (1.0 - f32::from(src_r) / 255.0) * (1.0 - f32::from(dst_r) / 255.0) * 255.0)
             .round() as u8;
 
         let dst = rgb_pixel(dst_r, 0x80, 0x40);
@@ -1108,7 +1106,7 @@ mod tests {
             "Screen should be ≥ both inputs; got {result_r}"
         );
         assert!(
-            (result_r as i16 - expected_r as i16).abs() <= 1,
+            (i16::from(result_r) - i16::from(expected_r)).abs() <= 1,
             "Expected ~{expected_r}, got {result_r}"
         );
     }

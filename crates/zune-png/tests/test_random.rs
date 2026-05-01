@@ -57,7 +57,7 @@ fn test_trns_transparency() {
 
 #[test]
 fn test_animation() {
-    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/animated_ball.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/clock.png";
     let data = open_and_read(path);
     let mut decoder = PngDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
@@ -68,7 +68,7 @@ fn test_animation() {
     let mut output =
         vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
 
-    // let mut i = 0;
+    let mut i = 0;
     while decoder.more_frames() {
         decoder.decode_headers().unwrap();
         let frame = decoder.frame_info().unwrap();
@@ -86,30 +86,29 @@ fn test_animation() {
         )
         .unwrap();
 
-        // let c = std::io::BufWriter::new(
-        //     OpenOptions::new()
-        //         .write(true)
-        //         .truncate(true)
-        //         .create(true)
-        //         .open(format!("./{i}.png"))
-        //         .unwrap()
-        // );
-        // i += 1;
-        //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(c);
-        // std::fs::write(format!("./{i}.png"), bytes).unwrap();
+        let c = std::io::BufWriter::new(
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(format!("./{i}.png"))
+                .unwrap()
+        );
+        i += 1;
+        let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(c);
         background = Some(pix);
     }
 }
 
 #[test]
 fn test_animation_2() {
-    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/030.png";
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/random/clock.png";
     let data = open_and_read(path);
     let mut decoder = PngDecoder::new(ZCursor::new(&data));
     decoder.decode_headers().unwrap();
     let colorspace = decoder.colorspace().unwrap();
-    let _depth = decoder.depth().unwrap();
-    //let mut i = 0;
+    let depth = decoder.depth().unwrap();
+    let mut i = 0;
     let info = decoder.info().unwrap().clone();
     let mut background: Option<Vec<u8>> = None;
     let mut output =
@@ -120,7 +119,7 @@ fn test_animation_2() {
         let frame = decoder.frame_info().unwrap();
 
         let pix = decoder.decode_raw().unwrap();
-        //let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+        let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
         post_process_image(
             &info,
             colorspace,
@@ -131,11 +130,18 @@ fn test_animation_2() {
             None
         )
         .unwrap();
+        let c = std::io::BufWriter::new(
+            OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(format!("./{i}.png"))
+                .unwrap()
+        );
 
-        //let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode();
+        let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(c);
 
-        //std::fs::write(format!("./{i}.png"), bytes).unwrap();
-        background = Some(pix);
-        // i += 1;
+        background = Some(output.clone());
+        i += 1;
     }
 }

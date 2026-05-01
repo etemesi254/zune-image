@@ -92,7 +92,7 @@ pub(crate) trait JxlBitEncoder {
     /// * `skip`:  Initial position
     /// * `code`:  Prefix code to use for encoding residuals
     /// * `output`:  The output to which we will write encoded residuals from
-    ///  n to skip
+    ///   n to skip
     ///
     #[rustfmt::skip]
     #[allow(clippy::needless_range_loop)]

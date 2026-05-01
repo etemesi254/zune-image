@@ -5,7 +5,7 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+#![allow(clippy::cast_sign_loss,clippy::cast_possible_wrap,clippy::cast_possible_truncation)]
 use alloc::format;
 use core::convert::TryInto;
 use core::cmp::min;

@@ -5,8 +5,8 @@ use alloc::borrow::Cow;
 #[inline(always)]
 fn find_epb(src: &[u8], start: usize) -> Option<usize> {
     // Standard SWAR masks for detecting a 0x00 byte inside a u64
-    const MAGIC_SUB: u64 = 0x0101010101010101;
-    const MAGIC_MASK: u64 = 0x8080808080808080;
+    const MAGIC_SUB: u64 = 0x0101_0101_0101_0101;
+    const MAGIC_MASK: u64 = 0x8080_8080_8080_8080;
 
     let len = src.len();
     let mut i = start;
@@ -110,9 +110,7 @@ fn clamp(a: i32) -> u8 {
 /// - `pos`: Current write offset (updated after writing)
 ///
 /// # Panics
-///
-/// Panics if output buffer is too small.
-
+///  If output buffer is too small.
 pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 ) {

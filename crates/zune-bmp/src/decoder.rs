@@ -628,7 +628,7 @@ where
     /// # Returns
     /// - `Some((width,height))`  - The image dimensions
     /// - `None`: Indicates that the image headers weren't decoded
-    ///    or an error occurred during decoding the headers   
+    ///   or an error occurred during decoding the headers   
     pub fn dimensions(&self) -> Option<(usize, usize)> {
         if !self.decoded_headers {
             return None;
@@ -1031,8 +1031,8 @@ where
     /// - in_bytes: Palette entry indices
     /// - buf: Where to write the bytes to
     /// - unpad: Whether to take padding bytes into account, this is important since
-    ///  callers like RLE bytes do not take padding into account but for non-rle data
-    /// we must take it into account
+    ///   callers like RLE bytes do not take padding into account but for non-rle data
+    ///   we must take it into account
     ///
     fn expand_palette(&self, in_bytes: &[u8], buf: &mut [u8], unpad: bool) {
         let palette: &[PaletteEntry; 256] = &self.palette[0..256].try_into().unwrap();

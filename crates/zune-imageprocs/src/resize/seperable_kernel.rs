@@ -223,7 +223,7 @@ where
         *out_pixel = sum;
     }
 }
-
+#[allow(clippy::needless_range_loop)]
 fn resample_vertical_only_precomputed<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, _in_height: usize, out_height: usize,
     v_kernels: &[ConvKernel],
@@ -306,7 +306,7 @@ pub(crate) struct ConvKernel {
     start_idx: u32,
     end_idx: u32,
 }
-
+#[allow(clippy::needless_range_loop,clippy::cast_possible_wrap)]
 fn precompute_kernels(
     in_size: usize, out_size: usize, ratio: f32, a: i32, kernel_fn: fn(f32) -> f32,
 ) -> Vec<ConvKernel> {
@@ -340,6 +340,7 @@ fn precompute_kernels(
         if weight_sum > 0.0 {
             let inv_sum = 1.0 / weight_sum;
             let count = (end - start + 1) as usize;
+
             for i in 0..count {
                 weights[i] *= inv_sum;
             }
@@ -651,7 +652,7 @@ mod tests {
 
         // Create a fake gradient image to give the kernels varying data to work with
         let in_pixels_u8: Vec<u8> = (0..(in_width * in_height)).map(|i| (i * 3 % 255) as u8).collect();
-        let in_pixels_f32: Vec<f32> = in_pixels_u8.iter().map(|&p| p as f32).collect();
+        let in_pixels_f32: Vec<f32> = in_pixels_u8.iter().map(|&p| f32::from(p)).collect();
 
         let mut out_pixels_u8 = vec![0u8; out_width * out_height];
         let mut out_pixels_f32 = vec![0.0f32; out_width * out_height];
@@ -676,15 +677,14 @@ mod tests {
             // Replicate the clamping that would normally happen when converting f32 image back to u8
             let f32_clamped = p_f32.clamp(0.0, 255.0).round() as u8;
 
-            let diff = (*p_u8 as i32 - f32_clamped as i32).abs();
+            let diff = (i32::from(*p_u8) - i32::from(f32_clamped)).abs();
 
             // We tolerate a strict maximum difference of 1.
             // This happens occasionally because `(a + 0.5).floor()` in floats vs `(a + (1<<31)) >> 32` in integers
             // can break ties exactly at .5 differently due to precision.
             assert!(
                 diff <= 1,
-                "Mismatch at index {}: fixed-point u8={} vs floating-point reference={} (diff {})",
-                i, p_u8, f32_clamped, diff
+                "Mismatch at index {i}: fixed-point u8={p_u8} vs floating-point reference={f32_clamped} (diff {diff})",
             );
         }
     }

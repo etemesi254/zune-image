@@ -365,7 +365,7 @@ fn skip_hrd_parameters(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines,clippy::field_reassign_with_default)]
 pub fn decode_slice_header(
     nal: &NalUnit, pps_storage: &[Option<Pps>], sps_storage: &[Option<Sps>], clean_payload: &[u8]
 ) -> Result<SliceHeader, NalError> {
@@ -485,8 +485,8 @@ pub fn decode_slice_header(
         {
             let deblocking_filter_override_flag = r.read_flag()?;
             if deblocking_filter_override_flag {
-                let _slice_deblocking_filter_disabled_flag = r.read_flag()?;
-                if !_slice_deblocking_filter_disabled_flag {
+                let slice_deblocking_filter_disabled_flag = r.read_flag()?;
+                if !slice_deblocking_filter_disabled_flag {
                     r.read_se()?; // beta_offset_div2
                     r.read_se()?; // tc_offset_div2
                 }

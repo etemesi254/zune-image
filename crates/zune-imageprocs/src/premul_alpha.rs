@@ -14,34 +14,34 @@
 //!
 //!  # Algorithm
 //! - To compute premultiplied alpha, we simply multiply alpha by color channel
-//!  so assuming float to convert from straight alpha to premultiplied alpha we can use
-//!  `RGB*a`, here `a` is between 0.0-1.0 (RGB are three color components, a multiplied
-//!  them separately)
-//!  We can handle this in integers, e.g for u8, the mapping `0.0-`1.0` can be scaled by `255` to
-//!  get alpha value in u8, and then doing alpha-premultiplication can be presented by the formula
+//!   so assuming float to convert from straight alpha to premultiplied alpha we can use
+//!   `RGB*a`, here `a` is between 0.0-1.0 (RGB are three color components, a multiplied
+//!   them separately)
+//!   We can handle this in integers, e.g for u8, the mapping `0.0-`1.0` can be scaled by `255` to
+//!   get alpha value in u8, and then doing alpha-premultiplication can be presented by the formula
 //!
 //! - `(RGB*255)/a`, we first scale the value by 255 in order for division to work since now the mapping
-//! is (255..65535), if your `R` value is 1 and alpha is 255, you get `(1*255)/255`, and similarly, if your value is `255`
-//! and alpha is 128 you get `(255*255)/128`. This allows us to actually carry out alpha pre-multiplication in integers
+//!   is (255..65535), if your `R` value is 1 and alpha is 255, you get `(1*255)/255`, and similarly, if your value is `255`
+//!   and alpha is 128 you get `(255*255)/128`. This allows us to actually carry out alpha pre-multiplication in integers
 //!
 //! - But division is a slow instruction and Rust tends to add checks for zero (and appropriate panics)
-//! hence it's either badly vectorized or not vectorized, furthermore it's hard to parallelize it
-//! in the instruction cache pipeline, which means the simple operation reduces speed.
+//!   hence it's either badly vectorized or not vectorized, furthermore it's hard to parallelize it
+//!   in the instruction cache pipeline, which means the simple operation reduces speed.
 //!
 //! #### A solution
 //!
-//!  - The solution here is that for integers, we are entirely in a fixed bounds, e.g for u8, we are
-//! bounded by `0..255`, always, and u16, we are bound to `0..65535`, (PS this doesn't apply for floats)
-//! and we can apply another optimization, namely Daniel's Lemire [fastmod](https://github.com/lemire/fastmod)
-//! so to compute special constants during runtime that can be used to divide via reciprocal multiplication
-//! so now to create premultiplied alpha, we simply the code becomes
+//! - The solution here is that for integers, we are entirely in a fixed bounds, e.g for u8, we are
+//!   bounded by `0..255`, always, and u16, we are bound to `0..65535`, (PS this doesn't apply for floats)
+//!   and we can apply another optimization, namely Daniel's Lemire [fastmod](https://github.com/lemire/fastmod)
+//!   so to compute special constants during runtime that can be used to divide via reciprocal multiplication
+//!   so now to create premultiplied alpha, we simply the code becomes
 //!
 //! - Compute constants
 //! - Iterate over source channel and alpha,
 //! - Lookup special constant (`c` ) for the alpha value
 //! - Multiply that constant `c` with channel value and take top bits
+//! 
 //! [`fastdiv_u32`]
-//! -
 
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorSpace;

@@ -22,7 +22,7 @@ use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::spatial::SpatialOps;
 use zune_imageprocs::spatial_ops::SpatialOperations;
 
-
+#[allow(clippy::type_complexity)]
 pub fn parse_options(
     argument: &str, args: &clap::ArgMatches,
 ) -> Result<Vec<(usize, Box<dyn OperationsTrait>)>, String> {

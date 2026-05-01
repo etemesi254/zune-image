@@ -27,7 +27,7 @@ fn subtract_value(value: usize, subtract: usize) -> Result<usize, HeicErrors> {
 fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.header_size) as usize),
-        _ => Err(HeicErrors::ParseError {
+        BoxSize::ToEnd => Err(HeicErrors::ParseError {
             box_type: box_header.box_type,
             msg: "Needs absolute size".into(),
         })
@@ -37,7 +37,7 @@ fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
 fn get_abs_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
     match box_header.total_size {
         BoxSize::Absolute(s) => Ok(s as usize),
-        _ => Err(HeicErrors::ParseError {
+        BoxSize::ToEnd => Err(HeicErrors::ParseError {
             box_type: box_header.box_type,
             msg: "Needs absolute size".into(),
         })
@@ -446,9 +446,9 @@ pub fn decode_iloc<R: ZByteReaderTrait>(
             bytes_left = subtract_value(bytes_left, bytes_read)?;
 
             extents.push(IlocExtent {
-                extent_index,
-                extent_offset,
-                extent_length,
+                index: extent_index,
+                offset: extent_offset,
+                length: extent_length,
             });
         }
 
@@ -1111,11 +1111,11 @@ mod tests {
     use super::*;
 
     /// Build a minimal valid ISOBMFF box: 4-byte size + 4-byte type + payload
-    fn make_box(fourcc: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    fn make_box(fourcc: [u8; 4], payload: &[u8]) -> Vec<u8> {
         let size = (8 + payload.len()) as u32;
         let mut b = Vec::new();
         b.extend_from_slice(&size.to_be_bytes());
-        b.extend_from_slice(fourcc);
+        b.extend_from_slice(&fourcc);
         b.extend_from_slice(payload);
         b
     }
@@ -1131,7 +1131,7 @@ mod tests {
         payload.extend_from_slice(b"mp42");
         payload.extend_from_slice(b"mp44");
 
-        let raw = make_box(b"ftyp", &payload);
+        let raw = make_box(*b"ftyp", &payload);
         let cursor = ZCursor::new(raw);
         let mut reader = ZReader::new(cursor);
         let response = BoxHeader::read(&mut reader).unwrap();

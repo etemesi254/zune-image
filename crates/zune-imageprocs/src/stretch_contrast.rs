@@ -89,9 +89,9 @@ use crate::utils::execute_on;
 ///
 /// * `image`: Image channel pixels
 /// * `lower`:  The lower minimum for which pixels below this value
-///  become 0
+///   become 0
 /// * `upper`:  Upper maximum for which pixels above this value become the maximum
-///  value
+///   value
 /// * `maximum`: Maximum value for this pixel type.
 ///
 /// - Modifies array in place

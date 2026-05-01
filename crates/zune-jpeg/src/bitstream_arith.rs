@@ -569,7 +569,7 @@ impl BitStream for BitStreamArithmetic {
     fn get_dc_table(
         tables: &mut EntropyTables, dc_pos: usize,
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors> {
-        tables.dc_arithmetic_tables.get_mut(dc_pos).ok_or_else(|| {
+        tables.dc_arithmetic.get_mut(dc_pos).ok_or_else(|| {
             DecodeErrors::Format(format!(
                 "No arithmetic coding conditioning table for DC component:{dc_pos}"
             ))
@@ -580,7 +580,7 @@ impl BitStream for BitStreamArithmetic {
     fn get_ac_table(
         tables: &mut EntropyTables, ac_pos: usize,
     ) -> Result<&mut Self::ACEntropyTable, DecodeErrors> {
-        tables.ac_arithmetic_tables.get_mut(ac_pos).ok_or_else(|| {
+        tables.ac_arithmetic.get_mut(ac_pos).ok_or_else(|| {
             DecodeErrors::Format(format!(
                 "No arithmetic coding conditioning table for AC component:{ac_pos}"
             ))
@@ -592,12 +592,12 @@ impl BitStream for BitStreamArithmetic {
         tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize,
     ) -> Result<(&mut Self::DCEntropyTable, &mut Self::ACEntropyTable), DecodeErrors> {
         Ok((
-            tables.dc_arithmetic_tables.get_mut(dc_pos).ok_or_else(|| {
+            tables.dc_arithmetic.get_mut(dc_pos).ok_or_else(|| {
                 DecodeErrors::Format(format!(
                     "No arithmetic coding conditioning table for DC component:{dc_pos}"
                 ))
             })?,
-            tables.ac_arithmetic_tables.get_mut(ac_pos).ok_or_else(|| {
+            tables.ac_arithmetic.get_mut(ac_pos).ok_or_else(|| {
                 DecodeErrors::Format(format!(
                     "No arithmetic coding conditioning table for AC component:{ac_pos}"
                 ))
@@ -606,14 +606,14 @@ impl BitStream for BitStreamArithmetic {
     }
 
     fn reset_arith_tables(tables: &mut EntropyTables) {
-        for dc in &mut tables.dc_arithmetic_tables {
+        for dc in &mut tables.dc_arithmetic {
             let d = ArithDCTables::default();
             dc.leading = d.leading;
             dc.x = d.x;
             dc.m = d.m;
         }
 
-        for ac in &mut tables.ac_arithmetic_tables {
+        for ac in &mut tables.ac_arithmetic {
             let a = ArithACTables::default();
             ac.v = a.v;
             ac.x_lo = a.x_lo;

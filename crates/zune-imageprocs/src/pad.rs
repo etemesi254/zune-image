@@ -68,8 +68,8 @@ pub enum PadMethod {
 ///  - width: Width of raw pixels
 ///  - height : Height of raw pixels
 ///  - pad_x: Number of columns to increase the width by.
-///     The width is increased on both sides i.e left is padded by
-///     pad_x and so is the right.
+///    The width is increased on both sides i.e left is padded by
+///    pad_x and so is the right.
 ///  - pad_y: Number of rows to increase the height by
 ///  - method: Method to use for pad pixels.
 ///

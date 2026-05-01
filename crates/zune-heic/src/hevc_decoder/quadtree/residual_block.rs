@@ -6,51 +6,52 @@ use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_X_PREFIX,
     CONTEXT_MODEL_LAST_SIGNIFICANT_COEFFICIENT_Y_PREFIX, CONTEXT_MODEL_RDPCM_DIR,
     CONTEXT_MODEL_RDPCM_FLAG, CONTEXT_MODEL_SIGNIFICANT_COEFF_FLAG,
-    CONTEXT_MODEL_TRANSFORM_SKIP_FLAG
+    CONTEXT_MODEL_TRANSFORM_SKIP_FLAG,
 };
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
 use crate::hevc_decoder::neighbor_tracker::PredMode;
 use crate::hevc_decoder::quadtree::transform_unit::Component;
 use crate::hevc_decoder::quadtree::transform_unit::Component::Luma;
+use std::fmt::Write;
 
 pub struct ScanPosition {
-    pub scan_pos:  i32,
-    pub sub_block: i32
+    pub scan_pos: i32,
+    pub sub_block: i32,
 }
 
 #[derive(Copy, Clone, Debug)]
 struct Pos {
     pub x: u8,
-    pub y: u8
+    pub y: u8,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Greater1State {
-    pub bit:          u8,
+    pub bit: u8,
     pub greater1_ctx: i32,
-    pub ctx_set:      i32
+    pub ctx_set: i32,
 }
 // log2_size == 1 (2x2 grid)
-const SCAN_2X2_DIAG:[Pos;4] = [
-Pos { x: 0, y: 0 },
-Pos { x: 0, y: 1 },
-Pos { x: 1, y: 0 },
-Pos { x: 1, y: 1 },
+const SCAN_2X2_DIAG: [Pos; 4] = [
+    Pos { x: 0, y: 0 },
+    Pos { x: 0, y: 1 },
+    Pos { x: 1, y: 0 },
+    Pos { x: 1, y: 1 },
 ];
 
-const SCAN_2X2_HOR:[Pos;4] = [
-Pos { x: 0, y: 0 },
-Pos { x: 1, y: 0 },
-Pos { x: 0, y: 1 },
-Pos { x: 1, y: 1 },
+const SCAN_2X2_HOR: [Pos; 4] = [
+    Pos { x: 0, y: 0 },
+    Pos { x: 1, y: 0 },
+    Pos { x: 0, y: 1 },
+    Pos { x: 1, y: 1 },
 ];
 
-const SCAN_2X2_VER:[Pos;4] = [
-Pos { x: 0, y: 0 },
-Pos { x: 0, y: 1 },
-Pos { x: 1, y: 0 },
-Pos { x: 1, y: 1 },
+const SCAN_2X2_VER: [Pos; 4] = [
+    Pos { x: 0, y: 0 },
+    Pos { x: 0, y: 1 },
+    Pos { x: 1, y: 0 },
+    Pos { x: 1, y: 1 },
 ];
 // Static tables for 4x4 blocks (log2 = 2)
 #[rustfmt::skip]
@@ -105,7 +106,7 @@ const SCAN_8X8_HOR: [Pos; 64] = {
     while i < 64 {
         pos[i] = Pos {
             x: (i % 8) as u8,
-            y: (i / 8) as u8
+            y: (i / 8) as u8,
         };
         i += 1;
     }
@@ -119,7 +120,7 @@ const SCAN_8X8_VER: [Pos; 64] = {
     while i < 64 {
         pos[i] = Pos {
             x: (i / 8) as u8,
-            y: (i % 8) as u8
+            y: (i % 8) as u8,
         };
         i += 1;
     }
@@ -145,7 +146,7 @@ fn get_scan_order(log2_size: u8, scan_idx: u8) -> &'static [Pos] {
         (3, 1) => &SCAN_8X8_HOR,
         (3, 2) => &SCAN_8X8_VER,
 
-        _ => panic!("Unsupported scan config: scan_idx={scan_idx}, log2size={log2_size}")
+        _ => unreachable!("Unsupported scan config: scan_idx={scan_idx}, log2size={log2_size}"),
     }
 }
 pub fn decode_transform_skip_flag(ctx: &mut DecodeSliceContext, component: Component) -> u8 {
@@ -180,7 +181,7 @@ pub fn decode_explicit_rdpcm_dir(ctx: &mut DecodeSliceContext, component: Compon
     bit // 0 = Horizontal, 1 = Vertical
 }
 pub fn decode_last_significant_coeff_prefix(
-    ctx: &mut DecodeSliceContext, log2_trafo_size: u8, c_idx: Component, is_x: bool
+    ctx: &mut DecodeSliceContext, log2_trafo_size: u8, c_idx: Component, is_x: bool,
 ) -> u8 {
     debug_more!(
         "# last_significant_coeff_prefix log2TrafoSize:{} cIdx:{:?}",
@@ -231,7 +232,7 @@ pub fn decode_last_significant_coeff_prefix(
 }
 
 pub fn get_intra_scan_idx(
-    ctx: &DecodeSliceContext, log2_trafo_size: u8, intra_mode: u8, component: Component
+    ctx: &DecodeSliceContext, log2_trafo_size: u8, intra_mode: u8, component: Component,
 ) -> u8 {
     // Condition: 4x4 block OR (8x8 block AND (Luma OR 4:4:4 Chroma))
     let is_small_block = log2_trafo_size == 2;
@@ -244,7 +245,9 @@ pub fn get_intra_scan_idx(
             2
         }
         // Horizontal Scan (1)
-        else { u8::from((22..=30).contains(&intra_mode)) };
+        else {
+            u8::from((22..=30).contains(&intra_mode))
+        };
     }
     // Larger blocks always use Diagonal Scan
     0
@@ -282,11 +285,11 @@ pub fn get_scan_position(x: u32, y: u32, scan_idx: u8, log2_trafo_size: u8) -> S
 
     ScanPosition {
         scan_pos,
-        sub_block
+        sub_block,
     }
 }
 pub fn decode_coded_sub_block_flag(
-    ctx: &mut DecodeSliceContext, component: Component, neighbor_info: u8
+    ctx: &mut DecodeSliceContext, component: Component, neighbor_info: u8,
 ) -> bool {
     debug_more!("coded_sub_block_flag [{:?}] = {}", component, neighbor_info);
     // libde265 logic: ctxIdxInc = (neighbor_info > 0 ? 1 : 0)
@@ -322,8 +325,8 @@ fn decode_coeff_abs_level_greater1(
     first_coeff_in_subblock: bool,
     first_subblock: bool,
     last_subblock_greater1_ctx: i32,
-    prev_state: Greater1State, 
-    c1: i32
+    prev_state: Greater1State,
+    c1: i32,
 ) -> Greater1State {
     debug_more!("# coeff_abs_level_greater1");
     debug_more!(
@@ -394,11 +397,11 @@ fn decode_coeff_abs_level_greater1(
     Greater1State {
         bit,
         greater1_ctx,
-        ctx_set
+        ctx_set,
     }
 }
 fn decode_coeff_abss_level_greater2(
-    ctx: &mut DecodeSliceContext, c_idx: usize, ctx_set: usize
+    ctx: &mut DecodeSliceContext, c_idx: usize, ctx_set: usize,
 ) -> u8 {
     debug_more!(
         "decode_coeff_abss_level_greater2(c_idx={:?},ctx_set={})",
@@ -433,18 +436,17 @@ pub fn decode_coeff_abs_level_remaining(ctx: &mut DecodeSliceContext, c_rice_par
     }
 
     // 2. Decode Suffix based on prefix length
-    let value: i32;
-    if prefix <= 3 {
+    let value: i32 = if prefix <= 3 {
         // Truncated Rice part
         let codeword = ctx.cabac.decode_fl_bypass(c_rice_param);
-        value = (prefix << c_rice_param) + codeword as i32;
+        (prefix << c_rice_param) + codeword as i32
     } else {
         // Exp-Golomb part (prefix-3)
         // libde265 math: (((1 << (prefix-3)) + 2) << cRiceParam) + codeword
         let n_bits = (prefix - 3 + i32::from(c_rice_param)) as usize;
         let codeword = ctx.cabac.decode_fl_bypass(n_bits as u8);
-        value = (((1 << (prefix - 3)) + 2) << c_rice_param) + codeword as i32;
-    }
+        (((1 << (prefix - 3)) + 2) << c_rice_param) + codeword as i32
+    };
 
     debug_more!("$1 coeff_abs_level_remaining={}", value);
     value
@@ -471,20 +473,19 @@ pub fn decode_residual_block(
     }
 
     // --- Transform Skip Logic ---
-    let transform_skip_flag ;
     let log2_max_transform_skip_size = if let Some(range) = pps.range_extension.as_ref() {
         range.log2_max_transform_skip_block_size
     } else {
         0
     };
-    if ctx.pps.transform_skip_enabled_flag
+    let transform_skip_flag = if ctx.pps.transform_skip_enabled_flag
         && !ctx.cu_transquant_bypass_flag
         && log2_trafo_size <= log2_max_transform_skip_size
     {
-        transform_skip_flag = decode_transform_skip_flag(ctx, component);
+        decode_transform_skip_flag(ctx, component)
     } else {
-        transform_skip_flag = 0;
-    }
+        0
+    };
     // Store in context for coefficient decoding and RDPCM
     ctx.transform_skip_flag[component as usize] = transform_skip_flag;
 
@@ -525,29 +526,24 @@ pub fn decode_residual_block(
         decode_last_significant_coeff_prefix(ctx, log2_trafo_size, component, false);
 
     // 1. Reconstruct LastSignificantCoeffX
-    let last_significant_coeff_x: u32;
-
-    if last_significant_coeff_x_prefix > 3 {
+    let last_significant_coeff_x: u32 = if last_significant_coeff_x_prefix > 3 {
         let n_bits = (last_significant_coeff_x_prefix >> 1) - 1;
         let last_x_suffix = ctx.cabac.decode_fl_bypass(n_bits);
 
-        last_significant_coeff_x =
-            ((2 + (u32::from(last_significant_coeff_x_prefix) & 1)) << n_bits) + last_x_suffix;
+        ((2 + (u32::from(last_significant_coeff_x_prefix) & 1)) << n_bits) + last_x_suffix
     } else {
-        last_significant_coeff_x = u32::from(last_significant_coeff_x_prefix);
-    }
+        u32::from(last_significant_coeff_x_prefix)
+    };
 
     // 2. Reconstruct LastSignificantCoeffY
-    let last_significant_coeff_y: u32;
-    if last_significant_coeff_y_prefix > 3 {
+    let last_significant_coeff_y: u32 = if last_significant_coeff_y_prefix > 3 {
         let n_bits = (last_significant_coeff_y_prefix >> 1) - 1;
         let last_y_suffix = ctx.cabac.decode_fl_bypass(n_bits);
 
-        last_significant_coeff_y =
-            ((2 + (u32::from(last_significant_coeff_y_prefix) & 1)) << n_bits) + last_y_suffix;
+        ((2 + (u32::from(last_significant_coeff_y_prefix) & 1)) << n_bits) + last_y_suffix
     } else {
-        last_significant_coeff_y = u32::from(last_significant_coeff_y_prefix);
-    }
+        u32::from(last_significant_coeff_y_prefix)
+    };
 
     // --- Determine scan_idx (libde265 style) ---
     let scan_idx = if pred_mode == PredMode::ModeIntra {
@@ -607,7 +603,7 @@ pub fn decode_residual_block(
         let mut scan_pos_trace = String::from("ScanOrderPos: ");
         for n in 0..16 {
             let pos = scan_order_pos[n];
-            scan_pos_trace.push_str(&format!("({},{}) ", pos.x, pos.y));
+            let _ = write!(scan_pos_trace, "({},{}) ", pos.x, pos.y);
         }
         debug_more!("{}", scan_pos_trace);
     }
@@ -637,15 +633,15 @@ pub fn decode_residual_block(
     );
 
     let mut g1_state = Greater1State {
-        bit:          0,
+        bit: 0,
         greater1_ctx: 0,
-        ctx_set:      0
+        ctx_set: 0,
     };
 
     let c_idx = match component {
         Component::Luma => 0,
         Component::Cb => 1,
-        Component::Cr => 2
+        Component::Cr => 2,
     };
 
     ctx.n_coeff[c_idx] = 0;
@@ -664,7 +660,7 @@ pub fn decode_residual_block(
             sub_block_is_coded = decode_coded_sub_block_flag(
                 ctx,
                 component,
-                coded_sub_block_neighbors[(s.x as usize) + ((s.y as usize) * sb_width)]
+                coded_sub_block_neighbors[(s.x as usize) + ((s.y as usize) * sb_width)],
             );
             infer_sb_dc_sig_coeff_flag = true;
         } else if i == 0 || i == last_sub_block {
@@ -699,8 +695,7 @@ pub fn decode_residual_block(
             let y0 = s.y << 2;
 
             let log2w = log2_trafo_size - 2;
-            let prev_csbf =
-                coded_sub_block_neighbors[((s.x as usize) + ((s.y as usize) * sb_width))];
+            let prev_csbf = coded_sub_block_neighbors[(s.x as usize) + ((s.y as usize) * sb_width)];
 
             let size_idx = (log2_trafo_size - 2) as usize;
             let chroma_idx = usize::from(component != Component::Luma);
@@ -740,12 +735,10 @@ pub fn decode_residual_block(
                 let yc = y0 + sub_y;
 
                 // Handle Range Extension (RExt) specialized context
-                let ctx_inc: usize;
-
-                if rext_ts_ctx
+                let ctx_inc: usize = if rext_ts_ctx
                     && (ctx.cu_transquant_bypass_flag || ctx.transform_skip_flag[c_idx] > 0)
                 {
-                    ctx_inc = if component == Component::Luma { 42 } else { 16 + 27 };
+                    if component == Component::Luma { 42 } else { 16 + 27 }
                 } else {
                     // can't propagate this due to rust errors.
                     // immutable borrow
@@ -754,8 +747,8 @@ pub fn decode_residual_block(
 
                     let idx = xc as usize + ((yc as usize) << (log2_trafo_size as usize));
                     // Standard context lookup using the precomputed map
-                    ctx_inc = ctx_idx_map[idx] as usize;
-                }
+                    ctx_idx_map[idx] as usize
+                };
 
                 debug_more!("trafoSize: {}", 1 << log2_trafo_size);
 
@@ -781,12 +774,10 @@ pub fn decode_residual_block(
                 } else {
                     // if inference failed, its coded
 
-                    let ctx_inc: usize;
-
-                    if rext_ts_ctx
+                    let ctx_inc: usize = if rext_ts_ctx
                         && (ctx.cu_transquant_bypass_flag || ctx.transform_skip_flag[c_idx] > 0)
                     {
-                        ctx_inc = if component == Component::Luma { 42 } else { 16 + 27 };
+                        if component == Component::Luma { 42 } else { 16 + 27 }
                     } else {
                         // can't propagate this due to rust errors.
                         // immutable borrow
@@ -795,8 +786,8 @@ pub fn decode_residual_block(
 
                         let idx = x0 as usize + ((y0 as usize) << (log2_trafo_size as usize));
                         // Standard context lookup using the precomputed map
-                        ctx_inc = ctx_idx_map[idx] as usize;
-                    }
+                        ctx_idx_map[idx] as usize
+                    };
 
                     let significant_coeff_flag = decode_significant_coeff_flag_lookup(ctx, ctx_inc);
 
@@ -836,7 +827,7 @@ pub fn decode_residual_block(
                     first_subblock,
                     last_sub_block_gtr1_ctx,
                     g1_state,
-                    ctx_set
+                    ctx_set,
                 );
                 if g1_state.bit == 1 {
                     coeff_value[c] += 1;
@@ -863,31 +854,29 @@ pub fn decode_residual_block(
                 coeff_has_max_base_level[new_last_greater_1_scan_pos as usize] = flag as i8;
             }
             // --decode coefficient signs ---
-            let sign_hidden;
 
-            let pred_mode_intra;
-            if c_idx == 0 {
-                pred_mode_intra = ctx.neighbor_tracker.get_intra_mode(x0, y0);
+            let pred_mode_intra = if c_idx == 0 {
+                ctx.neighbor_tracker.get_intra_mode(x0, y0)
             } else {
-                pred_mode_intra = ctx.neighbor_tracker.get_intra_mode_chroma(x0, y0);
-            }
+                ctx.neighbor_tracker.get_intra_mode_chroma(x0, y0)
+            };
             let implicit_rdpcm_enabled_flag = ctx
                 .sps
                 .range_extension
                 .as_ref()
                 .is_some_and(|s| s.implicit_rdpcm_enabled_flag);
 
-            if ctx.cu_transquant_bypass_flag
+            let sign_hidden = if ctx.cu_transquant_bypass_flag
                 || (pred_mode == PredMode::ModeIntra
                     && implicit_rdpcm_enabled_flag
                     && ctx.transform_skip_flag[c_idx] == 1
                     && (pred_mode_intra == 10 || pred_mode_intra == 26))
                 || ctx.explicit_rdpcm_flag
             {
-                sign_hidden = false;
+                false
             } else {
-                sign_hidden = coeff_scan_pos[0] - coeff_scan_pos[n_coefficients - 1] > 3;
-            }
+                coeff_scan_pos[0] - coeff_scan_pos[n_coefficients - 1] > 3
+            };
 
             for n in 0..n_coefficients - 1 {
                 coeff_sign[n] = ctx.cabac.decode_bypass();

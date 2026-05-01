@@ -60,9 +60,8 @@ pub fn get_actual_chroma_mode(intra_mode_chroma: u8, intra_mode_luma: u8) -> u8 
         0 => 0,                      // Planar
         1 => 26,                     // Vertical
         2 => 10,                     // Horizontal
-        3 => 1,                      // DC
         4 => return intra_mode_luma, // DM: Just return Luma's mode
-        _ => 1                       // Safety fallback to DC
+        _ => 1                       // Safety fallback to DC (also covers 3)
     };
 
     // If the mapped mode is the SAME as the Luma mode,

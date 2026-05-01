@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+
 use std::fs::read;
 use std::hint::black_box;
 use std::time::Duration;
@@ -34,7 +36,6 @@ fn zune_sobel_bench(input: &zune_image::image::Image) {
     im.flatten_frames::<u8>();
     black_box(im);
 }
-
 fn vips_gamma_bench(input: &VipsImage) {
     let mut gamma = GammaOptions::default();
     gamma.exponent = 2.5;
@@ -136,7 +137,6 @@ fn vips_resize_bench(input: &VipsImage, kernel: Kernel) {
 }
 
 fn zune_image_resize_bench(input: &Image, resize_method: ResizeMethod) {
-    let (w, h) = input.dimensions();
     let im = Resize::new(ResizeDimensions::Percentage(50, 50), resize_method)
         .clone_and_execute(input)
         .unwrap();

@@ -57,6 +57,8 @@ pub fn open_in_default_app(image: &Image, options: EncoderOptions) {
         std::process::Command::new("xdg-open")
             .arg(path.to_str().unwrap())
             .spawn()
+            .unwrap()
+            .wait()
             .unwrap();
     }
     #[cfg(target_os = "windows")]
@@ -64,6 +66,8 @@ pub fn open_in_default_app(image: &Image, options: EncoderOptions) {
         std::process::Command::new("start")
             .arg(path.to_str().unwrap())
             .spawn()
+            .unwrap()
+            .wait()
             .unwrap();
     }
     #[cfg(target_os = "macos")]
@@ -71,6 +75,8 @@ pub fn open_in_default_app(image: &Image, options: EncoderOptions) {
         std::process::Command::new("open")
             .arg(path.to_str().unwrap())
             .spawn()
+            .unwrap()
+            .wait()
             .unwrap();
     }
 }

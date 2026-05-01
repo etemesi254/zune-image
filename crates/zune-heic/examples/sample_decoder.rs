@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables)]
+#![allow(dead_code, unused_variables,clippy::collapsible_if)]
 // sample_decoder — HEIF container decoder
 //
 // All code is in one file, organised as inline modules that mirror the
@@ -35,6 +35,7 @@ mod isobmff {
     pub mod error {
         use std::fmt;
 
+        #[allow(clippy::enum_variant_names)]
         pub enum Error {
             /// Wraps an underlying I/O failure.
             Io(std::io::Error),

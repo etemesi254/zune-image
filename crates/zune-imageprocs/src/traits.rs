@@ -6,7 +6,12 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-#![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless,
+    clippy::cast_possible_wrap
+)]
 //! Various operations useful for generic image processing.
 //!
 //!
@@ -113,11 +118,11 @@ macro_rules! numops_for_int {
             }
             #[inline(always)]
             fn from_f64(x: f64) -> $int {
-                (x + 0.5)  as $int
+                (x + 0.5) as $int
             }
             #[inline(always)]
             fn from_f32(x: f32) -> $int {
-                (x + 0.5)  as $int
+                (x + 0.5) as $int
             }
             #[inline(always)]
             fn one() -> $int {
@@ -154,7 +159,7 @@ macro_rules! numops_for_int {
             }
             #[inline(always)]
             fn to_f64(self) -> f64 {
-                self as f64
+                f64::from(self)
             }
 
             #[inline(always)]

@@ -83,9 +83,9 @@ pub struct IlocItem {
 
 #[derive(Debug, Clone)]
 pub struct IlocExtent {
-    pub extent_index:  Option<u64>,
-    pub extent_offset: u64,
-    pub extent_length: u64
+    pub index:  Option<u64>,
+    pub offset: u64,
+    pub length: u64
 }
 
 #[derive(Debug, Clone)]

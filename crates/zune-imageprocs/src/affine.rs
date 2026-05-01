@@ -302,16 +302,14 @@ pub fn get_affine_output_dimensions(
 }
 
 /// Apply affine transform to a single channel
+#[allow(clippy::many_single_char_names)]
 pub fn affine_transform_channel<T: Copy + Default + NumOps<T>>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, transform: &AffineTransform,
 ) where
     f32: std::convert::From<T>,
 {
-    let inv_transform = match transform.inverse() {
-        Some(inv) => inv,
-        None => return,
-    };
+    let Some(inv_transform) = transform.inverse() else { return };
 
     out_channel.fill(T::default());
 

@@ -180,6 +180,7 @@ impl OperationsTrait for HaldClut {
 /// Applies a Hald-CLUT mapping to target RGB channels.
 ///
 /// Uses Trilinear Interpolation for smooth, professional-grade color mapping.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_hald_clut<T>(
     r_target: &mut [T], g_target: &mut [T], b_target: &mut [T], r_clut: &[T], g_clut: &[T],
     b_clut: &[T], level: usize, clut_w: usize,

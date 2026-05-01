@@ -37,6 +37,7 @@ impl Default for BlockState {
     }
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum PredMode {
     ModeIntra,
     ModeInter,
@@ -401,8 +402,8 @@ impl NeighborTracker {
         // 3. Local Z-Scan Check (Only if in the exact same CTU)
         if ctu_neigh_addr == ctu_curr_addr {
             let mask = (1 << log2_ctu_units) - 1;
-            let local_curr_z = self.get_zscan_from_units((cux & mask) as u32, (cuy & mask) as u32);
-            let local_neigh_z = self.get_zscan_from_units((nux & mask) as u32, (nuy & mask) as u32);
+            let local_curr_z = Self::get_zscan_from_units((cux & mask) as u32, (cuy & mask) as u32);
+            let local_neigh_z = Self::get_zscan_from_units((nux & mask) as u32, (nuy & mask) as u32);
 
             if local_neigh_z >= local_curr_z {
                 return false;
@@ -419,7 +420,7 @@ impl NeighborTracker {
         self.blocks[neigh_idx].available
     }
     #[inline(always)]
-    pub fn get_zscan_from_units(&self, ux: u32, uy: u32) -> u32 {
+    pub fn get_zscan_from_units( ux: u32, uy: u32) -> u32 {
         spread_bits(ux) | (spread_bits(uy) << 1)
     }
 }
@@ -487,6 +488,7 @@ impl NeighborTracker {
 }
 
 impl NeighborTracker {
+    #[allow(clippy::too_many_arguments)]
     pub fn update_cu_info(
         &mut self, x0: usize, y0: usize, cb_size: usize, depth: u8, qp: i8, is_skip: bool,
         slice_id: u16
@@ -517,9 +519,9 @@ impl NeighborTracker {
 }
 
 fn spread_bits(mut x: u32) -> u32 {
-    x = (x | (x << 8)) & 0x00FF00FF;
-    x = (x | (x << 4)) & 0x0F0F0F0F;
-    x = (x | (x << 2)) & 0x33333333;
-    x = (x | (x << 1)) & 0x55555555;
+    x = (x | (x << 8)) & 0x00FF_00FF;
+    x = (x | (x << 4)) & 0x0F0F_0F0F;
+    x = (x | (x << 2)) & 0x3333_3333;
+    x = (x | (x << 1)) & 0x5555_5555;
     x
 }

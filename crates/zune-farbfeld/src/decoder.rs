@@ -87,7 +87,7 @@ where
     ///
     /// ## Returns
     /// -  Some(usize) - The size expected for a buffer of `&[u8]` which can
-    ///  hold the whole decoded bytes without overflow
+    ///    hold the whole decoded bytes without overflow
     /// - None: Indicates the headers weren't decoded or width*height*8 would overflow a usize
     pub fn output_buffer_size(&self) -> Option<usize> {
         if self.decoded_headers {

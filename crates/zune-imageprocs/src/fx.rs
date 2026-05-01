@@ -1,4 +1,5 @@
 #![cfg(feature = "exmex")]
+#![allow(clippy::cast_possible_truncation,clippy::cast_precision_loss)]
 use exmex::prelude::*;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
@@ -394,6 +395,7 @@ impl OperationsTrait for Fx {
 
 /// Maps a user's variable string (like "r", "cb", "k", "c0") to the actual channel index
 /// based on the image's active colorspace.
+#[allow(clippy::match_same_arms)]
 fn get_channel_index(name: &str, cs: ColorSpace) -> Option<usize> {
     // 1. Generic Channel Matcher for Unknown or MultiBand images (c0, c1, c2...)
     // This allows users to type "c5" for a 6-channel MultiBand image and it just works.

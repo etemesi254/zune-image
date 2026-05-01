@@ -15,12 +15,12 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
+use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
-use crate::mathops::{compute_mod_u32, fastdiv_u32};
 
 #[derive(Default)]
 pub struct GaussianBlur {
@@ -49,12 +49,12 @@ impl OperationsTrait for GaussianBlur {
         let depth = image.depth();
 
         #[cfg(feature = "threads")]
-        let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let num_threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         #[cfg(not(feature = "threads"))]
         let num_threads = 1;
 
         if num_threads > 1 {
-            trace!("Running gaussian blur with {} spatial threads", num_threads);
+            trace!("Running gaussian blur with {num_threads} spatial threads");
         } else {
             trace!("Running gaussian blur in single threaded mode");
         }
@@ -146,7 +146,8 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
 }
 
 pub fn gaussian_blur_u8(
-    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32, num_threads: usize,
+    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32,
+    num_threads: usize,
 ) {
     let blur_radii = create_box_gauss(sigma);
     assert_eq!(blur_radii.len(), 3, "Update pass operations");
@@ -163,9 +164,15 @@ pub fn gaussian_blur_u8(
     if use_threads {
         #[cfg(feature = "threads")]
         std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image.chunks_mut(chunk_size).zip(scratch_space.chunks_mut(chunk_size)) {
+            for (in_chunk, scratch_chunk) in in_out_image
+                .chunks_mut(chunk_size)
+                .zip(scratch_space.chunks_mut(chunk_size))
+            {
                 s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk.chunks_exact_mut(width).zip(scratch_chunk.chunks_exact_mut(width)) {
+                    for (in_row, scratch_row) in in_chunk
+                        .chunks_exact_mut(width)
+                        .zip(scratch_chunk.chunks_exact_mut(width))
+                    {
                         crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
                         crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
                         crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
@@ -174,7 +181,10 @@ pub fn gaussian_blur_u8(
             }
         });
     } else {
-        for (in_row, scratch_row) in in_out_image.chunks_exact_mut(width).zip(scratch_space.chunks_exact_mut(width)) {
+        for (in_row, scratch_row) in in_out_image
+            .chunks_exact_mut(width)
+            .zip(scratch_space.chunks_exact_mut(width))
+        {
             crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
             crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
             crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
@@ -196,7 +206,9 @@ pub fn gaussian_blur_u8(
                     let y_start = i * chunk_height;
                     let radius = *blur_radius;
                     s.spawn(move || {
-                        box_blur_vertical_u8_chunk(input, out_chunk, width, height, radius, y_start);
+                        box_blur_vertical_u8_chunk(
+                            input, out_chunk, width, height, radius, y_start,
+                        );
                     });
                 }
             });
@@ -207,7 +219,8 @@ pub fn gaussian_blur_u8(
 }
 
 pub fn gaussian_blur_u16(
-    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32, num_threads: usize,
+    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32,
+    num_threads: usize,
 ) {
     let blur_radii = create_box_gauss(sigma);
     let chunk_height = (height + num_threads - 1) / num_threads.max(1);
@@ -221,9 +234,15 @@ pub fn gaussian_blur_u16(
     if use_threads {
         #[cfg(feature = "threads")]
         std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image.chunks_mut(chunk_size).zip(scratch_space.chunks_mut(chunk_size)) {
+            for (in_chunk, scratch_chunk) in in_out_image
+                .chunks_mut(chunk_size)
+                .zip(scratch_space.chunks_mut(chunk_size))
+            {
                 s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk.chunks_exact_mut(width).zip(scratch_chunk.chunks_exact_mut(width)) {
+                    for (in_row, scratch_row) in in_chunk
+                        .chunks_exact_mut(width)
+                        .zip(scratch_chunk.chunks_exact_mut(width))
+                    {
                         crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
                         crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
                         crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
@@ -232,7 +251,10 @@ pub fn gaussian_blur_u16(
             }
         });
     } else {
-        for (in_row, scratch_row) in in_out_image.chunks_exact_mut(width).zip(scratch_space.chunks_exact_mut(width)) {
+        for (in_row, scratch_row) in in_out_image
+            .chunks_exact_mut(width)
+            .zip(scratch_space.chunks_exact_mut(width))
+        {
             crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
             crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
             crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
@@ -253,7 +275,9 @@ pub fn gaussian_blur_u16(
                     let y_start = i * chunk_height;
                     let radius = *blur_radius;
                     s.spawn(move || {
-                        box_blur_vertical_u16_chunk(input, out_chunk, width, height, radius, y_start);
+                        box_blur_vertical_u16_chunk(
+                            input, out_chunk, width, height, radius, y_start,
+                        );
                     });
                 }
             });
@@ -264,7 +288,8 @@ pub fn gaussian_blur_u16(
 }
 
 pub fn gaussian_blur_f32(
-    in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, sigma: f32, num_threads: usize,
+    in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, sigma: f32,
+    num_threads: usize,
 ) {
     let blur_radii = create_box_gauss(sigma);
     let chunk_height = (height + num_threads - 1) / num_threads.max(1);
@@ -278,18 +303,42 @@ pub fn gaussian_blur_f32(
     if use_threads {
         #[cfg(feature = "threads")]
         std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image.chunks_mut(chunk_size).zip(scratch_space.chunks_mut(chunk_size)) {
+            for (in_chunk, scratch_chunk) in in_out_image
+                .chunks_mut(chunk_size)
+                .zip(scratch_space.chunks_mut(chunk_size))
+            {
                 s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk.chunks_exact_mut(width).zip(scratch_chunk.chunks_exact_mut(width)) {
-                        crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[0]);
-                        crate::box_blur::box_blur_f32_inner(scratch_row, in_row, width, blur_radii[1]);
-                        crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[2]);
+                    for (in_row, scratch_row) in in_chunk
+                        .chunks_exact_mut(width)
+                        .zip(scratch_chunk.chunks_exact_mut(width))
+                    {
+                        crate::box_blur::box_blur_f32_inner(
+                            in_row,
+                            scratch_row,
+                            width,
+                            blur_radii[0],
+                        );
+                        crate::box_blur::box_blur_f32_inner(
+                            scratch_row,
+                            in_row,
+                            width,
+                            blur_radii[1],
+                        );
+                        crate::box_blur::box_blur_f32_inner(
+                            in_row,
+                            scratch_row,
+                            width,
+                            blur_radii[2],
+                        );
                     }
                 });
             }
         });
     } else {
-        for (in_row, scratch_row) in in_out_image.chunks_exact_mut(width).zip(scratch_space.chunks_exact_mut(width)) {
+        for (in_row, scratch_row) in in_out_image
+            .chunks_exact_mut(width)
+            .zip(scratch_space.chunks_exact_mut(width))
+        {
             crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[0]);
             crate::box_blur::box_blur_f32_inner(scratch_row, in_row, width, blur_radii[1]);
             crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[2]);
@@ -310,7 +359,9 @@ pub fn gaussian_blur_f32(
                     let y_start = i * chunk_height;
                     let radius = *blur_radius;
                     s.spawn(move || {
-                        box_blur_vertical_f32_chunk(input, out_chunk, width, height, radius, y_start);
+                        box_blur_vertical_f32_chunk(
+                            input, out_chunk, width, height, radius, y_start,
+                        );
                     });
                 }
             });
@@ -326,7 +377,8 @@ pub fn gaussian_blur_f32(
 
 #[inline(always)]
 fn box_blur_vertical_u8_chunk(
-    input: &[u8], output_chunk: &mut [u8], width: usize, height: usize, radius: usize, y_start: usize,
+    input: &[u8], output_chunk: &mut [u8], width: usize, height: usize, radius: usize,
+    y_start: usize,
 ) {
     if radius == 0 || height <= 1 {
         let start_idx = y_start * width;
@@ -338,11 +390,13 @@ fn box_blur_vertical_u8_chunk(
     }
 
     let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 { return; }
+    if chunk_height == 0 {
+        return;
+    }
 
     let diameter = (radius * 2 + 1) as u32;
     let diameter = diameter.min(height as u32);
-    let m_radius = compute_mod_u32(diameter as u64);
+    let m_radius = compute_mod_u32(u64::from(diameter));
 
     let mut sums = vec![0u32; width];
 
@@ -350,14 +404,14 @@ fn box_blur_vertical_u8_chunk(
     for dy in 0..=(radius * 2) {
         let real_y = if dy < radius {
             let diff = radius - dy;
-            if y_start > diff { y_start - diff } else { 0 }
+            y_start.saturating_sub(diff)
         } else {
             let diff = dy - radius;
             (y_start + diff).min(height - 1)
         };
         let row = &input[real_y * width..real_y * width + width];
         for (x, &val) in row.iter().enumerate() {
-            sums[x] += val as u32;
+            sums[x] += u32::from(val);
         }
     }
 
@@ -377,8 +431,13 @@ fn box_blur_vertical_u8_chunk(
         let bottom_row = &input[bottom_y * width..bottom_y * width + width];
         let out_row = &mut output_chunk[y * width..y * width + width];
 
-        for (((sum, &top), &bottom), out) in sums.iter_mut().zip(top_row.iter()).zip(bottom_row.iter()).zip(out_row.iter_mut()) {
-            *sum = sum.wrapping_add(bottom as u32).wrapping_sub(top as u32);
+        for (((sum, &top), &bottom), out) in sums
+            .iter_mut()
+            .zip(top_row.iter())
+            .zip(bottom_row.iter())
+            .zip(out_row.iter_mut())
+        {
+            *sum = sum.wrapping_add(u32::from(bottom)).wrapping_sub(u32::from(top));
             *out = fastdiv_u32(*sum, m_radius) as u8;
         }
     }
@@ -386,7 +445,8 @@ fn box_blur_vertical_u8_chunk(
 
 #[inline(always)]
 fn box_blur_vertical_u16_chunk(
-    input: &[u16], output_chunk: &mut [u16], width: usize, height: usize, radius: usize, y_start: usize,
+    input: &[u16], output_chunk: &mut [u16], width: usize, height: usize, radius: usize,
+    y_start: usize,
 ) {
     if radius == 0 || height <= 1 {
         let start_idx = y_start * width;
@@ -398,25 +458,27 @@ fn box_blur_vertical_u16_chunk(
     }
 
     let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 { return; }
+    if chunk_height == 0 {
+        return;
+    }
 
     let diameter = (radius * 2 + 1) as u32;
     let diameter = diameter.min(height as u32);
-    let m_radius = compute_mod_u32(diameter as u64);
+    let m_radius = compute_mod_u32(u64::from(diameter));
 
     let mut sums = vec![0u32; width];
 
     for dy in 0..=(radius * 2) {
         let real_y = if dy < radius {
             let diff = radius - dy;
-            if y_start > diff { y_start - diff } else { 0 }
+            y_start.saturating_sub(diff)
         } else {
             let diff = dy - radius;
             (y_start + diff).min(height - 1)
         };
         let row = &input[real_y * width..real_y * width + width];
         for (x, &val) in row.iter().enumerate() {
-            sums[x] += val as u32;
+            sums[x] += u32::from(val);
         }
     }
 
@@ -434,8 +496,13 @@ fn box_blur_vertical_u16_chunk(
         let bottom_row = &input[bottom_y * width..bottom_y * width + width];
         let out_row = &mut output_chunk[y * width..y * width + width];
 
-        for (((sum, &top), &bottom), out) in sums.iter_mut().zip(top_row.iter()).zip(bottom_row.iter()).zip(out_row.iter_mut()) {
-            *sum = sum.wrapping_add(bottom as u32).wrapping_sub(top as u32);
+        for (((sum, &top), &bottom), out) in sums
+            .iter_mut()
+            .zip(top_row.iter())
+            .zip(bottom_row.iter())
+            .zip(out_row.iter_mut())
+        {
+            *sum = sum.wrapping_add(u32::from(bottom)).wrapping_sub(u32::from(top));
             *out = fastdiv_u32(*sum, m_radius) as u16;
         }
     }
@@ -443,7 +510,8 @@ fn box_blur_vertical_u16_chunk(
 
 #[inline(always)]
 fn box_blur_vertical_f32_chunk(
-    input: &[f32], output_chunk: &mut [f32], width: usize, height: usize, radius: usize, y_start: usize,
+    input: &[f32], output_chunk: &mut [f32], width: usize, height: usize, radius: usize,
+    y_start: usize,
 ) {
     if radius == 0 || height <= 1 {
         let start_idx = y_start * width;
@@ -455,7 +523,9 @@ fn box_blur_vertical_f32_chunk(
     }
 
     let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 { return; }
+    if chunk_height == 0 {
+        return;
+    }
 
     let weight = (radius * 2 + 1) as f32;
     let inv_weight = 1.0 / weight;
@@ -464,7 +534,7 @@ fn box_blur_vertical_f32_chunk(
     for dy in 0..=(radius * 2) {
         let real_y = if dy < radius {
             let diff = radius - dy;
-            if y_start > diff { y_start - diff } else { 0 }
+            y_start.saturating_sub(diff)
         } else {
             let diff = dy - radius;
             (y_start + diff).min(height - 1)
@@ -489,7 +559,12 @@ fn box_blur_vertical_f32_chunk(
         let bottom_row = &input[bottom_y * width..bottom_y * width + width];
         let out_row = &mut output_chunk[y * width..y * width + width];
 
-        for (((sum, &top), &bottom), out) in sums.iter_mut().zip(top_row.iter()).zip(bottom_row.iter()).zip(out_row.iter_mut()) {
+        for (((sum, &top), &bottom), out) in sums
+            .iter_mut()
+            .zip(top_row.iter())
+            .zip(bottom_row.iter())
+            .zip(out_row.iter_mut())
+        {
             *sum = *sum + bottom - top;
             *out = *sum * inv_weight;
         }

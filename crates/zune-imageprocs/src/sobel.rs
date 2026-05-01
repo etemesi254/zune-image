@@ -96,8 +96,8 @@ impl OperationsTrait for Sobel {
 /// Calculate sobel for f32 images
 ///
 /// # Arguments
-/// -  in_values: An array which is expected to contain 9 elements 
-///  that represents a 3x3 window for which we are to calculate the sobel 
+/// - in_values: An array which is expected to contain 9 elements 
+///   that represents a 3x3 window for which we are to calculate the sobel 
 #[rustfmt::skip]
 fn sobel_inner_f32<T>(c: &[T; 9]) -> T
     where
@@ -129,8 +129,8 @@ fn sobel_inner_f32<T>(c: &[T; 9]) -> T
 /// Calculate sobel for int  images
 ///
 /// # Arguments
-/// -  in_values: An array which is expected to contain 9 elements 
-///  that represents a 3x3 window for which we are to calculate the sobel values
+/// - in_values: An array which is expected to contain 9 elements 
+///   that represents a 3x3 window for which we are to calculate the sobel values
 #[allow(clippy::neg_multiply, clippy::identity_op)]
 #[rustfmt::skip]
 fn sobel_inner_i32<T>(c: &[T; 9]) -> T

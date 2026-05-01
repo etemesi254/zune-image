@@ -21,10 +21,6 @@ pub fn generate_all_sig_ctx_maps() -> Vec<Vec<Vec<Vec<Vec<u8>>>>> {
 }
 
 fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u8) -> Vec<u8> {
-    let w = 1 << log2w;
-    let sb_width = w >> 2;
-    let mut map = vec![0u8; w * w];
-
     #[rustfmt::skip]
      const  CTX_IDX_MAP_4X4:[u8;16] = [
         0, 1, 4, 5,
@@ -32,6 +28,10 @@ fn generate_libde265_sig_map(log2w: u8, c_idx: usize, scan_idx: u8, prev_csbf: u
         6, 6, 8, 8,
         7, 7, 8, 99
     ];
+    
+    let w = 1 << log2w;
+    let sb_width = w >> 2;
+    let mut map = vec![0u8; w * w];
 
     for yc in 0..w {
         for xc in 0..w {

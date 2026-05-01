@@ -503,8 +503,8 @@ where
     ///
     /// # Returns
     /// - `Ok(DecodingResult)`: This is a simple enum that can hold either
-    /// eight or 16 bits ([`u8`] or [`u16`]) singe ppm images can either be 8 bit or 16 bit.
-    ///    It can also return `DecodingResult::F32` in case of decoding PFM  images
+    ///   eight or 16 bits ([`u8`] or [`u16`]) singe ppm images can either be 8 bit or 16 bit.
+    ///   It can also return `DecodingResult::F32` in case of decoding PFM  images
     ///
     ///  -  Err(PPMDecodeErrors)`: There was a problem
     /// # Example

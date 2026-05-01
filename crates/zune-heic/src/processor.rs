@@ -145,12 +145,12 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
             for extent in &item_iloc.extents {
                 let absolute_offset = match item_iloc.construction_method {
-                    0 => item_iloc.base_offset + extent.extent_offset,
+                    0 => item_iloc.base_offset + extent.offset,
                     1 => {
                         let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
                             msg: "Missing idat offset".into()
                         })?;
-                        idat_off.position + item_iloc.base_offset + extent.extent_offset
+                        idat_off.position + item_iloc.base_offset + extent.offset
                     }
                     _ => {
                         return Err(HeicErrors::Generic {
@@ -166,7 +166,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 }
 
                 let buffer_index = (absolute_offset - mdat.start_offset) as usize;
-                let length = extent.extent_length as usize;
+                let length = extent.length as usize;
 
                 if buffer_index + length > mdat.raw_data.len() {
                     return Err(HeicErrors::Generic {
@@ -302,12 +302,12 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
 
             for extent in &item_iloc.extents {
                 let absolute_offset = match item_iloc.construction_method {
-                    0 => item_iloc.base_offset + extent.extent_offset,
+                    0 => item_iloc.base_offset + extent.offset,
                     1 => {
                         let idat_off = meta.idat.as_ref().ok_or(HeicErrors::Generic {
                             msg: "Missing idat offset".into()
                         })?;
-                        idat_off.position + item_iloc.base_offset + extent.extent_offset
+                        idat_off.position + item_iloc.base_offset + extent.offset
                     }
                     _ => {
                         return Err(HeicErrors::Generic {
@@ -317,7 +317,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
                 };
 
                 let buffer_index = (absolute_offset - mdat.start_offset) as usize;
-                let length = extent.extent_length as usize;
+                let length = extent.length as usize;
 
                 match mdat.raw_data.get(buffer_index..(buffer_index + length)) {
                     None => {
@@ -398,7 +398,7 @@ impl<T: ZByteReaderTrait> HeifDecoder<T> {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn stitch(&self, tile_map: TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
+    pub(crate) fn stitch(&self, tile_map: &TileMap, output: &mut [u8]) -> Result<(), HeicErrors> {
         let unrotated_w = self.width.unwrap() as usize;
         let unrotated_h = self.height.unwrap() as usize;
         let channels = self.colorspace().unwrap().num_components();

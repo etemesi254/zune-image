@@ -14,19 +14,19 @@
 //!
 //! # Note on Compatibility with images
 //!
-//! - The library automatically tries to convert the image with highest compatibility
-//!  this means that it will automatically convert the image to a supported bit depth
-//! and supported colorspace in case the image is not in the supported colorspace
-//!   E.g if you open a HDR or EXR image whose format is `f32` `[0.0-1.0]` and convert it to JPEG,
-//! which understands 8 bit images`[0-255]`, the library will internally convert it to 8 bit images
+//! - The library automatically tries to convert the image with the highest compatibility
+//!   this means that it will automatically convert the image to a supported bit depth
+//!   and supported colorspace in case the image is not in the supported colorspace
+//!   E.g. if you open a HDR or EXR image whose format is `f32` `[0.0-1.0]` and convert it to JPEG,
+//!   which understands 8 bit images`[0-255]`, the library will internally convert it to 8 bit images
 //!
 //! - For image depth, we convert it to the most appropriate depth, e.g trying to store F32 images in png
-//! will convert it to 16 bit images, this allows us to preserve as much information as possible
-//! during the conversation.
+//!   will convert it to 16 bit images, this allows us to preserve as much information as possible
+//!   during the conversation.
 //!
 //! - **Warning**: For this to work, the image will be cloned and the depth or colorspace modified on the
-//!  clone. The current image is left as is, unmodified.
-//!  **This may cause huge memory usage as cloning is expensive**
+//!   clone. The current image is left as is, unmodified.
+//!   **This may cause huge memory usage as cloning is expensive**
 //!
 //!
 #![allow(unused_imports, unused_variables, non_camel_case_types, dead_code)]
@@ -466,7 +466,7 @@ impl Image {
     ///
     /// * `file`: The file path to which the image will be saved
     /// * `format`: The format to save the image into. It's an error if the
-    ///     format doesn't have an encoder(not all formats do)
+    ///   format doesn't have an encoder(not all formats do)
     ///
     /// returns: Result<(), ImageErrors>
     ///
@@ -587,12 +587,12 @@ impl Image {
     ///
     ///
     /// - The decoders supported can be switched on and off depending on how
-    ///  you configure your Cargo.toml. It is generally recommended to not enable decoders
-    ///  you will not be using as it reduces both the security attack surface and dependency
+    ///   you configure your Cargo.toml. It is generally recommended to not enable decoders
+    ///   you will not be using as it reduces both the security attack surface and dependency
     ///
     /// # Arguments
     /// - file: The file path from which to read the file from, the file must be a supported format
-    /// otherwise it's an error to try and decode
+    ///   otherwise it's an error to try and decode
     ///
     /// See also [read](Self::read) for reading from memory
     pub fn open<P: AsRef<Path>>(file: P) -> Result<Image, ImageErrors> {
@@ -607,7 +607,7 @@ impl Image {
     ///
     /// # Example
     ///  -  Decode a file with strict mode enabled and only expect images with less
-    ///  than 100 pixels in width
+    ///     than 100 pixels in width
     ///
     /// ```no_run
     /// use zune_core::options::DecoderOptions;

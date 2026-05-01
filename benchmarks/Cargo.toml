@@ -29,7 +29,7 @@ zune-jpeg = { path = "../crates/zune-jpeg" ,features = []}
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
 zune-hdr = { path = "../crates/zune-hdr" }
-image = { version = "0.25.1", default-features = false, features = ["bmp", "hdr", "jpeg"] }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "hdr", "jpeg"] }
 zune-imageprocs = { path = "../crates/zune-imageprocs" }
 
 # VIPS

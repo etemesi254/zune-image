@@ -41,7 +41,7 @@ use crate::cmd_args::arg_parsers::IResizeMethod;
 
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::smush::{Smush, SmushDirection};
-
+#[allow(clippy::type_complexity)]
 pub fn parse_options(
     argument: &str, args: &clap::ArgMatches,
 ) -> Result<Vec<(usize, Box<dyn OperationsTrait>)>, String> {

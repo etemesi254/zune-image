@@ -129,13 +129,13 @@ impl EncoderOptions {
     ///
     ///  # Lossy
     /// - Higher quality means some images take longer to write and
-    /// are big but they look good
+    ///   have large file sizes but they look good (closer to lossless)
     ///
     /// - Lower quality means small images and low quality.
     ///
     /// # Lossless
     /// - High quality indicates more time is spent in making the file
-    /// smaller
+    ///   smaller
     ///
     /// - Low quality indicates less time is spent in making the file bigger
     pub const fn quality(&self) -> u8 {

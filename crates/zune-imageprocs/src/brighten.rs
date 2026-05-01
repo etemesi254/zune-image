@@ -62,7 +62,7 @@ impl Brighten {
     ///
     /// # Arguments
     /// - value: Value to increase the channel values with, must be between -1 and 1, where 1 stands for maximum brightness
-    ///  and -1 for darkness
+    ///   and -1 for darkness
     #[must_use]
     pub fn new(value: f32) -> Brighten {
         Brighten { value }
@@ -147,7 +147,6 @@ pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
 ///
 /// returns: ()
 ///
-
 pub fn brighten_f32(channel: &mut [f32], value: f32, max_value: f32) {
     for x in channel
         .iter_mut() { *x = (*x + value).clamp(0.0, max_value); }

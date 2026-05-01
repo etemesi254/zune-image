@@ -53,17 +53,16 @@ pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
 /// 1. The `&[i16]` slices passed contain 16 items
 ///
 /// 2. The slices passed are in the following order
-///     `y,cb,cr`
+///    `y,cb,cr`
 ///
 /// 3. `&mut [u8]` is zero initialized
 ///
 /// 4. `&mut usize` points to the position in the array where new values should
-/// be used
+///    be used
 ///
 /// The pointer should
 /// 1. Carry out color conversion
 /// 2. Update `&mut usize` with the new position
-
 pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &mut usize);
 
 /// IDCT  function prototype
@@ -85,15 +84,15 @@ pub(crate) struct ICCChunk {
 // A separate struct to allow &borrowing tables while &mut borrowing components
 pub(crate) struct EntropyTables {
     /// DC Huffman Tables with a maximum of 4 tables for each  component
-    pub(crate) dc_huffman_tables:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    pub(crate) dc_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
     /// AC Huffman Tables with a maximum of 4 tables for each component
-    pub(crate) ac_huffman_tables:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    pub(crate) ac_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Arithmetic coding initial conditioning parameters and statistics (has a default value)
     #[cfg(feature = "arith")]
-    pub(crate) dc_arithmetic_tables: [ArithDCTables; MAX_COMPONENTS],
+    pub(crate) dc_arithmetic: [ArithDCTables; MAX_COMPONENTS],
     /// Arithmetic coding initial conditioning parameters and statistics  (has a default value)
     #[cfg(feature = "arith")]
-    pub(crate) ac_arithmetic_tables: [ArithACTables; MAX_COMPONENTS]
+    pub(crate) ac_arithmetic: [ArithACTables; MAX_COMPONENTS]
 }
 
 /// A JPEG Decoder Instance.
@@ -189,17 +188,17 @@ where
             info:                  ImageInfo::default(),
             qt_tables:             [None, None, None, None],
             entropy_tables:        EntropyTables {
-                dc_huffman_tables: [None, None, None, None],
-                ac_huffman_tables: [None, None, None, None],
+                dc_huffman: [None, None, None, None],
+                ac_huffman: [None, None, None, None],
                 #[cfg(feature = "arith")]
-                dc_arithmetic_tables: [
+                dc_arithmetic: [
                     ArithDCTables::default(),
                     ArithDCTables::default(),
                     ArithDCTables::default(),
                     ArithDCTables::default()
                 ],
                 #[cfg(feature = "arith")]
-                ac_arithmetic_tables: [
+                ac_arithmetic: [
                     ArithACTables::default(),
                     ArithACTables::default(),
                     ArithACTables::default(),
@@ -374,6 +373,7 @@ where
     pub fn set_options(&mut self, options: DecoderOptions) {
         self.options = options;
     }
+    #[allow(clippy::cast_possible_truncation)]
     fn reassemble_extended_xmp(&mut self) {
         if self.extended_xmp_segments.is_empty() {
             return;
@@ -953,11 +953,11 @@ where
     }
 
     /// Set up-sampling routines in case an image is down sampled
-    pub(crate) fn set_upsampling(&mut self) -> Result<(), DecodeErrors> {
+    pub(crate) fn set_upsampling(&mut self) {
         // no sampling, return early
         // check if horizontal max ==1
         if self.h_max == self.v_max && self.h_max == 1 {
-            return Ok(());
+            return ;
         }
 
         for comp in &mut self.components {
@@ -990,7 +990,6 @@ where
             comp.up_sampler = samp_factor;
         }
 
-        return Ok(());
     }
     #[must_use]
     /// Get the width of the image as a u16
@@ -1081,7 +1080,6 @@ impl ImageInfo {
     /// Set width of the image
     ///
     /// Found in the start of frame
-
     pub(crate) fn set_width(&mut self, width: u16) {
         self.width = width;
     }
@@ -1089,7 +1087,6 @@ impl ImageInfo {
     /// Set height of the image
     ///
     /// Found in the start of frame
-
     pub(crate) fn set_height(&mut self, height: u16) {
         self.height = height;
     }
@@ -1097,7 +1094,6 @@ impl ImageInfo {
     /// Set the image density
     ///
     /// Found in the start of frame
-
     pub(crate) fn set_density(&mut self, density: u8) {
         self.pixel_density = density;
     }
@@ -1105,7 +1101,6 @@ impl ImageInfo {
     /// Set image Start of frame marker
     ///
     /// found in the Start of frame header
-
     pub(crate) fn set_sof_marker(&mut self, marker: SOFMarkers) {
         self.sof = marker;
     }

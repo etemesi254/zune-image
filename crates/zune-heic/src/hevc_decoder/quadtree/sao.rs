@@ -1,21 +1,21 @@
 #![allow(dead_code)]
-use std::cmp::min;
-use std::sync::Arc;
 use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::CONTEXT_MODEL_SAO_MERGE_FLAG;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
-use crate::hevc_decoder::raw_frame::{offset_plane, RawFrame, SingleFrame};
+use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame, offset_plane};
+use std::cmp::{Ordering, min};
+use std::sync::Arc;
 
 #[derive(Default, Debug, Clone)]
 pub struct SaoInfo {
     // todo combine sao_type_idx and sao_eo_class into one byte to save on space
-    type_index:   u8,
+    type_index: u8,
     sao_eo_class: u8,
 
     sao_band_position: [u8; 3],
-    sao_offset_val:    [[i8; 4]; 3]
+    sao_offset_val: [[i8; 4]; 3],
 }
 fn decode_sao_type_idx(ctx: &mut DecodeSliceContext) -> u8 {
     const OFF_SAO_TYPE: usize = 1;
@@ -137,7 +137,7 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
                     for j in 0..4 {
                         let bit_depth = match i {
                             0 => ctx.sps.bit_depth_luma,
-                            _ => ctx.sps.bit_depth_chroma
+                            _ => ctx.sps.bit_depth_chroma,
                         };
                         sao_info.sao_offset_val[i][j] = decode_sao_offset_abs(ctx, bit_depth) as i8;
 
@@ -181,11 +181,12 @@ pub fn read_sao(ctx: &mut DecodeSliceContext, x_ctb: usize, y_ctb: usize) {
                             if i == 0 {
                                 log_offset_scale = i32::from(range_ext.log2_sao_offset_scale_luma);
                             } else {
-                                log_offset_scale = i32::from(range_ext.log2_sao_offset_scale_chroma);
+                                log_offset_scale =
+                                    i32::from(range_ext.log2_sao_offset_scale_chroma);
                             }
                         }
                         for j in 0..4 {
-                            sao_info.sao_offset_val[i][j] *= (sign[j]  << log_offset_scale) as i8;
+                            sao_info.sao_offset_val[i][j] *= (sign[j] << log_offset_scale) as i8;
                         }
                     }
                 }
@@ -230,7 +231,7 @@ pub fn apply_sao_frame(
             let type_luma = info.type_index & 0x3;
             if type_luma != 0 {
                 apply_sao_component(
-                    &mut luma, l_x, l_y, l_w, l_h, 0, info, type_luma, pic_width, pic_height
+                    &mut luma, l_x, l_y, l_w, l_h, 0, info, type_luma, pic_width, pic_height,
                 );
             }
 
@@ -245,7 +246,7 @@ pub fn apply_sao_frame(
             let type_cb = (info.type_index >> 2) & 0x3;
             if type_cb != 0 {
                 apply_sao_component(
-                    &mut cb, c_x, c_y, c_w, c_h, 1, info, type_cb, c_pic_w, c_pic_h
+                    &mut cb, c_x, c_y, c_w, c_h, 1, info, type_cb, c_pic_w, c_pic_h,
                 );
             }
 
@@ -253,17 +254,18 @@ pub fn apply_sao_frame(
             let type_cr = (info.type_index >> 4) & 0x3;
             if type_cr != 0 {
                 apply_sao_component(
-                    &mut cr, c_x, c_y, c_w, c_h, 2, info, type_cr, c_pic_w, c_pic_h
+                    &mut cr, c_x, c_y, c_w, c_h, 2, info, type_cr, c_pic_w, c_pic_h,
                 );
             }
         }
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn apply_sao_component(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize,
-    c_idx: usize, info: &SaoInfo, type_idx: u8, pic_width: usize, pic_height: usize
+    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, c_idx: usize,
+    info: &SaoInfo, type_idx: u8, pic_width: usize, pic_height: usize,
 ) {
-    let offsets = &info.sao_offset_val[c_idx];
+    let offsets = info.sao_offset_val[c_idx];
 
     if type_idx == 1 {
         // Band Offset
@@ -272,12 +274,15 @@ fn apply_sao_component(
     } else if type_idx == 2 {
         // Edge Offset
         let eo_class = (info.sao_eo_class >> (c_idx * 2)) & 0x3;
-        apply_edge_offset(plane, x0, y0, w, h, eo_class, offsets, pic_width, pic_height);
+        apply_edge_offset(
+            plane, x0, y0, w, h, eo_class, offsets, pic_width, pic_height,
+        );
     }
 }
+#[allow(clippy::explicit_counter_loop)]
 fn apply_band_offset(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize,
-    band_pos: u8, offsets: &[i8; 4]
+    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, band_pos: u8,
+    offsets: [i8; 4],
 ) {
     let mut offset_table = [0i16; 32];
     let start_band = band_pos as usize;
@@ -287,9 +292,8 @@ fn apply_band_offset(
         offset_table[band_idx] = i16::from(offsets[i]);
     }
 
-
     for y in 0..h {
-        let mut idx = offset_plane(plane,x0, y0 + y);
+        let mut idx = offset_plane(plane, x0, y0 + y);
         for _ in 0..w {
             let px = plane.pixels[idx];
             let band_idx = (px >> 3) as usize; // >> 3 is for 8-bit. Use >> 5 for 10-bit.
@@ -304,14 +308,14 @@ fn apply_band_offset(
 }
 #[allow(clippy::too_many_arguments)]
 fn apply_edge_offset(
-    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize,
-    eo_class: u8, offsets: &[i8; 4], pic_width: usize, pic_height: usize
+    plane: &mut SingleFrame, x0: usize, y0: usize, w: usize, h: usize, eo_class: u8,
+    offsets: [i8; 4], pic_width: usize, pic_height: usize,
 ) {
     let (dx1, dy1, dx2, dy2): (isize, isize, isize, isize) = match eo_class {
-        0 => (-1, 0, 1, 0),   // Horizontal
-        1 => (0, -1, 0, 1),   // Vertical
-        2 => (-1, -1, 1, 1),  // 135 degree
-        3 => (1, -1, -1, 1),  // 45 degree
+        0 => (-1, 0, 1, 0),  // Horizontal
+        1 => (0, -1, 0, 1),  // Vertical
+        2 => (-1, -1, 1, 1), // 135 degree
+        3 => (1, -1, -1, 1), // 45 degree
         _ => unreachable!(),
     };
 
@@ -326,7 +330,11 @@ fn apply_edge_offset(
     let stride = plane.stride as isize;
 
     let sign = |val: i32| -> isize {
-        if val > 0 { 1 } else if val < 0 { -1 } else { 0 }
+        match val.cmp(&0) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        }
     };
 
     for y in 0..h {
@@ -335,12 +343,15 @@ fn apply_edge_offset(
             let abs_x = x0 + x;
 
             // Spec 8.7.3.2.3: Do not apply if neighbors cross the picture boundaries.
-            if (abs_x as isize + dx1 < 0) || (abs_x as isize + dx2 >= pic_width as isize) ||
-                (abs_y as isize + dy1 < 0) || (abs_y as isize + dy2 >= pic_height as isize) {
+            if (abs_x as isize + dx1 < 0)
+                || (abs_x as isize + dx2 >= pic_width as isize)
+                || (abs_y as isize + dy1 < 0)
+                || (abs_y as isize + dy2 >= pic_height as isize)
+            {
                 continue;
             }
 
-            let c_idx = offset_plane(plane,abs_x, abs_y);
+            let c_idx = offset_plane(plane, abs_x, abs_y);
             let n1_idx = (c_idx as isize + dy1 * stride + dx1) as usize;
             let n2_idx = (c_idx as isize + dy2 * stride + dx2) as usize;
 

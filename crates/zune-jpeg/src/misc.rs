@@ -24,31 +24,24 @@ use crate::huffman::HuffmanTable;
 use crate::JpegDecoder;
 
 /// Start of baseline DCT Huffman coding
-
 pub const START_OF_FRAME_BASE: u16 = 0xffc0;
 
 /// Start of another frame
-
 pub const START_OF_FRAME_EXT_SEQ: u16 = 0xffc1;
 
 /// Start of progressive DCT encoding
-
 pub const START_OF_FRAME_PROG_DCT: u16 = 0xffc2;
 
 /// Start of Lossless sequential Huffman coding
-
 pub const START_OF_FRAME_LOS_SEQ: u16 = 0xffc3;
 
 /// Start of extended sequential DCT arithmetic coding
-
 pub const START_OF_FRAME_EXT_AR: u16 = 0xffc9;
 
 /// Start of Progressive DCT arithmetic coding
-
 pub const START_OF_FRAME_PROG_DCT_AR: u16 = 0xffca;
 
 /// Start of Lossless sequential Arithmetic coding
-
 pub const START_OF_FRAME_LOS_SEQ_AR: u16 = 0xffcb;
 
 /// Undo run length encoding of coefficients by placing them in natural order
@@ -125,7 +118,6 @@ pub enum SOFMarkers {
 
 impl SOFMarkers {
     /// Check if a certain marker is sequential DCT or not
-
     pub fn is_sequential_dct(self) -> bool {
         matches!(
             self,
@@ -136,13 +128,11 @@ impl SOFMarkers {
     }
 
     /// Check if a marker is a Lossles type or not
-
     pub fn is_lossless(self) -> bool {
         matches!(self, Self::LosslessHuffman | Self::LosslessArithmetic)
     }
 
     /// Check whether a marker is a progressive marker or not
-
     pub fn is_progressive(self) -> bool {
         matches!(
             self,
@@ -151,7 +141,6 @@ impl SOFMarkers {
     }
 
     /// Create a marker from an integer
-
     pub fn from_int(int: u16) -> Option<SOFMarkers> {
         match int {
             START_OF_FRAME_BASE => Some(Self::BaselineDct),
@@ -188,6 +177,7 @@ impl fmt::Debug for SOFMarkers {
 ///
 /// This modifies the components in place setting up details needed by other
 /// parts fo the decoder.
+#[allow(clippy::cast_possible_truncation)]
 pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
@@ -291,8 +281,8 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
     if img.is_mjpeg {
         fill_default_mjpeg_tables(
             img.is_progressive,
-            &mut img.entropy_tables.dc_huffman_tables,
-            &mut img.entropy_tables.ac_huffman_tables
+            &mut img.entropy_tables.dc_huffman,
+            &mut img.entropy_tables.ac_huffman
         );
     }
 

@@ -61,7 +61,7 @@ impl Exposure {
     ///
     /// # Arguments
     ///  - exposure: Set the exposure correction,
-    ///     Common range is from -3.0 to 3.0. Default should be zero
+    ///    Common range is from -3.0 to 3.0. Default should be zero
     ///
     /// - black: Set black level correction,should be between 0.0 and 1.0,
     /// it will be scaled appropriately depending on image depth. E.g

@@ -57,12 +57,6 @@ pub fn decode_cu_qp_delta(ctx: &mut DecodeSliceContext) -> Result<i32, NalError>
 pub fn decode_quantization_parameters(
     ctx: &mut DecodeSliceContext, x0: usize, y0: usize, log2_cb_size: u8
 ) {
-    debug_more!(
-        "------------------decode_quantization_parameters(xc={},yc={},log2_cb_size={})----------",
-        x0,
-        y0,
-        log2_cb_size
-    );
     #[rustfmt::skip]
     const TABLE_8_22: [i8; 58] = [
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
@@ -72,6 +66,13 @@ pub fn decode_quantization_parameters(
         37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
         47, 48, 49, 50, 51
     ];
+    
+    debug_more!(
+        "------------------decode_quantization_parameters(xc={},yc={},log2_cb_size={})----------",
+        x0,
+        y0,
+        log2_cb_size
+    );
 
     let pps = ctx.pps;
     let sps = ctx.sps;

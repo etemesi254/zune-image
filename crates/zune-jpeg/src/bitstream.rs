@@ -332,7 +332,7 @@ impl BitStream for BitStreamHuffman {
         tables: &mut EntropyTables, dc_pos: usize
     ) -> Result<&mut Self::DCEntropyTable, DecodeErrors> {
         let dc_table = tables
-            .dc_huffman_tables
+            .dc_huffman
             .get_mut(dc_pos)
             .ok_or_else(|| {
                 DecodeErrors::Format(format!("No huffman table for DC component: {dc_pos}"))
@@ -352,7 +352,7 @@ impl BitStream for BitStreamHuffman {
         tables: &mut EntropyTables, ac_pos: usize
     ) -> Result<&mut Self::ACEntropyTable, DecodeErrors> {
         let ac_table = tables
-            .ac_huffman_tables
+            .ac_huffman
             .get_mut(ac_pos)
             .ok_or_else(|| {
                 DecodeErrors::Format(format!("No huffman table for AC component: {ac_pos}"))
@@ -371,7 +371,7 @@ impl BitStream for BitStreamHuffman {
         tables: &mut EntropyTables, dc_pos: usize, ac_pos: usize
     ) -> Result<(&mut Self::DCEntropyTable, &mut Self::ACEntropyTable), DecodeErrors> {
         let dc_table = tables
-            .dc_huffman_tables
+            .dc_huffman
             .get_mut(dc_pos)
             .ok_or_else(|| {
                 DecodeErrors::Format(format!("No huffman table for DC component: {dc_pos}"))
@@ -384,7 +384,7 @@ impl BitStream for BitStreamHuffman {
             })?;
 
         let ac_table = tables
-            .ac_huffman_tables
+            .ac_huffman
             .get_mut(ac_pos)
             .ok_or_else(|| {
                 DecodeErrors::Format(format!("No huffman table for AC component: {ac_pos}"))

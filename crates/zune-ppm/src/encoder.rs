@@ -144,8 +144,8 @@ impl<'a> PPMEncoder<'a> {
     ///
     /// # Arguments
     /// - out: The output buffer to write bytes into
-    ///     It is recommended that the buffer be at least [`max_out_size`](crate::encoder::max_out_size) in order
-    ///     to encode successfully. In case size is not big enough , the library will bail and return an error
+    ///   It is recommended that the buffer be at least [`max_out_size`](crate::encoder::max_out_size) in order
+    ///   to encode successfully. In case size is not big enough , the library will bail and return an error
     ///
     /// # Returns
     /// - Ok(size): The actual number of bytes written

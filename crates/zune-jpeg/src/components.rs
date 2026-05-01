@@ -24,7 +24,6 @@ const MAX_SAMP_FACTOR: usize = 4;
 
 /// Represents an up-sampler function, this function will be called to upsample
 /// a down-sampled image
-
 pub type UpSampler = fn(
     input: &[i16],
     in_near: &[i16],

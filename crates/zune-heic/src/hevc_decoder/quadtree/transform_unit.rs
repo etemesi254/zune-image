@@ -2,12 +2,12 @@ use crate::debug_more;
 use crate::hevc_decoder::DEBUG_MORE;
 use crate::hevc_decoder::cabac_tables::{
     CONTEXT_MODEL_CBF_CHROMA, CONTEXT_MODEL_CBF_LUMA, CONTEXT_MODEL_LOG2_RES_SCALE_ABS_PLUS1,
-    CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG
+    CONTEXT_MODEL_RES_SCALE_SIGN_FLAG, CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG,
 };
 use crate::hevc_decoder::constants::PartMode;
 use crate::hevc_decoder::ctx::DecodeSliceContext;
 use crate::hevc_decoder::idct::{
-    idct_4x4_hevc, idct_8x8_hevc, idct_16x16_hevc, idct_32x32_hevc, idst_4x4_hevc
+    idct_4x4_hevc, idct_8x8_hevc, idct_16x16_hevc, idct_32x32_hevc, idst_4x4_hevc,
 };
 use crate::hevc_decoder::nal_parser::NalError;
 use crate::hevc_decoder::nal_unit_headers::ChromaFormat;
@@ -21,7 +21,7 @@ use crate::hevc_decoder::quadtree::residual_block::decode_residual_block;
 pub(crate) enum Component {
     Luma = 0,
     Cb = 1,
-    Cr = 2
+    Cr = 2,
 }
 
 fn decode_cbf_luma(ctx: &mut DecodeSliceContext, trafo_depth: u8) -> bool {
@@ -44,7 +44,7 @@ fn decode_split_transform_flag(ctx: &mut DecodeSliceContext, log2_trafo_size: u8
         log2_trafo_size
     );
     let context = 5_u8.wrapping_sub(log2_trafo_size) as usize;
-    assert!( context <= 2);
+    assert!(context <= 2);
     let ctx_idx = CONTEXT_MODEL_SPLIT_TRANSFORM_FLAG + context;
     let flag = ctx.cabac.decode_decision(ctx_idx) == 1;
     debug_more!("  decode_split_transform_flag=>{flag}");
@@ -60,7 +60,7 @@ pub fn decode_tu(
     n_t: usize, // TU size (4, 8, 16, 32)
     c_idx: usize,
     cu_pred_mode: PredMode,
-    cbf: bool
+    cbf: bool,
 ) {
     let mut residual_dpcm = 0;
     let sps = ctx.sps;
@@ -78,7 +78,10 @@ pub fn decode_tu(
                 .get_intra_mode_chroma(x0 * sub_width_c, y0 * sub_height_c)
         };
 
-        assert!((intra_pred_mode < 35), "intra_pred_mode cannot be more than 35");
+        assert!(
+            (intra_pred_mode < 35),
+            "intra_pred_mode cannot be more than 35"
+        );
         debug_more!("intra_pred_mode=>{intra_pred_mode} c_idx={c_idx}");
 
         decode_intra_prediction(ctx, x0, y0, intra_pred_mode, n_t, c_idx);
@@ -138,9 +141,10 @@ pub fn decode_tu(
 
             // scratchpad can be reused without reset-ing as the buffer is overwritten
             // so no need to reset it every time
-            let idct_scratchpad: &mut [i16; 1024] = &mut ctx.idct_scratchpad[..].try_into().unwrap();
+            let idct_scratchpad: &mut [i16; 1024] =
+                &mut ctx.idct_scratchpad[..].try_into().unwrap();
 
-            debug_more!("idst:{}",use_dst);
+            debug_more!("idst:{}", use_dst);
             if use_dst {
                 // Luma 4x4 Intra -> Special DST path
                 let block: &mut [i16; 16] = (&mut ctx.math_scratchpad[..16])
@@ -177,7 +181,7 @@ pub fn decode_tu(
                             .unwrap();
                         idct_32x32_hevc(block, idct_scratchpad, bit_depth);
                     }
-                    _ => unreachable!("HEVC TU sizes are 4, 8, 16, or 32")
+                    _ => unreachable!("HEVC TU sizes are 4, 8, 16, or 32"),
                 }
             }
         } else {
@@ -223,7 +227,7 @@ pub fn decode_tu(
         ctx.write_block_scratchpad(c_idx, x0, y0, n_t, bit_depth);
     }
 }
-
+#[allow(clippy::too_many_arguments)]
 pub fn read_transform_tree(
     ctx: &mut DecodeSliceContext,
     x0: usize,
@@ -236,7 +240,7 @@ pub fn read_transform_tree(
     blk_idx: usize, // New: identifies the quadrant (0-3)
     intra_split_flag: bool,
     mut cbf_cb: u8,
-    mut cbf_cr: u8
+    mut cbf_cr: u8,
 ) -> Result<(), NalError> {
     debug_more!(
         "read_transform_tree: x0:{} y0:{} log2_trafo_size:{} trafo_depth:{} blk_idx:{}",
@@ -248,14 +252,13 @@ pub fn read_transform_tree(
     );
 
     // 1. Determine split_flag
-    let  split_flag;
     let can_decode_flag = log2_trafo_size <= ctx.sps.log2_max_transform_block_size
         && log2_trafo_size > ctx.sps.log2_min_transform_block_size
         && trafo_depth < max_trafo_depth
         && !(intra_split_flag && trafo_depth == 0);
 
-    if can_decode_flag {
-        split_flag = decode_split_transform_flag(ctx, log2_trafo_size);
+    let split_flag = if can_decode_flag {
+        decode_split_transform_flag(ctx, log2_trafo_size)
     } else {
         // Inference logic (Size limits, Forced Intra NxN, or Inter hierarchy)
         let part_mode = ctx.neighbor_tracker.get_part_mode(x0, y0);
@@ -266,8 +269,8 @@ pub fn read_transform_tree(
             && !ctx.is_intra
             && part_mode != PartMode::Part2Nx2N;
 
-        split_flag = size_too_big || forced_intra_split || inter_split_flag;
-    }
+        size_too_big || forced_intra_split || inter_split_flag
+    };
 
     // 2. Decode Chroma CBFs
     // If the parent TU had a CBF of 0, all children are inferred to be 0.
@@ -316,7 +319,7 @@ pub fn read_transform_tree(
                     j * 2 + i, // New blk_idx
                     intra_split_flag,
                     cbf_cb,
-                    cbf_cr
+                    cbf_cr,
                 )?;
             }
         }
@@ -340,7 +343,7 @@ pub fn read_transform_tree(
             blk_idx,
             cbf_luma,
             cbf_cb,
-            cbf_cr
+            cbf_cr,
         )?;
     }
     Ok(())
@@ -398,6 +401,7 @@ pub fn read_cross_comp_pred(ctx: &mut DecodeSliceContext, c_idx_minus_1: usize) 
     // Store in context for the upcoming TU reconstruction
     res_scale_val as i8
 }
+#[allow(clippy::too_many_arguments)]
 pub fn read_transform_unit(
     ctx: &mut DecodeSliceContext,
     x0: usize,
@@ -408,18 +412,20 @@ pub fn read_transform_unit(
     blk_idx: usize,
     cbf_luma: bool,
     cbf_cb: u8, // 2 bits for 4:2:2
-    cbf_cr: u8
+    cbf_cr: u8,
 ) -> Result<(), NalError> {
     let nt = 1 << log2_size;
     let chroma_format = ctx.sps.chroma_format;
 
     // 1. QP Delta Handling
-    if (cbf_luma || cbf_cb != 0 || cbf_cr != 0) && ctx.pps.cu_qp_delta_enabled_flag
-        && !ctx.is_cu_qp_delta_coded {
-            ctx.cu_qp_delta = decode_cu_qp_delta(ctx)?;
-            ctx.is_cu_qp_delta_coded = true;
-            decode_quantization_parameters(ctx, x0, y0, log2_size);
-        }
+    if (cbf_luma || cbf_cb != 0 || cbf_cr != 0)
+        && ctx.pps.cu_qp_delta_enabled_flag
+        && !ctx.is_cu_qp_delta_coded
+    {
+        ctx.cu_qp_delta = decode_cu_qp_delta(ctx)?;
+        ctx.is_cu_qp_delta_coded = true;
+        decode_quantization_parameters(ctx, x0, y0, log2_size);
+    }
 
     // 2. Luma Path
     let pred_mode = ctx.neighbor_tracker.get_pred_mode(x0, y0);
@@ -463,8 +469,7 @@ pub fn read_transform_unit(
         let (sub_w, sub_h) = match chroma_format {
             ChromaFormat::Yuv420 => (2, 2),
             ChromaFormat::Yuv422 => (2, 1),
-            ChromaFormat::Yuv444 => (1, 1),
-            _ => (1, 1)
+            _ => (1, 1),
         };
 
         let xc = if is_420_small { x_base } else { x0 };
@@ -488,7 +493,6 @@ pub fn read_transform_unit(
                     yc,
                     log2_size_c,
                     if c_idx == 1 { Component::Cb } else { Component::Cr },
-                    
                 );
             }
             decode_tu(
@@ -498,7 +502,7 @@ pub fn read_transform_unit(
                 nt_c,
                 c_idx,
                 pred_mode,
-                (cbf & 1) != 0
+                (cbf & 1) != 0,
             );
 
             // 4:2:2 Vertical Extension (Second Chroma Block)
@@ -512,7 +516,6 @@ pub fn read_transform_unit(
                         xc + (y_offset * sub_h),
                         log2_size_c,
                         if c_idx == 1 { Component::Cb } else { Component::Cr },
-                        
                     );
                 }
                 decode_tu(
@@ -522,7 +525,7 @@ pub fn read_transform_unit(
                     nt_c,
                     c_idx,
                     pred_mode,
-                    (cbf & 2) != 0
+                    (cbf & 2) != 0,
                 );
             }
         }

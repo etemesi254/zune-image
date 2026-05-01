@@ -7,7 +7,7 @@ use crate::hevc_decoder::nal_parser::{NalError, NalUnit};
 use crate::hevc_decoder::nal_unit_headers::{ChromaFormat, Pps, PpsRangeExtension, Sps};
 use crate::hevc_decoder::nal_unit_parsers::parse_scaling_list_data;
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines,clippy::field_reassign_with_default)]
 pub fn decode_pps(nal: &NalUnit, sps: &[Option<Sps>]) -> Result<Pps, NalError> {
     // 7.4.3.3.1: pps_pic_parameter_set_id is in [0, 63].
     const HEVC_MAX_PPS_COUNT: u8 = 64;

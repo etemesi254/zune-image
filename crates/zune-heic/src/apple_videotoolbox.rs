@@ -273,7 +273,6 @@ fn clamp(a: i32) -> u8 {
 /// # Panics
 ///
 /// Panics if output buffer is too small.
-
 pub fn ycbcr_to_rgb_inner_16_scalar<const BGRA: bool>(
     y: &[i16; 16], cb: &[i16; 16], cr: &[i16; 16], output: &mut [u8], pos: &mut usize
 ) {

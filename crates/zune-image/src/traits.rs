@@ -65,7 +65,7 @@ pub trait DecoderTrait {
     /// # Returns
     /// - Some(width,height)
     /// - None -> If image hasn't been decoded and we can't extract
-    ///  the width and height.
+    ///   the width and height.
     fn dimensions(&self) -> Option<(usize, usize)>;
 
     /// Get the colorspace that the decoded pixels
@@ -519,5 +519,6 @@ pub trait DecodeInto {
 /// Convert something into an image by consuming it
 pub trait IntoImage {
     /// Consumes this and returns an image
+    #[allow(clippy::wrong_self_convention)]
     fn into_image(&mut self) -> Result<Image, ImageErrors>;
 }

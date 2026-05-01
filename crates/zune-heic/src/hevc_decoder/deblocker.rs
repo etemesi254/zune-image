@@ -74,7 +74,7 @@ fn chroma_qp(luma_qp: i32, offset: i8) -> i32 {
 
 struct BsGrid {
     bs_v: Vec<Vec<u8>>, // [y4][x4] — left edge of 4×4 block
-    bs_h: Vec<Vec<u8>>,  // [y4][x4] — top  edge of 4×4 block
+    bs_h: Vec<Vec<u8>>, // [y4][x4] — top  edge of 4×4 block
 }
 
 impl BsGrid {
@@ -208,7 +208,6 @@ pub fn filter_luma_block(
         (dp, dq, sp_valid)
     };
 
-
     let (dp0, dq0, sp0) = check_row_metrics(b0);
     let (dp3, dq3, sp3) = check_row_metrics(b3);
 
@@ -277,7 +276,7 @@ pub fn filter_luma_block(
             plane[(rb - 2 * es) as usize] = p1n;
             plane[(rb - 3 * es) as usize] = p2n;
 
-            plane[(rb + 0 * es) as usize] = q0n;
+            plane[rb as usize] = q0n;
             plane[(rb + es) as usize] = q1n;
             plane[(rb + 2 * es) as usize] = q2n;
         } else {
@@ -599,8 +598,6 @@ mod tests {
             );
         }
     }
-
-
 
     // -----------------------------------------------------------------------
     // Chroma filter

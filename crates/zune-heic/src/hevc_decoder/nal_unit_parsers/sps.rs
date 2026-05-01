@@ -7,7 +7,7 @@ use crate::hevc_decoder::nal_unit_parsers::{
     decode_profile_data, parse_scaling_list_data, parse_short_term_ref_pic_set, parse_vui
 };
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines,clippy::field_reassign_with_default)]
 pub fn decode_sps(nal: &NalUnit) -> Result<Sps, NalError> {
     const SPS_MAX_LAYERS_LIMIT: u64 = 7;
     const SPS_MAX_SETS_LIMITS: u64 = 16;

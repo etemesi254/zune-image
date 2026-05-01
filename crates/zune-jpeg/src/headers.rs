@@ -86,7 +86,7 @@ where
         // store
         match dc_or_ac {
             0 => {
-                decoder.entropy_tables.dc_huffman_tables[index] = Some(HuffmanTable::new(
+                decoder.entropy_tables.dc_huffman[index] = Some(HuffmanTable::new(
                     &num_symbols,
                     symbols,
                     true,
@@ -94,7 +94,7 @@ where
                 )?);
             }
             _ => {
-                decoder.entropy_tables.ac_huffman_tables[index] = Some(HuffmanTable::new(
+                decoder.entropy_tables.ac_huffman[index] = Some(HuffmanTable::new(
                     &num_symbols,
                     symbols,
                     false,
@@ -161,7 +161,7 @@ where
                     )));
                 }
                 // overwrite the previous value
-                let t = &mut decoder.entropy_tables.dc_arithmetic_tables[index];
+                let t = &mut decoder.entropy_tables.dc_arithmetic[index];
                 t.l = l;
                 t.u = u;
             }
@@ -173,7 +173,7 @@ where
                     )));
                 }
                 // overwrite the previous value
-                decoder.entropy_tables.ac_arithmetic_tables[index].kx = cs_value;
+                decoder.entropy_tables.ac_arithmetic[index].kx = cs_value;
             }
             _ => {
                 return Err(DecodeErrors::ArithmeticDecode(format!(
@@ -252,7 +252,6 @@ pub(crate) fn parse_dqt<T: ZByteReaderTrait>(img: &mut JpegDecoder<T>) -> Result
 }
 
 /// Section:`B.2.2 Frame header syntax`
-
 pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
     sof: SOFMarkers, img: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
@@ -757,7 +756,6 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
 }
 
 /// Small utility function to print Un-zig-zagged quantization tables
-
 fn un_zig_zag<T>(a: &[T]) -> [i32; 64]
 where
     T: Default + Copy,

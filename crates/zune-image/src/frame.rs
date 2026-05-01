@@ -157,8 +157,7 @@ impl Frame {
     ///  A new frame
     ///
     /// # Panics
-    /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
-
+    ///- Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_u16(
         pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
@@ -181,8 +180,7 @@ impl Frame {
     ///  A new frame
     ///
     /// # Panics
-    /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
-
+    ///  In case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_u8(
         pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
     ) -> Frame {
@@ -252,11 +250,11 @@ impl Frame {
     /// # Arguments
     ///
     /// * `colorspace`:  The colorspace of the  frame, this is gotten from the image metadata
-    /// that contains this frame
+    ///   that contains this frame
     ///
     /// * `ignore_alpha`: Whether to ignore the alpha channel.
-    ///    If the colorspace has an alpha component, the last channel
-    ///     will be ignored as it is assumed to be the alpha channel
+    ///   If the colorspace has an alpha component, the last channel
+    ///   will be ignored as it is assumed to be the alpha channel
     ///
     /// returns: `&[Channel]`: References to the channels
     ///
@@ -277,11 +275,11 @@ impl Frame {
     /// # Arguments
     ///
     /// * `colorspace`:  The colorspace of the  frame, this is gotten from the image metadata
-    /// that contains this frame
+    ///   that contains this frame
     ///
     /// * `ignore_alpha`: Whether to ignore the alpha channel.
-    ///    If the colorspace has an alpha component, the last channel
-    ///     will be ignored as it is assumed to be the alpha channel
+    ///   If the colorspace has an alpha component, the last channel
+    ///   will be ignored as it is assumed to be the alpha channel
     ///
     /// returns: `&[Channel]`: References to the channels
     ///
@@ -391,7 +389,6 @@ impl Frame {
     /// - Ok(size) -  Bytes written to the memory location
     /// - Err(e) - An error occurred trying to represent the image as type `T`
     ///
-
     pub fn flatten_into<T: Clone + Default + 'static + Copy + Pod>(
         &self, into: &mut [T]
     ) -> Result<usize, ChannelErrors> {
@@ -500,8 +497,7 @@ impl Frame {
     ///  - A vector with each two bytes representing a u16 value but
     ///
     /// # Panics
-    /// If channel isn't storing the u16 as it's internal  type
-
+    /// If channel isn't storing the u16 as it's internal type
     pub fn u16_to_big_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
         // confirm all channels are in u16
         for channel in &self.channels {
@@ -602,10 +598,10 @@ impl Frame {
     ///
     /// # Returns
     ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the
-    /// colorspace matches the frame channel length.
-    ///     The return type is (color channels, alpha channel_
+    ///    colorspace matches the frame channel length.
+    ///    The return type is (color channels, alpha channel_
     /// - `None`: If the colorspace has no alpha or if the number of components for colorspace doesn't match
-    /// frames length
+    ///   frames length
     ///
     pub fn separate_color_and_alpha_ref(
         &self, color_space: ColorSpace
@@ -646,10 +642,10 @@ impl Frame {
     ///
     /// # Returns
     ///  - `Some(&[Channel], &Channel)`: If colorspace has alpha and number of components for the
-    /// colorspace matches the frame channel length.
-    ///     The return type is (color channels, alpha channel_
+    ///    colorspace matches the frame channel length.
+    ///    The return type is (color channels, alpha channel_
     /// - `None`: If the colorspace has no alpha or if the number of components for colorspace doesn't match
-    /// frames length
+    ///   frames length
     ///
     pub fn separate_color_and_alpha_mut(
         &mut self, color_space: ColorSpace

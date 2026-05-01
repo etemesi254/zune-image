@@ -11,62 +11,62 @@ use crate::hevc_decoder::quadtree::sig_ctx_generator::generate_all_sig_ctx_maps;
 use crate::hevc_decoder::raw_frame::{RawFrame, SingleFrame};
 #[allow(clippy::struct_excessive_bools)]
 pub struct DecodeSliceContext<'a> {
-    pub sps:                    &'a Sps,
-    pub pps:                    &'a Pps,
-    pub slice_header:           &'a SliceHeader,
-    pub cabac:                  CabacDecoder<'a>,
-    pub neighbor_tracker:       &'a mut NeighborTracker,
-    pub is_cu_qp_delta_coded:   bool,
-    pub cu_qp_delta:            i32,
+    pub sps: &'a Sps,
+    pub pps: &'a Pps,
+    pub slice_header: &'a SliceHeader,
+    pub cabac: CabacDecoder<'a>,
+    pub neighbor_tracker: &'a mut NeighborTracker,
+    pub is_cu_qp_delta_coded: bool,
+    pub cu_qp_delta: i32,
     // quantization group
-    pub current_qg_x:           usize,
-    pub current_qg_y:           usize,
-    pub last_qp_in_slice:       i8, // This tracks the "previous" QP for the next CU
+    pub current_qg_x: usize,
+    pub current_qg_y: usize,
+    pub last_qp_in_slice: i8, // This tracks the "previous" QP for the next CU
     pub last_qp_in_previous_qg: i8,
 
     // - CU state to be captured for the tracker
-    pub is_skip:                   bool,
-    pub is_intra:                  bool,
-    pub intra_mode_luma:           u8,
-    pub intra_mode_chroma:         u8,
-    pub qp_y_prime:                i32,
-    pub qp_cb_prime:               i32,
-    pub qp_cr_prime:               i32,
+    pub is_skip: bool,
+    pub is_intra: bool,
+    pub intra_mode_luma: u8,
+    pub intra_mode_chroma: u8,
+    pub qp_y_prime: i32,
+    pub qp_cb_prime: i32,
+    pub qp_cr_prime: i32,
     // residual data
     pub cu_transquant_bypass_flag: bool,
-    pub explicit_rdpcm_flag:       bool,
-    pub explicit_rdpcm_dir:        u8,
-    pub transform_skip_flag:       [u8; 3],
+    pub explicit_rdpcm_flag: bool,
+    pub explicit_rdpcm_dir: u8,
+    pub transform_skip_flag: [u8; 3],
     // context significant maps
-    pub sig_ctx_maps:              Vec<Vec<Vec<Vec<Vec<u8>>>>>,
-    pub stat_coeff:                [u8; 4],
-    pub coeff_list:                [[i16; 32 * 32]; 3],
-    pub coeff_pos:                 [[i16; 32 * 32]; 3],
-    pub n_coeff:                   [i16; 3],
+    pub sig_ctx_maps: Vec<Vec<Vec<Vec<Vec<u8>>>>>,
+    pub stat_coeff: [u8; 4],
+    pub coeff_list: [[i16; 32 * 32]; 3],
+    pub coeff_pos: [[i16; 32 * 32]; 3],
+    pub n_coeff: [i16; 3],
     // raw image frame reference
-    pub raw_frame:                 Arc<RawFrame>,
+    pub raw_frame: Arc<RawFrame>,
     // --- scratch buffers
     // --- High-Speed Fixed Buffers ---
-    pub pixel_scratchpad:          Vec<u8>,
-    pub math_scratchpad:           Vec<i16>,
-    pub idct_scratchpad:           Vec<i16>,
+    pub pixel_scratchpad: Vec<u8>,
+    pub math_scratchpad: Vec<i16>,
+    pub idct_scratchpad: Vec<i16>,
     // Reference Wall buffers
-    pub ref_samples_p:             Vec<u8>,
-    pub ref_samples_available:     Vec<bool>,
-    pub ref_main_buf:              Vec<u8>,
-    pub res_scale_val:             i8,
+    pub ref_samples_p: Vec<u8>,
+    pub ref_samples_available: Vec<bool>,
+    pub ref_main_buf: Vec<u8>,
+    pub res_scale_val: i8,
     ///  Stores the Luma residuals for the current TU area
     /// so Chroma can use them for CCP.
-    pub luma_residual_temp:        Vec<i16>,
+    pub luma_residual_temp: Vec<i16>,
 
     pub ctb_sao_buffer: Vec<SaoInfo>,
     // ctb contexts
-    pub ctb_context:    Vec<Option<[u8; NUM_CABAC_CONTEXTS]>>
+    pub ctb_context: Vec<Option<[u8; NUM_CABAC_CONTEXTS]>>,
 }
 impl<'a> DecodeSliceContext<'a> {
     pub fn new(
         sps: &'a Sps, pps: &'a Pps, slice_header: &'a SliceHeader, cabac_engine: CabacDecoder<'a>,
-        neighbor_tracker: &'a mut NeighborTracker, last_qp_in_slice: i8, raw_frame: Arc<RawFrame>
+        neighbor_tracker: &'a mut NeighborTracker, last_qp_in_slice: i8, raw_frame: &Arc<RawFrame>,
     ) -> Self {
         // SAO data
 
@@ -115,7 +115,7 @@ impl<'a> DecodeSliceContext<'a> {
             idct_scratchpad: vec![0; 1024],
             res_scale_val: -1,
             ctb_sao_buffer: vec![SaoInfo::default(); buffer_size],
-            ctb_context: vec![None; height_in_ctbs as usize]
+            ctb_context: vec![None; height_in_ctbs as usize],
         }
     }
 }
@@ -139,13 +139,13 @@ impl DecodeSliceContext<'_> {
     ///
     /// Data is expected to be in scratchpad
     pub fn write_block_scratchpad(
-        &self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8
+        &self, c_idx: usize, x0: usize, y0: usize, n_t: usize, bit_depth: u8,
     ) {
         let mut plane = match c_idx {
             0 => self.raw_frame.luma.lock().unwrap(),
             1 => self.raw_frame.cb.lock().unwrap(),
             2 => self.raw_frame.cr.lock().unwrap(),
-            _ => panic!("Invalid component index")
+            _ => unreachable!("Impossible write_block_scratchpad"),
         };
 
         write_block_and_pad(
@@ -155,7 +155,7 @@ impl DecodeSliceContext<'_> {
             n_t,
             &self.pixel_scratchpad,
             None,
-            bit_depth
+            bit_depth,
         );
     }
 
@@ -165,7 +165,7 @@ impl DecodeSliceContext<'_> {
         x_t: usize,
         y_t: usize, // TU pos
         n_t: usize, // TU size (4, 8, 16, 32)
-        c_idx: usize
+        c_idx: usize,
     ) {
         const LEVEL_SCALE: [i32; 6] = [40, 45, 51, 57, 64, 72];
 
@@ -185,7 +185,7 @@ impl DecodeSliceContext<'_> {
             0 => self.qp_y_prime.abs(),
             1 => self.qp_cb_prime.abs(),
             2 => self.qp_cr_prime.abs(),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         debug_more!("qp:{}", qp);
 
@@ -238,7 +238,7 @@ impl DecodeSliceContext<'_> {
                     8 => pps.pic_scaling_lists.size1[matrix_id].as_ref(), // [6][64]
                     16 => pps.pic_scaling_lists.size2[matrix_id].as_ref(), // [6][256]
                     32 => pps.pic_scaling_lists.size3[matrix_id].as_ref(), // [2][1024]
-                    _ => unreachable!("Invalid TU size for scaling list")
+                    _ => unreachable!("Invalid TU size for scaling list"),
                 }
             };
 
@@ -336,7 +336,7 @@ impl DecodeSliceContext<'_> {
         self.math_scratchpad[..16].reverse();
     }
     pub fn reconstruct_lossless(
-        &mut self, x_t: usize, y_t: usize, n_t: usize, c_idx: usize, rdpcm_mode: u8
+        &mut self, x_t: usize, y_t: usize, n_t: usize, c_idx: usize, rdpcm_mode: u8,
     ) {
         // --- 1. Extract values to the stack to avoid self-borrow conflicts ---
         let res_scale = self.res_scale_val;
@@ -371,9 +371,7 @@ impl DecodeSliceContext<'_> {
             1 => self.apply_rdpcm_horizontal(&mut residual, n_t),
             2 => self.apply_rdpcm_vertical(&mut residual, n_t),
             _ => {
-                for i in 0..(n_t * n_t) {
-                    residual[i] = self.math_scratchpad[i];
-                }
+                residual[..(n_t * n_t)].copy_from_slice(&self.math_scratchpad[..(n_t * n_t)]);
             }
         }
 
@@ -448,7 +446,7 @@ impl DecodeSliceContext<'_> {
     }
     pub fn add_residual_and_write(
         &mut self, x0: usize, y0: usize, n_t: usize, c_idx: usize, residual: Option<&[i16]>,
-        bit_depth: u8
+        bit_depth: u8,
     ) {
         let residual = residual.unwrap_or(&self.math_scratchpad);
 
@@ -456,7 +454,7 @@ impl DecodeSliceContext<'_> {
             0 => self.raw_frame.luma.lock().unwrap(),
             1 => self.raw_frame.cb.lock().unwrap(),
             2 => self.raw_frame.cr.lock().unwrap(),
-            _ => panic!("Invalid component index")
+            _ => unreachable!("Invalid component index"),
         };
 
         write_block_and_pad(
@@ -466,14 +464,14 @@ impl DecodeSliceContext<'_> {
             n_t,
             &self.pixel_scratchpad,
             Some(residual),
-            bit_depth
+            bit_depth,
         );
     }
     pub fn apply_cross_component_prediction(
         &mut self,
         n_t_c: usize, // Chroma TU size
         res_scale_val: i8,
-        residual: Option<&mut [i16]>
+        residual: Option<&mut [i16]>,
     ) {
         if res_scale_val == 0 {
             return;
@@ -506,7 +504,7 @@ impl DecodeSliceContext<'_> {
                         // In 4:4:4, it's 1-to-1
                         y * n_t_c + x
                     }
-                    _ => unreachable!()
+                    ChromaFormat::Monochrome => unreachable!(),
                 };
 
                 let luma_res = self.luma_residual_temp[luma_idx];
@@ -522,7 +520,7 @@ impl DecodeSliceContext<'_> {
 
 impl DecodeSliceContext<'_> {
     pub fn setup_reference_samples(
-        &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize
+        &mut self, x0: usize, y0: usize, n_t: usize, intra_mode: u8, c_idx: usize,
     ) -> usize {
         let p_len = 4 * n_t + 1;
 
@@ -540,7 +538,7 @@ impl DecodeSliceContext<'_> {
             &mut self.ref_samples_available[..p_len],
             self.sps.pic_width_in_luma_samples as isize,
             self.sps.pic_height_in_luma_samples as isize,
-            1 << self.sps.log2_ctb_size_y
+            1 << self.sps.log2_ctb_size_y,
         );
 
         if DEBUG_MORE {
@@ -556,7 +554,7 @@ impl DecodeSliceContext<'_> {
             x0,
             y0,
             n_t,
-            c_idx
+            c_idx,
         );
         if DEBUG_MORE {
             println!("--- Reference Border (N={n_t}) ---");
@@ -570,7 +568,7 @@ impl DecodeSliceContext<'_> {
                 &mut self.ref_samples_p[..p_len],
                 n_t,
                 intra_mode,
-                strong_enabled
+                strong_enabled,
             );
         }
 
@@ -580,7 +578,7 @@ impl DecodeSliceContext<'_> {
 
 fn write_block_and_pad(
     plane: &mut SingleFrame, x0: usize, y0: usize, n_t: usize, pred: &[u8],
-    residual: Option<&[i16]>, bit_depth: u8
+    residual: Option<&[i16]>, bit_depth: u8,
 ) {
     let max_val = (1_i32 << bit_depth) - 1;
     let buf = &mut plane.pixels;
@@ -602,7 +600,6 @@ fn write_block_and_pad(
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
             let dst_slice = &mut buf[dst_row..dst_row + n_t];
 
-
             for (dst, (&bv, &residual_value)) in
                 dst_slice.iter_mut().zip(residual_row.iter().zip(pred_row))
             {
@@ -614,7 +611,6 @@ fn write_block_and_pad(
             }
         }
     } else {
-
         // just copy-paste residual into the buffer
         for dy in 0..n_t {
             let dst_row = (frame_oy + y0 + dy) * s + (frame_ox + x0);
@@ -658,7 +654,7 @@ fn write_block_and_pad(
         for py in 1..=p {
             buf.copy_within(
                 src_row_base + x_start..src_row_base + x_stop,
-                src_row_base - py * s + x_start
+                src_row_base - py * s + x_start,
             );
         }
     }
@@ -671,7 +667,7 @@ fn write_block_and_pad(
         for py in 1..=p {
             buf.copy_within(
                 src_row_base + x_start..src_row_base + x_stop,
-                src_row_base + py * s + x_start
+                src_row_base + py * s + x_start,
             );
         }
     }
@@ -708,7 +704,7 @@ pub fn print_border(p: &[u8], n_t: usize) {
 #[allow(clippy::too_many_arguments)]
 fn check_availability(
     tracker: &NeighborTracker, x0: usize, y0: usize, n_t: usize, c_idx: usize,
-    available: &mut [bool], frame_width: isize, frame_height: isize, ctu_size: isize
+    available: &mut [bool], frame_width: isize, frame_height: isize, ctu_size: isize,
 ) {
     let scale = if c_idx == 0 { 1 } else { 2 };
     let sx0 = (x0 * scale) as isize;
@@ -753,7 +749,7 @@ fn check_availability(
             sy0 as usize,
             sx0 - 1,
             sy0 - 1,
-            ctu_size as usize
+            ctu_size as usize,
         )
     };
 
@@ -784,7 +780,7 @@ fn check_availability(
 
 fn perform_padding(
     frame: &Arc<RawFrame>, p: &mut [u8], available: &[bool], x0: usize, y0: usize, n_t: usize,
-    c_idx: usize
+    c_idx: usize,
 ) {
     let total = 4 * n_t + 1;
 
@@ -796,7 +792,7 @@ fn perform_padding(
         0 => frame.luma.lock().unwrap(),
         1 => frame.cb.lock().unwrap(),
         2 => frame.cr.lock().unwrap(),
-        _ => unreachable!()
+        _ => unreachable!(),
     };
     let (pixels, stride, pad) = (plane.pixels.as_slice(), plane.stride, plane.padding);
 
@@ -841,7 +837,6 @@ fn perform_padding(
     // initializing this (check where it is called) so no need
     // to do anything. like fill(128)
     if first_availability != -1 {
-
         // something is present, and its position is first_idx,
         // optimistically check if the whole array is available
         let available_len = available.len();
@@ -934,8 +929,7 @@ fn is_filtering_required(mode: u8, n_t: usize) -> bool {
     // HEVC Table 8-3
     match n_t {
         8 => mode == 0 || mode == 2 || mode == 18 || mode == 34,
-        16 => mode != 1 && mode != 10 && mode != 26,
-        32 => mode != 1 && mode != 10 && mode != 26,
-        _ => false
+        16 | 32 => mode != 1 && mode != 10 && mode != 26,
+        _ => false,
     }
 }
