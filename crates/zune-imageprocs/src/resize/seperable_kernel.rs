@@ -53,6 +53,107 @@ impl PrecomputedKernels {
     }
 }
 
+/// A single convolution kernel for one output pixel.
+/// Weights are heap-allocated so the kernel can be as wide as needed
+/// (e.g. Lanczos3 at 10× downscale needs ~60 taps, not 6).
+#[derive(Clone)]
+pub(crate) struct ConvKernel {
+    pub weights: Vec<f32>,
+    pub weights_i32: Vec<i32>,
+    pub start_idx: u32,
+    pub end_idx: u32,
+}
+
+#[allow(clippy::needless_range_loop, clippy::cast_possible_wrap)]
+fn precompute_kernels(
+    in_size: usize,
+    out_size: usize,
+    ratio: f32, // in_size / out_size  (>1 = downscale)
+    a: i32,     // base kernel radius in kernel-space taps
+    kernel_fn: fn(f32) -> f32,
+) -> Vec<ConvKernel> {
+    // When downscaling the kernel must widen to cover the source pixels that
+    // map to a single output pixel. `scale` is the stretch factor; for
+    // upscaling it stays 1.0 so the kernel is not artificially narrowed.
+    let scale = ratio.max(1.0_f32);
+
+    // Effective radius in input-pixel units. Ceiling so we never under-sample.
+    let scaled_a = (a as f32 * scale).ceil() as i32;
+
+    let mut kernels = Vec::with_capacity(out_size);
+    let in_size_i32 = in_size as i32;
+
+    for out_pos in 0..out_size {
+        // Centre of the output pixel mapped into input space.
+        let src_pos = (out_pos as f32 + 0.5) * ratio - 0.5;
+        let center = src_pos.floor() as i32;
+
+        // Clamp the tap range to the valid input region.
+        let start = (-scaled_a + 1).max(-center);
+        let end = scaled_a.min(in_size_i32 - center - 1);
+
+        let start_idx = (center + start) as usize;
+        let end_idx = (center + end) as usize;
+        let count = (end - start + 1) as usize;
+
+        let mut weights = vec![0.0_f32; count];
+        let mut weight_sum = 0.0_f32;
+
+        for (i, delta) in (start..=end).enumerate() {
+            // Normalise the distance into kernel-function space: divide by
+            // `scale` so the kernel is evaluated at the same relative
+            // position regardless of how many input pixels it covers.
+            let distance = ((center + delta) as f32 - src_pos) / scale;
+            let w = kernel_fn(distance);
+            weights[i] = w;
+            weight_sum += w;
+        }
+
+        // Normalise floating-point weights.
+        if weight_sum.abs() > 1e-10 {
+            let inv = 1.0 / weight_sum;
+            for w in &mut weights {
+                *w *= inv;
+            }
+        }
+
+        // Convert to fixed-point Q16 (×65536) for the u8 fast path.
+        let mut weights_i32 = vec![0_i32; count];
+        let mut fixed_sum = 0_i32;
+        for i in 0..count {
+            let w = (weights[i] * 65536.0).round() as i32;
+            weights_i32[i] = w;
+            fixed_sum += w;
+        }
+
+        // Correct any rounding drift so the fixed-point weights sum exactly
+        // to 65536, preventing brightness shifts on flat images.
+        if count > 0 {
+            let diff = 65536 - fixed_sum;
+            // Add the residual to the tap with the largest absolute weight.
+            let max_idx = weights_i32
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, &v)| v)
+                .map_or(0, |(i, _)| i);
+            weights_i32[max_idx] += diff;
+        }
+
+        kernels.push(ConvKernel {
+            weights,
+            weights_i32,
+            start_idx: start_idx as u32,
+            end_idx: end_idx as u32,
+        });
+    }
+
+    kernels
+}
+
+// ============================================================================
+// Public generic resampler (f32 / u16 / etc.)
+// ============================================================================
+
 pub fn resample_separable<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, kernels: &PrecomputedKernels,
@@ -71,7 +172,6 @@ pub fn resample_separable<T>(
     );
 }
 
-#[allow(clippy::assertions_on_constants)]
 pub fn resample_separable_precomputed<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, kernels: &PrecomputedKernels,
@@ -79,17 +179,16 @@ pub fn resample_separable_precomputed<T>(
     T: Copy + NumOps<T>,
     f32: std::convert::From<T>,
 {
-    // Early exit: if no resizing needed, just copy
+    // Early exit: no resize needed.
     if in_width == out_width && in_height == out_height {
         out_channel.copy_from_slice(in_channel);
         return;
     }
 
-    // Check if we need horizontal or vertical resizing
     let need_horizontal = kernels.horizontal.is_some();
     let need_vertical = kernels.vertical.is_some();
 
-    // Case 1: Only vertical resizing needed
+    // Vertical only.
     if !need_horizontal && need_vertical {
         resample_vertical_only_precomputed::<T>(
             in_channel,
@@ -102,7 +201,7 @@ pub fn resample_separable_precomputed<T>(
         return;
     }
 
-    // Case 2: Only horizontal resizing needed
+    // Horizontal only.
     if need_horizontal && !need_vertical {
         resample_horizontal_only_precomputed::<T>(
             in_channel,
@@ -114,76 +213,57 @@ pub fn resample_separable_precomputed<T>(
         return;
     }
 
-    // Case 3: Both dimensions need resizing (Fused Tiled Implementation)
+    // Both dimensions — fused tiled implementation.
     let h_kernels = kernels.horizontal.as_ref().unwrap();
     let v_kernels = kernels.vertical.as_ref().unwrap();
 
-    // Find the maximum number of rows any vertical kernel requires
     let max_v_taps = v_kernels
         .iter()
         .map(|k| (k.end_idx - k.start_idx + 1) as usize)
         .max()
-        .unwrap_or(1); // Ensure at least 1 to avoid div by zero
+        .unwrap_or(1);
 
-    // The ring buffer is tiny: only holds exactly the horizontal rows currently needed
     let mut ring_buffer = vec![0.0_f32; max_v_taps * out_width];
-    // Track which in_y row is currently sitting in each ring buffer slot
     let mut buffer_contents = vec![usize::MAX; max_v_taps];
-    // Accumulator for the vertical pass
     let mut row_accumulator = vec![0.0_f32; out_width];
 
-    // Main demand-driven loop
     for (out_y, v_kernel) in (0..out_height).zip(v_kernels.iter()) {
         let v_start = v_kernel.start_idx as usize;
         let v_end = v_kernel.end_idx as usize;
 
-        // STEP A: Horizontal pass (Computed strictly on demand)
+        // Horizontal pass — demand-driven.
         for in_y in v_start..=v_end {
             let buffer_idx = in_y % max_v_taps;
-
-            // If the row we need isn't in the buffer, compute it
             if buffer_contents[buffer_idx] != in_y {
-                let in_row_start = in_y * in_width;
-                let in_row = &in_channel[in_row_start..in_row_start + in_width];
-
-                let ring_row_start = buffer_idx * out_width;
-                let ring_row = &mut ring_buffer[ring_row_start..ring_row_start + out_width];
-
-                // Process single horizontal line
+                let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
+                let ring_row =
+                    &mut ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
                 process_horizontal_row_to_f32(in_row, ring_row, h_kernels);
-
-                // Mark this row as successfully cached
                 buffer_contents[buffer_idx] = in_y;
             }
         }
 
-        // STEP B: Vertical pass (Cache-Friendly Horizontal Accumulation)
+        // Vertical pass.
         row_accumulator.fill(0.0);
-
         for (i, in_y) in (v_start..=v_end).enumerate() {
             let weight = v_kernel.weights[i];
             let buffer_idx = in_y % max_v_taps;
-
-            let ring_row_start = buffer_idx * out_width;
-            let ring_row = &ring_buffer[ring_row_start..ring_row_start + out_width];
-
-            // Ultra-fast sequential inner loop
-            for (acc, &ring_val) in row_accumulator.iter_mut().zip(ring_row.iter()) {
-                *acc += ring_val * weight;
+            let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+            for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
+                *acc += rv * weight;
             }
         }
 
-        // Final output conversion
-        let out_row_start = out_y * out_width;
-        let out_row = &mut out_channel[out_row_start..out_row_start + out_width];
-
-        for x in 0..out_width {
-            out_row[x] = T::from_f32(row_accumulator[x]);
+        // Write output row.
+        let out_row = &mut out_channel[out_y * out_width..out_y * out_width + out_width];
+        for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
+            *px = T::from_f32(acc);
         }
     }
 }
 
-/// Helper function to process a single horizontal row and output into an `f32` buffer
+/// Process one input row through the horizontal kernels into an f32 buffer.
+/// Works for any kernel width — no fixed-size match needed.
 #[inline(always)]
 fn process_horizontal_row_to_f32<T>(in_row: &[T], out_row: &mut [f32], h_kernels: &[ConvKernel])
 where
@@ -191,38 +271,23 @@ where
     f32: std::convert::From<T>,
 {
     for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-        let start_idx = kernel.start_idx as usize;
-        let end_idx = kernel.end_idx as usize;
-        let weights = &kernel.weights;
-        let diff = (end_idx - start_idx) + 1;
+        let start = kernel.start_idx as usize;
+        let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
 
-        // do the most common ones
-        macro_rules! fixed_dot {
-                ($row:expr, $start:expr, $n:expr, $weights:expr) => {
-                    if let Some(e) = $row.get($start..$start + $n) {
-                        e.iter()
-                            .zip($weights.iter())
-                            .map(|(&p, &w)| f32::from(p) * w)
-                            .sum::<f32>()
-                    } else {
-                        0.0
-                    }
-                };
-            }
-
-        let sum = match diff {
-            1 => fixed_dot!(in_row, start_idx, 1, weights),
-            2 => fixed_dot!(in_row, start_idx, 2, weights),
-            3 => fixed_dot!(in_row, start_idx, 3, weights),
-            4 => fixed_dot!(in_row, start_idx, 4, weights),
-            5 => fixed_dot!(in_row, start_idx, 5, weights),
-            6 => fixed_dot!(in_row, start_idx, 6, weights),
-            _ => 0.0,
+        let sum = if let Some(slice) = in_row.get(start..start + count) {
+            slice
+                .iter()
+                .zip(kernel.weights.iter())
+                .map(|(&p, &w)| f32::from(p) * w)
+                .sum::<f32>()
+        } else {
+            0.0
         };
 
         *out_pixel = sum;
     }
 }
+
 #[allow(clippy::needless_range_loop)]
 fn resample_vertical_only_precomputed<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, _in_height: usize, out_height: usize,
@@ -234,17 +299,14 @@ fn resample_vertical_only_precomputed<T>(
     for out_y in 0..out_height {
         let kernel = &v_kernels[out_y];
         let out_row_offset = out_y * width;
-
         for x in 0..width {
-            let mut sum = 0.0;
-
+            let mut sum = 0.0_f32;
             for in_y in kernel.start_idx..=kernel.end_idx {
                 let in_y = in_y as usize;
-                let start_idx = kernel.start_idx as usize;
+                let tap_idx = in_y - kernel.start_idx as usize;
                 let pixel = f32::from(in_channel[in_y * width + x]);
-                sum += pixel * kernel.weights[in_y - start_idx];
+                sum += pixel * kernel.weights[tap_idx];
             }
-
             out_channel[out_row_offset + x] = T::from_f32(sum);
         }
     }
@@ -262,33 +324,17 @@ fn resample_horizontal_only_precomputed<T>(
         .zip(out_channel.chunks_exact_mut(out_width))
     {
         for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-            let start_idx = kernel.start_idx as usize;
-            let end_idx = kernel.end_idx as usize;
-            let weights = &kernel.weights;
+            let start = kernel.start_idx as usize;
+            let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
 
-            let diff = (end_idx - start_idx) + 1;
-            // do the most common ones
-            macro_rules! fixed_dot {
-                ($row:expr, $start:expr, $n:expr, $weights:expr) => {
-                    if let Some(e) = $row.get($start..$start + $n) {
-                        e.iter()
-                            .zip($weights.iter())
-                            .map(|(&p, &w)| f32::from(p) * w)
-                            .sum::<f32>()
-                    } else {
-                        0.0
-                    }
-                };
-            }
-
-            let sum = match diff {
-                1 => fixed_dot!(in_row, start_idx, 1, weights),
-                2 => fixed_dot!(in_row, start_idx, 2, weights),
-                3 => fixed_dot!(in_row, start_idx, 3, weights),
-                4 => fixed_dot!(in_row, start_idx, 4, weights),
-                5 => fixed_dot!(in_row, start_idx, 5, weights),
-                6 => fixed_dot!(in_row, start_idx, 6, weights),
-                _ =>  0.0,
+            let sum = if let Some(slice) = in_row.get(start..start + count) {
+                slice
+                    .iter()
+                    .zip(kernel.weights.iter())
+                    .map(|(&p, &w)| f32::from(p) * w)
+                    .sum::<f32>()
+            } else {
+                0.0
             };
 
             *out_pixel = T::from_f32(sum);
@@ -296,98 +342,14 @@ fn resample_horizontal_only_precomputed<T>(
     }
 }
 
-// Maximum kernel size: 2*A where A can be up to 3, so max 6 taps
-const MAX_KERNEL_SIZE: usize = 6;
-
-#[derive(Clone, Copy)]
-pub(crate) struct ConvKernel {
-    weights: [f32; MAX_KERNEL_SIZE],
-    pub weights_i32: [i32; MAX_KERNEL_SIZE],
-    start_idx: u32,
-    end_idx: u32,
-}
-#[allow(clippy::needless_range_loop,clippy::cast_possible_wrap)]
-fn precompute_kernels(
-    in_size: usize, out_size: usize, ratio: f32, a: i32, kernel_fn: fn(f32) -> f32,
-) -> Vec<ConvKernel> {
-    let max_size: usize = (2 * a) as usize;
-    assert!(max_size <= MAX_KERNEL_SIZE, "Kernel size exceeds maximum");
-
-    let mut kernels = Vec::with_capacity(out_size);
-    let in_size_i32 = in_size as i32;
-
-    for out_pos in 0..out_size {
-        let src_pos = (out_pos as f32 + 0.5) * ratio - 0.5;
-        let center = src_pos.floor() as i32;
-
-        let start = (-a + 1).max(-center);
-        let end = a.min(in_size_i32 - center - 1);
-
-        let start_idx = (center + start) as usize;
-        let end_idx = (center + end) as usize;
-
-        let mut weights = [0.0f32; MAX_KERNEL_SIZE];
-        let mut weight_sum = 0.0;
-
-        for (i, delta) in (start..=end).enumerate() {
-            let distance = (center + delta) as f32 - src_pos;
-            let weight = kernel_fn(distance);
-            weights[i] = weight;
-            weight_sum += weight;
-        }
-
-        // Normalize weights
-        if weight_sum > 0.0 {
-            let inv_sum = 1.0 / weight_sum;
-            let count = (end - start + 1) as usize;
-
-            for i in 0..count {
-                weights[i] *= inv_sum;
-            }
-        }
-        // GENERATE FIXED POINT WEIGHTS
-        let mut weights_i32 = [0i32; MAX_KERNEL_SIZE];
-        let mut fixed_sum = 0;
-        let count = (end - start + 1) as usize;
-
-        for i in 0..count {
-            let w = (weights[i] * 65536.0).round() as i32;
-            weights_i32[i] = w;
-            fixed_sum += w;
-        }
-
-        // Fix normalization for integers to prevent brightness shifting
-        if count > 0 {
-            let diff = 65536 - fixed_sum;
-            // Add the difference to the largest weight
-            let mut max_idx = 0;
-            let mut max_val = weights_i32[0];
-            for i in 1..count {
-                if weights_i32[i] > max_val {
-                    max_val = weights_i32[i];
-                    max_idx = i;
-                }
-            }
-            weights_i32[max_idx] += diff;
-        }
-
-        kernels.push(ConvKernel {
-            weights,
-            weights_i32,
-            start_idx: start_idx as u32,
-            end_idx: end_idx as u32,
-        });
-
-    }
-
-    kernels
-}
+// ============================================================================
+// Optimised u8 fixed-point path
+// ============================================================================
 
 pub fn resample_separable_u8(
     in_channel: &[u8], out_channel: &mut [u8], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, kernels: &PrecomputedKernels,
 ) {
-    // Early exit
     if in_width == out_width && in_height == out_height {
         out_channel.copy_from_slice(in_channel);
         return;
@@ -402,115 +364,81 @@ pub fn resample_separable_u8(
         .max()
         .unwrap_or(1);
 
-    // The ring buffer now stores i32 values directly. No floats!
-    let mut ring_buffer = vec![0i32; max_v_taps * out_width];
+    // Ring buffer stores Q16 horizontally-filtered rows.
+    let mut ring_buffer = vec![0_i32; max_v_taps * out_width];
     let mut buffer_contents = vec![usize::MAX; max_v_taps];
-
-    // Accumulator is i64 to prevent overflow when multiplying i32 intermediate by i32 weight
-    let mut row_accumulator = vec![0i64; out_width];
+    // i64 accumulator prevents overflow: Q16 × Q16 = Q32, fits in i64.
+    let mut row_accumulator = vec![0_i64; out_width];
 
     for (out_y, v_kernel) in (0..out_height).zip(v_kernels.iter()) {
         let v_start = v_kernel.start_idx as usize;
         let v_end = v_kernel.end_idx as usize;
 
-        // STEP A: Demand-driven Horizontal Pass
+        // Horizontal pass — demand-driven.
         for in_y in v_start..=v_end {
             let buffer_idx = in_y % max_v_taps;
-
             if buffer_contents[buffer_idx] != in_y {
-                let in_row_start = in_y * in_width;
-                let in_row = &in_channel[in_row_start..in_row_start + in_width];
-
-                let ring_row_start = buffer_idx * out_width;
-                let ring_row = &mut ring_buffer[ring_row_start..ring_row_start + out_width];
-
+                let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
+                let ring_row =
+                    &mut ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
                 process_horizontal_row_u8(in_row, ring_row, h_kernels);
                 buffer_contents[buffer_idx] = in_y;
             }
         }
 
-        // STEP B: Vertical Pass (i64 accumulation)
+        // Vertical pass.
         row_accumulator.fill(0);
-
         for (i, in_y) in (v_start..=v_end).enumerate() {
-            // Use the i32 weights cast to i64
             let weight = i64::from(v_kernel.weights_i32[i]);
             let buffer_idx = in_y % max_v_taps;
-
-            let ring_row_start = buffer_idx * out_width;
-            let ring_row = &ring_buffer[ring_row_start..ring_row_start + out_width];
-
-            for (acc, &ring_val) in row_accumulator.iter_mut().zip(ring_row.iter()) {
-                *acc += i64::from(ring_val) * weight;
+            let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+            for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
+                *acc += i64::from(rv) * weight;
             }
         }
 
-        // STEP C: Bit-shift back to u8 and clamp
-        let out_row_start = out_y * out_width;
-        let out_row = &mut out_channel[out_row_start..out_row_start + out_width];
-
-        for (out_pixel, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
-            // Add (1 << 31) for rounding, then shift down by 32 bits total (16 from horizontal + 16 from vertical)
-            let mut val = (acc + (1i64 << 31)) >> 32;
-
-            // Clamp negative ringing artifacts from bicubic/lanczos
-            val = val.clamp(0, 255);
-
-            *out_pixel = val as u8;
+        // Shift Q32 → u8 with rounding and clamp ringing artifacts.
+        let out_row = &mut out_channel[out_y * out_width..out_y * out_width + out_width];
+        for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
+            let val = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255);
+            *px = val as u8;
         }
     }
 }
 
+/// Horizontal pass into Q16 i32 buffer. Works for any kernel width.
 #[inline(always)]
-fn process_horizontal_row_u8(
-    in_row: &[u8], out_row: &mut [i32], h_kernels: &[ConvKernel]
-) {
+fn process_horizontal_row_u8(in_row: &[u8], out_row: &mut [i32], h_kernels: &[ConvKernel]) {
     for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-        let start_idx = kernel.start_idx as usize;
-        let end_idx = kernel.end_idx as usize;
-        let weights = &kernel.weights_i32;
-        let diff = (end_idx - start_idx) + 1;
+        let start = kernel.start_idx as usize;
+        let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
 
-        macro_rules! fixed_dot {
-                ($row:expr, $start:expr, $n:expr, $weights:expr) => {
-                    if let Some(e) = $row.get($start..$start + $n) {
-                        e.iter()
-                            .zip($weights.iter())
-                            .map(|(&p, &w)| i32::from(p) * w)
-                            .sum::<i32>()
-                    } else {
-                        0
-                    }
-                };
-            }
-
-        let sum = match diff {
-            1 => fixed_dot!(in_row, start_idx, 1, weights),
-            2 => fixed_dot!(in_row, start_idx, 2, weights),
-            3 => fixed_dot!(in_row, start_idx, 3, weights),
-            4 => fixed_dot!(in_row, start_idx, 4, weights),
-            5 => fixed_dot!(in_row, start_idx, 5, weights),
-            6 => fixed_dot!(in_row, start_idx, 6, weights),
-            _ =>  0,
+        let sum = if let Some(slice) = in_row.get(start..start + count) {
+            slice
+                .iter()
+                .zip(kernel.weights_i32.iter())
+                .map(|(&p, &w)| i32::from(p) * w)
+                .sum::<i32>()
+        } else {
+            0
         };
+
         *out_pixel = sum;
     }
 }
+
 // ============================================================================
-// KERNEL FUNCTIONS
+// Kernel functions
 // ============================================================================
 
-/// Lanczos kernel with parameter a
+/// Lanczos kernel with lobed parameter A.
 #[inline]
 fn lanczos_kernel<const A: i32>(x: f32) -> f32 {
     let x = x.abs();
-
     if x < 1e-6 {
         return 1.0;
     }
-
     let a = A as f32;
-
     if x < a {
         let pi_x = std::f32::consts::PI * x;
         let pi_x_a = pi_x / a;
@@ -520,25 +448,18 @@ fn lanczos_kernel<const A: i32>(x: f32) -> f32 {
     }
 }
 
-/// Generalized bicubic kernel (Mitchell-Netravali family)
-/// B and C are parameters that control the shape
-/// Common presets:
-/// - Mitchell: B=1/3, C=1/3 (balanced, default "bicubic")
-/// - Catmull-Rom: B=0, C=0.5 (sharper)
-/// - B-Spline: B=1, C=0 (blurrier, smoothest)
-/// - Hermite: B=0, C=0 (similar to B-Spline)
+/// Mitchell-Netravali bicubic family.
+/// B=1/3, C=1/3 → Mitchell  |  B=0, C=1/2 → Catmull-Rom
+/// B=1,   C=0   → B-Spline  |  B=0, C=0   → Hermite
 #[inline]
 fn bicubic_kernel(x: f32, b: f32, c: f32) -> f32 {
     let x = x.abs();
-
     if x < 1.0 {
-        // |x| < 1
         let x2 = x * x;
         let x3 = x2 * x;
         ((12.0 - 9.0 * b - 6.0 * c) * x3 + (-18.0 + 12.0 * b + 6.0 * c) * x2 + (6.0 - 2.0 * b))
             / 6.0
     } else if x < 2.0 {
-        // 1 <= |x| < 2
         let x2 = x * x;
         let x3 = x2 * x;
         ((-b - 6.0 * c) * x3
@@ -551,17 +472,14 @@ fn bicubic_kernel(x: f32, b: f32, c: f32) -> f32 {
     }
 }
 
-/// Sinc kernel with window radius A
+/// Sinc kernel with window radius A.
 #[inline]
 fn sinc_kernel<const A: i32>(x: f32) -> f32 {
     let x = x.abs();
-
     if x < 1e-6 {
         return 1.0;
     }
-
     let a = A as f32;
-
     if x < a {
         let pi_x = std::f32::consts::PI * x;
         pi_x.sin() / pi_x
@@ -570,11 +488,10 @@ fn sinc_kernel<const A: i32>(x: f32) -> f32 {
     }
 }
 
-/// Bilinear kernel (triangle function)
+/// Bilinear (triangle) kernel.
 #[inline]
 fn bilinear_kernel(x: f32) -> f32 {
     let x = x.abs();
-
     if x < 1.0 {
         1.0 - x
     } else {
@@ -582,12 +499,15 @@ fn bilinear_kernel(x: f32) -> f32 {
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::resize::seperable_kernel::PrecomputedKernels;
     use crate::resize::ResizeMethod;
-    use super::*;
-
 
     #[test]
     fn test_u8_identity_resize() {
@@ -596,98 +516,113 @@ mod tests {
         let in_pixels: Vec<u8> = vec![10, 50, 100, 200];
         let mut out_pixels = vec![0; 4];
 
-        let kernels = PrecomputedKernels::new(
-            width, height, width, height, ResizeMethod::Bicubic,
-        );
-
+        let kernels = PrecomputedKernels::new(width, height, width, height, ResizeMethod::Bicubic);
         resample_separable_u8(
-            &in_pixels, &mut out_pixels, width, height, width, height, &kernels,
+            &in_pixels,
+            &mut out_pixels,
+            width,
+            height,
+            width,
+            height,
+            &kernels,
         );
-
-        // Early exit should trigger and copy perfectly
         assert_eq!(in_pixels, out_pixels);
     }
 
     #[test]
     fn test_u8_solid_color_normalization() {
-        // Tests that our fixed-point normalization logic doesn't shift brightness
         let in_width = 4;
         let in_height = 4;
-
-        // Test with pure white
-        let in_pixels: Vec<u8> = vec![255; in_width * in_height];
-
         let out_width = 2;
         let out_height = 2;
-        let mut out_pixels = vec![0; out_width * out_height];
-
         let kernels = PrecomputedKernels::new(
-            in_width, in_height, out_width, out_height, ResizeMethod::Bicubic,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            ResizeMethod::Bicubic,
         );
 
+        let in_pixels: Vec<u8> = vec![255; in_width * in_height];
+        let mut out_pixels = vec![0u8; out_width * out_height];
         resample_separable_u8(
-            &in_pixels, &mut out_pixels, in_width, in_height, out_width, out_height, &kernels,
+            &in_pixels,
+            &mut out_pixels,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            &kernels,
         );
+        assert!(out_pixels.iter().all(|&p| p == 255), "Solid white shifted");
 
-        // Every single pixel should remain exactly 255.
-        // If it becomes 254 or overflows to 0, our weights_i32 sum is wrong.
-        assert!(out_pixels.iter().all(|&p| p == 255), "Solid white test failed, pixels shifted");
-
-        // Test with a mid-tone
         let in_pixels_mid: Vec<u8> = vec![128; in_width * in_height];
         resample_separable_u8(
-            &in_pixels_mid, &mut out_pixels, in_width, in_height, out_width, out_height, &kernels,
+            &in_pixels_mid,
+            &mut out_pixels,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            &kernels,
         );
-        assert!(out_pixels.iter().all(|&p| p == 128), "Solid mid-tone test failed, pixels shifted");
+        assert!(
+            out_pixels.iter().all(|&p| p == 128),
+            "Solid mid-tone shifted"
+        );
     }
 
     #[test]
     fn test_u8_vs_f32_parity() {
-        // Compare the fixed-point u8 output against the floating-point reference output
         let in_width = 8;
         let in_height = 8;
         let out_width = 5;
         let out_height = 5;
 
-        // Create a fake gradient image to give the kernels varying data to work with
-        let in_pixels_u8: Vec<u8> = (0..(in_width * in_height)).map(|i| (i * 3 % 255) as u8).collect();
+        let in_pixels_u8: Vec<u8> = (0..in_width * in_height)
+            .map(|i| (i * 3 % 255) as u8)
+            .collect();
         let in_pixels_f32: Vec<f32> = in_pixels_u8.iter().map(|&p| f32::from(p)).collect();
 
-        let mut out_pixels_u8 = vec![0u8; out_width * out_height];
-        let mut out_pixels_f32 = vec![0.0f32; out_width * out_height];
+        let mut out_u8 = vec![0u8; out_width * out_height];
+        let mut out_f32 = vec![0.0f32; out_width * out_height];
 
-        // Lanczos3 produces negative weights, which tests our clamping logic perfectly
         let kernels = PrecomputedKernels::new(
-            in_width, in_height, out_width, out_height, ResizeMethod::Lanczos3,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            ResizeMethod::Lanczos3,
         );
 
-        // 1. Run Fixed-Point
         resample_separable_u8(
-            &in_pixels_u8, &mut out_pixels_u8, in_width, in_height, out_width, out_height, &kernels,
+            &in_pixels_u8,
+            &mut out_u8,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            &kernels,
         );
-
-        // 2. Run Floating-Point
         resample_separable_precomputed::<f32>(
-            &in_pixels_f32, &mut out_pixels_f32, in_width, in_height, out_width, out_height, &kernels,
+            &in_pixels_f32,
+            &mut out_f32,
+            in_width,
+            in_height,
+            out_width,
+            out_height,
+            &kernels,
         );
 
-        // 3. Compare Results
-        for (i, (p_u8, p_f32)) in out_pixels_u8.iter().zip(out_pixels_f32.iter()).enumerate() {
-            // Replicate the clamping that would normally happen when converting f32 image back to u8
+        for (i, (p_u8, p_f32)) in out_u8.iter().zip(out_f32.iter()).enumerate() {
             let f32_clamped = p_f32.clamp(0.0, 255.0).round() as u8;
-
             let diff = (i32::from(*p_u8) - i32::from(f32_clamped)).abs();
-
-            // We tolerate a strict maximum difference of 1.
-            // This happens occasionally because `(a + 0.5).floor()` in floats vs `(a + (1<<31)) >> 32` in integers
-            // can break ties exactly at .5 differently due to precision.
             assert!(
                 diff <= 1,
-                "Mismatch at index {i}: fixed-point u8={p_u8} vs floating-point reference={f32_clamped} (diff {diff})",
+                "Mismatch at index {i}: u8={p_u8} vs f32={f32_clamped} (diff {diff})"
             );
         }
     }
-
 
     const ALL_METHODS: &[ResizeMethod] = &[
         ResizeMethod::Lanczos3,
@@ -701,28 +636,20 @@ mod tests {
         ResizeMethod::Bilinear,
     ];
 
-    // -------------------------------------------------------------------------
-    // Kernel property tests
-    // -------------------------------------------------------------------------
-
     #[test]
     fn test_weights_sum_to_one() {
         for &method in ALL_METHODS {
-            // Only horizontal kernels exist here (width changed, height same)
-            // Use asymmetric sizes to exercise non-trivial resampling
             let kernels = PrecomputedKernels::new(100, 80, 37, 53, method);
-
             for (dir, kernel_vec) in [
                 ("horizontal", kernels.horizontal.as_ref()),
                 ("vertical", kernels.vertical.as_ref()),
             ] {
-                let Some(kernels) = kernel_vec else { continue };
-                for (i, k) in kernels.iter().enumerate() {
-                    let count = (k.end_idx - k.start_idx + 1) as usize;
-                    let sum: f32 = k.weights[..count].iter().sum();
+                let Some(kv) = kernel_vec else { continue };
+                for (i, k) in kv.iter().enumerate() {
+                    let sum: f32 = k.weights.iter().sum();
                     assert!(
                         (sum - 1.0).abs() < 1e-5,
-                        "method={method:?} dir={dir} kernel[{i}] weights sum to {sum}, expected 1.0"
+                        "method={method:?} dir={dir} kernel[{i}] sum={sum}"
                     );
                 }
             }
@@ -733,79 +660,59 @@ mod tests {
     fn test_indices_in_bounds() {
         let (in_w, in_h) = (200, 150);
         let (out_w, out_h) = (73, 99);
-
         for &method in ALL_METHODS {
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-
             if let Some(h) = &kernels.horizontal {
                 for (i, k) in h.iter().enumerate() {
                     assert!(
                         (k.end_idx as usize) < in_w,
-                        "method={method:?} horizontal kernel[{i}] end_idx {} >= in_width {in_w}",
-                        k.end_idx
+                        "method={method:?} h kernel[{i}] OOB"
                     );
                     assert!(
                         k.start_idx <= k.end_idx,
-                        "method={method:?} horizontal kernel[{i}] start_idx > end_idx"
+                        "method={method:?} h kernel[{i}] inverted"
                     );
                 }
             }
-
             if let Some(v) = &kernels.vertical {
                 for (i, k) in v.iter().enumerate() {
                     assert!(
                         (k.end_idx as usize) < in_h,
-                        "method={method:?} vertical kernel[{i}] end_idx {} >= in_height {in_h}",
-                        k.end_idx
+                        "method={method:?} v kernel[{i}] OOB"
                     );
                     assert!(
                         k.start_idx <= k.end_idx,
-                        "method={method:?} vertical kernel[{i}] start_idx > end_idx"
+                        "method={method:?} v kernel[{i}] inverted"
                     );
                 }
             }
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Resample property tests
-    // -------------------------------------------------------------------------
 
     #[test]
     fn test_identity_resize_copies_exactly() {
         let (w, h) = (64usize, 48usize);
         let input: Vec<u8> = (0..w * h).map(|i| (i % 256) as u8).collect();
         let mut output = vec![0u8; w * h];
-
         for &method in ALL_METHODS {
             let kernels = PrecomputedKernels::new(w, h, w, h, method);
             resample_separable(&input, &mut output, w, h, w, h, &kernels);
-            assert_eq!(
-                input, output,
-                "method={method:?} identity resize should copy input exactly"
-            );
+            assert_eq!(input, output, "method={method:?} identity failed");
         }
     }
 
     #[test]
     fn test_flat_image_survives_resize() {
-        // A constant-value image should come out constant after any resize,
-        // because all normalized weight sums = 1.0
         let (in_w, in_h) = (64usize, 48usize);
         let (out_w, out_h) = (37usize, 53usize);
         let flat_value = 128u8;
-
         let input = vec![flat_value; in_w * in_h];
         let mut output = vec![0u8; out_w * out_h];
-
         for &method in ALL_METHODS {
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
             resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
             for (i, &px) in output.iter().enumerate() {
-                assert_eq!(
-                    px, flat_value,
-                    "method={method:?} flat image pixel[{i}] became {px}, expected {flat_value}"
-                );
+                assert_eq!(px, flat_value, "method={method:?} flat pixel[{i}]={px}");
             }
         }
     }
@@ -815,29 +722,22 @@ mod tests {
         let (in_w, in_h) = (100usize, 80usize);
         let (out_w, out_h) = (37usize, 53usize);
         let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-
         for &method in ALL_METHODS {
             let mut output = vec![0u8; out_w * out_h];
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
             resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            // If we got here without a panic/OOB, dimensions are consistent.
-            // Spot-check that the last pixel was written (not left as zero by accident)
-            // by verifying output length is intact.
             assert_eq!(output.len(), out_w * out_h);
         }
     }
 
     #[test]
     fn test_horizontal_only_matches_fused() {
-        // When only width changes, the horizontal-only path should match the fused path
         let (in_w, in_h) = (100usize, 48usize);
-        let (out_w, out_h) = (37usize, 48usize); // height unchanged
+        let (out_w, out_h) = (37usize, 48usize);
         let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-
         for &method in ALL_METHODS {
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
             assert!(kernels.vertical.is_none(), "expected no vertical kernels");
-
             let mut output = vec![0u8; out_w * out_h];
             resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
             assert_eq!(output.len(), out_w * out_h);
@@ -847,22 +747,19 @@ mod tests {
     #[test]
     fn test_vertical_only_matches_fused() {
         let (in_w, in_h) = (48usize, 100usize);
-        let (out_w, out_h) = (48usize, 37usize); // width unchanged
+        let (out_w, out_h) = (48usize, 37usize);
         let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-
         for &method in ALL_METHODS {
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            assert!(kernels.horizontal.is_none(), "expected no horizontal kernels");
-
+            assert!(
+                kernels.horizontal.is_none(),
+                "expected no horizontal kernels"
+            );
             let mut output = vec![0u8; out_w * out_h];
             resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
             assert_eq!(output.len(), out_w * out_h);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Edge / corner cases
-    // -------------------------------------------------------------------------
 
     #[test]
     fn test_single_pixel_input() {
@@ -885,7 +782,23 @@ mod tests {
             let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
             resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
             for &px in &output {
-                assert_eq!(px, 128, "method={method:?} extreme downscale flat image failed");
+                assert_eq!(px, 128, "method={method:?} extreme downscale flat failed");
+            }
+        }
+    }
+
+    #[test]
+    fn test_10x_downscale_flat_image() {
+        // Specifically tests the 100→10% case from the bug report.
+        let (in_w, in_h) = (1000usize, 1000usize);
+        let (out_w, out_h) = (100usize, 100usize);
+        let input = vec![200u8; in_w * in_h];
+        let mut output = vec![0u8; out_w * out_h];
+        for &method in ALL_METHODS {
+            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
+            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
+            for (i, &px) in output.iter().enumerate() {
+                assert_eq!(px, 200, "method={method:?} 10x downscale pixel[{i}]={px}");
             }
         }
     }

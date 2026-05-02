@@ -27,7 +27,6 @@ use crate::resize::seperable_kernel::{resample_separable_u8, PrecomputedKernels}
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
-mod bilinear;
 mod seperable_kernel;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -140,67 +139,41 @@ impl OperationsTrait for Resize {
 
         let new_length = new_w * new_h * image.depth().size_of();
 
-        let precomputed_kernels = if self.method == ResizeMethod::Bilinear {
-            None
-        } else {
-            Some(PrecomputedKernels::new(
-                old_w,
-                old_h,
-                new_w,
-                new_h,
-                self.method,
-            ))
-        };
+        let precomputed_kernels = PrecomputedKernels::new(old_w, old_h, new_w, new_h, self.method);
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut new_channel = Channel::new_with_bit_type(new_length, depth);
             match depth {
                 BitType::U8 => {
-                    if self.method == ResizeMethod::Bilinear {
-                        // will short circuit to the right one
-                        resize::<u8>(
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?,
-                            self.method,
-                            old_w,
-                            old_h,
-                            new_w,
-                            new_h,
-                            precomputed_kernels.as_ref(),
-                        );
-                    } else {
-                        resample_separable_u8(
-                            channel.reinterpret_as()?,
-                            new_channel.reinterpret_as_mut()?,
-                            old_w,
-                            old_h,
-                            new_w,
-                            new_h,
-                            precomputed_kernels.as_ref().unwrap(),
-                        );
-                    }
+                    resample_separable_u8(
+                        channel.reinterpret_as()?,
+                        new_channel.reinterpret_as_mut()?,
+                        old_w,
+                        old_h,
+                        new_w,
+                        new_h,
+                        &precomputed_kernels,
+                    );
                 }
                 BitType::U16 => resize::<u16>(
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
-                    self.method,
                     old_w,
                     old_h,
                     new_w,
                     new_h,
-                    precomputed_kernels.as_ref(),
+                    &precomputed_kernels,
                 ),
 
                 BitType::F32 => {
                     resize::<f32>(
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
-                        self.method,
                         old_w,
                         old_h,
                         new_w,
                         new_h,
-                        precomputed_kernels.as_ref(),
+                        &precomputed_kernels,
                     );
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d)),
@@ -213,7 +186,7 @@ impl OperationsTrait for Resize {
 
         // convert back from premultiplied if we did not get the
         // image as premultiplied
-        if !is_premultiplied && has_alpha {
+        if !is_premultiplied & &has_alpha {
             trace!("Un-premultiplying alpha along resize method");
             let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::NonPreMultiplied).execute_impl(image)?;
@@ -296,36 +269,21 @@ pub fn ratio_dimensions_larger(
 /// - `out_width*out_height` do not match `out_image.len()`.
 #[allow(clippy::too_many_arguments)]
 fn resize<T>(
-    in_image: &[T], out_image: &mut [T], method: ResizeMethod, in_width: usize, in_height: usize,
-    out_width: usize, out_height: usize, precomputed_kernels: Option<&PrecomputedKernels>,
+    in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
+    out_height: usize, precomputed_kernels: &PrecomputedKernels,
 ) where
     T: Copy + NumOps<T> + Default,
     f32: std::convert::From<T>,
 {
-    match method {
-        ResizeMethod::Bilinear => {
-            bilinear::bilinear_impl(
-                in_image, out_image, in_width, in_height, out_width, out_height,
-            );
-        }
-
-        _ => match precomputed_kernels {
-            Some(precomputed_kernels) => {
-                seperable_kernel::resample_separable(
-                    in_image,
-                    out_image,
-                    in_width,
-                    in_height,
-                    out_width,
-                    out_height,
-                    precomputed_kernels,
-                );
-            }
-            None => {
-                unreachable!("Precomputed kernels not loaded");
-            }
-        },
-    }
+    seperable_kernel::resample_separable(
+        in_image,
+        out_image,
+        in_width,
+        in_height,
+        out_width,
+        out_height,
+        precomputed_kernels,
+    );
 }
 
 fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (usize, usize) {
