@@ -10,14 +10,15 @@ repository = "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-bin"
 
 [dependencies]
 log = "0.4.29"
-zune-image = { version = "^0.5", path = "../zune-image", features = ["all"] }
+zune-image = { version = "^0.5", path = "../zune-image", features = ["all", "web"] }
+ureq = { version = "3.3.0" }
 zune-core = { path = "../zune-core", version = "^0.5" }
-zune-imageprocs = { path = "../zune-imageprocs",features = ["exif","exmex"] }
+zune-imageprocs = { path = "../zune-imageprocs", features = ["exif", "exmex"] }
 #zune-opencl = { path = "../zune-opencl" }
 serde_json = "1.0.93"
 serde = "1.0.152"
 # Don't need fancy stuff as we are just doing cmd parsing
-regex = { version = "1.12.3",default-features = false }
+regex = { version = "1.12.3", default-features = false }
 [dependencies.simple_logger]
 version = "5.1.0"
 default-features = false

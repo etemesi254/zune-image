@@ -9,27 +9,27 @@
 use clap::parser::ValueSource;
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
-use log::{info, Level};
+use log::{info, LevelFilter};
 
 use crate::cmd_args::MmapOptions;
 
 #[derive(Debug, Copy, Clone)]
 pub struct CmdOptions {
-    pub mmap:                 MmapOptions,
-    pub max_width:            usize,
-    pub max_height:           usize,
-    pub override_files:       bool,
-    pub experimental_formats: bool
+    pub mmap: MmapOptions,
+    pub max_width: usize,
+    pub max_height: usize,
+    pub override_files: bool,
+    pub experimental_formats: bool,
 }
 
 impl CmdOptions {
     pub fn new() -> CmdOptions {
         CmdOptions {
-            mmap:                 MmapOptions::No,
-            max_width:            0,
-            max_height:           0,
-            override_files:       false,
-            experimental_formats: false
+            mmap: MmapOptions::No,
+            max_width: 0,
+            max_height: 0,
+            override_files: false,
+            experimental_formats: false,
         }
     }
 }
@@ -69,18 +69,23 @@ pub fn setup_logger(options: &ArgMatches) {
         let log_level;
 
         if *options.get_one::<bool>("debug").unwrap() {
-            log_level = Level::Debug;
+            log_level = LevelFilter::Debug;
         } else if *options.get_one::<bool>("trace").unwrap() {
-            log_level = Level::Trace;
+            log_level = LevelFilter::Trace;
         } else if *options.get_one::<bool>("warn").unwrap() {
-            log_level = Level::Warn
+            log_level = LevelFilter::Warn
         } else if *options.get_one::<bool>("info").unwrap() {
-            log_level = Level::Info;
+            log_level = LevelFilter::Info;
         } else {
-            log_level = Level::Warn;
+            log_level = LevelFilter::Warn;
         }
 
-        simple_logger::init_with_level(log_level).unwrap();
+        simple_logger::SimpleLogger::new()
+            .with_level(log_level)
+            .with_module_level("ureq", LevelFilter::Warn)
+            .with_module_level("rustls", LevelFilter::Info)
+            .init()
+            .unwrap();
 
         info!("Initialized logger");
         info!("Log level :{log_level}");

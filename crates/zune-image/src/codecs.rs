@@ -707,6 +707,14 @@ impl Image {
     pub fn from_decoder(mut decoder: impl DecoderTrait) -> Result<Image, ImageErrors> {
         decoder.decode()
     }
+    /// Opens an image directly from a URL via a synchronous HTTP request.
+    ///
+    /// # Arguments
+    /// - `url`: The HTTP/HTTPS URL pointing to the encoded image file.
+    #[cfg(feature = "web")]
+    pub fn open_web(url: &str, options: DecoderOptions) -> Result<Image, ImageErrors> {
+        crate::web::open_web(url, options)
+    }
 }
 /// Guess the format of an image based on it's magic bytes
 ///

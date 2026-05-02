@@ -118,3 +118,4 @@ pub mod traits;
 pub mod utils;
 pub mod iters;
 pub mod colors;
+pub mod web;

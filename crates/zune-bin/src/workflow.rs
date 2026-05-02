@@ -11,6 +11,12 @@ use std::path::Path;
 use std::string::String;
 use std::time::Instant;
 
+use crate::cmd_args::CmdImageFormats;
+use crate::cmd_parsers::global_options::CmdOptions;
+use crate::cmd_parsers::{decoder_options, encoder_options};
+use crate::file_io::{ZuneFile, ZuneMem, ZuneWeb};
+use crate::probe_files::probe_input_files;
+use crate::show_gui::open_in_default_app;
 use clap::parser::ValueSource::CommandLine;
 use clap::ArgMatches;
 use log::{error, info, log_enabled, trace};
@@ -18,22 +24,16 @@ use zune_image::codecs::ImageFormat;
 use zune_image::errors::ImageErrors;
 use zune_image::pipelines::Pipeline;
 use zune_image::traits::OperationsTrait;
-use crate::cmd_args::CmdImageFormats;
-use crate::cmd_parsers::global_options::CmdOptions;
-use crate::cmd_parsers::{decoder_options, encoder_options};
-use crate::file_io::{ZuneFile, ZuneMem};
-use crate::probe_files::probe_input_files;
-use crate::show_gui::open_in_default_app;
 
 struct CmdPipeline {
-    inner:   Pipeline,
-    formats: Vec<(ImageFormat, std::ffi::OsString)>
+    inner: Pipeline,
+    formats: Vec<(ImageFormat, std::ffi::OsString)>,
 }
 impl CmdPipeline {
     pub fn new() -> CmdPipeline {
         CmdPipeline {
-            inner:   Pipeline::new(),
-            formats: vec![]
+            inner: Pipeline::new(),
+            formats: vec![],
         }
     }
 }
@@ -41,7 +41,7 @@ impl CmdPipeline {
 #[allow(unused_variables)]
 #[allow(clippy::unused_io_amount)] // yes it's what I want
 pub(crate) fn create_and_exec_workflow_from_cmd(
-    args: &ArgMatches, cmd_opts: &CmdOptions
+    args: &ArgMatches, cmd_opts: &CmdOptions,
 ) -> Result<(), ImageErrors> {
     if let Some(view) = args.value_source("probe") {
         if view == CommandLine {
@@ -61,9 +61,6 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
     let mut workflow: CmdPipeline = CmdPipeline::new();
     let options = encoder_options(args);
 
-    // ==========================================
-    // PHASE 1: INGEST ALL INPUTS
-    // ==========================================
     for in_file in args.get_raw("in").unwrap() {
         if in_file == "-" {
             // Handle stdin completely in memory
@@ -72,7 +69,9 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
 
             if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&data)) {
                 if format.has_decoder() {
-                    workflow.inner.chain_decoder(Box::new(ZuneMem::new(data, decoder_options)));
+                    workflow
+                        .inner
+                        .chain_decoder(Box::new(ZuneMem::new(data, decoder_options)));
                 } else {
                     return Err(ImageErrors::ImageDecoderNotImplemented(format));
                 }
@@ -80,19 +79,71 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 return Err(ImageErrors::ImageDecoderNotIncluded(ImageFormat::Unknown));
             }
         } else {
-            // Read just enough bytes to guess the format without loading the whole file into RAM
-            let mut file = File::open(in_file)?;
-            let mut header = [0; 32];
-            let bytes_read = file.read(&mut header)?;
 
-            if let Some((format, _)) = ImageFormat::guess_format(std::io::Cursor::new(&header[..bytes_read])) {
+            let in_file_str = in_file.to_string_lossy();
+            let is_web = in_file_str.starts_with("http://") || in_file_str.starts_with("https://");
+
+            let mut header = [0u8; 32];
+            let bytes_read;
+
+            let mut web_parts = None;
+            let mut local_file = None;
+            if is_web {
+                {
+                    // 1. Make the request and grab the Content-Length
+                    let resp = ureq::get(&in_file_str.to_string())
+                        .call()
+                        .map_err(|e| ImageErrors::GenericString(format!("Network error: {}", e)))?;
+
+                    let content_length = resp
+                        .headers()
+                        .get("Content-Length")
+                        .and_then(|s| s.to_str().ok()?.parse::<u64>().ok());
+
+                    let mut stream =
+                        Box::new(resp.into_body().into_reader()) as Box<dyn Read + Send + Sync>;
+
+                    // 2. Read the header for format guessing
+                    bytes_read = stream.read(&mut header)?;
+
+                    // 3. Save the active stream and the read bytes for later
+                    let initial_data = header[..bytes_read].to_vec();
+                    web_parts = Some((stream, initial_data, content_length));
+                }
+            } else {
+                let mut file = File::open(in_file)?;
+                bytes_read = file.read(&mut header)?;
+
+                // Store the file handle to pass to ZuneFile
+                local_file = Some(file);
+            }
+
+            // 4. Guess format and chain
+            if let Some((format, _)) =
+                ImageFormat::guess_format(std::io::Cursor::new(&header[..bytes_read]))
+            {
                 if format.has_decoder() {
-                    // ZuneFile likely handles reading the file from the path,
-                    // so we don't need to pass a full buffer to it.
-                    workflow.inner.chain_decoder(Box::new(ZuneFile::new(
-                        in_file.to_os_string(),
-                        decoder_options
-                    )));
+                    if is_web {
+                        if let Some((stream, initial_data, content_length)) = web_parts {
+                            // Construct the WebBuffer right here with the live connection
+                            let web_buf = zune_image::web::WebBuffer::from_parts(
+                                stream,
+                                initial_data,
+                                content_length,
+                            );
+                            workflow
+                                .inner
+                                .chain_decoder(Box::new(ZuneWeb::new(web_buf, decoder_options)));
+                        }
+                    } else {
+                        if let Some(file) = local_file {
+                            // Pass the open file directly; no more re-opening from the path string
+                            workflow.inner.chain_decoder(Box::new(ZuneFile::new(
+                                file,
+                                decoder_options
+                            )));
+                        }
+                    }
                 } else {
                     return Err(ImageErrors::ImageDecoderNotImplemented(format));
                 }
@@ -138,9 +189,13 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                         return Err(ImageErrors::GenericStr("You must specify the image format via --output-format when outputting to stdout ('-')"));
                     }
                 } else if let Some(ext) = path.extension() {
-                    if let Some(encode_type) = ImageFormat::encoder_for_extension(ext.to_str().unwrap()) {
+                    if let Some(encode_type) =
+                        ImageFormat::encoder_for_extension(ext.to_str().unwrap())
+                    {
                         info!("Treating {out_file:?} as a {encode_type:?} format");
-                        workflow.formats.push((encode_type, out_file.to_os_string()));
+                        workflow
+                            .formats
+                            .push((encode_type, out_file.to_os_string()));
                     } else {
                         error!("Unknown or unsupported format for {out_file:?}");
                         return Err(ImageErrors::GenericStr("Unsupported output format"));
@@ -183,11 +238,11 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 let end = Instant::now();
 
                 trace!(
-                "Took {:?} to encode {} bytes to {:?}",
-                end - start,
-                bytes,
-                out_file
-            );
+                    "Took {:?} to encode {} bytes to {:?}",
+                    end - start,
+                    bytes,
+                    out_file
+                );
             }
         }
     }
@@ -199,7 +254,6 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
             }
         }
     }
-
 
     Ok(())
 }
@@ -216,9 +270,7 @@ pub fn add_operations(args: &ArgMatches, workflow: &mut Pipeline) -> Result<(), 
             continue;
         }
 
-        let value_source = args
-            .value_source(id_str)
-            .expect("id came from matches");
+        let value_source = args.value_source(id_str).expect("id came from matches");
 
         if value_source != clap::parser::ValueSource::CommandLine {
             // ignore things not passed via command line
