@@ -14,7 +14,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial;
@@ -73,6 +73,9 @@ impl BilateralFilter {
 impl OperationsTrait for BilateralFilter {
     fn name(&self) -> &'static str {
         "Bilateral Filter"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {

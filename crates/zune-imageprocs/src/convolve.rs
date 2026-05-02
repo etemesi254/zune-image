@@ -18,7 +18,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::pad::{pad, PadMethod};
 use crate::traits::NumOps;
@@ -59,7 +59,7 @@ use crate::utils::{execute_on, z_prefetch};
 #[derive(Default)]
 pub struct Convolve {
     weights: Vec<f32>,
-    scale:   f32
+    scale: f32,
 }
 
 impl Convolve {
@@ -75,6 +75,9 @@ impl Convolve {
 impl OperationsTrait for Convolve {
     fn name(&self) -> &'static str {
         "2D convolution"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
     #[allow(clippy::too_many_lines)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
@@ -92,7 +95,7 @@ impl OperationsTrait for Convolve {
                         width,
                         height,
                         &self.weights,
-                        self.scale
+                        self.scale,
                     )?;
                 }
                 BitType::U16 => {
@@ -102,7 +105,7 @@ impl OperationsTrait for Convolve {
                         width,
                         height,
                         &self.weights,
-                        self.scale
+                        self.scale,
                     )?;
                 }
                 BitType::F32 => {
@@ -112,10 +115,10 @@ impl OperationsTrait for Convolve {
                         width,
                         height,
                         &self.weights,
-                        self.scale
+                        self.scale,
                     )?;
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
 
             *channel = out_channel;
@@ -131,7 +134,7 @@ impl OperationsTrait for Convolve {
 fn convolve_3x3_inner<T>(in_array: &[T; 9], weights: &[f32; 9], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     T::from_f32(
         in_array
@@ -139,7 +142,7 @@ where
             .zip(weights)
             .map(|(x, weight)| f32::from(*x) * weight)
             .sum::<f32>()
-            * scale
+            * scale,
     )
     .zclamp(T::min_val(), T::max_val())
 }
@@ -147,7 +150,7 @@ where
 fn convolve_5x5_inner<T>(in_array: &[T; 25], weights: &[f32; 25], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     T::from_f32(
         in_array
@@ -155,7 +158,7 @@ where
             .zip(weights)
             .map(|(x, weight)| f32::from(*x) * weight)
             .sum::<f32>()
-            * scale
+            * scale,
     )
     .zclamp(T::MIN_VAL, T::MAX_VAL)
 }
@@ -163,7 +166,7 @@ where
 fn convolve_7x7_inner<T>(in_array: &[T; 49], weights: &[f32; 49], scale: f32) -> T
 where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     T::from_f32(
         in_array
@@ -171,7 +174,7 @@ where
             .zip(weights)
             .map(|(x, weight)| f32::from(*x) * weight)
             .sum::<f32>()
-            * scale
+            * scale,
     )
     .zclamp(T::min_val(), T::max_val())
 }
@@ -179,10 +182,10 @@ where
 /// Convolve a matrix
 pub fn convolve_3x3<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 9],
-    scale: f32
+    scale: f32,
 ) where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     // pad input
     //pad here
@@ -195,16 +198,16 @@ pub fn convolve_3x3<T>(
         height,
         convolve_3x3_inner,
         weights,
-        scale
+        scale,
     );
 }
 
 pub fn convolve_5x5<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 25],
-    scale: f32
+    scale: f32,
 ) where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     // pad input
     //pad here
@@ -217,16 +220,16 @@ pub fn convolve_5x5<T>(
         height,
         convolve_5x5_inner,
         weights,
-        scale
+        scale,
     );
 }
 
 pub fn convolve_7x7<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32; 49],
-    scale: f32
+    scale: f32,
 ) where
     T: NumOps<T> + Copy + Default,
-    f32: From<T>
+    f32: From<T>,
 {
     // pad input
     //pad here
@@ -239,18 +242,18 @@ pub fn convolve_7x7<T>(
         height,
         convolve_7x7_inner,
         weights,
-        scale
+        scale,
     );
 }
 
 /// Selects a convolve matrix
 pub fn convolve<T>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, weights: &[f32],
-    scale: f32
+    scale: f32,
 ) -> Result<(), &'static str>
 where
     T: NumOps<T> + Copy + Default,
-    f32: std::convert::From<T>
+    f32: std::convert::From<T>,
 {
     if weights.len() == 9 {
         convolve_3x3::<T>(
@@ -259,7 +262,7 @@ where
             width,
             height,
             weights.try_into().unwrap(),
-            scale
+            scale,
         );
     } else if weights.len() == 25 {
         convolve_5x5::<T>(
@@ -268,7 +271,7 @@ where
             width,
             height,
             weights.try_into().unwrap(),
-            scale
+            scale,
         );
     } else if weights.len() == 49 {
         convolve_7x7::<T>(
@@ -277,7 +280,7 @@ where
             width,
             height,
             weights.try_into().unwrap(),
-            scale
+            scale,
         );
     } else {
         return Err("Not implemented, only works for 3x3, 5x5 and 7x7 arrays");
@@ -290,10 +293,10 @@ where
 #[allow(non_snake_case)]
 fn spatial_NxN<T, F, const RADIUS: usize, const OUT_SIZE: usize>(
     in_channel: &[T], out_channel: &mut [T], width: usize, height: usize, function: F,
-    values: &[f32; OUT_SIZE], scale: f32
+    values: &[f32; OUT_SIZE], scale: f32,
 ) where
     T: Default + Copy,
-    F: Fn(&[T; OUT_SIZE], &[f32; OUT_SIZE], f32) -> T
+    F: Fn(&[T; OUT_SIZE], &[f32; OUT_SIZE], f32) -> T,
 {
     let old_width = width;
     let height = (RADIUS * 2) + height;

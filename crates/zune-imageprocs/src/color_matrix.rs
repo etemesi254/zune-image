@@ -52,7 +52,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 
@@ -120,6 +120,9 @@ impl OperationsTrait for ColorMatrix {
         "Color Matrix"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
+    }
     #[allow(clippy::many_single_char_names)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let original_color = image.colorspace();

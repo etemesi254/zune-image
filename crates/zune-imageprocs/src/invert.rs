@@ -21,7 +21,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 use crate::utils::execute_on;
@@ -46,6 +46,9 @@ impl Invert {
 impl OperationsTrait for Invert {
     fn name(&self) -> &'static str {
         "Invert"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Any
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth().bit_type();

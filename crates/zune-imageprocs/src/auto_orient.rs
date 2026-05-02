@@ -16,7 +16,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::flip::{Flip, FlipDirection};
 use crate::rotate::Rotate;
@@ -39,6 +39,9 @@ impl OperationsTrait for AutoOrient {
         "Auto orient"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Any
+    }
     #[allow(unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // check if we have exif orientation metadata and transform it
@@ -52,51 +55,46 @@ impl OperationsTrait for AutoOrient {
                 'rotator: for field in data {
                     // look for the orientation tag
                     if field.tag == Tag::Orientation {
-                        match &field.value {
-                            Value::Short(bytes) => {
-                                if bytes.is_empty() {
-                                    warn!("The exif value is empty, cannot orient");
-                                    return Ok(());
-                                }
-                                let byte = bytes[0];
-                                match byte {
-                                    1 => (), // orientation is okay
-                                    2 => {
-                                        Flip::new(FlipDirection::Horizontal).execute(image)?;
-                                    }
-
-                                    3 => {
-                                        Rotate::new(180.0).execute(image)?;
-                                    }
-                                    4 => {
-                                        Flip::new(FlipDirection::Vertical).execute(image)?;
-                                    }
-                                    5 => {
-                                        Transpose::new().execute_impl(image)?;
-                                    }
-                                    6 => {
-                                        Rotate::new(90.0).execute(image)?;
-                                    }
-                                    7 => {
-                                        Rotate::new(270.0).execute(image)?;
-                                        Flip::new(FlipDirection::Horizontal).execute(image)?;
-                                    }
-                                    8 => {
-                                        Rotate::new(270.0).execute(image)?;
-                                    }
-
-                                    _ => {
-                                        warn!(
-                                            "Unknown exif orientation tag {:?}, ignoring it",
-                                            &field.value
-                                        );
-                                    }
-                                }
-                                break 'rotator;
+                        if let Value::Short(bytes) = &field.value {
+                            if bytes.is_empty() {
+                                warn!("The exif value is empty, cannot orient");
+                                return Ok(());
                             }
-                            _ => {
-                                warn!("Invalid exif orientation type, ignoring it");
+                            let byte = bytes[0];
+                            match byte {
+                                1 => (), // orientation is okay
+                                2 => {
+                                    Flip::new(FlipDirection::Horizontal).execute(image)?;
+                                }
+
+                                3 => {
+                                    Rotate::new(180.0).execute(image)?;
+                                }
+                                4 => {
+                                    Flip::new(FlipDirection::Vertical).execute(image)?;
+                                }
+                                5 => {
+                                    Transpose::new().execute_impl(image)?;
+                                }
+                                6 => {
+                                    Rotate::new(90.0).execute(image)?;
+                                }
+                                7 => {
+                                    Rotate::new(270.0).execute(image)?;
+                                    Flip::new(FlipDirection::Horizontal).execute(image)?;
+                                }
+                                8 => {
+                                    Rotate::new(270.0).execute(image)?;
+                                }
+
+                                _ => {
+                                    warn!(
+                                        "Unknown exif orientation tag {:?}, ignoring it",
+                                        &field.value
+                                    );
+                                }
                             }
+                            break 'rotator;
                         }
                     }
                 }

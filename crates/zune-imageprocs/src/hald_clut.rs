@@ -4,7 +4,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 pub struct HaldClut;
 
@@ -36,6 +36,9 @@ impl OperationsTrait for HaldClut {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
+    }
     #[allow(clippy::too_many_lines)]
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.len() < 2 {

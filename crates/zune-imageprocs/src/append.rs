@@ -3,7 +3,7 @@ use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::frame::Frame;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 /// Direction to append the images
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -32,13 +32,16 @@ impl OperationsTrait for Append {
     fn name(&self) -> &'static str {
         "Append"
     }
-
+    
     fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
         Err(ImageErrors::GenericStr(
             "Append requires multiple images; it must be called via execute_multiple",
         ))
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Any
+    }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }

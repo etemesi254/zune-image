@@ -11,7 +11,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::pad::{pad, PadMethod};
 use crate::spatial::spatial_NxN;
@@ -54,6 +54,9 @@ impl Sobel {
 impl OperationsTrait for Sobel {
     fn name(&self) -> &'static str {
         "Sobel"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth().bit_type();

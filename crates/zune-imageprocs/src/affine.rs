@@ -11,7 +11,7 @@ use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 /// Affine transformation matrix in the form:
 /// | a  b  tx |
@@ -146,6 +146,9 @@ impl AffineTransform {
 impl OperationsTrait for AffineTransform {
     fn name(&self) -> &'static str {
         "Affine Transform"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     #[allow(clippy::too_many_lines)]
@@ -309,7 +312,9 @@ pub fn affine_transform_channel<T: Copy + Default + NumOps<T>>(
 ) where
     f32: std::convert::From<T>,
 {
-    let Some(inv_transform) = transform.inverse() else { return };
+    let Some(inv_transform) = transform.inverse() else {
+        return;
+    };
 
     out_channel.fill(T::default());
 

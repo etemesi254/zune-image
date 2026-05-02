@@ -54,7 +54,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::utils::execute_on;
 
@@ -124,6 +124,9 @@ impl OperationsTrait for Crop {
         "Crop"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Any
+    }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let new_dims = self.width * self.height * image.depth().size_of();
         let (old_width, _) = image.dimensions();

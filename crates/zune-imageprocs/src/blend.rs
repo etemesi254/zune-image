@@ -13,7 +13,7 @@
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 
@@ -85,6 +85,9 @@ impl OperationsTrait for Blend {
         Err(ImageErrors::GenericStr(
             "Blend requires multiple images; it must be called via execute_multiple"
         ))
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     fn supported_types(&self) -> &'static [BitType] {

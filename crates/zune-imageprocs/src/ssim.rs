@@ -5,7 +5,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::gaussian_blur::gaussian_blur_f32;
 
@@ -44,6 +44,9 @@ impl SsimDetection {
 impl OperationsTrait for SsimDetection {
     fn name(&self) -> &'static str {
         "SSIM Detection"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {

@@ -22,7 +22,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::utils::execute_on;
 
@@ -53,7 +53,7 @@ use crate::utils::execute_on;
 ///
 pub struct Exposure {
     exposure: f32,
-    black:    f32
+    black: f32,
 }
 
 impl Exposure {
@@ -79,6 +79,9 @@ impl OperationsTrait for Exposure {
         "Exposure"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
+    }
     #[allow(
         clippy::cast_sign_loss,
         clippy::cast_lossless,
@@ -105,10 +108,11 @@ impl OperationsTrait for Exposure {
                 }
                 BitType::F32 => {
                     let raw_px = channel.reinterpret_as_mut::<f32>()?;
-                    for x in raw_px
-                        .iter_mut() { *x = (*x - black) * self.exposure; }
+                    for x in raw_px.iter_mut() {
+                        *x = (*x - black) * self.exposure;
+                    }
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };

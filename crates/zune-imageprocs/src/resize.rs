@@ -19,7 +19,7 @@ use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
@@ -92,6 +92,9 @@ impl OperationsTrait for Resize {
         "Resize"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
+    }
     #[allow(clippy::too_many_lines)]
     #[allow(unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {

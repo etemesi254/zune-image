@@ -20,7 +20,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 #[derive(Default)]
 pub struct GaussianBlur {
@@ -41,6 +41,9 @@ impl GaussianBlur {
 impl OperationsTrait for GaussianBlur {
     fn name(&self) -> &'static str {
         "Gaussian blur"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     #[allow(clippy::too_many_lines)]

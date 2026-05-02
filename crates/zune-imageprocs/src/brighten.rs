@@ -28,7 +28,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 use crate::utils::execute_on;
@@ -74,6 +74,9 @@ impl OperationsTrait for Brighten {
         "Brighten"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
+    }
     #[allow(
         clippy::cast_sign_loss,
         clippy::cast_precision_loss,

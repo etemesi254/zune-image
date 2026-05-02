@@ -40,7 +40,7 @@
 //! - Iterate over source channel and alpha,
 //! - Lookup special constant (`c` ) for the alpha value
 //! - Multiply that constant `c` with channel value and take top bits
-//! 
+//!
 //! [`fastdiv_u32`]
 
 use zune_core::bit_depth::{BitDepth, BitType};
@@ -49,7 +49,7 @@ use zune_core::log::warn;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 
@@ -65,7 +65,7 @@ mod std_simd;
 /// be loss of image quality.
 #[derive(Copy, Clone)]
 pub struct PremultiplyAlpha {
-    to: AlphaState
+    to: AlphaState,
 }
 
 impl PremultiplyAlpha {
@@ -82,6 +82,9 @@ impl PremultiplyAlpha {
 impl OperationsTrait for PremultiplyAlpha {
     fn name(&self) -> &'static str {
         "pre-multiply alpha"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
@@ -134,24 +137,24 @@ impl OperationsTrait for PremultiplyAlpha {
                         BitDepth::Eight => {
                             premultiply_u8(
                                 channel.reinterpret_as_mut()?,
-                                alpha[0].reinterpret_as()?
+                                alpha[0].reinterpret_as()?,
                             );
                         }
                         BitDepth::Sixteen => {
                             premultiply_u16(
                                 channel.reinterpret_as_mut()?,
-                                alpha[0].reinterpret_as()?
+                                alpha[0].reinterpret_as()?,
                             );
                         }
 
                         BitDepth::Float32 => premultiply_f32(
                             channel.reinterpret_as_mut()?,
-                            alpha[0].reinterpret_as()?
+                            alpha[0].reinterpret_as()?,
                         ),
                         d => {
                             return Err(ImageErrors::ImageOperationNotImplemented(
                                 self.name(),
-                                d.bit_type()
+                                d.bit_type(),
                             ))
                         }
                     },
@@ -160,29 +163,29 @@ impl OperationsTrait for PremultiplyAlpha {
                             unpremultiply_u8(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?,
-                                &u8_table
+                                &u8_table,
                             );
                         }
                         BitDepth::Sixteen => {
                             unpremultiply_u16(
                                 channel.reinterpret_as_mut()?,
                                 alpha[0].reinterpret_as()?,
-                                &u16_table
+                                &u16_table,
                             );
                         }
 
                         BitDepth::Float32 => unpremultiply_f32(
                             channel.reinterpret_as_mut()?,
-                            alpha[0].reinterpret_as()?
+                            alpha[0].reinterpret_as()?,
                         ),
                         d => {
                             return Err(ImageErrors::ImageOperationNotImplemented(
                                 self.name(),
-                                d.bit_type()
+                                d.bit_type(),
                             ))
                         }
                     },
-                    (_, _) => return Err(ImageErrors::GenericStr("Could not pre-multiply alpha"))
+                    (_, _) => return Err(ImageErrors::GenericStr("Could not pre-multiply alpha")),
                 }
             }
         }
@@ -281,7 +284,7 @@ pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 25
         let associated_alpha = premul_table[usize::from(*al)];
         *color = u8::try_from(fastdiv_u32(
             u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
-            associated_alpha
+            associated_alpha,
         ))
         .unwrap_or(u8::MAX);
     });
@@ -317,7 +320,7 @@ pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128]
 
         *color = u16::try_from(fastdiv_u32(
             u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
-            associated_alpha
+            associated_alpha,
         ))
         .unwrap_or(u16::MAX);
     });

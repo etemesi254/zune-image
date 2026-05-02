@@ -1,7 +1,7 @@
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 use crate::utils::{calculate_gravity, Gravity};
@@ -119,6 +119,9 @@ impl OperationsTrait for Composite {
         "Composite"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
+    }
     fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
         Err(ImageErrors::GenericStr(
             "Composite requires multiple images; it must be called via execute_multiple",
@@ -1038,7 +1041,8 @@ mod tests {
         let src = rgb_pixel(0x80, 0xC0, 0x80);
         let src_r = 0xC0_u8;
         let dst_r = 0x80_u8;
-        let expected_r = ((f32::from(src_r) / 255.0) * (f32::from(dst_r) / 255.0) * 255.0).round() as u8;
+        let expected_r =
+            ((f32::from(src_r) / 255.0) * (f32::from(dst_r) / 255.0) * 255.0).round() as u8;
 
         let mut images = vec![dst, src];
         Composite::new(CompositeMethod::Multiply, (0, 0))

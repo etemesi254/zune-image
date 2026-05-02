@@ -21,7 +21,7 @@ use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 
@@ -80,6 +80,9 @@ impl HsvAdjust {
 impl OperationsTrait for HsvAdjust {
     fn name(&self) -> &'static str {
         "modulate"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {

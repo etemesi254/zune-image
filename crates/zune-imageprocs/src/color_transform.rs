@@ -7,7 +7,7 @@ use zune_core::log::{info, trace};
 use zune_image::errors::ImageErrors;
 use zune_image::frame::Frame;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 #[derive(Debug, Clone, Copy)]
 #[allow(non_camel_case_types)]
@@ -41,6 +41,9 @@ impl ColorTransform {
 impl OperationsTrait for ColorTransform {
     fn name(&self) -> &'static str {
         "Color Transform"
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {

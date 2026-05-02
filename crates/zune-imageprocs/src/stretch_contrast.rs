@@ -32,6 +32,9 @@ impl OperationsTrait for StretchContrast {
         "Stretch Contrast"
     }
 
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
+    }
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
@@ -75,7 +78,7 @@ use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::traits::OperationsTrait;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;

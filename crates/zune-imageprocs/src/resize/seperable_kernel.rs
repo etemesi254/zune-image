@@ -440,7 +440,6 @@ pub fn resample_separable_u8(
             let ring_row_start = buffer_idx * out_width;
             let ring_row = &ring_buffer[ring_row_start..ring_row_start + out_width];
 
-            // .zip() completely eliminates Rust bounds checks here
             for (acc, &ring_val) in row_accumulator.iter_mut().zip(ring_row.iter()) {
                 *acc += i64::from(ring_val) * weight;
             }

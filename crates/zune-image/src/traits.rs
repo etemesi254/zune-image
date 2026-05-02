@@ -29,6 +29,23 @@ use crate::metadata::AlphaState::NonPreMultiplied;
 use crate::metadata::{AlphaState, ImageMetadata};
 use crate::pipelines::EncodeResult;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum OperationColorValues {
+    /// This operation works purely in gamma light
+    /// meaning  image should be in gamma-encoded
+    /// colorspace e.g like sRGB e.g hald_clut,color matrix, brighten
+    Gamma,
+    /// This operation works purely in linear light
+    /// meaning the image should have been in linear light
+    /// E.g resize, colorspace conversions, sobel,affine
+    Linear,
+    /// This operation does not care about the colorspace it is in
+    /// will work for linear and gamma.
+    ///
+    /// E.g cropping, flipping
+    Any,
+}
+
 /// Encapsulates an image decoder.
 ///
 /// All supported image decoders must implement this class
@@ -145,8 +162,7 @@ pub trait OperationsTrait: Send + Sync {
         // Confirm colorspace
         let colorspace = image.colorspace();
 
-        let supported = self
-            .supported_colorspaces().contains(&colorspace);
+        let supported = self.supported_colorspaces().contains(&colorspace);
 
         if !supported {
             match colorspace {
@@ -162,23 +178,19 @@ pub trait OperationsTrait: Send + Sync {
                     return Err(ImageErrors::UnsupportedColorspace(
                         colorspace,
                         self.name(),
-                        self.supported_colorspaces()
+                        self.supported_colorspaces(),
                     ));
                 }
             }
         }
-        // if image.metadata.alpha != self.alpha_state()
-        // {
-        //     PremultiplyAlpha::new(self.alpha_state());
-        // }
-        // check we support the bit depth
+
         let bit_type = image.metadata.depth().bit_type();
 
         let supported = self.supported_types().contains(&bit_type);
 
         if !supported {
             return Err(ImageErrors::OperationsError(
-                ImageOperationsErrors::UnsupportedType(self.name(), bit_type)
+                ImageOperationsErrors::UnsupportedType(self.name(), bit_type),
             ));
         }
 
@@ -197,6 +209,10 @@ pub trait OperationsTrait: Send + Sync {
     /// be converted into before carrying out an operation
     fn alpha_state(&self) -> AlphaState {
         AlphaState::PreMultiplied
+    }
+
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Any
     }
 
     /// Clone the image and execute the operation on it, returning
@@ -257,7 +273,7 @@ fn confirm_invariants(image: &Image) -> Result<(), ImageErrors> {
         if channel.len() != expected_length {
             return Err(ImageErrors::DimensionsMisMatch(
                 expected_length,
-                channel.len()
+                channel.len(),
             ));
         }
     }
@@ -289,7 +305,7 @@ pub trait EncoderTrait {
     ///
     /// [encode]: EncoderTrait::encode
     fn encode_inner<T: ZByteWriterTrait>(
-        &mut self, image: &Image, sink: T
+        &mut self, image: &Image, sink: T,
     ) -> Result<usize, ImageErrors>;
 
     /// Return all colorspaces supported by this encoder.
@@ -322,7 +338,7 @@ pub trait EncoderTrait {
     /// is recommended to have the image in a format that can be encoded
     /// directly to prevent such
     fn encode<T: ZByteWriterTrait>(
-        &mut self, image: &Image, sink: T
+        &mut self, image: &Image, sink: T,
     ) -> Result<usize, ImageErrors> {
         // confirm things hold themselves
         confirm_invariants(image)?;
@@ -404,8 +420,8 @@ pub trait EncoderTrait {
         let data = self.encode(image, &mut sink)?;
 
         Ok(EncodeResult {
-            data:   vec![],
-            format: self.format()
+            data: vec![],
+            format: self.format(),
         })
     }
     /// Get supported bit-depths for this image
