@@ -227,35 +227,53 @@ pub fn resample_separable_precomputed<T>(
     let mut buffer_contents = vec![usize::MAX; max_v_taps];
     let mut row_accumulator = vec![0.0_f32; out_width];
 
-    for (out_y, v_kernel) in (0..out_height).zip(v_kernels.iter()) {
+    let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
+
+    for (v_kernel, out_row) in v_kernels
+        .iter()
+        .zip(out_channel.chunks_exact_mut(out_width))
+    {
         let v_start = v_kernel.start_idx as usize;
         let v_end = v_kernel.end_idx as usize;
 
-        // Horizontal pass — demand-driven.
         for in_y in v_start..=v_end {
-            let buffer_idx = in_y % max_v_taps;
+            let buffer_idx = crate::mathops::fastmod_u32(in_y as u32, special_div,max_v_taps as u32) as usize;
+
             if buffer_contents[buffer_idx] != in_y {
+
                 let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
-                let ring_row =
-                    &mut ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+                let ring_row = &mut ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+
                 process_horizontal_row_to_f32(in_row, ring_row, h_kernels);
                 buffer_contents[buffer_idx] = in_y;
             }
         }
 
         // Vertical pass.
-        row_accumulator.fill(0.0);
-        for (i, in_y) in (v_start..=v_end).enumerate() {
-            let weight = v_kernel.weights[i];
-            let buffer_idx = in_y % max_v_taps;
+
+        // pass 1
+        {
+            let weight = v_kernel.weights[v_start];
+
+            let buffer_idx = crate::mathops::fastmod_u32(v_start as u32, special_div,max_v_taps as u32) as usize;
             let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+
+            for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
+                *acc = rv * weight;
+            }
+        }
+
+        for (i, in_y) in (v_start+1..=v_end).enumerate() {
+            let weight = v_kernel.weights[i];
+            let buffer_idx = crate::mathops::fastmod_u32(in_y as u32, special_div,max_v_taps as u32) as usize;
+            let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+
             for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
                 *acc += rv * weight;
             }
         }
 
         // Write output row.
-        let out_row = &mut out_channel[out_y * out_width..out_y * out_width + out_width];
         for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
             *px = T::from_f32(acc);
         }
@@ -364,19 +382,24 @@ pub fn resample_separable_u8(
         .max()
         .unwrap_or(1);
 
+    let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
+
     // Ring buffer stores Q16 horizontally-filtered rows.
     let mut ring_buffer = vec![0_i32; max_v_taps * out_width];
     let mut buffer_contents = vec![usize::MAX; max_v_taps];
     // i64 accumulator prevents overflow: Q16 × Q16 = Q32, fits in i64.
     let mut row_accumulator = vec![0_i64; out_width];
 
-    for (out_y, v_kernel) in (0..out_height).zip(v_kernels.iter()) {
+    for (v_kernel, out_row) in v_kernels
+        .iter()
+        .zip(out_channel.chunks_exact_mut(out_width))
+    {
         let v_start = v_kernel.start_idx as usize;
         let v_end = v_kernel.end_idx as usize;
 
-        // Horizontal pass — demand-driven.
         for in_y in v_start..=v_end {
-            let buffer_idx = in_y % max_v_taps;
+            let buffer_idx = crate::mathops::fastmod_u32(in_y as u32, special_div,max_v_taps as u32) as usize;
+
             if buffer_contents[buffer_idx] != in_y {
                 let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
                 let ring_row =
@@ -388,17 +411,18 @@ pub fn resample_separable_u8(
 
         // Vertical pass.
         row_accumulator.fill(0);
+
         for (i, in_y) in (v_start..=v_end).enumerate() {
             let weight = i64::from(v_kernel.weights_i32[i]);
-            let buffer_idx = in_y % max_v_taps;
+            let buffer_idx = crate::mathops::fastmod_u32(in_y as u32, special_div,max_v_taps as u32) as usize;
             let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+
             for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
                 *acc += i64::from(rv) * weight;
             }
         }
 
         // Shift Q32 → u8 with rounding and clamp ringing artifacts.
-        let out_row = &mut out_channel[out_y * out_width..out_y * out_width + out_width];
         for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
             let val = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255);
             *px = val as u8;
