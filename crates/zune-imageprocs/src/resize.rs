@@ -272,7 +272,7 @@ fn resize<T>(
     in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, precomputed_kernels: &PrecomputedKernels,
 ) where
-    T: Copy + NumOps<T> + Default,
+    T: Copy + NumOps<T> + Default+Send+Sync,
     f32: std::convert::From<T>,
 {
     seperable_kernel::resample_separable(
