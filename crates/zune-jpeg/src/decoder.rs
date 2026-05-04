@@ -2144,7 +2144,7 @@ where
     /// decoder.decode_headers().unwrap();
     ///
     /// let layout = decoder.planar_layout().unwrap();
-    /// let n = decoder.num_components();
+    /// let n = decoder.num_components().unwrap();
     /// let mut buffers: Vec<Vec<u8>> = (0..n)
     ///     .map(|i| vec![0u8; layout[i].byte_size])
     ///     .collect();
@@ -2250,7 +2250,7 @@ where
     /// decoder.decode_headers().unwrap();
     ///
     /// let layout = decoder.planar_layout().unwrap();
-    /// let n = decoder.num_components();
+    /// let n = decoder.num_components().unwrap();
     ///
     /// // Use a 64-byte aligned stride (common for GPU upload).
     /// let strides: Vec<usize> = (0..n)
