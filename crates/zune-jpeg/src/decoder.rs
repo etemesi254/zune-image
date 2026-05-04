@@ -2133,6 +2133,27 @@ where
     /// meaningful; trailing padding columns / rows contain
     /// implementation-defined data.
     ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let layout = decoder.planar_layout().unwrap();
+    /// let n = decoder.num_components();
+    /// let mut buffers: Vec<Vec<u8>> = (0..n)
+    ///     .map(|i| vec![0u8; layout[i].byte_size])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
+    ///
+    /// decoder.decode_raw(&mut planes).unwrap();
+    /// // planes[0] = Y, planes[1] = Cb, planes[2] = Cr (for YCbCr)
+    /// ```
+    ///
     /// # Errors
     /// - [`DecodeErrors::TooSmallOutput`]: a plane buffer is shorter than
     ///   its `byte_size`.
@@ -2185,7 +2206,7 @@ where
         // Raw mode writes into the plane sink; downstream pixel bookkeeping
         // only needs a placeholder slice.
         let mut sink: [u8; 0] = [];
-        let result = if self.is_arithmetic {
+        if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
                 if self.is_progressive {
@@ -2200,10 +2221,8 @@ where
             self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
         } else {
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
-        };
-
+        }
         // Guard clears `raw_planes_sink` on drop.
-        result
     }
 
     /// Decode raw planes using caller-supplied row strides.
@@ -2216,6 +2235,36 @@ where
     ///
     /// Only the logical plane area is written. Padding columns in the caller's
     /// stride and trailing DCT rows are left untouched.
+    ///
+    /// # Examples
+    ///
+    /// Skia-style: allocate with custom stride (e.g. GPU-aligned), decode
+    /// only the logical image area, leave padding untouched.
+    ///
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let data = std::fs::read("photo.jpg").unwrap();
+    /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
+    /// decoder.decode_headers().unwrap();
+    ///
+    /// let layout = decoder.planar_layout().unwrap();
+    /// let n = decoder.num_components();
+    ///
+    /// // Use a 64-byte aligned stride (common for GPU upload).
+    /// let strides: Vec<usize> = (0..n)
+    ///     .map(|i| (layout[i].width + 63) & !63)
+    ///     .collect();
+    /// let mut buffers: Vec<Vec<u8>> = (0..n)
+    ///     .map(|i| vec![0u8; strides[i] * layout[i].height])
+    ///     .collect();
+    /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
+    ///
+    /// decoder.decode_raw_strided(&mut planes, &strides).unwrap();
+    /// // Each planes[i] now contains the component data with the custom stride.
+    /// // Upload planes[i] to a GPU texture with row pitch = strides[i].
+    /// ```
     ///
     /// # Errors
     /// - [`DecodeErrors::Format`] if `planes.len()` or `strides.len()`
@@ -2284,7 +2333,7 @@ where
         };
 
         let mut sink: [u8; 0] = [];
-        let result = if self.is_arithmetic {
+        if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
                 if self.is_progressive {
@@ -2299,9 +2348,7 @@ where
             self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
         } else {
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
-        };
-
-        result
+        }
     }
 
     /// Per-component [`ComponentID`] in declaration order
@@ -2383,7 +2430,11 @@ where
                     let dst_offset = (row_start + r) * target_stride;
                     let dst = plane_ptr.add(dst_offset);
                     for (i, sample) in src.iter().enumerate() {
-                        *dst.add(i) = *sample as u8;
+                        // Post-IDCT samples are already clamped to [0, 255].
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        {
+                            *dst.add(i) = *sample as u8;
+                        }
                     }
                 }
             }
