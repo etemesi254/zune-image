@@ -3,7 +3,7 @@ name: Benchmark Regression
 on:
   pull_request:
   push:
-    branches: [ "main" ]
+    branches: [ "dev" ]
   workflow_dispatch:
 
 permissions:
@@ -42,7 +42,7 @@ jobs:
           name: bench-${{ github.sha }}
           path: bench.json
   compare:
-    name: Benchmark Diff (PR vs main)
+    name: Benchmark Diff (PR vs dev)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
@@ -64,11 +64,11 @@ jobs:
       # ----------------------------
       # Fetch base branch benchmark
       # ----------------------------
-      - name: Fetch main branch benchmark
+      - name: Fetch dev branch benchmark
         run: |
-          git fetch origin main
-          git checkout origin/main
-          cargo criterion --message-format=json > main.json
+          git fetch origin dev
+          git checkout origin/dev
+          cargo criterion --message-format=json > dev.json
           git checkout ${{ github.sha }}
 
       # ----------------------------
@@ -79,12 +79,13 @@ jobs:
 
       - name: Compare benchmarks
         run: |
-          critcmp main.json pr.json | tee diff.txt
+          critcmp dev.json pr.json | tee diff.txt
 
       # ----------------------------
       # Comment PR
       # ----------------------------
       - name: Comment PR with benchmark diff
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
