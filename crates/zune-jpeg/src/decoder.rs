@@ -77,10 +77,45 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 /// Tracks the current decoding phase for incremental decoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DecodingState {
-    /// Headers not yet fully decoded.
-    DecodeHeaders,
+    /// Headers not yet fully decoded. `resume_position == 0` means start from SOI.
+    DecodeHeaders { resume_position: usize },
     /// Headers decoded; scan data starts at `scan_start_position`.
     DecodeScan { scan_start_position: usize },
+}
+
+// Snapshot of append-only buffers populated across multi-segment markers
+// (ICC chunks, extended XMP, gain map). All other parsers either overwrite
+// fixed slots (qt/huffman/components) or fail before mutating, so only
+// these three need to be rolled back when a marker parser errors out.
+#[derive(Clone, Copy)]
+struct HeaderAppendStateSnapshot {
+    icc:  usize,
+    xmp:  usize,
+    gain: usize
+}
+
+impl HeaderAppendStateSnapshot {
+    fn capture<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Self {
+        Self {
+            icc:  decoder.icc_data.len(),
+            xmp:  decoder.extended_xmp_segments.len(),
+            gain: decoder.info.gain_map_info.len()
+        }
+    }
+
+    fn rollback<T: ZByteReaderTrait>(self, decoder: &mut JpegDecoder<T>) {
+        decoder.icc_data.truncate(self.icc);
+        decoder.extended_xmp_segments.truncate(self.xmp);
+        decoder.info.gain_map_info.truncate(self.gain);
+    }
+}
+
+/// Result of handling a single marker inside the header loop.
+enum MarkerStep {
+    /// Continue reading further markers.
+    Continue,
+    /// Reached SOS; headers are done and scan starts at the current position.
+    EnteredScan
 }
 
 /// An encapsulation of an ICC chunk
@@ -192,6 +227,44 @@ impl<T> JpegDecoder<T>
 where
     T: ZByteReaderTrait
 {
+    // Mark the current stream position as a safe resume point at a marker
+    // boundary; on a future retry decode_headers_internal will seek here
+    // instead of restarting from SOI.
+    fn stream_position(&mut self) -> Result<usize, DecodeErrors> {
+        let position = self.stream.position()?;
+        usize::try_from(position).map_err(|_| {
+            DecodeErrors::FormatStatic("Stream position does not fit in usize")
+        })
+    }
+
+    fn checkpoint_headers(&mut self) -> Result<(), DecodeErrors> {
+        let resume_position = self.stream_position()?;
+        self.state = DecodingState::DecodeHeaders { resume_position };
+        Ok(())
+    }
+
+    fn enter_scan_state(&mut self) -> Result<(), DecodeErrors> {
+        let scan_start_position = self.stream_position()?;
+        self.state = DecodingState::DecodeScan { scan_start_position };
+        Ok(())
+    }
+
+    // Match output colorspace; we only care for ycbcr to rgb/rgba here, in
+    // case one is using another colorspace may god help you.
+    fn set_color_convert_from_options(&mut self) {
+        let out_colorspace = self.options.jpeg_get_out_colorspace();
+        if matches!(
+            out_colorspace,
+            ColorSpace::BGR | ColorSpace::BGRA | ColorSpace::RGB | ColorSpace::RGBA
+        ) {
+            self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
+                self.options.jpeg_get_out_colorspace(),
+                &self.options
+            )
+            .unwrap();
+        }
+    }
+
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
@@ -249,7 +322,7 @@ where
             is_mjpeg:          false,
             coeff:             1,
             extended_xmp_segments: vec![],
-            state:             DecodingState::DecodeHeaders,
+            state:             DecodingState::DecodeHeaders { resume_position: 0 },
         }
     }
     /// Decode a buffer already in memory
@@ -452,39 +525,29 @@ where
             DecodingState::DecodeScan { .. } => {
                 return Ok(());
             }
-            DecodingState::DecodeHeaders => {
-                // Reset any partial state from a prior incomplete attempt.
-                self.reset_header_state();
+            DecodingState::DecodeHeaders { resume_position } => {
+                if resume_position == 0 {
+                    self.reset_header_state();
+
+                    // First two bytes should be jpeg soi marker
+                    let magic_bytes = self.stream.get_u16_be_err()?;
+
+                    if magic_bytes != 0xffd8 {
+                        return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
+                    }
+
+                    // Color convert depends only on options, so pick it once
+                    // on a fresh decode rather than on every resume.
+                    self.set_color_convert_from_options();
+                    self.checkpoint_headers()?;
+                } else {
+                    self.stream.set_position(resume_position)?;
+                }
             }
         }
 
-        // match output colorspace here
-        // we know this will only be called once per image
-        // so makes sense
-        // We only care for ycbcr to rgb/rgba here
-        // in case one is using another colorspace.
-        // May god help you
-        let out_colorspace = self.options.jpeg_get_out_colorspace();
-
-        if matches!(
-            out_colorspace,
-            ColorSpace::BGR | ColorSpace::BGRA | ColorSpace::RGB | ColorSpace::RGBA
-        ) {
-            self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
-                self.options.jpeg_get_out_colorspace(),
-                &self.options
-            )
-            .unwrap();
-        }
-        // First two bytes should be jpeg soi marker
-        let magic_bytes = self.stream.get_u16_be_err()?;
-
         let mut last_byte = 0;
         let mut bytes_before_marker = 0;
-
-        if magic_bytes != 0xffd8 {
-            return Err(DecodeErrors::IllegalMagicBytes(magic_bytes));
-        }
 
         loop {
             // read a byte
@@ -533,73 +596,95 @@ where
 
                     bytes_before_marker = 0;
 
-                    self.parse_marker_inner(n)?;
-
-                    if !self.extended_xmp_segments.is_empty() {
-                        self.reassemble_extended_xmp();
-                    }
-
-                    // break after reading the start of scan.
-                    // what follows is the image data
-                    if n == Marker::SOS {
-                        self.headers_decoded = true;
-                        trace!("Input colorspace {:?}", self.input_colorspace);
-
-                        // Check if image is RGB
-                        // The check is weird, we need to check if ID
-                        // represents R, G and B in ascii,
-                        //
-                        // I am not sure if this is even specified in any standard,
-                        // but jpegli https://github.com/google/jpegli does encode
-                        // its images that way, so this will check for that. and handle it appropriately
-                        // It is spefified here so that on a successful header decode,we can at least
-                        // try to attribute image colorspace  correctly.
-                        //
-                        // It was first the issue in https://github.com/etemesi254/zune-image/issues/291
-                        // that brought it to light
-                        //
-                        let mut is_rgb = self.components.len() == 3;
-                        let chars = ['R', 'G', 'B'];
-                        for (comp, single_char) in self.components.iter().zip(chars.iter()) {
-                            is_rgb &= comp.id == (*single_char) as u8;
-                        }
-                        // Image is RGB, change colorspace
-                        if is_rgb {
-                            self.input_colorspace = ColorSpace::RGB;
-                        }
-
-                        // Transition to scan phase, remembering where scan data starts.
-                        if self.state == DecodingState::DecodeHeaders {
-                            #[allow(clippy::cast_possible_truncation)]
-                            let pos = self.stream.position()? as usize;
-                            self.state = DecodingState::DecodeScan {
-                                scan_start_position: pos,
-                            };
-                        }
-
+                    if let MarkerStep::EnteredScan = self.handle_known_marker(n)? {
                         return Ok(());
                     }
                 } else {
                     bytes_before_marker = 0;
-
                     warn!("Marker 0xFF{m:X} not known");
-
-                    let length = self.stream.get_u16_be_err()?;
-
-                    if length < 2 {
-                        return Err(DecodeErrors::Format(format!(
-                            "Found a marker with invalid length : {length}"
-                        )));
-                    }
-
-                    warn!("Skipping {} bytes", length - 2);
-                    self.stream.skip((length - 2) as usize)?;
+                    self.skip_unknown_marker()?;
                 }
             }
             last_byte = m;
             bytes_before_marker += 1;
         }
-        // Check if image is RGB
+    }
+
+    // Parse a recognised marker and update the resume checkpoint. On a parser
+    // error, append-only metadata accumulated during this marker is rolled
+    // back so a future retry sees a clean state.
+    fn handle_known_marker(&mut self, n: Marker) -> Result<MarkerStep, DecodeErrors> {
+        let snapshot = HeaderAppendStateSnapshot::capture(self);
+
+        if let Err(e) = self.parse_marker_inner(n) {
+            snapshot.rollback(self);
+            return Err(e);
+        }
+
+        if !self.extended_xmp_segments.is_empty() {
+            self.reassemble_extended_xmp();
+        }
+
+        // break after reading the start of scan.
+        // what follows is the image data
+        if n == Marker::SOS {
+            self.headers_decoded = true;
+            trace!("Input colorspace {:?}", self.input_colorspace);
+
+            // Check if image is RGB
+            // The check is weird, we need to check if ID
+            // represents R, G and B in ascii,
+            //
+            // I am not sure if this is even specified in any standard,
+            // but jpegli https://github.com/google/jpegli does encode
+            // its images that way, so this will check for that. and handle it appropriately
+            // It is spefified here so that on a successful header decode,we can at least
+            // try to attribute image colorspace  correctly.
+            //
+            // It was first the issue in https://github.com/etemesi254/zune-image/issues/291
+            // that brought it to light
+            //
+            let mut is_rgb = self.components.len() == 3;
+            let chars = ['R', 'G', 'B'];
+            for (comp, single_char) in self.components.iter().zip(chars.iter()) {
+                is_rgb &= comp.id == (*single_char) as u8;
+            }
+            // Image is RGB, change colorspace
+            if is_rgb {
+                self.input_colorspace = ColorSpace::RGB;
+            }
+
+            self.enter_scan_state()?;
+            return Ok(MarkerStep::EnteredScan);
+        }
+
+        self.checkpoint_headers()?;
+        Ok(MarkerStep::Continue)
+    }
+
+    // Read a length-prefixed marker payload and skip past it. Shared by the
+    // unknown-marker path in `decode_headers_internal` and the catch-all arm
+    // in `parse_marker_inner` so the length validation lives in one place.
+    fn skip_marker_payload(&mut self) -> Result<(), DecodeErrors> {
+        let length = self.stream.get_u16_be_err()?;
+
+        if length < 2 {
+            return Err(DecodeErrors::Format(format!(
+                "Found a marker with invalid length : {length}"
+            )));
+        }
+
+        warn!("Skipping {} bytes", length - 2);
+        self.stream.skip((length - 2) as usize)?;
+        Ok(())
+    }
+
+    // Skip a marker we don't recognise, then checkpoint past it so we don't
+    // need to re-skip on retry.
+    fn skip_unknown_marker(&mut self) -> Result<(), DecodeErrors> {
+        self.skip_marker_payload()?;
+        self.checkpoint_headers()?;
+        Ok(())
     }
     #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
@@ -728,20 +813,12 @@ where
                 warn!(
                     "Capabilities for processing marker \"{m:?}\" not implemented"
                 );
-
-                let length = self.stream.get_u16_be_err()?;
-
-                if length < 2 {
-                    return Err(DecodeErrors::Format(format!(
-                        "Found a marker with invalid length:{length}\n"
-                    )));
-                }
-                warn!("Skipping {} bytes", length - 2);
-                self.stream.skip((length - 2) as usize)?;
+                self.skip_marker_payload()?;
             }
         }
         Ok(())
     }
+
     /// Get the embedded ICC profile if it exists
     /// and is correct
     ///
@@ -914,7 +991,7 @@ where
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         match self.state {
-            DecodingState::DecodeHeaders => {
+            DecodingState::DecodeHeaders { .. } => {
                 self.decode_headers_internal()?;
             }
             DecodingState::DecodeScan { scan_start_position } => {
@@ -1013,7 +1090,7 @@ where
         self.is_mjpeg = false;
         self.coeff = 1;
         self.extended_xmp_segments.clear();
-        self.state = DecodingState::DecodeHeaders;
+        self.state = DecodingState::DecodeHeaders { resume_position: 0 };
         // Best-effort seek to start; may fail for non-seekable streams.
         let _ = self.stream.set_position(0);
     }

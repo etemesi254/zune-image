@@ -14,6 +14,77 @@
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::JpegDecoder;
 
+use std::cell::Cell;
+use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::rc::Rc;
+
+/// A cursor over a byte slice with an adjustable visibility limit.
+///
+/// Reads/seeks beyond `limit` behave as if the data ends there (EOF).
+/// The test can grow `limit` via the shared `Rc<Cell<usize>>` to
+/// simulate more data arriving, then retry on the **same** decoder.
+struct GrowableCursor<'a> {
+    data:     &'a [u8],
+    position: usize,
+    limit:    Rc<Cell<usize>>,
+}
+
+impl<'a> GrowableCursor<'a> {
+    fn new(data: &'a [u8], limit: Rc<Cell<usize>>) -> Self {
+        Self { data, position: 0, limit }
+    }
+
+    fn visible(&self) -> usize {
+        self.limit.get().min(self.data.len())
+    }
+}
+
+impl Read for GrowableCursor<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let visible = self.visible();
+        if self.position >= visible {
+            return Ok(0); // EOF
+        }
+        let available = &self.data[self.position..visible];
+        let n = available.len().min(buf.len());
+        buf[..n].copy_from_slice(&available[..n]);
+        self.position += n;
+        Ok(n)
+    }
+}
+
+impl BufRead for GrowableCursor<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        let visible = self.visible();
+        if self.position >= visible {
+            return Ok(&[]);
+        }
+        Ok(&self.data[self.position..visible])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.position += amt;
+    }
+}
+
+impl Seek for GrowableCursor<'_> {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        let new_pos = match pos {
+            SeekFrom::Start(p) => p as i64,
+            SeekFrom::Current(p) => self.position as i64 + p,
+            SeekFrom::End(p) => self.visible() as i64 + p,
+        };
+        if new_pos < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before start",
+            ));
+        }
+        self.position = new_pos as usize;
+        Ok(self.position as u64)
+    }
+}
+
 fn decode_oneshot(data: &[u8]) -> Vec<u8> {
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode().expect("one-shot decode failed")
@@ -95,11 +166,11 @@ fn repeated_eof_does_not_corrupt_state() {
     }
 }
 
-/// Byte-by-byte header feeding: grow the visible window one byte at a time,
-/// creating a new decoder each time, until headers succeed. The final decoded
-/// output must match one-shot.
+/// Byte-by-byte header feeding with a *fresh* decoder per attempt: this is
+/// a one-shot parity regression test, not a fine-grained resume test (each
+/// attempt restarts from SOI).
 #[test]
-fn chunked_header_feeding_byte_by_byte() {
+fn chunked_fresh_decoder_byte_by_byte() {
     let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let expected = decode_oneshot(data);
 
@@ -123,4 +194,119 @@ fn chunked_header_feeding_byte_by_byte() {
             Err(e) => panic!("unexpected error at byte {available}: {e:?}"),
         }
     }
+}
+
+/// In-place resumable header parsing on the *same* decoder instance.
+///
+/// Uses `GrowableCursor` to simulate a stream where more data becomes
+/// available over time.  The decoder must resume from where it left off
+/// (not restart from SOI) and eventually succeed, producing output that
+/// matches a one-shot decode.
+#[test]
+fn inplace_growable_header_resume() {
+    let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    // Grow limit in chunks until headers succeed.
+    let step = 32;
+    loop {
+        let new_limit = (limit.get() + step).min(data.len());
+        limit.set(new_limit);
+
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref e) if e.is_recoverable_eof() => {
+                assert!(
+                    new_limit < data.len(),
+                    "EOF with all bytes visible — headers should have succeeded"
+                );
+            }
+            Err(e) => panic!("unexpected error at limit {new_limit}: {e:?}"),
+        }
+    }
+
+    // Headers decoded — make all data visible and decode the image.
+    limit.set(data.len());
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    decoder.decode_into(&mut out).unwrap();
+    assert_eq!(out, expected, "decoded pixels must match one-shot decode");
+}
+
+/// Byte-by-byte in-place resume: grow visibility one byte at a time on
+/// the *same* decoder instance, verifying that fine-grained checkpointing
+/// works for every possible truncation point in the headers.
+#[test]
+fn inplace_byte_by_byte_header_resume() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    for avail in 1..=data.len() {
+        limit.set(avail);
+
+        match decoder.decode_headers() {
+            Ok(()) => {
+                // Headers succeeded — make all data visible and decode.
+                limit.set(data.len());
+                let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+                decoder.decode_into(&mut out).unwrap();
+                assert_eq!(out, expected);
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected error at byte {avail}: {e:?}"),
+        }
+    }
+    panic!("headers never succeeded even with all bytes visible");
+}
+
+/// Verify that an EOF after a completed SOF marker is recoverable and that
+/// supplying the rest of the data lets the decoder finish parsing headers.
+///
+/// Note: this asserts the resume *succeeds*, not that markers parsed before
+/// the EOF were preserved across the retry. The byte-by-byte in-place tests
+/// above exercise true fine-grained checkpointing.
+#[test]
+fn resume_after_sof_eventually_succeeds() {
+    let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+
+    // Find roughly where SOF is by scanning for 0xFFC0 marker.
+    let sof_pos = data
+        .windows(2)
+        .position(|w| w == [0xFF, 0xC0] || w == [0xFF, 0xC2])
+        .expect("no SOF marker found in test image");
+
+    // Find roughly where SOS is by scanning for 0xFFDA marker.
+    let sos_pos = data
+        .windows(2)
+        .position(|w| w == [0xFF, 0xDA])
+        .expect("no SOS marker found in test image");
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    // Feed enough data to get past SOF but not past SOS.
+    // We pick a point between SOF and SOS.  The SOF marker segment
+    // is typically ~20 bytes, so SOF + 30 should be safely past it.
+    let mid = (sof_pos + 30).min(sos_pos);
+    limit.set(mid);
+    let err = decoder.decode_headers().unwrap_err();
+    assert!(err.is_recoverable_eof(), "expected EOF between SOF and SOS");
+    // Headers haven't completed yet, so info() must still be None.
+    assert!(decoder.info().is_none(), "info() must be None until headers complete");
+
+    // Now supply all data; the decoder should resume and finish.
+    limit.set(data.len());
+    decoder.decode_headers().unwrap();
+
+    let info = decoder.info().expect("info() must be Some after headers");
+    assert!(info.width > 0 && info.height > 0, "dimensions must be valid");
 }
