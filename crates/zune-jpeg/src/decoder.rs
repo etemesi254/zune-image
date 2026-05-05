@@ -82,13 +82,6 @@ pub struct PlaneInfo {
     pub byte_size:        usize
 }
 
-/// Ceiling division: `ceil(a / b)` without overflow on the addition.
-#[inline]
-fn ceil_div(a: usize, b: usize) -> usize {
-    debug_assert!(b != 0);
-    a / b + usize::from(a % b != 0)
-}
-
 /// Round `n` up to the next multiple of `align` (which must be non-zero).
 /// Returns `None` on overflow.
 #[inline]
@@ -460,11 +453,19 @@ pub struct JpegDecoder<T> {
 
 /// Internal sink for one raw planar decode call.
 ///
-/// Holds owned per-component plane buffers that MCU-stripe copies write into.
-/// After decoding completes, the caller copies from these into its output slices.
+/// Holds raw pointers into the caller-provided plane buffers so that MCU-stripe
+/// processing can write decoded samples directly without an intermediate copy.
+///
+/// # Safety
+/// The pointers are valid for the lifetime of the `decode_raw` / `decode_raw_strided`
+/// call that sets up this sink.  The sink is always cleared (set to `None`) before
+/// those functions return, so the pointers never outlive the caller's slices.
+#[allow(unsafe_code)]
 pub(crate) struct RawPlanesSink {
-    /// Internal plane buffers (one per component, sized to full plane).
-    pub(crate) planes:         Vec<Vec<u8>>,
+    /// Raw pointers into the caller's plane buffers (one per component).
+    pub(crate) ptrs:           [*mut u8; MAX_COMPONENTS],
+    /// Total byte length of each caller buffer.
+    pub(crate) lengths:        [usize; MAX_COMPONENTS],
     /// Bytes between successive destination rows (used for strided output).
     pub(crate) target_strides: [usize; MAX_COMPONENTS],
     /// Maximum bytes to write per destination row.
@@ -474,6 +475,15 @@ pub(crate) struct RawPlanesSink {
     /// Number of valid components.
     pub(crate) n_components:   usize
 }
+
+/// SAFETY: The pointers in `RawPlanesSink` are derived from `&mut [u8]` references
+/// that live on the calling thread's stack.  The sink is only alive for the duration
+/// of a single `decode_raw*` call, never sent across threads.
+#[allow(unsafe_code)]
+unsafe impl Send for RawPlanesSink {}
+/// SAFETY: No shared-mutable state; see `Send` impl above.
+#[allow(unsafe_code)]
+unsafe impl Sync for RawPlanesSink {}
 
 impl<T> JpegDecoder<T>
 where
@@ -1070,8 +1080,8 @@ where
         }
         let mut out = [PlaneInfo::default(); MAX_COMPONENTS];
         for (slot, comp) in out.iter_mut().zip(self.components.iter()) {
-            let comp_w = ceil_div(img_w.checked_mul(comp.horizontal_sample)?, h_max);
-            let comp_h = ceil_div(img_h.checked_mul(comp.vertical_sample)?, v_max);
+            let comp_w = img_w.checked_mul(comp.horizontal_sample)?.div_ceil(h_max);
+            let comp_h = img_h.checked_mul(comp.vertical_sample)?.div_ceil(v_max);
             let stride = round_up_pow2(comp_w, DCT_BLOCK_SIZE)?;
             let allocated_height = round_up_pow2(comp_h, DCT_BLOCK_SIZE)?;
             let byte_size = stride.checked_mul(allocated_height)?;
@@ -2200,27 +2210,32 @@ where
             }
         }
 
-        // Each plane is mutably borrowed for this call; internal buffers
-        // collect the MCU stripe outputs, then are copied to the caller at the end.
+        // Set up the raw-planes sink pointing directly into the caller's slices.
+        // SAFETY: The pointers are derived from the mutable slice references in
+        // `planes`, which are guaranteed to remain valid and exclusively borrowed
+        // for the duration of this call.  The sink is cleared before we return.
+        let mut ptrs = [core::ptr::null_mut(); MAX_COMPONENTS];
+        let mut lengths = [0usize; MAX_COMPONENTS];
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
-        let mut internal_planes: Vec<Vec<u8>> = Vec::with_capacity(n);
         for i in 0..n {
+            ptrs[i] = planes[i].as_mut_ptr();
+            lengths[i] = planes[i].len();
             target_strides[i] = layout[i].stride;
             target_widths[i] = layout[i].stride;
             target_heights[i] = layout[i].allocated_height;
-            internal_planes.push(vec![0u8; layout[i].byte_size]);
         }
         self.raw_planes_sink = Some(RawPlanesSink {
-            planes: internal_planes,
+            ptrs,
+            lengths,
             target_strides,
             target_widths,
             target_heights,
             n_components: n
         });
 
-        // Raw mode writes into the internal plane buffers; downstream pixel
+        // Raw mode writes directly into the caller's buffers; downstream pixel
         // bookkeeping only needs a placeholder slice.
         let mut sink: [u8; 0] = [];
         let result = if self.is_arithmetic {
@@ -2240,13 +2255,8 @@ where
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
         };
 
-        // Copy from internal buffers to the caller's output slices.
-        if let Some(raw_sink) = self.raw_planes_sink.take() {
-            for (i, internal) in raw_sink.planes.into_iter().enumerate() {
-                let dst = &mut planes[i][..internal.len()];
-                dst.copy_from_slice(&internal);
-            }
-        }
+        // Clear the sink so pointers don't outlive the caller's slices.
+        self.raw_planes_sink = None;
 
         result
     }
@@ -2347,20 +2357,24 @@ where
             }
         }
 
-        // Each plane is mutably borrowed for this call; internal buffers
-        // collect the MCU stripe outputs, then are copied to the caller at the end.
+        // Set up the raw-planes sink pointing directly into the caller's slices.
+        // SAFETY: Same guarantees as `decode_raw` — pointers derived from exclusive
+        // mutable borrows, valid for the entire call, cleared before return.
+        let mut ptrs = [core::ptr::null_mut(); MAX_COMPONENTS];
+        let mut lengths = [0usize; MAX_COMPONENTS];
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
-        let mut internal_planes: Vec<Vec<u8>> = Vec::with_capacity(n);
         for i in 0..n {
+            ptrs[i] = planes[i].as_mut_ptr();
+            lengths[i] = planes[i].len();
             target_strides[i] = strides[i];
             target_widths[i] = layout[i].width;
             target_heights[i] = layout[i].height;
-            internal_planes.push(vec![0u8; strides[i] * layout[i].height]);
         }
         self.raw_planes_sink = Some(RawPlanesSink {
-            planes: internal_planes,
+            ptrs,
+            lengths,
             target_strides,
             target_widths,
             target_heights,
@@ -2385,20 +2399,8 @@ where
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
         };
 
-        // Copy from internal buffers to the caller's output slices.
-        // Only copy logical width per row to preserve caller's padding bytes.
-        if let Some(raw_sink) = self.raw_planes_sink.take() {
-            for (i, internal) in raw_sink.planes.into_iter().enumerate() {
-                let stride = raw_sink.target_strides[i];
-                let width = raw_sink.target_widths[i];
-                let height = raw_sink.target_heights[i];
-                for y in 0..height {
-                    let off = y * stride;
-                    planes[i][off..off + width]
-                        .copy_from_slice(&internal[off..off + width]);
-                }
-            }
-        }
+        // Clear the sink so pointers don't outlive the caller's slices.
+        self.raw_planes_sink = None;
 
         result
     }
@@ -2430,6 +2432,7 @@ where
     ///
     /// The IDCT outputs are already clamped to `[0, 255]` so the `i16 -> u8`
     /// truncation here is exact.
+    #[allow(unsafe_code)]
     pub(crate) fn copy_raw_planes_for_mcu_stripe(
         &mut self, mcu_stripe_index: usize
     ) -> Result<(), DecodeErrors> {
@@ -2457,7 +2460,8 @@ where
             let src_stride = comp.width_stride;
             let copy_w = core::cmp::min(src_stride, core::cmp::min(target_width, target_stride));
 
-            let plane = &mut sink.planes[idx];
+            let ptr = sink.ptrs[idx];
+            let len = sink.lengths[idx];
 
             for r in 0..rows_to_copy {
                 let src_row_start = r * src_stride;
@@ -2470,11 +2474,18 @@ where
                 let src = &comp.raw_coeff[src_row_start..src_row_end];
 
                 let dst_offset = (row_start + r) * target_stride;
-                let dst = &mut plane[dst_offset..dst_offset + copy_w];
-                for (i, sample) in src.iter().enumerate() {
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    {
-                        dst[i] = *sample as u8;
+                debug_assert!(dst_offset + copy_w <= len);
+                // SAFETY: `ptr` points into the caller's `&mut [u8]` which is
+                // guaranteed to be at least `len` bytes.  The bounds check above
+                // (via `target_height` / `target_stride` validation in decode_raw*)
+                // ensures `dst_offset + copy_w <= len`.
+                unsafe {
+                    let dst = core::slice::from_raw_parts_mut(ptr.add(dst_offset), copy_w);
+                    for (i, sample) in src.iter().enumerate() {
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        {
+                            dst[i] = *sample as u8;
+                        }
                     }
                 }
             }
@@ -2702,17 +2713,17 @@ impl ImageInfo {
 
 #[cfg(test)]
 mod planar_layout_helpers {
-    use super::{ceil_div, round_up_pow2};
+    use super::round_up_pow2;
 
     #[test]
-    fn ceil_div_basic() {
-        assert_eq!(ceil_div(0, 8), 0);
-        assert_eq!(ceil_div(1, 8), 1);
-        assert_eq!(ceil_div(8, 8), 1);
-        assert_eq!(ceil_div(9, 8), 2);
-        assert_eq!(ceil_div(64, 8), 8);
-        assert_eq!(ceil_div(65, 8), 9);
-        assert_eq!(ceil_div(101, 8), 13);
+    fn div_ceil_basic() {
+        assert_eq!(0usize.div_ceil(8), 0);
+        assert_eq!(1usize.div_ceil(8), 1);
+        assert_eq!(8usize.div_ceil(8), 1);
+        assert_eq!(9usize.div_ceil(8), 2);
+        assert_eq!(64usize.div_ceil(8), 8);
+        assert_eq!(65usize.div_ceil(8), 9);
+        assert_eq!(101usize.div_ceil(8), 13);
     }
 
     #[test]
