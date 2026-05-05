@@ -55,7 +55,7 @@ where
 
 impl<T> PSDDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     /// Create a new decoder that reads a photoshop encoded file
     /// from `T` and returns pixels
@@ -124,14 +124,14 @@ where
         if width > self.options.max_width() {
             return Err(PSDDecodeErrors::LargeDimensions(
                 self.options.max_width(),
-                width
+                width,
             ));
         }
 
         if height > self.options.max_height() {
             return Err(PSDDecodeErrors::LargeDimensions(
                 self.options.max_height(),
-                height
+                height,
             ));
         }
 
@@ -150,7 +150,7 @@ where
         let im_depth = match depth {
             8 => BitDepth::Eight,
             16 => BitDepth::Sixteen,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         self.depth = im_depth;
@@ -208,163 +208,345 @@ where
         Ok(())
     }
 
-    /// Decode an image to bytes without regard to depth or endianness
+    /// Decodes the image into a raw byte buffer.
+    ///
+    /// This is a low-level decoding function that returns the underlying pixel
+    /// data as a flat `Vec<u8>` without enforcing a specific interpretation of
+    /// bit depth or endianness beyond what is produced internally.
+    ///
+    /// Internally, this allocates a buffer of size [`required_len`] and delegates
+    /// decoding to [`decode_into`].
     ///
     /// # Returns
-    /// Ok(bytes):  Raw bytes of the image
-    /// Err(E): An error if it occurred during decoding
+    ///
+    /// - `Ok(Vec<u8>)` containing the decoded pixel data
+    /// - `Err(_)` if decoding fails
+    ///
+    /// The returned buffer:
+    /// - Has length exactly equal to [`required_len`]
+    /// - Is interleaved by channel (e.g. RGBA RGBA ...)
+    /// - Uses:
+    ///   - 1 byte per channel for 8-bit images
+    ///   - 2 bytes per channel for 16-bit images (native endian)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Header decoding fails
+    /// - The compression method or bit depth is unsupported
+    /// - The underlying stream is invalid or truncated
+    ///
+    /// # Notes
+    ///
+    /// - This function performs a heap allocation. For allocation-free decoding,
+    ///   use [`decode_into`].
+    /// - If an alpha channel is present, white matte is removed during decoding.
+    /// - Headers are decoded automatically if not already processed.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_psd::errors::PSDDecodeErrors;
+    /// use zune_psd::PSDDecoder;
+    /// let mut decoder = PSDDecoder::new(ZCursor::new(vec![0]));
+    /// let raw = decoder.decode_raw()?;
+    /// println!("decoded {} bytes", raw.len());
+    ///
+    /// Ok::<(),PSDDecodeErrors>(())
+    /// ```
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PSDDecodeErrors> {
         if !self.decoded_header {
             self.decode_headers()?;
         }
 
+        let required_length = self.required_len()?;
+        let mut out = vec![0; required_length];
+        let new_length = self.decode_into(&mut out)?;
+        debug_assert!(new_length == required_length);
+        Ok(out)
+    }
+    /// Returns the exact number of bytes required to hold the decoded image data.
+    ///
+    /// This value can be used to preallocate a buffer for [`decode_into`].
+    ///
+    /// The size is computed as:
+    /// `width * height * channel_count * bytes_per_sample`
+    ///
+    /// Where:
+    /// - `bytes_per_sample` is:
+    ///   - `1` for 8-bit images
+    ///   - `2` for 16-bit images
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The PSD headers have not been decoded yet
+    /// - The bit depth is unsupported
+    /// - The computed size overflows `usize`
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use zune_psd::PSDDecoder;
+    /// use zune_psd::errors::PSDDecodeErrors;
+    /// use zune_core::bytestream::ZCursor;
+    ///  let mut decoder = PSDDecoder::new(ZCursor::new(vec![0]));
+    /// let len = decoder.required_len()?;
+    /// let mut buffer = vec![0u8; len];
+    /// decoder.decode_into(&mut buffer)?;
+    ///
+    /// Ok::<(),PSDDecodeErrors>(())
+    /// ```
+    ///
+    /// # Notes
+    ///
+    /// - The returned size is the exact number of bytes written by [`decode_into`]
+    ///   on success.
+    /// - The output layout is interleaved by channel (e.g. RGBA RGBA ...).
+    /// - No padding or alignment bytes are included.
+    pub fn required_len(&self) -> Result<usize, PSDDecodeErrors> {
+        if !self.decoded_header {
+            return Err(PSDDecodeErrors::Generic("Headers not decoded"));
+        }
+
+        let bytes_per_sample = match self.depth {
+            BitDepth::Eight => 1usize,
+            BitDepth::Sixteen => 2usize,
+            _ => return Err(PSDDecodeErrors::Generic("Unsupported bit depth")),
+        };
+
+        let pixel_count = self.width
+            .checked_mul(self.height)
+            .ok_or(PSDDecodeErrors::Generic("Dimension overflow"))?;
+
+        let total = pixel_count
+            .checked_mul(self.channel_count)
+            .and_then(|v| v.checked_mul(bytes_per_sample))
+            .ok_or(PSDDecodeErrors::Generic("Size overflow"))?;
+
+        Ok(total)
+    }
+    /// Decodes the PSD image into a caller-provided buffer.
+    ///
+    /// This function writes decoded pixel data into `output` without allocating.
+    /// The caller is responsible for providing a buffer large enough to hold
+    /// the result (see [`required_len`]).
+    ///
+    /// # Parameters
+    ///
+    /// - `output`: Destination buffer for decoded pixel data.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes written into `output` on success.
+    /// This will always equal [`required_len`] if the call succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Header decoding fails
+    /// - The output buffer is too small
+    /// - The compression method or bit depth is unsupported
+    /// - The underlying stream is invalid or truncated
+    ///
+    /// # Buffer Requirements
+    ///
+    /// The buffer must be at least:
+    /// `width * height * channel_count * bytes_per_sample` bytes long.
+    ///
+    /// You can obtain this size via [`required_len`].
+    ///
+    /// # Output Format
+    ///
+    /// - Pixel data is interleaved by channel (e.g. RGBA RGBA ...).
+    /// - 8-bit images use 1 byte per channel.
+    /// - 16-bit images use 2 bytes per channel (native endian).
+    /// - If an alpha channel is present, white matte is removed.
+    ///
+    /// # Notes
+    ///
+    /// - This function does not allocate.
+    /// - Any extra capacity in `output` beyond the required size is ignored.
+    /// - The function assumes the stream is positioned at the start of image data.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use zune_psd::PSDDecoder;
+    /// use zune_psd::errors::PSDDecodeErrors;
+    /// use zune_core::bytestream::ZCursor;
+    /// let mut decoder = PSDDecoder::new(ZCursor::new(vec![1]));
+    /// let len = decoder.required_len()?;
+    /// let mut buffer = vec![0u8; len];
+    ///
+    /// let written = decoder.decode_into(&mut buffer)?;
+    /// assert_eq!(written, len);
+    /// Ok::<(),PSDDecodeErrors>(())
+    /// ```
+    pub fn decode_into(&mut self, output: &mut [u8]) -> Result<usize, PSDDecodeErrors> {
+        if !self.decoded_header {
+            self.decode_headers()?;
+        }
+
         let pixel_count = self.width * self.height;
+        let bytes_per_sample = match self.depth {
+            BitDepth::Eight => 1,
+            BitDepth::Sixteen => 2,
+            _ => return Err(PSDDecodeErrors::Generic("Unsupported bit depth")),
+        };
 
-        let mut result = match (self.compression, self.depth) {
+        let required_len = pixel_count * self.channel_count * bytes_per_sample;
+
+        if output.len() < required_len {
+            return Err(PSDDecodeErrors::Generic("Output buffer too small"));
+        }
+
+        let out = &mut output[..required_len];
+
+        match (self.compression, self.depth) {
             (CompressionMethod::RLE, BitDepth::Eight) => {
-                // RLE
-                // Loop until you get the number of unpacked bytes you are expecting:
-                //     Read the next source byte into n.
-                //     If n is between 0 and 127 inclusive, copy the next n+1 bytes
-                //     literally. Else if n is between -127 and -1 inclusive, copy the next
-                //     byte -n+1 times. Else if n is 128, noop.
-                // Endloop
-
-                // The RLE-compressed data is preceded by a 2-byte data count for each row
-                // in the data, which we're going to just skip.
                 let skipped = self.height * self.channel_count * 2;
                 self.stream.skip(skipped)?;
 
-                let mut out_channel = vec![0; pixel_count * self.channel_count + 10];
-
                 for channel in 0..self.channel_count {
-                    let pixel_count = self.width * self.height;
-                    self.psd_decode_rle(pixel_count, &mut out_channel[channel..])?;
+                    self.psd_decode_rle(pixel_count, &mut out[channel..])?;
                 }
-
-                out_channel.truncate(pixel_count * self.channel_count);
-
-                out_channel
             }
+
             (CompressionMethod::NoCompression, BitDepth::Eight) => {
-                // We're at the raw image data.  It's each channel in order (Red, Green,
-                // Blue, Alpha, ...) where each channel consists of an 8-bit
-                // value for each pixel in the image.
-
-                // Read the data by channel.
-
-                let mut out_channel = vec![0; self.width * self.height * self.channel_count + 10];
-                let pixel_count = self.width * self.height;
-
-                // // check we have enough data
-                // if !self.stream.has(pixel_count * self.channel_count) {
-                //     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
-                // }
-
                 for channel in 0..self.channel_count {
                     let mut i = channel;
 
                     while i < pixel_count {
-                        out_channel[i] = self.stream.read_u8_err()?;
+                        out[i] = self.stream.read_u8_err()?;
                         i += self.channel_count;
                     }
                 }
-
-                out_channel.truncate(pixel_count * self.channel_count);
-                out_channel
             }
 
             (CompressionMethod::NoCompression, BitDepth::Sixteen) => {
-                // We're at the raw image data.  It's each channel in order (Red, Green,
-                // Blue, Alpha, ...) where each channel consists of an 8-bit
-                // value for each pixel in the image.
+                let channel_pixels = pixel_count;
 
-                // Read the data by channel.
-
-                // size of a single channel
-                let channel_dimensions = self.width * self.height;
-
-                let mut out_channel = vec![0; 2 * (channel_dimensions * self.channel_count + 10)];
-
-                let pixel_count = channel_dimensions * 2;
-
-                // check we have enough data
-                // if !self.stream.has(pixel_count * self.channel_count) {
-                //     return Err(PSDDecodeErrors::Generic("Incomplete bitstream"));
-                // }
-
-                // iterate per channel
                 for channel in 0..self.channel_count {
                     let i = channel * 2;
-                    let out_chunks = out_channel[i..].chunks_exact_mut(self.channel_count * 2);
+                    let chunks = out[i..].chunks_exact_mut(self.channel_count * 2);
 
-                    // iterate only taking the image dimensions
-                    for out in out_chunks.take(channel_dimensions) {
+                    for chunk in chunks.take(channel_pixels) {
                         let value = self.stream.get_u16_be_err()?;
-
-                        out[..2].copy_from_slice(&value.to_ne_bytes());
+                        chunk[..2].copy_from_slice(&value.to_ne_bytes());
                     }
                 }
-
-                out_channel.truncate(pixel_count * self.channel_count);
-                out_channel
             }
-            _ => return Err(PSDDecodeErrors::Generic("Not implemented or Unknown"))
-        };
-        // remove white matte from psd
+
+            _ => return Err(PSDDecodeErrors::Generic("Not implemented or Unknown")),
+        }
+
+        // Remove white matte
         if self.channel_count >= 4 {
             match self.depth {
-                BitDepth::Sixteen => {
-                    for pixel in result.chunks_exact_mut(8) {
-                        let px3 = u16::from_be_bytes(pixel[6..8].try_into().unwrap());
-                        if px3 != 0 && px3 != 65535 {
-                            let px0 = u16::from_be_bytes(pixel[0..2].try_into().unwrap());
-                            let px1 = u16::from_be_bytes(pixel[2..4].try_into().unwrap());
-                            let px2 = u16::from_be_bytes(pixel[4..6].try_into().unwrap());
-
-                            let a = f32::from(px3) / 65535.0;
-                            let ra = 1.0 / a;
-                            let inv_a = 65535.0 * (1.0 - ra);
-
-                            let x = (f32::from(px0) * ra + inv_a) as u16;
-                            let y = (f32::from(px1) * ra + inv_a) as u16;
-                            let z = (f32::from(px2) * ra + inv_a) as u16;
-
-                            pixel[0..2].copy_from_slice(&x.to_ne_bytes());
-                            pixel[2..4].copy_from_slice(&y.to_ne_bytes());
-                            pixel[4..6].copy_from_slice(&z.to_ne_bytes());
-                        }
-                    }
-                }
                 BitDepth::Eight => {
-                    for pixel in result.chunks_exact_mut(4) {
+                    for pixel in out.chunks_exact_mut(4) {
                         if pixel[3] != 0 && pixel[3] != 255 {
-                            let a = f32::from(pixel[3]) / 255.0;
+                            let a = pixel[3] as f32 / 255.0;
                             let ra = 1.0 / a;
                             let inv_a = 255.0 * (1.0 - ra);
-                            pixel[0] = (f32::from(pixel[0]) * ra + inv_a) as u8;
-                            pixel[1] = (f32::from(pixel[1]) * ra + inv_a) as u8;
-                            pixel[2] = (f32::from(pixel[2]) * ra + inv_a) as u8;
+
+                            pixel[0] = (pixel[0] as f32 * ra + inv_a) as u8;
+                            pixel[1] = (pixel[1] as f32 * ra + inv_a) as u8;
+                            pixel[2] = (pixel[2] as f32 * ra + inv_a) as u8;
                         }
                     }
                 }
-                _ => unreachable!()
+
+                BitDepth::Sixteen => {
+                    for pixel in out.chunks_exact_mut(8) {
+                        let a = u16::from_be_bytes(pixel[6..8].try_into().unwrap());
+
+                        if a != 0 && a != 65535 {
+                            let r = u16::from_be_bytes(pixel[0..2].try_into().unwrap());
+                            let g = u16::from_be_bytes(pixel[2..4].try_into().unwrap());
+                            let b = u16::from_be_bytes(pixel[4..6].try_into().unwrap());
+
+                            let af = a as f32 / 65535.0;
+                            let ra = 1.0 / af;
+                            let inv_a = 65535.0 * (1.0 - ra);
+
+                            let r = (r as f32 * ra + inv_a) as u16;
+                            let g = (g as f32 * ra + inv_a) as u16;
+                            let b = (b as f32 * ra + inv_a) as u16;
+
+                            pixel[0..2].copy_from_slice(&r.to_ne_bytes());
+                            pixel[2..4].copy_from_slice(&g.to_ne_bytes());
+                            pixel[4..6].copy_from_slice(&b.to_ne_bytes());
+                        }
+                    }
+                }
+
+                _ => unreachable!(),
             }
         }
-        Ok(result)
+
+        Ok(required_len)
     }
-    /// Decode a PSD file extracting the image only
+    /// Decodes the image into a typed pixel buffer.
     ///
-    /// Currently this does it without respect to  layers
-    /// and such, only extracting the PSD image, hence might not be the
-    /// most useful one.
+    /// This is the high-level decoding API. It interprets the raw byte output
+    /// from [`decode_raw`] and converts it into a typed representation based
+    /// on the image bit depth.
     ///
+    /// # Returns
+    ///
+    /// - `DecodingResult::U8(Vec<u8>)` for 8-bit images
+    /// - `DecodingResult::U16(Vec<u16>)` for 16-bit images
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Decoding fails at the raw stage
+    /// - The bit depth is unsupported
+    ///
+    /// # Output Format
+    ///
+    /// - Pixel data is interleaved by channel (e.g. RGBA RGBA ...)
+    /// - For 16-bit images:
+    ///   - Input bytes are interpreted as **big-endian**
+    ///   - Values are converted into native `u16`
+    ///
+    /// # Notes
+    ///
+    /// - This function always allocates a new buffer.
+    /// - For 16-bit images, this performs an additional conversion pass
+    ///   from `Vec<u8>` to `Vec<u16>`.
+    /// - If you need raw access or want to avoid the conversion cost,
+    ///   use [`decode_raw`] or [`decode_into`] instead.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_psd::PSDDecoder;
+    /// use zune_core::result::DecodingResult;
+    /// use zune_psd::errors::PSDDecodeErrors;
+    /// let mut decoder = PSDDecoder::new(ZCursor::new(vec![0]));
+    /// match decoder.decode()? {
+    ///     DecodingResult::U8(pixels) => {
+    ///         println!("8-bit image: {} bytes", pixels.len());
+    ///     }
+    ///     DecodingResult::U16(pixels) => {
+    ///         println!("16-bit image: {} samples", pixels.len());
+    ///     }
+    ///     _=>unreachable!()
+    /// }
+    ///Ok::<(),PSDDecodeErrors>(())
+    /// ```
     pub fn decode(&mut self) -> Result<DecodingResult, PSDDecodeErrors> {
         let raw = self.decode_raw()?;
 
         if self.depth == BitDepth::Eight {
             return Ok(DecodingResult::U8(raw));
         }
+
         if self.depth == BitDepth::Sixteen {
             // https://github.com/etemesi254/zune-image/issues/36
             let new_array: Vec<u16> = raw
@@ -382,7 +564,7 @@ where
     }
 
     fn psd_decode_rle(
-        &mut self, pixel_count: usize, buffer: &mut [u8]
+        &mut self, pixel_count: usize, buffer: &mut [u8],
     ) -> Result<(), PSDDecodeErrors> {
         let mut count = 0;
         let mut nleft = pixel_count - count;

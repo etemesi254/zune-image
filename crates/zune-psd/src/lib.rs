@@ -12,7 +12,7 @@
 //!
 //! Sometimes that's all you need..
 //!
-//! [obligatory photoshop dunking](https://github.com/gco/xee/blob/master/XeePhotoshopLoader.m#L108)
+//! [obligatory photoshop history](https://github.com/gco/xee/blob/master/XeePhotoshopLoader.m#L108)
 //!
 //! # Example
 //! - Reading a psd file
@@ -23,7 +23,7 @@
 //!
 //! fn main()->Result<(),PSDDecodeErrors>{
 //!     use zune_core::bytestream::ZCursor;
-//! let mut decoder = PSDDecoder::new(ZCursor::new(&[]));
+//!     let mut decoder = PSDDecoder::new(ZCursor::new(&[]));
 //!     let px = decoder.decode()?;
 //!
 //!     // we need to handle u8 and u16 since the decoder supports those depths
