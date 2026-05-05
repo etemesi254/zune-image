@@ -15,7 +15,6 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use alloc::{format, vec};
 use core::num::NonZeroU32;
-use core::ptr::NonNull;
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
@@ -460,16 +459,19 @@ pub struct JpegDecoder<T> {
 }
 
 /// Internal sink for one raw planar decode call.
+///
+/// Holds owned per-component plane buffers that MCU-stripe copies write into.
+/// After decoding completes, the caller copies from these into its output slices.
 pub(crate) struct RawPlanesSink {
-    /// Per-component plane base pointer (only `0..n_components` are valid).
-    pub(crate) ptrs:           [*mut u8; MAX_COMPONENTS],
-    /// Bytes between successive destination rows.
+    /// Internal plane buffers (one per component, sized to full plane).
+    pub(crate) planes:         Vec<Vec<u8>>,
+    /// Bytes between successive destination rows (used for strided output).
     pub(crate) target_strides: [usize; MAX_COMPONENTS],
     /// Maximum bytes to write per destination row.
     pub(crate) target_widths:  [usize; MAX_COMPONENTS],
-    /// Number of destination rows the caller's buffer can accept.
+    /// Number of destination rows per plane.
     pub(crate) target_heights: [usize; MAX_COMPONENTS],
-    /// Number of valid components in `ptrs`.
+    /// Number of valid components.
     pub(crate) n_components:   usize
 }
 
@@ -2180,33 +2182,30 @@ where
             }
         }
 
-        // Each plane is mutably borrowed for this call; the guard clears the
-        // raw pointers before returning.
-        let mut ptrs: [*mut u8; MAX_COMPONENTS] = [core::ptr::null_mut(); MAX_COMPONENTS];
+        // Each plane is mutably borrowed for this call; internal buffers
+        // collect the MCU stripe outputs, then are copied to the caller at the end.
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
-        for (i, plane) in planes.iter_mut().enumerate() {
-            ptrs[i] = plane.as_mut_ptr();
+        let mut internal_planes: Vec<Vec<u8>> = Vec::with_capacity(n);
+        for i in 0..n {
             target_strides[i] = layout[i].stride;
             target_widths[i] = layout[i].stride;
             target_heights[i] = layout[i].allocated_height;
+            internal_planes.push(vec![0u8; layout[i].byte_size]);
         }
         self.raw_planes_sink = Some(RawPlanesSink {
-            ptrs,
+            planes: internal_planes,
             target_strides,
             target_widths,
             target_heights,
             n_components: n
         });
-        let _guard = RawPlanesGuard {
-            dec: NonNull::from(&mut *self)
-        };
 
-        // Raw mode writes into the plane sink; downstream pixel bookkeeping
-        // only needs a placeholder slice.
+        // Raw mode writes into the internal plane buffers; downstream pixel
+        // bookkeeping only needs a placeholder slice.
         let mut sink: [u8; 0] = [];
-        if self.is_arithmetic {
+        let result = if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
                 if self.is_progressive {
@@ -2221,8 +2220,17 @@ where
             self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
         } else {
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
+        };
+
+        // Copy from internal buffers to the caller's output slices.
+        if let Some(raw_sink) = self.raw_planes_sink.take() {
+            for (i, internal) in raw_sink.planes.into_iter().enumerate() {
+                let dst = &mut planes[i][..internal.len()];
+                dst.copy_from_slice(&internal);
+            }
         }
-        // Guard clears `raw_planes_sink` on drop.
+
+        result
     }
 
     /// Decode raw planes using caller-supplied row strides.
@@ -2309,31 +2317,28 @@ where
             }
         }
 
-        // Each plane is mutably borrowed for this call; the guard clears the
-        // raw pointers before returning.
-        let mut ptrs: [*mut u8; MAX_COMPONENTS] = [core::ptr::null_mut(); MAX_COMPONENTS];
+        // Each plane is mutably borrowed for this call; internal buffers
+        // collect the MCU stripe outputs, then are copied to the caller at the end.
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
-        for (i, plane) in planes.iter_mut().enumerate() {
-            ptrs[i] = plane.as_mut_ptr();
+        let mut internal_planes: Vec<Vec<u8>> = Vec::with_capacity(n);
+        for i in 0..n {
             target_strides[i] = strides[i];
             target_widths[i] = layout[i].width;
             target_heights[i] = layout[i].height;
+            internal_planes.push(vec![0u8; strides[i] * layout[i].height]);
         }
         self.raw_planes_sink = Some(RawPlanesSink {
-            ptrs,
+            planes: internal_planes,
             target_strides,
             target_widths,
             target_heights,
             n_components: n
         });
-        let _guard = RawPlanesGuard {
-            dec: NonNull::from(&mut *self)
-        };
 
         let mut sink: [u8; 0] = [];
-        if self.is_arithmetic {
+        let result = if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
                 if self.is_progressive {
@@ -2348,7 +2353,24 @@ where
             self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
         } else {
             self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
+        };
+
+        // Copy from internal buffers to the caller's output slices.
+        // Only copy logical width per row to preserve caller's padding bytes.
+        if let Some(raw_sink) = self.raw_planes_sink.take() {
+            for (i, internal) in raw_sink.planes.into_iter().enumerate() {
+                let stride = raw_sink.target_strides[i];
+                let width = raw_sink.target_widths[i];
+                let height = raw_sink.target_heights[i];
+                for y in 0..height {
+                    let off = y * stride;
+                    planes[i][off..off + width]
+                        .copy_from_slice(&internal[off..off + width]);
+                }
+            }
         }
+
+        result
     }
 
     /// Per-component [`ComponentID`] in declaration order
@@ -2383,16 +2405,12 @@ where
     ) -> Result<(), DecodeErrors> {
         let sink = self
             .raw_planes_sink
-            .as_ref()
+            .as_mut()
             .expect("copy_raw_planes_for_mcu_stripe called without active sink");
 
         for (idx, comp) in self.components.iter().enumerate() {
             if idx >= sink.n_components {
                 break;
-            }
-            let plane_ptr = sink.ptrs[idx];
-            if plane_ptr.is_null() {
-                continue;
             }
             let target_stride = sink.target_strides[idx];
             let target_width = sink.target_widths[idx];
@@ -2400,7 +2418,7 @@ where
 
             let stripe_rows = comp.vertical_sample * DCT_BLOCK_SIZE;
             let row_start = mcu_stripe_index * stripe_rows;
-            // Clip rows to the caller-provided plane height.
+            // Clip rows to the plane height.
             if row_start >= target_height {
                 continue;
             }
@@ -2408,6 +2426,8 @@ where
 
             let src_stride = comp.width_stride;
             let copy_w = core::cmp::min(src_stride, core::cmp::min(target_width, target_stride));
+
+            let plane = &mut sink.planes[idx];
 
             for r in 0..rows_to_copy {
                 let src_row_start = r * src_stride;
@@ -2419,22 +2439,12 @@ where
                 }
                 let src = &comp.raw_coeff[src_row_start..src_row_end];
 
-                // SAFETY: `plane_ptr` came from a `&mut [u8]` of length at
-                // least `target_stride * target_height` (validated in
-                // `decode_raw` / `decode_raw_strided`). `(row_start + r) <
-                // target_height` and `copy_w <= target_stride`, so
-                // `dst_offset + copy_w <= target_stride * target_height`.
-                // No other code path borrows the plane buffer while
-                // `raw_planes_sink` is set.
-                unsafe {
-                    let dst_offset = (row_start + r) * target_stride;
-                    let dst = plane_ptr.add(dst_offset);
-                    for (i, sample) in src.iter().enumerate() {
-                        // Post-IDCT samples are already clamped to [0, 255].
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                        {
-                            *dst.add(i) = *sample as u8;
-                        }
+                let dst_offset = (row_start + r) * target_stride;
+                let dst = &mut plane[dst_offset..dst_offset + copy_w];
+                for (i, sample) in src.iter().enumerate() {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        dst[i] = *sample as u8;
                     }
                 }
             }
@@ -2657,31 +2667,6 @@ impl ImageInfo {
     #[allow(dead_code)]
     pub(crate) fn set_y(&mut self, sample: u16) {
         self.y_density = sample;
-    }
-}
-
-// SAFETY: `RawPlanesSink` only ever holds raw pointers into caller-owned
-// buffers for the duration of a single `decode_raw` call (which takes
-// `&mut self`). No other code path can observe or alias the pointers, so
-// these auto-trait restorations are defensive — they let `JpegDecoder<T>`
-// retain whatever Send/Sync it would have had without this field, when
-// `T: Send + Sync`.
-unsafe impl Send for RawPlanesSink {}
-unsafe impl Sync for RawPlanesSink {}
-
-/// RAII guard that clears [`JpegDecoder::raw_planes_sink`] when dropped,
-/// including on panic / early `?` returns from inside `decode_raw`.
-pub(crate) struct RawPlanesGuard<T: ZByteReaderTrait> {
-    pub(crate) dec: NonNull<JpegDecoder<T>>
-}
-
-impl<T: ZByteReaderTrait> Drop for RawPlanesGuard<T> {
-    fn drop(&mut self) {
-        // SAFETY: `dec` was created from `&mut *self` inside `decode_raw`
-        // and the guard does not outlive that borrow.
-        unsafe {
-            self.dec.as_mut().raw_planes_sink = None;
-        }
     }
 }
 
