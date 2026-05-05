@@ -2137,6 +2137,9 @@ where
     ///
     /// # Examples
     ///
+    /// Decode a JPEG into raw YCbCr planes (libjpeg-turbo style) and access
+    /// individual component data:
+    ///
     /// ```no_run
     /// use zune_core::bytestream::ZCursor;
     /// use zune_jpeg::JpegDecoder;
@@ -2145,15 +2148,30 @@ where
     /// let mut decoder = JpegDecoder::new(ZCursor::new(&data));
     /// decoder.decode_headers().unwrap();
     ///
+    /// // Query the plane geometry (DCT-block-padded sizes).
     /// let layout = decoder.planar_layout().unwrap();
     /// let n = decoder.num_components().unwrap();
+    ///
+    /// // Allocate one buffer per component, sized to the full padded plane.
     /// let mut buffers: Vec<Vec<u8>> = (0..n)
     ///     .map(|i| vec![0u8; layout[i].byte_size])
     ///     .collect();
     /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
     ///
     /// decoder.decode_raw(&mut planes).unwrap();
-    /// // planes[0] = Y, planes[1] = Cb, planes[2] = Cr (for YCbCr)
+    ///
+    /// // For a 4:2:0 YCbCr image:
+    /// //   planes[0] = Y  (full resolution, padded to DCT blocks)
+    /// //   planes[1] = Cb (half resolution)
+    /// //   planes[2] = Cr (half resolution)
+    /// //
+    /// // Access a specific pixel's Y value:
+    /// let y_stride = layout[0].stride; // row pitch in bytes
+    /// let y_value = planes[0][/* row */ 10 * y_stride + /* col */ 20];
+    ///
+    /// // Identify component order for non-standard JPEGs:
+    /// let ids = decoder.component_ids().unwrap();
+    /// println!("Component order: {:?}", ids);
     /// ```
     ///
     /// # Errors
@@ -2246,8 +2264,10 @@ where
     ///
     /// # Examples
     ///
-    /// Skia-style: allocate with custom stride (e.g. GPU-aligned), decode
-    /// only the logical image area, leave padding untouched.
+    /// Skia-style: decode into GPU-aligned buffers where each row has a
+    /// power-of-two stride, then upload the planes as textures. Only the
+    /// logical image area is written; padding bytes are left untouched so
+    /// the caller can pre-fill them with a known value (e.g. for debugging).
     ///
     /// ```no_run
     /// use zune_core::bytestream::ZCursor;
@@ -2264,14 +2284,24 @@ where
     /// let strides: Vec<usize> = (0..n)
     ///     .map(|i| (layout[i].width + 63) & !63)
     ///     .collect();
+    ///
+    /// // Allocate buffers sized to logical height × custom stride.
+    /// // Only layout[i].width × layout[i].height pixels are written;
+    /// // the gap between width and stride is never touched.
     /// let mut buffers: Vec<Vec<u8>> = (0..n)
     ///     .map(|i| vec![0u8; strides[i] * layout[i].height])
     ///     .collect();
     /// let mut planes: Vec<&mut [u8]> = buffers.iter_mut().map(|b| b.as_mut_slice()).collect();
     ///
     /// decoder.decode_raw_strided(&mut planes, &strides).unwrap();
-    /// // Each planes[i] now contains the component data with the custom stride.
-    /// // Upload planes[i] to a GPU texture with row pitch = strides[i].
+    ///
+    /// // Upload each plane to a GPU texture:
+    /// for i in 0..n {
+    ///     let width = layout[i].width;
+    ///     let height = layout[i].height;
+    ///     let row_pitch = strides[i];
+    ///     // gpu.upload_texture(planes[i], width, height, row_pitch);
+    /// }
     /// ```
     ///
     /// # Errors
