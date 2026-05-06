@@ -27,7 +27,7 @@ use crate::resize::seperable_kernel::{resample_separable_u8, PrecomputedKernels}
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
-mod seperable_kernel;
+pub(crate) mod seperable_kernel;
 
 /// Resampling algorithms available for image resizing.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
