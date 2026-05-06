@@ -103,12 +103,34 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             block[i] = vec![0; len];
         }
 
+        let checkpoint = self.scan_checkpoint().cloned();
+        let mut resume_position = checkpoint
+            .as_ref()
+            .map(|checkpoint| (checkpoint.mcu_row, checkpoint.mcu_col));
+
+        if let Some(checkpoint) = checkpoint.as_ref() {
+            self.components = checkpoint.component_state.clone();
+            for (dst, src) in block.iter_mut().zip(&checkpoint.component_buffers) {
+                if !src.is_empty() {
+                    *dst = src.clone();
+                }
+            }
+        }
+
         let mut stream = B::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
         // there are multiple scans in the stream, this should resolve the first scan
-        let result = self.parse_entropy_coded_data(&mut stream, &mut block);
+        let result =
+            self.parse_entropy_coded_data(&mut stream, &mut block, resume_position.take());
 
-        if result.is_err() {
+        if let Err(ref e) = result {
+            // Always propagate ExhaustedData for incremental decoding support.
+            if e.is_recoverable_eof() {
+                return Err(result.err().unwrap());
+            }
+            if self.stream.eof()? {
+                return Err(DecodeErrors::ExhaustedData);
+            }
             return if self.options.strict_mode() {
                 Err(result.err().unwrap())
             } else {
@@ -117,12 +139,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 return self.finish_progressive_decoding(&block, pixels);
             };
         }
+        if stream.overread_by() > 0 {
+            return Err(DecodeErrors::ExhaustedData);
+        }
 
         // extract marker
-        let mut marker = stream
-            .marker()
-            .take()
-            .ok_or(DecodeErrors::FormatStatic("Marker missing where expected"))?;
+        let mut marker = get_marker(&mut self.stream, &mut stream)?;
 
         // if marker is EOI, we are done, otherwise continue scanning.
         //
@@ -141,17 +163,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_end
                     );
                     // after every SOS, marker, parse data for that scan.
-                    let result = self.parse_entropy_coded_data(&mut stream, &mut block);
+                    let result = self.parse_entropy_coded_data(&mut stream, &mut block, None);
 
                     // Do not error out too fast, allows the decoder to continue as much as possible
-                    // even after errors
-                    if result.is_err() {
+                    // even after errors — but always propagate ExhaustedData.
+                    if let Err(ref e) = result {
+                        if e.is_recoverable_eof() {
+                            return Err(result.err().unwrap());
+                        }
+                        if self.stream.eof()? {
+                            return Err(DecodeErrors::ExhaustedData);
+                        }
                         return if self.options.strict_mode() {
                             Err(result.err().unwrap())
                         } else {
                             error!("{}", result.err().unwrap());
                             break 'eoi;
                         };
+                    }
+                    if stream.overread_by() > 0 {
+                        return Err(DecodeErrors::ExhaustedData);
                     }
                     // extract marker, might either indicate end of image or we continue
                     // scanning(hence the continue statement to determine).
@@ -171,6 +202,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             continue 'eoi;
                         }
                         Err(msg) => {
+                            if msg.is_recoverable_eof() {
+                                return Err(msg);
+                            }
                             if self.options.strict_mode() {
                                 return Err(msg);
                             }
@@ -192,6 +226,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     marker = marker_n;
                 }
                 Err(e) => {
+                    if e.is_recoverable_eof() {
+                        return Err(e);
+                    }
                     if self.options.strict_mode() {
                         return Err(e);
                     }
@@ -220,11 +257,18 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.todo = if self.restart_interval != 0 { self.restart_interval } else { usize::MAX };
     }
 
+    /// Parse a progressive scan's entropy-coded data into `buffer`.
+    ///
+    /// `resume_position` is `Some((mcu_row, mcu_col))` when resuming from a
+    /// restart-interval checkpoint; the loop will restart from that MCU
+    /// coordinate. `None` starts decoding from `(0, 0)`.
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
+        resume_position: Option<(usize, usize)>
     ) -> Result<(), DecodeErrors> {
         self.reset_prog_params(stream);
+        let (resume_row, resume_col) = resume_position.unwrap_or((0, 0));
 
         if usize::from(self.num_scans) > self.input_colorspace.num_components() {
             return Err(DecodeErrors::Format(format!(
@@ -255,8 +299,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let mcu_width = (self.info.width as usize * component.horizontal_sample).div_ceil(self.h_max * 8);
             let mcu_height = (self.info.height as usize * component.vertical_sample).div_ceil(self.v_max * 8);
 
-            for i in 0..mcu_height {
-                for j in 0..mcu_width {
+            for i in resume_row..mcu_height {
+                let start_col = if i == resume_row { resume_col } else { 0 };
+                for j in start_col..mcu_width {
                     if self.spec_start != 0 && self.succ_high == 0 && *stream.eob_run() > 0 {
                         // handle EOB runs here.
                         *stream.eob_run() -= 1;
@@ -316,7 +361,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // + EOB and investigate effect.
                     self.todo -= 1;
 
-                    self.handle_rst_main(stream)?;
+                    if self.handle_rst_main(stream)? {
+                        let component_buffers = core::array::from_fn(|idx| buffer[idx].clone());
+                        self.checkpoint_scan(i, j + 1, 0, component_buffers, &[])?;
+                    }
                 }
             }
         } else {
@@ -345,8 +393,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             // Components shall not be interleaved in progressive mode, except for
             // the DC coefficients in the first scan for each component of a progressive frame.
-            for i in 0..self.mcu_y {
-                for j in 0..self.mcu_x {
+            for i in resume_row..self.mcu_y {
+                let start_col = if i == resume_row { resume_col } else { 0 };
+                for j in start_col..self.mcu_x {
                     // process scan n elements in order
                     for k in 0..self.num_scans {
                         let n = self.z_order[k as usize];
@@ -385,7 +434,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // we get a higher number in the case this underflows
                     self.todo -= 1;
                     // after every scan that's a mcu, count down restart markers.
-                    self.handle_rst_main(stream)?;
+                    if self.handle_rst_main(stream)? {
+                        let component_buffers = core::array::from_fn(|idx| buffer[idx].clone());
+                        self.checkpoint_scan(i, j + 1, 0, component_buffers, &[])?;
+                    }
                 }
             }
         }
@@ -395,7 +447,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::used_underscore_binding)]
     pub(crate) fn handle_rst_main<B: BitStream>(
         &mut self, stream: &mut B
-    ) -> Result<(), DecodeErrors> {
+    ) -> Result<bool, DecodeErrors> {
         if self.todo == 0 {
             stream.refill(&mut self.stream)?;
         }
@@ -418,23 +470,31 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // in the image and this would return an error, so for now
             // translate it to a warning, but return the image decoded up
             // until that point
-            if let Ok(marker) = marker {
-                let _end = self.stream.position()?;
-                *stream.marker() = Some(marker);
-                // NB some warnings may be false positives.
-                warn!(
-                    "{} Extraneous bytes before marker {:?}",
-                    _end - _start,
-                    marker
-                );
-            } else {
-                warn!("RST marker was not found, where expected, image may be garbled");
+            match marker {
+                Ok(marker) => {
+                    let _end = self.stream.position()?;
+                    *stream.marker() = Some(marker);
+                    // NB some warnings may be false positives.
+                    warn!(
+                        "{} Extraneous bytes before marker {:?}",
+                        _end - _start,
+                        marker
+                    );
+                }
+                Err(ref e) if e.is_recoverable_eof() => {
+                    return Err(DecodeErrors::ExhaustedData);
+                }
+                Err(_) => {
+                    warn!("RST marker was not found, where expected, image may be garbled");
+                }
             }
         }
         if self.todo == 0 {
+            let handled_restart = matches!(stream.marker(), Some(Marker::RST(_)));
             self.handle_rst(stream)?;
+            return Ok(handled_restart);
         }
-        Ok(())
+        Ok(false)
     }
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]

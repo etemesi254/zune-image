@@ -9,6 +9,7 @@
 //! Main image logic.
 #![allow(clippy::doc_markdown)]
 
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -18,6 +19,8 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
 
+#[cfg(feature = "arith")]
+use crate::bitstream::BitStream;
 use crate::bitstream::BitStreamHuffman;
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
@@ -75,29 +78,61 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// Tracks the current decoding phase for incremental decoding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone)]
 pub(crate) enum DecodingState {
     /// Headers not yet fully decoded. `resume_position == 0` means start from SOI.
     DecodeHeaders { resume_position: usize },
     /// Headers decoded; scan data starts at `scan_start_position`.
     ///
-    /// `append_snapshot` records the lengths of the append-only metadata
-    /// buffers (ICC, extended XMP, gain map) at the moment we entered the
-    /// scan. On every scan retry we roll those buffers back to this snapshot
-    /// before re-seeking, so inline markers re-encountered during replay
-    /// (see `mcu.rs::check_stream_marker_after_mcu_width`) do not duplicate
-    /// metadata entries.
+    /// `append_snapshot` rolls back inline metadata on scan replay.
+    /// `sos_snapshot` restores scan parameters before replay.
+    /// `rst_checkpoint` resumes from the latest restart boundary when present.
     DecodeScan {
         scan_start_position: usize,
-        append_snapshot:     HeaderAppendStateSnapshot
-    },
+        append_snapshot:     HeaderAppendStateSnapshot,
+        sos_snapshot:        SosParamsSnapshot,
+        rst_checkpoint:      Option<Box<ScanCheckpoint>>
+    }
 }
 
-// Snapshot of append-only buffers populated across multi-segment markers
-// (ICC chunks, extended XMP, gain map). All other parsers either overwrite
-// fixed slots (qt/huffman/components) or fail before mutating, so only
-// these three need to be rolled back when a marker parser errors out
-// or when scan-phase replay re-seeks past markers it already consumed.
+/// SOS fields restored before replaying scan data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SosParamsSnapshot {
+    pub(crate) z_order:         [usize; MAX_COMPONENTS],
+    pub(crate) num_scans:       u8,
+    pub(crate) scan_subsampled: bool,
+    pub(crate) spec_start:      u8,
+    pub(crate) spec_end:        u8,
+    pub(crate) succ_high:       u8,
+    pub(crate) succ_low:        u8,
+    pub(crate) dc_huff_tables:  [usize; MAX_COMPONENTS],
+    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS]
+}
+
+/// Saved state at a restart-interval boundary during scan decoding.
+#[derive(Clone)]
+pub(crate) struct ScanCheckpoint {
+    /// Stream position immediately after the RST marker.
+    pub(crate) stream_position:   usize,
+    /// Next MCU row to decode.
+    pub(crate) mcu_row:           usize,
+    /// Next MCU column to decode in `mcu_row`.
+    pub(crate) mcu_col:           usize,
+    /// Number of output bytes stable at this checkpoint.
+    pub(crate) pixels_written:    usize,
+    /// SOS/component table state at this checkpoint.
+    pub(crate) sos_snapshot:      SosParamsSnapshot,
+    /// Append-only metadata state at this checkpoint.
+    pub(crate) append_snapshot:   HeaderAppendStateSnapshot,
+    /// Decoded coefficient/sample buffers.
+    pub(crate) component_buffers: [Vec<i16>; MAX_COMPONENTS],
+    /// Component decoder state, including upsampling row history.
+    pub(crate) component_state:   Vec<Components>,
+    /// Output bytes to restore before continuing.
+    pub(crate) output_prefix:     Vec<u8>
+}
+
+// Snapshot append-only metadata so marker or scan replay can roll it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HeaderAppendStateSnapshot {
     icc:  usize,
@@ -254,13 +289,74 @@ where
         Ok(())
     }
 
+    fn capture_sos_params(&self) -> SosParamsSnapshot {
+        SosParamsSnapshot {
+            z_order:         self.z_order,
+            num_scans:       self.num_scans,
+            scan_subsampled: self.scan_subsampled,
+            spec_start:      self.spec_start,
+            spec_end:        self.spec_end,
+            succ_high:       self.succ_high,
+            succ_low:        self.succ_low,
+            dc_huff_tables:  core::array::from_fn(|i| {
+                self.components
+                    .get(i)
+                    .map_or(0, |component| component.dc_huff_table)
+            }),
+            ac_huff_tables:  core::array::from_fn(|i| {
+                self.components
+                    .get(i)
+                    .map_or(0, |component| component.ac_huff_table)
+            })
+        }
+    }
+
     fn enter_scan_state(&mut self) -> Result<(), DecodeErrors> {
         let scan_start_position = self.stream_position()?;
         let append_snapshot = HeaderAppendStateSnapshot::capture(self);
+        let sos_snapshot = self.capture_sos_params();
         self.state = DecodingState::DecodeScan {
             scan_start_position,
-            append_snapshot
+            append_snapshot,
+            sos_snapshot,
+            rst_checkpoint: None
         };
+        Ok(())
+    }
+
+    pub(crate) fn scan_checkpoint(&self) -> Option<&ScanCheckpoint> {
+        match &self.state {
+            DecodingState::DecodeScan { rst_checkpoint, .. } => rst_checkpoint.as_deref(),
+            DecodingState::DecodeHeaders { .. } => None
+        }
+    }
+
+    // Save a restart-boundary checkpoint. `pixels_written` remains row-based:
+    // if an RST lands mid-row, resume replays the row from restored buffers.
+    pub(crate) fn checkpoint_scan(
+        &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
+        component_buffers: [Vec<i16>; MAX_COMPONENTS], pixels: &[u8]
+    ) -> Result<(), DecodeErrors> {
+        let stream_position = self.stream_position()?;
+        let sos_snapshot = self.capture_sos_params();
+        let append_snapshot = HeaderAppendStateSnapshot::capture(self);
+        let output_prefix_len = pixels_written.min(pixels.len());
+        let output_prefix = pixels[..output_prefix_len].to_vec();
+        let component_state = self.components.clone();
+
+        if let DecodingState::DecodeScan { rst_checkpoint, .. } = &mut self.state {
+            *rst_checkpoint = Some(Box::new(ScanCheckpoint {
+                stream_position,
+                mcu_row,
+                mcu_col,
+                pixels_written: output_prefix_len,
+                sos_snapshot,
+                append_snapshot,
+                component_buffers,
+                component_state,
+                output_prefix
+            }));
+        }
         Ok(())
     }
 
@@ -536,12 +632,12 @@ where
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors> {
-        match self.state {
+        match &self.state {
             DecodingState::DecodeScan { .. } => {
                 return Ok(());
             }
             DecodingState::DecodeHeaders { resume_position } => {
-                if resume_position == 0 {
+                if *resume_position == 0 {
                     // First two bytes should be jpeg soi marker
                     let magic_bytes = self.stream.get_u16_be_err()?;
 
@@ -554,7 +650,7 @@ where
                     self.set_color_convert_from_options();
                     self.checkpoint_headers()?;
                 } else {
-                    self.stream.set_position(resume_position)?;
+                    self.stream.set_position(*resume_position)?;
                 }
             }
         }
@@ -1012,16 +1108,60 @@ where
     ///
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
-        match self.state {
+        match self.state.clone() {
             DecodingState::DecodeHeaders { .. } => {
                 self.decode_headers_internal()?;
             }
-            DecodingState::DecodeScan { scan_start_position, append_snapshot } => {
-                // Roll back any metadata that an inline marker pushed during
-                // a previous scan attempt, then seek back to the start of the
-                // scan so MCU decoding can be retried from the same anchor.
-                append_snapshot.rollback(self);
-                self.stream.set_position(scan_start_position)?;
+            DecodingState::DecodeScan {
+                scan_start_position,
+                append_snapshot,
+                sos_snapshot,
+                rst_checkpoint
+            } => {
+                // Roll back inline metadata from a previous scan attempt.
+                let resume_append_snapshot = rst_checkpoint
+                    .as_ref()
+                    .map_or(append_snapshot, |checkpoint| checkpoint.append_snapshot);
+                resume_append_snapshot.rollback(self);
+
+                // Restore the SOS state for the chosen resume point.
+                let resume_sos_snapshot = rst_checkpoint
+                    .as_ref()
+                    .map_or(sos_snapshot, |checkpoint| checkpoint.sos_snapshot);
+                self.z_order = resume_sos_snapshot.z_order;
+                self.num_scans = resume_sos_snapshot.num_scans;
+                self.scan_subsampled = resume_sos_snapshot.scan_subsampled;
+                self.spec_start = resume_sos_snapshot.spec_start;
+                self.spec_end = resume_sos_snapshot.spec_end;
+                self.succ_high = resume_sos_snapshot.succ_high;
+                self.succ_low = resume_sos_snapshot.succ_low;
+                debug_assert!(
+                    self.components.len() <= MAX_COMPONENTS,
+                    "components vector exceeds MAX_COMPONENTS; SOS restore would index out of bounds"
+                );
+                for (i, component) in self.components.iter_mut().take(MAX_COMPONENTS).enumerate() {
+                    component.dc_huff_table = resume_sos_snapshot.dc_huff_tables[i];
+                    component.ac_huff_table = resume_sos_snapshot.ac_huff_tables[i];
+                }
+
+                if let Some(checkpoint) = rst_checkpoint {
+                    self.stream.set_position(checkpoint.stream_position)?;
+                } else {
+                    self.stream.set_position(scan_start_position)?;
+                }
+
+                // DC predictions restart at scan start and RST boundaries.
+                for comp in &mut self.components {
+                    comp.dc_pred = 0;
+                    comp.dc_diff = 0;
+                }
+                self.todo =
+                    if self.restart_interval == 0 { 0x7fff_ffff } else { self.restart_interval };
+
+                if self.is_arithmetic {
+                    #[cfg(feature = "arith")]
+                    BitStreamArithmetic::reset_arith_tables(&mut self.entropy_tables);
+                }
             }
         }
 
