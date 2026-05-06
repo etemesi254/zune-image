@@ -9,14 +9,15 @@
 //!
 //! The andlge can  be any arbitrary angle including normal 90,180 260.. and
 
+use crate::affine::AffineTransform;
+use crate::traits::NumOps;
+use crate::utils::execute_on;
 use zune_core::bit_depth::BitType;
+use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
-
-use crate::traits::NumOps;
-use crate::utils::execute_on;
 
 #[must_use]
 pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize, usize) {
@@ -77,6 +78,7 @@ pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize
 /// ```
 pub struct Rotate {
     angle: f32,
+    #[allow(dead_code)]
     bg_color: f32,
 }
 
@@ -88,7 +90,7 @@ impl Rotate {
     #[must_use]
     pub fn new(angle: f32) -> Rotate {
         Rotate {
-            angle,
+            angle: angle % 360.0,
             bg_color: 0.0,
         }
     }
@@ -97,8 +99,12 @@ impl Rotate {
     /// # Arguments
     /// * `angle` - The rotation angle in degrees (clockwise).
     /// * `bg_color` - A normalized value (`0.0` to `1.0`) representing the background fill color.
+    #[must_use]
     pub fn new_with_bg_color(angle: f32, bg_color: f32) -> Rotate {
-        Rotate { angle, bg_color }
+        Rotate {
+            angle: angle % 360.0,
+            bg_color,
+        }
     }
 }
 
@@ -108,6 +114,14 @@ impl OperationsTrait for Rotate {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        if !((self.angle - 180.0).abs() < f32::EPSILON
+            || (self.angle - 270.0).abs() < f32::EPSILON
+            || (self.angle - 90.0).abs() < f32::EPSILON)
+        {
+            trace!("Arbitrary rotate operation, using affine transform");
+            AffineTransform::rotation(self.angle).execute(image)?;
+            return Ok(());
+        };
         let im_type = image.depth().bit_type();
 
         let (width, height) = image.dimensions();
@@ -117,6 +131,23 @@ impl OperationsTrait for Rotate {
 
         let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let (new_width, new_height) = get_rotated_dimensions(width, height, self.angle);
+
+            if (self.angle - 180.0).abs() < f32::EPSILON {
+                // no need to allocate, so simply reverse pixels inside
+                match im_type {
+                    BitType::U8 => {
+                        channel.reinterpret_as_mut::<u8>()?.reverse();
+                    }
+                    BitType::U16 => {
+                        channel.reinterpret_as_mut::<u16>()?.reverse();
+                    }
+                    BitType::F32 => {
+                        channel.reinterpret_as_mut::<f32>()?.reverse();
+                    }
+                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                }
+                return Ok(());
+            }
 
             let mut new_channel = Channel::new_with_length_and_type(
                 new_width * new_height * depth.size_of(),
@@ -129,11 +160,8 @@ impl OperationsTrait for Rotate {
                         self.angle,
                         width,
                         height,
-                        new_width,
-                        new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
-                        self.bg_color,
                     );
                 }
                 BitType::U16 => {
@@ -141,22 +169,16 @@ impl OperationsTrait for Rotate {
                         self.angle,
                         width,
                         height,
-                        new_width,
-                        new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
-                        self.bg_color,
                     );
                 }
                 BitType::F32 => rotate::<f32>(
                     self.angle,
                     width,
                     height,
-                    new_width,
-                    new_height,
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
-                    self.bg_color,
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
@@ -187,113 +209,68 @@ fn change_image_dims(image: &mut Image, angle: f32) {
         image.set_dimensions(oh, ow);
         return;
     }
-    // For arbitrary angles, calculate bounding box
-    let angle_rad = angle.to_radians();
-    let cos_a = angle_rad.cos().abs();
-    let sin_a = angle_rad.sin().abs();
-
-    let new_width = (ow as f32 * cos_a + oh as f32 * sin_a).ceil() as usize;
-    let new_height = (ow as f32 * sin_a + oh as f32 * cos_a).ceil() as usize;
-
-    image.set_dimensions(new_width, new_height);
+    unreachable!("Should never change image dimensions");
 }
 
 pub fn rotate<T: Copy + NumOps<T> + Default>(
-    angle: f32, width: usize, height: usize, out_width: usize, out_height: usize, in_image: &[T],
-    out_image: &mut [T], bg_color: f32,
+    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T],
 ) {
     let angle = angle % 360.0;
 
-    if (angle - 180.0).abs() < f32::EPSILON {
-        out_image.copy_from_slice(in_image);
-        out_image.reverse();
-    } else if (angle - 90.0).abs() < f32::EPSILON {
+    if (angle - 90.0).abs() < f32::EPSILON {
         rotate_90(in_image, out_image, width, height);
     } else if (angle - 270.0).abs() < f32::EPSILON {
         rotate_270(in_image, out_image, width, height);
     } else {
-        rotate_arbitrary(
-            in_image, out_image, width, height, out_width, out_height, angle, bg_color,
-        );
-    }
-}
-
-fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
-    in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, angle: f32, bg_color: f32,
-) {
-    let angle_rad = angle.to_radians();
-    let cos_a = angle_rad.cos();
-    let sin_a = angle_rad.sin();
-
-    // Centers
-    let in_cx = in_width as f32 / 2.0;
-    let in_cy = in_height as f32 / 2.0;
-    let out_cx = out_width as f32 / 2.0;
-    let out_cy = out_height as f32 / 2.0;
-
-    let bg_val = T::from_f32(bg_color.clamp(0.0, 1.0) * T::max_val().to_f32());
-    out_image.fill(bg_val);
-
-    for out_y in 0..out_height {
-        for out_x in 0..out_width {
-            // Translate output position to centered coordinates
-            let x = out_x as f32 - out_cx;
-            let y = out_y as f32 - out_cy;
-
-            // Rotate backwards to find source position
-            let src_x = x * cos_a + y * sin_a + in_cx;
-            let src_y = -x * sin_a + y * cos_a + in_cy;
-
-            // Check bounds and interpolate
-            if src_x >= 0.0
-                && src_x < (in_width - 1) as f32
-                && src_y >= 0.0
-                && src_y < (in_height - 1) as f32
-            {
-                let x0 = src_x.floor() as usize;
-                let y0 = src_y.floor() as usize;
-                let x1 = x0 + 1;
-                let y1 = y0 + 1;
-
-                let fx = src_x - x0 as f32;
-                let fy = src_y - y0 as f32;
-
-                let p00 = in_image[y0 * in_width + x0].to_f32();
-                let p10 = in_image[y0 * in_width + x1].to_f32();
-                let p01 = in_image[y1 * in_width + x0].to_f32();
-                let p11 = in_image[y1 * in_width + x1].to_f32();
-
-                let result = p00 * (1.0 - fx) * (1.0 - fy)
-                    + p10 * fx * (1.0 - fy)
-                    + p01 * (1.0 - fx) * fy
-                    + p11 * fx * fy;
-
-                out_image[out_y * out_width + out_x] = T::from_f32(result);
-            }
-        }
+        unreachable!("Should have called affine before here")
     }
 }
 fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
-    // TODO: [cae]: Use loop tiling.
-    // Does not matter that it is already good enough, we need it fast.
-    for (y, pixels) in in_image.chunks_exact(width).enumerate() {
-        let idx = height - y - 1;
+    // 8x8 tiles, works fastest on benchmarks
+    const TILE: usize = 8;
 
-        for (x, pix) in pixels.iter().enumerate() {
-            if let Some(c) = out_image.get_mut((x * height) + idx) {
-                *c = *pix;
+    for ty in (0..height).step_by(TILE) {
+        for tx in (0..width).step_by(TILE) {
+            let y_max = (ty + TILE).min(height);
+            let x_max = (tx + TILE).min(width);
+
+            for y in ty..y_max {
+                let row = &in_image[y * width..(y + 1) * width];
+                let idx = height - y - 1;
+
+                for (pos, pix) in row[tx..x_max].iter().enumerate() {
+                    let x = tx + pos;
+                    let out_idx = x * height + idx;
+
+                    if let Some(c) = out_image.get_mut(out_idx) {
+                        *c = *pix;
+                    }
+                }
             }
         }
     }
 }
 
 fn rotate_270<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
-    for (y, pixels) in in_image.chunks_exact(width).enumerate() {
-        for (x, pix) in pixels.iter().enumerate() {
-            let y_idx = (width - x - 1) * height;
-            if let Some(c) = out_image.get_mut(y_idx + y) {
-                *c = *pix;
+    const TILE: usize = 8;
+
+    for ty in (0..height).step_by(TILE) {
+        for tx in (0..width).step_by(TILE) {
+            let y_max = (ty + TILE).min(height);
+            let x_max = (tx + TILE).min(width);
+
+            for y in ty..y_max {
+                let row = &in_image[y * width..(y + 1) * width];
+
+                for (pos, pix) in row[tx..x_max].iter().enumerate() {
+                    let x = tx + pos;
+                    let y_idx = (width - x - 1) * height;
+                    let out_idx = y_idx + y;
+
+                    if let Some(c) = out_image.get_mut(out_idx) {
+                        *c = *pix;
+                    }
+                }
             }
         }
     }
@@ -305,7 +282,7 @@ mod tests {
     use zune_image::image::Image;
     use zune_image::traits::OperationsTrait;
 
-    use crate::rotate::Rotate;
+    use crate::rotate::{rotate_270, rotate_90, Rotate};
 
     #[test]
     fn rotate_over() {
@@ -326,5 +303,257 @@ mod tests {
         let mut dst_image = Image::fill(0_f32, ColorSpace::RGB, 100, 120);
         Rotate::new(270.0).execute(&mut dst_image).unwrap();
         assert_eq!(dst_image.dimensions(), (120, 100));
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// Build a flat image where every pixel encodes its (x, y) position as
+    /// a u32: `y * 1000 + x`.  That makes it trivial to verify where each
+    /// pixel landed after rotation.
+    fn coord_image(width: usize, height: usize) -> Vec<u32> {
+        (0..height)
+            .flat_map(|y| (0..width).map(move |x| (y * 1000 + x) as u32))
+            .collect()
+    }
+
+    fn rotate(deg: u32, src: &[u32], width: usize, height: usize) -> Vec<u32> {
+        let mut dst = vec![0u32; src.len()];
+        match deg {
+            90 => rotate_90(src, &mut dst, width, height),
+            270 => rotate_270(src, &mut dst, width, height),
+            _ => panic!("unsupported rotation"),
+        }
+        dst
+    }
+
+    // ── rotate_90 ─────────────────────────────────────────────────────────────
+    //
+    // 90° clockwise: (x, y) → (height - 1 - y, x) in the output,
+    // which has dimensions (height × width).
+    //
+    // Equivalently, out[x][height-1-y] = in[y][x],
+    // i.e. out_pixel at row=x col=(height-1-y) == src pixel at row=y col=x.
+
+    #[test]
+    fn rotate_90_trivial_1x1() {
+        let src = vec![42u32];
+        assert_eq!(rotate(90, &src, 1, 1), vec![42]);
+    }
+
+    #[test]
+    fn rotate_90_square_2x2() {
+        // src (row-major):        after 90° CW:
+        //  0  1                    2  0
+        //  2  3                    3  1
+        let src = vec![0u32, 1, 2, 3];
+        let dst = rotate(90, &src, 2, 2);
+        assert_eq!(dst, vec![2, 0, 3, 1]);
+    }
+
+    #[test]
+    fn rotate_90_square_3x3() {
+        // src:          after 90° CW:
+        //  0 1 2          6 3 0
+        //  3 4 5          7 4 1
+        //  6 7 8          8 5 2
+        let src: Vec<u32> = (0..9).collect();
+        let dst = rotate(90, &src, 3, 3);
+        assert_eq!(dst, vec![6, 3, 0, 7, 4, 1, 8, 5, 2]);
+    }
+
+    /// Non-square: width=3 height=2, output is width=2 height=3.
+    /// src (3 wide, 2 tall):     after 90° CW (2 wide, 3 tall):
+    ///  0 1 2                      3 0
+    ///  3 4 5                      4 1
+    ///                             5 2
+    #[test]
+    fn rotate_90_non_square_3x2() {
+        let src = vec![0u32, 1, 2, 3, 4, 5];
+        let dst = rotate(90, &src, 3, 2);
+        assert_eq!(dst, vec![3, 0, 4, 1, 5, 2]);
+    }
+
+    /// This is the regression that catches the tile-local-index bug.
+    /// Use a size > TILE (32) so that at least two tiles are visited.
+    /// With the bug, pixels in the second tile get placed at wrong columns.
+    #[test]
+    fn rotate_90_multi_tile_wide() {
+        let width = 70;
+        let height = 4;
+        let src = coord_image(width, height);
+        let dst = rotate(90, &src, width, height);
+
+        // out dimensions: width=height=4, height=width=70
+        let out_w = height;
+        let out_h = width;
+        for y in 0..height {
+            for x in 0..width {
+                let src_val = src[y * width + x];
+                // (x, y) → out row = x, out col = height - 1 - y
+                let out_row = x;
+                let out_col = height - 1 - y;
+                let got = dst[out_row * out_w + out_col];
+                assert_eq!(
+                    got, src_val,
+                    "rotate_90 mismatch at src ({x},{y}): \
+                     expected pixel {src_val} at out ({out_col},{out_row}), got {got}"
+                );
+                let _ = out_h; // suppress unused warning
+            }
+        }
+    }
+
+    #[test]
+    fn rotate_90_multi_tile_tall() {
+        let width = 4;
+        let height = 70;
+        let src = coord_image(width, height);
+        let dst = rotate(90, &src, width, height);
+        let out_w = height; // 70
+        for y in 0..height {
+            for x in 0..width {
+                let src_val = src[y * width + x];
+                let out_row = x;
+                let out_col = height - 1 - y;
+                let got = dst[out_row * out_w + out_col];
+                assert_eq!(
+                    got, src_val,
+                    "rotate_90 tall mismatch at src ({x},{y}): \
+                     expected {src_val} at out ({out_col},{out_row}), got {got}"
+                );
+            }
+        }
+    }
+
+    // ── rotate_270 ────────────────────────────────────────────────────────────
+    //
+    // 270° clockwise (= 90° CCW): (x, y) → (y, width - 1 - x).
+    // Output dimensions: (height × width).
+
+    #[test]
+    fn rotate_270_trivial_1x1() {
+        let src = vec![7u32];
+        assert_eq!(rotate(270, &src, 1, 1), vec![7]);
+    }
+
+    #[test]
+    fn rotate_270_square_2x2() {
+        // src:            after 270° CW:
+        //  0  1              1  3
+        //  2  3              0  2
+        let src = vec![0u32, 1, 2, 3];
+        let dst = rotate(270, &src, 2, 2);
+        assert_eq!(dst, vec![1, 3, 0, 2]);
+    }
+
+    #[test]
+    fn rotate_270_square_3x3() {
+        // src:          after 270° CW:
+        //  0 1 2          2 5 8
+        //  3 4 5          1 4 7
+        //  6 7 8          0 3 6
+        let src: Vec<u32> = (0..9).collect();
+        let dst = rotate(270, &src, 3, 3);
+        assert_eq!(dst, vec![2, 5, 8, 1, 4, 7, 0, 3, 6]);
+    }
+
+    /// Non-square: width=3 height=2, output is width=2 height=3.
+    /// src (3 wide, 2 tall):     after 270° CW (2 wide, 3 tall):
+    ///  0 1 2                      2 5
+    ///  3 4 5                      1 4
+    ///                             0 3
+    #[test]
+    fn rotate_270_non_square_3x2() {
+        let src = vec![0u32, 1, 2, 3, 4, 5];
+        let dst = rotate(270, &src, 3, 2);
+        assert_eq!(dst, vec![2, 5, 1, 4, 0, 3]);
+    }
+
+    /// Regression: tile boundary crossing with the tile-local-index bug.
+    #[test]
+    fn rotate_270_multi_tile_wide() {
+        let width = 70;
+        let height = 4;
+        let src = coord_image(width, height);
+        let dst = rotate(270, &src, width, height);
+
+        let out_w = height; // 4
+        for y in 0..height {
+            for x in 0..width {
+                let src_val = src[y * width + x];
+                // (x, y) → out row = width - 1 - x, out col = y
+                let out_row = width - 1 - x;
+                let out_col = y;
+                let got = dst[out_row * out_w + out_col];
+                assert_eq!(
+                    got, src_val,
+                    "rotate_270 mismatch at src ({x},{y}): \
+                     expected pixel {src_val} at out ({out_col},{out_row}), got {got}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rotate_270_multi_tile_tall() {
+        let width = 4;
+        let height = 70;
+        let src = coord_image(width, height);
+        let dst = rotate(270, &src, width, height);
+        let out_w = height; // 70
+        for y in 0..height {
+            for x in 0..width {
+                let src_val = src[y * width + x];
+                let out_row = width - 1 - x;
+                let out_col = y;
+                let got = dst[out_row * out_w + out_col];
+                assert_eq!(
+                    got, src_val,
+                    "rotate_270 tall mismatch at src ({x},{y}): \
+                     expected {src_val} at out ({out_col},{out_row}), got {got}"
+                );
+            }
+        }
+    }
+
+    // ── round-trip consistency ─────────────────────────────────────────────────
+
+    /// 90° × 4 = identity, for a square image.
+    #[test]
+    fn rotate_90_four_times_is_identity_square() {
+        let w = 50usize;
+        let src = coord_image(w, w);
+        let mut cur = src.clone();
+        for _ in 0..4 {
+            let mut nxt = vec![0u32; w * w];
+            rotate_90(&cur, &mut nxt, w, w);
+            cur = nxt;
+        }
+        assert_eq!(cur, src);
+    }
+
+    /// 90° + 270° = identity, for a square image.
+    #[test]
+    fn rotate_90_then_270_is_identity() {
+        let w = 50usize;
+        let src = coord_image(w, w);
+        let mut mid = vec![0u32; w * w];
+        rotate_90(&src, &mut mid, w, w);
+        let mut out = vec![0u32; w * w];
+        rotate_270(&mid, &mut out, w, w);
+        assert_eq!(out, src);
+    }
+
+    /// For a non-square image, 90°+270° must also be identity.
+    /// After 90° the dimensions swap, so we pass the swapped dims to 270°.
+    #[test]
+    fn rotate_90_then_270_non_square_is_identity() {
+        let (w, h) = (70, 40);
+        let src = coord_image(w, h);
+        let mut mid = vec![0u32; w * h];
+        rotate_90(&src, &mut mid, w, h); // out is h×w
+        let mut out = vec![0u32; w * h];
+        rotate_270(&mid, &mut out, h, w); // now h wide, w tall → back to w×h
+        assert_eq!(out, src);
     }
 }
