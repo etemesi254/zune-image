@@ -52,11 +52,13 @@
     clippy::too_many_lines
 )]
 
+pub use filter_ext::FilterExt;
 pub use zune_image;
 
-pub mod append;
 pub mod affine;
+pub mod append;
 pub mod auto_orient;
+pub mod average;
 pub mod bilateral_filter;
 pub mod blend;
 pub mod box_blur;
@@ -69,34 +71,33 @@ pub mod contrast;
 pub mod convolve;
 pub mod crop;
 pub mod exposure;
+pub mod filter_ext;
 pub mod flip;
+pub mod fx;
 pub mod gamma;
 pub mod gaussian_blur;
+pub mod hald_clut;
 pub mod histogram;
 pub mod hsv_adjust;
-mod image_transfer;
 pub mod invert;
 pub mod mathops;
 pub mod median;
 pub mod mirror;
 pub mod pad;
 pub mod premul_alpha;
-mod prewitt;
 pub mod resize;
 pub mod rotate;
 pub mod scharr;
+pub mod sharpen;
+pub mod smush;
 pub mod sobel;
 pub mod spatial;
 pub mod spatial_ops;
+pub mod ssim;
 pub mod stretch_contrast;
+pub mod swap;
 pub mod threshold;
 pub mod traits;
+pub mod transfer_curve;
 pub mod transpose;
-pub mod sharpen;
 mod utils;
-pub mod ssim;
-pub mod hald_clut;
-pub mod average;
-pub mod swap;
-pub mod fx;
-pub mod smush;

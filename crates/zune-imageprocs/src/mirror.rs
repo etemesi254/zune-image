@@ -15,52 +15,66 @@ use zune_image::traits::OperationsTrait;
 
 use crate::utils::execute_on;
 
-/// Supported mirror modes
+/// Supported mirror modes, indicating which half of the image is preserved and reflected.
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum MirrorMode {
+    /// Preserves the Top (North) half and reflects it onto the Bottom half.
     ///
-    /// ```text           
-    ///  old image     new image
-    ///  ┌─────────┐   ┌──────────┐
-    ///  │a b c d e│   │a b c d e │
-    ///  │f g h i j│   │a b d d e │
-    ///  └─────────┘   └──────────┘
+    /// ```text
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ a b c d │
+    /// │ e f g h │   │ e f g h │
+    /// │ i j k l │   │ e f g h │
+    /// │ m n o p │   │ a b c d │
+    /// └─────────┘   └─────────┘
     /// ```
     North,
+
+    /// Preserves the Bottom (South) half and reflects it onto the Top half.
     ///
-    /// ```text           
-    ///  old image     new image
-    ///  ┌─────────┐   ┌──────────┐
-    ///  │a b c d e│   │f g h i j │
-    ///  │f g h i j│   │f g h i j │
-    ///  └─────────┘   └──────────┘
+    /// ```text
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ m n o p │
+    /// │ e f g h │   │ i j k l │
+    /// │ i j k l │   │ i j k l │
+    /// │ m n o p │   │ m n o p │
+    /// └─────────┘   └─────────┘
     /// ```
     South,
+
+    /// Preserves the Right (East) half and reflects it onto the Left half.
     ///
-    /// ```text           
-    ///  old image     new image
-    ///  ┌─────────┐   ┌──────────┐
-    ///  │a b c d e│   │a b c b a │
-    ///  │f g h i j│   │f g h g f │
-    ///  └─────────┘   └──────────┘
+    /// ```text
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ d c c d │
+    /// │ e f g h │   │ h g g h │
+    /// │ i j k l │   │ l k k l │
+    /// │ m n o p │   │ p o o p │
+    /// └─────────┘   └─────────┘
     /// ```
     East,
+
+    /// Preserves the Left (West) half and reflects it onto the Right half.
     ///
-    /// ```text           
-    ///  old image     new image
-    ///  ┌─────────┐   ┌──────────┐
-    ///  │a b c d e│   │e d c d e │
-    ///  │f g h i j│   │j i h i j │
-    ///  └─────────┘   └──────────┘
+    /// ```text
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ a b b a │
+    /// │ e f g h │   │ e f f e │
+    /// │ i j k l │   │ i j j i │
+    /// │ m n o p │   │ m n n m │
+    /// └─────────┘   └─────────┘
     /// ```
     West
 }
 
-/// Rearrange the pixels along a certain axis.
+/// Applies a mirror reflection to the image along a specified axis.
 ///
-/// To see the effect of this
-/// see the image [mirror-modes](crate::mirror::MirrorMode) documentation
-/// for each used mode
+/// This operation duplicates half of the image's pixels and reflects them over
+/// the center line, creating perfect symmetry based on the chosen [`MirrorMode`].
 pub struct Mirror {
     mode: MirrorMode
 }

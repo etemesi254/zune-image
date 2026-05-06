@@ -16,11 +16,22 @@ use zune_image::traits::OperationsTrait;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
 
+/// Thresholding methods available for image binarization and truncation.
+///
+/// These behaviors mirror the standard thresholding operations found in OpenCV.
 #[derive(Copy, Clone, Debug)]
 pub enum ThresholdMethod {
+    /// If the pixel is greater than the threshold, it is set to the maximum value.
+    /// Otherwise, it is set to 0.
     Binary,
+    /// If the pixel is greater than the threshold, it is set to 0.
+    /// Otherwise, it is set to the maximum value.
     BinaryInv,
+    /// If the pixel is greater than the threshold, it is truncated to exactly the threshold value.
+    /// Otherwise, it remains unchanged.
     ThreshTrunc,
+    /// If the pixel is greater than the threshold, it remains unchanged.
+    /// Otherwise, it is set to 0.
     ThreshToZero
 }
 
@@ -37,24 +48,39 @@ impl ThresholdMethod {
     }
 }
 
-/// Apply a fixed level threshold to an image.
+/// Applies a fixed-level threshold to an image.
 ///
+/// Thresholding is typically used to separate foreground objects from their background,
+/// or to drop low-intensity noise.
 ///
-/// # Methods
-/// The library supports threshold methods derived from opencv , see [here](https://docs.opencv.org/4.x/d7/d1b/group__imgproc__misc.html#gaa9e58d2860d4afa658ef70a9b1115576)
-/// for the definitions
+/// # Color Channels
 ///
-///  - [Binary](ThresholdMethod::Binary) => max if src(x,y) > thresh 0 otherwise
-///  - [BinaryInv](ThresholdMethod::BinaryInv) => 0 if src(x,y) > thresh max otherwise
-///  - [ThreshTrunc](ThresholdMethod::ThreshTrunc) => thresh if src(x,y) > thresh src(x,y) otherwise
-///  - [ThreshToZero](ThresholdMethod::ThreshToZero) => src(x,y) if src(x,y) > thresh 0 otherwise
-///           
-///  See [Wikipedia Article on Thresholding](https://en.wikipedia.org/wiki/Thresholding_(image_processing))
+/// Thresholding operates independently on every pixel in every channel. While this is
+/// mathematically correct, running a binary threshold on an RGB image can result in
+/// harsh cyan, magenta, yellow, or white banding. It is highly recommended to convert
+/// your image to a grayscale colorspace (like `Luma`) before applying this filter.
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
+/// use zune_image::errors::ImageErrors;
+///
+/// // Create a grayscale image
+/// let mut img = Image::fill(100_u8, ColorSpace::Luma, 100, 100);
+///
+/// // Binarize the image: anything > 128 becomes 255, else 0.
+/// let threshold = Threshold::new(128.0, ThresholdMethod::Binary);
+/// threshold.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 pub struct Threshold {
     method:    ThresholdMethod,
     threshold: f32
 }
-
 impl Threshold {
     /// Create a new threshold filter
     ///
@@ -119,36 +145,32 @@ pub fn threshold<T>(in_channel: &mut [T], threshold: T, method: ThresholdMethod)
 {
     let max = T::max_val();
     let min = T::min_val();
-    match method
-    {
-        ThresholdMethod::Binary =>
-            {
-                for x in in_channel.iter_mut()
-                {
-                    *x = if *x > threshold { max } else { min };
+
+    match method {
+        ThresholdMethod::Binary => {
+            for x in in_channel.iter_mut() {
+                *x = if *x > threshold { max } else { min };
+            }
+        }
+        ThresholdMethod::BinaryInv => {
+            for x in in_channel.iter_mut() {
+                *x = if *x > threshold { min } else { max };
+            }
+        }
+        ThresholdMethod::ThreshTrunc => {
+            for x in in_channel.iter_mut() {
+                if *x > threshold {
+                    *x = threshold; // Only write if we need to truncate
                 }
             }
-        ThresholdMethod::BinaryInv =>
-            {
-                for x in in_channel.iter_mut()
-                {
-                    *x = if *x > threshold { min } else { max };
+        }
+        ThresholdMethod::ThreshToZero => {
+            for x in in_channel.iter_mut() {
+                if *x <= threshold {
+                    *x = min; // Only write to zero out shadows
                 }
             }
-        ThresholdMethod::ThreshTrunc =>
-            {
-                for x in in_channel.iter_mut()
-                {
-                    *x = if *x > threshold { threshold } else { *x };
-                }
-            }
-        ThresholdMethod::ThreshToZero =>
-            {
-                for x in in_channel.iter_mut()
-                {
-                    *x = if *x > threshold { threshold } else { T::min_val() }
-                }
-            }
+        }
     }
 }
 

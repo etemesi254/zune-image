@@ -12,19 +12,18 @@
 //!
 //! Algorithm is from [here](https://www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/)
 //!
-//! Steps repeated here for convenience
-//!
-//! First step is to calculate a contrast correlation factor
+//! The first step is to calculate a contrast correlation factor:
 //!
 //! ```text
-//! f = 259(c+255)/(255(259-c))
-//!```
-//! `c` is the desired level of contrast.
-//! `f` is the constant correlation factor.
+//! F = 259(C + 255) / (255(259 - C))
+//! ```
+//! `C` is the desired level of contrast (typically between `-255.0` and `255.0`).
+//! `F` is the constant correlation factor.
 //!
-//! The next step is to perform the contrast adjustment
+//! The next step is to perform the contrast adjustment around the bit-depth's midpoint.
+//! For 8-bit images, the midpoint is 128:
 //! ```text
-//! R' = F(R-128)+128
+//! R' = F(R - 128) + 128
 //! ```
 
 use zune_core::bit_depth::BitType;
@@ -35,23 +34,23 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 /// Adjust the contrast of an image
 ///
-/// Note contrast is only currently implemented for 8 bit images.
+/// This shifts the pixel values away from or towards their mathematical midpoint
+/// (128 for 8-bit, 32768 for 16-bit, 0.5 for f32).
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_image::image::Image;
 /// use zune_image::traits::OperationsTrait;
 /// use zune_imageprocs::contrast::Contrast;
 /// use zune_image::errors::ImageErrors;
 ///
-/// fn main() -> Result<(),ImageErrors>{
-///     let mut im = Image::fill(100_u8,ColorSpace::RGB,100,100);
+/// fn main() -> Result<(), ImageErrors> {
+///     let mut im = Image::fill(100_u8, ColorSpace::RGB, 100, 100);
 ///     let contrast = Contrast::new(10.0);
 ///     contrast.execute(&mut im)
 /// }
-///
 /// ```
 #[derive(Default)]
 pub struct Contrast {
@@ -69,6 +68,7 @@ impl OperationsTrait for Contrast {
     fn operation_color_values(&self) -> OperationColorValues {
         OperationColorValues::Gamma
     }
+
     fn name(&self) -> &'static str {
         "contrast"
     }
@@ -76,14 +76,94 @@ impl OperationsTrait for Contrast {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth();
 
-        for channel in image.channels_mut(true) {
-            match depth.bit_type() {
-                BitType::U8 => contrast_u8(channel.reinterpret_as_mut::<u8>()?, self.contrast),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        // Calculate the core factor once (it is invariant of bit depth)
+        let factor = (259.0 * (self.contrast + 255.0)) / (255.0 * (259.0 - self.contrast));
+
+        match depth.bit_type() {
+            BitType::U8 => {
+                let lut = build_lut_u8(factor);
+
+                #[cfg(feature = "threads")]
+                {
+                    std::thread::scope(|s| {
+                        let mut errors = vec![];
+                        for channel in image.channels_mut(true) {
+                            let lut_ref = &lut; // Share reference across threads
+                            let result = s.spawn(move || {
+                                let data = channel.reinterpret_as_mut::<u8>()?;
+                                contrast_u8(data, lut_ref);
+                                Ok::<(), ImageErrors>(())
+                            });
+                            errors.push(result);
+                        }
+                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
+                    })?;
+                }
+                #[cfg(not(feature = "threads"))]
+                {
+                    for channel in image.channels_mut(true) {
+                        let data = channel.reinterpret_as_mut::<u8>()?;
+                        contrast_u8(data, &lut);
+                    }
+                }
             }
+            BitType::U16 => {
+                let lut = build_lut_u16(factor);
+
+                #[cfg(feature = "threads")]
+                {
+                    std::thread::scope(|s| {
+                        let mut errors = vec![];
+                        for channel in image.channels_mut(true) {
+                            let lut_ref = &lut;
+                            let result = s.spawn(move || {
+                                let data = channel.reinterpret_as_mut::<u16>()?;
+                                contrast_u16(data, lut_ref);
+                                Ok::<(), ImageErrors>(())
+                            });
+                            errors.push(result);
+                        }
+                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
+                    })?;
+                }
+                #[cfg(not(feature = "threads"))]
+                {
+                    for channel in image.channels_mut(true) {
+                        let data = channel.reinterpret_as_mut::<u16>()?;
+                        contrast_u16(data, &lut);
+                    }
+                }
+            }
+            BitType::F32 => {
+                // F32 cannot use a LUT, so we just pass the pre-computed factor
+                #[cfg(feature = "threads")]
+                {
+                    std::thread::scope(|s| {
+                        let mut errors = vec![];
+                        for channel in image.channels_mut(true) {
+                            let result = s.spawn(|| {
+                                let data = channel.reinterpret_as_mut::<f32>()?;
+                                contrast_f32(data, factor);
+                                Ok::<(), ImageErrors>(())
+                            });
+                            errors.push(result);
+                        }
+                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
+                    })?;
+                }
+                #[cfg(not(feature = "threads"))]
+                {
+                    for channel in image.channels_mut(true) {
+                        let data = channel.reinterpret_as_mut::<f32>()?;
+                        contrast_f32(data, factor);
+                    }
+                }
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
         Ok(())
     }
+
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[
             ColorSpace::RGBA,
@@ -92,26 +172,56 @@ impl OperationsTrait for Contrast {
             ColorSpace::Luma,
         ]
     }
+
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 
-/// Calculate the contrast of an image
-///
-/// # Arguments
-/// - channel: Input channel , modified in place
-/// - contrast: The contrast to adjust the channel with
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-pub fn contrast_u8(channel: &mut [u8], contrast: f32) {
-    // calculate correlation factor
-    // These constants may not work for u16
-    let factor = (259.0 * (contrast + 255.0)) / (255.0 * (259.0 - contrast));
+// -----------------------------------------------------------------------
+// LUT Generation
+// -----------------------------------------------------------------------
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+pub fn build_lut_u8(factor: f32) -> [u8; 256] {
+    let mut lut = [0_u8; 256];
+    for (i, item) in lut.iter_mut().enumerate() {
+        let float_pix = i as f32;
+        *item = ((factor * (float_pix - 128.0)) + 128.0).clamp(0.0, 255.0) as u8;
+    }
+    lut
+}
+
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+pub fn build_lut_u16(factor: f32) -> Vec<u16> {
+    let mut lut = vec![0_u16; 65536];
+    for (i, item) in lut.iter_mut().enumerate() {
+        let float_pix = i as f32;
+        // The midpoint for 16-bit integers is 32768
+        *item = ((factor * (float_pix - 32768.0)) + 32768.0).clamp(0.0, 65535.0) as u16;
+    }
+    lut
+}
+
+// -----------------------------------------------------------------------
+// Execution Functions
+// -----------------------------------------------------------------------
+
+pub fn contrast_u8(channel: &mut [u8], lut: &[u8; 256]) {
     for pix in channel {
-        let float_pix = f32::from(*pix);
-        let new_val = ((factor * (float_pix - 128.0)) + 128.0).clamp(0.0, 255.0);
-        // clamp should happen automatically??
-        *pix = new_val as u8;
+        *pix = lut[*pix as usize];
+    }
+}
+
+pub fn contrast_u16(channel: &mut [u16], lut: &[u16]) {
+    for pix in channel {
+        *pix = lut[*pix as usize];
+    }
+}
+
+pub fn contrast_f32(channel: &mut [f32], factor: f32) {
+    for pix in channel {
+        // The midpoint for normalized f32 is 0.5
+        *pix = ((factor * (*pix - 0.5)) + 0.5).clamp(0.0, 1.0);
     }
 }

@@ -56,10 +56,45 @@ fn build_gamma_lut<T: Default + NumOps<T> + Copy>(value: f32, max_value: u16) ->
     return lut;
 }
 
-/// Gamma adjust an image
+/// Applies gamma correction to an image.
 ///
+/// Gamma correction is a non-linear operation used to adjust the luminance of an image.
+/// It alters the midtones of the image while keeping the absolute black (`0`) and absolute
+/// white (`max_value`) constant.
 ///
-/// This operation is internally multithreaded, where supported
+/// # Algorithm
+///
+/// The formula used normalizes the pixel value, applies the power function, and
+/// scales it back to the original bit depth:
+/// ```text
+/// normalized = pixel_value / max_value
+/// new_pixel = max_value * (normalized ^ gamma)
+/// ```
+///
+/// # Visual Effect
+///
+/// * **`gamma < 1.0`**: Lightens the midtones of the image (often used to decode/display linear images).
+/// * **`gamma == 1.0`**: Identity; the image remains unchanged.
+/// * **`gamma > 1.0`**: Darkens the midtones of the image (often used to encode images into sRGB space).
+/// * Typical display gamma values are around `2.2` (or its inverse, `0.4545`).
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::gamma::Gamma;
+/// use zune_image::errors::ImageErrors;
+///
+/// // Create a mid-gray image
+/// let mut img = Image::fill(128_u8, ColorSpace::RGB, 100, 100);
+///
+/// // Darken the midtones by applying a gamma of 2.2
+/// let gamma = Gamma::new(2.2);
+/// gamma.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct Gamma {
     value: f32
@@ -81,9 +116,6 @@ impl OperationsTrait for Gamma {
         "Gamma Correction"
     }
 
-    fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Gamma
-    }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let max_value = image.depth().max_value();
 
@@ -118,14 +150,13 @@ impl OperationsTrait for Gamma {
                 }
                 BitType::F32 => {
                     // for floats, we can't use LUT tables, the scope is too big
-                    let value_inv = 1.0 / f32::from(max_value);
+                    let max_f32 = f32::from(max_value);
+                    let value_inv = 1.0 / max_f32;
 
-                    channel
-                        .reinterpret_as_mut::<f32>()?
-                        .iter_mut()
-                        .for_each(|x| {
-                            *x = value_inv * x.powf(self.value);
-                        });
+                    channel.reinterpret_as_mut::<f32>()?.iter_mut().for_each(|x| {
+                        // Normalize -> Pow -> Scale back
+                        *x = max_f32 * (*x * value_inv).powf(self.value);
+                    });
                 }
 
                 d => {
@@ -138,6 +169,9 @@ impl OperationsTrait for Gamma {
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
     }
 }
 

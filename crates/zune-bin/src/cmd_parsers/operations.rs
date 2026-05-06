@@ -51,7 +51,7 @@ pub fn parse_options(
         if let Some(indices) = args.indices_of(argument) {
             for idx in indices {
                 debug!("Parsed flip operation at {idx}");
-                parsed_ops.push((idx, Box::new(Flip::new(FlipDirection::MirrorXAxis))));
+                parsed_ops.push((idx, Box::new(Flip::new(FlipDirection::Rotate180))));
             }
         }
     } else if argument == "grayscale" {

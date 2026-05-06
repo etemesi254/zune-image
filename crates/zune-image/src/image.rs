@@ -208,7 +208,29 @@ impl Image {
             todo!("Unimplemented")
         }
     }
-    /// Convert the images to
+    /// Flatten every channel of every frame into a `Vec<Vec<u8>>`.
+    ///
+    /// Each inner `Vec<u8>` corresponds to one channel (in channel order),
+    /// and contains every pixel in that channel laid out in row-major order.
+    ///
+    /// If the image is already 8-bit the channel data is copied directly.
+    /// Otherwise the image is cloned and converted to 8-bit before flattening;
+    /// the original image is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal depth conversion fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::Image;
+    ///
+    /// let image = Image::from_u8(&[0, 128, 255], 3, 1, ColorSpace::Luma);
+    /// let channels = image.flatten_to_u8();
+    /// assert_eq!(channels[0], vec![0, 128, 255]);
+    /// ```
     pub fn flatten_to_u8(&self) -> Vec<Vec<u8>> {
         if self.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
@@ -216,6 +238,40 @@ impl Image {
             let mut im_clone = self.clone();
             Depth::new(BitDepth::Eight).execute(&mut im_clone).unwrap();
             im_clone.flatten_frames::<u8>()
+        }
+    }
+    /// Flatten every channel of every frame into a `Vec<Vec<u16>>`.
+    ///
+    /// Each inner `Vec<u16>` corresponds to one channel (in channel order),
+    /// and contains every pixel in that channel laid out in row-major order.
+    ///
+    /// If the image is already 16-bit the channel data is copied directly.
+    /// Otherwise the image is cloned and converted to 16-bit before flattening;
+    /// the original image is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal depth conversion fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use zune_core::colorspace::ColorSpace;
+    /// use zune_image::image::Image;
+    ///
+    /// let image = Image::from_u8(&[0, 128, 255], 3, 1, ColorSpace::Luma);
+    /// let channels = image.flatten_to_u16();
+    /// // values are scaled from 8-bit to 16-bit
+    /// assert_eq!(channels[0][0], 0);
+    /// assert_eq!(channels[0][2], 65535);
+    /// ```
+    pub fn flatten_to_u16(&self) -> Vec<Vec<u16>> {
+        if self.depth() == BitDepth::Sixteen {
+            self.flatten_frames::<u16>()
+        } else {
+            let mut im_clone = self.clone();
+            Depth::new(BitDepth::Sixteen).execute(&mut im_clone).unwrap();
+            im_clone.flatten_frames::<u16>()
         }
     }
     #[allow(dead_code)]

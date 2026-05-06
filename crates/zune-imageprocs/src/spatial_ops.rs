@@ -9,8 +9,7 @@
 use std::fmt::Debug;
 use std::ops::{Add, Div, Sub};
 
-use crate::pad::{pad, PadMethod};
-use crate::spatial::spatial;
+
 use crate::traits::NumOps;
 
 /// Spatial operations implemented for images
@@ -45,9 +44,9 @@ impl SpatialOperations {
     }
 }
 
-fn find_min<T: PartialOrd + Default + Copy + NumOps<T>>(data: &[T]) -> T {
-    let mut minimum = T::max_val();
 
+fn find_min<T: PartialOrd + Copy + NumOps<T>>(data: &[T]) -> T {
+    let mut minimum = T::max_val();
     for datum in data {
         if *datum < minimum {
             minimum = *datum;
@@ -56,52 +55,8 @@ fn find_min<T: PartialOrd + Default + Copy + NumOps<T>>(data: &[T]) -> T {
     minimum
 }
 
-fn find_contrast<
-    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
->(
-    data: &[T]
-) -> T {
-    let mut minimum = T::MAX_VAL;
-    let mut maximum = T::MIN_VAL;
-
-    for datum in data {
-        if *datum < minimum {
-            minimum = *datum;
-        }
-        if *datum > maximum {
-            maximum = *datum;
-        }
-    }
-    let num = maximum - minimum;
-    let div = (maximum + minimum).saturating_add(T::one()); // do not allow division by zero
-
-    num / div
-}
-
-fn find_gradient<
-    T: PartialOrd + Default + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>
->(
-    data: &[T]
-) -> T {
-    let mut minimum = T::max_val();
-    let mut maximum = T::min_val();
-
-    for datum in data {
-        if *datum < minimum {
-            minimum = *datum;
-        }
-        if *datum > maximum {
-            maximum = *datum;
-        }
-    }
-
-    maximum - minimum
-}
-
-#[inline(always)]
 fn find_max<T: PartialOrd + Copy + NumOps<T>>(data: &[T]) -> T {
     let mut maximum = T::min_val();
-
     for datum in data {
         if *datum > maximum {
             maximum = *datum;
@@ -110,81 +65,90 @@ fn find_max<T: PartialOrd + Copy + NumOps<T>>(data: &[T]) -> T {
     maximum
 }
 
+fn find_gradient<T>(data: &[T]) -> T
+where
+    T: PartialOrd + Copy + NumOps<T> + Sub<Output = T>,
+{
+    find_max(data) - find_min(data)
+}
+
+fn find_contrast<T>(data: &[T]) -> T
+where
+    T: PartialOrd + Copy + NumOps<T> + Sub<Output = T> + Add<Output = T> + Div<Output = T>,
+{
+    let minimum = find_min(data);
+    let maximum = find_max(data);
+    let num = maximum - minimum;
+    let div = (maximum + minimum).saturating_add(T::one());
+    num / div
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn find_mean<T>(data: &[T]) -> T
 where
-    T: Default + Copy + NumOps<T> + Add<Output = T> + Div<Output = T>,
-    u32: std::convert::From<T>
+    T: Default + Copy + NumOps<T>,
+    u32: std::convert::From<T>,
 {
-    //https://godbolt.org/z/6Y8ncehd5
-    let mut maximum = u32::default();
+    let mut sum = u32::default();
     let len = data.len() as u32;
-
     for datum in data {
-        maximum += u32::from(*datum);
+        sum += u32::from(*datum);
     }
-    T::from_u32(maximum / len)
+    T::from_u32(sum / len)
 }
 
-/// Run spatial operations on a pixel
-///
-/// # Arguments
-///
-/// * `in_channel`:  Input channel.
-/// * `out_channel`: Output channels
-/// * `radius`:  Radius for the spatial function
-/// * `width`:  Image width
-/// * `height`:  Image height
-/// * `operations`:  Enum operation to run
-///
-///
+/// Collect the `(2*radius+1)²` neighbourhood around `(cx, cy)` into `buf`,
+/// clamping out-of-bounds coordinates to replicate edge pixels.
+#[inline(always)]
+fn collect_neighbourhood<T: Copy>(
+    src: &[T], width: usize, height: usize, cx: usize, cy: usize, radius: usize, buf: &mut [T],
+) {
+    let diameter = 2 * radius + 1;
+    let mut i = 0;
+    for ky in 0..diameter {
+        let sy = (cy + ky).saturating_sub(radius).min(height - 1);
+        for kx in 0..diameter {
+            let sx = (cx + kx).saturating_sub(radius).min(width - 1);
+            buf[i] = src[sy * width + sx];
+            i += 1;
+        }
+    }
+}
+
 pub fn spatial_ops<T>(
     in_channel: &[T], out_channel: &mut [T], radius: usize, width: usize, height: usize,
-    operations: SpatialOperations
+    operations: SpatialOperations,
 ) where
     T: PartialOrd
-        + Default
-        + Copy
-        + NumOps<T>
-        + Sub<Output = T>
-        + Add<Output = T>
-        + Div<Output = T> + Send +Sync,
-    u32: std::convert::From<T>
+    + Default
+    + Copy
+    + NumOps<T>
+    + Sub<Output = T>
+    + Add<Output = T>
+    + Div<Output = T>
+    + Send
+    + Sync,
+    u32: std::convert::From<T>,
 {
-    //pad here
-    let padded_input = pad(
-        in_channel,
-        width,
-        height,
-        radius,
-        radius,
-        PadMethod::Replicate
-    );
-
-    // Note: It's faster to do it like this,
-    // Because of our tied and tested enemy called cache misses
-    //
-    // i.e using fn pointers
-    //
-    //   55,526,220,319   L1-dcache-loads:u         #    3.601 G/sec                    (75.02%)
-    //   746,710,874      L1-dcache-load-misses:u   #    1.34% of all L1-dcache accesses  (75.03%)
-    //
-    // Manual code for each statistic:
-    //
-    //   40,616,989,582   L1-dcache-loads:u         #    1.451 G/sec                    (75.03%)
-    //   103,089,305      L1-dcache-load-misses:u   #    0.25% of all L1-dcache accesses  (75.01%)
-    //
-    //
-    // Fn pointers have it 2x faster , yea tell me that we understand computers.
-    let ptr = match operations {
-        SpatialOperations::Contrast => find_contrast::<T>,
-        SpatialOperations::Maximum => find_max::<T>,
-        SpatialOperations::Gradient => find_gradient::<T>,
-        SpatialOperations::Minimum => find_min::<T>,
-        SpatialOperations::Mean => find_mean::<T>
+    // See original comment: fn pointers beat a match inside the hot loop
+    // due to dramatically better cache behaviour.
+    let ptr: fn(&[T]) -> T = match operations {
+        SpatialOperations::Contrast  => find_contrast::<T>,
+        SpatialOperations::Maximum   => find_max::<T>,
+        SpatialOperations::Gradient  => find_gradient::<T>,
+        SpatialOperations::Minimum   => find_min::<T>,
+        SpatialOperations::Mean      => find_mean::<T>,
     };
 
-    spatial(&padded_input, out_channel, radius, width, height, ptr);
+    let neighbourhood_len = (2 * radius + 1) * (2 * radius + 1);
+    let mut buf = vec![T::default(); neighbourhood_len];
+
+    for y in 0..height {
+        for x in 0..width {
+            collect_neighbourhood(in_channel, width, height, x, y, radius, &mut buf);
+            out_channel[y * width + x] = ptr(&buf);
+        }
+    }
 }
 
 #[cfg(feature = "benchmarks")]

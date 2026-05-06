@@ -56,33 +56,54 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 
-/// A color matrix filter
+/// Applies a 4x5 color matrix transformation to the image.
 ///
-/// The filter will convert the colorspace into RGBA,apply the color matrix,
-/// and then convert it back to the initial colorspace
+/// A color matrix operation multiplies the RGBA color channels of an image by an
+/// arbitrary transformation matrix. This is incredibly powerful for applying color
+/// grading, sepia filters, hue shifts, saturation adjustments, and color inversions.
 ///
-/// # Example
-/// ```rust
-/// use zune_image::errors::ImageErrors;
-/// use zune_core::colorspace::ColorSpace;
-/// use zune_image::image::Image;
-/// use zune_image::traits::OperationsTrait;
-/// use zune_imageprocs::color_matrix::ColorMatrix;
+/// Internally, the image is converted to `ColorSpace::RGBA`, processed, and then
+/// safely converted back to its original colorspace.
 ///
-/// fn main()->Result<(),ImageErrors>{
-///    
-///     let mut image = Image::fill(0.0f32,ColorSpace::RGB,100,100);
-///     // convert to grayscale using a color matrix
-///     let filter = ColorMatrix::new(
-///         [[0.2, 0.5, 0.3, 0.0, 0.0],
-///         [0.2, 0.5, 0.3, 0.0, 0.0],
-///         [0.2, 0.5, 0.3, 0.0, 0.0],
-///         [0.0, 0.0, 0.0, 1.0, 0.0]]);
+/// # Mathematical Definition
 ///
-///     filter.execute(&mut image)?;
-///     
-///     Ok(())
-/// }
+/// For a given pixel with channels `(R, G, B, A)`, the new values are computed as:
+///
+/// ```text
+/// R' = (m[0][0] * R) + (m[0][1] * G) + (m[0][2] * B) + (m[0][3] * A) + (m[0][4] * MAX)
+/// G' = (m[1][0] * R) + (m[1][1] * G) + (m[1][2] * B) + (m[1][3] * A) + (m[1][4] * MAX)
+/// B' = (m[2][0] * R) + (m[2][1] * G) + (m[2][2] * B) + (m[2][3] * A) + (m[2][4] * MAX)
+/// A' = (m[3][0] * R) + (m[3][1] * G) + (m[3][2] * B) + (m[3][3] * A) + (m[3][4] * MAX)
+/// ```
+///
+/// *Note:* The final column (`m[x][4]`) represents a translation (offset). It is expected
+/// to be a normalized value between `0.0` and `1.0`, which the library scales appropriately
+/// by the maximum value of the bit depth (`MAX`).
+///
+/// # Examples
+///
+/// **Identity Matrix** (Does nothing):
+/// ```text
+/// [[1.0, 0.0, 0.0, 0.0, 0.0],
+///  [0.0, 1.0, 0.0, 0.0, 0.0],
+///  [0.0, 0.0, 1.0, 0.0, 0.0],
+///  [0.0, 0.0, 0.0, 1.0, 0.0]]
+/// ```
+///
+/// **Grayscale Conversion** (Luminance weights):
+/// ```text
+/// [[0.2, 0.5, 0.3, 0.0, 0.0],
+///  [0.2, 0.5, 0.3, 0.0, 0.0],
+///  [0.2, 0.5, 0.3, 0.0, 0.0],
+///  [0.0, 0.0, 0.0, 1.0, 0.0]]
+/// ```
+///
+/// **Color Invert**:
+/// ```text
+/// [[-1.0,  0.0,  0.0, 0.0, 1.0],
+///  [ 0.0, -1.0,  0.0, 0.0, 1.0],
+///  [ 0.0,  0.0, -1.0, 0.0, 1.0],
+///  [ 0.0,  0.0,  0.0, 1.0, 0.0]]
 /// ```
 pub struct ColorMatrix {
     matrix: [[f32; 5]; 4]
@@ -179,6 +200,10 @@ fn color_matrix_component<T: NumOps<T> + Copy>(
 ) where
     f32: From<T>
 {
+    assert_eq!(c1.len(), c2.len());
+    assert_eq!(c2.len(), c3.len());
+    assert_eq!(c3.len(), alpha.len());
+
     let max_t = f32::from(T::MAX_VAL);
     // we need to multiply the first channel with the color matrix and then add the new offset only from the first row
 

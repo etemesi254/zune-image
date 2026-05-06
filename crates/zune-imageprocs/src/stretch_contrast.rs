@@ -5,14 +5,45 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-//! Strech contrast filter, Linearly stretches the contrast in an image
-
-/// Linearly stretches the contrast in an image in place,
-/// sending lower to image minimum and upper to image maximum.
+/// Linearly stretches the contrast of an image.
+///
+/// This filter remaps the pixel values of an image so that a specified `lower` bound
+/// becomes the absolute minimum (e.g., `0`), and an `upper` bound becomes the absolute
+/// maximum (e.g., `255`, `65535`, or `1.0`).
+///
+/// This is highly effective for normalizing images that suffer from poor lighting or
+/// atmospheric haze, stretching their limited color range across the entire available
+/// spectrum.
+///
+/// # Algorithm
+///
+/// For each pixel:
+/// * If `pixel <= lower`, it is clamped to the minimum value.
+/// * If `pixel >= upper`, it is clamped to the maximum value.
+/// * Otherwise, it is scaled linearly: `new_pixel = (pixel - lower) / (upper - lower) * MAX`
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::stretch_contrast::StretchContrast;
+/// use zune_image::errors::ImageErrors;
+///
+/// // Create an image
+/// let mut img = Image::fill(128_u8, ColorSpace::RGB, 100, 100);
+///
+/// // Stretch the contrast so that any pixel <= 50 becomes 0,
+/// // and any pixel >= 200 becomes 255.
+/// let stretch = StretchContrast::new(50.0, 200.0);
+/// stretch.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct StretchContrast {
     lower: f32,
-    upper: f32
+    upper: f32,
 }
 
 impl StretchContrast {
@@ -49,27 +80,27 @@ impl OperationsTrait for StretchContrast {
                     channel.reinterpret_as_mut::<u8>()?,
                     self.lower as u8,
                     self.upper as u8,
-                    u32::from(depth.max_value())
+                    u32::from(depth.max_value()),
                 )?,
                 BitType::U16 => stretch_contrast(
                     channel.reinterpret_as_mut::<u16>()?,
                     self.lower as _,
                     self.upper as _,
-                    u32::from(depth.max_value())
+                    u32::from(depth.max_value()),
                 )?,
                 BitType::F32 => stretch_contrast_f32(
                     channel.reinterpret_as_mut::<f32>()?,
                     self.lower as _,
-                    self.upper as _
+                    self.upper as _,
                 )?,
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };
         execute_on(strech_contrast_fn, image, true)
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 use std::ops::Sub;
@@ -100,11 +131,11 @@ use crate::utils::execute_on;
 /// - Modifies array in place
 ///
 pub fn stretch_contrast<T>(
-    image: &mut [T], lower: T, upper: T, maximum: u32
+    image: &mut [T], lower: T, upper: T, maximum: u32,
 ) -> Result<(), &'static str>
 where
     T: Ord + Sub<Output = T> + NumOps<T> + Copy,
-    u32: std::convert::From<T>
+    u32: std::convert::From<T>,
 {
     if upper < lower {
         return Err("upper must be strictly greater than lower");
@@ -128,6 +159,7 @@ where
         } else if *pixel <= lower {
             *pixel = T::MIN_VAL;
         } else {
+            // TODO: (cae): Use a LUT table
             let numerator = maximum * u32::from(*pixel - lower);
             let scaled = fastdiv_u32(numerator, mod_len);
             *pixel = T::from_u32(scaled);
@@ -147,7 +179,7 @@ pub fn stretch_contrast_f32(image: &mut [f32], lower: f32, upper: f32) -> Result
         } else if *pixel <= lower {
             *pixel = f32::min_val();
         } else {
-            *pixel = (f32::max_val() - *pixel) * inv_range;
+            *pixel = (*pixel - lower) * inv_range;
         }
     }
 

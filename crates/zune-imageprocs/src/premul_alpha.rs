@@ -55,14 +55,34 @@ use crate::mathops::{compute_mod_u32, fastdiv_u32};
 
 mod std_simd;
 
-/// Carry out alpha pre-multiply and un-premultiply
+/// Converts an image to or from a Premultiplied Alpha state.
 ///
-/// The type of transform is specified.
+/// In standard (straight) alpha, color channels (RGB) and the alpha channel are
+/// independent. In premultiplied alpha, the color channels are already multiplied
+/// by their corresponding alpha value. Premultiplied alpha is widely used in computer
+/// graphics because it simplifies alpha blending equations and prevents dark fringing
+/// during image scaling and filtering.
 ///
-/// Note that some operations are lossy,
-/// due to the nature of the operation multiplying and dividing values.
-/// Where alpha is to big to fit into target integer, or zero, there will
-/// be loss of image quality.
+/// # Algorithm & Optimization
+///
+/// Converting to/from premultiplied alpha requires scaling the pixel values by the
+/// alpha channel.
+///
+/// * **Premultiplication (`RGB * A`)**: Computed quickly using fast bit-shifting
+///   approximations for 8-bit and 16-bit integers to avoid expensive integer division.
+/// * **Un-premultiplication (`RGB / A`)**: Division is notoriously slow on modern CPUs.
+///   This implementation completely avoids the `div` instruction for integer depths.
+///   Instead, it pre-computes a table of reciprocal multipliers using Daniel Lemire's
+///   `fastmod` algorithm, replacing the division with a blazing-fast multiplication
+///   and bit-shift operation.
+///
+/// # Gotchas
+///
+/// * Un-premultiplying is inherently a **lossy** operation for integer bit depths,
+///   as precision is permanently lost when the initial premultiplication scaled the
+///   color values down.
+/// * If the image's colorspace does not have an alpha channel, this operation acts
+///   as a safe no-op.
 #[derive(Copy, Clone)]
 pub struct PremultiplyAlpha {
     to: AlphaState,
@@ -241,12 +261,10 @@ pub fn create_unpremul_table_u16() -> Vec<u128> {
 /// Items in input are modified in place.
 #[allow(clippy::cast_possible_truncation)]
 pub fn premultiply_u8(input: &mut [u8], alpha: &[u8]) {
-    const MAX_VALUE: u16 = 255;
-
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         let temp = (u16::from(*al) * u16::from(*color)) + 0x80;
 
-        *color = ((temp + (temp >> 8)) / MAX_VALUE) as u8;
+        *color = ((temp + (temp >> 8)) >> 8) as u8;
     });
 }
 
@@ -264,7 +282,7 @@ pub fn premultiply_u16(input: &mut [u16], alpha: &[u16]) {
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         let temp = (u32::from(*al) * u32::from(*color)) + MAX_VALUE.div_ceil(2);
-        *color = ((temp + (temp >> 16)) / MAX_VALUE) as u16;
+        *color = ((temp + (temp >> 16)) >> 16) as u16;
     });
 }
 
@@ -281,12 +299,16 @@ pub fn unpremultiply_u8(input: &mut [u8], alpha: &[u8], premul_table: &[u128; 25
     const MAX_VALUE: u32 = 255;
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
-        let associated_alpha = premul_table[usize::from(*al)];
-        *color = u8::try_from(fastdiv_u32(
-            u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
-            associated_alpha,
-        ))
-        .unwrap_or(u8::MAX);
+        if *al == 0 {
+            *color = 0; // Explicitly handle divide-by-zero
+        } else {
+            let associated_alpha = premul_table[usize::from(*al)];
+            *color = u8::try_from(fastdiv_u32(
+                u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
+                associated_alpha,
+            ))
+            .unwrap_or(u8::MAX);
+        }
     });
 }
 
@@ -317,12 +339,15 @@ pub fn unpremultiply_u16(input: &mut [u16], alpha: &[u16], premul_table: &[u128]
 
     input.iter_mut().zip(alpha).for_each(|(color, al)| {
         let associated_alpha = premul_table[usize::from(*al)];
-
-        *color = u16::try_from(fastdiv_u32(
-            u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
-            associated_alpha,
-        ))
-        .unwrap_or(u16::MAX);
+        if *al == 0 {
+            *color = 0;
+        } else {
+            *color = u16::try_from(fastdiv_u32(
+                u32::from(*color) * MAX_VALUE + (u32::from(*al) / 2),
+                associated_alpha,
+            ))
+            .unwrap_or(u16::MAX);
+        }
     });
 }
 

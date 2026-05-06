@@ -22,18 +22,29 @@ use crate::flip::{Flip, FlipDirection};
 use crate::rotate::Rotate;
 use crate::transpose::Transpose;
 
-/// Auto orient the image based on the exif metadata
-///
-/// This operation is a no-op if `metadata` feature is not specified
-/// in the crate level docs
-///
-/// This operation is also a no-op if the image does not have
-/// exif metadata
-///
-/// If orientation is applied, it will also modify the exif tag to indicate
-/// the image was oriented
-pub struct AutoOrient;
 
+/// Automatically orients an image based on its EXIF metadata.
+///
+/// Digital cameras and smartphones often write an `Orientation` tag into the EXIF metadata
+/// to indicate how the device was held when the photo was taken. Instead of altering the
+/// pixel data immediately, they save the image sideways and append this tag.
+///
+/// This operation reads that tag and applies the necessary physical rotations and flips
+/// to the underlying pixel data so that the image is correctly oriented (i.e., "right-side up").
+///
+/// # Behavior
+///
+/// * Checks the EXIF `Orientation` tag (values 1 through 8).
+/// * Applies the corresponding `Rotate`, `Flip`, or `Transpose` operations.
+/// * Mutates the EXIF metadata, resetting the `Orientation` tag to `1` (Normal) so that
+///   subsequent saves or reads do not mistakenly double-apply the orientation.
+///
+/// # Feature Flags
+///
+/// This operation requires the `exif` feature to be enabled. If the feature is disabled,
+/// if the image lacks EXIF metadata, or if the EXIF tag is missing/malformed, this
+/// operation safely acts as a **no-op** and returns the image unmodified.
+pub struct AutoOrient;
 impl OperationsTrait for AutoOrient {
     fn name(&self) -> &'static str {
         "Auto orient"

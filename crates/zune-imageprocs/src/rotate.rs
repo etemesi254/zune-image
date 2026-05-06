@@ -40,15 +40,65 @@ pub fn get_rotated_dimensions(width: usize, height: usize, angle: f32) -> (usize
 
     (new_width, new_height)
 }
-
+/// Rotates an image by an arbitrary angle.
+///
+/// This filter calculates the new bounding box required to fit the rotated image
+/// and maps the pixels using bilinear interpolation.
+///
+/// # Background Color
+///
+/// Because rotating an image at non-right angles (e.g., 45 degrees) exposes the
+/// empty corners of the new bounding box, this filter allows you to set a uniform
+/// `bg_color`.
+/// * `0.0` fills the background with Black (or Transparent, if an alpha channel exists).
+/// * `1.0` fills the background with White (or fully Opaque).
+///
+/// # Optimization
+///
+/// Orthogonal angles (`0.0`, `90.0`, `180.0`, and `270.0` degrees) bypass the expensive
+/// trigonometric interpolation and instead use highly optimized memory transposition
+/// and reversal techniques.
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::rotate::Rotate;
+/// use zune_image::errors::ImageErrors;
+///
+/// let mut img = Image::fill(255_u8, ColorSpace::RGB, 100, 100);
+///
+/// // Rotate 45 degrees, filling the newly exposed corners with black/transparent (0.0)
+/// let rotate = Rotate::new_with_bg_color(45.0, 0.0);
+/// rotate.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 pub struct Rotate {
     angle: f32,
+    bg_color: f32,
 }
 
 impl Rotate {
+    /// Creates a new rotation operation.
+    ///
+    /// # Arguments
+    /// * `angle` - The rotation angle in degrees (clockwise).
     #[must_use]
     pub fn new(angle: f32) -> Rotate {
-        Rotate { angle }
+        Rotate {
+            angle,
+            bg_color: 0.0,
+        }
+    }
+    /// Creates a new rotation operation.
+    ///
+    /// # Arguments
+    /// * `angle` - The rotation angle in degrees (clockwise).
+    /// * `bg_color` - A normalized value (`0.0` to `1.0`) representing the background fill color.
+    pub fn new_with_bg_color(angle: f32, bg_color: f32) -> Rotate {
+        Rotate { angle, bg_color }
     }
 }
 
@@ -83,6 +133,7 @@ impl OperationsTrait for Rotate {
                         new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
+                        self.bg_color,
                     );
                 }
                 BitType::U16 => {
@@ -94,6 +145,7 @@ impl OperationsTrait for Rotate {
                         new_height,
                         channel.reinterpret_as()?,
                         new_channel.reinterpret_as_mut()?,
+                        self.bg_color,
                     );
                 }
                 BitType::F32 => rotate::<f32>(
@@ -104,6 +156,7 @@ impl OperationsTrait for Rotate {
                     new_height,
                     channel.reinterpret_as()?,
                     new_channel.reinterpret_as_mut()?,
+                    self.bg_color,
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
@@ -147,42 +200,27 @@ fn change_image_dims(image: &mut Image, angle: f32) {
 
 pub fn rotate<T: Copy + NumOps<T> + Default>(
     angle: f32, width: usize, height: usize, out_width: usize, out_height: usize, in_image: &[T],
-    out_image: &mut [T],
+    out_image: &mut [T], bg_color: f32,
 ) {
     let angle = angle % 360.0;
 
     if (angle - 180.0).abs() < f32::EPSILON {
-        // copy in image to out image
         out_image.copy_from_slice(in_image);
-        rotate_180(out_image, width);
+        out_image.reverse();
     } else if (angle - 90.0).abs() < f32::EPSILON {
         rotate_90(in_image, out_image, width, height);
     } else if (angle - 270.0).abs() < f32::EPSILON {
         rotate_270(in_image, out_image, width, height);
     } else {
         rotate_arbitrary(
-            in_image, out_image, width, height, out_width, out_height, angle,
+            in_image, out_image, width, height, out_width, out_height, angle, bg_color,
         );
-    }
-}
-
-fn rotate_180<T: Copy>(in_out_image: &mut [T], width: usize) {
-    let half = in_out_image.len() / 2;
-    let (top, bottom) = in_out_image.split_at_mut(half);
-
-    for (top_chunk, bottom_chunk) in top
-        .chunks_exact_mut(width)
-        .zip(bottom.chunks_exact_mut(width).rev())
-    {
-        for (a, b) in top_chunk.iter_mut().zip(bottom_chunk.iter_mut()) {
-            core::mem::swap(a, b);
-        }
     }
 }
 
 fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
     in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, angle: f32,
+    out_height: usize, angle: f32, bg_color: f32,
 ) {
     let angle_rad = angle.to_radians();
     let cos_a = angle_rad.cos();
@@ -194,7 +232,8 @@ fn rotate_arbitrary<T: Copy + Default + NumOps<T>>(
     let out_cx = out_width as f32 / 2.0;
     let out_cy = out_height as f32 / 2.0;
 
-    out_image.fill(T::max_val());
+    let bg_val = T::from_f32(bg_color.clamp(0.0, 1.0) * T::max_val().to_f32());
+    out_image.fill(bg_val);
 
     for out_y in 0..out_height {
         for out_x in 0..out_width {

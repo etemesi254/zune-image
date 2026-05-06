@@ -58,38 +58,59 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::utils::execute_on;
 
-/// Crop out a part of an image
+/// Extracts a smaller rectangular sub-region from an image.
 ///
-/// This creates a smaller image from a bigger image
+/// A crop operation reduces the dimensions of an image by selecting a specific
+/// window defined by an `(x, y)` origin point and a new `width` and `height`.
+///
+/// # Algorithm
+///
+/// Cropping is fundamentally a selective memory copy. It skips the top `y` rows,
+/// and then for each remaining row, it copies `width` pixels starting from the
+/// `x` offset.
+///
+/// ```text
+///    width ──────────────────────────────►
+/// │ ┌─────────────────────────────────────┐
+/// │ │                                     │
+/// │ │   (x,y)     out width               │
+/// │ │     ┌────────────────────┐          │
+/// │ │     │                    │          │
+/// │ │     │                    │          │
+/// │ │     │  CROPPED IMAGE     │          │
+/// │ │   h │                    │          │
+/// │ │   e │                    │          │
+/// │ │   i │                    │          │
+/// │ │   g │                    │          │
+/// │ │   h └────────────────────┘          │
+/// │ │   t                                 │
+/// │ │                                     │
+/// ▼ │                                     │
+///   └─────────────────────────────────────┘
+/// ```
 ///
 /// # Example
-/// Create a smaller 100x100 from a larger 1000x1000 image based on the left edge
-/// ```
+///
+/// Create a 100x100 crop from the center of a 1000x1000 image:
+///
+/// ```rust
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_image::image::Image;
 /// use zune_image::errors::ImageErrors;
 /// use zune_image::traits::OperationsTrait;
 /// use zune_imageprocs::crop::Crop;
 ///
-/// // create a white image
-/// fn main()->Result<(),ImageErrors>{
-///     // create a 1000 by 1000 grayscale image
-///     let mut image = Image::fill(255_u8,ColorSpace::Luma,1000,1000);
+/// let mut image = Image::fill(255_u8, ColorSpace::Luma, 1000, 1000);
+/// let (w, h) = image.dimensions();
+/// let crop_w = 100;
+/// let crop_h = 100;
 ///
-///     let (w,h) = image.dimensions();
-///     let crop_w = 100;
-///     let crop_h = 100;
+/// // Calculate center offset
+/// let start_x = (w / 2) - (crop_w / 2);
+/// let start_y = (h / 2) - (crop_h / 2);
 ///
-///     // we want to crop the center part, so we move to the center
-///     // and offset the start half our crop width from the center
-///     let start_x = (w/2) - (crop_w/2);
-///     let start_y = (h/2) - (crop_h/2);
-///
-///     // now crop- in place
-///      Crop::new(crop_w,crop_h,start_x,start_y).execute(&mut image)?;
-///      
-///      Ok(())
-/// }
+/// Crop::new(crop_w, crop_h, start_x, start_y).execute(&mut image)?;
+/// # Ok::<(), ImageErrors>(())
 /// ```
 pub struct Crop {
     x:      usize,
@@ -128,6 +149,14 @@ impl OperationsTrait for Crop {
         OperationColorValues::Any
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        let (old_width, old_height) = image.dimensions();
+
+        // 1. Boundary Validation
+        if self.x + self.width > old_width || self.y + self.height > old_height {
+            return Err(ImageErrors::GenericStr(
+                "Crop boundaries fall outside the dimensions of the original image"
+            ));
+        }
         let new_dims = self.width * self.height * image.depth().size_of();
         let (old_width, _) = image.dimensions();
         let depth = image.depth().bit_type();

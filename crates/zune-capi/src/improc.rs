@@ -189,7 +189,7 @@ pub extern "C" fn zil_imgproc_crop(
 /// \param status: Image execution reporter
 #[no_mangle]
 pub extern "C" fn zil_imgproc_flip_mirror_x_axis(image: *mut ZImage, status: *mut ZStatus) {
-    exec_imgproc(image, Flip::new(FlipDirection::MirrorXAxis), status)
+    exec_imgproc(image, Flip::new(FlipDirection::Rotate180), status)
 }
 
 /// Flop an image by reflecting pixels on its y-axis

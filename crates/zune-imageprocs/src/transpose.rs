@@ -26,12 +26,28 @@ mod tests;
 
 static START: Once = Once::new();
 
-/// Transpose an image
+/// Transposes an image by swapping its rows and columns.
 ///
-/// This mirrors the image along the image top left to bottom-right
-/// diagonal
+/// This operation reflects the image across its main diagonal (top-left to bottom-right).
+/// As a result, the image's width and height are swapped.
 ///
-/// Done by swapping X and Y indices of the array representation
+/// # Visual Example
+///
+/// ```text
+/// Old Image      New Image
+/// ┌─────────┐   ┌───────┐
+/// │ a b c d │   │ a e i │
+/// │ e f g h │   │ b f j │
+/// │ i j k l │   │ c g k │
+/// └─────────┘   │ d h l │
+///               └───────┘
+/// ```
+///
+/// # Hardware Acceleration
+///
+/// Transposition is heavily constrained by memory bandwidth and cache locality.
+/// When compiled with the `sse41` feature on x86/x86_64 architectures, this operation
+/// utilizes highly optimized SIMD instructions to transpose the matrix in cache-friendly blocks.
 #[derive(Default)]
 pub struct Transpose;
 
@@ -154,33 +170,10 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
 
             if is_x86_feature_detected!("sse4.1") {
                 START.call_once(|| {
-                    trace!("Using SSE4.1 transpose u8 algorithm");
+                    trace!("Using SSE4.1 transpose f32 algorithm");
                 });
                 unsafe {
                     return transpose_sse_float(in_matrix, out_matrix, width, height);
-                }
-            }
-        }
-    }
-    START.call_once(|| {
-        trace!("Using scalar transpose u8 algorithm");
-    });
-    transpose_scalar(in_matrix, out_matrix, width, height);
-}
-
-pub fn transpose_u32(in_matrix: &[u32], out_matrix: &mut [u32], width: usize, height: usize) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        #[cfg(feature = "sse41")]
-        {
-            use crate::transpose::sse41::transpose_sse_u32;
-
-            if is_x86_feature_detected!("sse") {
-                START.call_once(|| {
-                    trace!("Using SSE4.1 transpose u8 algorithm");
-                });
-                unsafe {
-                    return transpose_sse_u32(in_matrix, out_matrix, width, height);
                 }
             }
         }

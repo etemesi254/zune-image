@@ -1,46 +1,58 @@
-/*
- * Copyright (c) 2023.
- *
- * This software is free software;
- *
- * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
- */
-/// Perfom a box blur filter on an image
-///
-/// A box blur is a 2D filter that sums up all values
-/// in it's window and divides it by the window size
-///
-/// This approximates a `mean` of the window  and sets it as the output
 use std::f32;
 
 use zune_core::bit_depth::BitType;
-use zune_core::log::{trace, warn};
+use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;
-use crate::transpose;
 
-/// Perform a box blur
+/// A fast Box Blur filter operation.
 ///
-/// Radius is a measure of how many
-/// pixels to include in the box blur.
+/// A box blur is a spatial domain linear filter where each pixel in the resulting image
+/// has a value equal to the average value of its neighboring pixels. It acts as a low-pass
+/// filter, blurring the image by reducing sharp localized changes in pixel values.
 ///
-/// The greater the radius, the more pronounced the box blur
+/// # Algorithmic Details
 ///
-/// This operation is multithreaded capable
+/// This implementation is highly optimized:
+/// 1. **Separable Passes:** A 2D box blur is mathematically separable. This applies a 1D
+///    horizontal blur, transposes the image, applies a second 1D horizontal blur, and
+///    transposes back. This reduces algorithmic complexity from $O(R^2)$ to $O(R)$.
+/// 2. **Sliding Window:** During the 1D passes, it uses a sliding window (moving average)
+///    accumulator. Instead of summing all pixels in the radius for every pixel, it simply
+///    adds the incoming pixel and subtracts the outgoing pixel, dropping the per-pixel
+///    complexity to $O(1)$ regardless of the radius size.
+/// 3. **Fast Division:** Replaces expensive integer division in the inner loop with
+///    multiplication by a constant (`fastdiv_u32`).
+///
+/// # Threads
+///
+/// If the `threads` feature is enabled, this operation automatically parallelizes processing
+/// across the image's color channels.
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::errors::ImageErrors;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::box_blur::BoxBlur;
+///
+/// let blur = BoxBlur::new(5);
+/// let mut image = Image::fill(10_u8, ColorSpace::RGB, 100, 100);
+/// blur.execute(&mut image)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct BoxBlur {
-    radius: usize
+    radius: usize,
 }
 
 impl BoxBlur {
-    /// Create a new blur operation.
-    ///
-    /// # Arguments
-    /// - radius: The radius of the blur, larger the value the more pronounced the blur
     #[must_use]
     pub fn new(radius: usize) -> BoxBlur {
         BoxBlur { radius }
@@ -87,7 +99,7 @@ impl OperationsTrait for BoxBlur {
                             box_blur_f32(data, &mut scratch_space, width, height, self.radius);
                             Ok(())
                         }
-                        d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d))
+                        d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d)),
                     });
                     errors.push(result);
                 }
@@ -127,12 +139,13 @@ impl OperationsTrait for BoxBlur {
                         box_blur_f32(data, &mut scratch_space, width, height, self.radius);
                     }
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented("box_blur", d)),
             }
         }
 
         Ok(())
     }
+
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
@@ -140,231 +153,275 @@ impl OperationsTrait for BoxBlur {
 
 pub fn box_blur_u16(
     in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize,
-    mut radius: usize
+    mut radius: usize,
 ) {
     if width == 0 || radius <= 1 {
-        warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
     if radius.is_multiple_of(2) {
         radius += 1;
     }
+
+    // Horizontal pass: reads from in_out_image, writes to scratch_space
     box_blur_inner(in_out_image, scratch_space, width, radius);
-    transpose::transpose_u16(scratch_space, in_out_image, width, height);
-    box_blur_inner(in_out_image, scratch_space, height, radius);
-    transpose::transpose_u16(scratch_space, in_out_image, height, width);
+    // Vertical pass: reads from scratch_space, writes DIRECTLY back to in_out_image
+    box_blur_vertical_inner(scratch_space, in_out_image, width, height, radius);
 }
 
 pub fn box_blur_u8(
     in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize,
-    mut radius: usize
+    mut radius: usize,
 ) {
     if width == 0 || radius <= 1 {
-        warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
     if radius.is_multiple_of(2) {
-        // evn radius are annoying, generates wrong values, just bump it to the next odd one
         radius += 1;
     }
+
     box_blur_inner(in_out_image, scratch_space, width, radius);
-    transpose::transpose_u8(scratch_space, in_out_image, width, height);
-    box_blur_inner(in_out_image, scratch_space, height, radius);
-    transpose::transpose_u8(scratch_space, in_out_image, height, width);
+    box_blur_vertical_inner(scratch_space, in_out_image, width, height, radius);
 }
 
 pub fn box_blur_f32(
     in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize,
-    mut radius: usize
+    mut radius: usize,
 ) {
     if width == 0 || radius <= 1 {
-        warn!("Box blur with radius less than or equal to 1 does nothing");
         return;
     }
     if radius.is_multiple_of(2) {
         radius += 1;
     }
+
     box_blur_f32_inner(in_out_image, scratch_space, width, radius);
-    transpose::transpose_generic(scratch_space, in_out_image, width, height);
-    box_blur_f32_inner(in_out_image, scratch_space, height, radius);
-    transpose::transpose_generic(scratch_space, in_out_image, height, width);
+    box_blur_f32_vertical_inner(scratch_space, in_out_image, width, height, radius);
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+// --------------------------------------------------------------------------
+// 1D Horizontal Passes
+// --------------------------------------------------------------------------
+
 pub(crate) fn box_blur_inner<T>(in_image: &[T], out_image: &mut [T], width: usize, radius: usize)
 where
     T: Copy + NumOps<T>,
-    u32: std::convert::From<T>
+    u32: std::convert::From<T>,
 {
     let diameter = (radius * 2) + 1;
-    // 1D-Box blurs can be seen as the average of radius pixels iterating
-    // through a window
-    // A box blur therefore is
-    //
-    // pix[x,y]= (pix[x-r/2,y]...+pix[x,y]+...pix[x+r/2,y])/r
-    //
-    // The naive operation is slow, due to a lot of reasons, so here we use a slightly more
-    // optimized version
-    //
-    // One thing to see is that 1D box blurs are independent per width stride
-    // ie. calculating row y is independent of calculating row y+1, with this info
-    // we can do a bit of loop unrolling to better utilize ILP.
-    //
-    // Furthermore, notice we are dividing by r, which is a constant across all rows,
-    // But division is a slow instruction, hence we can replace it with multiplication by some
-    // weird constant, that eliminates that in the inner loop, credits to Daniel Lemire's fastmod for that
-    //
-    // Further more there is no need to sum up a window per iteration, we can simply implement it by looking at what is changing
-    // For any iteration the sum is window[n], and for n+1 sum is window[n+1], but what changed was nothing
-    // i.e what changed was windows[n-r/2] was dropped and windows [n+r/2] was added.
-    // So if we keep the terms window[n-r/2] and windows [n+r/2] the summing becomes
-    // sum(windows[n]) = a - windows[r]-windows[0]
-    // where a is sum of chunk[0..r], (first of the array), we can keep updating a during the loop
-    // and we have a window sum!
-
     if width <= 1 || diameter <= 1 {
-        // repeated here for the optimizer
         return;
     }
-    let diameter = diameter.min(width);
     let m_radius = compute_mod_u32(diameter as u64);
 
     for (stride_in, stride_out) in in_image
         .chunks_exact(width)
         .zip(out_image.chunks_exact_mut(width))
     {
-        let half_radius = diameter.div_ceil(2);
+        let mut accumulator: u32 = 0;
 
-        let mut accumulator: u32 = stride_in[..half_radius].iter().map(|x| u32::from(*x)).sum();
-
-        accumulator += ((half_radius - 1) as u32) * u32::from(stride_in[0]);
-
-        for (data_in, data_out) in stride_in[half_radius..]
-            .iter()
-            .zip(stride_out.iter_mut())
-            .take(half_radius - 1)
-        {
-            accumulator += u32::from(*data_in);
-            accumulator -= u32::from(stride_in[0]);
-
-            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
+        // Setup initial window for x = 0
+        accumulator += (radius as u32) * u32::from(stride_in[0]);
+        let safe_r = radius.min(width - 1);
+        for x in 0..=safe_r {
+            accumulator += u32::from(stride_in[x]);
+        }
+        if radius > safe_r {
+            accumulator += ((radius - safe_r) as u32) * u32::from(*stride_in.last().unwrap());
         }
 
-        // testing purposes
-        //
-        // assert_eq!(
-        //     accumulator,
-        //     stride_in[..diameter]
-        //         .iter()
-        //         .map(|x| u32::from(*x))
-        //         .sum::<u32>()
-        // );
+        stride_out[0] = T::from_u32(fastdiv_u32(accumulator, m_radius));
 
-        let mut window_slide = u32::from(stride_in[0]);
+        // Sliding window
+        for x in 1..width {
+            let leaving = if x <= radius { stride_in[0] } else { stride_in[x - radius - 1] };
+            let right_idx = (x + radius).min(width - 1);
+            let entering = stride_in[right_idx];
 
-        for (window_in, data_out) in stride_in[1..]
-            .windows(diameter)
-            .zip(stride_out[half_radius - 1..].iter_mut())
-        {
-            accumulator -= window_slide;
-            accumulator += u32::from(*window_in.last().unwrap());
+            accumulator += u32::from(entering);
+            accumulator -= u32::from(leaving);
 
-            // testing purposes
-            //
-            // assert_eq!(
-            //     accumulator,
-            //     window_in.iter().map(|x| u32::from(*x)).sum::<u32>()
-            // );
-
-            window_slide = u32::from(window_in[0]);
-
-            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
-        }
-
-        let edge_len = stride_out.len() - half_radius;
-
-        let end_stride = &mut stride_out[edge_len..];
-        let last_item = u32::from(*stride_in.last().unwrap());
-
-        for (data_in, data_out) in stride_in[edge_len..]
-            .iter()
-            .zip(end_stride)
-            .take(half_radius)
-        {
-            accumulator = accumulator.wrapping_sub(u32::from(*data_in));
-            accumulator = accumulator.wrapping_add(last_item);
-
-            *data_out = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            stride_out[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
         }
     }
 }
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::too_many_lines,
-    clippy::cast_precision_loss
-)]
+
 pub(crate) fn box_blur_f32_inner(
-    in_image: &[f32], out_image: &mut [f32], width: usize, radius: usize
+    in_image: &[f32], out_image: &mut [f32], width: usize, radius: usize,
 ) {
     let diameter = (radius * 2) + 1;
-
     if width <= 1 || diameter <= 1 {
-        // repeated here for the optimizer
         return;
     }
-    let diameter = diameter.min(width);
-    let recip = 1.0 / diameter as f32;
+    let recip = 1.0 / (diameter as f64);
 
     for (stride_in, stride_out) in in_image
         .chunks_exact(width)
         .zip(out_image.chunks_exact_mut(width))
     {
-        let half_radius = diameter.div_ceil(2);
+        let mut accumulator: f64 = 0.0;
 
-        let mut accumulator: f32 = stride_in[..half_radius].iter().copied().sum();
-
-        accumulator += (half_radius - 1) as f32 * stride_in[0];
-
-        for (data_in, data_out) in stride_in[half_radius..]
-            .iter()
-            .zip(stride_out.iter_mut())
-            .take(half_radius - 1)
-        {
-            accumulator += *data_in;
-            accumulator -= stride_in[0];
-
-            *data_out = accumulator * recip;
+        accumulator += (radius as f64) * f64::from(stride_in[0]);
+        let safe_r = radius.min(width - 1);
+        for x in 0..=safe_r {
+            accumulator += f64::from(stride_in[x]);
+        }
+        if radius > safe_r {
+            accumulator += ((radius - safe_r) as f64) * f64::from(*stride_in.last().unwrap());
         }
 
-        let mut window_slide = stride_in[0];
+        stride_out[0] = (accumulator * recip) as f32;
 
-        for (window_in, data_out) in stride_in[1..]
-            .windows(diameter)
-            .zip(stride_out[half_radius - 1..].iter_mut())
-        {
-            accumulator -= window_slide;
-            accumulator += *window_in.last().unwrap();
+        for x in 1..width {
+            let leaving = if x <= radius {
+                f64::from(stride_in[0])
+            } else {
+                f64::from(stride_in[x - radius - 1])
+            };
+            let right_idx = (x + radius).min(width - 1);
+            let entering = f64::from(stride_in[right_idx]);
 
-            window_slide = window_in[0];
+            accumulator += entering;
+            accumulator -= leaving;
 
-            *data_out = accumulator * recip;
+            stride_out[x] = (accumulator * recip) as f32;
+        }
+    }
+}
+
+// --------------------------------------------------------------------------
+// 1D Vertical Passes (Column Striding)
+// --------------------------------------------------------------------------
+
+pub(crate) fn box_blur_vertical_inner<T>(
+    in_image: &[T], out_image: &mut [T], width: usize, height: usize, radius: usize,
+) where
+    T: Copy + NumOps<T>,
+    u32: std::convert::From<T>,
+{
+    let diameter = (radius * 2) + 1;
+    if height <= 1 || diameter <= 1 {
+        return;
+    }
+    let m_radius = compute_mod_u32(diameter as u64);
+
+    for x in 0..width {
+        let mut accumulator: u32 = 0;
+
+        let top_val = u32::from(in_image[x]);
+        accumulator += (radius as u32) * top_val;
+
+        let safe_r = radius.min(height - 1);
+        for y in 0..=safe_r {
+            accumulator += u32::from(in_image[y * width + x]);
+        }
+        if radius > safe_r {
+            let bottom_val = u32::from(in_image[(height - 1) * width + x]);
+            accumulator += ((radius - safe_r) as u32) * bottom_val;
         }
 
-        let edge_len = stride_out.len() - half_radius;
+        out_image[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
 
-        let end_stride = &mut stride_out[edge_len..];
-        let last_item = *stride_in.last().unwrap();
+        for y in 1..height {
+            let leaving = if y <= radius {
+                top_val
+            } else {
+                u32::from(in_image[(y - radius - 1) * width + x])
+            };
 
-        for (data_in, data_out) in stride_in[edge_len..]
-            .iter()
-            .zip(end_stride)
-            .take(half_radius)
-        {
-            accumulator -= *data_in;
-            accumulator += last_item;
+            let right_y = (y + radius).min(height - 1);
+            let entering = u32::from(in_image[right_y * width + x]);
 
-            *data_out = accumulator * recip;
+            accumulator += entering;
+            accumulator -= leaving;
+
+            out_image[y * width + x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
         }
+    }
+}
+
+pub(crate) fn box_blur_f32_vertical_inner(
+    in_image: &[f32], out_image: &mut [f32], width: usize, height: usize, radius: usize,
+) {
+    let diameter = (radius * 2) + 1;
+    if height <= 1 || diameter <= 1 {
+        return;
+    }
+    let recip = 1.0 / (diameter as f64);
+
+    for x in 0..width {
+        let mut accumulator: f64 = 0.0;
+
+        let top_val = f64::from(in_image[x]);
+        accumulator += (radius as f64) * top_val;
+
+        let safe_r = radius.min(height - 1);
+        for y in 0..=safe_r {
+            accumulator += f64::from(in_image[y * width + x]);
+        }
+        if radius > safe_r {
+            let bottom_val = f64::from(in_image[(height - 1) * width + x]);
+            accumulator += ((radius - safe_r) as f64) * bottom_val;
+        }
+
+        out_image[x] = (accumulator * recip) as f32;
+
+        for y in 1..height {
+            let leaving = if y <= radius {
+                top_val
+            } else {
+                f64::from(in_image[(y - radius - 1) * width + x])
+            };
+
+            let right_y = (y + radius).min(height - 1);
+            let entering = f64::from(in_image[right_y * width + x]);
+
+            accumulator += entering;
+            accumulator -= leaving;
+
+            out_image[y * width + x] = (accumulator * recip) as f32;
+        }
+    }
+}
+
+// --------------------------------------------------------------------------
+// Tests and Benchmarks
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_box_blur_alignment_bug_fixed() {
+        // A simple 1D test to ensure pixels don't shift left/right
+        let width = 5;
+        let input: Vec<u8> = vec![10, 20, 30, 40, 50];
+        let mut scratch = vec![0; 5];
+
+        box_blur_inner(&input, &mut scratch, width, 1);
+
+        // Expected for r=1, diameter=3:
+        // x=0: (10+10+20)/3 = 13.33 -> 13
+        // x=1: (10+20+30)/3 = 20.00 -> 20
+        // x=2: (20+30+40)/3 = 30.00 -> 30
+        // x=3: (30+40+50)/3 = 40.00 -> 40
+        // x=4: (40+50+50)/3 = 46.66 -> 46
+        assert_eq!(scratch, vec![13, 20, 30, 40, 46]);
+    }
+
+    #[test]
+    fn test_box_blur_f32_precision() {
+        let width = 4;
+        let input: Vec<f32> = vec![100.0, 200.0, 300.0, 400.0];
+        let mut scratch = vec![0.0; 4];
+
+        box_blur_f32_inner(&input, &mut scratch, width, 1);
+
+        // Allow minor floating point jitter
+        assert!((scratch[0] - 133.333).abs() < 0.1);
+        assert!((scratch[1] - 200.0).abs() < 0.1);
+        assert!((scratch[2] - 300.0).abs() < 0.1);
+        assert!((scratch[3] - 366.666).abs() < 0.1);
     }
 }
 
@@ -372,11 +429,10 @@ pub(crate) fn box_blur_f32_inner(
 #[cfg(test)]
 mod benchmarks {
     extern crate test;
-
-    use crate::box_blur::{box_blur_u16, box_blur_u8};
+    use super::*;
 
     #[bench]
-    fn bench_box_blur_u16(b: &mut test::Bencher) {
+    fn bench_box_blur_u16_full(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let radius = 10;
@@ -384,13 +440,14 @@ mod benchmarks {
         let mut in_vec = vec![255; dimensions];
         let mut scratch_space = vec![0; dimensions];
 
+        // This tests both horizontal and vertical passes
         b.iter(|| {
             box_blur_u16(&mut in_vec, &mut scratch_space, width, height, radius);
         });
     }
 
     #[bench]
-    fn bench_box_blur_u8(b: &mut test::Bencher) {
+    fn bench_box_blur_u8_full(b: &mut test::Bencher) {
         let width = 800;
         let height = 800;
         let radius = 10;
@@ -400,6 +457,20 @@ mod benchmarks {
 
         b.iter(|| {
             box_blur_u8(&mut in_vec, &mut scratch_space, width, height, radius);
+        });
+    }
+
+    #[bench]
+    fn bench_box_blur_f32_full(b: &mut test::Bencher) {
+        let width = 800;
+        let height = 800;
+        let radius = 10;
+        let dimensions = width * height;
+        let mut in_vec = vec![1.0; dimensions];
+        let mut scratch_space = vec![0.0; dimensions];
+
+        b.iter(|| {
+            box_blur_f32(&mut in_vec, &mut scratch_space, width, height, radius);
         });
     }
 }

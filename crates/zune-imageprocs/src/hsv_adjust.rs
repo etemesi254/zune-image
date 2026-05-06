@@ -25,29 +25,38 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
 
-/// Create a new HSV adjust filter that manipulates pixels in RGB space
+/// Adjusts the Hue, Saturation, and Value (Brightness) of an image.
 ///
-/// Recommended to run this in linear gamma space
+/// This filter manipulates the color properties of an image while preserving its
+/// original colorspace.
+///
+/// # Algorithm
+///
+/// Instead of performing an expensive per-pixel conversion from RGB to HSV and back,
+/// this filter computes a 3x3 transformation matrix based on the requested HSV shifts.
+/// It then applies this matrix directly to the RGB channels, acting as a highly
+/// optimized color tint/modulation operation.
+///
+/// *Reference: [HSV Color Transforms](https://beesbuzz.biz/code/16-hsv-color-transforms)*
 ///
 /// # Example
 ///
-/// - Huerotate by 33%, red becomes Cyan
-///```
+/// Rotate the hue by 90 degrees and boost saturation by 20%:
+///
+/// ```rust
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_image::errors::ImageErrors;
 /// use zune_image::image::Image;
 /// use zune_image::traits::OperationsTrait;
-/// use zune_imageprocs::exposure::Exposure;
 /// use zune_imageprocs::hsv_adjust::HsvAdjust;
 ///
-/// // create a 100x100 grayscale image
-/// let mut img = Image::from_fn::<u16,_>(100,100,ColorSpace::Luma,|x,y,pix|{
-///    pix[0]=((x + y) % 65536) as u16;
-/// });
-/// // huerotate the image
-/// HsvAdjust::new(33.0,1.0,1.0).execute(&mut img)?;
+/// // Create a solid red image
+/// let mut img = Image::fill(255_u8, ColorSpace::RGB, 100, 100);
 ///
-///# Ok::<(),ImageErrors>(())
+/// // Apply the adjustment
+/// let adjust = HsvAdjust::new(90.0, 1.2, 1.0);
+/// adjust.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
 /// ```
 pub struct HsvAdjust {
     hue:        f32,
@@ -82,7 +91,7 @@ impl OperationsTrait for HsvAdjust {
         "modulate"
     }
     fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Gamma
+        OperationColorValues::Linear
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
@@ -147,35 +156,43 @@ impl OperationsTrait for HsvAdjust {
 }
 
 #[allow(clippy::many_single_char_names)]
+#[allow(clippy::many_single_char_names)]
 fn modulate_hsl<T>(r: &mut [T], g: &mut [T], b: &mut [T], h: f32, s: f32, v: f32)
 where
     f32: From<T>,
     T: NumOps<T> + Copy
 {
-    // from https://beesbuzz.biz/code/16-hsv-color-transforms
-    // whoever you are, thank you for keeping up the site for 20 years :)
-
     let vsu = v * s * (h * PI / 180.0).cos();
     let vsw = v * s * (h * PI / 180.0).sin();
 
+    // 1. Hoist the matrix coefficients out of the loop!
+    let rr = 0.299 * v + 0.701 * vsu + 0.168 * vsw;
+    let rg = 0.587 * v - 0.587 * vsu + 0.330 * vsw;
+    let rb = 0.114 * v - 0.114 * vsu - 0.497 * vsw;
+
+    let gr = 0.299 * v - 0.299 * vsu - 0.328 * vsw;
+    let gg = 0.587 * v + 0.413 * vsu + 0.035 * vsw;
+    let gb = 0.114 * v - 0.114 * vsu + 0.292 * vsw;
+
+    let br = 0.299 * v - 0.300 * vsu + 1.250 * vsw;
+    let bg = 0.587 * v - 0.588 * vsu - 1.050 * vsw;
+    let bb = 0.114 * v + 0.886 * vsu - 0.203 * vsw;
+
     let min = T::MIN_VAL.to_f32();
     let max = T::MAX_VAL.to_f32();
+
+    // 2. Elide bounds checks to unlock SIMD
+    assert_eq!(r.len(), g.len());
+    assert_eq!(g.len(), b.len());
 
     for ((r_i, g_i), b_i) in r.iter_mut().zip(g.iter_mut()).zip(b.iter_mut()) {
         let in_r = f32::from(*r_i);
         let in_g = f32::from(*g_i);
         let in_b = f32::from(*b_i);
-        let new_r = (0.299 * v + 0.701 * vsu + 0.168 * vsw) * in_r
-            + (0.587 * v - 0.587 * vsu + 0.330 * vsw) * in_g
-            + (0.114 * v - 0.114 * vsu - 0.497 * vsw) * in_b;
 
-        let new_g = (0.299 * v - 0.299 * vsu - 0.328 * vsw) * in_r
-            + (0.587 * v + 0.413 * vsu + 0.035 * vsw) * in_g
-            + (0.114 * v - 0.114 * vsu + 0.292 * vsw) * in_b;
-
-        let new_b = (0.299 * v - 0.300 * vsu + 1.25 * vsw) * in_r
-            + (0.587 * v - 0.588 * vsu - 1.05 * vsw) * in_g
-            + (0.114 * v + 0.886 * vsu - 0.203 * vsw) * in_b;
+        let new_r = (rr * in_r) + (rg * in_g) + (rb * in_b);
+        let new_g = (gr * in_r) + (gg * in_g) + (gb * in_b);
+        let new_b = (br * in_r) + (bg * in_g) + (bb * in_b);
 
         *r_i = T::from_f32(new_r.clamp(min, max));
         *g_i = T::from_f32(new_g.clamp(min, max));

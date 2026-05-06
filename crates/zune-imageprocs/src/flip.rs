@@ -15,49 +15,51 @@ use zune_image::traits::OperationsTrait;
 
 use crate::utils::execute_on;
 
+/// The direction in which to flip the image.
 #[derive(Copy, Clone, Debug)]
 pub enum FlipDirection {
-    /// Creates a horizontal mirror image by reflecting the pixels around the central y-axis
-    ///```text
-    ///old image     new image
-    ///┌─────────┐   ┌──────────┐
-    ///│a b c d e│   │e d b c a │
-    ///│f g h i j│   │j i h g f │
-    ///└─────────┘   └──────────┘
-    ///```
+    /// Creates a horizontal mirror image by reflecting the pixels around the central vertical (Y) axis.
+    ///
+    /// ```text
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ d c b a │
+    /// │ e f g h │   │ h g f e │
+    /// └─────────┘   └─────────┘
+    /// ```
     Horizontal,
 
-    /// Flip the image vertically,( rotate image by 180 degrees)
+    /// Creates a vertical mirror image by reflecting the pixels around the central horizontal (X) axis.
     ///
     /// ```text
-    ///
-    ///old image     new image
-    /// ┌─────────┐   ┌──────────┐
-    /// │a b c d e│   │f g h i j │
-    /// │f g h i j│   │a b c d e │
-    /// └─────────┘   └──────────┘
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ e f g h │
+    /// │ e f g h │   │ a b c d │
+    /// └─────────┘   └─────────┘
     /// ```
-    ///
     Vertical,
-    /// Creates a vertical mirror image by reflecting
-    /// the pixels around the central x-axis.
+
+    /// Rotates the image by 180 degrees.
     ///
+    /// This is equivalent to applying both a Horizontal and Vertical flip
+    /// (reflecting across the origin).
     ///
     /// ```text
-    ///
-    ///old image     new image
-    /// ┌─────────┐   ┌──────────┐
-    /// │a b c d e│   │j i h g f │
-    /// │f g h i j│   │e d c b a │
-    /// └─────────┘   └──────────┘
+    /// Old Image      New Image
+    /// ┌─────────┐   ┌─────────┐
+    /// │ a b c d │   │ h g f e │
+    /// │ e f g h │   │ d c b a │
+    /// └─────────┘   └─────────┘
     /// ```
-    MirrorXAxis
+    Rotate180,
 }
 
-/// Flip an image to a certain direction
+/// Flips or rotates an image geometrically.
 pub struct Flip {
     flip_direction: FlipDirection
 }
+
 
 impl Flip {
     /// Create a new flip operation
@@ -102,7 +104,7 @@ impl OperationsTrait for Flip {
                     }
                     d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
                 },
-                FlipDirection::MirrorXAxis => match depth.bit_type() {
+                FlipDirection::Rotate180 => match depth.bit_type() {
                     BitType::U8 => {
                         flip(inp.reinterpret_as_mut::<u8>()?);
                     }
@@ -137,26 +139,7 @@ impl OperationsTrait for Flip {
 /// └─────────┘   └──────────┘
 /// ```
 pub fn flip<T: Copy>(in_out_image: &mut [T]) {
-    // NOTE: CAE, this operation became slower after switching to generics
-    //
-    // The compiler fails to see how we can make it faster
-    //
-    // Original
-    //
-    // test flip::benchmarks::flip_scalar   ... bench:      20,777 ns/iter (+/- 655)
-    //
-    // After
-    //
-    //test flip::benchmarks::flip_scalar    ... bench:      41,956 ns/iter (+/- 4,189)
-    //
-    // It's still fast enough so hopefully no one notices
-    let length = in_out_image.len() / 2;
-
-    let (in_img_top, in_img_bottom) = in_out_image.split_at_mut(length);
-
-    for (in_dim, out_dim) in in_img_top.iter_mut().zip(in_img_bottom.iter_mut().rev()) {
-        std::mem::swap(in_dim, out_dim);
-    }
+    in_out_image.reverse();
 }
 
 /// Flip an image on the vertical axis
@@ -171,23 +154,16 @@ pub fn flip<T: Copy>(in_out_image: &mut [T]) {
 /// └─────────┘   └──────────┘
 /// ```
 ///
-pub fn vertical_flip<T: Copy + Default>(channel: &mut [T], width: usize) {
-    // Simply split the image in half
-    // on one end read from the start to the halfway point
-    // on the other end read from the end to the halfway point
-
+pub fn vertical_flip<T: Copy>(channel: &mut [T], width: usize) {
     let len = channel.len();
-
     let (top, bottom) = channel.split_at_mut(len / 2);
 
-    let mut stride = vec![T::default(); width];
     for (t, b) in top
         .chunks_exact_mut(width)
         .zip(bottom.rchunks_exact_mut(width))
     {
-        stride.copy_from_slice(t);
-        t.copy_from_slice(b);
-        b.copy_from_slice(&stride);
+        // This swaps the chunks in-place, perfectly safely, with zero allocations.
+        t.swap_with_slice(b);
     }
 }
 
@@ -209,12 +185,8 @@ pub fn flop<T: Copy>(in_out_image: &mut [T], width: usize) {
     );
 
     for width_chunks in in_out_image.chunks_exact_mut(width) {
-        let (left_to_right, right_to_left) = width_chunks.split_at_mut(width / 2);
-
-        // iterate and swap
-        for (ltr, rtl) in left_to_right.iter_mut().zip(right_to_left.iter_mut().rev()) {
-            std::mem::swap(ltr, rtl);
-        }
+        // Reverses just this specific row in place
+        width_chunks.reverse();
     }
 }
 #[cfg(feature = "benchmarks")]

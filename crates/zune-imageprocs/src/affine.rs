@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
+use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
 use crate::traits::NumOps;
 use crate::utils::execute_on;
@@ -151,7 +151,7 @@ impl OperationsTrait for AffineTransform {
         OperationColorValues::Linear
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines,unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         // --- 1. THE RESIZE METADATA PIPELINE (Gamma & Alpha) ---
         let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
@@ -163,7 +163,7 @@ impl OperationsTrait for AffineTransform {
         if !is_image_linear {
             let start = Instant::now();
             trace!("Converting image to linear along affine transform");
-            let transfers = ImageTransfer::new(
+            let transfers = TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::GammaToLinear,
             );
@@ -256,7 +256,7 @@ impl OperationsTrait for AffineTransform {
         if !is_image_linear {
             let start = Instant::now();
             trace!("Converting image back to gamma along affine transform");
-            let transfers = ImageTransfer::new(
+            let transfers = TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::LinearToGamma,
             );

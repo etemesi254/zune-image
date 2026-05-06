@@ -75,9 +75,10 @@ fn test_u8_mod() {
     for i in 1..1000 {
         let rng = (u64::from_be_bytes(nanorand::WyRand::new().rand()) >> 32) as u32;
 
-        let num = compute_mod_u32(u64::from(rng));
-        let divisor = fastdiv_u32(rng, num);
+        let num = compute_mod_u32(i as u64);
+        let rem_fancy = fastmod_u32(rng, num, i );
+        let norm = rng % i;
 
-        assert_eq!(rng / i, divisor);
+        assert_eq!(rem_fancy,norm);
     }
 }

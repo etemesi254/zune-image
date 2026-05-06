@@ -22,6 +22,40 @@ use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
+/// Applies a fast Gaussian blur to the image.
+///
+/// A true Gaussian blur is computationally expensive because it requires convolving the
+/// image with a large, mathematically precise bell-curve matrix.
+///
+/// # Algorithm
+///
+/// This implementation uses a highly optimized approximation algorithm. Based on the
+/// Central Limit Theorem, applying several sequential box blurs mathematically approaches
+/// a true Gaussian distribution.
+///
+/// This filter calculates the ideal box-blur radii for three separate passes to approximate
+/// the requested Gaussian standard deviation (`sigma`). Because box blurs operate in $O(1)$
+/// time relative to their radius, this makes the Gaussian blur extremely fast, even for
+/// massive blur radii.
+///
+/// *Reference: [Fastest Gaussian Blur by Ivan Kutskir](https://blog.ivank.net/fastest-gaussian-blur.html)*
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::gaussian_blur::GaussianBlur;
+/// use zune_image::errors::ImageErrors;
+///
+/// let mut img = Image::fill(255_u8, ColorSpace::RGB, 100, 100);
+///
+/// // Apply a Gaussian blur with a sigma of 5.0
+/// let blur = GaussianBlur::new(5.0);
+/// blur.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 #[derive(Default)]
 pub struct GaussianBlur {
     sigma: f32,
@@ -530,9 +564,16 @@ fn box_blur_vertical_f32_chunk(
         return;
     }
 
-    let weight = (radius * 2 + 1) as f32;
+    let chunk_height = output_chunk.len() / width;
+    if chunk_height == 0 {
+        return;
+    }
+
+    let weight = (radius * 2 + 1) as f64; // Use f64
     let inv_weight = 1.0 / weight;
-    let mut sums = vec![0.0f32; width];
+
+    // 1. Allocate sums as f64
+    let mut sums = vec![0.0f64; width];
 
     for dy in 0..=(radius * 2) {
         let real_y = if dy < radius {
@@ -544,13 +585,13 @@ fn box_blur_vertical_f32_chunk(
         };
         let row = &input[real_y * width..real_y * width + width];
         for (x, &val) in row.iter().enumerate() {
-            sums[x] += val;
+            sums[x] += f64::from(val); // Accumulate as f64
         }
     }
 
     let out_row = &mut output_chunk[0..width];
     for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = sum * inv_weight;
+        out_row[x] = (sum * inv_weight) as f32; // Cast down
     }
 
     for y in 1..chunk_height {
@@ -568,8 +609,9 @@ fn box_blur_vertical_f32_chunk(
             .zip(bottom_row.iter())
             .zip(out_row.iter_mut())
         {
-            *sum = *sum + bottom - top;
-            *out = *sum * inv_weight;
+            // Calculate with f64 precision
+            *sum = *sum + f64::from(bottom) - f64::from(top);
+            *out = (*sum * inv_weight) as f32; // Cast down
         }
     }
 }

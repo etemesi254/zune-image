@@ -13,21 +13,56 @@ use crate::utils::execute_on;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConversionType {
     GammaToLinear,
-    LinearToGamma
+    LinearToGamma,
 }
-pub struct ImageTransfer {
+/// Applies a color space transfer curve (gamma correction/linearization) to an image.
+///
+/// Images are typically stored in a gamma-compressed color space (like sRGB) to save
+/// bandwidth and match human perception. However, mathematical image processing
+/// (like blurs, resizing, and convolutions) should ideally happen in a **linear** /// color space to prevent visual artifacts and dark fringing.
+///
+/// This filter converts an image between linear and gamma-encoded states using
+/// standard transfer functions.
+///
+/// # Metadata Safety
+///
+/// This operation checks the image's metadata (`is_linear()`) before executing.
+/// If you attempt to linearize an image that is already linear (or gamma-compress
+/// an image that is already compressed), it will safely log a warning and act as a no-op.
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::transfer_curve::{TransferCurve, ConversionType, TransferFunction};
+/// use zune_image::errors::ImageErrors;
+///
+/// // Create an sRGB (gamma-encoded) image
+/// let mut img = Image::fill(128_u8, ColorSpace::RGB, 100, 100);
+/// img.metadata_mut().set_linear(false); // Ensure metadata knows it is gamma-encoded
+///
+/// // Convert it to Linear space before processing
+/// let linearize = TransferCurve::new(TransferFunction::Srgb, ConversionType::GammaToLinear);
+/// linearize.execute(&mut img)?;
+///
+/// assert!(img.metadata().is_linear());
+/// # Ok::<(), ImageErrors>(())
+/// ```
+pub struct TransferCurve {
     transfer_function: TransferFunction,
-    conversion_type:   ConversionType
+    conversion_type: ConversionType,
 }
-impl ImageTransfer {
+impl TransferCurve {
     pub fn new(transfer_function: TransferFunction, conversion_type: ConversionType) -> Self {
-        ImageTransfer {
+        Self {
             transfer_function,
-            conversion_type
+            conversion_type,
         }
     }
 }
-impl OperationsTrait for ImageTransfer {
+impl OperationsTrait for TransferCurve {
     fn name(&self) -> &'static str {
         "ImageTransfer"
     }
@@ -51,11 +86,11 @@ impl OperationsTrait for ImageTransfer {
         let eight_bit_lut = if image.depth().bit_type() == BitType::U8 {
             match self.conversion_type {
                 ConversionType::GammaToLinear => Some(build_8_bit_gamma_to_linear_lut_table(
-                    self.transfer_function
+                    self.transfer_function,
                 )),
                 ConversionType::LinearToGamma => Some(build_8_bit_linear_to_gamma_lut_table(
-                    self.transfer_function
-                ))
+                    self.transfer_function,
+                )),
             }
         } else {
             None
@@ -63,11 +98,11 @@ impl OperationsTrait for ImageTransfer {
         let sixteen_bit_lut = if image.depth().bit_type() == BitType::U16 {
             match self.conversion_type {
                 ConversionType::GammaToLinear => Some(build_sixteen_bit_gamma_to_linear_lut_table(
-                    self.transfer_function
+                    self.transfer_function,
                 )),
                 ConversionType::LinearToGamma => Some(build_sixteen_bit_linear_to_gamma_lut_table(
-                    self.transfer_function
-                ))
+                    self.transfer_function,
+                )),
             }
         } else {
             None
@@ -77,7 +112,9 @@ impl OperationsTrait for ImageTransfer {
                 BitType::U8 => {
                     if let Some(lut_table) = eight_bit_lut.as_ref() {
                         let channel = input.reinterpret_as_mut::<u8>()?;
-                        for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
+                        for x in channel.iter_mut() {
+                            *x = lut_table[*x as usize];
+                        }
                     } else {
                         return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
@@ -85,7 +122,9 @@ impl OperationsTrait for ImageTransfer {
                 BitType::U16 => {
                     if let Some(lut_table) = sixteen_bit_lut.as_ref() {
                         let channel = input.reinterpret_as_mut::<u16>()?;
-                        for x in channel.iter_mut() { *x = lut_table[*x as usize]; }
+                        for x in channel.iter_mut() {
+                            *x = lut_table[*x as usize];
+                        }
                     } else {
                         return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
@@ -95,16 +134,18 @@ impl OperationsTrait for ImageTransfer {
                     let channel = input.reinterpret_as_mut::<f32>()?;
                     match self.conversion_type {
                         ConversionType::GammaToLinear => {
-                            for x in channel
-                                .iter_mut() { *x = self.transfer_function.linearize(*x); }
+                            for x in channel.iter_mut() {
+                                *x = self.transfer_function.linearize(*x);
+                            }
                         }
                         ConversionType::LinearToGamma => {
-                            for x in channel
-                                .iter_mut() { *x = self.transfer_function.gamma(*x); }
+                            for x in channel.iter_mut() {
+                                *x = self.transfer_function.gamma(*x);
+                            }
                         }
                     }
                 }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };
@@ -113,14 +154,14 @@ impl OperationsTrait for ImageTransfer {
 
         match self.conversion_type {
             ConversionType::GammaToLinear => image.metadata_mut().set_linear(true),
-            ConversionType::LinearToGamma => image.metadata_mut().set_linear(false)
+            ConversionType::LinearToGamma => image.metadata_mut().set_linear(false),
         }
 
         Ok(())
     }
 
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 pub fn build_8_bit_gamma_to_linear_lut_table(transfer_function: TransferFunction) -> [u8; 256] {

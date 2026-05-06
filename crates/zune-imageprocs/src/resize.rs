@@ -21,7 +21,7 @@ use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
-use crate::image_transfer::{ConversionType, ImageTransfer, TransferFunction};
+use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
 use crate::resize::seperable_kernel::{resample_separable_u8, PrecomputedKernels};
 use crate::traits::NumOps;
@@ -29,42 +29,81 @@ use crate::utils::execute_on;
 
 mod seperable_kernel;
 
+/// Resampling algorithms available for image resizing.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ResizeMethod {
-    Lanczos3,   // Lanczos with a=3 (highest quality, slowest)
-    Lanczos2,   // Lanczos with a=2
-    Bicubic,    // Bicubic interpolation (Mitchell-Netravali, B=1/3, C=1/3)
-    CatmullRom, // Catmull-Rom spline (B=0, C=0.5)
-    Mitchell,   // Mitchell filter (B=1/3, C=1/3) - same as Bicubic but explicit
-    BSpline,    // B-Spline (B=1, C=0)
-    Hermite,    // Hermite filter (B=0, C=0)
-    Sinc,       // Sinc with window radius 3
-    Bilinear,   // Bilinear (for completeness, 2x2 kernel)
+    /// Lanczos filter with a window of 3. Provides the highest quality and sharpest
+    /// results for both upscaling and downscaling, but is the slowest.
+    Lanczos3,
+    /// Lanczos filter with a window of 2. A slightly faster, slightly softer alternative to Lanczos3.
+    Lanczos2,
+    /// Bicubic interpolation (Mitchell-Netravali). A good balance of speed and quality.
+    Bicubic,
+    /// Catmull-Rom spline. Produces sharp edges without the ringing artifacts sometimes seen in Lanczos.
+    CatmullRom,
+    /// Mitchell filter. An alias for Bicubic interpolation.
+    Mitchell,
+    /// B-Spline interpolation. Produces very smooth/soft results.
+    BSpline,
+    /// Hermite filter. Fast, but relatively soft.
+    Hermite,
+    /// Sinc filter with a window radius of 3.
+    Sinc,
+    /// Bilinear interpolation. Very fast, but produces blurry results when upscaling
+    /// and aliasing artifacts when downscaling.
+    Bilinear,
 }
-/// Resize dimensions
+
+/// Geometry constraints for calculating the final resized dimensions.
 #[derive(Copy, Clone, Debug)]
 pub enum ResizeDimensions {
-    /// e.g., "50%" or "50%x75%"
+    /// Resizes the image by a percentage of its original width and height (e.g., `50`, `75`).
     Percentage(usize, usize),
-    /// e.g., "800x600!" (Ignore aspect ratio entirely)
+    /// Forces the image to exactly these dimensions, ignoring the original aspect ratio.
     IgnoreAspectRatio(usize, usize),
-    /// e.g., "800x600" (Fit within bounds, keep aspect ratio)
+    /// Scales the image to fit entirely within the specified bounding box while maintaining aspect ratio.
     FitWithin(usize, usize),
-    /// e.g., "800x600^" (Fill bounds, keep aspect ratio)
+    /// Scales the image so that it completely covers the bounding box while maintaining aspect ratio (some parts of the image may overflow the box).
     Fill(usize, usize),
-    /// e.g., "800" (Width only)
+    /// Resizes the image to the target width; the height is calculated automatically to maintain aspect ratio.
     WidthOnly(usize),
-    /// e.g., "x600" (Height only)
+    /// Resizes the image to the target height; the width is calculated automatically to maintain aspect ratio.
     HeightOnly(usize),
-    /// e.g., "800x600>"
+    /// Fits the image within the bounding box, but *only* if the image is larger than the box.
     ShrinkToFit(usize, usize),
-    /// e.g., "800x600<"
+    /// Fits the image within the bounding box, but *only* if the image is smaller than the box.
     EnlargeToFit(usize, usize),
-    /// e.g., "40000@"
+    /// Scales the image so its total pixel count matches the specified area, maintaining aspect ratio.
     Area(usize),
 }
-/// Resize an image to a new width and height
-/// using the resize method specified
+/// Resizes an image to new dimensions using a specified resampling algorithm.
+///
+/// # Color Accuracy
+///
+/// To prevent visual artifacts (such as dark fringing or color shifting), this operation
+/// automatically performs mathematical resampling in a **linear color space**.
+///
+/// 1. If the image is gamma-encoded (e.g., sRGB), it is temporarily linearized.
+/// 2. If the image has an alpha channel, it is temporarily converted to **premultiplied alpha**.
+/// 3. The image is resampled.
+/// 4. The image is converted back to its original gamma and alpha state.
+///
+/// # Example
+///
+/// ```rust
+/// use zune_core::colorspace::ColorSpace;
+/// use zune_image::image::Image;
+/// use zune_image::traits::OperationsTrait;
+/// use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
+/// use zune_image::errors::ImageErrors;
+///
+/// let mut img = Image::fill(255_u8, ColorSpace::RGB, 1000, 1000);
+///
+/// // Resize the image to fit within a 500x500 box using high-quality Lanczos3
+/// let resize = Resize::new(ResizeDimensions::FitWithin(500, 500), ResizeMethod::Lanczos3);
+/// resize.execute(&mut img)?;
+/// # Ok::<(), ImageErrors>(())
+/// ```
 #[derive(Copy, Clone)]
 pub struct Resize {
     dimensions: ResizeDimensions,
@@ -109,7 +148,7 @@ impl OperationsTrait for Resize {
         if !is_image_linear {
             let start = Instant::now();
             trace!("Converting image to linear along resize method");
-            let transfers = ImageTransfer::new(
+            let transfers = TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::GammaToLinear,
             );
@@ -199,7 +238,7 @@ impl OperationsTrait for Resize {
         if !is_image_linear {
             let start = Instant::now();
             trace!("Converting image back to gamma along resize method");
-            let transfers = ImageTransfer::new(
+            let transfers = TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::LinearToGamma,
             );
@@ -272,7 +311,7 @@ fn resize<T>(
     in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
     out_height: usize, precomputed_kernels: &PrecomputedKernels,
 ) where
-    T: Copy + NumOps<T> + Default+Send+Sync,
+    T: Copy + NumOps<T> + Default + Send + Sync,
     f32: std::convert::From<T>,
 {
     seperable_kernel::resample_separable(
