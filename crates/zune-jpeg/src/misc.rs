@@ -236,8 +236,8 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
         // probably not needed. :)
         component.y = y;
         component.quantization_table = qt_table;
-        // initially stride contains its horizontal sub-sampling
-        component.width_stride *= img.mcu_x * 8;
+        // Use direct assignment (not *=) so this is idempotent on retry.
+        component.width_stride = component.horizontal_sample * img.mcu_x * 8;
     }
     {
         // Sampling factors are one thing that suck

@@ -14,7 +14,7 @@
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::JpegDecoder;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::rc::Rc;
 
@@ -27,11 +27,29 @@ struct GrowableCursor<'a> {
     data:     &'a [u8],
     position: usize,
     limit:    Rc<Cell<usize>>,
+    seek_log: Option<Rc<RefCell<Vec<usize>>>>
 }
 
 impl<'a> GrowableCursor<'a> {
     fn new(data: &'a [u8], limit: Rc<Cell<usize>>) -> Self {
-        Self { data, position: 0, limit }
+        Self {
+            data,
+            position: 0,
+            limit,
+            seek_log: None
+        }
+    }
+
+    #[cfg(feature = "arith")]
+    fn with_seek_log(
+        data: &'a [u8], limit: Rc<Cell<usize>>, seek_log: Rc<RefCell<Vec<usize>>>
+    ) -> Self {
+        Self {
+            data,
+            position: 0,
+            limit,
+            seek_log: Some(seek_log)
+        }
     }
 
     fn visible(&self) -> usize {
@@ -81,6 +99,9 @@ impl Seek for GrowableCursor<'_> {
             ));
         }
         self.position = new_pos as usize;
+        if let Some(seek_log) = &self.seek_log {
+            seek_log.borrow_mut().push(self.position);
+        }
         Ok(self.position as u64)
     }
 }
@@ -88,6 +109,86 @@ impl Seek for GrowableCursor<'_> {
 fn decode_oneshot(data: &[u8]) -> Vec<u8> {
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode().expect("one-shot decode failed")
+}
+
+fn assert_pixels_match(actual: &[u8], expected: &[u8], name: &str, available: usize) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{name}: incremental and one-shot output lengths differ"
+    );
+
+    if let Some(index) = actual
+        .iter()
+        .zip(expected)
+        .position(|(left, right)| left != right)
+    {
+        let start = index.saturating_sub(8);
+        let end = (index + 9).min(actual.len());
+        panic!(
+            "{name}: first pixel byte mismatch at {index} with {available} bytes visible: incremental={}, one-shot={}, incremental window={:?}, one-shot window={:?}",
+            actual[index],
+            expected[index],
+            &actual[start..end],
+            &expected[start..end]
+        );
+    }
+}
+
+fn assert_incremental_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    assert!(step > 0, "incremental step must be non-zero");
+
+    let expected = decode_oneshot(data);
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut header_done = false;
+    let mut out: Vec<u8> = Vec::new();
+    let mut available = 0_usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+
+        if !header_done {
+            match decoder.decode_headers() {
+                Ok(()) => header_done = true,
+                Err(ref e) if e.is_recoverable_eof() => {
+                    assert!(
+                        available < data.len(),
+                        "headers still need more data with the full input visible"
+                    );
+                    continue;
+                }
+                Err(e) => panic!("unexpected header error at byte {available}: {e:?}")
+            }
+        }
+
+        if out.is_empty() {
+            out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        }
+
+        match decoder.decode_into(&mut out) {
+            Ok(()) => {
+                assert_pixels_match(&out, &expected, name, available);
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "scan still needs more data with the full input visible"
+                );
+            }
+            Err(e) => panic!("unexpected scan error at byte {available}: {e:?}")
+        }
+    }
+}
+
+fn assert_incremental_decode_matrix(cases: &[(&str, &[u8], usize)]) {
+    for (name, data, step) in cases {
+        assert_incremental_decode_matches_oneshot(name, data, *step);
+    }
 }
 
 /// Feeding the entire file at once via decode_headers + decode_into must
@@ -389,12 +490,243 @@ fn header_app2_truncation_is_recoverable() {
     panic!("headers never completed even with all bytes visible");
 }
 
+/// Sanity check: give headers + partial scan, get EOF, then give
+/// full data and verify pixels match one-shot.
+#[test]
+fn scan_resume_two_step() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    // Expose 80% of data — headers should complete, scan should fail
+    let partial = data.len() * 80 / 100;
+    limit.set(partial);
+
+    decoder
+        .decode_headers()
+        .expect("headers should succeed at 80%");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+    match decoder.decode_into(&mut out) {
+        Ok(()) => panic!("scan should not complete with only 80% data"),
+        Err(ref e) if e.is_recoverable_eof() => {} // expected
+        Err(e) => panic!("unexpected error: {e:?}")
+    }
+
+    // Now expose all data
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("scan should succeed with 100% data");
+    assert_eq!(out, expected, "pixels must match one-shot decode");
+}
+
+/// Same as two_step but with 10-byte chunks to stress-test many retries.
+#[test]
+fn scan_resume_small_chunks() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut out: Vec<u8> = Vec::new();
+    let chunk = 10;
+    let mut header_done = false;
+    for avail in (chunk..=data.len()).step_by(chunk) {
+        limit.set(avail.min(data.len()));
+
+        if !header_done {
+            match decoder.decode_headers() {
+                Ok(()) => {
+                    header_done = true;
+                }
+                Err(ref e) if e.is_recoverable_eof() => continue,
+                Err(e) => panic!("header error at byte {avail}: {e:?}")
+            }
+        }
+
+        if out.is_empty() {
+            out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        }
+
+        match decoder.decode_into(&mut out) {
+            Ok(()) => {
+                assert_eq!(out, expected, "pixels must match one-shot");
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => {
+                continue;
+            }
+            Err(e) => panic!("scan error at byte {avail}: {e:?}")
+        }
+    }
+    // One final try with all data
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("should succeed with all data");
+    assert_eq!(out, expected, "pixels must match one-shot (final)");
+}
+
+#[test]
+fn baseline_interleaved_incremental_parity() {
+    assert_incremental_decode_matrix(&[
+        (
+            "synthetic_image",
+            include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
+            37
+        ),
+        (
+            "sampling_factors",
+            include_bytes!("../../../test-images/jpeg/sampling_factors.jpg"),
+            29
+        ),
+        (
+            "cymk",
+            include_bytes!("../../../test-images/jpeg/cymk.jpg"),
+            4096
+        )
+    ]);
+}
+
+#[test]
+fn concatenated_four_components_incremental_parity() {
+    assert_incremental_decode_matches_oneshot(
+        "four_components",
+        include_bytes!("../../../test-images/jpeg/four_components.jpg"),
+        4096
+    );
+}
+
+#[test]
+fn baseline_non_interleaved_incremental_parity() {
+    assert_incremental_decode_matrix(&[
+        (
+            "non_interleaved_444_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg"),
+            17
+        ),
+        (
+            "non_interleaved_420_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg"),
+            17
+        ),
+        (
+            "non_interleaved_422_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg"),
+            17
+        ),
+        (
+            "non_interleaved_440_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg"),
+            17
+        ),
+        (
+            "non_interleaved_422_65x65",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg"),
+            17
+        )
+    ]);
+}
+
+#[test]
+fn progressive_huffman_incremental_parity() {
+    assert_incremental_decode_matrix(&[
+        (
+            "down_sampled_grayscale_prog",
+            include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+            31
+        ),
+        (
+            "kiara_limited_progressive_four_components",
+            include_bytes!(
+                "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
+            ),
+            8192
+        )
+    ]);
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_incremental_parity() {
+    assert_incremental_decode_matrix(&[
+        (
+            "arith_seq",
+            include_bytes!("../../../test-images/jpeg/arith/seq.jpg"),
+            23
+        ),
+        (
+            "arith_prog",
+            include_bytes!("../../../test-images/jpeg/arith/prog.jpg"),
+            23
+        )
+    ]);
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_restart_incremental_parity() {
+    assert_incremental_decode_matrix(&[
+        (
+            "arith_seq_restart",
+            include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg"),
+            23
+        ),
+        (
+            "arith_prog_restart",
+            include_bytes!("../../../test-images/jpeg/arith/prog-restart.jpg"),
+            23
+        )
+    ]);
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_restart_resume_uses_rst_checkpoint() {
+    let data = include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg");
+    let expected = decode_oneshot(data);
+    let limit = Rc::new(Cell::new(874_usize));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be visible before first RST retry");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated scan after first RST should be recoverable");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should resume from RST checkpoint");
+
+    let seeks = seek_log.borrow();
+    assert!(
+        seeks.iter().any(|&position| position == 857),
+        "retry should seek to first RST checkpoint at 857, got {seeks:?}"
+    );
+    assert_pixels_match(&out, &expected, "arith_seq_restart_checkpoint", data.len());
+}
+
 /// Sanity check: byte-by-byte incremental decode of a normal image (no
 /// inline markers) must reproduce the one-shot pixel output. If this test
 /// fails, the bug is in the scan-retry mechanism itself rather than in
 /// the inline-marker path.
 #[test]
-#[ignore = "scan-phase resume not yet implemented: entropy decoder treats EOF as end-of-scan"]
 fn inplace_byte_by_byte_full_decode() {
     let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let expected = decode_oneshot(data);
@@ -442,7 +774,6 @@ fn inplace_byte_by_byte_full_decode() {
 ///   4. asserts the final ICC profile is byte-identical (not duplicated)
 ///      and pixels match.
 #[test]
-#[ignore = "scan-phase resume not yet implemented: entropy decoder treats EOF as end-of-scan"]
 fn inline_marker_in_scan_does_not_duplicate_icc() {
     let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
     let payload = b"INLINE-ICC-PAYLOAD-FOR-REGRESSION-TEST";
