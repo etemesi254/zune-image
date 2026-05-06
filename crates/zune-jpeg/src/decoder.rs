@@ -542,8 +542,6 @@ where
             }
             DecodingState::DecodeHeaders { resume_position } => {
                 if resume_position == 0 {
-                    self.reset_header_state();
-
                     // First two bytes should be jpeg soi marker
                     let magic_bytes = self.stream.get_u16_be_err()?;
 
@@ -1084,43 +1082,7 @@ where
         Ok(())
     }
 
-    /// Reset all state set during header parsing so that
-    /// `decode_headers_internal` can be called again from scratch.
-    // NB: fields here must stay in sync with `fn default()`.
-    fn reset_header_state(&mut self) {
-        self.info = ImageInfo::default();
-        self.qt_tables = [None, None, None, None];
-        self.entropy_tables.dc_huffman = [None, None, None, None];
-        self.entropy_tables.ac_huffman = [None, None, None, None];
-        self.components.clear();
-        self.h_max = 1;
-        self.v_max = 1;
-        self.mcu_height = 0;
-        self.mcu_width = 0;
-        self.mcu_x = 0;
-        self.mcu_y = 0;
-        self.is_interleaved = false;
-        self.is_progressive = false;
-        self.spec_start = 0;
-        self.spec_end = 0;
-        self.succ_high = 0;
-        self.succ_low = 0;
-        self.num_scans = 0;
-        self.scan_subsampled = false;
-        self.input_colorspace = ColorSpace::YCbCr;
-        self.z_order = [0; MAX_COMPONENTS];
-        self.restart_interval = 0;
-        self.todo = 0x7fff_ffff;
-        self.headers_decoded = false;
-        self.seen_sof = false;
-        self.icc_data.clear();
-        self.is_mjpeg = false;
-        self.coeff = 1;
-        self.extended_xmp_segments.clear();
-        self.state = DecodingState::DecodeHeaders { resume_position: 0 };
-        // Best-effort seek to start; may fail for non-seekable streams.
-        let _ = self.stream.set_position(0);
-    }
+
 
     /// Create a new decoder with the specified options to be used for decoding
     /// an image
