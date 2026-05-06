@@ -310,3 +310,148 @@ fn resume_after_sof_eventually_succeeds() {
     let info = decoder.info().expect("info() must be Some after headers");
     assert!(info.width > 0 && info.height > 0, "dimensions must be valid");
 }
+
+/// Inject a synthetic APP2 ICC chunk just before the EOI marker of `base`.
+///
+/// The resulting JPEG places an APP marker at a position the entropy decoder
+/// encounters while reading scan data; in non-strict mode the scan loop
+/// dispatches such markers through `parse_marker_inner` from `mcu.rs`,
+/// which bypasses the header-side snapshot/rollback wrapping done in
+/// `handle_known_marker`.
+fn inject_inline_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
+    let eoi = base
+        .windows(2)
+        .rposition(|w| w == [0xFF, 0xD9])
+        .expect("base JPEG must end with EOI");
+
+    let body_len = 2 + 12 + 1 + 1 + payload.len();
+    assert!(body_len <= u16::MAX as usize, "payload too large for one APP2");
+
+    let mut chunk = Vec::with_capacity(2 + body_len);
+    chunk.extend_from_slice(&[0xFF, 0xE2]);
+    chunk.extend_from_slice(&(body_len as u16).to_be_bytes());
+    chunk.extend_from_slice(b"ICC_PROFILE\0");
+    chunk.push(1);
+    chunk.push(1);
+    chunk.extend_from_slice(payload);
+
+    let mut out = Vec::with_capacity(base.len() + chunk.len());
+    out.extend_from_slice(&base[..eoi]);
+    out.extend_from_slice(&chunk);
+    out.extend_from_slice(&base[eoi..]);
+    out
+}
+
+/// Sanity check: byte-by-byte incremental decode of a normal image (no
+/// inline markers) must reproduce the one-shot pixel output. If this test
+/// fails, the bug is in the scan-retry mechanism itself rather than in
+/// the inline-marker path.
+#[test]
+#[ignore = "scan-phase resume not yet implemented: entropy decoder treats EOF as end-of-scan"]
+fn inplace_byte_by_byte_full_decode() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut out: Vec<u8> = Vec::new();
+    for avail in 1..=data.len() {
+        limit.set(avail);
+
+        match decoder.decode_headers() {
+            Ok(()) => {}
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected header error at byte {avail}: {e:?}"),
+        }
+
+        if out.is_empty() {
+            out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        }
+
+        match decoder.decode_into(&mut out) {
+            Ok(()) => {
+                assert_eq!(out, expected, "pixel output must match one-shot");
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected scan error at byte {avail}: {e:?}"),
+        }
+    }
+    panic!("decode never completed");
+}
+
+/// Regression test for the case when scan-phase resume re-seeks to 
+/// `scan_start_position` and replays the scan, any inline marker dispatched
+///  through `mcu.rs::parse_marker_inner` gets re-parsed on every retry. 
+/// For append-only metadata like ICC, this silently duplicates entries.
+///
+/// The test:
+///   1. builds a synthetic JPEG with one inline APP2 ICC chunk just before EOI,
+///   2. one-shot decodes it to record the expected ICC and pixel output,
+///   3. incrementally decodes it byte-by-byte through `GrowableCursor`,
+///      forcing many scan retries,
+///   4. asserts the final ICC profile is byte-identical (not duplicated)
+///      and pixels match.
+#[test]
+#[ignore = "scan-phase resume not yet implemented: entropy decoder treats EOF as end-of-scan"]
+fn inline_marker_in_scan_does_not_duplicate_icc() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let payload = b"INLINE-ICC-PAYLOAD-FOR-REGRESSION-TEST";
+    let data = inject_inline_icc(base, payload);
+
+    // Sanity: one-shot decode must accept the synthetic image and surface
+    // exactly the payload we injected.
+    let mut oneshot = JpegDecoder::new(ZCursor::new(&data[..]));
+    let expected_pixels = oneshot.decode().expect("one-shot decode of synthetic image");
+    let expected_icc = oneshot
+        .icc_profile()
+        .expect("one-shot decode must expose injected ICC profile");
+    assert_eq!(
+        expected_icc, payload,
+        "injected payload not round-tripped by one-shot decoder; \
+         test image construction is wrong"
+    );
+
+    // Incremental decode on the *same* decoder, growing visibility one byte
+    // at a time so the scan path repeatedly hits recoverable EOF and retries.
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut out: Vec<u8> = Vec::new();
+    for avail in 1..=data.len() {
+        limit.set(avail);
+
+        // Drive headers first; only attempt scan once headers complete.
+        match decoder.decode_headers() {
+            Ok(()) => {}
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected header error at byte {avail}: {e:?}"),
+        }
+
+        if out.is_empty() {
+            out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        }
+
+        match decoder.decode_into(&mut out) {
+            Ok(()) => {
+                assert_eq!(out, expected_pixels, "pixel output must match one-shot");
+                let got_icc = decoder
+                    .icc_profile()
+                    .expect("incremental decode must expose injected ICC profile");
+                assert_eq!(
+                    got_icc, expected_icc,
+                    "ICC profile after incremental decode must match one-shot \
+                     (duplicated entries indicate scan-retry re-parses an \
+                     inline marker without rolling back append-only state)"
+                );
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected scan error at byte {avail}: {e:?}"),
+        }
+    }
+    panic!("decode never completed even with all bytes visible");
+}

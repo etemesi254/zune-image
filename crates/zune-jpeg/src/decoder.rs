@@ -80,14 +80,25 @@ pub(crate) enum DecodingState {
     /// Headers not yet fully decoded. `resume_position == 0` means start from SOI.
     DecodeHeaders { resume_position: usize },
     /// Headers decoded; scan data starts at `scan_start_position`.
-    DecodeScan { scan_start_position: usize },
+    ///
+    /// `append_snapshot` records the lengths of the append-only metadata
+    /// buffers (ICC, extended XMP, gain map) at the moment we entered the
+    /// scan. On every scan retry we roll those buffers back to this snapshot
+    /// before re-seeking, so inline markers re-encountered during replay
+    /// (see `mcu.rs::check_stream_marker_after_mcu_width`) do not duplicate
+    /// metadata entries.
+    DecodeScan {
+        scan_start_position: usize,
+        append_snapshot:     HeaderAppendStateSnapshot
+    },
 }
 
 // Snapshot of append-only buffers populated across multi-segment markers
 // (ICC chunks, extended XMP, gain map). All other parsers either overwrite
 // fixed slots (qt/huffman/components) or fail before mutating, so only
-// these three need to be rolled back when a marker parser errors out.
-#[derive(Clone, Copy)]
+// these three need to be rolled back when a marker parser errors out
+// or when scan-phase replay re-seeks past markers it already consumed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HeaderAppendStateSnapshot {
     icc:  usize,
     xmp:  usize,
@@ -245,7 +256,11 @@ where
 
     fn enter_scan_state(&mut self) -> Result<(), DecodeErrors> {
         let scan_start_position = self.stream_position()?;
-        self.state = DecodingState::DecodeScan { scan_start_position };
+        let append_snapshot = HeaderAppendStateSnapshot::capture(self);
+        self.state = DecodingState::DecodeScan {
+            scan_start_position,
+            append_snapshot
+        };
         Ok(())
     }
 
@@ -610,16 +625,12 @@ where
         }
     }
 
-    // Parse a recognised marker and update the resume checkpoint. On a parser
-    // error, append-only metadata accumulated during this marker is rolled
-    // back so a future retry sees a clean state.
+    // Parse a recognised marker and update the resume checkpoint. Rollback of
+    // append-only metadata on parser error lives inside `parse_marker_inner`
+    // itself so every caller (including the inline-marker path in `mcu.rs`)
+    // is protected uniformly.
     fn handle_known_marker(&mut self, n: Marker) -> Result<MarkerStep, DecodeErrors> {
-        let snapshot = HeaderAppendStateSnapshot::capture(self);
-
-        if let Err(e) = self.parse_marker_inner(n) {
-            snapshot.rollback(self);
-            return Err(e);
-        }
+        self.parse_marker_inner(n)?;
 
         if !self.extended_xmp_segments.is_empty() {
             self.reassemble_extended_xmp();
@@ -686,8 +697,21 @@ where
         self.checkpoint_headers()?;
         Ok(())
     }
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
+        // Snapshot append-only metadata so any error path leaves the decoder
+        // in the same shape as before the marker started. Required for both
+        // header-phase resume and the non-strict inline-marker dispatch from
+        // `mcu.rs::check_stream_marker_after_mcu_width`.
+        let snapshot = HeaderAppendStateSnapshot::capture(self);
+        let result = self.parse_marker_dispatch(m);
+        if result.is_err() {
+            snapshot.rollback(self);
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn parse_marker_dispatch(&mut self, m: Marker) -> Result<(), DecodeErrors> {
         match m {
             Marker::SOF(0..=2) => {
                 // choose marker
@@ -994,8 +1018,11 @@ where
             DecodingState::DecodeHeaders { .. } => {
                 self.decode_headers_internal()?;
             }
-            DecodingState::DecodeScan { scan_start_position } => {
-                // Seek back to scan start (needed for retry after more data arrived).
+            DecodingState::DecodeScan { scan_start_position, append_snapshot } => {
+                // Roll back any metadata that an inline marker pushed during
+                // a previous scan attempt, then seek back to the start of the
+                // scan so MCU decoding can be retried from the same anchor.
+                append_snapshot.rollback(self);
                 self.stream.set_position(scan_start_position)?;
             }
         }
