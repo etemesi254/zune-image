@@ -522,7 +522,7 @@ pub(crate) fn parse_app13<T: ZByteReaderTrait>(
 ) -> Result<(), DecodeErrors> {
     const IPTC_PREFIX: &[u8] = b"Photoshop 3.0\0";
     // skip length.
-    let mut length = usize::from(decoder.stream.get_u16_be());
+    let mut length = usize::from(decoder.stream.get_u16_be_err()?);
 
     if length < 2 {
         return Err(DecodeErrors::FormatStatic("Too small APP13 length"));
@@ -549,7 +549,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
     decoder: &mut JpegDecoder<T>
 ) -> Result<(), DecodeErrors> {
     // skip length
-    let mut length = usize::from(decoder.stream.get_u16_be());
+    let mut length = usize::from(decoder.stream.get_u16_be_err()?);
 
     if length < 2 {
         return Err(DecodeErrors::FormatStatic("Too small APP14 length"));
@@ -566,7 +566,7 @@ pub(crate) fn parse_app14<T: ZByteReaderTrait>(
         // skip version, flags0 and flags1
         decoder.stream.skip(5)?;
         // get color transform
-        let transform = decoder.stream.read_u8();
+        let transform = decoder.stream.read_u8_err()?;
         // https://exiftool.org/TagNames/JPEG.html#Adobe
         match transform {
             0 => decoder.input_colorspace = ColorSpace::CMYK,
@@ -609,7 +609,7 @@ pub(crate) fn parse_app1<T: ZByteReaderTrait>(
         EXTENDED_XMP_GUID_SIZE + EXTENDED_XMP_TOTAL_SIZE_SIZE + EXTENDED_XMP_OFFSET_SIZE;
 
     // contains exif data
-    let mut length = usize::from(decoder.stream.get_u16_be());
+    let mut length = usize::from(decoder.stream.get_u16_be_err()?);
 
     if length < 2 {
         return Err(DecodeErrors::FormatStatic("Too small app1 length"));
@@ -678,7 +678,7 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     static HDR_META: &[u8] = b"urn:iso:std:iso:ts:21496:-1\0";
     static MPF_DATA: &[u8] = b"MPF\0";
 
-    let mut length = usize::from(decoder.stream.get_u16_be());
+    let mut length = usize::from(decoder.stream.get_u16_be_err()?);
 
     if length < 2 {
         return Err(DecodeErrors::FormatStatic("Too small app2 segment"));
@@ -691,8 +691,8 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
         // skip 12 bytes which indicate ICC profile
         length -= 12;
         decoder.stream.skip(12)?;
-        let seq_no = decoder.stream.read_u8();
-        let num_markers = decoder.stream.read_u8();
+        let seq_no = decoder.stream.read_u8_err()?;
+        let num_markers = decoder.stream.read_u8_err()?;
         // deduct the two bytes we read above
         length -= 2;
 
@@ -715,8 +715,8 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
                 // 2 bytes minimum_version: (00 00)
                 // 2 bytes writer_version: (00 00)
                 // Perhaps nothing to do with it ?
-                let _ = decoder.stream.get_u16_be();
-                let _ = decoder.stream.get_u16_be();
+                let _ = decoder.stream.get_u16_be_err()?;
+                let _ = decoder.stream.get_u16_be_err()?;
                 length -= 4;
                 decoder
                     .info

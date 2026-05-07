@@ -99,7 +99,7 @@ pub(crate) enum DecodingState {
 // these three need to be rolled back when a marker parser errors out
 // or when scan-phase replay re-seeks past markers it already consumed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct HeaderAppendStateSnapshot {
+pub(crate) struct HeaderAppendStateSnapshot {
     icc:  usize,
     xmp:  usize,
     gain: usize
