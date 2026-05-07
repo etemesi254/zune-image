@@ -14,7 +14,7 @@
     clippy::cast_sign_loss,
     clippy::cast_possible_truncation
 )]
-
+#![cfg(feature = "arith")]
 //! This file exposes a single struct that can decode an arithmetic encoded
 //! Bitstream in a JPEG file
 //!
