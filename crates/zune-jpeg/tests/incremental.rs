@@ -311,19 +311,8 @@ fn resume_after_sof_eventually_succeeds() {
     assert!(info.width > 0 && info.height > 0, "dimensions must be valid");
 }
 
-/// Inject a synthetic APP2 ICC chunk just before the EOI marker of `base`.
-///
-/// The resulting JPEG places an APP marker at a position the entropy decoder
-/// encounters while reading scan data; in non-strict mode the scan loop
-/// dispatches such markers through `parse_marker_inner` from `mcu.rs`,
-/// which bypasses the header-side snapshot/rollback wrapping done in
-/// `handle_known_marker`.
-fn inject_inline_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
-    let eoi = base
-        .windows(2)
-        .rposition(|w| w == [0xFF, 0xD9])
-        .expect("base JPEG must end with EOI");
-
+/// Build a synthetic APP2 ICC chunk with a single payload segment.
+fn icc_app2_chunk(payload: &[u8]) -> Vec<u8> {
     let body_len = 2 + 12 + 1 + 1 + payload.len();
     assert!(body_len <= u16::MAX as usize, "payload too large for one APP2");
 
@@ -334,12 +323,70 @@ fn inject_inline_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
     chunk.push(1);
     chunk.push(1);
     chunk.extend_from_slice(payload);
+    chunk
+}
+
+/// Inject a synthetic APP2 ICC chunk before SOS so header parsing sees it.
+fn inject_header_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
+    let sos = base
+        .windows(2)
+        .position(|w| w == [0xFF, 0xDA])
+        .expect("base JPEG must contain SOS");
+    let chunk = icc_app2_chunk(payload);
+
+    let mut out = Vec::with_capacity(base.len() + chunk.len());
+    out.extend_from_slice(&base[..sos]);
+    out.extend_from_slice(&chunk);
+    out.extend_from_slice(&base[sos..]);
+    out
+}
+
+/// Inject a synthetic APP2 ICC chunk just before the EOI marker of `base`.
+///
+/// The resulting JPEG places an APP marker at a position the entropy decoder
+/// encounters while reading scan data; in non-strict mode the scan loop
+/// dispatches such markers through `parse_marker_inner` from `mcu.rs`.
+fn inject_inline_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
+    let eoi = base
+        .windows(2)
+        .rposition(|w| w == [0xFF, 0xD9])
+        .expect("base JPEG must end with EOI");
+    let chunk = icc_app2_chunk(payload);
 
     let mut out = Vec::with_capacity(base.len() + chunk.len());
     out.extend_from_slice(&base[..eoi]);
     out.extend_from_slice(&chunk);
     out.extend_from_slice(&base[eoi..]);
     out
+}
+
+#[test]
+fn header_app2_truncation_is_recoverable() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let payload = b"HEADER-ICC-PAYLOAD-FOR-RESUME-TEST";
+    let data = inject_header_icc(base, payload);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    for avail in 1..=data.len() {
+        limit.set(avail);
+
+        match decoder.decode_headers() {
+            Ok(()) => {
+                let got_icc = decoder
+                    .icc_profile()
+                    .expect("incremental headers must expose injected ICC profile");
+                assert_eq!(got_icc, payload);
+                return;
+            }
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected header error at byte {avail}: {e:?}"),
+        }
+    }
+
+    panic!("headers never completed even with all bytes visible");
 }
 
 /// Sanity check: byte-by-byte incremental decode of a normal image (no
@@ -382,9 +429,9 @@ fn inplace_byte_by_byte_full_decode() {
     panic!("decode never completed");
 }
 
-/// Regression test for the case when scan-phase resume re-seeks to 
+/// Regression test for the case when scan-phase resume re-seeks to
 /// `scan_start_position` and replays the scan, any inline marker dispatched
-///  through `mcu.rs::parse_marker_inner` gets re-parsed on every retry. 
+///  through `mcu.rs::parse_marker_inner` gets re-parsed on every retry.
 /// For append-only metadata like ICC, this silently duplicates entries.
 ///
 /// The test:
