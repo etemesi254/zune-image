@@ -34,6 +34,7 @@ use crate::huffman::HuffmanTable;
 use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
+use crate::scanline::ScanlineState;
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
     generic_sampler, upsample_no_op
@@ -232,6 +233,10 @@ pub struct JpegDecoder<T> {
     pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
     /// Current decoding phase for incremental decoding.
     state: DecodingState,
+    /// Per-call state for the libjpeg-turbo-style scanline output API.
+    /// `None` until `start_decompress` is called; back to `None` after
+    /// `finish_decompress`.
+    pub(crate) scanline_state: Option<ScanlineState>
 }
 
 impl<T> JpegDecoder<T>
@@ -338,6 +343,7 @@ where
             coeff:             1,
             extended_xmp_segments: vec![],
             state:             DecodingState::DecodeHeaders { resume_position: 0 },
+            scanline_state:    None,
         }
     }
     /// Decode a buffer already in memory
@@ -986,6 +992,53 @@ where
         };
     }
 
+    /// Total number of scanlines this image will produce. Returns `None`
+    /// if headers have not been decoded.
+    #[must_use]
+    pub fn output_height(&self) -> Option<usize> {
+        return if self.headers_decoded {
+            Some(usize::from(self.info.height))
+        } else {
+            None
+        };
+    }
+
+    /// Output width in pixels. Returns `None` if headers have not been
+    /// decoded.
+    #[must_use]
+    pub fn output_width(&self) -> Option<usize> {
+        return if self.headers_decoded {
+            Some(usize::from(self.info.width))
+        } else {
+            None
+        };
+    }
+
+    /// Number of components per output pixel after any colorspace
+    /// transform configured in [`DecoderOptions`]. Returns `None` if
+    /// headers have not been decoded.
+    #[must_use]
+    pub fn output_components(&self) -> Option<usize> {
+        return if self.headers_decoded {
+            Some(self.options.jpeg_get_out_colorspace().num_components())
+        } else {
+            None
+        };
+    }
+
+    /// Bytes per output scanline = `output_width * output_components`.
+    /// Returns `None` if headers have not been decoded or the value
+    /// would overflow `usize`.
+    #[must_use]
+    pub fn output_row_stride(&self) -> Option<usize> {
+        return if self.headers_decoded {
+            usize::from(self.info.width)
+                .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
+        } else {
+            None
+        };
+    }
+
     /// Decode into a pre-allocated buffer
     ///
     /// It is an error if the buffer size is smaller than
@@ -1082,7 +1135,135 @@ where
         Ok(())
     }
 
+    /// Begin scanline-by-scanline decompression.
+    ///
+    /// This is the libjpeg-turbo-style entry point for streaming output:
+    /// after calling [`decode_headers`](Self::decode_headers) the caller
+    /// invokes `start_decompress` once, then drives output with repeated
+    /// calls to [`read_scanlines`](Self::read_scanlines) until
+    /// [`next_scanline`](Self::next_scanline) reaches
+    /// [`output_height`](Self::output_height), then calls
+    /// [`finish_decompress`](Self::finish_decompress).
+    ///
+    /// # Errors
+    /// - If `decode_headers` has not yet been called, this method will
+    ///   call it; any error from header parsing propagates.
+    /// - Returns an error if `start_decompress` was already called and
+    ///   `finish_decompress` has not yet been invoked.
+    /// - If the input is truncated and the underlying decode returns a
+    ///   recoverable EOF, that error propagates and no scanline state is
+    ///   installed; the caller may supply more input and call
+    ///   `start_decompress` again on the same decoder.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use zune_core::bytestream::ZCursor;
+    /// use zune_jpeg::JpegDecoder;
+    ///
+    /// let img = std::fs::read("a.jpg").unwrap();
+    /// let mut dec = JpegDecoder::new(ZCursor::new(&img));
+    /// dec.decode_headers().unwrap();
+    /// dec.start_decompress().unwrap();
+    ///
+    /// let row_stride = dec.output_row_stride().unwrap();
+    /// let height = dec.output_height().unwrap();
+    /// let mut row = vec![0_u8; row_stride];
+    /// while dec.next_scanline() < height {
+    ///     dec.read_scanlines(&mut row, 1).unwrap();
+    ///     // emit `row` somewhere
+    /// }
+    /// dec.finish_decompress().unwrap();
+    /// ```
+    pub fn start_decompress(&mut self) -> Result<(), DecodeErrors> {
+        if self.scanline_state.is_some() {
+            return Err(DecodeErrors::FormatStatic(
+                "start_decompress called twice without finish_decompress"
+            ));
+        }
 
+        let pre_decoded = self.decode()?;
+
+        let out_width = usize::from(self.info.width);
+        let out_height = usize::from(self.info.height);
+        let out_components = self.options.jpeg_get_out_colorspace().num_components();
+        let row_stride = out_width
+            .checked_mul(out_components)
+            .ok_or(DecodeErrors::FormatStatic("Output row stride overflow"))?;
+
+        self.scanline_state = Some(ScanlineState {
+            next_scanline: 0,
+            out_height,
+            row_stride,
+            pre_decoded
+        });
+        Ok(())
+    }
+
+    /// Read up to `num_lines` scanlines into `buf`.
+    ///
+    /// The return value is the number of scanlines actually written, which
+    /// may be less than `num_lines` if the image has fewer remaining rows.
+    /// Once the image is exhausted subsequent calls return `Ok(0)`.
+    ///
+    /// `buf` need only be large enough to hold the lines that will actually
+    /// be written on this call (i.e. at least
+    /// `min(num_lines, output_height() - next_scanline()) * output_row_stride()`
+    /// bytes). Passing a larger `num_lines` than rows remaining is not an
+    /// error — this matches libjpeg-turbo's `jpeg_read_scanlines`, which
+    /// documents an oversize `max_lines` as legal.
+    ///
+    /// # Errors
+    /// - Returns an error if `start_decompress` has not been called.
+    /// - Returns [`DecodeErrors::TooSmallOutput`] if `buf` is too short to
+    ///   hold the lines that would be written.
+    pub fn read_scanlines(
+        &mut self, buf: &mut [u8], num_lines: usize
+    ) -> Result<usize, DecodeErrors> {
+        let state = self.scanline_state.as_mut().ok_or(
+            DecodeErrors::FormatStatic("read_scanlines called before start_decompress")
+        )?;
+
+        if num_lines == 0 {
+            return Ok(0);
+        }
+
+        let take = (state.out_height - state.next_scanline).min(num_lines);
+        if take == 0 {
+            return Ok(0);
+        }
+
+        // take <= out_height; out_height * row_stride == pre_decoded.len(), so no overflow.
+        let bytes = take * state.row_stride;
+        if buf.len() < bytes {
+            return Err(DecodeErrors::TooSmallOutput(bytes, buf.len()));
+        }
+
+        let src = state.next_scanline * state.row_stride;
+        buf[..bytes].copy_from_slice(&state.pre_decoded[src..src + bytes]);
+        state.next_scanline += take;
+        Ok(take)
+    }
+
+    /// Finalize scanline decoding and free associated resources.
+    ///
+    /// Mirrors libjpeg-turbo's `jpeg_finish_decompress`. Tolerates being
+    /// called when `start_decompress` was never called or when
+    /// `finish_decompress` has already been invoked; both cases are
+    /// no-ops that return `Ok(())`.
+    pub fn finish_decompress(&mut self) -> Result<(), DecodeErrors> {
+        self.scanline_state = None;
+        Ok(())
+    }
+
+    /// Index of the next scanline that will be returned by
+    /// [`read_scanlines`](Self::read_scanlines).
+    ///
+    /// Mirrors libjpeg's `cinfo.output_scanline`. Returns 0 before
+    /// `start_decompress` is called.
+    #[must_use]
+    pub fn next_scanline(&self) -> usize {
+        self.scanline_state.as_ref().map_or(0, |s| s.next_scanline)
+    }
 
     /// Create a new decoder with the specified options to be used for decoding
     /// an image

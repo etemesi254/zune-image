@@ -188,6 +188,7 @@ mod marker;
 mod mcu;
 mod mcu_prog;
 mod misc;
+mod scanline;
 mod unsafe_utils;
 mod unsafe_utils_avx2;
 mod unsafe_utils_neon;
