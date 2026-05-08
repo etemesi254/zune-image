@@ -19,7 +19,7 @@ use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::{JpegDecoder, ProgressiveFineCheckpoint, MAX_COMPONENTS};
+use crate::decoder::{JpegDecoder, McuDecodeOutput, ProgressiveFineCheckpoint, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::headers::parse_sos;
 use crate::marker::Marker;
@@ -46,14 +46,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     pub(crate) fn decode_mcu_ycbcr_progressive<B: BitStream>(
-        &mut self, pixels: &mut [u8],
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         // Move the coefficient buffers out so scan helpers can borrow `self`
         // while receiving the buffers separately.
         let mut block = core::mem::take(&mut self.progressive_mcus_buffer);
         let mut scan_block = core::mem::take(&mut self.progressive_scan_buffer);
-        let result =
-            self.decode_mcu_ycbcr_progressive_inner::<B>(pixels, &mut block, &mut scan_block);
+        let result = self.decode_mcu_ycbcr_progressive_inner::<B>(
+            output,
+            &mut block,
+            &mut scan_block,
+        );
         if matches!(&result, Err(error) if error.is_recoverable_eof() || matches!(error, DecodeErrors::Cancelled)) {
             self.progressive_scan_buffer = scan_block;
         }
@@ -68,8 +71,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::too_many_lines
     )]
     fn decode_mcu_ycbcr_progressive_inner<B: BitStream>(
-        &mut self, pixels: &mut [u8], block: &mut [Vec<i16>; MAX_COMPONENTS],
-        scan_block: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, output: &mut McuDecodeOutput<'_, '_>, block: &mut [Vec<i16>; MAX_COMPONENTS]
+        , scan_block: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
         let mut mcu_height;
@@ -133,10 +136,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             &mut stream,
             block,
             scan_block,
-            pixels,
+            output,
             preserve_progressive_scans,
         )? {
-            return self.finish_progressive_decoding(block, pixels);
+            return self.finish_progressive_decoding(block, output);
         }
         if self.progressive_completed_scans > self.options.jpeg_get_max_scans() {
             return Err(DecodeErrors::Format(format!(
@@ -151,7 +154,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 return self.handle_progressive_inter_scan_error(
                     e,
                     block,
-                    pixels,
+                    output,
                     preserve_progressive_scans
                 )
             }
@@ -166,7 +169,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return self.handle_progressive_inter_scan_error(
                             e,
                             block,
-                            pixels,
+                            output,
                             preserve_progressive_scans
                         );
                     }
@@ -181,7 +184,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &mut stream,
                         block,
                         scan_block,
-                        pixels,
+                        output,
                         preserve_progressive_scans
                     )? {
                         break 'eoi;
@@ -205,7 +208,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             return self.handle_progressive_inter_scan_error(
                                 e,
                                 block,
-                                pixels,
+                                output,
                                 preserve_progressive_scans
                             )
                         }
@@ -219,7 +222,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         return self.handle_progressive_inter_scan_error(
                             e,
                             block,
-                            pixels,
+                            output,
                             preserve_progressive_scans
                         );
                     }
@@ -234,19 +237,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     return self.handle_progressive_inter_scan_error(
                         e,
                         block,
-                        pixels,
+                        output,
                         preserve_progressive_scans
                     )
                 }
             }
         }
 
-        self.finish_progressive_decoding(block, pixels)
+    self.finish_progressive_decoding(block, output)
     }
 
     fn decode_progressive_scan<B: BitStream>(
         &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS],
-        scan_block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        scan_block: &mut [Vec<i16>; MAX_COMPONENTS], output: &mut McuDecodeOutput<'_, '_>,
         use_scratch_coefficients: bool
     ) -> Result<bool, DecodeErrors> {
         if !use_scratch_coefficients {
@@ -296,14 +299,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if fine_resume.is_some() {
                     self.invalidate_progressive_fine_checkpoint();
                 }
-                self.finish_progressive_partial(block, pixels)?;
+                self.finish_progressive_partial(block, output)?;
                 return Err(e);
             }
             if self.stream.eof()? && self.scan_eof_is_error() {
                 if fine_resume.is_some() {
                     self.invalidate_progressive_fine_checkpoint();
                 }
-                self.finish_progressive_partial(block, pixels)?;
+                self.finish_progressive_partial(block, output)?;
                 return Err(DecodeErrors::ExhaustedData);
             }
             if self.options.strict_mode() {
@@ -328,7 +331,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 if fine_resume.is_some() {
                     self.invalidate_progressive_fine_checkpoint();
                 }
-                self.finish_progressive_partial(block, pixels)?;
+                self.finish_progressive_partial(block, output)?;
                 return Err(DecodeErrors::ExhaustedData);
             }
             error!("{}", DecodeErrors::ExhaustedData);
@@ -392,7 +395,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn handle_progressive_inter_scan_error(
-        &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS],
+        output: &mut McuDecodeOutput<'_, '_>,
         preserve_completed_scans: bool
     ) -> Result<(), DecodeErrors> {
         if matches!(error, DecodeErrors::Cancelled) {
@@ -400,7 +404,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
         if error.is_recoverable_eof() && self.scan_eof_is_error() {
             if preserve_completed_scans {
-                self.finish_progressive_partial(block, pixels)?;
+                self.finish_progressive_partial(block, output)?;
             } else {
                 self.discard_progressive_partial();
             }
@@ -410,7 +414,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             return Err(error);
         }
         error!("{error}");
-        self.finish_progressive_decoding(block, pixels)
+        self.finish_progressive_decoding(block, output)
     }
 
     fn discard_progressive_partial(&mut self) {
@@ -422,7 +426,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn finish_progressive_partial(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8]
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         if self.progressive_completed_scans == 0 {
             self.pixels_decoded = 0;
@@ -431,7 +435,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         if self.progressive_displayed_scans != self.progressive_completed_scans {
-            self.finish_progressive_decoding(block, pixels)?;
+            self.finish_progressive_decoding(block, output)?;
             self.progressive_displayed_scans = self.progressive_completed_scans;
         }
         self.pixels_decoded = 0;
@@ -900,7 +904,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]
     fn finish_progressive_decoding(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], output: &mut McuDecodeOutput<'_, '_>
     ) -> Result<(), DecodeErrors> {
         // Rendering replaces the caller's output row by row. Until every row
         // succeeds, the buffer may contain a mix of preview generations and
@@ -950,7 +954,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut upsampler_scratch_space = vec![0; upsampler_scratch_size];
         let mut tmp = [0_i32; DCT_BLOCK];
 
-        let raw_mode = self.raw_planes_sink.is_some();
+        let raw_mode = output.is_raw();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
@@ -1053,10 +1057,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
 
             // process that width up until it's impossible
-            if self.raw_planes_sink.is_some() {
-                self.copy_raw_planes_for_mcu_stripe(i)?;
-            } else {
-                self.post_process(
+            match output {
+                McuDecodeOutput::Pixels(pixels) => self.post_process(
                     pixels,
                     i,
                     mcu_height,
@@ -1064,7 +1066,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     padded_width,
                     &mut pixels_written,
                     &mut upsampler_scratch_space
-                )?;
+                )?,
+                McuDecodeOutput::RawPlanes(raw_planes) => {
+                    self.copy_raw_planes_for_mcu_stripe(i, raw_planes)?;
+                }
             }
         }
 
