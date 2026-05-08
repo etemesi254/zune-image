@@ -142,7 +142,8 @@ fn scanlines_baseline_luma_output_from_color() {
 
 #[test]
 fn scanlines_progressive_420() {
-    let data = include_bytes!("../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg");
+    let data =
+        include_bytes!("../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg");
     let opts = DecoderOptions::default();
     assert_matches_one_shot(data, opts, 1);
     assert_matches_one_shot(data, opts, 8);
@@ -205,7 +206,9 @@ fn scanlines_read_past_end_returns_zero() {
     let mut out = vec![0_u8; row_stride * height];
     let mut total = 0;
     while dec.next_scanline() < height {
-        let n = dec.read_scanlines(&mut out[total * row_stride..], 1).unwrap();
+        let n = dec
+            .read_scanlines(&mut out[total * row_stride..], 1)
+            .unwrap();
         if n == 0 {
             break;
         }
@@ -277,3 +280,26 @@ fn scanlines_oversize_num_lines_ok() {
     assert_eq!(dec.read_scanlines(&mut tmp, usize::MAX).unwrap(), 0);
 }
 
+#[test]
+fn scanlines_partial_mcu_height() {
+    // 65x65: height is not a multiple of an MCU row. Exercises the
+    // last-partial-row path that the streaming follow-up will care
+    // about. Match against decode() so we pin both halves.
+    let data = include_bytes!("../../../test-images/jpeg/non_interleaved_422_65x65.jpg");
+    let opts = DecoderOptions::default();
+    assert_matches_one_shot(data, opts, 1);
+    assert_matches_one_shot(data, opts, 8);
+    assert_matches_one_shot(data, opts, 65);
+}
+
+#[test]
+fn scanlines_baseline_with_restart_markers() {
+    // four_components.jpg is baseline with a non-zero DRI: the scan is
+    // broken up by RST markers. Pin byte-for-byte equivalence with
+    // decode() so the streaming follow-up has a regression net for the
+    // restart path.
+    let data = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let opts = DecoderOptions::default();
+    assert_matches_one_shot(data, opts, 1);
+    assert_matches_one_shot(data, opts, 16);
+}
