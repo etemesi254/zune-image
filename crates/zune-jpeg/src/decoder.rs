@@ -441,29 +441,32 @@ pub struct JpegDecoder<T> {
     /// scan's entropy data. The MCU decode loop will intercept that marker
     /// and store the real height; if it never arrives, decoding returns an
     /// error.
-    pub(crate) expects_dnl: bool,
-    /// When `Some`, the decoder is in raw planar output mode and
-    /// `post_process()` is bypassed in favour of copying each component's
-    /// post-IDCT samples directly into the caller-provided plane buffers.
-    ///
-    /// Always set/cleared inside [`JpegDecoder::decode_raw`]; `None`
-    /// during normal interleaved-pixel decoding.
-    pub(crate) raw_planes_sink: Option<RawPlanesSink>
+    pub(crate) expects_dnl: bool
 }
 
-/// Internal sink for one raw planar decode call.
-///
-/// Holds raw pointers into the caller-provided plane buffers so that MCU-stripe
-/// processing can write decoded samples directly without an intermediate copy.
-///
-/// # Safety
-/// The pointers are valid for the lifetime of the `decode_raw` / `decode_raw_strided`
-/// call that sets up this sink.  The sink is always cleared (set to `None`) before
-/// those functions return, so the pointers never outlive the caller's slices.
-#[allow(unsafe_code)]
-pub(crate) struct RawPlanesSink {
-    /// Raw pointers into the caller's plane buffers (one per component).
-    pub(crate) ptrs:           [*mut u8; MAX_COMPONENTS],
+/// Output target for one MCU decode call.
+pub(crate) enum McuDecodeOutput<'planes, 'buf> {
+    Pixels(&'planes mut [u8]),
+    RawPlanes(RawPlanesSink<'planes, 'buf>)
+}
+
+impl McuDecodeOutput<'_, '_> {
+    pub(crate) const fn is_raw(&self) -> bool {
+        matches!(self, Self::RawPlanes(_))
+    }
+
+    pub(crate) fn pixels_mut(&mut self) -> Option<&mut [u8]> {
+        match self {
+            Self::Pixels(pixels) => Some(pixels),
+            Self::RawPlanes(_) => None
+        }
+    }
+}
+
+/// Caller-provided raw planar buffers for one decode call.
+pub(crate) struct RawPlanesSink<'planes, 'buf> {
+    /// Caller plane buffers, one per component.
+    pub(crate) planes:         &'planes mut [&'buf mut [u8]],
     /// Total byte length of each caller buffer.
     pub(crate) lengths:        [usize; MAX_COMPONENTS],
     /// Bytes between successive destination rows (used for strided output).
@@ -475,15 +478,6 @@ pub(crate) struct RawPlanesSink {
     /// Number of valid components.
     pub(crate) n_components:   usize
 }
-
-/// SAFETY: The pointers in `RawPlanesSink` are derived from `&mut [u8]` references
-/// that live on the calling thread's stack.  The sink is only alive for the duration
-/// of a single `decode_raw*` call, never sent across threads.
-#[allow(unsafe_code)]
-unsafe impl Send for RawPlanesSink {}
-/// SAFETY: No shared-mutable state; see `Send` impl above.
-#[allow(unsafe_code)]
-unsafe impl Sync for RawPlanesSink {}
 
 impl<T> JpegDecoder<T>
 where
@@ -800,8 +794,7 @@ where
             progressive_displayed_scans: 0,
             progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
-                expects_dnl:                 false,
-                raw_planes_sink:             None
+            expects_dnl:                 false
         }
     }
     /// Decode a buffer already in memory
@@ -2078,23 +2071,8 @@ where
         }
         self.scan_decode_attempted = true;
 
-        let result: Result<(), DecodeErrors>;
-        if self.is_arithmetic {
-            #[cfg(feature = "arith")]
-            {
-                result = if self.is_progressive {
-                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(out)
-                } else {
-                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(out)
-                };
-            }
-            #[cfg(not(feature = "arith"))]
-            unreachable!();
-        } else if self.is_progressive {
-            result = self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out);
-        } else {
-            result = self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out);
-        }
+        let mut output = McuDecodeOutput::Pixels(out);
+        let result = self.decode_mcu_output(&mut output);
 
         match result {
             Ok(()) => {
@@ -2116,6 +2094,27 @@ where
                 Ok(())
             }
             Err(e) => Err(e)
+        }
+    }
+
+    fn decode_mcu_output(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        if self.is_arithmetic {
+            #[cfg(feature = "arith")]
+            {
+                if self.is_progressive {
+                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(output)
+                } else {
+                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(output)
+                }
+            }
+            #[cfg(not(feature = "arith"))]
+            unreachable!();
+        } else if self.is_progressive {
+            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(output)
+        } else {
+            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(output)
         }
     }
 
@@ -2210,55 +2209,26 @@ where
             }
         }
 
-        // Set up the raw-planes sink pointing directly into the caller's slices.
-        // SAFETY: The pointers are derived from the mutable slice references in
-        // `planes`, which are guaranteed to remain valid and exclusively borrowed
-        // for the duration of this call.  The sink is cleared before we return.
-        let mut ptrs = [core::ptr::null_mut(); MAX_COMPONENTS];
         let mut lengths = [0usize; MAX_COMPONENTS];
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
         for i in 0..n {
-            ptrs[i] = planes[i].as_mut_ptr();
             lengths[i] = planes[i].len();
             target_strides[i] = layout[i].stride;
             target_widths[i] = layout[i].stride;
             target_heights[i] = layout[i].allocated_height;
         }
-        self.raw_planes_sink = Some(RawPlanesSink {
-            ptrs,
+        let raw_planes = RawPlanesSink {
+            planes,
             lengths,
             target_strides,
             target_widths,
             target_heights,
             n_components: n
-        });
-
-        // Raw mode writes directly into the caller's buffers; downstream pixel
-        // bookkeeping only needs a placeholder slice.
-        let mut sink: [u8; 0] = [];
-        let result = if self.is_arithmetic {
-            #[cfg(feature = "arith")]
-            {
-                if self.is_progressive {
-                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(&mut sink)
-                } else {
-                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(&mut sink)
-                }
-            }
-            #[cfg(not(feature = "arith"))]
-            unreachable!();
-        } else if self.is_progressive {
-            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
-        } else {
-            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
         };
-
-        // Clear the sink so pointers don't outlive the caller's slices.
-        self.raw_planes_sink = None;
-
-        result
+        let mut output = McuDecodeOutput::RawPlanes(raw_planes);
+        self.decode_mcu_output(&mut output)
     }
 
     /// Decode raw planes using caller-supplied row strides.
@@ -2357,52 +2327,26 @@ where
             }
         }
 
-        // Set up the raw-planes sink pointing directly into the caller's slices.
-        // SAFETY: Same guarantees as `decode_raw` — pointers derived from exclusive
-        // mutable borrows, valid for the entire call, cleared before return.
-        let mut ptrs = [core::ptr::null_mut(); MAX_COMPONENTS];
         let mut lengths = [0usize; MAX_COMPONENTS];
         let mut target_strides = [0usize; MAX_COMPONENTS];
         let mut target_widths = [0usize; MAX_COMPONENTS];
         let mut target_heights = [0usize; MAX_COMPONENTS];
         for i in 0..n {
-            ptrs[i] = planes[i].as_mut_ptr();
             lengths[i] = planes[i].len();
             target_strides[i] = strides[i];
             target_widths[i] = layout[i].width;
             target_heights[i] = layout[i].height;
         }
-        self.raw_planes_sink = Some(RawPlanesSink {
-            ptrs,
+        let raw_planes = RawPlanesSink {
+            planes,
             lengths,
             target_strides,
             target_widths,
             target_heights,
             n_components: n
-        });
-
-        let mut sink: [u8; 0] = [];
-        let result = if self.is_arithmetic {
-            #[cfg(feature = "arith")]
-            {
-                if self.is_progressive {
-                    self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(&mut sink)
-                } else {
-                    self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(&mut sink)
-                }
-            }
-            #[cfg(not(feature = "arith"))]
-            unreachable!();
-        } else if self.is_progressive {
-            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(&mut sink)
-        } else {
-            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(&mut sink)
         };
-
-        // Clear the sink so pointers don't outlive the caller's slices.
-        self.raw_planes_sink = None;
-
-        result
+        let mut output = McuDecodeOutput::RawPlanes(raw_planes);
+        self.decode_mcu_output(&mut output)
     }
 
     /// Per-component [`ComponentID`] in declaration order
@@ -2427,20 +2371,13 @@ where
     /// each component's `raw_coeff` into the caller-provided plane buffers.
     ///
     /// Called from the baseline / progressive paths in place of
-    /// `post_process()` when [`raw_planes_sink`](Self::raw_planes_sink)
-    /// is `Some` (i.e. inside [`decode_raw`](Self::decode_raw)).
+    /// `post_process()` when decoding raw planes.
     ///
     /// The IDCT outputs are already clamped to `[0, 255]` so the `i16 -> u8`
     /// truncation here is exact.
-    #[allow(unsafe_code)]
     pub(crate) fn copy_raw_planes_for_mcu_stripe(
-        &mut self, mcu_stripe_index: usize
+        &self, mcu_stripe_index: usize, sink: &mut RawPlanesSink<'_, '_>
     ) -> Result<(), DecodeErrors> {
-        let sink = self
-            .raw_planes_sink
-            .as_mut()
-            .expect("copy_raw_planes_for_mcu_stripe called without active sink");
-
         for (idx, comp) in self.components.iter().enumerate() {
             if idx >= sink.n_components {
                 break;
@@ -2459,8 +2396,6 @@ where
 
             let src_stride = comp.width_stride;
             let copy_w = core::cmp::min(src_stride, core::cmp::min(target_width, target_stride));
-
-            let ptr = sink.ptrs[idx];
             let len = sink.lengths[idx];
 
             for r in 0..rows_to_copy {
@@ -2474,18 +2409,15 @@ where
                 let src = &comp.raw_coeff[src_row_start..src_row_end];
 
                 let dst_offset = (row_start + r) * target_stride;
-                debug_assert!(dst_offset + copy_w <= len);
-                // SAFETY: `ptr` points into the caller's `&mut [u8]` which is
-                // guaranteed to be at least `len` bytes.  The bounds check above
-                // (via `target_height` / `target_stride` validation in decode_raw*)
-                // ensures `dst_offset + copy_w <= len`.
-                unsafe {
-                    let dst = core::slice::from_raw_parts_mut(ptr.add(dst_offset), copy_w);
-                    for (i, sample) in src.iter().enumerate() {
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                        {
-                            dst[i] = *sample as u8;
-                        }
+                let dst_end = dst_offset + copy_w;
+                if dst_end > len {
+                    return Err(DecodeErrors::TooSmallOutput(dst_end, len));
+                }
+                let dst = &mut sink.planes[idx][dst_offset..dst_end];
+                for (sample, dst) in src.iter().zip(dst.iter_mut()) {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        *dst = *sample as u8;
                     }
                 }
             }
