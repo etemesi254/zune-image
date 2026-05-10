@@ -28,6 +28,7 @@ use crate::traits::NumOps;
 use crate::utils::execute_on;
 
 pub(crate) mod seperable_kernel;
+mod polyphase_kernel;
 
 /// Resampling algorithms available for image resizing.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -52,6 +53,8 @@ pub enum ResizeMethod {
     /// Bilinear interpolation. Very fast, but produces blurry results when upscaling
     /// and aliasing artifacts when downscaling.
     Bilinear,
+    
+    //MagicKernelSharp
 }
 
 /// Geometry constraints for calculating the final resized dimensions.

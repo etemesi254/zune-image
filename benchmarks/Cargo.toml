@@ -24,7 +24,7 @@ zune-png = { path = "../crates/zune-png" }
 # JPEG benchmarks
 mozjpeg = "0.10.5"
 jpeg-decoder = "0.3.0"
-zune-jpeg = { path = "../crates/zune-jpeg" ,features = []}
+zune-jpeg = { path = "../crates/zune-jpeg", features = [] }
 
 #other format
 zune-image = { path = "../crates/zune-image", features = ["all"] }
@@ -35,6 +35,9 @@ zune-imageprocs = { path = "../crates/zune-imageprocs" }
 # VIPS
 libvips = "1.7.0"
 
+# Resizing
+fast_image_resize = { version = "6.0.0", features = ["rayon"] }
+stb-sys = {version = "0.6.0",features = ["stb_image_resize"]}
 [dev-dependencies.criterion]
 version = "0.8.1"
 default-features = false
