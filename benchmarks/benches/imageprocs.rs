@@ -5,10 +5,12 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use fast_image_resize::{PixelType, ResizeAlg};
 use image::imageops::FilterType;
 use image::DynamicImage;
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
 use libvips::VipsImage;
+use stb_sys::stbir_filter;
 use zune_benches::sample_path;
 use zune_hdr::zune_core::bytestream::ZCursor;
 use zune_hdr::zune_core::options::DecoderOptions;
@@ -136,6 +138,47 @@ fn vips_resize_bench(input: &VipsImage, kernel: Kernel) {
     black_box(im);
 }
 
+fn stb_resize_linear(input: &[u8], input_width: u32, input_height: u32) {
+    let (out_w, out_h) = (input_width * 79 / 100, input_height * 79 / 100);
+    let mut output = vec![0u8; (out_w * out_h * 3) as usize];
+
+    unsafe {
+        stb_sys::stbir_resize_uint8_srgb(
+            input.as_ptr().cast(),
+            input_width as i32,
+            input_height as i32,
+            0,
+            // tightly packed
+            output.as_mut_ptr(),
+            out_w as i32,
+            out_h as i32,
+            0,
+            3,
+            0,
+            0,
+        );
+    }
+
+    black_box(output);
+}
+
+fn fir_resize_bench(input: &fast_image_resize::images::Image, resize_alg: ResizeAlg) {
+    let mut resizer = fast_image_resize::Resizer::new();
+    let mut output = fast_image_resize::images::Image::new(
+        input.width() * 79 / 100,
+        input.height() * 79 / 100,
+        input.pixel_type(),
+    );
+
+    resizer
+        .resize(
+            input,
+            &mut output,
+            Some(&fast_image_resize::ResizeOptions::new().resize_alg(resize_alg)),
+        )
+        .expect("image resize failed");
+    black_box(output);
+}
 fn zune_image_resize_bench(input: &Image, resize_method: ResizeMethod) {
     let im = Resize::new(ResizeDimensions::Percentage(79, 79), resize_method)
         .clone_and_execute(input)
@@ -278,6 +321,63 @@ fn bench_inner_zune_vips_image_rs<T, U, V>(
     });
 }
 
+fn bench_inner_resize_zune_vips_image_rs<T, U, V, W, X>(
+    c: &mut Criterion, name: &str, zune_fn: T, image_rs_fn: U, vips_fn: V, fir_fn: W, stb_fn: X,
+) where
+    T: Fn(&Image),
+    U: Fn(&image::DynamicImage),
+    V: Fn(&VipsImage),
+    W: Fn(&fast_image_resize::images::Image),
+    X: Fn(&[u8], u32, u32),
+{
+    let path = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
+
+    let data = read(path).unwrap();
+    let zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
+    let vips_im = VipsImage::new_from_buffer(&data, ".jpg").unwrap();
+    let image_rs_im = image::load_from_memory(&data).unwrap();
+    let fir_image = fast_image_resize::images::Image::new(
+        zune_im.width() as u32,
+        zune_im.height() as u32,
+        PixelType::U8x3,
+    );
+    let stb_image = vec![0; zune_im.width() * zune_im.height() * 3];
+    let mut group = c.benchmark_group(name);
+
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("vips", |b| {
+        b.iter(|| {
+            vips_fn(&vips_im);
+            black_box(());
+        })
+    });
+    group.bench_function("image-rs", |b| {
+        b.iter(|| {
+            image_rs_fn(&image_rs_im);
+            black_box(());
+        })
+    });
+
+    group.bench_function("zune-image", |b| {
+        b.iter(|| {
+            zune_fn(&zune_im);
+            black_box(());
+        })
+    });
+    group.bench_function("fir", |b| {
+        b.iter(|| {
+            fir_fn(&fir_image);
+            black_box(());
+        })
+    });
+    group.bench_function("stb-image-resize", |b| {
+        b.iter(|| {
+            stb_fn(&stb_image, zune_im.width() as u32, zune_im.height() as u32);
+            black_box(());
+        })
+    });
+}
 fn bench_gamma(c: &mut Criterion) {
     bench_inner_zune_vips(c, "imageprocs: gamma", zune_gamma_bench, vips_gamma_bench);
 }
@@ -333,14 +433,16 @@ fn bench_invert(c: &mut Criterion) {
 }
 fn bench_resize_generic(
     c: &mut Criterion, name: &str, zune_resize: ResizeMethod, image_resize: FilterType,
-    vips_resize: Kernel,
+    vips_resize: Kernel, fir_algo: fast_image_resize::FilterType
 ) {
-    bench_inner_zune_vips_image_rs(
+    bench_inner_resize_zune_vips_image_rs(
         c,
         name,
         |c| zune_image_resize_bench(c, zune_resize),
         |c| image_rs_resize_bench(c, image_resize),
         |c| vips_resize_bench(c, vips_resize),
+        |c| fir_resize_bench(c, fast_image_resize::ResizeAlg::Convolution(fir_algo)),
+        |c, w, h| stb_resize_linear(c, w, h),
     );
 }
 fn bench_resize_linear(c: &mut Criterion) {
@@ -350,25 +452,28 @@ fn bench_resize_linear(c: &mut Criterion) {
         ResizeMethod::Bilinear,
         FilterType::Triangle,
         Kernel::Linear,
+        fast_image_resize::FilterType::Bilinear,
     );
 }
 
 fn bench_resize_bicubic(c: &mut Criterion) {
     bench_resize_generic(
         c,
-        "imageprocs: resize-lanczos-kernel",
+        "imageprocs: resize - lanczos-kernel",
         ResizeMethod::Lanczos3,
         FilterType::Lanczos3,
         Kernel::Lanczos3,
+        fast_image_resize::FilterType::Lanczos3,
     );
 }
 fn bench_resize_caltmull(c: &mut Criterion) {
     bench_resize_generic(
         c,
-        "imageprocs: resize-mitchell",
+        "imageprocs: resize - mitchell",
         ResizeMethod::Mitchell,
         FilterType::Lanczos3,
         Kernel::Mitchell,
+        fast_image_resize::FilterType::Mitchell,
     );
 }
 fn bench_flip_horizontal(c: &mut Criterion) {

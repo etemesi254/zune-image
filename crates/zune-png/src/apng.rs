@@ -23,7 +23,7 @@ use crate::PngInfo;
 #[derive(Copy, Clone)]
 pub struct ActlChunk {
     pub num_frames: u32,
-    pub num_plays:  u32
+    pub num_plays: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,7 +35,7 @@ pub enum DisposeOp {
     Background,
     /// The frame's region of the output buffer is
     /// to be reverted to the previous contents before rendering the next frame.
-    Previous
+    Previous,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,7 +46,7 @@ pub enum BlendOp {
     /// Frame should be composited onto the output buffer
     /// based on its alpha, using a simple OVER operation as described
     /// in the "Alpha Channel Processing" section of the PNG specification [PNG-1.2]
-    Over
+    Over,
 }
 
 impl BlendOp {
@@ -54,7 +54,7 @@ impl BlendOp {
         match int {
             0 => Ok(BlendOp::Source),
             1 => Ok(BlendOp::Over),
-            _ => Err(PngDecodeErrors::GenericStatic("Unknown blend operation"))
+            _ => Err(PngDecodeErrors::GenericStatic("Unknown blend operation")),
         }
     }
 }
@@ -65,7 +65,7 @@ impl DisposeOp {
             0 => Ok(DisposeOp::None),
             1 => Ok(DisposeOp::Background),
             2 => Ok(DisposeOp::Previous),
-            _ => Err(PngDecodeErrors::GenericStatic("Unknown blend operation"))
+            _ => Err(PngDecodeErrors::GenericStatic("Unknown blend operation")),
         }
     }
 }
@@ -75,41 +75,41 @@ impl DisposeOp {
 pub struct FrameInfo {
     /// Sequence number of frame. If image isn't an APNG, it is usually
     /// set to zero
-    pub seq_number:     i32,
+    pub seq_number: i32,
     /// Width of the frame, If image isn't an APNG, it matches the width of
     /// the image
-    pub width:          usize,
+    pub width: usize,
     /// Height of frame. If image isn't an APNG, it matches the height of the image
-    pub height:         usize,
+    pub height: usize,
     /// X position at which to render the following frame, if image isn't APNG, set to zero
-    pub x_offset:       usize,
+    pub x_offset: usize,
     /// Y position at which to render the following frame, if image isn't APNG, set to zero
-    pub y_offset:       usize,
+    pub y_offset: usize,
     /// Frame delay fraction numerator
-    pub delay_num:      u16,
+    pub delay_num: u16,
     /// Frame delay fraction denominator
-    pub delay_denom:    u16,
+    pub delay_denom: u16,
     /// Type of frame area disposal to be done after rendering this frame
-    pub dispose_op:     DisposeOp,
+    pub dispose_op: DisposeOp,
     /// Type of frame area rendering for this frame
-    pub blend_op:       BlendOp,
+    pub blend_op: BlendOp,
     /// Whether the frame is supposed to be part of the
     /// animation sequence.
     ///
     /// If an image contains standard IDAT chunks, this is what is to be
     /// displayed in case the decoder doesn't support apng but here
     /// it is usually the first frame
-    pub is_part_of_seq: bool
+    pub is_part_of_seq: bool,
 }
 
 /// Represents a single frame
 pub struct SingleFrame {
     // can either be idat or fdat, depending
     // on frame number
-    pub fdat:      Vec<u8>,
+    pub fdat: Vec<u8>,
     /// If none, indicates data is IDAT, hence
     /// should be decoded as such
-    pub fctl_info: Option<FrameInfo>
+    pub fctl_info: Option<FrameInfo>,
 }
 
 impl SingleFrame {
@@ -117,7 +117,7 @@ impl SingleFrame {
     pub fn new(chunks: Vec<u8>, fctl_info: Option<FrameInfo>) -> SingleFrame {
         SingleFrame {
             fdat: chunks,
-            fctl_info
+            fctl_info,
         }
     }
 
@@ -153,11 +153,11 @@ impl SingleFrame {
 /// * `frame_info`: The current frame information , for the current frame, it is obtained by [.frame_info()](crate::PngDecoder::frame_info)
 /// * `current_frame`: This is the current frame which we are processing
 /// * `prev_frame`: An optional previous frame. In case the frame information says we use
-///  the previous frame as background this frame will be copied to the output before blending the image
+///   the previous frame as background this frame will be copied to the output before blending the image
 ///   This is the fully processed previous frame, hence the width and height should match that of the image (indicated by `info.width`,`info.height`)
 /// * `output`: The output of the processed frame. The dimensions of this should be (`info.width * info.height*decoder.colorspace().num_components()`)
 /// * `gamma`: An optional gamma value. It is best this is retrieved from [the image's gamma](crate::PngInfo.gamma),
-/// if `None`, we will default to use 2.2 (default gamma value)
+///   if `None`, we will default to use 2.2 (default gamma value)
 ///
 /// returns: Ok(()) Output is written to `output` variable
 ///
@@ -225,19 +225,19 @@ impl SingleFrame {
 #[cfg(feature = "std")]
 pub fn post_process_image(
     info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo, current_frame: &[u8],
-    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>
+    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>,
 ) -> Result<(), PngDecodeErrors> {
     let nc = colorspace.num_components();
     //
     // check invariants
     if frame_info.x_offset + frame_info.width > info.width {
         return Err(PngDecodeErrors::GenericStatic(
-            "Frame X offset + frame width larger than image width"
+            "Frame X offset + frame width larger than image width",
         ));
     }
     if frame_info.y_offset + frame_info.height > info.height {
         return Err(PngDecodeErrors::GenericStatic(
-            "Frame y offset + frame height larger than image height"
+            "Frame y offset + frame height larger than image height",
         ));
     }
     // current frame matches the image frame
@@ -254,54 +254,53 @@ pub fn post_process_image(
     }
 
     match frame_info.dispose_op {
-        DisposeOp::None => {} // do nothing
+        DisposeOp::None => {
+         
+        } // do nothing
         DisposeOp::Background => {
             // APNG_DISPOSE_OP_BACKGROUND: the frame's region of the output buffer
             // is to be cleared to fully transparent black before rendering the next frame.
-            // for line_stride in output
-            //     .chunks_exact_mut(info.width * nc)
-            //     .skip(frame_info.y_offset)
-            //     .take(frame_info.width)
-            // {
-            //     let start_frame = frame_info.x_offset * nc;
-            //     let end_frame = (frame_info.x_offset + frame_info.width) * nc;
+            for line_stride in output
+                .chunks_exact_mut(info.width * nc)
+                .skip(frame_info.y_offset)
+                .take(frame_info.height)
+            {
+                let start_frame = frame_info.x_offset * nc;
+                let end_frame = (frame_info.x_offset + frame_info.width) * nc;
+
+                line_stride[start_frame..end_frame].fill(0);
+            }
+
+            // zero out top area
+            for line_stride in output
+                .chunks_exact_mut(info.width * nc)
+                .take(frame_info.y_offset)
+            {
+                line_stride.fill(0);
+            }
+            //output.fill(0);
             //
-            //     line_stride[start_frame..end_frame].fill(0);
-            // }
-            // // Also zero out the area around the frame
-            // //
-            // //{
-            // // zero out top area
-            // for line_stride in output
-            //     .chunks_exact_mut(info.width * nc)
-            //     .take(frame_info.y_offset)
-            // {
-            //     line_stride.fill(0);
-            // }
-            output.fill(0);
-            //
-            //     // zero out area around frame
-            //     for line_stride in output
-            //         .chunks_exact_mut(info.width * nc)
-            //         .skip(frame_info.y_offset)
-            //         .take(frame_info.width)
-            //     {
-            //         line_stride[..].fill(0);
-            //     }
-            // }
+            // zero out area around frame
+            for line_stride in output
+                .chunks_exact_mut(info.width * nc)
+                .skip(frame_info.y_offset)
+                .take(frame_info.width)
+            {
+                line_stride[..].fill(0);
+            }
         }
         DisposeOp::Previous => {
             // copy background if possible
             if let Some(data) = prev_frame {
                 if output.len() != data.len() {
                     return Err(PngDecodeErrors::GenericStatic(
-                        "Previous frame does not match output length"
+                        "Previous frame does not match output length",
                     ));
                 }
                 output.copy_from_slice(data);
             } else if frame_info.seq_number > 1 {
                 return Err(PngDecodeErrors::GenericStatic(
-                    "A frame whose DisposeOp is Previous did not get a previous frame"
+                    "A frame whose DisposeOp is Previous did not get a previous frame",
                 ));
             }
         } // blend
@@ -315,7 +314,7 @@ pub fn post_process_image(
         output
             .chunks_exact_mut(info.width * nc)
             .skip(frame_info.y_offset)
-            .take(frame_info.height)
+            .take(frame_info.height),
     ) {
         // move to the x offset
         let h_x = &mut h[frame_info.x_offset * nc..(frame_info.x_offset + frame_info.width) * nc];
