@@ -22,3 +22,7 @@ default = ["zlib", "gzip", "std"]
 
 [dependencies]
 simd-adler32 = { version = "0.3.4", optional = true, default-features = false }
+
+[dev-dependencies]
+miniz_oxide = "0.9.1"
+nanorand = "0.8.0"

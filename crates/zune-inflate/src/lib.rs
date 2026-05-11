@@ -100,3 +100,4 @@ mod encoder;
 pub mod errors;
 mod gzip_constants;
 mod utils;
+mod tests;
