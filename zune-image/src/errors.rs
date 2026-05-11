@@ -53,38 +53,38 @@ impl Debug for ImgErrors
         {
             Self::ImageDecodeErrors(err) =>
             {
-                writeln!(f, "{err}")
+                write!(f, "{err}")
             }
 
             Self::GenericStr(err) =>
             {
-                writeln!(f, "{err}")
+                write!(f, "{err}")
             }
 
             Self::GenericString(err) =>
             {
-                writeln!(f, "{err}")
+                write!(f, "{err}")
             }
             Self::NoImageForOperations =>
             {
-                writeln!(f, "No image found for which we can execute operations")
+                write!(f, "No image found for which we can execute operations")
             }
             Self::NoImageForEncoding =>
             {
-                writeln!(f, "No image found for which we can encode")
+                write!(f, "No image found for which we can encode")
             }
-            Self::NoImageBuffer => writeln!(f, "No image buffer present"),
+            Self::NoImageBuffer => write!(f, "No image buffer present"),
 
-            Self::OperationsError(ref error) => writeln!(f, "{error:?}"),
+            Self::OperationsError(ref error) => write!(f, "{error:?}"),
 
-            Self::EncodeErrors(ref err) => writeln!(f, "{err:?}"),
+            Self::EncodeErrors(ref err) => write!(f, "{err:?}"),
             ImgErrors::UnsupportedColorspace(present, operation, supported) =>
             {
-                writeln!(f, "Unsupported colorspace {present:?}, for the operation {operation}\nSupported colorspaces are {supported:?}")
+                write!(f, "Unsupported colorspace {present:?}, for the operation {operation}\nSupported colorspaces are {supported:?}")
             }
             ImgErrors::DimensionsMisMatch(expected, found) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Dimensions mismatch, expected {expected} but found {found}"
                 )
@@ -148,23 +148,23 @@ impl Debug for ImgOperationsErrors
         {
             Self::InvalidChannelLayout(reason) =>
             {
-                writeln!(f, "{reason:}")
+                write!(f, "{reason:}")
             }
             Self::Generic(reason) =>
             {
-                writeln!(f, "{reason:}")
+                write!(f, "{reason:}")
             }
             Self::GenericString(err) =>
             {
-                writeln!(f, "{err}")
+                write!(f, "{err}")
             }
             Self::WrongColorspace(ref expected, ref found) =>
             {
-                writeln!(f, "Expected {expected:?} colorspace but found {found:?}")
+                write!(f, "Expected {expected:?} colorspace but found {found:?}")
             }
             Self::WrongComponents(expected, found) =>
             {
-                writeln!(f, "Expected {expected} components and found {found}")
+                write!(f, "Expected {expected} components and found {found}")
             }
         }
     }
@@ -225,18 +225,18 @@ impl Debug for ImgEncodeErrors
     {
         match self
         {
-            Self::Generic(ref string) => writeln!(f, "{string}"),
-            Self::GenericStatic(ref string) => writeln!(f, "{string}"),
+            Self::Generic(ref string) => write!(f, "{string}"),
+            Self::GenericStatic(ref string) => write!(f, "{string}"),
             Self::UnsupportedColorspace(ref found, ref expected) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Found colorspace {found:?} but the encoder supports {expected:?}"
                 )
             }
             Self::ImageEncodeErrors(err) =>
             {
-                writeln!(f, "Image could not be encoded, reason: {err}")
+                write!(f, "Image could not be encoded, reason: {err}")
             }
         }
     }

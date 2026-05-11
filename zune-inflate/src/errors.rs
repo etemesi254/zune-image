@@ -50,7 +50,7 @@ impl Debug for InflateDecodeErrors
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result
     {
-        writeln!(f, "{:?}", self.error)
+        write!(f, "{:?}", self.error)
     }
 }
 
@@ -85,21 +85,21 @@ impl Debug for DecodeErrorStatus
     {
         match self
         {
-            Self::InsufficientData => writeln!(f, "Insufficient data"),
-            Self::Generic(reason) => writeln!(f, "{reason}"),
-            Self::GenericStr(reason) => writeln!(f, "{reason}"),
-            Self::CorruptData => writeln!(f, "Corrupt data"),
-            Self::OutputLimitExceeded(limit, current) => writeln!(
+            Self::InsufficientData => write!(f, "Insufficient data"),
+            Self::Generic(reason) => write!(f, "{reason}"),
+            Self::GenericStr(reason) => write!(f, "{reason}"),
+            Self::CorruptData => write!(f, "Corrupt data"),
+            Self::OutputLimitExceeded(limit, current) => write!(
                 f,
                 "Output limit exceeded, set limit was {limit} and output size is {current}"
             ),
             Self::MismatchedCRC(expected, found) =>
             {
-                writeln!(f, "Mismatched CRC, expected {expected} but found {found}")
+                write!(f, "Mismatched CRC, expected {expected} but found {found}")
             }
             Self::MismatchedAdler(expected, found) =>
             {
-                writeln!(f, "Mismatched Adler, expected {expected} but found {found}")
+                write!(f, "Mismatched Adler, expected {expected} but found {found}")
             }
         }
     }

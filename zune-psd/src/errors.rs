@@ -25,11 +25,11 @@ impl Debug for PSDDecodeErrors
         {
             PSDDecodeErrors::Generic(reason) =>
             {
-                writeln!(f, "{reason}")
+                write!(f, "{reason}")
             }
             PSDDecodeErrors::WrongMagicBytes(bytes) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Expected {:?} but found  {:?}, not a PSD image",
                     PSD_IDENTIFIER_BE.to_be_bytes(),
@@ -38,18 +38,18 @@ impl Debug for PSDDecodeErrors
             }
             PSDDecodeErrors::UnsupportedFileType(version) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Unsupported file version {version:?}, known versions are 1",
                 )
             }
             PSDDecodeErrors::UnsupportedChannelCount(channels) =>
             {
-                writeln!(f, "Unsupported channel count {channels:?}")
+                write!(f, "Unsupported channel count {channels:?}")
             }
             PSDDecodeErrors::UnsupportedBitDepth(depth) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Unsupported bit depth {depth:?}, supported depths are 8 and 16",
                 )
@@ -58,34 +58,34 @@ impl Debug for PSDDecodeErrors
             {
                 if let Some(color) = color
                 {
-                    writeln!(
+                    write!(
                         f,
                         "Unsupported color format  {color:?}, supported formats RGB only",
                     )
                 }
                 else
                 {
-                    writeln!(f, "Unknown color format")
+                    write!(f, "Unknown color format")
                 }
             }
             PSDDecodeErrors::UnknownCompression =>
             {
-                writeln!(f, "Unknown compression format")
+                write!(f, "Unknown compression format")
             }
             PSDDecodeErrors::BadRLE =>
             {
-                writeln!(f, "Bad RLE")
+                write!(f, "Bad RLE")
             }
             PSDDecodeErrors::LargeDimensions(supported, found) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Too large dimensions, supported {supported} but found {found}",
                 )
             }
             PSDDecodeErrors::ZeroDimensions =>
             {
-                writeln!(f, "Zero found where not expected")
+                write!(f, "Zero found where not expected")
             }
         }
     }
