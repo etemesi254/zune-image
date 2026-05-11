@@ -40,36 +40,36 @@ impl Debug for QoiErrors
         {
             QoiErrors::WrongMagicBytes =>
             {
-                writeln!(f, "Wrong magic bytes, expected `qoif` as image start")
+                write!(f, "Wrong magic bytes, expected `qoif` as image start")
             }
             QoiErrors::InsufficientData(expected, found) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Insufficient data required {expected} but remaining stream has {found}"
                 )
             }
             QoiErrors::UnknownChannels(channel) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Unknown channel number {channel}, expected either 3 or 4"
                 )
             }
             QoiErrors::UnknownColorspace(colorspace) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Unknown colorspace number {colorspace}, expected either 0 or 1"
                 )
             }
             QoiErrors::Generic(val) =>
             {
-                writeln!(f, "{val}")
+                write!(f, "{val}")
             }
             QoiErrors::GenericStatic(val) =>
             {
-                writeln!(f, "{val}")
+                write!(f, "{val}")
             }
         }
     }
