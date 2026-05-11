@@ -37,31 +37,41 @@ pub fn fixed_copy_within<const SIZE: usize>(
 }
 
 #[inline(always)]
-pub fn copy_rep_matches(dest: &mut [u8], offset: usize, dest_offset: usize, length: usize) {
-    // This is a slightly complicated rep match copier that has
-    // no bounds check.
-
-    // The only invariant we need to uphold is dest[dest_offset] should
-    // copy from dest[offset]
-    // i.e in the first iteration, the first entry in the window will point
-    // to dest[offset] and the
-    // last entry will point to dest[dest_offset]
-    // it's easy to prove dest[offset] since we take our slice
-    // from offset.
-    // but proving dest[dest_offset] is trickier
-    // If we were at offset, to get to dest_offset, we could
-    // 1. Get difference between dest_offset and offset
-    // 2. Add that difference to offset.
+pub fn copy_rep_matches(dest: &mut [u8], src_offset: usize, dest_offset: usize, length: usize) {
+    // Overlapping/repeating match copy. The source pattern starts at src_offset
+    // and has a period of `diff` bytes. We expand it forward by copying one byte
+    // at a time through a sliding window, so each written byte is immediately
+    // available as a source for later bytes in the same match.
     //
+    // Invariant: window[0] is always a valid already-written source byte,
+    // and window.last() is always the next destination byte to fill.
+    //
+    // Slice bounds: we need `length` windows of size `diff`.
+    // The last window occupies indices [length-1 .. length-1+diff],
+    // i.e. the slice must end at src_offset + (length - 1) + diff
+    //                             = src_offset + length - 1 + (dest_offset - src_offset + 1)
+    //                             = dest_offset + length.
+    // So the slice is dest[src_offset .. dest_offset + length + 1].
+    //                                                           ^^^
+    //                                     +1 because ..end is exclusive
 
-    let diff = dest_offset - offset + 1;
+    let diff = dest_offset - src_offset + 1;
 
-    // note
-    for window in Cell::from_mut(&mut dest[offset..dest_offset + length + 2])
+    for window in Cell::from_mut(&mut dest[src_offset..dest_offset + length + 1])
         .as_slice_of_cells()
         .windows(diff)
     {
         window.last().unwrap().set(window[0].get());
+    }
+}
+#[inline(always)]
+pub fn copy_rep_matches_slow(dest: &mut [u8], src_offset: usize, dest_offset: usize, length: usize) {
+    // Overlapping copy: period is `dest_offset - src_offset`, so we can't
+    // bulk-copy. Write one byte at a time; each write is immediately
+    // readable as source for later bytes in the same match.
+    let period = dest_offset - src_offset;
+    for i in 0..length {
+        dest[dest_offset + i] = dest[src_offset + i % period];
     }
 }
 
