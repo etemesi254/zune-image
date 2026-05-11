@@ -91,6 +91,7 @@ extern crate alloc;
 
 pub use crate::decoder::{DeflateDecoder, DeflateOptions};
 pub use crate::encoder::DeflateEncoder;
+pub use crate::streaming_decoder::{StreamingDecoder,DecodeStatus};
 
 mod bitstream;
 mod constants;
@@ -99,5 +100,6 @@ mod decoder;
 mod encoder;
 pub mod errors;
 mod gzip_constants;
-mod utils;
+mod streaming_decoder;
 mod tests;
+mod utils;
