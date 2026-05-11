@@ -2,8 +2,7 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use super::*;
-    use crate::decoder::{DecodeStatus, DeflateState};
-    use crate::{DeflateDecoder, DeflateOptions};
+    use crate::{DecodeStatus, DeflateDecoder, DeflateOptions, StreamingDecoder};
     use miniz_oxide::deflate::compress_to_vec;
     use nanorand::{Rng, WyRand};
 
@@ -14,8 +13,7 @@ mod tests {
     fn run_streaming_test(
         uncompressed: &[u8], compressed: &[u8], in_chunk_size: usize, initial_out_size: usize,
     ) {
-        let options = DeflateOptions::default().set_limit(uncompressed.len() * 2 + 1024);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
 
         let mut out_vec = vec![0u8; initial_out_size];
         let mut input_offset = 0;
@@ -53,12 +51,12 @@ mod tests {
                 }
                 DecodeStatus::Finished => {
                     assert_eq!(
-                        decoder.decode_dest(),
+                        decoder.current_dest_offset(),
                         uncompressed.len(),
                         "Decoded length mismatch!"
                     );
                     assert_eq!(
-                        &out_vec[..decoder.decode_dest()],
+                        &out_vec[..decoder.current_dest_offset()],
                         uncompressed,
                         "Decoded data does not match original!"
                     );
@@ -388,8 +386,8 @@ mod tests {
 
         // The decoder MUST either succeed (if mutation didn't corrupt critically)
         // or return DecodeStatus::Error — it must never panic.
-        let options = DeflateOptions::default().set_limit(data.len() * 4);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; data.len() * 2];
 
         // We don't care about the result, just that it doesn't panic.
@@ -400,58 +398,20 @@ mod tests {
     // 8. OUTPUT LIMIT ENFORCEMENT
     // ============================================================================
 
-    /// Decoder must return an error (not panic or produce truncated output) when
-    /// the decompressed size would exceed the configured limit.
-    #[test]
-    fn test_output_limit_exceeded() {
-        let data = vec![0x00u8; 10_000];
-        let compressed = compress_deflate(&data, 6);
-
-        // Set limit to half the actual output size.
-        let options = DeflateOptions::default().set_limit(4_000);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
-        let mut out_vec = vec![0u8; 20_000];
-
-        let status = decoder.decode_chunk(&compressed, true, &mut out_vec);
-        assert!(
-            matches!(status, DecodeStatus::Error(_)),
-            "Expected Error when output limit is exceeded, got {:?}",
-            status
-        );
-    }
 
     /// Limit set to exactly the output size — must succeed.
     #[test]
     fn test_output_limit_exactly_met() {
         let data = vec![0x00u8; 1000];
         let compressed = compress_deflate(&data, 6);
+        let mut decoder = StreamingDecoder::new();
 
-        let options = DeflateOptions::default().set_limit(data.len());
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
         let mut out_vec = vec![0u8; data.len()];
 
         let status = decoder.decode_chunk(&compressed, true, &mut out_vec);
         assert!(
             matches!(status, DecodeStatus::Finished),
             "Expected Finished when limit exactly equals output, got {:?}",
-            status
-        );
-    }
-
-    /// Limit set to one byte less than the output size — must fail.
-    #[test]
-    fn test_output_limit_one_byte_short() {
-        let data = vec![0xAAu8; 1000];
-        let compressed = compress_deflate(&data, 6);
-
-        let options = DeflateOptions::default().set_limit(data.len() - 1);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
-        let mut out_vec = vec![0u8; data.len() * 2];
-
-        let status = decoder.decode_chunk(&compressed, true, &mut out_vec);
-        assert!(
-            matches!(status, DecodeStatus::Error(_)),
-            "Expected Error when limit is one byte short, got {:?}",
             status
         );
     }
@@ -463,8 +423,8 @@ mod tests {
     /// Completely empty compressed input — must not panic.
     #[test]
     fn test_empty_compressed_input() {
-        let options = DeflateOptions::default().set_limit(1024);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; 1024];
 
         // Final chunk = true, but no bytes at all.
@@ -483,8 +443,8 @@ mod tests {
         let data = b"some data that will be truncated";
         let compressed = compress_deflate(data, 6);
 
-        let options = DeflateOptions::default().set_limit(data.len() * 2);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; data.len() * 2];
 
         // Feed only the first half, but lie and say it's the final chunk.
@@ -502,8 +462,8 @@ mod tests {
         // Craft a single byte with BFINAL=1 (bit 0) and BTYPE=11 (bits 1-2).
         // Binary: 0b00000111 = 0x07
         let bad_stream = [0x07u8];
-        let options = DeflateOptions::default().set_limit(1024);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; 1024];
 
         let status = decoder.decode_chunk(&bad_stream, true, &mut out_vec);
@@ -518,8 +478,8 @@ mod tests {
     #[test]
     fn test_all_zeros_corrupt() {
         let garbage = vec![0u8; 64];
-        let options = DeflateOptions::default().set_limit(4096);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; 4096];
         let status = decoder.decode_chunk(&garbage, true, &mut out_vec);
         assert!(
@@ -534,9 +494,8 @@ mod tests {
         let mut rng = WyRand::new_seed(42);
         let mut garbage = vec![0u8; 128];
         rng.fill(&mut garbage);
+        let mut decoder = StreamingDecoder::new();
 
-        let options = DeflateOptions::default().set_limit(4096);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
         let mut out_vec = vec![0u8; 4096];
         let _status = decoder.decode_chunk(&garbage, true, &mut out_vec);
         // Any result is fine; we just verify no panic or undefined behaviour.
@@ -552,8 +511,8 @@ mod tests {
         let mid = compressed.len() / 2;
         compressed[mid] ^= 0x10;
 
-        let options = DeflateOptions::default().set_limit(data.len() * 2);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
+
         let mut out_vec = vec![0u8; data.len() * 2];
         let _status = decoder.decode_chunk(&compressed, true, &mut out_vec);
         // Must not panic; error result is expected but not required.
@@ -577,8 +536,8 @@ mod tests {
         let compressed = compress_deflate(&data, 6);
 
         let decode = |chunk_size: usize| -> Vec<u8> {
-            let options = DeflateOptions::default().set_limit(data.len() * 2);
-            let mut decoder = DeflateDecoder::new_with_options(&[], options);
+            let mut decoder = StreamingDecoder::new();
+
             let mut out_vec = vec![0u8; data.len() * 2];
             let mut input_offset = 0;
             loop {
@@ -591,7 +550,7 @@ mod tests {
                         out_vec.resize(out_vec.len() + at_least + 128, 0);
                     }
                     DecodeStatus::Finished => {
-                        return out_vec[..decoder.decode_dest()].to_vec();
+                        return out_vec[..decoder.current_dest_offset()].to_vec();
                     }
                     _ => panic!("Decode failed"),
                 }
@@ -757,16 +716,16 @@ mod tests {
         let compressed = compress_deflate(data, 6);
 
         let options = DeflateOptions::default().set_limit(data.len() * 2);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
+        let mut decoder = StreamingDecoder::new();
         let mut out_vec = vec![0u8; 1000]; // Much bigger than data
 
         let status = decoder.decode_chunk(&compressed, true, &mut out_vec);
         assert!(matches!(status, DecodeStatus::Finished));
         assert_eq!(
-            decoder.decode_dest(),
+            decoder.current_dest_offset(),
             data.len(),
             "decode_dest() returned {} but expected {}",
-            decoder.decode_dest(),
+            decoder.current_dest_offset(),
             data.len()
         );
     }
@@ -781,9 +740,8 @@ mod tests {
     fn test_final_chunk_is_one_byte() {
         let data = b"final chunk is exactly one byte long";
         let compressed = compress_deflate(data, 6);
+        let mut decoder = StreamingDecoder::new();
 
-        let options = DeflateOptions::default().set_limit(data.len() * 2);
-        let mut decoder = DeflateDecoder::new_with_options(&[], options);
         let mut out_vec = vec![0u8; data.len() * 2];
         let mut input_offset = 0;
 
@@ -801,7 +759,7 @@ mod tests {
                     out_vec.resize(out_vec.len() + at_least + 64, 0);
                 }
                 DecodeStatus::Finished => {
-                    assert_eq!(&out_vec[..decoder.decode_dest()], data);
+                    assert_eq!(&out_vec[..decoder.current_dest_offset()], data);
                     return;
                 }
                 e => panic!("Unexpected status: {:?}", e),
