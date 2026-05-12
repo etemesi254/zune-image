@@ -32,19 +32,19 @@ impl Debug for PPMEncodeErrors
         {
             PPMEncodeErrors::Static(ref errors) =>
             {
-                writeln!(f, "{errors}")
+                write!(f, "{errors}")
             }
             PPMEncodeErrors::IOErrors(ref err) =>
             {
-                writeln!(f, "{err}")
+                write!(f, "{err}")
             }
             PPMEncodeErrors::TooShortInput(expected, found) =>
             {
-                writeln!(f, "Expected input of length {expected} but found {found}")
+                write!(f, "Expected input of length {expected} but found {found}")
             }
             PPMEncodeErrors::UnsupportedColorspace(colorspace) =>
             {
-                writeln!(f, "Unsupported colorspace {colorspace:?} for ppm")
+                write!(f, "Unsupported colorspace {colorspace:?} for ppm")
             }
         }
     }
