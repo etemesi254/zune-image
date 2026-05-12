@@ -37,20 +37,6 @@ impl<'src> BitStreamReader<'src> {
             is_final,
         }
     }
-    /// Update the reader with a new chunk of data.
-    /// This preserves `bits_left` and `buffer` so we can resume
-    /// exactly where a code crossed the chunk boundary.
-    pub fn update_chunk(&mut self, new_chunk: &'src [u8], is_final: bool) {
-        if self.src.as_ptr() != new_chunk.as_ptr()  {
-            self.src = new_chunk;
-            self.position = 0;
-        }
-        self.is_final = is_final;
-
-        // Wipe out any "Ghost Bytes" trapped in the buffer
-        // from the previous chunk before they corrupt the new chunk!
-        self.buffer &= (1_u64 << self.bits_left) - 1;
-    }
     /// Refill the bitstream ensuring the buffer has bits between
     /// 56 and 63.
     ///
@@ -228,67 +214,5 @@ mod tests {
 
         // The padded bits should be zeros
         assert_eq!(reader.get_bits(8), 0x00);
-    }
-
-    #[test]
-    fn test_resume_across_chunk_boundary() {
-        // We want to simulate reading a 12-bit value that is split across two IDAT chunks.
-        // Chunk 1: 0xDD (1101_1101)
-        // Chunk 2: 0xEE (1110_1110)
-
-        let chunk1 = [0xDD];
-        let chunk2 = [0xEE];
-
-        let mut reader = BitStreamReader::new(&chunk1, false);
-        reader.refill();
-
-        // Read 4 bits from Chunk 1 (lower nibble of 0xDD is 1101 = 13 = 0x0D)
-        assert_eq!(reader.get_bits(4), 0x0D);
-
-        // Reader is now starved (4 bits left in buffer, but we want 8 more).
-        assert_eq!(reader.get_bits_left(), 4);
-        assert!(!reader.has(8));
-
-        // SIMULATE PARSER FEEDING THE NEXT CHUNK
-        reader.update_chunk(&chunk2, true);
-
-        // Refill combines the remaining 4 bits from chunk1 with chunk2
-        reader.refill();
-
-        // The buffer should now hold the remaining 4 bits of chunk1 (1101 = 0x0D)
-        // as the LSBs, followed by chunk2 (0xEE)
-        // Let's read 8 bits. It should pull the 4 from chunk1, then the lower 4 from chunk2 (1110 = 0x0E).
-        // Resulting byte: (0x0E << 4) | 0x0D = 0xED
-        assert_eq!(reader.get_bits(8), 0xED);
-
-        // Read the remaining 4 bits of chunk2
-        assert_eq!(reader.get_bits(4), 0x0E);
-    }
-
-    #[test]
-    fn test_peek_and_drop_across_chunks() {
-        let chunk1 = [0x12];
-        let mut reader = BitStreamReader::new(&chunk1, false);
-        reader.refill();
-
-        // We peek 8 bits, ensure it's correct, but drop only 4
-        assert_eq!(reader.peek_bits::<8>(), 0x12);
-        reader.drop_bits(4); // Drops the 2 (0010), leaving the 1 (0001)
-
-        assert_eq!(reader.get_bits_left(), 4);
-
-        // Feed next chunk
-        let chunk2 = [0x34];
-        reader.update_chunk(&chunk2, false);
-        reader.refill();
-
-        // Buffer has: 0x01 (from chunk 1) then 0x34 (from chunk 2)
-        // Let's peek 12 bits.
-        // 0x34 shifted by 4 is 0x340. OR with 0x01 -> 0x341.
-        assert_eq!(reader.peek_var_bits(12), 0x341);
-
-        // Consume them
-        assert_eq!(reader.get_bits(12), 0x341);
-        assert_eq!(reader.get_bits_left(), 0);
     }
 }

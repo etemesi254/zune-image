@@ -10,7 +10,6 @@ use image::imageops::FilterType;
 use image::DynamicImage;
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
 use libvips::VipsImage;
-use stb_sys::stbir_filter;
 use zune_benches::sample_path;
 use zune_hdr::zune_core::bytestream::ZCursor;
 use zune_hdr::zune_core::options::DecoderOptions;

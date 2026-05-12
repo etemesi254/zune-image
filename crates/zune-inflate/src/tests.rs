@@ -1,8 +1,7 @@
 #![cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use super::*;
-    use crate::{DecodeStatus, DeflateDecoder, DeflateOptions, StreamingDecoder};
+    use crate::{DecodeStatus,StreamingDecoder};
     use miniz_oxide::deflate::compress_to_vec;
     use nanorand::{Rng, WyRand};
 
@@ -715,7 +714,6 @@ mod tests {
         let data = b"decode_dest must track bytes written";
         let compressed = compress_deflate(data, 6);
 
-        let options = DeflateOptions::default().set_limit(data.len() * 2);
         let mut decoder = StreamingDecoder::new();
         let mut out_vec = vec![0u8; 1000]; // Much bigger than data
 

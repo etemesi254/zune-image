@@ -880,12 +880,9 @@ mod tests {
     fn test_for_benchmark() {
         let (in_w, in_h) = (1885, 1226);
         let (out_w, out_h) = (1885_usize / 2, 1226_usize / 2);
-        let flat_value = 128u8;
-        let input = vec![flat_value; in_w * in_h];
-        let mut output = vec![0u8; out_w * out_h];
 
         let start = Instant::now();
-        let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, ResizeMethod::Lanczos3);
+        let _ = PrecomputedKernels::new(in_w, in_h, out_w, out_h, ResizeMethod::Lanczos3);
 
         let end = Instant::now();
         println!("{:?}", end.duration_since(start));

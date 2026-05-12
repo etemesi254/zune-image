@@ -35,6 +35,7 @@ use crate::utils::{
 /// The alpha field is used if the image has a tRNS
 /// chunk and pLTE chunk.
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub(crate) struct PLTEEntry {
     pub red: u8,
     pub green: u8,
@@ -174,6 +175,7 @@ pub struct PngDecoder<T> {
     pub(crate) current_frame: usize,
     pub(crate) called_from_decode_into: bool,
     pub(crate) current_idat_bytes_left: usize,
+    pub(crate) seen_idat: bool,
 }
 
 impl<T: ZByteReaderTrait> PngDecoder<T> {
@@ -220,6 +222,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             current_frame: 0,
             called_from_decode_into: true,
             current_idat_bytes_left: 0,
+            seen_idat: false,
         }
     }
 
@@ -389,10 +392,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// After calling this, header information can
     /// be accessed by public headers
     pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors> {
-        self.decode_headers_inner(true)
+        self.decode_headers_inner()
     }
-    pub fn decode_headers_inner(&mut self, parse_idat: bool) -> Result<(), PngDecodeErrors> {
-        if self.seen_headers && self.seen_iend {
+    pub fn decode_headers_inner(&mut self) -> Result<(), PngDecodeErrors> {
+        if (self.seen_headers && self.seen_iend) || (self.seen_idat) {
             return Ok(());
         }
         if !self.seen_hdr {
@@ -412,7 +415,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         loop {
             let header = self.read_chunk_header()?;
 
-            if !parse_idat && header.chunk_type == PngChunkType::IDAT {
+            if header.chunk_type == PngChunkType::IDAT {
+                self.seen_idat = true;
                 // Stop parsing headers. We are ready to stream pixels.
                 // Save the length so our streaming loop knows how much to read
                 self.current_idat_bytes_left = header.length;
@@ -692,36 +696,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// returns: `Result<Vec<u8, Global>, PngErrors>`
     ///
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
-        self.decode_headers()?;
-        self.called_from_decode_into = false;
-
-        // allocate
-        let new_len = self.output_buffer_size().unwrap();
-        let t = self.inner_buffer_size().unwrap();
-        let mut out: Vec<u8> = vec![0; t];
-        //decode
-        self.decode_into(&mut out)?;
-        if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
-            // in case we are to convert from 16 bit to 8 bit, we can do it here
-            // we optimize it by using the same buffer the 16 bit data is stored in
-            // and implicitly converting it to 8 bit.
-            //
-            // Do note that to convert it, we only take the top 8 bits of a 16 bit.
-            // so to run [a,a,b,b,c,b,d,b] => [a,b,c,d], the write never catches on the read
-            // hence no override. which works for us
-            //
-            // then convert to 8 bit in place
-            let mut i = 0;
-            let mut j = 0;
-            while j < out.len() {
-                out[i] = out[j];
-                i += 1;
-                j += 2;
-            }
-            out.truncate(new_len);
-        }
-
-        Ok(out)
+        self.decode_stream_raw()
     }
 
     /// Return the **yet to be decoded** frame's frame information
@@ -916,7 +891,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             assert_eq!(b.len(), new_len * 2); // length should be twice that of u8
             b
         };
-        self.decode_into(out)?;
+        self.decode_stream(out)?;
 
         if self.png_info.depth <= 8
         {

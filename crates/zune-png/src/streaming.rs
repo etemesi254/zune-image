@@ -1,4 +1,4 @@
-use crate::decoder::{PLTEEntry, PngChunk};
+use crate::decoder::{PLTEEntry};
 use crate::enums::{FilterMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::filters::de_filter::{
@@ -184,7 +184,7 @@ where
         &mut self, final_out: &mut [u8],
     ) -> Result<(), PngDecodeErrors> {
         if !self.seen_headers {
-            self.decode_headers_inner(false)?;
+            self.decode_headers_inner()?;
         }
 
         //  Find the first non-empty pass
@@ -359,7 +359,7 @@ where
     }
     pub fn decode_stream_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         if !self.seen_headers {
-            self.decode_headers_inner(false)?;
+            self.decode_headers_inner()?;
         }
         let mut final_out = vec![0u8; self.output_buffer_size().unwrap()];
         if self.png_info.interlace_method == InterlaceMethod::Standard {
@@ -371,7 +371,7 @@ where
     }
     pub(crate) fn decode_stream(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         if !self.seen_headers {
-            self.decode_headers_inner(false)?;
+            self.decode_headers_inner()?;
         }
         let row_size = self.calculate_row_size();
 
@@ -593,8 +593,7 @@ impl<T> PngDecoder<T> {
         let width_stride = raw.len();
 
         let mut filter = FilterMethod::from_int(filter_byte)
-            .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))
-            .unwrap();
+            .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))?;
 
         if is_first_row {
             // Match the filters to special filters for the first row.
@@ -640,7 +639,6 @@ where
         &mut self, to_filter_row: &mut [u8], width_stride: usize, row_width: usize,
     ) -> Result<(), PngDecodeErrors> {
         let info = &self.png_info;
-        let width = info.width;
         let n_components = usize::from(info.color.num_components());
         let add_alpha_channel = self.options.png_get_add_alpha_channel() && !info.color.has_alpha();
 
@@ -756,14 +754,24 @@ mod tests {
         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
         decoder.decode_raw().unwrap()
     }
-    // #[test]
-    // fn test_simple_decode() {
-    //     let path =
-    //         "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench_interlaced.png";
-    //     let data = std::fs::read(path).unwrap();
-    //     let last = decode_zune_png(&data[..]);
-    //
-    //     let first = decode_zune_streaming(&data[..]);
-    //     assert_eq!(first, last);
-    // }
+    #[test]
+    fn test_simple_decode() {
+        let path =
+            "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench_interlaced.png";
+        let data = std::fs::read(path).unwrap();
+        let last = decode_zune_png(&data[..]);
+
+        let first = decode_zune_streaming(&data[..]);
+        assert_eq!(first, last);
+    }
+    #[test]
+    fn decode_normal(){
+        let path =
+            "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench.png";
+        let data = std::fs::read(path).unwrap();
+        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+        decoder.decode().unwrap();
+
+
+    }
 }
