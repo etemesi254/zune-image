@@ -574,7 +574,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         {
             todo!();
         }
-        self.decode_stream(out)
+        self.decode_stream_into(out)
     }
 
     /// Decode data returning it into `Vec<u8>`.
@@ -707,7 +707,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             assert_eq!(b.len(), new_len * 2); // length should be twice that of u8
             b
         };
-        self.decode_stream(out)?;
+        self.decode_stream_into(out)?;
 
         if self.png_info.depth <= 8
         {
