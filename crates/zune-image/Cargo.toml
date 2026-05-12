@@ -15,6 +15,7 @@ description = "An image library, containing necessary capabilities to decode, ma
 log = ["zune-core/log"]
 ppm = ["zune-ppm"]
 jpeg = ["zune-jpeg", "jpeg-encoder"]
+png=["zune-png",]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
@@ -57,6 +58,7 @@ zune-jpegxl = { path = "../zune-jpegxl", version = "^0.5.2", optional = true }
 zune-hdr = { path = "../zune-hdr", version = "^0.5.2", optional = true }
 zune-bmp = { path = "../zune-bmp", version = "^0.5.2", optional = true }
 zune-heic = { path = "../zune-heic", version = "0.5.0", optional = true }
+zune-png = {path = "../zune-png",version = "0.5.2",optional = true}
 # Channel conversions in a safe way
 bytemuck = { version = "1.24.0", default-features = false }
 # Serializing info
@@ -68,9 +70,9 @@ jxl-oxide = { version = "0.12.5", optional = true }
 kamadak-exif = { version = "0.6.1", optional = true }
 
 image-webp = { version = "0.2.4", optional = true }
-png = { version = "0.18.0", optional = true }
 log = "0.4.29"
 ureq = { version = "3.3.0", optional = true }
+png = "0.18.1"
 
 [dev-dependencies]
 num-complex = "0.4.3" # Runs generate-fractals

@@ -63,7 +63,7 @@ fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool) {
 ///
 #[inline]
 pub fn convert_be_to_target_endian_u16(
-    sample: &mut [u8], endian: ByteEndian, use_intrinsics: bool
+    sample: &mut [u8], endian: ByteEndian, use_intrinsics: bool,
 ) {
     // if target is BE no conversion
     if endian == ByteEndian::BE {
@@ -85,24 +85,55 @@ pub const fn is_le() -> bool {
 }
 
 pub(crate) fn expand_palette(
-    input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize
+    input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize,
 ) {
-    if components == 0 {
-        return;
-    }
 
     if components == 3 {
-        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(3)) {
-            let entry = palette[usize::from(*in_px) % 256];
+        let mut out_chunks = out.chunks_exact_mut(6);
+        let mut input_iter = input.chunks_exact(2);
 
+        for (in_px, px) in input_iter.by_ref().zip(out_chunks.by_ref()) {
+            let entry0 = palette[usize::from(in_px[0])];
+            let entry1 = palette[usize::from(in_px[1])];
+            px[0] = entry0.red;
+            px[1] = entry0.green;
+            px[2] = entry0.blue;
+            px[3] = entry1.red;
+            px[4] = entry1.green;
+            px[5] = entry1.blue;
+        }
+
+        // Remainders from both iterators stay in sync
+        let rem_in = input_iter.remainder();
+        let rem_out = out_chunks.into_remainder();
+        for (in_px, px) in rem_in.iter().zip(rem_out.chunks_exact_mut(3)) {
+            let entry = palette[usize::from(*in_px)];
             px[0] = entry.red;
             px[1] = entry.green;
             px[2] = entry.blue;
         }
     } else if components == 4 {
-        for (in_px, px) in input.iter().zip(out.chunks_exact_mut(4)) {
-            let entry = palette[usize::from(*in_px) % 256];
+        let mut out_chunks = out.chunks_exact_mut(8);
+        let mut input_iter = input.chunks_exact(2);
 
+        for (in_px, px) in input_iter.by_ref().zip(out_chunks.by_ref()) {
+            let entry0 = palette[usize::from(in_px[0])];
+            let entry1 = palette[usize::from(in_px[1])];
+            px[0] = entry0.red;
+            px[1] = entry0.green;
+            px[2] = entry0.blue;
+            px[3] = entry0.alpha;
+
+            px[4] = entry1.red;
+            px[5] = entry1.green;
+            px[6] = entry1.blue;
+            px[7] = entry1.alpha;
+        }
+
+        let rem_in = input_iter.remainder();
+        let rem_out = out_chunks.into_remainder();
+        for (in_px, px) in rem_in.iter().zip(rem_out.chunks_exact_mut(4)) {
+            let entry = palette[usize::from(*in_px)];
             px[0] = entry.red;
             px[1] = entry.green;
             px[2] = entry.blue;
@@ -120,7 +151,7 @@ pub(crate) fn expand_palette(
 /// * `depth`:  The depth of the image
 ///
 pub fn expand_trns<const SIXTEEN_BITS: bool>(
-    input: &[u8], out: &mut [u8], color: PngColor, trns_bytes: [u16; 4], depth: u8
+    input: &[u8], out: &mut [u8], color: PngColor, trns_bytes: [u16; 4], depth: u8,
 ) {
     const DEPTH_SCALE_TABLE: [u8; 9] = [0, 0xff, 0x55, 0, 0x11, 0, 0, 0, 0x01];
 
@@ -175,7 +206,7 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                     }
                 }
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     } else {
         match color {
@@ -209,14 +240,14 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                     chunk[3] = 255 * u8::from(mask);
                 }
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
 
 /// Expand bits to bytes expand images with less than 8 bpp
 pub(crate) fn expand_bits_to_byte(
-    width: usize, depth: usize, out_n: usize, plte_present: bool, input: &[u8], out: &mut [u8]
+    width: usize, depth: usize, out_n: usize, plte_present: bool, input: &[u8], out: &mut [u8],
 ) {
     let scale = if plte_present {
         // When a palette is used we only separate the indexes in this pass,
@@ -227,7 +258,7 @@ pub(crate) fn expand_bits_to_byte(
             1 => 0xFF,
             2 => 0x55,
             4 => 0x11,
-            _ => return
+            _ => return,
         }
     };
 
@@ -347,7 +378,9 @@ pub(crate) fn add_alpha(input: &[u8], output: &mut [u8], colorspace: PngColor, d
                 out_chunk[7] = 255;
             }
         }
-        (a, b) => panic!("Unknown combination of depth {a:?} and color type for expand alpha {b:?}")
+        (a, b) => {
+            panic!("Unknown combination of depth {a:?} and color type for expand alpha {b:?}")
+        }
     }
 }
 
@@ -357,7 +390,7 @@ pub fn convert_u16_to_u8_slice(slice: &mut [u16]) -> &mut [u8] {
     unsafe {
         core::slice::from_raw_parts_mut(
             slice.as_ptr() as *mut u8,
-            slice.len().checked_mul(2).unwrap()
+            slice.len().checked_mul(2).unwrap(),
         )
     }
 }

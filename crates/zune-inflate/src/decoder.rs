@@ -173,7 +173,6 @@ pub struct DeflateDecoder<'a> {
     static_codes_loaded: bool,
     deflate_header_tables: DeflateHeaderTables,
     options: DeflateOptions,
-    dest_offset: usize,
 }
 
 impl<'a> DeflateDecoder<'a> {
@@ -238,7 +237,6 @@ impl<'a> DeflateDecoder<'a> {
             static_codes_loaded: false,
             deflate_header_tables: DeflateHeaderTables::default(),
             options,
-            dest_offset: 0,
         }
     }
     /// Decode zlib-encoded data returning the uncompressed in a `Vec<u8>`

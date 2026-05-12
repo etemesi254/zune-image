@@ -15,6 +15,7 @@ pub mod de_filter;
 mod filter;
 mod portable_simd;
 mod sse4;
+mod neon;
 
 pub fn choose_compression_filter(_previous_row: &[u8], _current_row: &[u8]) -> FilterMethod {
     if _previous_row.is_empty() {

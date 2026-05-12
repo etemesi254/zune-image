@@ -24,6 +24,7 @@ pub struct StreamingBitStreamReader {
 
 impl StreamingBitStreamReader {
     /// Create a new empty `StreamingBitStream` instance
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -122,18 +123,7 @@ impl StreamingBitStreamReader {
         self.bits_left
     }
 
-    /// Get position the stream is in this buffer
-    /// Or alternatively, number of bits read.
-    pub fn get_position(&self) -> usize {
-        self.position
-            .saturating_sub(usize::from(self.bits_left >> 3))
-    }
 
-    /// Reset buffer and bits left to zero.
-    pub fn reset(&mut self) {
-        self.buffer = 0;
-        self.bits_left = 0;
-    }
 
     /// Return true if the bit buffer can satisfy
     /// `bits` read without refilling,

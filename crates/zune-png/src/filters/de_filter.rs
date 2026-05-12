@@ -4,14 +4,30 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 #![allow(dead_code)]
+
 #[cfg(feature = "portable-simd")]
 use crate::filters::portable_simd;
+use std::arch::is_aarch64_feature_detected;
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool,
 ) {
     if raw.len() < components || current.len() < components {
         return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if is_aarch64_feature_detected!("neon") {
+            unsafe {
+                match components {
+                    3 => return crate::filters::neon::defilter_avg_neon::<3>(prev_row,raw, current),
+                    4 => return crate::filters::neon::defilter_avg_neon::<4>(prev_row,raw, current),
+                    6 => return crate::filters::neon::defilter_avg_neon::<6>(prev_row,raw, current),
+                    8 => return crate::filters::neon::defilter_avg_neon::<8>(prev_row,raw, current),
+                    _=>()
+                }
+            }
+        }
     }
 
     #[cfg(feature = "portable-simd")]
@@ -21,7 +37,7 @@ pub fn handle_avg(
             4 => return portable_simd::defilter_avg_generic::<4>(prev_row, raw, current),
             6 => return portable_simd::defilter_avg_generic::<6>(prev_row, raw, current),
             8 => return portable_simd::defilter_avg_generic::<8>(prev_row, raw, current),
-            _ => ()
+            _ => (),
         }
     }
 
@@ -35,7 +51,7 @@ pub fn handle_avg(
                 4 => return crate::filters::sse4::defilter_avg_sse::<4>(prev_row, raw, current),
                 6 => return crate::filters::sse4::defilter_avg_sse::<6>(prev_row, raw, current),
                 8 => return crate::filters::sse4::defilter_avg_sse::<8>(prev_row, raw, current),
-                _ => ()
+                _ => (),
             }
         }
     }
@@ -73,14 +89,26 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
     if current.len() < components || raw.len() < components {
         return;
     }
+
     #[cfg(feature = "portable-simd")]
     {
         match components {
-            3 => return portable_simd::defilter_sub_generic::<3>(raw, current),
-            4 => return portable_simd::defilter_sub_generic::<4>(raw, current),
+
             6 => return portable_simd::defilter_sub_generic::<6>(raw, current),
             8 => return portable_simd::defilter_sub_generic::<8>(raw, current),
-            _ => ()
+            _ => (),
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if is_aarch64_feature_detected!("neon") {
+            unsafe {
+                match components {
+                    6 => return crate::filters::neon::de_filter_sub_neon::<6>(raw, current),
+                    8 => return crate::filters::neon::de_filter_sub_neon::<8>(raw, current),
+                    _ => (),
+                }
+            }
         }
     }
     #[cfg(feature = "sse")]
@@ -92,7 +120,7 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
                 4 => return crate::filters::sse4::de_filter_sub_sse2::<4>(raw, current),
                 6 => return crate::filters::sse4::de_filter_sub_sse2::<6>(raw, current),
                 8 => return crate::filters::sse4::de_filter_sub_sse2::<8>(raw, current),
-                _ => ()
+                _ => (),
             }
         }
     }
@@ -109,84 +137,59 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
     }
 }
 
-#[allow(clippy::manual_memcpy)]
+
+
+
+
 pub fn handle_paeth(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool
+    prev_row: &[u8],
+    raw: &[u8],
+    current: &mut [u8],
+    components: usize,
+    _use_sse4: bool,
 ) {
+    macro_rules! paeth_loop {
+    ($components:expr, $len:expr, $current:expr, $raw:expr, $prev_row:expr) => {{
+        let c = $components;
+        let mut i = c;
+        while i + (c - 1) < $len {
+            for j in 0..c {
+                $current[i + j] = $raw[i + j]
+                    .wrapping_add(paeth($current[i + j - c], $prev_row[i + j], $prev_row[i + j - c]));
+            }
+            i += c;
+        }
+        // tail: handle any remaining bytes one at a time
+        while i < $len {
+            $current[i] = $raw[i]
+                .wrapping_add(paeth($current[i - c], $prev_row[i], $prev_row[i - c]));
+            i += 1;
+        }
+    }};
+}
+
     if raw.len() < components || current.len() < components {
         return;
     }
 
-    #[cfg(feature = "portable-simd")]
-    {
-        match components {
-            3 => {
-                return crate::filters::portable_simd::defilter_paeth_generic::<3>(
-                    prev_row, raw, current
-                )
-            }
-            4 => {
-                return crate::filters::portable_simd::defilter_paeth_generic::<4>(
-                    prev_row, raw, current
-                )
-            }
-            6 => {
-                return crate::filters::portable_simd::defilter_paeth_generic::<6>(
-                    prev_row, raw, current
-                )
-            }
-            8 => {
-                return crate::filters::portable_simd::defilter_paeth_generic::<8>(
-                    prev_row, raw, current
-                )
-            }
-            _ => ()
-        }
-    }
+    let len = current.len().min(raw.len()).min(prev_row.len());
 
-    #[cfg(feature = "sse")]
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if use_sse4 {
-            match components {
-                3 => {
-                    return crate::filters::sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current)
-                }
-                4 => {
-                    return crate::filters::sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current)
-                }
-                6 => {
-                    return crate::filters::sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current)
-                }
-                8 => {
-                    return crate::filters::sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current)
-                }
-                _ => ()
-            }
-        }
-    }
-
-    // handle leftmost byte explicitly
+    // Leftmost pixel has no left neighbour, so the "left" and "upper-left" terms are zero.
     for i in 0..components {
         current[i] = raw[i].wrapping_add(paeth(0, prev_row[i], 0));
     }
-    // raw length is one row,so always keep it in check
-    let end = current.len().min(raw.len()).min(prev_row.len());
 
-    if components > 8 {
-        // optimizer hint to tell the CPU that we don't see this ever happening
-        return;
-    }
-
-    for i in components..end {
-        let paeth_res = paeth(
-            current[i - components],
-            prev_row[i],
-            prev_row[i - components]
-        );
-        current[i] = raw[i].wrapping_add(paeth_res)
+    match components {
+        1 => paeth_loop!(1, len, current, raw, prev_row),
+        2 => paeth_loop!(2, len, current, raw, prev_row),
+        3 => paeth_loop!(3, len, current, raw, prev_row),
+        4 => paeth_loop!(4, len, current, raw, prev_row),
+        6 => paeth_loop!(6, len, current, raw, prev_row),
+        8 => paeth_loop!(8, len, current, raw, prev_row),
+        _ => paeth_loop!(components, len, current, raw, prev_row),
     }
 }
+
 
 pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row) {

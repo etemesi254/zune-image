@@ -1,4 +1,3 @@
-use crate::bitstream::BitStreamReader;
 use crate::constants::{
     DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN, DEFLATE_BLOCKTYPE_STATIC, DEFLATE_BLOCKTYPE_UNCOMPRESSED,
     DEFLATE_MAX_CODEWORD_LENGTH, DEFLATE_MAX_LITLEN_CODEWORD_LENGTH,
@@ -13,7 +12,6 @@ use crate::decoder::{build_decode_table_inner, DeflateHeaderTables};
 use crate::errors::{DecodeErrorStatus, InflateDecodeErrors};
 use crate::streaming_decoder::streaming_bitstream::StreamingBitStreamReader;
 use crate::utils::{copy_rep_matches_slow, fixed_copy_within};
-use crate::DeflateOptions;
 
 mod streaming_bitstream;
 
