@@ -1,10 +1,12 @@
-use crate::decoder::{PLTEEntry};
+use crate::decoder::PLTEEntry;
 use crate::enums::{FilterMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::filters::de_filter::{
     handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up,
 };
-use crate::utils::{add_alpha, expand_bits_to_byte, expand_palette, expand_trns};
+use crate::utils::{
+    add_alpha, expand_bits_to_byte, expand_palette, expand_palette_sub_byte, expand_trns,
+};
 use crate::{InterlaceMethod, PngDecoder};
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_inflate::DecodeStatus;
@@ -15,10 +17,9 @@ const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
 const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
 
 // this is the single read size per decode of deflate
-// This is to match the default PNG done by libpng, so means a general deflate
-// will do 8 KB of decompressing a time
-// NB: Other encoders like Photoshop do 32 KB, so if its beneficial we can switch to that
-const BUF_READ: usize = 8192;
+// A bit larger than typical ZLIB idat chunks (which are 8KB)
+// but this allows us to reduce the copy_within shifts in the decoder
+const BUF_READ: usize = 32_768;
 // Maximum deflate history that can be used by an image
 const MAX_DEFLATE_HISTORY: usize = 32_768;
 
@@ -30,8 +31,10 @@ struct InterlaceState {
     row_size: usize,
     width_stride: usize,
     out_chunk_size: usize,
-    prev_row_buf: Vec<u8>,
-    curr_row_buf: Vec<u8>,
+    // The Ping-Pong buffer (size: width_stride * 2)
+    raw_buffers: Vec<u8>,
+    // Holds the fully processed row before scattering
+    post_processed_row: Vec<u8>,
     filter_components: usize,
     is_complete: bool,
 }
@@ -65,28 +68,49 @@ where
         row_bytes + 1 // +1 for the filter byte
     }
     fn scatter_interlaced_row(
-        &self,
-        pass: usize,
-        pass_y: usize, // current_row_idx in this pass
-        pass_w: usize,
-        post_processed_row: &[u8],
+        &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
         final_image_out: &mut [u8],
     ) {
+        // to this function rather than recalculating it and unwrap()ping every row.
         let bytes_per_pixel = self.colorspace().unwrap().num_components()
             * if self.png_info.depth == 16 { 2 } else { 1 };
 
+        // 1. Hoist the Y-axis math completely out of the loop.
+        // We only need to find where the row starts once.
         let out_y = pass_y * YSPC[pass] + YORIG[pass];
+        let row_start_idx = out_y * self.png_info.width * bytes_per_pixel;
 
-        for i in 0..pass_w {
-            let out_x = i * XSPC[pass] + XORIG[pass];
+        // 2. Isolate the specific output row.
+        // Slicing here restricts the memory window, helping the compiler elide inner bounds checks.
+        let out_row_slice = &mut final_image_out[row_start_idx..];
 
-            let final_start = (out_y * self.png_info.width + out_x) * bytes_per_pixel;
-            let src_start = i * bytes_per_pixel;
+        // 3. Pre-calculate the X stride in bytes.
+        let x_orig_bytes = XORIG[pass] * bytes_per_pixel;
 
-            if let Some(dest) = final_image_out.get_mut(final_start..final_start + bytes_per_pixel)
-            {
-                dest.copy_from_slice(&post_processed_row[src_start..src_start + bytes_per_pixel]);
-            }
+        // Pass 7 (Index 6) has XSPC = 1. Pixels are strictly contiguous!
+        // We bypass the loop entirely. Under the hood, copy_from_slice
+        // will compile down to a heavily vectorized memcpy (AVX2/AVX-512).
+        if pass == 6 {
+            let total_bytes = pass_w * bytes_per_pixel;
+            out_row_slice[x_orig_bytes..x_orig_bytes + total_bytes]
+                .copy_from_slice(&post_processed_row[..total_bytes]);
+            return;
+        }
+
+        let x_spc_bytes = XSPC[pass] * bytes_per_pixel;
+
+        // 4. Chunk the source array.
+        // chunks_exact() is highly optimized in standard Rust and removes src_start math.
+        let src_pixels = post_processed_row.chunks_exact(bytes_per_pixel);
+
+        let mut current_out_x = x_orig_bytes;
+
+        // 5. The tight loop: No complex multiplication, just straight addition and copying.
+        for src_pixel in src_pixels.take(pass_w) {
+            out_row_slice[current_out_x..current_out_x + bytes_per_pixel]
+                .copy_from_slice(src_pixel);
+
+            current_out_x += x_spc_bytes;
         }
     }
 
@@ -95,64 +119,58 @@ where
         final_out: &mut [u8], state: &mut InterlaceState,
     ) -> Result<(), PngDecodeErrors> {
         let num_components = self.colorspace().unwrap().num_components();
+        let will_post_process = self.will_post_process();
+
         while (decode_dest - *processed_bytes) >= state.row_size && !state.is_complete {
             let in_stride = &deflate_buf[*processed_bytes..*processed_bytes + state.row_size];
             let filter_byte = in_stride[0];
             let raw = &in_stride[1..];
 
-            let will_post_process = self.will_post_process();
-            // 1. Un-filter into `curr_row_buf`
+            // 1. Ping-pong buffer split
+            let midpoint = state.raw_buffers.len() / 2;
+            let (half_a, half_b) = state.raw_buffers.split_at_mut(midpoint);
+
+            let curr_idx = state.current_row_idx % 2;
+            let (prev_row_full, curr_row_full) =
+                if curr_idx == 0 { (&*half_b, half_a) } else { (&*half_a, half_b) };
+
+            let prev_row = &prev_row_full[..state.width_stride];
+            let curr_row = &mut curr_row_full[..state.width_stride];
+
+            // 2. Un-filter
             let is_first_row = state.current_row_idx == 0;
             self.apply_filter(
                 filter_byte,
-                &state.prev_row_buf[..state.width_stride],
+                prev_row,
                 raw,
-                &mut state.curr_row_buf[..state.width_stride],
+                curr_row,
                 is_first_row,
                 state.filter_components,
             )?;
 
-            // 2. Post-Process and Scatter the PREVIOUS row (The 2-row lag)
-            if state.current_row_idx > 0 {
-                let prev_row = &mut state.prev_row_buf[..state.out_chunk_size];
-
-                if will_post_process {
-                    self.post_process_row(prev_row, state.width_stride, state.pass_w)?;
-                }
-
-                self.scatter_interlaced_row(
-                    state.current_pass,
-                    state.current_row_idx - 1,
-                    state.pass_w,
-                    prev_row,
-                    final_out,
-                );
+            // 3. Post-process immediately!
+            let dest_slice = &mut state.post_processed_row[..state.out_chunk_size];
+            if will_post_process {
+                self.post_process_row_direct(curr_row, dest_slice, state.pass_w)?;
+            } else {
+                let copy_len = dest_slice.len().min(curr_row.len());
+                dest_slice[..copy_len].copy_from_slice(&curr_row[..copy_len]);
             }
 
-            // 3. Swap buffers for the next row
-            std::mem::swap(&mut state.prev_row_buf, &mut state.curr_row_buf);
+            // 4. Scatter immediately! (No 2-row lag)
+            self.scatter_interlaced_row(
+                state.current_pass,
+                state.current_row_idx,
+                state.pass_w,
+                dest_slice,
+                final_out,
+            );
 
             *processed_bytes += state.row_size;
             state.current_row_idx += 1;
 
-            // 4. Check for pass completion
+            // 5. Check for pass completion
             if state.current_row_idx == state.pass_h {
-                // Post-process and scatter the trailing row of the pass
-                let final_row = &mut state.prev_row_buf[..state.out_chunk_size];
-
-                if will_post_process {
-                    self.post_process_row(final_row, state.width_stride, state.pass_w)?;
-                }
-
-                self.scatter_interlaced_row(
-                    state.current_pass,
-                    state.current_row_idx - 1,
-                    state.pass_w,
-                    final_row,
-                    final_out,
-                );
-
-                // Advance pass and skip empty passes
                 state.current_pass += 1;
                 loop {
                     if state.current_pass > 6 {
@@ -163,12 +181,11 @@ where
                     state.pass_w = dims.0;
                     state.pass_h = dims.1;
                     if state.pass_w > 0 && state.pass_h > 0 {
-                        break; // Found a pass with actual pixels
+                        break;
                     }
                     state.current_pass += 1;
                 }
 
-                // Recalculate dimensions for the new pass
                 state.row_size = self.calculate_pass_row_size(state.pass_w);
                 state.width_stride = state.row_size - 1;
 
@@ -214,6 +231,8 @@ where
             self.png_info.width * self.colorspace().unwrap().num_components() * bytes_per_pixel;
 
         let initial_row_size = self.calculate_pass_row_size(initial_pass_w);
+        let initial_out_chunk =
+            initial_pass_w * self.colorspace().unwrap().num_components() * bytes_per_pixel;
 
         let mut state = InterlaceState {
             current_pass: start_pass,
@@ -222,18 +241,13 @@ where
             current_row_idx: 0,
             row_size: initial_row_size,
             width_stride: initial_row_size - 1,
-            out_chunk_size: initial_pass_w
-                * self.colorspace().unwrap().num_components()
-                * bytes_per_pixel,
-            prev_row_buf: vec![0; std::cmp::max(max_row_size, max_out_chunk)],
-            curr_row_buf: vec![0; std::cmp::max(max_row_size, max_out_chunk)],
+            out_chunk_size: initial_out_chunk,
+            // Allocate the ping pong buffer AND the post-processed scatter buffer
+            raw_buffers: vec![0; std::cmp::max(max_row_size, max_out_chunk) * 2],
+            post_processed_row: vec![0; max_out_chunk],
             filter_components,
             is_complete: false,
         };
-
-        if self.will_post_process() {
-            self.previous_stride.resize(max_out_chunk, 0);
-        }
 
         // --- 3. Setup Deflate ---
         let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + max_row_size + 4096);
@@ -277,8 +291,7 @@ where
             };
 
             self.current_idat_bytes_left -= chunk_size;
-            // we updated the buffer,so reset position to
-            // zero
+            // we updated the buffer,so reset position to zero
             decoder.reset_position();
 
             let mut chunk_pos = 0;
@@ -369,54 +382,46 @@ where
         }
         Ok(final_out)
     }
+}
+impl<T> PngDecoder<T>
+where
+    T: ZByteReaderTrait,
+{
     pub(crate) fn decode_stream(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
+
         let row_size = self.calculate_row_size();
-
-        let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
-        // allocations we make, buf_size is generally enough to hold 2 rows, including
-        //
-        // Furthermore, we split it into 1 allocation of two buffers so that we reduce alloc pressure
-        // the buffer is then split into 2 separate buffers and used for first reading the zlib
-        // data into temporary buffer and then second for storing decoded bytes from the buffer
-        let mut major_buf = vec![0u8; buf_size + BUF_READ];
-
-        let (byte_buf, deflate_buf) = major_buf.split_at_mut(BUF_READ);
-
-        let mut decoder = zune_inflate::StreamingDecoder::new();
-
-        // Trackers for Deflate state
-        let mut processed_bytes = 0;
-        // Trackers for PNG row state
         let width_stride = row_size - 1;
-        // 3. The final output size per row (post-processed)
         let bytes_per_channel = if self.png_info.depth == 16 { 2 } else { 1 };
         let out_chunk_size =
             self.png_info.width * self.colorspace().unwrap().num_components() * bytes_per_channel;
+
+        // 2. Setup Single-Allocation Ping-Pong Buffers
+        // We allocate exactly enough space for TWO raw rows side-by-side.
+        // This ensures the current and previous rows are right next to each other in cache.
+        let mut raw_buffers = vec![0u8; width_stride * 2];
+
+        // 3. Setup Deflate Buffers
+        let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
+        let mut major_buf = vec![0u8; buf_size + BUF_READ];
+        let (byte_buf, deflate_buf) = major_buf.split_at_mut(BUF_READ);
+
+        let mut decoder = zune_inflate::StreamingDecoder::new();
+        let mut processed_bytes = 0;
         let mut current_row_idx = 0;
         let mut final_out_pos = 0;
-
-        // Zlib streams have a 2-byte header we must skip manually before raw Deflate
         let mut skipped_zlib_header = false;
-
-        if self.will_post_process() {
-            self.previous_stride.resize(out_chunk_size, 0);
-        }
         let mut is_final_chunk = false;
 
-        // 2. The Streaming Loop
+        // 4. The Streaming Loop
         loop {
-            // If we exhausted the current IDAT chunk, read the next one
             if self.current_idat_bytes_left == 0 {
-                // Skip the CRC of the previous IDAT chunk
-                self.stream.skip(4)?;
-
+                self.stream.skip(4)?; // Skip CRC
                 let header = self.read_chunk_header()?;
 
                 if header.chunk_type != PngChunkType::IDAT {
-                    // We are out of IDAT chunks
                     is_final_chunk = true;
                     self.current_idat_bytes_left = 0;
                 } else {
@@ -424,19 +429,13 @@ where
                 }
             }
 
-            // Read a chunk of compressed data from the stream
-            // (Read up to 4KB at a time, or whatever is left in the IDAT)
             let read_len = std::cmp::min(byte_buf.len(), self.current_idat_bytes_left);
-
-            let chunk_size = { self.stream.read_bytes(&mut byte_buf[..read_len])? };
+            let chunk_size = self.stream.read_bytes(&mut byte_buf[..read_len])?;
             self.current_idat_bytes_left -= chunk_size;
-            // We just overwrote the buffer with fresh data.
             decoder.reset_position();
 
             let mut chunk_pos = 0;
-
             if !skipped_zlib_header {
-                // Skip 2 bytes of Zlib header
                 chunk_pos += 2;
                 skipped_zlib_header = true;
             }
@@ -448,17 +447,10 @@ where
                     &byte_buf[chunk_pos..chunk_size]
                 };
 
-                // on the very next iteration before it can be read again.
                 match decoder.decode_chunk(input_slice, is_final_chunk, deflate_buf) {
-                    DecodeStatus::NeedsMoreInput => {
-                        // Current chunk fully consumed. Break to read more from stream.
-                        break;
-                    }
+                    DecodeStatus::NeedsMoreInput => break,
 
-                    DecodeStatus::NeedsMoreOutput {
-                        at_least: _at_least,
-                    } => {
-                        // Extract any fully decompressed rows before sliding
+                    DecodeStatus::NeedsMoreOutput { .. } => {
                         self.extract_rows(
                             deflate_buf,
                             &mut processed_bytes,
@@ -468,9 +460,9 @@ where
                             final_out,
                             &mut final_out_pos,
                             out_chunk_size,
+                            &mut raw_buffers, // Pass the ping-pong buffer
                         )?;
 
-                        // Now slide the window back to preserve the 32 KB history
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
                         let keep_amount = std::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
                         let slide_amount =
@@ -481,12 +473,9 @@ where
                             decoder.slide_window(slide_amount);
                             processed_bytes -= slide_amount;
                         }
-
-                        // Do not break; loop around to retry decode_chunk with the SAME input
                     }
 
                     DecodeStatus::Finished => {
-                        // Extract the final remaining rows
                         self.extract_rows(
                             deflate_buf,
                             &mut processed_bytes,
@@ -496,73 +485,84 @@ where
                             final_out,
                             &mut final_out_pos,
                             out_chunk_size,
+                            &mut raw_buffers,
                         )?;
-
-                        // Trigger the final post-process step for the very last row here
-                        self.post_process_final_row(
-                            final_out,
-                            current_row_idx,
-                            out_chunk_size,
-                            width_stride,
-                        )?;
-
+                        // Notice: `post_process_final_row` is completely GONE!
                         return Ok(());
                     }
 
-                    DecodeStatus::Error(e) => {
-                        return Err(PngDecodeErrors::ZlibDecodeErrors(e));
-                    }
+                    DecodeStatus::Error(e) => return Err(PngDecodeErrors::ZlibDecodeErrors(e)),
                     _ => unreachable!(),
                 }
             }
         }
     }
+}
+impl<T> PngDecoder<T>
+where
+    T: ZByteReaderTrait,
+{
     #[allow(clippy::too_many_arguments)]
     fn extract_rows(
-        &mut self, deflate_buf: &[u8], processed_bytes: &mut usize, decode_dest: usize,
-        row_size: usize, current_row_idx: &mut usize, final_out: &mut [u8],
-        final_out_pos: &mut usize, out_chunk_size: usize,
+        &mut self,
+        deflate_buf: &[u8],
+        processed_bytes: &mut usize,
+        decode_dest: usize,
+        row_size: usize,
+        current_row_idx: &mut usize,
+        final_out: &mut [u8],
+        final_out_pos: &mut usize,
+        out_chunk_size: usize,
+        raw_buffers: &mut [u8], // The single allocation containing exactly 2 raw rows
     ) -> Result<(), PngDecodeErrors> {
         let width_stride = row_size - 1;
-        // As long as we have enough bytes for a full row
+        let filter_bpp = usize::from(self.png_info.color.num_components())
+            * if self.png_info.depth == 16 { 2 } else { 1 };
+
+        let will_post_process = self.will_post_process();
+
         while (decode_dest - *processed_bytes) >= row_size {
+            // Grab the chunk of deflate data for this exact row
             let in_stride = &deflate_buf[*processed_bytes..*processed_bytes + row_size];
             let filter_byte = in_stride[0];
             let raw = &in_stride[1..];
 
-            let bytes_per_channel = if self.png_info.depth == 16 { 2 } else { 1 };
-            let filter_bpp = usize::from(self.png_info.color.num_components()) * bytes_per_channel;
+            // 1. Borrow checker magic: safely split the buffer into "Left" (A) and "Right" (B) halves.
+            // This guarantees `prev_row` and `curr_row` never overlap in memory.
+            let (half_a, half_b) = raw_buffers.split_at_mut(width_stride);
 
-            // 1. Grab the slice of the final_out buffer using the EXPANDED size
-            let (prev_data, current_dest) = final_out.split_at_mut(*final_out_pos);
-            let current = &mut current_dest[0..out_chunk_size];
-            // 2. Identify the previous row for un-filtering (or dummy row if first)
-            let prev_row = if *current_row_idx == 0 {
-                &[0_u8]
+            // 2. Ping-pong assignments based on whether the row index is even or odd.
+            let curr_idx = *current_row_idx % 2;
+            let (prev_row, curr_row) = if curr_idx == 0 {
+                (&*half_b, half_a) // Even row: read previous from B, write current to A
             } else {
-                &prev_data[*final_out_pos - out_chunk_size..*final_out_pos]
+                (&*half_a, half_b) // Odd row: read previous from A, write current to B
             };
+
+            // 3. Un-filter the Deflate data directly into `curr_row`
             let is_first_row = *current_row_idx == 0;
-            // 3. Un-filter the row
             self.apply_filter(
                 filter_byte,
                 prev_row,
                 raw,
-                &mut current[..width_stride],
+                curr_row,
                 is_first_row,
                 filter_bpp,
             )?;
 
-            // 4. Post-Process the PREVIOUS row (The 2-row lag)
-            if *current_row_idx > 0 && self.will_post_process() {
-                let row_to_post_process =
-                    &mut prev_data[*final_out_pos - out_chunk_size..*final_out_pos];
+            // 4. Isolate the exact slice of the final output buffer for this row
+            let dest_slice = &mut final_out[*final_out_pos..*final_out_pos + out_chunk_size];
 
-                // Process the row that is trailing one step behind
-                self.post_process_row(row_to_post_process, row_size - 1, self.png_info.width)?;
+            // 5. Post-process immediately into the final output buffer
+            if will_post_process {
+                self.post_process_row_direct(curr_row, dest_slice, self.png_info.width)?;
+            } else {
+                // Fast-path: If no depth/palette/alpha changes are needed, just copy it.
+                let copy_len = dest_slice.len().min(curr_row.len());
+                dest_slice[..copy_len].copy_from_slice(&curr_row[..copy_len]);
             }
 
-            // 5. Advance the trackers
+            // 6. Advance all trackers
             *processed_bytes += row_size;
             *final_out_pos += out_chunk_size;
             *current_row_idx += 1;
@@ -571,7 +571,6 @@ where
         Ok(())
     }
 }
-
 impl<T> PngDecoder<T> {
     /// Apply PNG unfiltering
     ///
@@ -623,6 +622,157 @@ impl<T> PngDecoder<T> {
 
 impl<T> PngDecoder<T>
 where
+    T: zune_core::bytestream::ZByteReaderTrait,
+{
+    /// Directly transforms a raw unfiltered row into the final formatted output.
+    /// Eliminates all intermediate vectors and 2-pass conversions.
+    #[inline]
+    pub(crate) fn post_process_row_direct(
+        &self, raw_input: &[u8], final_output: &mut [u8], row_width: usize,
+    ) -> Result<(), PngDecodeErrors> {
+        let info = &self.png_info;
+        let n_components = usize::from(info.color.num_components());
+        let add_alpha_channel = self.options.png_get_add_alpha_channel() && !info.color.has_alpha();
+
+        let has_trns = self.seen_trns && info.color != PngColor::Palette;
+        let is_palette = self.seen_ptle && info.color == PngColor::Palette;
+
+        // --- 1. PALETTE PATH (Fused 1-Pass) ---
+        if is_palette {
+            if self.palette.is_empty() {
+                return Err(PngDecodeErrors::EmptyPalette);
+            }
+            let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
+
+            // If there's a tRNS chunk for the palette, or we are forcing alpha, it becomes RGBA
+            let components = if self.seen_trns || add_alpha_channel { 4 } else { 3 };
+
+            if info.depth < 8 {
+                expand_palette_sub_byte(
+                    raw_input,
+                    final_output,
+                    plte_entry,
+                    components,
+                    info.depth,
+                    row_width,
+                );
+            } else {
+                expand_palette(raw_input, final_output, plte_entry, components);
+            }
+            return Ok(());
+        }
+
+        // --- 2. GRAYSCALE SUB-BYTE WITH tRNS OR ADDED ALPHA (Fused 1-Pass) ---
+        // If an image is < 8-bit depth, not paletted, but requires an alpha channel,
+        // we must expand the bits AND inject the alpha bytes simultaneously.
+        if info.depth < 8 && (has_trns || add_alpha_channel) {
+            // Pre-calculate the scaled tRNS match value
+            let trns_val_scaled = if has_trns {
+                let depth_mask = (1_u16 << info.depth) - 1;
+                let scale = match info.depth {
+                    1 => 0xFF,
+                    2 => 0x55,
+                    4 => 0x11,
+                    _ => 0,
+                };
+                ((self.trns_bytes[0] & 0xFF & depth_mask) as u8) * scale
+            } else {
+                255 // Impossible value for u8, meaning it will never match
+            };
+
+            let scale = match info.depth {
+                1 => 0xFF,
+                2 => 0x55,
+                4 => 0x11,
+                _ => 0,
+            };
+
+            let mut out_idx = 0;
+            let mut px_processed = 0;
+            let pixels_per_byte = (8 / info.depth) as usize;
+
+            for &in_byte in raw_input {
+                if px_processed >= row_width {
+                    break;
+                }
+
+                for i in 0..pixels_per_byte {
+                    if px_processed >= row_width {
+                        break;
+                    }
+
+                    let shift = 8 - info.depth - (i as u8 * info.depth);
+                    let mask = (1 << info.depth) - 1;
+
+                    let raw_val = (in_byte >> shift) & mask;
+                    let expanded_luma = raw_val * scale;
+
+                    final_output[out_idx] = expanded_luma;
+
+                    if has_trns && expanded_luma == trns_val_scaled {
+                        final_output[out_idx + 1] = 0; // Fully transparent
+                    } else {
+                        final_output[out_idx + 1] = 255; // Fully opaque
+                    }
+
+                    out_idx += 2;
+                    px_processed += 1;
+                }
+            }
+            return Ok(());
+        }
+
+        // --- 3. SUB-BYTE (NO ALPHA/tRNS TRANSFORMS) ---
+        if info.depth < 8 {
+            expand_bits_to_byte(
+                row_width,
+                usize::from(info.depth),
+                n_components,
+                self.seen_ptle,
+                raw_input,
+                final_output,
+            );
+            return Ok(());
+        }
+
+        // --- 4. 8-BIT / 16-BIT tRNS ---
+        if has_trns {
+            if info.depth <= 8 {
+                expand_trns::<false>(
+                    raw_input,
+                    final_output,
+                    info.color,
+                    self.trns_bytes,
+                    info.depth,
+                );
+            } else if info.depth == 16 {
+                expand_trns::<true>(
+                    raw_input,
+                    final_output,
+                    info.color,
+                    self.trns_bytes,
+                    info.depth,
+                );
+            }
+            return Ok(());
+        }
+
+        // --- 5. 8-BIT / 16-BIT ADD ALPHA ---
+        if add_alpha_channel {
+            add_alpha(raw_input, final_output, info.color, self.depth().unwrap());
+            return Ok(());
+        }
+
+        // --- 6. FAST PATH NO-OP (Direct Copy) ---
+        // If no processing is required, safely copy over the exact length.
+        let copy_len = final_output.len().min(raw_input.len());
+        final_output[..copy_len].copy_from_slice(&raw_input[..copy_len]);
+
+        Ok(())
+    }
+}
+impl<T> PngDecoder<T>
+where
     T: ZByteReaderTrait,
 {
     /// Helper to check if we need to run any post-processing at all
@@ -631,113 +781,6 @@ where
         let add_alpha =
             self.options.png_get_add_alpha_channel() && !self.png_info.color.has_alpha();
         self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha
-    }
-
-    /// Post-processes a single row in-place (using `previous_stride` as a temporary buffer)
-    #[inline]
-    pub(crate) fn post_process_row(
-        &mut self, to_filter_row: &mut [u8], width_stride: usize, row_width: usize,
-    ) -> Result<(), PngDecodeErrors> {
-        let info = &self.png_info;
-        let n_components = usize::from(info.color.num_components());
-        let add_alpha_channel = self.options.png_get_add_alpha_channel() && !info.color.has_alpha();
-
-        let extra_transform = self.seen_ptle | self.seen_trns | add_alpha_channel;
-
-        if info.depth < 8 {
-            if extra_transform {
-                // Input data is in `to_filter_row`, we write output to `previous_stride`
-                // since other parts will read from `previous_stride`.
-                expand_bits_to_byte(
-                    row_width,
-                    usize::from(info.depth),
-                    n_components,
-                    self.seen_ptle,
-                    to_filter_row,
-                    &mut self.previous_stride,
-                );
-            } else {
-                // No extra transform, just depth upscaling.
-                // Copy the row to a temporary space
-                self.previous_stride[..width_stride]
-                    .copy_from_slice(&to_filter_row[..width_stride]);
-
-                expand_bits_to_byte(
-                    row_width,
-                    usize::from(info.depth),
-                    n_components,
-                    self.seen_ptle,
-                    &self.previous_stride,
-                    to_filter_row,
-                );
-            }
-        } else {
-            // Copy the row to a temporary space for subsequent transforms
-            self.previous_stride[..width_stride].copy_from_slice(&to_filter_row[..width_stride]);
-        }
-
-        if self.seen_trns && info.color != PngColor::Palette {
-            if info.depth <= 8 {
-                expand_trns::<false>(
-                    &self.previous_stride,
-                    to_filter_row,
-                    info.color,
-                    self.trns_bytes,
-                    info.depth,
-                );
-            } else if info.depth == 16 {
-                expand_trns::<true>(
-                    &self.previous_stride,
-                    to_filter_row,
-                    info.color,
-                    self.trns_bytes,
-                    info.depth,
-                );
-            }
-        }
-
-        if self.seen_ptle && info.color == PngColor::Palette {
-            if self.palette.is_empty() {
-                return Err(PngDecodeErrors::EmptyPalette);
-            }
-            let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
-
-            if self.seen_trns | add_alpha_channel {
-                expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
-            } else {
-                expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
-            }
-        } else if add_alpha_channel {
-            add_alpha(
-                &self.previous_stride,
-                to_filter_row,
-                info.color,
-                self.depth().unwrap(),
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Safely calculates the boundaries of the final row and processes it.
-    pub(crate) fn post_process_final_row(
-        &mut self, final_out: &mut [u8], current_row_idx: usize, out_chunk_size: usize,
-        width_stride: usize,
-    ) -> Result<(), PngDecodeErrors> {
-        if !self.will_post_process() || current_row_idx == 0 {
-            return Ok(());
-        }
-
-        // current_row_idx represents how many rows we have successfully *un-filtered*.
-        // Therefore, the very last row in the buffer is at `current_row_idx - 1`.
-        let final_row_idx = current_row_idx - 1;
-
-        let start = final_row_idx * out_chunk_size;
-        let end = start + out_chunk_size;
-
-        let to_filter_row = &mut final_out[start..end];
-
-        self.post_process_row(to_filter_row, width_stride, out_chunk_size)
     }
 }
 
@@ -765,13 +808,11 @@ mod tests {
         assert_eq!(first, last);
     }
     #[test]
-    fn decode_normal(){
+    fn decode_normal() {
         let path =
             "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench.png";
         let data = std::fs::read(path).unwrap();
         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
         decoder.decode().unwrap();
-
-
     }
 }

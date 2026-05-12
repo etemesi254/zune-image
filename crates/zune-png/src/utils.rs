@@ -6,77 +6,13 @@
 
 //! Utilities required by multiple implementations
 //! that help to do small things
-use zune_core::bit_depth::{BitDepth, ByteEndian};
+use zune_core::bit_depth::BitDepth;
 
 use crate::decoder::PLTEEntry;
 use crate::enums::PngColor;
 
 mod avx;
 mod sse;
-
-/// scalar impl of big-endian to native endian
-fn convert_be_to_ne_scalar(out: &mut [u8]) {
-    out.chunks_exact_mut(2).for_each(|chunk| {
-        let value: [u8; 2] = chunk.try_into().unwrap();
-        let pix = u16::from_be_bytes(value);
-        chunk.copy_from_slice(&pix.to_ne_bytes());
-    });
-}
-
-/// Convert big endian to little endian for u16 samples
-///
-/// This is a no-op if the system is already in big-endian
-///
-/// # Arguments
-///
-/// * `out`:  The output array for which we will convert in place
-/// * `use_sse4`:  Whether to use SSE intrinsics for conversion
-///
-fn convert_be_to_le_u16(out: &mut [u8], _use_sse4: bool) {
-    #[cfg(feature = "std")]
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        if _use_sse4 && is_x86_feature_detected!("avx2") {
-            unsafe {
-                return avx::convert_be_to_ne_avx(out);
-            };
-        }
-        if _use_sse4 && is_x86_feature_detected!("ssse3") {
-            unsafe {
-                return sse::convert_be_to_ne_sse4(out);
-            }
-        }
-    }
-    convert_be_to_ne_scalar(out)
-}
-
-/// Convert u16 big endian samples to target endian
-///
-/// # Arguments
-///
-/// * `sample`:  The raw samples assumed to be in big endian
-/// * `endian`:  The target endianness for which to convert samples
-/// * `use_intrinsics`:  Whether to use sse intrinsics to speed up
-///
-///
-/// sample array is modified in place
-///
-#[inline]
-pub fn convert_be_to_target_endian_u16(
-    sample: &mut [u8], endian: ByteEndian, use_intrinsics: bool,
-) {
-    // if target is BE no conversion
-    if endian == ByteEndian::BE {
-        return;
-    }
-    // if system is BE, no conversion
-    // poor man's check
-    if u16::from_be_bytes([234, 231]) == u16::from_ne_bytes([234, 231]) {
-        return;
-    }
-    // convert then
-    convert_be_to_le_u16(sample, use_intrinsics);
-}
 
 /// Return true if the system is little endian
 pub const fn is_le() -> bool {
@@ -87,7 +23,6 @@ pub const fn is_le() -> bool {
 pub(crate) fn expand_palette(
     input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize,
 ) {
-
     if components == 3 {
         let mut out_chunks = out.chunks_exact_mut(6);
         let mut input_iter = input.chunks_exact(2);
@@ -138,6 +73,105 @@ pub(crate) fn expand_palette(
             px[1] = entry.green;
             px[2] = entry.blue;
             px[3] = entry.alpha;
+        }
+    }
+}
+
+pub(crate) fn expand_palette_sub_byte(
+    input: &[u8],
+    out: &mut [u8],
+    palette: &[PLTEEntry; 256],
+    components: usize,
+    depth: u8,
+    width: usize, // We need width to avoid over-writing trailing padding bits
+) {
+    let mut px_processed = 0;
+
+    if depth == 4 {
+        let out_bytes_per_loop = components * 2; // 2 pixels per byte
+        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+
+        for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
+            if px_processed >= width {
+                break;
+            }
+
+            let entry0 = &palette[usize::from((in_byte >> 4) & 0x0F)];
+            let entry1 = &palette[usize::from(in_byte & 0x0F)];
+
+            out_chunk[0] = entry0.red;
+            out_chunk[1] = entry0.green;
+            out_chunk[2] = entry0.blue;
+
+            if components == 4 {
+                out_chunk[3] = entry0.alpha;
+            }
+
+            let offset = components;
+            if px_processed + 1 < width {
+                out_chunk[offset] = entry1.red;
+                out_chunk[offset + 1] = entry1.green;
+                out_chunk[offset + 2] = entry1.blue;
+
+                if components == 4 {
+                    out_chunk[offset + 3] = entry1.alpha;
+                }
+            }
+            px_processed += 2;
+        }
+    } else if depth == 2 {
+        let out_bytes_per_loop = components * 4; // 4 pixels per byte
+        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+
+        for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
+            if px_processed >= width {
+                break;
+            }
+
+            for i in 0..4 {
+                if px_processed + i >= width {
+                    break;
+                }
+                let shift = 6 - (i * 2);
+                let entry = &palette[usize::from((in_byte >> shift) & 0x03)];
+                let offset = i * components;
+
+                out_chunk[offset] = entry.red;
+                out_chunk[offset + 1] = entry.green;
+                out_chunk[offset + 2] = entry.blue;
+
+                if components == 4 {
+                    out_chunk[offset + 3] = entry.alpha;
+                }
+            }
+            px_processed += 4;
+        }
+    } else if depth == 1 {
+        let out_bytes_per_loop = components * 8; // 8 pixels per byte
+        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+
+        for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
+            if px_processed >= width {
+                break;
+            }
+
+            for i in 0..8 {
+                if px_processed + i >= width {
+                    break;
+                }
+                let shift = 7 - i;
+                let entry = &palette[usize::from((in_byte >> shift) & 0x01)];
+
+                let offset = i * components;
+                out_chunk[offset] = entry.red;
+                out_chunk[offset + 1] = entry.green;
+                out_chunk[offset + 2] = entry.blue;
+
+                if components == 4 {
+                    out_chunk[offset + 3] = entry.alpha;
+                }
+            }
+            px_processed += 8;
         }
     }
 }
