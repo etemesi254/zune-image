@@ -43,11 +43,11 @@ impl Debug for ChannelErrors
         {
             ChannelErrors::UnalignedPointer(expected, found) =>
             {
-                writeln!(f, "Channel pointer {expected} is not aligned to {found}")
+                write!(f, "Channel pointer {expected} is not aligned to {found}")
             }
             ChannelErrors::UnevenLength(length, size_of_1) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Size of {size_of_1} cannot evenly divide length {length}"
                 )

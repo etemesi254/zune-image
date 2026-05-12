@@ -43,20 +43,20 @@ impl Debug for PPMDecodeErrors
         {
             Self::Generic(val) =>
             {
-                writeln!(f, "{val}")
+                write!(f, "{val}")
             }
-            Self::GenericStatic(val) => writeln!(f, "{val}"),
+            Self::GenericStatic(val) => write!(f, "{val}"),
             Self::InvalidHeader(val) =>
             {
-                writeln!(f, "Invalid header, reason: {val}")
+                write!(f, "Invalid header, reason: {val}")
             }
             Self::UnsupportedImpl(val) =>
             {
-                writeln!(f, "Invalid header, reason: {val}")
+                write!(f, "Invalid header, reason: {val}")
             }
             Self::LargeDimensions(expected, found) =>
             {
-                writeln!(
+                write!(
                     f,
                     "Too large dimensions, expected a value less than {expected} but found {found}"
                 )
