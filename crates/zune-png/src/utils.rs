@@ -11,8 +11,7 @@ use zune_core::bit_depth::BitDepth;
 use crate::decoder::PLTEEntry;
 use crate::enums::PngColor;
 
-mod avx;
-mod sse;
+
 
 /// Return true if the system is little endian
 pub const fn is_le() -> bool {
