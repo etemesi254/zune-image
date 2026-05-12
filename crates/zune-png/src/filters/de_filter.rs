@@ -149,24 +149,31 @@ pub fn handle_paeth(
     _use_sse4: bool,
 ) {
     macro_rules! paeth_loop {
-    ($components:expr, $len:expr, $current:expr, $raw:expr, $prev_row:expr) => {{
-        let c = $components;
-        let mut i = c;
-        while i + (c - 1) < $len {
-            for j in 0..c {
-                $current[i + j] = $raw[i + j]
-                    .wrapping_add(paeth($current[i + j - c], $prev_row[i + j], $prev_row[i + j - c]));
+        ($c:expr, $len:expr, $cur:expr, $r:expr, $p:expr) => {{
+            let mut i = $c;
+
+            // The ILP-friendly loop: LLVM will completely unroll the `j` loop
+            // since `$c` is a constant. R, G, B, and A will compute in parallel.
+            while i + ($c - 1) < $len {
+                for j in 0..$c {
+                    let a = $cur[i + j - $c];
+                    let b = $p[i + j];
+                    let c_val = $p[i + j - $c];
+                    $cur[i + j] = $r[i + j].wrapping_add(paeth(a, b, c_val));
+                }
+                i += $c;
             }
-            i += c;
-        }
-        // tail: handle any remaining bytes one at a time
-        while i < $len {
-            $current[i] = $raw[i]
-                .wrapping_add(paeth($current[i - c], $prev_row[i], $prev_row[i - c]));
-            i += 1;
-        }
-    }};
-}
+
+            // Tail: handle any remaining bytes one at a time
+            while i < $len {
+                let a = $cur[i - $c];
+                let b = $p[i];
+                let c_val = $p[i - $c];
+                $cur[i] = $r[i].wrapping_add(paeth(a, b, c_val));
+                i += 1;
+            }
+        }};
+    }
 
     if raw.len() < components || current.len() < components {
         return;
@@ -174,19 +181,25 @@ pub fn handle_paeth(
 
     let len = current.len().min(raw.len()).min(prev_row.len());
 
-    // Leftmost pixel has no left neighbour, so the "left" and "upper-left" terms are zero.
+    // Explicitly restrict the slices to the identical minimum length.
+    // This gives LLVM the global proof it needs to drop inner bounds checks.
+    let cur = &mut current[..len];
+    let r = &raw[..len];
+    let p = &prev_row[..len];
+
+    // Leftmost pixel optimization: Paeth(0, b, 0) == b
     for i in 0..components {
-        current[i] = raw[i].wrapping_add(paeth(0, prev_row[i], 0));
+        cur[i] = r[i].wrapping_add(p[i]);
     }
 
     match components {
-        1 => paeth_loop!(1, len, current, raw, prev_row),
-        2 => paeth_loop!(2, len, current, raw, prev_row),
-        3 => paeth_loop!(3, len, current, raw, prev_row),
-        4 => paeth_loop!(4, len, current, raw, prev_row),
-        6 => paeth_loop!(6, len, current, raw, prev_row),
-        8 => paeth_loop!(8, len, current, raw, prev_row),
-        _ => paeth_loop!(components, len, current, raw, prev_row),
+        1 => paeth_loop!(1, len, cur, r, p),
+        2 => paeth_loop!(2, len, cur, r, p),
+        3 => paeth_loop!(3, len, cur, r, p),
+        4 => paeth_loop!(4, len, cur, r, p),
+        6 => paeth_loop!(6, len, cur, r, p),
+        8 => paeth_loop!(8, len, cur, r, p),
+        _ => paeth_loop!(components, len, cur, r, p),
     }
 }
 

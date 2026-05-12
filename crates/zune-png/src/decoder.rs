@@ -5,30 +5,22 @@
  */
 
 use alloc::vec::Vec;
-use alloc::{format, vec};
-use core::cmp::min;
+use alloc::{vec};
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::{trace, warn};
 use zune_core::options::DecoderOptions;
 use zune_core::result::DecodingResult;
-use zune_inflate::DeflateOptions;
 
 use crate::apng::{ActlChunk, FrameInfo, SingleFrame};
 use crate::constants::PNG_SIGNATURE;
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::error::PngDecodeErrors::GenericStatic;
-use crate::filters::de_filter::{
-    handle_avg, handle_avg_first, handle_paeth, handle_paeth_first, handle_sub, handle_up,
-};
+
 use crate::options::default_chunk_handler;
-use crate::utils::{
-    add_alpha, convert_be_to_target_endian_u16, convert_u16_to_u8_slice, expand_bits_to_byte,
-    expand_palette, expand_trns, is_le,
-};
+use crate::utils::{convert_u16_to_u8_slice, is_le};
 
 /// A palette entry.
 ///
@@ -165,7 +157,6 @@ pub struct PngDecoder<T> {
     pub(crate) palette: Vec<PLTEEntry>,
     pub(crate) frames: Vec<SingleFrame>,
     pub(crate) actl_info: Option<ActlChunk>,
-    pub(crate) previous_stride: Vec<u8>,
     pub(crate) trns_bytes: [u16; 4],
     pub(crate) seen_hdr: bool,
     pub(crate) seen_ptle: bool,
@@ -212,7 +203,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             palette: Vec::new(),
             png_info: PngInfo::default(),
             actl_info: None,
-            previous_stride: vec![],
             frames: vec![],
             seen_ptle: false,
             seen_trns: false,
@@ -523,33 +513,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             .checked_mul(out_n)?
             .checked_mul(bytes)
     }
-    /// Return the number of bytes required to hold a decoded image frame
-    /// decoded without regard to the given input transformations
-    ///
-    /// # Returns
-    ///  - `Some(usize)`: Minimum size for a buffer needed to decode the image
-    ///  - `None`: Indicates the image headers was not decoded.
-    ///
-    /// # Panics
-    /// In case `width*height*colorspace` calculation may overflow a usize
-    fn inner_buffer_size(&self) -> Option<usize> {
-        if !self.seen_hdr {
-            return None;
-        }
-
-        let info = self.frame_info()?;
-        let p_info = &self.png_info;
-        // only difference with output is here we don't care about
-        // stripping 16 bit to 8 bit
-        let bytes = if p_info.depth == 16 { 2 } else { 1 };
-
-        let out_n = self.colorspace()?.num_components();
-
-        info.width
-            .checked_mul(info.height)?
-            .checked_mul(out_n)?
-            .checked_mul(bytes)
-    }
 
     /// Get png information which was extracted from the headers
     ///
@@ -609,77 +572,9 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             && self.png_info.depth == 16
             && self.options.png_get_strip_to_8bit()
         {
-            let image_len = self.output_buffer_size().unwrap();
-
-            if out.len() < image_len {
-                return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
-            }
-            // allocate new size
-            let mut temp_alloc = vec![0; self.inner_buffer_size().unwrap()];
-            self.decode_into_inner(&mut temp_alloc)?;
-
-            let out = &mut out[..image_len];
-            // then convert it to 8 bit by taking top bit
-            for (input, output) in temp_alloc.chunks_exact(2).zip(out) {
-                *output = input[0];
-            }
-            return Ok(());
+            todo!();
         }
-        self.decode_into_inner(out)
-    }
-    fn decode_into_inner(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
-        // decode headers
-        self.decode_headers()?;
-
-        trace!("Input Colorspace: {:?} ", self.png_info.color);
-        trace!("Output Colorspace: {:?} ", self.colorspace().unwrap());
-
-        if self.frames.get(self.current_frame).is_none() {
-            return Err(PngDecodeErrors::GenericStatic("No more frames"));
-        }
-        if self.frames[self.current_frame].fctl_info.is_none() {
-            return Err(PngDecodeErrors::GenericStatic("Unimplemented frame info"));
-        }
-        let info = self.frames[self.current_frame].fctl_info.unwrap();
-
-        let png_info = self.png_info.clone();
-
-        let image_len = self
-            .inner_buffer_size()
-            .ok_or(PngDecodeErrors::GenericStatic(
-                "Output buffer size overflowed a usize (corrupt png?)"
-            ))?;
-
-        if out.len() < image_len {
-            return Err(PngDecodeErrors::TooSmallOutput(image_len, out.len()));
-        }
-
-        let out = &mut out[..image_len];
-
-        // go parse IDAT chunks returning the inflate
-        let deflate_data = self.inflate()?;
-
-        // then release it, we no longer need it
-        self.frames[self.current_frame].fdat = vec![];
-        // remove idat chunks from memory
-        // we are already done with them.
-
-        if png_info.interlace_method == InterlaceMethod::Standard {
-            // allocate out to be enough to hold raw decoded bytes
-            let dims = self.frame_info().unwrap();
-
-            self.create_png_image_raw(&deflate_data, dims.width, dims.height, out, &png_info)?;
-        } else if png_info.interlace_method == InterlaceMethod::Adam7 {
-            self.decode_interlaced(&deflate_data, out, &png_info, &info)?;
-        }
-
-        // convert to set endian if need be
-        if self.depth().unwrap() == BitDepth::Sixteen {
-            convert_be_to_target_endian_u16(out, self.byte_endian(), self.options.use_sse41());
-        }
-        // one more frame decoded
-        self.current_frame += 1;
-        Ok(())
+        self.decode_stream(out)
     }
 
     /// Decode data returning it into `Vec<u8>`.
@@ -734,85 +629,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         }
         None
     }
-
-    fn decode_interlaced(
-        &mut self, deflate_data: &[u8], out: &mut [u8], info: &PngInfo, frame_info: &FrameInfo,
-    ) -> Result<(), PngDecodeErrors> {
-        const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
-        const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
-
-        const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
-        const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
-
-        let bytes = if info.depth == 16 { 2 } else { 1 };
-
-        let out_n = self.colorspace().unwrap().num_components();
-
-        let new_len = frame_info.width * frame_info.height * out_n * bytes;
-
-        // A mad idea would be to make this multithreaded :)
-        // They called me a mad man - Thanos
-        let out_bytes = out_n * bytes;
-
-        // temporary space for  holding interlaced images
-        let mut final_out = vec![0_u8; new_len];
-
-        let mut image_offset = 0;
-
-        // get the maximum height and width for the whole interlace part
-        for p in 0..7 {
-            let x = (frame_info
-                .width
-                .saturating_sub(XORIG[p])
-                .saturating_add(XSPC[p])
-                .saturating_sub(1))
-                / XSPC[p];
-
-            let y = (frame_info
-                .height
-                .saturating_sub(YORIG[p])
-                .saturating_add(YSPC[p])
-                .saturating_sub(1))
-                / YSPC[p];
-
-            if x != 0 && y != 0 {
-                let mut image_len = usize::from(info.color.num_components()) * x;
-
-                image_len *= usize::from(info.depth);
-                image_len += 7;
-                image_len /= 8;
-                image_len += 1; // filter byte
-                image_len *= y;
-
-                if image_offset + image_len > deflate_data.len() {
-                    return Err(PngDecodeErrors::GenericStatic("Too short data"));
-                }
-
-                let deflate_slice = &deflate_data[image_offset..image_offset + image_len];
-
-                self.create_png_image_raw(deflate_slice, x, y, &mut final_out, info)?;
-
-                for j in 0..y {
-                    for i in 0..x {
-                        let out_y = j * YSPC[p] + YORIG[p];
-                        let out_x = i * XSPC[p] + XORIG[p];
-
-                        let final_start = out_y * info.width * out_bytes + out_x * out_bytes;
-                        let out_start = (j * x + i) * out_bytes;
-
-                        if let Some(e) = out.get_mut(final_start..final_start + out_bytes) {
-                            e.copy_from_slice(&final_out[out_start..out_start + out_bytes]);
-                        } else {
-                            warn!("Malformed image, interlace cannot be placed correctly");
-                        }
-                    }
-                }
-                image_offset += image_len;
-            }
-        }
-        Ok(())
-    }
-
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a `Vec<u16>` if  [`DecoderOptions::png_set_strip_to_8bit`](zune_core::options::DecoderOptions::png_get_strip_to_8bit)
     /// returns false
@@ -904,393 +720,5 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         }
 
         Err(PngDecodeErrors::GenericStatic("Not implemented"))
-    }
-    /// Create the png data from post deflated data
-    ///
-    /// `out` needs to have enough space to hold data, otherwise
-    /// this will panic
-    ///
-    /// This is to allow reuse e.g interlaced images use one big allocation
-    /// to and since that ends up calling this multiple times, allocation was moved
-    /// away from this method to the caller of this method
-    #[allow(clippy::manual_memcpy, clippy::comparison_chain)]
-    fn create_png_image_raw(
-        &mut self, deflate_data: &[u8], width: usize, height: usize, out: &mut [u8], info: &PngInfo,
-    ) -> Result<(), PngDecodeErrors> {
-        let use_sse4 = self.options.use_sse41();
-        let use_sse2 = self.options.use_sse2();
-
-        let bytes = if info.depth == 16 { 2 } else { 1 };
-
-        let out_colorspace = self.colorspace().unwrap();
-
-        let mut img_width_bytes;
-
-        img_width_bytes = usize::from(info.component) * width;
-        img_width_bytes *= usize::from(info.depth);
-        img_width_bytes += 7;
-        img_width_bytes /= 8;
-
-        let out_n = usize::from(info.color.num_components());
-
-        let image_len = img_width_bytes * height;
-
-        if deflate_data.len() < image_len + height
-        // account for filter bytes
-        {
-            let msg = format!(
-                "Not enough pixels, expected {} but found {}",
-                image_len,
-                deflate_data.len()
-            );
-            return Err(PngDecodeErrors::Generic(msg));
-        }
-        // do png  un-filtering
-        let mut chunk_size;
-        let mut components = usize::from(info.color.num_components()) * bytes;
-
-        if info.depth < 8 {
-            // if the bit depth is 8, the spec says the byte before
-            // X to be used by the filter
-            components = 1;
-        }
-
-        // add width plus colour component, this gives us number of bytes per every scan line
-        chunk_size = width * out_n;
-        chunk_size *= usize::from(info.depth);
-        chunk_size += 7;
-        chunk_size /= 8;
-        // filter type
-        chunk_size += 1;
-
-        let out_chunk_size = width * out_colorspace.num_components() * bytes;
-
-        // each chunk is a width stride of unfiltered data
-        let chunks = deflate_data.chunks_exact(chunk_size);
-
-        // Begin doing loop un-filtering.
-        let width_stride = chunk_size - 1;
-
-        let mut prev_row_start = 0;
-        let mut first_row = true;
-        let mut out_position = 0;
-
-        let mut will_post_process = self.seen_trns | self.seen_ptle | (info.depth < 8);
-
-        let add_alpha_channel =
-            self.options.png_get_add_alpha_channel() && (!self.png_info.color.has_alpha());
-
-        will_post_process |= add_alpha_channel;
-
-        if will_post_process && self.previous_stride.len() < out_chunk_size {
-            self.previous_stride.resize(out_chunk_size, 0);
-        }
-        let n_components = usize::from(info.color.num_components());
-
-        for (i, in_stride) in chunks.take(height).enumerate() {
-            // Split output into current and previous
-            // current points to the start of the row where we are writing de-filtered output to
-            // prev is all rows we already wrote output to.
-
-            let (prev, mut current) = out.split_at_mut(out_position);
-
-            current = &mut current[0..out_chunk_size];
-
-            // get the previous row.
-            //Set this to a dummy to handle special case of first row, if we aren't in the first
-            // row, we actually take the real slice a line down
-            let mut prev_row: &[u8] = &[0_u8];
-
-            if !first_row {
-                // normal bit depth, use the previous row as normal
-                prev_row = &prev[prev_row_start..prev_row_start + out_chunk_size];
-                prev_row_start += out_chunk_size;
-            }
-
-            out_position += out_chunk_size;
-
-            // take filter
-            let filter_byte = in_stride[0];
-            // raw image bytes
-            let raw = &in_stride[1..];
-
-            // get its type
-            let mut filter = FilterMethod::from_int(filter_byte)
-                .ok_or_else(|| PngDecodeErrors::Generic(format!("Unknown filter {filter_byte}")))?;
-
-            if first_row {
-                // match our filters to special filters for first row
-                // these special filters do not need the previous scanline and treat it
-                // as zero
-
-                if filter == FilterMethod::Paeth {
-                    filter = FilterMethod::PaethFirst;
-                }
-                if filter == FilterMethod::Up {
-                    // up for the first row becomes a memcpy
-                    filter = FilterMethod::None;
-                }
-                if filter == FilterMethod::Average {
-                    filter = FilterMethod::AvgFirst;
-                }
-
-                first_row = false;
-            }
-
-            match filter {
-                FilterMethod::None => current[0..width_stride].copy_from_slice(raw),
-
-                FilterMethod::Average => handle_avg(prev_row, raw, current, components, use_sse4),
-
-                FilterMethod::Sub => handle_sub(raw, current, components, use_sse2),
-
-                FilterMethod::Up => handle_up(prev_row, raw, current),
-
-                FilterMethod::Paeth => handle_paeth(prev_row, raw, current, components, use_sse4),
-
-                FilterMethod::PaethFirst => handle_paeth_first(raw, current, components),
-
-                FilterMethod::AvgFirst => handle_avg_first(raw, current, components),
-
-                FilterMethod::Unknown => unreachable!()
-            }
-
-            if will_post_process && i > 0 {
-                // run the post processor two scanlines behind so that we
-                // don't mess with any filters that require previous row
-
-                // read the row we are about to filter
-                let to_filter_row = &mut prev[(i - 1) * out_chunk_size..(i) * out_chunk_size];
-
-                if info.depth < 8 {
-                    // check if we will run any other transform
-                    let extra_transform = self.seen_ptle | self.seen_trns | add_alpha_channel;
-
-                    if extra_transform {
-                        // input data is  in_to_filter_row,
-                        // we write output to previous_stride
-                        // since other parts use previous_stride
-                        expand_bits_to_byte(
-                            width,
-                            usize::from(info.depth),
-                            n_components,
-                            self.seen_ptle,
-                            to_filter_row,
-                            &mut self.previous_stride,
-                        )
-                    } else {
-                        // no extra transform, just depth upscaling, so let's
-                        // do that,
-
-                        // copy the row to a temporary space
-                        self.previous_stride[..width_stride]
-                            .copy_from_slice(&to_filter_row[..width_stride]);
-
-                        expand_bits_to_byte(
-                            width,
-                            usize::from(info.depth),
-                            n_components,
-                            self.seen_ptle,
-                            &self.previous_stride,
-                            to_filter_row,
-                        )
-                    }
-                } else {
-                    // copy the row to a temporary space
-                    self.previous_stride[..width_stride]
-                        .copy_from_slice(&to_filter_row[..width_stride]);
-                }
-
-                if self.seen_trns && self.png_info.color != PngColor::Palette {
-                    // the expansion is a trns expansion
-                    // bytes are already in position, so finish the business
-
-                    if info.depth <= 8 {
-                        expand_trns::<false>(
-                            &self.previous_stride,
-                            to_filter_row,
-                            info.color,
-                            self.trns_bytes,
-                            info.depth,
-                        );
-                    } else if info.depth == 16 {
-                        // Tested by test_palette_trns_16bit.
-                        expand_trns::<true>(
-                            &self.previous_stride,
-                            to_filter_row,
-                            info.color,
-                            self.trns_bytes,
-                            info.depth,
-                        );
-                    }
-                }
-
-                if self.seen_ptle && self.png_info.color == PngColor::Palette {
-                    if self.palette.is_empty() {
-                        return Err(PngDecodeErrors::EmptyPalette);
-                    }
-                    let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
-
-                    // so now we have two things
-                    // the palette entries stored in self.previous_stride
-                    // the row to fill the palette sored in to_filter row,
-                    // so we can finally expand the entries
-
-                    if self.seen_trns | add_alpha_channel {
-                        // if tRNS chunk is present in paletted images, it contains
-                        // alpha byte values, so that means we create alpha data from
-                        // raw bytes
-
-                        // if we are to add alpha channel for palette images , we simply just
-                        // read four entries from the palette.
-                        //
-                        // The palette is set that the alpha channel is initialized as 255 for non alpha
-                        // images,
-                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
-                    } else {
-                        // Normal expansion
-                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
-                    }
-                } else if add_alpha_channel {
-                    // the image is a normal RGB/ Luma image, which we need to add the alpha channel
-                    // do it here
-                    add_alpha(
-                        &self.previous_stride,
-                        to_filter_row,
-                        self.png_info.color,
-                        self.depth().unwrap(),
-                    );
-                }
-            }
-        }
-
-        if will_post_process {
-            for i in height..height + min(height, 1) {
-                let to_filter_row = &mut out[(i - 1) * out_chunk_size..i * out_chunk_size];
-
-                // check if we will run any other transform
-                let extra_transform = self.seen_ptle | self.seen_trns;
-
-                if info.depth < 8 {
-                    if extra_transform {
-                        // input data is  in_to_filter_row,
-                        // we write output to previous_stride
-                        // since other parts use previous_stride
-                        expand_bits_to_byte(
-                            width,
-                            usize::from(info.depth),
-                            n_components,
-                            self.seen_ptle,
-                            to_filter_row,
-                            &mut self.previous_stride,
-                        )
-                    } else {
-                        // no extra transform, just depth upscaling, so let's
-                        // do that,
-
-                        // copy the row to a temporary space
-                        self.previous_stride[..width_stride]
-                            .copy_from_slice(&to_filter_row[..width_stride]);
-
-                        expand_bits_to_byte(
-                            width,
-                            usize::from(info.depth),
-                            n_components,
-                            self.seen_ptle,
-                            &self.previous_stride,
-                            to_filter_row,
-                        )
-                    }
-                } else {
-                    // copy the row to a temporary space
-                    self.previous_stride[..width_stride]
-                        .copy_from_slice(&to_filter_row[..width_stride]);
-                }
-                if self.seen_trns && self.png_info.color != PngColor::Palette {
-                    // the expansion is a trns expansion
-                    // bytes are already in position, so finish the business
-
-                    if info.depth <= 8 {
-                        expand_trns::<false>(
-                            &self.previous_stride,
-                            to_filter_row,
-                            info.color,
-                            self.trns_bytes,
-                            info.depth,
-                        );
-                    } else if info.depth == 16 {
-                        // Tested by test_palette_trns_16bit.
-                        expand_trns::<true>(
-                            &self.previous_stride,
-                            to_filter_row,
-                            info.color,
-                            self.trns_bytes,
-                            info.depth,
-                        );
-                    }
-                }
-                if self.seen_ptle && self.png_info.color == PngColor::Palette {
-                    if self.palette.is_empty() {
-                        return Err(PngDecodeErrors::EmptyPalette);
-                    }
-
-                    let plte_entry: &[PLTEEntry; 256] = self.palette[..256].try_into().unwrap();
-
-                    if self.seen_trns | add_alpha_channel {
-                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 4);
-                    } else {
-                        expand_palette(&self.previous_stride, to_filter_row, plte_entry, 3);
-                    }
-                } else if add_alpha_channel {
-                    add_alpha(
-                        &self.previous_stride,
-                        to_filter_row,
-                        self.png_info.color,
-                        self.depth().unwrap(),
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Undo deflate decoding
-    #[allow(clippy::manual_memcpy)]
-    fn inflate(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
-        let flat_data = &self.frames[self.current_frame];
-
-        // An annoying thing is that deflate doesn't
-        // store its uncompressed size,
-        // so we can't pre-allocate storage and pass that willy nilly
-        //
-        // Meaning we are left with some design choices
-        // 1. Have deflate resize at will
-        // 2. Have deflate return incomplete, to indicate we need to extend
-        // the vec, extend and go back to inflate.
-        //
-        //
-        // so choose point 1.
-        //
-        // This allows the zlib decoder to optimize its own paths(which it does)
-        // because it controls the allocation and doesn't have to check for near EOB
-        // runs.
-        //
-        let depth_scale = if self.png_info.depth == 16 { 2 } else { 1 };
-
-        let size_hint = (self.png_info.width + 1)
-            * self.png_info.height
-            * depth_scale
-            * usize::from(self.png_info.color.num_components());
-
-        let option = DeflateOptions::default()
-            .set_size_hint(size_hint)
-            .set_limit(size_hint + 4 * (self.png_info.height))
-            .set_confirm_checksum(self.options.inflate_get_confirm_adler());
-
-        let mut decoder = zune_inflate::DeflateDecoder::new_with_options(&flat_data.fdat, option);
-
-        decoder
-            .decode_zlib()
-            .map_err(PngDecodeErrors::ZlibDecodeErrors)
     }
 }
