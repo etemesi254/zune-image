@@ -33,7 +33,7 @@ fn decode_ref(data: &[u8]) -> Vec<u8> {
 
 fn decode_zune(data: &[u8]) -> Vec<u8> {
     zune_png::PngDecoder::new(ZCursor::new(data))
-        .decode_raw()
+        .decode_stream_raw()
         .unwrap()
 }
 
