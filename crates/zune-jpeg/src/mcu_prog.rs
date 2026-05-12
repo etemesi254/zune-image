@@ -41,6 +41,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode a progressive image
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
+    ///
+    /// Progressive decoding allocates its scan buffer per call. Unlike
+    /// baseline, it does not record per-RST checkpoints (refine passes do
+    /// read-modify-write on the buffer, making mid-scan resume unsafe), so
+    /// there is no benefit to persisting the buffer on the decoder across
+    /// calls — the buffer is always zeroed at the start of a fresh decode.
     #[allow(
         clippy::needless_range_loop,
         clippy::cast_sign_loss,
@@ -54,7 +60,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         setup_component_params(self)?;
         let mut mcu_height;
 
-        // memory location for decoded pixels for components
+        // Coefficient buffer is local: progressive can't reuse contents
+        // across `decode_into` retries (see RST handling note in this file
+        // for why).
         let mut block: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut mcu_width;
 
@@ -97,34 +105,30 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         mcu_width *= 64;
 
+        // Progressive scans can be refine passes that read-modify-write
+        // existing `block` entries (`decode_prog_dc_refine`,
+        // `decode_prog_ac_refine`). Mid-scan resume into such a buffer is
+        // unsafe — the partial deltas from a failed attempt would be
+        // re-applied on retry. Progressive therefore does not capture
+        // per-RST checkpoints (see RST handling below); on a recoverable
+        // EOF the decoder falls back to `scan_start_position`, replaying
+        // from the first SOS with a freshly-zeroed `block`.
         for (i, comp) in self.components.iter().enumerate() {
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
-
             block[i] = vec![0; len];
         }
 
-        let checkpoint = self.scan_checkpoint().cloned();
-        let mut resume_position = checkpoint
-            .as_ref()
-            .map(|checkpoint| (checkpoint.mcu_row, checkpoint.mcu_col));
-
-        if let Some(checkpoint) = checkpoint.as_ref() {
-            self.components = checkpoint.component_state.clone();
-            for (dst, src) in block.iter_mut().zip(&checkpoint.component_buffers) {
-                if !src.is_empty() {
-                    *dst = src.clone();
-                }
-            }
-        }
-
+        // Per-RST checkpoints are not recorded for progressive (see comment
+        // above), so `parse_entropy_coded_data` always starts each scan from
+        // its beginning. This still benefits from header-level resume.
         let mut stream = B::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
         // there are multiple scans in the stream, this should resolve the first scan
-        let result =
-            self.parse_entropy_coded_data(&mut stream, &mut block, resume_position.take());
+        let result = self.parse_entropy_coded_data(&mut stream, &mut block);
 
         if let Err(ref e) = result {
-            // Always propagate ExhaustedData for incremental decoding support.
+            // Always propagate ExhaustedData for incremental decoding support
+            // — the caller can retry with more data.
             if e.is_recoverable_eof() {
                 return Err(result.err().unwrap());
             }
@@ -163,7 +167,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_end
                     );
                     // after every SOS, marker, parse data for that scan.
-                    let result = self.parse_entropy_coded_data(&mut stream, &mut block, None);
+                    let result = self.parse_entropy_coded_data(&mut stream, &mut block);
 
                     // Do not error out too fast, allows the decoder to continue as much as possible
                     // even after errors — but always propagate ExhaustedData.
@@ -259,16 +263,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     /// Parse a progressive scan's entropy-coded data into `buffer`.
     ///
-    /// `resume_position` is `Some((mcu_row, mcu_col))` when resuming from a
-    /// restart-interval checkpoint; the loop will restart from that MCU
-    /// coordinate. `None` starts decoding from `(0, 0)`.
+    /// Progressive scans always start at MCU `(0, 0)` — per-RST checkpoints
+    /// are not recorded for progressive (refine passes do read-modify-write
+    /// on `buffer`, so mid-scan resume would re-apply partial deltas).
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data<B: BitStream>(
-        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
-        resume_position: Option<(usize, usize)>
+        &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         self.reset_prog_params(stream);
-        let (resume_row, resume_col) = resume_position.unwrap_or((0, 0));
 
         if usize::from(self.num_scans) > self.input_colorspace.num_components() {
             return Err(DecodeErrors::Format(format!(
@@ -299,9 +301,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let mcu_width = (self.info.width as usize * component.horizontal_sample).div_ceil(self.h_max * 8);
             let mcu_height = (self.info.height as usize * component.vertical_sample).div_ceil(self.v_max * 8);
 
-            for i in resume_row..mcu_height {
-                let start_col = if i == resume_row { resume_col } else { 0 };
-                for j in start_col..mcu_width {
+            for i in 0..mcu_height {
+                for j in 0..mcu_width {
                     if self.spec_start != 0 && self.succ_high == 0 && *stream.eob_run() > 0 {
                         // handle EOB runs here.
                         *stream.eob_run() -= 1;
@@ -361,10 +362,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // + EOB and investigate effect.
                     self.todo -= 1;
 
-                    if self.handle_rst_main(stream)? {
-                        let component_buffers = core::array::from_fn(|idx| buffer[idx].clone());
-                        self.checkpoint_scan(i, j + 1, 0, component_buffers, &[])?;
-                    }
+                    // Progressive does not record per-RST checkpoints —
+                    // refine scans do read-modify-write on `buffer` and
+                    // mid-scan resume would re-apply partial deltas. On
+                    // EOF the decoder falls back to scan-start replay.
+                    self.handle_rst_main(stream)?;
                 }
             }
         } else {
@@ -393,9 +395,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             // Components shall not be interleaved in progressive mode, except for
             // the DC coefficients in the first scan for each component of a progressive frame.
-            for i in resume_row..self.mcu_y {
-                let start_col = if i == resume_row { resume_col } else { 0 };
-                for j in start_col..self.mcu_x {
+            for i in 0..self.mcu_y {
+                for j in 0..self.mcu_x {
                     // process scan n elements in order
                     for k in 0..self.num_scans {
                         let n = self.z_order[k as usize];
@@ -434,20 +435,25 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     // we get a higher number in the case this underflows
                     self.todo -= 1;
                     // after every scan that's a mcu, count down restart markers.
-                    if self.handle_rst_main(stream)? {
-                        let component_buffers = core::array::from_fn(|idx| buffer[idx].clone());
-                        self.checkpoint_scan(i, j + 1, 0, component_buffers, &[])?;
-                    }
+                    // Progressive does not record per-RST checkpoints;
+                    // see comment in the spectral branch above.
+                    self.handle_rst_main(stream)?;
                 }
             }
         }
         return Ok(());
     }
 
+    /// Handle an RST marker mid-scan, if one is due. Used by the progressive
+    /// scan decoder, which does not record per-RST checkpoints and therefore
+    /// does not need to know whether a marker was actually consumed.
+    ///
+    /// The baseline decoder, which does checkpoint, calls
+    /// [`Self::handle_rst_main_with_status`] instead.
     #[allow(clippy::used_underscore_binding)]
     pub(crate) fn handle_rst_main<B: BitStream>(
         &mut self, stream: &mut B
-    ) -> Result<bool, DecodeErrors> {
+    ) -> Result<(), DecodeErrors> {
         if self.todo == 0 {
             stream.refill(&mut self.stream)?;
         }
@@ -490,11 +496,34 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             }
         }
         if self.todo == 0 {
-            let handled_restart = matches!(stream.marker(), Some(Marker::RST(_)));
             self.handle_rst(stream)?;
-            return Ok(handled_restart);
         }
-        Ok(false)
+        Ok(())
+    }
+
+    /// Variant of [`Self::handle_rst_main`] used by the baseline scan decoder
+    /// to detect whether the consumed marker was actually an RST. Returns
+    /// `true` when `todo` had wrapped to 0 *and* a real RST marker was found
+    /// at the entropy-segment boundary, signalling a safe place to take a
+    /// resumability checkpoint. Returns `false` otherwise.
+    ///
+    /// Only baseline calls this; progressive uses the lighter
+    /// [`Self::handle_rst_main`] above so its per-MCU codegen stays
+    /// bit-identical to the pre-PR shape.
+    pub(crate) fn handle_rst_main_with_status<B: BitStream>(
+        &mut self, stream: &mut B
+    ) -> Result<bool, DecodeErrors> {
+        let was_due = self.todo == 0;
+        self.handle_rst_main(stream)?;
+        if !was_due {
+            return Ok(false);
+        }
+        // After `handle_rst_main`, the marker (if any) has been latched into
+        // the stream's marker slot. A successful restart consumes the latched
+        // RST marker and clears it, but the marker may also be SOS/EOI/DHT/…
+        // for which we don't want to record a checkpoint.
+        let handled_restart = matches!(stream.marker(), None | Some(Marker::RST(_)));
+        Ok(handled_restart)
     }
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::needless_range_loop, clippy::cast_sign_loss)]

@@ -36,8 +36,6 @@ struct McuWidthContext<'a, B: BitStream> {
     start_col:      usize,
     // Number of output bytes already committed before this MCU row.
     pixels_written: usize,
-    // Output buffer snapshot source used when capturing a restart checkpoint.
-    pixels:         &'a [u8],
     // Shared coefficient scratch block reused for each decoded data unit.
     tmp:            &'a mut [i32; 64],
     // Entropy decoder state for the current scan.
@@ -63,6 +61,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode MCUs and carry out post processing.
     ///
     /// This is the main decoder loop for the library, the hot path.
+    pub(crate) fn decode_mcu_ycbcr_baseline<B: BitStream>(
+        &mut self, pixels: &mut [u8]
+    ) -> Result<(), DecodeErrors> {
+        // Move the persistent multi-SOS coefficient buffer out of `self` so
+        // the inner decoder can borrow it mutably while still calling methods
+        // on `self`. The buffer is put back on return and survives across
+        // `decode_into` retries, which is what lets per-RST checkpoints stay
+        // allocation-free.
+        let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
+        let result =
+            self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
+        self.progressive_mcus_buffer = progressive_mcus;
+        result
+    }
+
+    /// Inner implementation of [`Self::decode_mcu_ycbcr_baseline`].
+    ///
+    /// `progressive_mcus` is owned by the decoder across calls so its
+    /// contents survive recoverable EOFs and don't need to be copied into a
+    /// `ScanCheckpoint` at restart boundaries.
     ///
     /// Because of this, we pull in some very crazy optimization tricks hence readability is a pinch
     /// here.
@@ -73,8 +91,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::used_underscore_binding
     )]
     #[inline(never)]
-    pub(crate) fn decode_mcu_ycbcr_baseline<B: BitStream>(
+    fn decode_mcu_ycbcr_baseline_inner<B: BitStream>(
         &mut self, pixels: &mut [u8],
+        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -130,6 +149,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut tmp = [0_i32; DCT_BLOCK];
 
         let comp_len = self.components.len();
+        // True when we are resuming from a previously-saved RST checkpoint;
+        // in that case the per-component `raw_coeff` and `progressive_mcus`
+        // buffers still hold the data from the prior `decode_into` call and
+        // must not be re-zeroed. On a fresh decode they are (re-)allocated.
+        let resuming = self.scan_checkpoint().is_some();
 
         for (pos, comp) in self.components.iter_mut().enumerate() {
             // Allocate only needed components.
@@ -149,7 +173,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let len = comp.width_stride * comp.vertical_sample * 8;
 
                 comp.needed = true;
-                comp.raw_coeff = vec![0; len];
+                if !resuming || comp.raw_coeff.len() != len {
+                    // Reuse capacity across decodes; zero contents.
+                    comp.raw_coeff.clear();
+                    comp.raw_coeff.resize(len, 0);
+                }
             } else {
                 comp.needed = false;
             }
@@ -159,52 +187,42 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // (upsampled) pixels immediately after each MCU, for convenience we use each row of MCUS.
         // Otherwise, we must first wait until following SOS provide the remaining components.
         let all_components_in_first_scan = usize::from(self.num_scans) == self.components.len();
-        let mut progressive_mcus: [Vec<i16>; 4] = core::array::from_fn(|_| vec![]);
 
-        if !all_components_in_first_scan {
-            for (component, mcu) in self.components.iter().zip(&mut progressive_mcus) {
+        if all_components_in_first_scan {
+            // No multi-SOS scratch is needed for this call; release any
+            // retained `progressive_mcus_buffer` capacity so it doesn't pin
+            // memory between decodes.
+            for mcu in progressive_mcus.iter_mut() {
+                *mcu = Vec::new();
+            }
+        } else {
+            for (component, mcu) in self.components.iter().zip(progressive_mcus.iter_mut()) {
                 let len = mcu_width
                     * component.vertical_sample
                     * component.horizontal_sample
                     * mcu_height
                     * 64;
-                *mcu = vec![0; len];
+                if !resuming || mcu.len() != len {
+                    mcu.clear();
+                    mcu.resize(len, 0);
+                }
             }
         }
 
-        let checkpoint = self.scan_checkpoint().cloned();
+        let checkpoint = self.scan_checkpoint().copied();
         let mut resume_row = 0;
         let mut resume_col = 0;
         let mut pixels_written = 0;
 
-        if let Some(checkpoint) = checkpoint.as_ref() {
+        if let Some(checkpoint) = checkpoint {
             resume_row = checkpoint.mcu_row;
             resume_col = checkpoint.mcu_col;
             pixels_written = checkpoint.pixels_written;
-            let prefix_len = checkpoint.output_prefix.len().min(pixels.len());
-            pixels[..prefix_len].copy_from_slice(&checkpoint.output_prefix[..prefix_len]);
-            self.components = checkpoint.component_state.clone();
-
-            if !all_components_in_first_scan {
-                for (dst, src) in progressive_mcus
-                    .iter_mut()
-                    .zip(&checkpoint.component_buffers)
-                {
-                    if !src.is_empty() {
-                        *dst = src.clone();
-                    }
-                }
-            } else {
-                for (component, src) in self
-                    .components
-                    .iter_mut()
-                    .zip(&checkpoint.component_buffers)
-                {
-                    if !src.is_empty() {
-                        component.raw_coeff = src.clone();
-                    }
-                }
-            }
+            // Coefficient and progressive buffers are persistent across
+            // `decode_into` calls and already contain the data from the
+            // prior attempt; we don't need to copy anything back. Only the
+            // per-component DC predictor state needs to be restored, which
+            // is already handled in `decode_into` from the checkpoint.
         }
 
         let is_hv = usize::from(self.is_interleaved);
@@ -242,10 +260,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     mcu_row: i,
                     start_col,
                     pixels_written,
-                    pixels,
                     tmp: &mut tmp,
                     stream: &mut stream,
-                    progressive: &mut progressive_mcus
+                    progressive: &mut *progressive_mcus
                 };
                 let terminate = if all_components_in_first_scan {
                     self.decode_mcu_width::<false, B>(&mut mcu_width_context)?
@@ -282,6 +299,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &mut pixels_written,
                         &mut upsampler_scratch_space,
                     )?;
+                    // The just-completed row's `raw_coeff` will be overwritten
+                    // by the next row's decode. Any RST checkpoint recorded
+                    // mid-row-`i` would now point at coefficient data that is
+                    // about to be clobbered, so drop it. The next row's first
+                    // RST will record a fresh, valid checkpoint; if EOF hits
+                    // before that, resume falls back to scan-start replay.
+                    self.invalidate_scan_checkpoint();
                 }
 
                 match terminate {
@@ -500,6 +524,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool, B: BitStream>(
         &mut self, context: &mut McuWidthContext<'_, B>
     ) -> Result<McuContinuation, DecodeErrors> {
+        // Destructure the context into local bindings up front. Reading the
+        // hot loop through `context.<field>` keeps the optimizer from
+        // treating the per-field mutable borrows as `noalias` and was
+        // observed to cost ~1-2% on sub-sampled baseline benchmarks; pulling
+        // them out here restores parity with the pre-refactor signature.
+        let mcu_width = context.mcu_width;
+        let mcu_row = context.mcu_row;
+        let start_col = context.start_col;
+        let ctx_pixels_written = context.pixels_written;
+        let tmp: &mut [i32; 64] = &mut *context.tmp;
+        let stream: &mut B = &mut *context.stream;
+        let progressive: &mut [Vec<i16>; MAX_COMPONENTS] = &mut *context.progressive;
+
         let z_order = self.z_order;
         let z_scans = &z_order[..usize::from(self.num_scans)];
 
@@ -519,7 +556,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // Calculate actual data units for this component: ceil(width / (8 * subsampling_ratio))
             (self.info.width as usize * comp.horizontal_sample).div_ceil(self.h_max * 8)
         } else {
-            context.mcu_width
+            mcu_width
         };
         // In malformed scans that list multiple components, clamp to the smallest row capacity
         // to avoid writing past the row buffer.
@@ -532,7 +569,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             scan_du_width = scan_du_width.min(min_du);
         }
 
-        for j in context.start_col..scan_du_width {
+        for j in start_col..scan_du_width {
             // iterate over components
             for &k in z_scans {
                 // we made this loop body massive due to several different paths that depend on
@@ -551,12 +588,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let qt_table = &component.quantization_table;
                 let channel = if PROGRESSIVE {
                     let offset =
-                        context.mcu_row * component.width_stride * 8 * component.vertical_sample;
+                        mcu_row * component.width_stride * 8 * component.vertical_sample;
                     // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
-                    if offset >= context.progressive[k].len() {
+                    if offset >= progressive[k].len() {
                         return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
                     }
-                    &mut context.progressive[k][offset..]
+                    &mut progressive[k][offset..]
                 } else {
                     &mut component.raw_coeff
                 };
@@ -591,20 +628,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             // we attempt to overwrite exactly one coefficient.
                             let clobber_len = if clobber_more_than_4x4 { 64 } else { 32 };
 
-                            context.tmp[..clobber_len].fill(0);
+                            tmp[..clobber_len].fill(0);
 
-                            context.stream.decode_mcu_block(
+                            stream.decode_mcu_block(
                                 &mut self.stream,
                                 dc_table,
                                 ac_table,
                                 qt_table,
-                                context.tmp,
+                                tmp,
                                 &mut component.dc_pred,
                                 &mut component.dc_diff,
                             )
                         } else {
                             // We do not touch tmp so there is no need to reset it.
-                            context.stream.discard_mcu_block(
+                            stream.discard_mcu_block(
                                 &mut self.stream,
                                 dc_table,
                                 ac_table,
@@ -656,12 +693,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             let idct_pos = channel.get_mut(idct_position..).unwrap();
 
                             if len <= 1 {
-                                (self.idct_1x1_func)(context.tmp, idct_pos, component.width_stride);
+                                (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
                             } else if len <= 10 {
-                                (self.idct_4x4_func)(context.tmp, idct_pos, component.width_stride);
+                                (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
                             } else {
                                 //  call idct.
-                                (self.idct_func)(context.tmp, idct_pos, component.width_stride);
+                                (self.idct_func)(tmp, idct_pos, component.width_stride);
                             }
                         }
                     }
@@ -671,33 +708,33 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             self.todo = self.todo.wrapping_sub(1);
 
             if self.todo == 0 {
-                if self.handle_rst_main(context.stream)? {
-                    let component_buffers = if PROGRESSIVE {
-                        core::array::from_fn(|idx| context.progressive[idx].clone())
-                    } else {
-                        core::array::from_fn(|idx| {
-                            self.components
-                                .get(idx)
-                                .map_or_else(Vec::new, |component| component.raw_coeff.clone())
-                        })
-                    };
+                if self.handle_rst_main_with_status(stream)? {
+                    // Coefficient buffers (`raw_coeff` and `progressive`)
+                    // live on the decoder across `decode_into` calls, so
+                    // they don't need to be snapshotted here. We only
+                    // capture the per-component DC predictor state, which is
+                    // zero immediately after `handle_rst` resets it.
+                    let dc_predictions = core::array::from_fn(|idx| {
+                        self.components
+                            .get(idx)
+                            .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
+                    });
                     self.checkpoint_scan(
-                        context.mcu_row,
+                        mcu_row,
                         j + 1,
-                        context.pixels_written,
-                        component_buffers,
-                        context.pixels
+                        ctx_pixels_written,
+                        dc_predictions
                     )?;
                 }
                 continue;
             }
 
-            if context.stream.marker().is_some() && context.stream.bits_left() == 0 {
+            if stream.marker().is_some() && stream.bits_left() == 0 {
                 break;
             }
         }
 
-        self.check_stream_marker_after_mcu_width(context.stream)
+        self.check_stream_marker_after_mcu_width(stream)
     }
 
     fn check_stream_marker_after_mcu_width<B: BitStream>(
