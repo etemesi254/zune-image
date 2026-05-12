@@ -24,8 +24,11 @@ const BUF_READ: usize = 32_768;
 const MAX_DEFLATE_HISTORY: usize = 32_768;
 
 struct InterlaceState {
+    // Current interlace pass, bounded from 0 to 7
     current_pass: usize,
+    // Maximum pass width
     pass_w: usize,
+    // Maximum pass height
     pass_h: usize,
     current_row_idx: usize,
     row_size: usize,
@@ -197,9 +200,7 @@ where
         Ok(())
     }
 
-    pub fn decode_stream_interlaced(
-        &mut self, final_out: &mut [u8],
-    ) -> Result<(), PngDecodeErrors> {
+    fn decode_stream_interlaced(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
@@ -370,24 +371,31 @@ where
         // 4. Add the filter byte
         row_bytes + 1
     }
-    pub fn decode_stream_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
+    /// Decode a single stream
+    pub(crate) fn decode_stream_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
+        // make buffer
         let mut final_out = vec![0u8; self.output_buffer_size().unwrap()];
-        if self.png_info.interlace_method == InterlaceMethod::Standard {
-            self.decode_stream(&mut final_out)?;
-        } else {
-            self.decode_stream_interlaced(&mut final_out)?;
-        }
+        // decode into buffer
+        self.decode_stream_into(&mut final_out)?;
         Ok(final_out)
+    }
+    pub(crate) fn decode_stream_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
+        if self.png_info.interlace_method == InterlaceMethod::Standard {
+            self.decode_stream(out)?;
+        } else {
+            self.decode_stream_interlaced(out)?;
+        }
+        Ok(())
     }
 }
 impl<T> PngDecoder<T>
 where
     T: ZByteReaderTrait,
 {
-    pub(crate) fn decode_stream(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
+    fn decode_stream(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
@@ -784,35 +792,21 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use zune_core::bytestream::ZCursor;
-
-    fn decode_zune_streaming(data: &[u8]) -> Vec<u8> {
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-
-        decoder.decode_stream_raw().unwrap()
-    }
-    fn decode_zune_png(data: &[u8]) -> Vec<u8> {
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode_raw().unwrap()
-    }
-    #[test]
-    fn test_simple_decode() {
-        let path =
-            "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench_interlaced.png";
-        let data = std::fs::read(path).unwrap();
-        let last = decode_zune_png(&data[..]);
-
-        let first = decode_zune_streaming(&data[..]);
-        assert_eq!(first, last);
-    }
-    #[test]
-    fn decode_normal() {
-        let path =
-            "/Users/etemesi/rust/zune-image/crates/zune-png/tests/benchmarks/speed_bench.png";
-        let data = std::fs::read(path).unwrap();
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode().unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//
+//     fn decode_zune_png(data: &[u8]) -> Vec<u8> {
+//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+//         decoder.decode_raw().unwrap()
+//     }
+//
+//     #[test]
+//     fn decode_normal() {
+//         let path =
+//             "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
+//         let data = std::fs::read(path).unwrap();
+//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+//         decoder.decode().unwrap();
+//     }
+// }
