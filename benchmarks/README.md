@@ -33,3 +33,17 @@ cargo bench --workspace
 ```
 
 If you fail to symlink, the libraries
+
+## On linux
+This is a short one on ubuntu 
+
+1. Install clang, libvips, libvips-dev , nasm (for mozjpeg)
+
+```shell
+sudo apt install clang libvips libvips-dev nasm
+```
+
+2. Run the benchmark
+```shell
+cargo bench --workspace
+```
