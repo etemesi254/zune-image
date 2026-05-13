@@ -94,18 +94,19 @@ where
         }
 
         let x_spc_bytes = XSPC[pass] * bpp;
-        // Constrain the source slice up front so we don't need `.take(pass_w)` in the loop
         let src_pixels = &post_processed_row[..pass_w * bpp];
 
         let out_space = &mut out_row_slice[x_orig_bytes..];
 
         macro_rules! scatter {
             ($b_size:expr) => {
-                for (src_pixel, out_chunk) in src_pixels
-                    .chunks_exact($b_size)
-                    .zip(out_space.chunks_mut(x_spc_bytes))
-                {
-                    out_chunk[..$b_size].copy_from_slice(src_pixel);
+                if {$b_size} <= x_spc_bytes{
+                    for (src_pixel, out_chunk) in src_pixels
+                        .chunks_exact($b_size)
+                        .zip(out_space.chunks_mut(x_spc_bytes))
+                    {
+                        out_chunk[..$b_size].copy_from_slice(src_pixel);
+                    }
                 }
             };
         }
