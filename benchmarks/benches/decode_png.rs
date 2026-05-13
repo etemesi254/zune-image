@@ -104,7 +104,7 @@ fn decode_test_palette(c: &mut Criterion) {
 // fn decode_test_wallhaven(c: &mut Criterion) {
 //     generic_bench(
 //         c,
-//         "/Users/etemesi/Downloads/wallhaven-57x2v3_3840x2160.png",
+//         "/Users/etemesi/Downloads/wallhaven-lywpjl_3840x2400.png",
 //         "png: PNG decoding wallhaven",
 //     );
 // }

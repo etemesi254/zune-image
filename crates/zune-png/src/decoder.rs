@@ -26,25 +26,18 @@ use crate::utils::{convert_u16_to_u8_slice, is_le};
 ///
 /// The alpha field is used if the image has a tRNS
 /// chunk and pLTE chunk.
+///
+// NB: (cae), using typed structs leads to a slow down so just use an array of u8,
+// slowdown may be due to LLVM not decoding it correctly
 #[derive(Copy, Clone, Debug)]
-#[repr(C)]
-pub(crate) struct PLTEEntry {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-    pub alpha: u8,
-}
+#[repr(transparent)]
+pub(crate) struct PLTEEntry(pub(crate) [u8; 4]);
 
 impl Default for PLTEEntry {
     fn default() -> Self {
         // but a tRNS chunk may contain fewer values than there are palette entries.
         // In this case, the alpha value for all remaining palette entries is assumed to be 255
-        PLTEEntry {
-            red: 0,
-            green: 0,
-            blue: 0,
-            alpha: 255,
-        }
+        PLTEEntry([0, 0, 0, 255])
     }
 }
 
@@ -318,7 +311,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // Format is length - chunk type - [data] -  crc chunk, load crc chunk now
         let chunk_length = self.stream.get_u32_be_err()? as usize;
         let chunk_type_int = self.stream.get_u32_be_err()?.to_be_bytes();
-        
+
         let chunk_type = match &chunk_type_int {
             b"IHDR" => PngChunkType::IHDR,
             b"tRNS" => PngChunkType::tRNS,
@@ -340,11 +333,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         };
 
         //  let mut crc_bytes = [0; 4];
-        // 
+        //
         //  let crc_ref = self.stream.peek_at(chunk_length, 4)?;
-        // 
+        //
         //  crc_bytes.copy_from_slice(crc_ref);
-        // 
+        //
         // let crc = u32::from_be_bytes(crc_bytes);
         // if self.options.png_get_confirm_crc() {
         //     use crate::crc::crc32_slice8;

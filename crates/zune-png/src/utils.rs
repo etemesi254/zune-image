@@ -11,8 +11,6 @@ use zune_core::bit_depth::BitDepth;
 use crate::decoder::PLTEEntry;
 use crate::enums::PngColor;
 
-
-
 /// Return true if the system is little endian
 pub const fn is_le() -> bool {
     // see if le and be conversion return the same number
@@ -20,31 +18,21 @@ pub const fn is_le() -> bool {
 }
 
 pub(crate) fn expand_palette(
-    input: &[u8], out: &mut [u8], palette: &[PLTEEntry; 256], components: usize,
+    mut input: &[u8], mut out: &mut [u8], palette: &[PLTEEntry; 256], components: usize,
 ) {
     if components == 3 {
-        let mut out_chunks = out.chunks_exact_mut(6);
-        let mut input_iter = input.chunks_exact(2);
+        // From image-rs/png
+        while out.len() >= 4 && !input.is_empty() {
+            // Copying 4 bytes at a time is more efficient than 3.
+            let rgba = &palette[input[0] as usize].0;
+            out[0..4].copy_from_slice(rgba);
 
-        for (in_px, px) in input_iter.by_ref().zip(out_chunks.by_ref()) {
-            let entry0 = palette[usize::from(in_px[0])];
-            let entry1 = palette[usize::from(in_px[1])];
-            px[0] = entry0.red;
-            px[1] = entry0.green;
-            px[2] = entry0.blue;
-            px[3] = entry1.red;
-            px[4] = entry1.green;
-            px[5] = entry1.blue;
+            input = &input[1..];
+            out = &mut out[3..];
         }
-
-        // Remainders from both iterators stay in sync
-        let rem_in = input_iter.remainder();
-        let rem_out = out_chunks.into_remainder();
-        for (in_px, px) in rem_in.iter().zip(rem_out.chunks_exact_mut(3)) {
-            let entry = palette[usize::from(*in_px)];
-            px[0] = entry.red;
-            px[1] = entry.green;
-            px[2] = entry.blue;
+        if out.len() >= 3 && !input.is_empty() {
+            let rgba = &palette[input[0] as usize].0;
+            out[0..3].copy_from_slice(&rgba[0..3]);
         }
     } else if components == 4 {
         let mut out_chunks = out.chunks_exact_mut(8);
@@ -53,25 +41,16 @@ pub(crate) fn expand_palette(
         for (in_px, px) in input_iter.by_ref().zip(out_chunks.by_ref()) {
             let entry0 = palette[usize::from(in_px[0])];
             let entry1 = palette[usize::from(in_px[1])];
-            px[0] = entry0.red;
-            px[1] = entry0.green;
-            px[2] = entry0.blue;
-            px[3] = entry0.alpha;
 
-            px[4] = entry1.red;
-            px[5] = entry1.green;
-            px[6] = entry1.blue;
-            px[7] = entry1.alpha;
+            px[0..4].copy_from_slice(&entry0.0);
+            px[4..8].copy_from_slice(&entry1.0);
         }
 
         let rem_in = input_iter.remainder();
         let rem_out = out_chunks.into_remainder();
         for (in_px, px) in rem_in.iter().zip(rem_out.chunks_exact_mut(4)) {
             let entry = palette[usize::from(*in_px)];
-            px[0] = entry.red;
-            px[1] = entry.green;
-            px[2] = entry.blue;
-            px[3] = entry.alpha;
+            px.copy_from_slice(&entry.0)
         }
     }
 }
@@ -98,22 +77,18 @@ pub(crate) fn expand_palette_sub_byte(
             let entry0 = &palette[usize::from((in_byte >> 4) & 0x0F)];
             let entry1 = &palette[usize::from(in_byte & 0x0F)];
 
-            out_chunk[0] = entry0.red;
-            out_chunk[1] = entry0.green;
-            out_chunk[2] = entry0.blue;
+            out_chunk[0..3].copy_from_slice(&entry0.0[0..3]);
 
             if components == 4 {
-                out_chunk[3] = entry0.alpha;
+                out_chunk[3] = entry0.0[3];
             }
 
             let offset = components;
             if px_processed + 1 < width {
-                out_chunk[offset] = entry1.red;
-                out_chunk[offset + 1] = entry1.green;
-                out_chunk[offset + 2] = entry1.blue;
+                out_chunk[offset..offset + 3].copy_from_slice(&entry1.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset + 3] = entry1.alpha;
+                    out_chunk[3] = entry1.0[3];
                 }
             }
             px_processed += 2;
@@ -135,12 +110,10 @@ pub(crate) fn expand_palette_sub_byte(
                 let entry = &palette[usize::from((in_byte >> shift) & 0x03)];
                 let offset = i * components;
 
-                out_chunk[offset] = entry.red;
-                out_chunk[offset + 1] = entry.green;
-                out_chunk[offset + 2] = entry.blue;
+                out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset + 3] = entry.alpha;
+                    out_chunk[3] = entry.0[3];
                 }
             }
             px_processed += 4;
@@ -162,12 +135,10 @@ pub(crate) fn expand_palette_sub_byte(
                 let entry = &palette[usize::from((in_byte >> shift) & 0x01)];
 
                 let offset = i * components;
-                out_chunk[offset] = entry.red;
-                out_chunk[offset + 1] = entry.green;
-                out_chunk[offset + 2] = entry.blue;
+                out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset + 3] = entry.alpha;
+                    out_chunk[3] = entry.0[3];
                 }
             }
             px_processed += 8;
