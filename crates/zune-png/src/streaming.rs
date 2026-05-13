@@ -592,7 +592,6 @@ where
                 let dest_slice = &mut remaining[..out_chunk_size];
 
                 let prev_row = if is_first_row {
-
                     &[]
                 } else {
                     // The previous row is simply the last `out_chunk_size` bytes we just wrote.

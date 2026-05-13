@@ -53,7 +53,6 @@ pub(crate) struct PngChunk {
     pub length: usize,
     pub chunk_type: PngChunkType,
     pub chunk: [u8; 4],
-    pub crc: u32,
 }
 
 /// Time information data
@@ -319,15 +318,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // Format is length - chunk type - [data] -  crc chunk, load crc chunk now
         let chunk_length = self.stream.get_u32_be_err()? as usize;
         let chunk_type_int = self.stream.get_u32_be_err()?.to_be_bytes();
-
-        let mut crc_bytes = [0; 4];
-
-        let crc_ref = self.stream.peek_at(chunk_length, 4)?;
-
-        crc_bytes.copy_from_slice(crc_ref);
-
-        let crc = u32::from_be_bytes(crc_bytes);
-
+        
         let chunk_type = match &chunk_type_int {
             b"IHDR" => PngChunkType::IHDR,
             b"tRNS" => PngChunkType::tRNS,
@@ -348,6 +339,13 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             _ => PngChunkType::unkn
         };
 
+        //  let mut crc_bytes = [0; 4];
+        // 
+        //  let crc_ref = self.stream.peek_at(chunk_length, 4)?;
+        // 
+        //  crc_bytes.copy_from_slice(crc_ref);
+        // 
+        // let crc = u32::from_be_bytes(crc_bytes);
         // if self.options.png_get_confirm_crc() {
         //     use crate::crc::crc32_slice8;
         //
@@ -372,7 +370,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             length: chunk_length,
             chunk: chunk_type_int,
             chunk_type,
-            crc,
         })
     }
 
@@ -470,7 +467,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 self.parse_fctl(header)?;
             }
             PngChunkType::IEND => self.seen_iend = true,
-            _ => default_chunk_handler(header.length, header.chunk, &mut self.stream, header.crc)?
+            _ => default_chunk_handler(header.length, header.chunk, &mut self.stream)?
         }
 
         if !self.seen_hdr {
