@@ -161,11 +161,9 @@ fn is_all_zero(s: &[i16]) -> bool {
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_epi32(m: __m128i) -> i32 {
-    unsafe {
-        let t1 = _mm_add_epi32(m, _mm_shuffle_epi32(m, 0x4E));
-        let t2 = _mm_add_epi32(t1, _mm_shuffle_epi32(t1, 0xB1));
-        _mm_cvtsi128_si32(t2)
-    }
+    let t1 = _mm_add_epi32(m, _mm_shuffle_epi32(m, 0x4E));
+    let t2 = _mm_add_epi32(t1, _mm_shuffle_epi32(t1, 0xB1));
+    _mm_cvtsi128_si32(t2)
 }
 
 #[inline]
