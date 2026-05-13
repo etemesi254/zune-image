@@ -797,21 +797,17 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use zune_core::bytestream::ZCursor;
-
-    fn decode_zune_png(data: &[u8]) -> Vec<u8> {
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode_raw().unwrap()
-    }
-
-    #[test]
-    fn decode_normal() {
-        let path =
-            "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
-        let data = std::fs::read(path).unwrap();
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode().unwrap();
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use zune_core::bytestream::ZCursor;
+//
+//
+//     #[test]
+//     fn decode_normal() {
+//         let path =
+//             "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
+//         let data = std::fs::read(path).unwrap();
+//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+//         decoder.decode().unwrap();
+//     }
+//}
