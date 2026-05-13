@@ -721,7 +721,6 @@ impl StreamingDecoder {
                 }
 
                 DeflateState::DecodingData => {
-                    // We need to adapt the fast/slow loop
                     if let Err(status) = self.decode_data(chunk, out_block) {
                         return status;
                     }
@@ -777,31 +776,41 @@ impl StreamingDecoder {
                     self.stream.refill(chunk);
                     saved_bitbuf = self.stream.buffer;
                     self.stream.drop_bits((entry & 0xFF) as u8);
-
-                    // --- FAST LITERAL ---
-                    if (entry & HUFFDEC_LITERAL) != 0 {
-                        literal = entry >> 16;
-                        let new_pos = self.stream.peek_bits::<{ LITLEN_DECODE_BITS }>();
-                        entry = litlen_decode_table[new_pos];
-                        saved_bitbuf = self.stream.buffer;
-                        self.stream.drop_bits(entry as u8);
-
-                        let out: &mut [u8; 2] = out_block
-                            .get_mut(self.dest_offset..self.dest_offset + 2)
-                            .unwrap()
-                            .try_into()
-                            .unwrap();
-
-                        out[0] = literal as u8;
-                        self.dest_offset += 1;
-
+                    if let Some(out) = out_block.get_mut(self.dest_offset..self.dest_offset + 3) {
+                        // --- FAST LITERAL 1 ---
                         if (entry & HUFFDEC_LITERAL) != 0 {
                             literal = entry >> 16;
                             let new_pos = self.stream.peek_bits::<{ LITLEN_DECODE_BITS }>();
                             entry = litlen_decode_table[new_pos];
-                            out[1] = literal as u8;
+                            saved_bitbuf = self.stream.buffer;
+                            self.stream.drop_bits(entry as u8);
+
+                            out[0] = literal as u8;
                             self.dest_offset += 1;
-                            continue;
+
+                            // --- FAST LITERAL 2 ---
+                            if (entry & HUFFDEC_LITERAL) != 0 {
+                                literal = entry >> 16;
+                                let new_pos = self.stream.peek_bits::<{ LITLEN_DECODE_BITS }>();
+                                entry = litlen_decode_table[new_pos];
+                                saved_bitbuf = self.stream.buffer;
+                                self.stream.drop_bits(entry as u8);
+
+                                out[1] = literal as u8;
+                                self.dest_offset += 1;
+
+                                // --- FAST LITERAL 3 ---
+                                if (entry & HUFFDEC_LITERAL) != 0 {
+                                    literal = entry >> 16;
+                                    let new_pos = self.stream.peek_bits::<{ LITLEN_DECODE_BITS }>();
+                                    entry = litlen_decode_table[new_pos];
+
+                                    out[2] = literal as u8;
+                                    self.dest_offset += 1;
+
+                                    continue;
+                                }
+                            }
                         }
                     }
 
@@ -824,8 +833,9 @@ impl StreamingDecoder {
                             literal = entry >> 16;
                             entry = litlen_decode_table[new_pos];
 
-                            *out_block.get_mut(self.dest_offset).unwrap_or(&mut 0) =
-                                (literal & 0xFF) as u8;
+                            if let Some(out) = out_block.get_mut(self.dest_offset) {
+                                *out = (literal & 0xFF) as u8;
+                            }
 
                             self.dest_offset += 1;
                             continue;
@@ -1016,7 +1026,7 @@ impl StreamingDecoder {
 
                 let (dest_src, dest_ptr) = out_block.split_at_mut(self.dest_offset);
 
-                if src_offset + length + FASTCOPY_BYTES > self.dest_offset {
+                if src_offset + length > self.dest_offset {
                     copy_rep_matches_slow(out_block, src_offset, self.dest_offset, length);
                 } else {
                     dest_ptr[0..length].copy_from_slice(&dest_src[src_offset..src_offset + length]);
