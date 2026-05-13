@@ -93,7 +93,8 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
     #[cfg(feature = "portable-simd")]
     {
         match components {
-
+            3 => return portable_simd::defilter_sub_generic::<3>(raw, current),
+            4 => return portable_simd::defilter_avg_generic::<4>(raw, current),
             6 => return portable_simd::defilter_sub_generic::<6>(raw, current),
             8 => return portable_simd::defilter_sub_generic::<8>(raw, current),
             _ => (),
@@ -106,6 +107,8 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
         if is_aarch64_feature_detected!("neon") {
             unsafe {
                 match components {
+                    3 => return crate::filters::neon::de_filter_sub_neon::<3>(raw, current),
+                    4 => return crate::filters::neon::de_filter_sub_neon::<4>(raw, current),
                     6 => return crate::filters::neon::de_filter_sub_neon::<6>(raw, current),
                     8 => return crate::filters::neon::de_filter_sub_neon::<8>(raw, current),
                     _ => (),
@@ -138,10 +141,6 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
         current[i] = raw[i].wrapping_add(a);
     }
 }
-
-
-
-
 
 pub fn handle_paeth(
     prev_row: &[u8],
