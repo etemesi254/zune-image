@@ -1,6 +1,5 @@
 #![allow(unreachable_code)]
 
-use std::arch::is_aarch64_feature_detected;
 
 mod aarch64;
 mod std_simd;
@@ -284,6 +283,8 @@ pub fn idst_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
+
         if is_aarch64_feature_detected!("neon") {
             return aarch64::idst_4x4_hevc(block, scratchpad, bit_depth);
         }
@@ -305,6 +306,7 @@ pub fn idct_4x4_hevc(block: &mut [i16; 16], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
         if is_aarch64_feature_detected!("neon") {
             return aarch64::idct_4x4_hevc(block, scratchpad, bit_depth);
         }
@@ -326,6 +328,8 @@ pub fn idct_8x8_hevc(block: &mut [i16; 64], scratchpad: &mut [i16; 1024], bit_de
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
+
         if is_aarch64_feature_detected!("neon") {
             return aarch64::idct_8x8_hevc(block, scratchpad, bit_depth);
         }
@@ -347,6 +351,8 @@ pub fn idct_16x16_hevc(block: &mut [i16; 256], scratchpad: &mut [i16; 1024], bit
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
+
         if is_aarch64_feature_detected!("neon") {
             return aarch64::idct_16x16_hevc(block, scratchpad, bit_depth);
         }
@@ -368,6 +374,8 @@ pub fn idct_32x32_hevc(block: &mut [i16; 1024], scratchpad: &mut [i16; 1024], bi
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
+
         if is_aarch64_feature_detected!("neon") {
             return aarch64::idct_32x32_hevc(block, scratchpad, bit_depth);
         }
