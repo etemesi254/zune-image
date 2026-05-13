@@ -148,6 +148,31 @@ pub fn handle_paeth(
     components: usize,
     _use_sse4: bool,
 ) {
+
+
+    #[cfg(feature = "sse")]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if use_sse4 {
+            match components {
+                3 => {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<3>(prev_row, raw, current)
+                }
+                4 => {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<4>(prev_row, raw, current)
+                }
+                6 => {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<6>(prev_row, raw, current)
+                }
+                8 => {
+                    return crate::filters::sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current)
+                }
+                _ => ()
+            }
+        }
+    }
+    let len = current.len().min(raw.len()).min(prev_row.len());
+
     macro_rules! paeth_loop {
         ($c:expr, $len:expr, $cur:expr, $r:expr, $p:expr) => {{
             let mut i = $c;
