@@ -146,7 +146,7 @@ pub fn handle_paeth(
     raw: &[u8],
     current: &mut [u8],
     components: usize,
-    _use_sse4: bool,
+    use_sse4: bool,
 ) {
 
 
