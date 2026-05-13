@@ -134,7 +134,7 @@ where
             let filter_byte = in_stride[0];
             let raw = &in_stride[1..];
 
-            // 1. Ping-pong buffer split
+            // 1. Ping-pong buffer split (Required for interlaced so we have a contiguous prev_row)
             let midpoint = state.raw_buffers.len() / 2;
             let (half_a, half_b) = state.raw_buffers.split_at_mut(midpoint);
 
@@ -156,24 +156,34 @@ where
                 state.filter_components,
             )?;
 
-            // 3. Post-process immediately!
-            let dest_slice = &mut state.post_processed_row[..state.out_chunk_size];
+            // 3. Post-process & Scatter
             if will_post_process {
+                // SLOW PATH: Needs color/depth conversion before scattering
+                let dest_slice = &mut state.post_processed_row[..state.out_chunk_size];
                 self.post_process_row_direct(curr_row, dest_slice, state.pass_w)?;
-            } else {
-                let copy_len = dest_slice.len().min(curr_row.len());
-                dest_slice[..copy_len].copy_from_slice(&curr_row[..copy_len]);
-            }
 
-            // 4. Scatter immediately! (No 2-row lag)
-            self.scatter_interlaced_row(
-                state.current_pass,
-                state.current_row_idx,
-                state.pass_w,
-                dest_slice,
-                final_out,
-                num_components,
-            );
+                self.scatter_interlaced_row(
+                    state.current_pass,
+                    state.current_row_idx,
+                    state.pass_w,
+                    dest_slice,
+                    final_out,
+                    num_components,
+                );
+            } else {
+                // FAST PATH: No post-processing needed.
+                // Skip `post_processed_row` entirely and scatter directly from `curr_row`.
+                let valid_curr_row = &curr_row[..state.out_chunk_size.min(curr_row.len())];
+
+                self.scatter_interlaced_row(
+                    state.current_pass,
+                    state.current_row_idx,
+                    state.pass_w,
+                    valid_curr_row,
+                    final_out,
+                    num_components,
+                );
+            }
 
             *processed_bytes += state.row_size;
             state.current_row_idx += 1;
@@ -334,7 +344,8 @@ where
                         }
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
-                        let keep_amount = std::cmp::max(32_768, unread_bytes);
+                        let keep_amount = std::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
+
                         let slide_amount =
                             decoder.current_dest_offset().saturating_sub(keep_amount);
 
@@ -412,10 +423,14 @@ where
         let out_chunk_size =
             self.png_info.width * self.colorspace().unwrap().num_components() * bytes_per_channel;
 
+        let will_post_process = self.will_post_process();
+
         // 2. Setup Single-Allocation Ping-Pong Buffers
         // We allocate exactly enough space for TWO raw rows side-by-side.
         // This ensures the current and previous rows are right next to each other in cache.
-        let mut raw_buffers = vec![0u8; width_stride * 2];
+        // But we only allocate it if we will need it, and it is only needed on images we will post process
+        // e.g by palettes etc
+        let mut raw_buffers = vec![0u8; width_stride * 2*usize::from(will_post_process)];
 
         // 3. Setup Deflate Buffers
         let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
@@ -443,12 +458,14 @@ where
                 }
             }
 
+            // Read bytes from the IDAT stream
             let read_len = std::cmp::min(byte_buf.len(), self.current_idat_bytes_left);
             let chunk_size = self.stream.read_bytes(&mut byte_buf[..read_len])?;
-            self.current_idat_bytes_left -= chunk_size;
+            self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(chunk_size);
             decoder.reset_position();
 
             let mut chunk_pos = 0;
+            // If first chunk, we skip the ZLIB bytes
             if !skipped_zlib_header {
                 chunk_pos += 2;
                 skipped_zlib_header = true;
@@ -474,7 +491,7 @@ where
                             final_out,
                             &mut final_out_pos,
                             out_chunk_size,
-                            &mut raw_buffers, // Pass the ping-pong buffer
+                            &mut raw_buffers,
                         )?;
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
@@ -501,7 +518,6 @@ where
                             out_chunk_size,
                             &mut raw_buffers,
                         )?;
-                        // Notice: `post_process_final_row` is completely GONE!
                         return Ok(());
                     }
 
@@ -527,7 +543,7 @@ where
         final_out: &mut [u8],
         final_out_pos: &mut usize,
         out_chunk_size: usize,
-        raw_buffers: &mut [u8], // The single allocation containing exactly 2 raw rows
+        raw_buffers: &mut [u8],
     ) -> Result<(), PngDecodeErrors> {
         let width_stride = row_size - 1;
         let filter_bpp = usize::from(self.png_info.color.num_components())
@@ -540,43 +556,61 @@ where
             let in_stride = &deflate_buf[*processed_bytes..*processed_bytes + row_size];
             let filter_byte = in_stride[0];
             let raw = &in_stride[1..];
-
-            // 1. Borrow checker magic: safely split the buffer into "Left" (A) and "Right" (B) halves.
-            // This guarantees `prev_row` and `curr_row` never overlap in memory.
-            let (half_a, half_b) = raw_buffers.split_at_mut(width_stride);
-
-            // 2. Ping-pong assignments based on whether the row index is even or odd.
-            let curr_idx = *current_row_idx % 2;
-            let (prev_row, curr_row) = if curr_idx == 0 {
-                (&*half_b, half_a) // Even row: read previous from B, write current to A
-            } else {
-                (&*half_a, half_b) // Odd row: read previous from A, write current to B
-            };
-
-            // 3. Un-filter the Deflate data directly into `curr_row`
             let is_first_row = *current_row_idx == 0;
-            self.apply_filter(
-                filter_byte,
-                prev_row,
-                raw,
-                curr_row,
-                is_first_row,
-                filter_bpp,
-            )?;
 
-            // 4. Isolate the exact slice of the final output buffer for this row
-            let dest_slice = &mut final_out[*final_out_pos..*final_out_pos + out_chunk_size];
-
-            // 5. Post-process immediately into the final output buffer
             if will_post_process {
+                // SLOW PATH: We must use temporary buffers because the previous row
+                // in `final_out` has already been transformed, and the PNG filter
+                // requires raw, unmodified previous row bytes.
+                let (half_a, half_b) = raw_buffers.split_at_mut(width_stride);
+                let curr_idx = *current_row_idx % 2;
+                let (prev_row, curr_row) = if curr_idx == 0 {
+                    (&*half_b, half_a)
+                } else {
+                    (&*half_a, half_b)
+                };
+
+                self.apply_filter(
+                    filter_byte,
+                    prev_row,
+                    raw,
+                    curr_row,
+                    is_first_row,
+                    filter_bpp,
+                )?;
+
+                let dest_slice = &mut final_out[*final_out_pos..*final_out_pos + out_chunk_size];
                 self.post_process_row_direct(curr_row, dest_slice, self.png_info.width)?;
+
             } else {
-                // Fast-path: If no depth/palette/alpha changes are needed, just copy it.
-                let copy_len = dest_slice.len().min(curr_row.len());
-                dest_slice[..copy_len].copy_from_slice(&curr_row[..copy_len]);
+                // FAST PATH (Zero-Copy): No post-processing needed.
+                // We write directly into `final_out`.
+
+                // split_at_mut safely gives us read access to what we've already written,
+                // and write access to the remaining space.
+                let (finished, remaining) = final_out.split_at_mut(*final_out_pos);
+                let dest_slice = &mut remaining[..out_chunk_size];
+
+                let prev_row = if is_first_row {
+                    // If it's the first row, the PNG filter treats the previous row as zeros.
+                    // We can pass a dummy slice. `raw_buffers` is convenient here.
+                    &raw_buffers[..width_stride]
+                } else {
+                    // The previous row is simply the last `out_chunk_size` bytes we just wrote.
+                    &finished[finished.len() - out_chunk_size..]
+                };
+
+                self.apply_filter(
+                    filter_byte,
+                    prev_row,
+                    raw,
+                    dest_slice,
+                    is_first_row,
+                    filter_bpp,
+                )?;
             }
 
-            // 6. Advance all trackers
+            // Advance all trackers
             *processed_bytes += row_size;
             *final_out_pos += out_chunk_size;
             *current_row_idx += 1;
@@ -798,17 +832,17 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use zune_core::bytestream::ZCursor;
-//
-//
-//     #[test]
-//     fn decode_normal() {
-//         let path =
-//             "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
-//         let data = std::fs::read(path).unwrap();
-//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-//         decoder.decode().unwrap();
-//     }
-//}
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+
+
+    #[test]
+    fn decode_normal() {
+        let path =
+            "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench.png";
+        let data = std::fs::read(path).unwrap();
+        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+        decoder.decode().unwrap();
+    }
+}
