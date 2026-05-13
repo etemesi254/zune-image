@@ -164,7 +164,6 @@ impl<'a> PngEncoder<'a> {
                 length:     chunk.len(),
                 chunk_type: PngChunkType::IDAT, // not needed
                 chunk:      *b"IDAT",
-                crc:        0 // not needed
             };
             write_chunk(chunk_type, chunk, writer)?;
         }
