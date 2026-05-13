@@ -592,9 +592,8 @@ where
                 let dest_slice = &mut remaining[..out_chunk_size];
 
                 let prev_row = if is_first_row {
-                    // If it's the first row, the PNG filter treats the previous row as zeros.
-                    // We can pass a dummy slice. `raw_buffers` is convenient here.
-                    &raw_buffers[..width_stride]
+
+                    &[]
                 } else {
                     // The previous row is simply the last `out_chunk_size` bytes we just wrote.
                     &finished[finished.len() - out_chunk_size..]
