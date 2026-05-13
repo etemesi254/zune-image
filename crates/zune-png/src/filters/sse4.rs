@@ -211,57 +211,95 @@ unsafe fn if_then_else(c: __m128i, t: __m128i, e: __m128i) -> __m128i {
 #[target_feature(enable = "sse4.1")]
 #[allow(unused_assignments)]
 unsafe fn de_filter_paeth_sse41_inner<const SIZE: usize>(
-    prev_row: &[u8], raw: &[u8], current: &mut [u8]
+    prev_row: &[u8],
+    raw: &[u8],
+    current: &mut [u8],
 ) {
     let zero = _mm_setzero_si128();
 
+    // c = upper-left
+    // b = upper
+    // a = left
+    // d = current/raw
     let (mut c, mut b, mut a, mut d) = (zero, zero, zero, zero);
 
-    let (mut pa, mut pb, mut pc, mut smallest, mut nearest);
-
-    let (mut f, mut g) = ([0; 16], [0; 16]);
+    let (mut f, mut g) = ([0u8; 16], [0u8; 16]);
 
     for ((prev, raw), current_row) in prev_row
         .chunks_exact(SIZE)
         .zip(raw.chunks_exact(SIZE))
         .zip(current.chunks_exact_mut(SIZE))
     {
-        f[0..SIZE].copy_from_slice(prev);
-        g[0..SIZE].copy_from_slice(raw);
+        f[..SIZE].copy_from_slice(prev);
+        g[..SIZE].copy_from_slice(raw);
 
+        // Slide previous vectors
         c = b;
-        b = _mm_unpacklo_epi8(_mm_loadu_si128(f.as_ptr().cast()), zero);
         a = d;
-        d = _mm_unpacklo_epi8(_mm_loadu_si128(g.as_ptr().cast()), zero);
 
-        /* (p-a) == (a+b-c - a) == (b-c) */
-        pa = _mm_sub_epi16(b, c);
-
-        /* (p-b) == (a+b-c - b) == (a-c) */
-        pb = _mm_sub_epi16(a, c);
-
-        /* (p-c) == (a+b-c - c) == (a+b-c-c) == (b-c)+(a-c) */
-        pc = _mm_add_epi16(pa, pb);
-
-        pa = _mm_abs_epi16(pa); /* |p-a| */
-        pb = _mm_abs_epi16(pb); /* |p-b| */
-        pc = _mm_abs_epi16(pc); /* |p-c| */
-
-        smallest = _mm_min_epi16(pc, _mm_min_epi16(pa, pb));
-
-        /* Paeth breaks ties favoring a over b over c. */
-        nearest = if_then_else(
-            _mm_cmpeq_epi16(smallest, pa),
-            a,
-            if_then_else(_mm_cmpeq_epi16(smallest, pb), b, c)
+        // Load next upper/raw bytes as widened i16 lanes
+        b = _mm_unpacklo_epi8(
+            _mm_loadu_si128(f.as_ptr().cast()),
+            zero,
         );
 
-        /* Note `_epi8`: we need addition to wrap modulo 255. */
+        d = _mm_unpacklo_epi8(
+            _mm_loadu_si128(g.as_ptr().cast()),
+            zero,
+        );
+
+        //
+        // stb-style Paeth predictor:
+        //
+        // thresh = 3*c - (a+b)
+        //
+        // if hi <= thresh => lo
+        // else if thresh <= lo => hi
+        // else => c
+        //
+
+        let lo = _mm_min_epi16(a, b);
+        let hi = _mm_max_epi16(a, b);
+
+        let cc = _mm_add_epi16(c, c);
+        let three_c = _mm_add_epi16(cc, c);
+
+        let ab = _mm_add_epi16(a, b);
+
+        let thresh = _mm_sub_epi16(three_c, ab);
+
+        // thresh <= lo
+        let choose_hi = _mm_cmpeq_epi16(
+            _mm_min_epi16(thresh, lo),
+            thresh,
+        );
+
+        // hi <= thresh
+        let choose_lo = _mm_cmpeq_epi16(
+            _mm_min_epi16(hi, thresh),
+            hi,
+        );
+
+        let nearest = if_then_else(
+            choose_lo,
+            lo,
+            if_then_else(
+                choose_hi,
+                hi,
+                c,
+            ),
+        );
+
+        // modulo-256 reconstruction add
         d = _mm_add_epi8(d, nearest);
 
-        _mm_storeu_si128(f.as_mut_ptr().cast(), _mm_packus_epi16(d, d));
+        // pack back to bytes
+        _mm_storeu_si128(
+            f.as_mut_ptr().cast(),
+            _mm_packus_epi16(d, d),
+        );
 
-        current_row.copy_from_slice(&f[0..SIZE]);
+        current_row.copy_from_slice(&f[..SIZE]);
     }
 }
 
