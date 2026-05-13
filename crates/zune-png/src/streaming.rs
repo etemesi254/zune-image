@@ -72,48 +72,52 @@ where
     }
     fn scatter_interlaced_row(
         &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
-        final_image_out: &mut [u8],
+        final_image_out: &mut [u8], num_components: usize,
     ) {
-        // to this function rather than recalculating it and unwrap()ping every row.
-        let bytes_per_pixel = self.colorspace().unwrap().num_components()
-            * if self.png_info.depth == 16 { 2 } else { 1 };
+        let bpp = num_components * if self.png_info.depth == 16 { 2 } else { 1 };
 
-        // 1. Hoist the Y-axis math completely out of the loop.
         // We only need to find where the row starts once.
         let out_y = pass_y * YSPC[pass] + YORIG[pass];
-        let row_start_idx = out_y * self.png_info.width * bytes_per_pixel;
+        let row_start_idx = out_y * self.png_info.width * bpp;
 
-        // 2. Isolate the specific output row.
         // Slicing here restricts the memory window, helping the compiler elide inner bounds checks.
         let out_row_slice = &mut final_image_out[row_start_idx..];
+        let x_orig_bytes = XORIG[pass] * bpp;
 
-        // 3. Pre-calculate the X stride in bytes.
-        let x_orig_bytes = XORIG[pass] * bytes_per_pixel;
-
-        // Pass 7 (Index 6) has XSPC = 1. Pixels are strictly contiguous!
-        // We bypass the loop entirely. Under the hood, copy_from_slice
-        // will compile down to a heavily vectorized memcpy (AVX2/AVX-512).
+        // Pass 7 (Index 6) has XSPC = 1. Pixels are strictly contiguous
+        // We bypass the loop entirely.
         if pass == 6 {
-            let total_bytes = pass_w * bytes_per_pixel;
+            let total_bytes = pass_w * bpp;
             out_row_slice[x_orig_bytes..x_orig_bytes + total_bytes]
                 .copy_from_slice(&post_processed_row[..total_bytes]);
             return;
         }
 
-        let x_spc_bytes = XSPC[pass] * bytes_per_pixel;
+        let x_spc_bytes = XSPC[pass] * bpp;
+        // Constrain the source slice up front so we don't need `.take(pass_w)` in the loop
+        let src_pixels = &post_processed_row[..pass_w * bpp];
 
-        // 4. Chunk the source array.
-        // chunks_exact() is highly optimized in standard Rust and removes src_start math.
-        let src_pixels = post_processed_row.chunks_exact(bytes_per_pixel);
+        let out_space = &mut out_row_slice[x_orig_bytes..];
 
-        let mut current_out_x = x_orig_bytes;
+        macro_rules! scatter {
+            ($b_size:expr) => {
+                for (src_pixel, out_chunk) in src_pixels
+                    .chunks_exact($b_size)
+                    .zip(out_space.chunks_mut(x_spc_bytes))
+                {
+                    out_chunk[..$b_size].copy_from_slice(src_pixel);
+                }
+            };
+        }
 
-        // 5. The tight loop: No complex multiplication, just straight addition and copying.
-        for src_pixel in src_pixels.take(pass_w) {
-            out_row_slice[current_out_x..current_out_x + bytes_per_pixel]
-                .copy_from_slice(src_pixel);
-
-            current_out_x += x_spc_bytes;
+        match bpp {
+            1 => scatter!(1),
+            2 => scatter!(2),
+            3 => scatter!(3),
+            4 => scatter!(4),
+            6 => scatter!(6),
+            8 => scatter!(8),
+            _ => unreachable!(),
         }
     }
 
@@ -167,6 +171,7 @@ where
                 state.pass_w,
                 dest_slice,
                 final_out,
+                num_components,
             );
 
             *processed_bytes += state.row_size;
@@ -792,21 +797,21 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use zune_core::bytestream::ZCursor;
-//
-//     fn decode_zune_png(data: &[u8]) -> Vec<u8> {
-//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-//         decoder.decode_raw().unwrap()
-//     }
-//
-//     #[test]
-//     fn decode_normal() {
-//         let path =
-//             "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
-//         let data = std::fs::read(path).unwrap();
-//         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-//         decoder.decode().unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use zune_core::bytestream::ZCursor;
+
+    fn decode_zune_png(data: &[u8]) -> Vec<u8> {
+        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+        decoder.decode_raw().unwrap()
+    }
+
+    #[test]
+    fn decode_normal() {
+        let path =
+            "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench_interlaced.png";
+        let data = std::fs::read(path).unwrap();
+        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
+        decoder.decode().unwrap();
+    }
+}
