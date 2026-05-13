@@ -60,68 +60,76 @@ fn shift_clip(val: i32, shift: i32) -> i16 {
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn shift_clip_x4<const shift: i32>(vals: &[i32; 4]) -> [i16; 4] {
-    let v = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
-    let offset = _mm_set1_epi32((1 << shift) >> 1);
-    let shifted = _mm_srai_epi32(_mm_add_epi32(v, offset), shift);
-    let packed = _mm_packs_epi32(shifted, shifted);
-    let mut out = [0i16; 4];
-    _mm_storel_epi64(out.as_mut_ptr() as *mut __m128i, packed);
-    out
+unsafe fn shift_clip_x4<const SHIFT: i32>(vals: &[i32; 4]) -> [i16; 4] {
+    unsafe {
+        let v = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
+        let offset = _mm_set1_epi32((1 << SHIFT) >> 1);
+        let shifted = _mm_srai_epi32(_mm_add_epi32(v, offset), SHIFT);
+        let packed = _mm_packs_epi32(shifted, shifted);
+        let mut out = [0i16; 4];
+        _mm_storel_epi64(out.as_mut_ptr() as *mut __m128i, packed);
+        out
+    }
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn shift_clip_x8<const shift: i32>(vals: &[i32; 8]) -> [i16; 8] {
-    let lo = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
-    let hi = _mm_loadu_si128(vals.as_ptr().add(4) as *const __m128i);
-    let offset = _mm_set1_epi32((1 << shift) >> 1);
+unsafe fn shift_clip_x8<const SHIFT: i32>(vals: &[i32; 8]) -> [i16; 8] {
+    unsafe {
+        let lo = _mm_loadu_si128(vals.as_ptr() as *const __m128i);
+        let hi = _mm_loadu_si128(vals.as_ptr().add(4) as *const __m128i);
+        let offset = _mm_set1_epi32((1 << SHIFT) >> 1);
 
-    let slo = _mm_srai_epi32(_mm_add_epi32(lo, offset), shift);
-    let shi = _mm_srai_epi32(_mm_add_epi32(hi, offset), shift);
+        let slo = _mm_srai_epi32(_mm_add_epi32(lo, offset), SHIFT);
+        let shi = _mm_srai_epi32(_mm_add_epi32(hi, offset), SHIFT);
 
-    let packed = _mm_packs_epi32(slo, shi);
-    let mut out = [0i16; 8];
-    _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, packed);
-    out
+        let packed = _mm_packs_epi32(slo, shi);
+        let mut out = [0i16; 8];
+        _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, packed);
+        out
+    }
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn shift_clip_x16<const shift: i32>(vals: &[i32; 16]) -> [i16; 16] {
+unsafe fn shift_clip_x16<const SHIFT: i32>(vals: &[i32; 16]) -> [i16; 16] {
     let mut out = [0i16; 16];
-    let o1 = shift_clip_x8::<shift>(vals[0..8].try_into().unwrap());
-    let o2 = shift_clip_x8::<shift>(vals[8..16].try_into().unwrap());
-    out[0..8].copy_from_slice(&o1);
-    out[8..16].copy_from_slice(&o2);
+    unsafe {
+        let o1 = shift_clip_x8::<SHIFT>(vals[0..8].try_into().unwrap());
+        let o2 = shift_clip_x8::<SHIFT>(vals[8..16].try_into().unwrap());
+        out[0..8].copy_from_slice(&o1);
+        out[8..16].copy_from_slice(&o2);
+    }
     out
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn shift_clip_x32<const shift: i32>(vals: &[i32; 32]) -> [i16; 32] {
+unsafe fn shift_clip_x32<const SHIFT: i32>(vals: &[i32; 32]) -> [i16; 32] {
     let mut out = [0i16; 32];
-    let o1 = shift_clip_x16::<shift>(vals[0..16].try_into().unwrap());
-    let o2 = shift_clip_x16::<shift>(vals[16..32].try_into().unwrap());
-    out[0..16].copy_from_slice(&o1);
-    out[16..32].copy_from_slice(&o2);
+    unsafe {
+        let o1 = shift_clip_x16::<SHIFT>(vals[0..16].try_into().unwrap());
+        let o2 = shift_clip_x16::<SHIFT>(vals[16..32].try_into().unwrap());
+        out[0..16].copy_from_slice(&o1);
+        out[16..32].copy_from_slice(&o2);
+    }
     out
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
-fn shift_clip_slice<const N: usize, const shift: i32>(vals: &[i32; 32], out: &mut [i16]) {
+fn shift_clip_slice<const N: usize, const SHIFT: i32>(vals: &[i32; 32], out: &mut [i16]) {
     unsafe {
         match N {
-            4 => out[..4].copy_from_slice(&shift_clip_x4::<shift>(vals[..4].try_into().unwrap())),
-            8 => out[..8].copy_from_slice(&shift_clip_x8::<shift>(vals[..8].try_into().unwrap())),
+            4 => out[..4].copy_from_slice(&shift_clip_x4::<SHIFT>(vals[..4].try_into().unwrap())),
+            8 => out[..8].copy_from_slice(&shift_clip_x8::<SHIFT>(vals[..8].try_into().unwrap())),
             16 => {
-                out[..16].copy_from_slice(&shift_clip_x16::<shift>(vals[..16].try_into().unwrap()))
+                out[..16].copy_from_slice(&shift_clip_x16::<SHIFT>(vals[..16].try_into().unwrap()))
             }
             32 => {
-                out[..32].copy_from_slice(&shift_clip_x32::<shift>(vals[..32].try_into().unwrap()))
+                out[..32].copy_from_slice(&shift_clip_x32::<SHIFT>(vals[..32].try_into().unwrap()))
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -129,18 +137,20 @@ fn shift_clip_slice<const N: usize, const shift: i32>(vals: &[i32; 32], out: &mu
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn is_all_zero_impl(s: &[i16]) -> bool {
-    let mut chunks = s.chunks_exact(8);
-    let mut acc = _mm_setzero_si128();
-    for chunk in chunks.by_ref() {
-        let v = _mm_loadu_si128(chunk.as_ptr() as *const __m128i);
-        acc = _mm_or_si128(acc, v);
+    unsafe {
+        let mut chunks = s.chunks_exact(8);
+        let mut acc = _mm_setzero_si128();
+        for chunk in chunks.by_ref() {
+            let v = _mm_loadu_si128(chunk.as_ptr() as *const __m128i);
+            acc = _mm_or_si128(acc, v);
+        }
+        let cmp = _mm_cmpeq_epi8(acc, _mm_setzero_si128());
+        let mask = _mm_movemask_epi8(cmp);
+        if mask != 0xFFFF {
+            return false;
+        }
+        chunks.remainder().iter().all(|&v| v == 0)
     }
-    let cmp = _mm_cmpeq_epi8(acc, _mm_setzero_si128());
-    let mask = _mm_movemask_epi8(cmp);
-    if mask != 0xFFFF {
-        return false;
-    }
-    chunks.remainder().iter().all(|&v| v == 0)
 }
 
 #[inline(always)]
@@ -151,42 +161,50 @@ fn is_all_zero(s: &[i16]) -> bool {
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_epi32(m: __m128i) -> i32 {
-    let t1 = _mm_add_epi32(m, _mm_shuffle_epi32(m, 0x4E));
-    let t2 = _mm_add_epi32(t1, _mm_shuffle_epi32(t1, 0xB1));
-    _mm_cvtsi128_si32(t2)
+    unsafe {
+        let t1 = _mm_add_epi32(m, _mm_shuffle_epi32(m, 0x4E));
+        let t2 = _mm_add_epi32(t1, _mm_shuffle_epi32(t1, 0xB1));
+        _mm_cvtsi128_si32(t2)
+    }
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn dot4(a: &[i16; 4], b: &[i16; 4]) -> i32 {
-    let va = _mm_loadl_epi64(a.as_ptr() as *const __m128i);
-    let vb = _mm_loadl_epi64(b.as_ptr() as *const __m128i);
-    let m = _mm_madd_epi16(va, vb);
-    hsum_epi32(m)
+    unsafe {
+        let va = _mm_loadl_epi64(a.as_ptr() as *const __m128i);
+        let vb = _mm_loadl_epi64(b.as_ptr() as *const __m128i);
+        let m = _mm_madd_epi16(va, vb);
+        hsum_epi32(m)
+    }
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn dot8(a: &[i16; 8], b: &[i16; 8]) -> i32 {
-    let va = _mm_loadu_si128(a.as_ptr() as *const __m128i);
-    let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
-    let m = _mm_madd_epi16(va, vb);
-    hsum_epi32(m)
+    unsafe {
+        let va = _mm_loadu_si128(a.as_ptr() as *const __m128i);
+        let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
+        let m = _mm_madd_epi16(va, vb);
+        hsum_epi32(m)
+    }
 }
 
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn dot16(a: &[i16; 16], b: &[i16; 16]) -> i32 {
-    let va1 = _mm_loadu_si128(a.as_ptr() as *const __m128i);
-    let vb1 = _mm_loadu_si128(b.as_ptr() as *const __m128i);
-    let m1 = _mm_madd_epi16(va1, vb1);
+    unsafe {
+        let va1 = _mm_loadu_si128(a.as_ptr() as *const __m128i);
+        let vb1 = _mm_loadu_si128(b.as_ptr() as *const __m128i);
+        let m1 = _mm_madd_epi16(va1, vb1);
 
-    let va2 = _mm_loadu_si128(a.as_ptr().add(8) as *const __m128i);
-    let vb2 = _mm_loadu_si128(b.as_ptr().add(8) as *const __m128i);
-    let m2 = _mm_madd_epi16(va2, vb2);
+        let va2 = _mm_loadu_si128(a.as_ptr().add(8) as *const __m128i);
+        let vb2 = _mm_loadu_si128(b.as_ptr().add(8) as *const __m128i);
+        let m2 = _mm_madd_epi16(va2, vb2);
 
-    let m = _mm_add_epi32(m1, m2);
-    hsum_epi32(m)
+        let m = _mm_add_epi32(m1, m2);
+        hsum_epi32(m)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +278,7 @@ fn transform16_1d_simd(input: &[i16], output: &mut [i32]) {
     transform8_1d_simd(&even_in, &mut e);
 
     let odd_in = [
-        input[1], input[3], input[5], input[7], input[9], input[11], input[13], input[15]
+        input[1], input[3], input[5], input[7], input[9], input[11], input[13], input[15],
     ];
 
     let mut o = [0i32; 8];
@@ -288,7 +306,7 @@ fn transform32_1d_simd(input: &[i16], output: &mut [i32]) {
 
     let odd_in = [
         input[1], input[3], input[5], input[7], input[9], input[11], input[13], input[15],
-        input[17], input[19], input[21], input[23], input[25], input[27], input[29], input[31]
+        input[17], input[19], input[21], input[23], input[25], input[27], input[29], input[31],
     ];
 
     let mut o = [0i32; 16];
@@ -309,12 +327,11 @@ fn transform32_1d_simd(input: &[i16], output: &mut [i32]) {
 // ---------------------------------------------------------------------------
 
 pub fn idct_2d_core<const N: usize>(
-    block: &mut [i16], intermediate: &mut [i16; 1024], bit_depth: u8, is_dst: bool,
-    transform_1d: fn(&[i16], &mut [i32])
+    block: &mut [i16], intermediate: &mut [i16; 1024], _bit_depth: u8, is_dst: bool,
+    transform_1d: fn(&[i16], &mut [i32]),
 ) {
-    const shift1: i32 = 7;
-    const shift2: i32 = 20 - 8; /*todo, use genercis for newer bit depths passing it as const generics i32::from(bit_depth) */
-    
+    const SHIFT1: i32 = 7;
+    const SHIFT2: i32 = 20 - 8; /*todo, use genercis for newer bit depths passing it as const generics i32::from(bit_depth) */
 
     for c in 0..N {
         let mut col_in = [0i16; 32];
@@ -330,7 +347,7 @@ pub fn idct_2d_core<const N: usize>(
         }
 
         if !is_dst && col_in[0] != 0 && is_all_zero(&col_in[1..N]) {
-            let dc_val = shift_clip(i32::from(col_in[0]) * 64, shift1);
+            let dc_val = shift_clip(i32::from(col_in[0]) * 64, SHIFT1);
             for r in 0..N {
                 intermediate[r * N + c] = dc_val;
             }
@@ -342,7 +359,7 @@ pub fn idct_2d_core<const N: usize>(
 
         let mut clipped = [0i16; 32];
         unsafe {
-            shift_clip_slice::<N, shift1>(&col_out, &mut clipped);
+            shift_clip_slice::<N, SHIFT1>(&col_out, &mut clipped);
         }
         for r in 0..N {
             intermediate[r * N + c] = clipped[r];
@@ -360,7 +377,7 @@ pub fn idct_2d_core<const N: usize>(
         }
 
         if !is_dst && row[0] != 0 && is_all_zero(&row[1..N]) {
-            let val = shift_clip(i32::from(row[0]) * DC_VERTICAL_SCALE, shift2);
+            let val = shift_clip(i32::from(row[0]) * DC_VERTICAL_SCALE, SHIFT2);
             for c in 0..N {
                 block[r * N + c] = val;
             }
@@ -372,7 +389,7 @@ pub fn idct_2d_core<const N: usize>(
 
         let mut clipped = [0i16; 32];
         unsafe {
-            shift_clip_slice::<N, shift2>(&row_out, &mut clipped);
+            shift_clip_slice::<N, SHIFT2>(&row_out, &mut clipped);
         }
         for c in 0..N {
             block[r * N + c] = clipped[c];

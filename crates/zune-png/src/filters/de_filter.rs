@@ -7,7 +7,6 @@
 
 #[cfg(feature = "portable-simd")]
 use crate::filters::portable_simd;
-use std::arch::is_aarch64_feature_detected;
 #[allow(clippy::manual_memcpy)]
 pub fn handle_avg(
     prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool,
@@ -17,6 +16,7 @@ pub fn handle_avg(
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
         if is_aarch64_feature_detected!("neon") {
             unsafe {
                 match components {
@@ -101,6 +101,8 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
     }
     #[cfg(target_arch = "aarch64")]
     {
+        use std::arch::is_aarch64_feature_detected;
+
         if is_aarch64_feature_detected!("neon") {
             unsafe {
                 match components {
