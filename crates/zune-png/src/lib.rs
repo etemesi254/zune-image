@@ -153,7 +153,7 @@
 //!
 //! The library supports animated images decoding, up to post processing for 8-bit images.
 //!
-//! To understand more see [post_process_image]
+//! To understand more see [post_process_image_apng]
 //!
 //! # Alternatives
 //! - [png](https://crates.io/crates/png) crate

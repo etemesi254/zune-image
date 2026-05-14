@@ -34,26 +34,26 @@
 git clone https://github.com/etemesi254/zune-image
 ```
 
-2. cd into the repo and into the zune-python repository
+1. cd into the repo and into the zune-python repository
 
 ```
 shell cd ./zune-image/zune-python
 ```
 
-3. Create a virtual environment for the repo
+1. Create a virtual environment for the repo
 
 ```shell
 python -m venv .env
 source .env/bin/activate 
 ```
 
-4. Install [maturin](https://github.com/PyO3/maturin)
+1. Install [maturin](https://github.com/PyO3/maturin)
 
 ```shell
 pip install maturin
 ```
 
-5. Call `maturin build --release` This will build the project with optimizations turned
+1. Call `maturin build --release` This will build the project with optimizations turned
 
 ```shell
 maturin build --release
@@ -65,16 +65,16 @@ Wait until you see
 📦 Built wheel for CPython 3.11 to ./target/wheels/zune_image-0.4.0-cp311-cp311-manylinux_2_34_x86_64.whl
 ```
 
-6. Navigate to `{CRATE_DIR}/target/wheels/`
-7. Call pip install with the local built package
+1. Navigate to `{CRATE_DIR}/target/wheels/`
+2. Call pip install with the local built package
 
 ```shell
  pip install --force-reinstall ./zune_image-0.4.0-cp311-cp311-manylinux_2_34_x86_64.whl
 
 ```
 
-8. call `python` or `ipython` to get an interactive shell.
-9. Import `zil` from there and decode an image
+1. call `python` or `ipython` to get an interactive shell.
+2. Import `zil` from there and decode an image
 
 ```python
 # Import the package

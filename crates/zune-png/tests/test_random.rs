@@ -14,7 +14,7 @@ use std::path::Path;
 use png::Transformations;
 use zune_core::bytestream::ZCursor;
 use zune_core::options::EncoderOptions;
-use zune_png::{post_process_image, post_process_image_apng, FrameInfo, PngDecoder};
+use zune_png::{ post_process_image_apng, FrameInfo, PngDecoder};
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
