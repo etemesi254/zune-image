@@ -295,14 +295,14 @@ where
             width_stride: initial_row_size - 1,
             out_chunk_size: initial_out_chunk,
             // Allocate the ping pong buffer AND the post-processed scatter buffer
-            raw_buffers: vec![0; std::cmp::max(max_row_size, max_out_chunk) * 2],
+            raw_buffers: vec![0; core::cmp::max(max_row_size, max_out_chunk) * 2],
             post_processed_row: vec![0; max_out_chunk],
             filter_components,
             is_complete: false,
         };
 
         // --- 3. Setup Deflate ---
-        let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + max_row_size + 4096);
+        let buf_size = core::cmp::max(65536, MAX_DEFLATE_HISTORY + max_row_size + 4096);
         // allocations we make, buf_size is generally enough to hold 2 rows, including
         //
         // Furthermore, we split it into 1 allocation of two buffers so that we reduce alloc pressure
@@ -352,7 +352,7 @@ where
                 return Ok(());
             }
 
-            let read_len = std::cmp::min(BUF_READ, self.current_idat_bytes_left);
+            let read_len = core::cmp::min(BUF_READ, self.current_idat_bytes_left);
 
             let chunk_size = if read_len > 0 {
                 self.stream.read_bytes(&mut byte_buf[..read_len])?
@@ -397,7 +397,7 @@ where
                         }
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
-                        let keep_amount = std::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
+                        let keep_amount = core::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
 
                         let slide_amount =
                             decoder.current_dest_offset().saturating_sub(keep_amount);
@@ -555,7 +555,7 @@ where
         let mut raw_buffers = vec![0u8; width_stride * 2 * usize::from(will_post_process)];
 
         // 3. Setup Deflate Buffers
-        let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
+        let buf_size = core::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
         let mut major_buf = vec![0u8; buf_size + BUF_READ];
         let (byte_buf, deflate_buf) = major_buf.split_at_mut(BUF_READ);
 
@@ -603,7 +603,7 @@ where
             }
 
             // Read bytes from the IDAT stream
-            let read_len = std::cmp::min(byte_buf.len(), self.current_idat_bytes_left);
+            let read_len = core::cmp::min(byte_buf.len(), self.current_idat_bytes_left);
             let chunk_size = self.stream.read_bytes(&mut byte_buf[..read_len])?;
             self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(chunk_size);
             decoder.reset_position();
@@ -639,7 +639,7 @@ where
                         )?;
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
-                        let keep_amount = std::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
+                        let keep_amount = core::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
                         let slide_amount =
                             decoder.current_dest_offset().saturating_sub(keep_amount);
 
