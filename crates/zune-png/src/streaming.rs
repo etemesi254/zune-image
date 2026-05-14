@@ -1,4 +1,4 @@
-use crate::decoder::PLTEEntry;
+use crate::decoder::{DecodingState, PLTEEntry};
 use crate::enums::{FilterMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::filters::de_filter::{
@@ -9,6 +9,7 @@ use crate::utils::{
 };
 use crate::{InterlaceMethod, PngDecoder};
 use zune_core::bytestream::ZByteReaderTrait;
+use zune_core::log::{trace, warn};
 use zune_inflate::DecodeStatus;
 
 const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
@@ -46,22 +47,29 @@ impl<T> PngDecoder<T>
 where
     T: ZByteReaderTrait,
 {
-    fn adam7_dimensions(&self, pass: usize) -> (usize, usize) {
-        let w = self.png_info.width;
-        let h = self.png_info.height;
+    fn adam7_dimensions(&self, pass: usize) -> Result<(usize, usize), PngDecodeErrors> {
+        if let Some(info) = self.frame_info().as_ref() {
+            let h = info.height;
+            let w = info.width;
 
-        let pass_w = (w
-            .saturating_sub(XORIG[pass])
-            .saturating_add(XSPC[pass])
-            .saturating_sub(1))
-            / XSPC[pass];
-        let pass_h = (h
-            .saturating_sub(YORIG[pass])
-            .saturating_add(YSPC[pass])
-            .saturating_sub(1))
-            / YSPC[pass];
+            let pass_w = (w
+                .saturating_sub(XORIG[pass])
+                .saturating_add(XSPC[pass])
+                .saturating_sub(1))
+                / XSPC[pass];
+            let pass_h = (h
+                .saturating_sub(YORIG[pass])
+                .saturating_add(YSPC[pass])
+                .saturating_sub(1))
+                / YSPC[pass];
 
-        (pass_w, pass_h)
+            return Ok((pass_w, pass_h));
+        }
+
+        Err(PngDecodeErrors::Generic(format!(
+            "No frame found for frame {}",
+            self.current_frame
+        )))
     }
     fn calculate_pass_row_size(&self, pass_w: usize) -> usize {
         let bpp =
@@ -72,13 +80,13 @@ where
     }
     fn scatter_interlaced_row(
         &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
-        final_image_out: &mut [u8], num_components: usize,
+        final_image_out: &mut [u8], num_components: usize, width: usize,
     ) {
         let bpp = num_components * if self.png_info.depth == 16 { 2 } else { 1 };
 
         // We only need to find where the row starts once.
         let out_y = pass_y * YSPC[pass] + YORIG[pass];
-        let row_start_idx = out_y * self.png_info.width * bpp;
+        let row_start_idx = out_y * width * bpp;
 
         // Slicing here restricts the memory window, helping the compiler elide inner bounds checks.
         let out_row_slice = &mut final_image_out[row_start_idx..];
@@ -100,7 +108,10 @@ where
 
         macro_rules! scatter {
             ($b_size:expr) => {
-                if {$b_size} <= x_spc_bytes{
+                // check that x_spc_bytes is more than b_size
+                // this elides 2 bounds check 1. That x_spc_bytes is not zero,
+                // 2. that the copy on out chunk will succeed correctly
+                if { $b_size } <= x_spc_bytes {
                     for (src_pixel, out_chunk) in src_pixels
                         .chunks_exact($b_size)
                         .zip(out_space.chunks_mut(x_spc_bytes))
@@ -124,7 +135,7 @@ where
 
     fn extract_rows_interlaced(
         &mut self, deflate_buf: &[u8], processed_bytes: &mut usize, decode_dest: usize,
-        final_out: &mut [u8], state: &mut InterlaceState,
+        final_out: &mut [u8], width: usize, state: &mut InterlaceState,
     ) -> Result<(), PngDecodeErrors> {
         let num_components = self.colorspace().unwrap().num_components();
         let will_post_process = self.will_post_process();
@@ -169,6 +180,7 @@ where
                     dest_slice,
                     final_out,
                     num_components,
+                    width,
                 );
             } else {
                 // FAST PATH: No post-processing needed.
@@ -182,6 +194,7 @@ where
                     valid_curr_row,
                     final_out,
                     num_components,
+                    width,
                 );
             }
 
@@ -196,7 +209,7 @@ where
                         state.is_complete = true;
                         return Ok(());
                     }
-                    let dims = self.adam7_dimensions(state.current_pass);
+                    let dims = self.adam7_dimensions(state.current_pass)?;
                     state.pass_w = dims.0;
                     state.pass_h = dims.1;
                     if state.pass_w > 0 && state.pass_h > 0 {
@@ -221,16 +234,24 @@ where
             self.decode_headers_inner()?;
         }
 
+        let w = if let Some(e) = self.frame_info().as_ref() {
+            e.width
+        } else {
+            return Err(PngDecodeErrors::Generic(format!(
+                "No frame found for {:?}",
+                self.current_frame
+            )));
+        };
         //  Find the first non-empty pass
         let mut start_pass = 0;
-        let (mut initial_pass_w, mut initial_pass_h) = self.adam7_dimensions(start_pass);
+        let (mut initial_pass_w, mut initial_pass_h) = self.adam7_dimensions(start_pass)?;
         while initial_pass_w == 0 || initial_pass_h == 0 {
             start_pass += 1;
             if start_pass > 6 {
                 return Ok(());
             }
             // Completely empty image
-            let dims = self.adam7_dimensions(start_pass);
+            let dims = self.adam7_dimensions(start_pass)?;
             initial_pass_w = dims.0;
             initial_pass_h = dims.1;
         }
@@ -243,9 +264,8 @@ where
             filter_components = 1;
         }
 
-        let max_row_size = self.calculate_pass_row_size(self.png_info.width);
-        let max_out_chunk =
-            self.png_info.width * self.colorspace().unwrap().num_components() * bytes_per_pixel;
+        let max_row_size = self.calculate_pass_row_size(w);
+        let max_out_chunk = w * self.colorspace().unwrap().num_components() * bytes_per_pixel;
 
         let initial_row_size = self.calculate_pass_row_size(initial_pass_w);
         let initial_out_chunk =
@@ -283,20 +303,39 @@ where
         let mut skipped_zlib_header = false;
         let mut is_final_chunk = false;
 
+        let mut finished = false;
         // --- 4. The Streaming Loop ---
         loop {
+            let mut chunk_pos = 0;
             if self.current_idat_bytes_left == 0 && !is_final_chunk {
                 // Skip the CRC of the previous IDAT chunk
                 self.stream.skip(4)?;
 
                 let header = self.read_chunk_header()?;
 
-                if header.chunk_type != PngChunkType::IDAT {
+
+                if finished {
+                    self.non_parsed_header = Some(header);
+                    return Ok(());
+                }
+                if header.chunk_type != PngChunkType::IDAT
+                    || header.chunk_type != PngChunkType::fdAT
+                {
                     is_final_chunk = true;
                     self.current_idat_bytes_left = 0;
                 } else {
                     self.current_idat_bytes_left = header.length;
+
+                    if header.chunk_type == PngChunkType::fdAT {
+                        // starts with a 4 byte sequence, skip that
+                        chunk_pos += 4;
+                    }
                 }
+            }
+            if finished {
+                // no header, but stream also ended, just return
+                warn!("No header found after stream end, possibly corrupt image");
+                return  Ok(())
             }
 
             let read_len = std::cmp::min(BUF_READ, self.current_idat_bytes_left);
@@ -311,14 +350,14 @@ where
             // we updated the buffer,so reset position to zero
             decoder.reset_position();
 
-            let mut chunk_pos = 0;
             // skip the ZLIB chunk
             if !skipped_zlib_header && chunk_size >= 2 {
                 chunk_pos += 2;
                 skipped_zlib_header = true;
             }
 
-            loop {
+
+            'decoding:loop {
                 let input_slice: &[u8] = if chunk_size == 0 && is_final_chunk {
                     &[]
                 } else {
@@ -336,6 +375,7 @@ where
                             &mut processed_bytes,
                             decoder.current_dest_offset(),
                             final_out,
+                            w,
                             &mut state,
                         )?;
 
@@ -362,9 +402,21 @@ where
                             &mut processed_bytes,
                             decoder.current_dest_offset(),
                             final_out,
+                            w,
                             &mut state,
                         )?;
-                        return Ok(());
+                        if is_final_chunk{
+                            return Ok(());
+                        }
+                        // sometimes we can have a case where the bytes read were
+                        // a perfect to the boundary, there is no idat, but the
+                        // next header has not been read,
+                        // we need to read the next header because the expect
+                        // the next header in the stream, so we mark finished
+                        // and on the header reading loop above, we
+                        // read and return. upholding the contract
+                        finished = true;
+                        break 'decoding;
                     }
 
                     DecodeStatus::Error(e) => return Err(PngDecodeErrors::ZlibDecodeErrors(e)),
@@ -374,13 +426,13 @@ where
         }
     }
 
-    fn calculate_row_size(&self) -> usize {
+    fn calculate_row_size(&self, width: usize) -> usize {
         // 1. Get bits per pixel (components * bit depth)
         let bpp =
             usize::from(self.png_info.color.num_components()) * usize::from(self.png_info.depth);
 
         // 2. Total bits in a row
-        let row_bits = self.png_info.width * bpp;
+        let row_bits = width * bpp;
 
         // 3. Convert to bytes, rounding up (e.g. 5 bits -> 1 byte)
         let row_bytes = row_bits.div_ceil(8);
@@ -388,22 +440,66 @@ where
         // 4. Add the filter byte
         row_bytes + 1
     }
+    fn output_frame_size(&self) -> Result<usize, PngDecodeErrors> {
+        let (width, height) = if let Some(e) = self.frame_info().as_ref() {
+            (e.width, e.height)
+        } else {
+            return Err(PngDecodeErrors::Generic(format!(
+                "No frame found for {:?}",
+                self.current_frame
+            )));
+        };
+        let bytes = if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
+            2
+        } else {
+            1
+        };
+
+        let out_n = self
+            .colorspace()
+            .ok_or(PngDecodeErrors::GenericStatic("IHDR not decoded"))?
+            .num_components();
+
+        let result = width
+            .checked_mul(height)
+            .ok_or(PngDecodeErrors::GenericStatic("Dimensions overflow"))?
+            .checked_mul(out_n)
+            .ok_or(PngDecodeErrors::GenericStatic("Dimensions overflow"))?
+            .checked_mul(bytes)
+            .ok_or(PngDecodeErrors::GenericStatic("Dimensions overflow"))?;
+
+        Ok(result)
+    }
     /// Decode a single stream
     pub(crate) fn decode_stream_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
         // make buffer
-        let mut final_out = vec![0u8; self.output_buffer_size().unwrap()];
+        let mut final_out = vec![0u8; self.output_frame_size()?];
         // decode into buffer
         self.decode_stream_into(&mut final_out)?;
         Ok(final_out)
     }
     pub(crate) fn decode_stream_into(&mut self, out: &mut [u8]) -> Result<(), PngDecodeErrors> {
+        if self.decoding_state == DecodingState::Done {
+            return Err(PngDecodeErrors::GenericStatic("No more frames to produce"));
+        }
         if self.png_info.interlace_method == InterlaceMethod::Standard {
             self.decode_stream(out)?;
         } else {
             self.decode_stream_interlaced(out)?;
+        }
+
+        if let Some(last_read_header) = self.non_parsed_header.as_ref() {
+            if last_read_header.chunk_type == PngChunkType::IEND {
+                trace!("Encountered end of image, so long an thanks for the fish");
+                self.seen_iend = true;
+                self.decoding_state = DecodingState::Done;
+            } else {
+                // may be a fCTL chunk
+                self.decoding_state = DecodingState::DecodingHeaders;
+            }
         }
         Ok(())
     }
@@ -416,12 +512,20 @@ where
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
+        let width = if let Some(e) = self.frame_info().as_ref() {
+            e.width
+        } else {
+            return Err(PngDecodeErrors::Generic(format!(
+                "No frame found for {:?}",
+                self.current_frame
+            )));
+        };
+        let num_components = self.colorspace().unwrap().num_components();
 
-        let row_size = self.calculate_row_size();
+        let row_size = self.calculate_row_size(width);
         let width_stride = row_size - 1;
         let bytes_per_channel = if self.png_info.depth == 16 { 2 } else { 1 };
-        let out_chunk_size =
-            self.png_info.width * self.colorspace().unwrap().num_components() * bytes_per_channel;
+        let out_chunk_size = width * num_components * bytes_per_channel;
 
         let will_post_process = self.will_post_process();
 
@@ -430,7 +534,7 @@ where
         // This ensures the current and previous rows are right next to each other in cache.
         // But we only allocate it if we will need it, and it is only needed on images we will post process
         // e.g by palettes etc
-        let mut raw_buffers = vec![0u8; width_stride * 2*usize::from(will_post_process)];
+        let mut raw_buffers = vec![0u8; width_stride * 2 * usize::from(will_post_process)];
 
         // 3. Setup Deflate Buffers
         let buf_size = std::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
@@ -444,18 +548,40 @@ where
         let mut skipped_zlib_header = false;
         let mut is_final_chunk = false;
 
+        let mut finished = false;
         // 4. The Streaming Loop
         loop {
+            let mut chunk_pos = 0;
+
             if self.current_idat_bytes_left == 0 {
                 self.stream.skip(4)?; // Skip CRC
                 let header = self.read_chunk_header()?;
 
-                if header.chunk_type != PngChunkType::IDAT {
+                if finished {
+                    self.non_parsed_header = Some(header);
+                    return Ok(());
+                }
+
+                if header.chunk_type != PngChunkType::IDAT
+                    || header.chunk_type != PngChunkType::fdAT
+                {
+                    // if not idat, we save it in the global context so that `decode_headers` can pick it
+                    self.non_parsed_header = Some(header);
                     is_final_chunk = true;
                     self.current_idat_bytes_left = 0;
                 } else {
                     self.current_idat_bytes_left = header.length;
+
+                    if header.chunk_type == PngChunkType::fdAT {
+                        // starts with a 4 byte sequence, skip that
+                        chunk_pos += 4;
+                    }
                 }
+            }
+            if finished {
+                // no header, but stream also ended, just return
+                warn!("No header found after stream end, possibly corrupt image");
+                return  Ok(())
             }
 
             // Read bytes from the IDAT stream
@@ -464,14 +590,13 @@ where
             self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(chunk_size);
             decoder.reset_position();
 
-            let mut chunk_pos = 0;
             // If first chunk, we skip the ZLIB bytes
             if !skipped_zlib_header {
                 chunk_pos += 2;
                 skipped_zlib_header = true;
             }
 
-            loop {
+            'decoding:loop {
                 let input_slice: &[u8] = if self.current_idat_bytes_left == 0 && is_final_chunk {
                     &[]
                 } else {
@@ -483,6 +608,7 @@ where
 
                     DecodeStatus::NeedsMoreOutput { .. } => {
                         self.extract_rows(
+                            width,
                             deflate_buf,
                             &mut processed_bytes,
                             decoder.current_dest_offset(),
@@ -508,6 +634,7 @@ where
 
                     DecodeStatus::Finished => {
                         self.extract_rows(
+                            width,
                             deflate_buf,
                             &mut processed_bytes,
                             decoder.current_dest_offset(),
@@ -518,7 +645,18 @@ where
                             out_chunk_size,
                             &mut raw_buffers,
                         )?;
-                        return Ok(());
+                        if is_final_chunk {
+                            return Ok(());
+                        }
+                        // sometimes we can have a case where the bytes read were
+                        // a perfect to the boundary, there is no idat, but the
+                        // next header has not been read,
+                        // we need to read the next header because the expect
+                        // the next header in the stream, so we mark finished
+                        // and on the header reading loop above, we
+                        // read and return. upholding the contract
+                        finished = true;
+                        break 'decoding;
                     }
 
                     DecodeStatus::Error(e) => return Err(PngDecodeErrors::ZlibDecodeErrors(e)),
@@ -534,16 +672,9 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     fn extract_rows(
-        &mut self,
-        deflate_buf: &[u8],
-        processed_bytes: &mut usize,
-        decode_dest: usize,
-        row_size: usize,
-        current_row_idx: &mut usize,
-        final_out: &mut [u8],
-        final_out_pos: &mut usize,
-        out_chunk_size: usize,
-        raw_buffers: &mut [u8],
+        &mut self, width: usize, deflate_buf: &[u8], processed_bytes: &mut usize,
+        decode_dest: usize, row_size: usize, current_row_idx: &mut usize, final_out: &mut [u8],
+        final_out_pos: &mut usize, out_chunk_size: usize, raw_buffers: &mut [u8],
     ) -> Result<(), PngDecodeErrors> {
         let width_stride = row_size - 1;
         let filter_bpp = usize::from(self.png_info.color.num_components())
@@ -564,11 +695,8 @@ where
                 // requires raw, unmodified previous row bytes.
                 let (half_a, half_b) = raw_buffers.split_at_mut(width_stride);
                 let curr_idx = *current_row_idx % 2;
-                let (prev_row, curr_row) = if curr_idx == 0 {
-                    (&*half_b, half_a)
-                } else {
-                    (&*half_a, half_b)
-                };
+                let (prev_row, curr_row) =
+                    if curr_idx == 0 { (&*half_b, half_a) } else { (&*half_a, half_b) };
 
                 self.apply_filter(
                     filter_byte,
@@ -580,8 +708,7 @@ where
                 )?;
 
                 let dest_slice = &mut final_out[*final_out_pos..*final_out_pos + out_chunk_size];
-                self.post_process_row_direct(curr_row, dest_slice, self.png_info.width)?;
-
+                self.post_process_row_direct(curr_row, dest_slice, width)?;
             } else {
                 // FAST PATH (Zero-Copy): No post-processing needed.
                 // We write directly into `final_out`.
@@ -834,13 +961,17 @@ where
 mod tests {
     use zune_core::bytestream::ZCursor;
 
-
     #[test]
     fn decode_normal() {
-        let path =
-            "/Users/etemesi/rust/zune-image/test-images/png/benchmarks/speed_bench.png";
+        let path = "/Users/etemesi/rust/zune-image/crates/zune-png/tests/random/animated_ball.png";
         let data = std::fs::read(path).unwrap();
         let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode().unwrap();
+        decoder.decode_headers().unwrap();
+
+        while decoder.more_frames() {
+            decoder.decode_headers().unwrap();
+            let frameN = decoder.decode().unwrap();
+            println!("Done Decoding\n");
+        }
     }
 }

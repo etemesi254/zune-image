@@ -166,8 +166,10 @@ extern crate alloc;
 extern crate core;
 
 #[cfg(feature = "std")]
-pub use apng::post_process_image;
-pub use apng::{BlendOp, DisposeOp};
+#[allow(deprecated)]
+pub use {apng::post_process_image_apng,apng::post_process_image};
+
+pub use apng::{BlendOp, DisposeOp,FrameInfo};
 pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
 pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;

@@ -104,282 +104,324 @@ pub struct FrameInfo {
 
 /// Represents a single frame
 pub struct SingleFrame {
-    // can either be idat or fdat, depending
-    // on frame number
-    pub fdat: Vec<u8>,
     /// If none, indicates data is IDAT, hence
     /// should be decoded as such
-    pub fctl_info: Option<FrameInfo>,
+    pub fctl_info: FrameInfo,
 }
 
 impl SingleFrame {
     /// Create a new frame
-    pub fn new(chunks: Vec<u8>, fctl_info: Option<FrameInfo>) -> SingleFrame {
-        SingleFrame {
-            fdat: chunks,
-            fctl_info,
-        }
-    }
-
-    pub fn chunk_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.fdat
-    }
-    /// Set Frame control details for this frame
-    pub fn set_fctl(&mut self, fctl: FrameInfo) {
-        self.fctl_info = Some(fctl);
+    pub fn new(fctl_info: FrameInfo) -> SingleFrame {
+        SingleFrame { fctl_info }
     }
 }
 
+/// ERROR:
 ///
-/// Convert a single png frame into a full separate image.
+/// #use  [post_process_image_apng]
 ///
-/// The APNG spec requires post processing of individual frames which can include:
-/// - Setting the background to be color,black or the previous frame.
-/// - Compositing the current frame with the previous frame.
+/// This function had the wrong signature for post processing an APNG image, but due
+/// to backward compatibility could not be entirely removed
+#[deprecated(
+    note = "This function signature was wrong, but maintained for backwards compatibility, use post_process_image_apng instead"
+)]
+#[allow(unused_variables, unused_mut)]
+pub fn post_process_image(
+    info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo, current_frame: &[u8],
+    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>,
+) -> Result<(), PngDecodeErrors> {
+    Err(PngDecodeErrors::GenericStatic(
+        "Wrong function signature, use post_process_image_apng",
+    ))
+}
+
+pub trait PixelDepth: Copy + PartialEq {
+    const MAX_FLOAT: f32;
+
+    fn zero() -> Self;
+    fn is_transparent(self) -> bool;
+    fn is_opaque(self) -> bool;
+    fn to_f32(self) -> f32;
+    fn from_linear(val: f32) -> Self;
+}
+impl PixelDepth for u8 {
+    const MAX_FLOAT: f32 = 255.0;
+
+    fn zero() -> Self {
+        0
+    }
+    fn is_transparent(self) -> bool {
+        self == 0
+    }
+    fn is_opaque(self) -> bool {
+        self == 255
+    }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+
+    fn from_linear(val: f32) -> Self {
+        (val * Self::MAX_FLOAT + 0.5).clamp(0.0, Self::MAX_FLOAT) as u8
+    }
+}
+
+impl PixelDepth for u16 {
+    const MAX_FLOAT: f32 = 65535.0;
+
+    fn zero() -> Self {
+        0
+    }
+    fn is_transparent(self) -> bool {
+        self == 0
+    }
+    fn is_opaque(self) -> bool {
+        self == 65535
+    }
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+
+    fn from_linear(val: f32) -> Self {
+        (val * Self::MAX_FLOAT + 0.5).clamp(0.0, Self::MAX_FLOAT) as u16
+    }
+}
+/// Convert a single APNG frame into a fully composited image on the canvas.
 ///
-/// This function performs the two operations above given a frame, its details and an optional previous frame
+/// The APNG specification requires a strict lifecycle for post-processing individual frames:
+/// 1. **Disposal**: Modifying the canvas based on the *previous* frame's disposal operation
+///    (e.g., clearing it to background or reverting it to a previous state).
+/// 2. **Blending**: Compositing the *current* frame's raw pixels onto the canvas using its blend operation.
 ///
+/// This function performs both operations in the correct order. It also automatically saves a snapshot
+/// of the canvas into the `canvas_backup` buffer if the current frame requests `DisposeOp::Previous`
+/// for the next iteration.
 ///
-/// In case of alpha compositing, we do the blending in linear space. The code we use matches what is
-/// specified by the spec at [Alpha Channel Processing](https://www.w3.org/TR/2003/REC-PNG-20031110/#13Alpha-channel-processing)
+/// In the case of alpha compositing (`BlendOp::Over`), blending is performed in linear space.
+/// The code matches the specification at [Alpha Channel Processing](https://www.w3.org/TR/2003/REC-PNG-20031110/#13Alpha-channel-processing).
 ///
+/// # Requires
+/// Requires the `#[std]` feature as we need the `powf` function from the standard library.
 ///
-///  # Requires
-/// Requires the `#[std]` feature as we need `powf` function from the standard library
 /// # Arguments
 ///
-/// * `info`: Png information, this should contain width and height of the main image
-/// * `colorspace`: The image colorspace, this can be obtained from a decoder `get_colorspace()`
-/// * `frame_info`: The current frame information , for the current frame, it is obtained by [.frame_info()](crate::PngDecoder::frame_info)
-/// * `current_frame`: This is the current frame which we are processing
-/// * `prev_frame`: An optional previous frame. In case the frame information says we use
-///   the previous frame as background this frame will be copied to the output before blending the image
-///   This is the fully processed previous frame, hence the width and height should match that of the image (indicated by `info.width`,`info.height`)
-/// * `output`: The output of the processed frame. The dimensions of this should be (`info.width * info.height*decoder.colorspace().num_components()`)
-/// * `gamma`: An optional gamma value. It is best this is retrieved from [the image's gamma](crate::PngInfo.gamma),
-///   if `None`, we will default to use 2.2 (default gamma value)
+/// * `info`: PNG information containing the width and height of the main canvas.
+/// * `colorspace`: The image colorspace, obtained from the decoder via `get_colorspace()`.
+/// * `frame_info`: The `FrameInfo` for the *current* frame being processed.
+/// * `prev_frame_info`: The `FrameInfo` for the *previous* frame. This is required to determine the correct disposal area and method. Pass `None` for the very first frame.
+/// * `current_frame`: The raw decoded pixels of the current frame.
+/// * `canvas_backup`: A mutable reference to a backup buffer. This must be the same size as `output`. It is used to restore the canvas if the previous frame requested `DisposeOp::Previous`, and is automatically updated internally if the current frame requests it for the next round.
+/// * `output`: The main output canvas buffer. The dimensions should be `(info.width * info.height * colorspace.num_components())`.
+/// * `gamma`: An optional gamma value. Best retrieved from [the image's gamma](crate::PngInfo.gamma). If `None`, it defaults to 2.2.
 ///
-/// returns: Ok(()) Output is written to `output` variable
+/// # Returns
+/// * `Ok(())` on success. The composited image is written directly to the `output` variable.
 ///
 /// # Examples
 ///
 /// ```no_run
 /// use zune_core::bytestream::ZCursor;
 /// use zune_core::options::EncoderOptions;
-/// use zune_png::{PngDecoder, post_process_image};
-/// // read the file
-/// // set up decoder
+/// use zune_png::{PngDecoder, post_process_image_apng, FrameInfo};
+///
+/// // Set up the decoder
 /// let mut decoder = PngDecoder::new(ZCursor::new(&[]));
-/// // decode headers
 /// decoder.decode_headers().unwrap();
-/// // get useful information about the image
+///
+/// // Get useful information about the image
 /// let colorspace = decoder.colorspace().unwrap();
 /// let depth = decoder.depth().unwrap();
-/// //  get decoder information,we clone this because we need a standalone
-/// // info since we mutably modify decoder struct below
 /// let info = decoder.info().unwrap().clone();
-/// // set up our background variable. Soon it will contain the data for the previous
-/// // frame, the first frame has no background hence why this is None
-/// let mut background: Option<Vec<u8>> = None;
-/// // the output, since we know that no frame will be bigger than the width and height, we can
-/// // set this up outside of the loop.
-/// let mut output =
-///  vec![0; info.width * info.height * decoder.colorspace().unwrap().num_components()];
+///
+/// // Allocate the main canvas and a backup canvas for DisposeOp::Previous
+/// let buffer_size = info.width * info.height * colorspace.num_components();
+/// let mut output = vec![0; buffer_size];
+/// let mut canvas_backup = vec![0; buffer_size];
+///
+/// // Keep track of the previous frame's info for disposal
+/// let mut prev_frame_info: Option<FrameInfo> = None;
 /// let mut i = 0;
 ///
 /// while decoder.more_frames() {
-///     // decode the header, in case we haven't processed a frame header
-///    decoder.decode_headers().unwrap();
-///     // then decode the current frame information,
-///     // NB: Frame information is for current frame hence should be accessed before decoding the frame
-///     // as it will change on subsequent frames
-///    let frame = decoder.frame_info().unwrap();
-///    // decode the raw pixels, even on smaller frames, we only allocate frame_info.width*frame_info.height
-///    let pix = decoder.decode_raw().unwrap();
-///     // call post process
-///    post_process_image(
-///             &info,
-///             colorspace,
-///             &frame,
-///             &pix,
-///             background.as_ref().map(|x| x.as_slice()),
-///             &mut output,
-///             None
-///    ).unwrap();
-///     // create encoder parameters
-///    let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+///     decoder.decode_headers().unwrap();
 ///
-///     let mut out = vec![];
-///    let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(&mut out);
+///     // Get the current frame info. We clone it so we can save it at the end of the loop.
+///     let frame = decoder.frame_info().unwrap().clone();
 ///
-///     //std::fs::write(format!("./{i}.png"), bytes).unwrap();
-///     // this is expensive, but we need a copy of the previous fully rendered frame
-///     // we can alleviate this since we are using the same output, so DisposeOP::None will always be the
-///     // same as DisposeOp::Previous, but only works for this example.
-///     // in case you reuse the same buffer per invocation,
-///     // always have your background as None
-///     background = Some(output.clone());
-///    i += 1;
+///     // Decode the raw pixels for this specific frame bounding box
+///     let pix = decoder.decode_raw().unwrap();
+///
+///     // Process the frame (handles disposal of the old frame, and blending of the new one)
+///     post_process_image_apng(
+///         &info,
+///         colorspace,
+///         &frame,
+///         prev_frame_info.as_ref(), // Use previous frame's rules for disposal
+///         &pix,
+///         &mut canvas_backup,       // Pass mutable backup buffer
+///         &mut output,              // The main canvas
+///         None
+///     ).unwrap();
+///
+///     // The `output` buffer now contains the fully composited frame.
+///     // (Encoding step omitted for brevity)
+///     // let encoder_opts = EncoderOptions::new(info.width, info.height, colorspace, depth);
+///     // let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(&mut vec![]);
+///
+///     // Store the current frame info so it becomes the previous frame on the next iteration
+///     prev_frame_info = Some(frame);
+///     i += 1;
 /// }
 /// ```
+
 #[cfg(feature = "std")]
-pub fn post_process_image(
-    info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo, current_frame: &[u8],
-    prev_frame: Option<&[u8]>, output: &mut [u8], gamma: Option<f32>,
-) -> Result<(), PngDecodeErrors> {
+#[allow(clippy::too_many_arguments)]
+pub fn post_process_image_apng<T: PixelDepth>(
+    info: &PngInfo, colorspace: ColorSpace, frame_info: &FrameInfo,
+    prev_frame_info: Option<&FrameInfo>, current_frame: &[T], canvas_backup: &mut [T],
+    output: &mut [T], gamma: Option<f32>,
+) -> Result<(), PngDecodeErrors> where usize:From<T> {
     let nc = colorspace.num_components();
-    //
-    // check invariants
+
+    // DISPOSAL (Applies to the PREVIOUS frame's state)
+    if let Some(prev_info) = prev_frame_info {
+        match prev_info.dispose_op {
+            DisposeOp::None => {} // Do nothing
+            DisposeOp::Background => {
+                // Clear ONLY the exact bounding box of the previous frame
+                for line_stride in output
+                    .chunks_exact_mut(info.width * nc)
+                    .skip(prev_info.y_offset)
+                    .take(prev_info.height)
+                {
+                    let start = prev_info.x_offset * nc;
+                    let end = (prev_info.x_offset + prev_info.width) * nc;
+                    line_stride[start..end].fill(T::zero());
+                }
+            }
+            DisposeOp::Previous => {
+                // Restore the canvas state from the backup buffer
+                if output.len() != canvas_backup.len() {
+                    return Err(PngDecodeErrors::GenericStatic(
+                        "Backup canvas size does not match output length",
+                    ));
+                }
+
+                for (out_line, backup_line) in output
+                    .chunks_exact_mut(info.width * nc)
+                    .skip(prev_info.y_offset)
+                    .take(prev_info.height)
+                    .zip(
+                        canvas_backup
+                            .chunks_exact(info.width * nc)
+                            .skip(prev_info.y_offset)
+                            .take(prev_info.height),
+                    )
+                {
+                    let start = prev_info.x_offset * nc;
+                    let end = (prev_info.x_offset + prev_info.width) * nc;
+                    out_line[start..end].copy_from_slice(&backup_line[start..end]);
+                }
+            }
+        }
+    }
+    // If the current frame requires DisposeOp::Previous on the next loop,
+    // we must save the canvas state now, after previous disposal, but before blending!
+    if frame_info.dispose_op == DisposeOp::Previous {
+        canvas_backup.copy_from_slice(output);
+    }
+
     if frame_info.x_offset + frame_info.width > info.width {
         return Err(PngDecodeErrors::GenericStatic(
-            "Frame X offset + frame width larger than image width",
+            "Frame X offset + width larger than image width",
         ));
     }
     if frame_info.y_offset + frame_info.height > info.height {
         return Err(PngDecodeErrors::GenericStatic(
-            "Frame y offset + frame height larger than image height",
+            "Frame y offset + height larger than image height",
         ));
     }
-    // current frame matches the image frame
-    let frame_dims = frame_info.height * frame_info.width * nc;
 
-    // ensure we can have at least enough space to write output
+    let frame_dims = frame_info.height * frame_info.width * nc;
     if current_frame.len() < frame_dims {
-        let msg = alloc::format!(
-            "Current frame dimensions ({}) less than  expected dimensions ({})",
+        return Err(PngDecodeErrors::Generic(alloc::format!(
+            "Current frame dimensions ({}) less than expected ({})",
             current_frame.len(),
             frame_dims
-        );
-        return Err(PngDecodeErrors::Generic(msg));
+        )));
     }
 
-    match frame_info.dispose_op {
-        DisposeOp::None => {
-         
-        } // do nothing
-        DisposeOp::Background => {
-            // APNG_DISPOSE_OP_BACKGROUND: the frame's region of the output buffer
-            // is to be cleared to fully transparent black before rendering the next frame.
-            for line_stride in output
-                .chunks_exact_mut(info.width * nc)
-                .skip(frame_info.y_offset)
-                .take(frame_info.height)
-            {
-                let start_frame = frame_info.x_offset * nc;
-                let end_frame = (frame_info.x_offset + frame_info.width) * nc;
-
-                line_stride[start_frame..end_frame].fill(0);
-            }
-
-            // zero out top area
-            for line_stride in output
-                .chunks_exact_mut(info.width * nc)
-                .take(frame_info.y_offset)
-            {
-                line_stride.fill(0);
-            }
-            //output.fill(0);
-            //
-            // zero out area around frame
-            for line_stride in output
-                .chunks_exact_mut(info.width * nc)
-                .skip(frame_info.y_offset)
-                .take(frame_info.width)
-            {
-                line_stride[..].fill(0);
-            }
-        }
-        DisposeOp::Previous => {
-            // copy background if possible
-            if let Some(data) = prev_frame {
-                if output.len() != data.len() {
-                    return Err(PngDecodeErrors::GenericStatic(
-                        "Previous frame does not match output length",
-                    ));
-                }
-                output.copy_from_slice(data);
-            } else if frame_info.seq_number > 1 {
-                return Err(PngDecodeErrors::GenericStatic(
-                    "A frame whose DisposeOp is Previous did not get a previous frame",
-                ));
-            }
-        } // blend
-    }
-    // deal with gamma
     let gamma_value = gamma.unwrap_or(2.2);
     let gamma_inv = 1.0 / gamma_value;
 
-    // iterate by a width stride
+    let mut gamma_values = vec![0.0; (T::MAX_FLOAT+1.0) as usize];
+    let mut inv_gamma_values = vec![0.0; (T::MAX_FLOAT+1.0) as usize];
+    let max_sample = T::MAX_FLOAT;
+
+    for (i, (item, c)) in gamma_values
+        .iter_mut()
+        .zip(inv_gamma_values.iter_mut())
+        .enumerate()
+    {
+        let gam = (i as f32) / max_sample;
+        *item = f32::powf(gam, gamma_inv);
+        *c = f32::powf(gam, gamma_value);
+    }
+
     for (src_width, h) in current_frame.chunks_exact(frame_info.width * nc).zip(
         output
             .chunks_exact_mut(info.width * nc)
             .skip(frame_info.y_offset)
             .take(frame_info.height),
     ) {
-        // move to the x offset
         let h_x = &mut h[frame_info.x_offset * nc..(frame_info.x_offset + frame_info.width) * nc];
 
-        // now blend
         match frame_info.blend_op {
             BlendOp::Source => {
-                // overwrite
                 h_x.copy_from_slice(src_width);
             }
             BlendOp::Over => {
-                // carry out alpha blending, we do the alpha bending in linear colorspace
-                //
-                assert!(colorspace.has_alpha());
                 if !colorspace.has_alpha() {
-                    return Err(PngDecodeErrors::GenericStatic("Image doesn't have alpha but requests blending using over which requires alpha"));
-                }
-                // pre-calculate the gamma samples
-                let mut gamma_values = [0.0; 256];
-                let mut inv_gamma_values = [0.0; 256];
-                let max_sample = 255.0;
-
-                for (i, (item, c)) in gamma_values
-                    .iter_mut()
-                    .zip(inv_gamma_values.iter_mut())
-                    .enumerate()
-                {
-                    let gam = (i as f32) / max_sample;
-                    let linfg = f32::powf(gam, gamma_inv);
-                    let inv_fg = f32::powf(gam, gamma_value);
-                    *c = inv_fg;
-                    *item = linfg;
+                    return Err(PngDecodeErrors::GenericStatic(
+                        "Image needs alpha for BlendOp::Over",
+                    ));
                 }
 
                 for (src_comp, dst_comp) in src_width.chunks_exact(nc).zip(h_x.chunks_exact_mut(nc))
                 {
-                    let alpha = *src_comp.last().unwrap();
-                    let foreground_alpha = f32::from(alpha) / 255.0;
-                    let dst_alpha = 1.0 - foreground_alpha;
+                    let src_a_u8 = src_comp[nc - 1];
 
-                    let max_sample = 255.0;
-
-                    if alpha == 0 {
-                        /*
-                         * Foreground image is transparent here.
-                         * If the background image is already in the frame
-                         * buffer, there is nothing to do.
-                         */
+                    if src_a_u8.is_transparent() {
                         continue;
                     }
 
-                    for (a, b) in src_comp.iter().zip(dst_comp).take(nc - 1) {
-                        // convert to floating point, undo gamma encoding
-                        let linfg = gamma_values[usize::from(*a)];
-                        let linbg = gamma_values[usize::from(*b)];
-                        // composite
-                        let commpix = linfg * foreground_alpha + linbg * dst_alpha;
-                        // gamma encode for storage
-                        // NB: (cae): This function becomes quite expensive.
-                        // I'm not sure if memoization may help us here.
-                        //  Anyone with tricks??
-                        let gamout = f32::powf(commpix, gamma_value);
-                        // scale up and output to b
-                        let pix = (gamout * max_sample + 0.5) as u8;
-                        *b = pix;
+                    if src_a_u8.is_opaque() {
+                        dst_comp.copy_from_slice(src_comp);
+                        continue;
+                    }
+
+                    let foreground_alpha = src_a_u8.to_f32() / T::MAX_FLOAT;
+                    let dst_alpha_u8 = dst_comp[nc - 1];
+                    let background_alpha = dst_alpha_u8.to_f32() / T::MAX_FLOAT;
+
+                    let out_alpha = foreground_alpha + background_alpha * (1.0 - foreground_alpha);
+
+                    if out_alpha > 0.0 {
+                        for (a, b) in src_comp.iter().zip(dst_comp.iter_mut()).take(nc - 1) {
+                            let linfg = gamma_values[usize::from(*a)];
+                            let linbg = gamma_values[usize::from(*b)];
+
+                            let commpix = (linfg * foreground_alpha
+                                + linbg * background_alpha * (1.0 - foreground_alpha))
+                                / out_alpha;
+
+                            let gamout = f32::powf(commpix, gamma_value);
+
+                            *b = T::from_linear(gamout)
+                        }
+                        // Write the final calculated alpha back to destination
+                        dst_comp[nc - 1] = T::from_linear(out_alpha);
+                    } else {
+                        dst_comp.fill(T::zero());
                     }
                 }
             }

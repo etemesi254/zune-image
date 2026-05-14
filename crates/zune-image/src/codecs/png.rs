@@ -12,7 +12,7 @@
 //! Represents an png image decoder and encoder
 use std::io::Cursor;
 
-use zune_core::bit_depth::BitDepth;
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::warn;
@@ -21,7 +21,6 @@ use zune_core::result::DecodingResult;
 use zune_png::error::PngDecodeErrors;
 use zune_png::*;
 
-pub use zune_png::PngDecoder;
 use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
 use crate::errors::ImageErrors::ImageDecodeErrors;
@@ -30,10 +29,11 @@ use crate::frame::Frame;
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
+pub use zune_png::PngDecoder;
 
 impl<T> DecoderTrait for PngDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     fn decode(&mut self) -> Result<Image, ImageErrors> {
         let metadata = self.read_headers()?.unwrap();
@@ -46,40 +46,92 @@ where
             // decode apng frames
             //let mut previous_frame
             let info = self.info().unwrap().clone();
-            // the output, since we know that no frame will be bigger than the width and height, we can
-            // set this up outside of the loop.
-            let mut output = vec![0; info.width * info.height * colorspace.num_components()];
-            let mut output_frames = Vec::new();
-            while self.more_frames() {
-                self.decode_headers()?;
 
-                let mut frame = self.frame_info().unwrap();
-                if frame.dispose_op == DisposeOp::Previous {
-                    // we don't clear our buffer, so output always contains the previous frame
-                    //
-                    // this means that there is no need to store the previous frame and copy it
-                    frame.dispose_op = DisposeOp::None;
-                }
-                let pix = self.decode()?;
-                match pix {
-                    DecodingResult::U8(pix) => {
-                        post_process_image(
+            // Allocate both the main canvas and the backup canvas
+            let buffer_size = info.width * info.height * colorspace.num_components();
+            let mut output_frames = Vec::new();
+
+            match self.depth().unwrap().bit_type() {
+                BitType::U8 => {
+                    let mut output = vec![0; buffer_size];
+                    let mut canvas_backup = vec![0; buffer_size];
+
+                    // Track the previous frame's information for the disposal phase
+                    let mut prev_frame_info: Option<FrameInfo> = None;
+
+                    while self.more_frames() {
+                        self.decode_headers()?;
+
+                        // We clone the frame info because we need to store it as `prev_frame_info` at the end of the loop
+                        let frame = self.frame_info().unwrap();
+
+                        let pix = self.decode_raw()?;
+
+                        // Use the new APNG post-processing function
+                        post_process_image_apng(
                             &info,
                             colorspace,
                             &frame,
+                            prev_frame_info.as_ref(),
                             &pix,
-                            None,
+                            &mut canvas_backup,
                             &mut output,
                             None,
                         )?;
-                        let duration = f64::from(frame.delay_num) / f64::from(frame.delay_denom);
-                        // then build a frame from that
-                        let im_frame = Frame::from_u8(&output, colorspace, usize::from(frame.delay_num),usize::from(frame.delay_denom));
+
+                        // Create the frame from the fully composited output
+                        let im_frame = Frame::from_u8(
+                            &output,
+                            colorspace,
+                            usize::from(frame.delay_num),
+                            usize::from(frame.delay_denom),
+                        );
                         output_frames.push(im_frame);
+
+                        // At the end of the loop, the current frame becomes the previous frame
+                        prev_frame_info = Some(frame);
                     }
-                    _ => return Err(ImageDecodeErrors("The current image is an  Animated PNG but has a depth of 16, such an image isn't supported".to_string()))
                 }
+                BitType::U16 => {
+                    let mut output = vec![0; buffer_size];
+                    let mut canvas_backup = vec![0; buffer_size];
+                    let mut prev_frame_info: Option<FrameInfo> = None;
+
+                    while self.more_frames() {
+                        self.decode_headers()?;
+
+                        let frame = self.frame_info().unwrap();
+
+                        if let DecodingResult::U16(pix) = self.decode()? {
+                            post_process_image_apng(
+                                &info,
+                                colorspace,
+                                &frame,
+                                prev_frame_info.as_ref(),
+                                &pix,
+                                &mut canvas_backup,
+                                &mut output,
+                                None,
+                            )?;
+
+                            // Create the frame from the fully composited output
+                            let im_frame = Frame::from_u16(
+                                &output,
+                                colorspace,
+                                usize::from(frame.delay_num),
+                                usize::from(frame.delay_denom),
+                            );
+                            output_frames.push(im_frame);
+
+                            prev_frame_info = Some(frame);
+                        } else {
+                            unreachable!("Invalid image state, please report");
+                        }
+                    }
+                }
+                _ => unreachable!(),
             }
+
             let mut image = Image::new_frames(output_frames, depth, width, height, colorspace);
             image.metadata = metadata;
 
@@ -92,7 +144,7 @@ where
             let mut image = match pixels {
                 DecodingResult::U8(data) => Image::from_u8(&data, width, height, colorspace),
                 DecodingResult::U16(data) => Image::from_u16(&data, width, height, colorspace),
-                _ => unreachable!()
+                _ => unreachable!(),
             };
             // metadata
             image.metadata = metadata;
@@ -155,7 +207,7 @@ impl From<zune_png::error::PngDecodeErrors> for ImageErrors {
 
 #[derive(Default)]
 pub struct PngEncoder {
-    options: Option<EncoderOptions>
+    options: Option<EncoderOptions>,
 }
 
 impl PngEncoder {
@@ -164,7 +216,7 @@ impl PngEncoder {
     }
     pub fn new_with_options(options: EncoderOptions) -> PngEncoder {
         PngEncoder {
-            options: Some(options)
+            options: Some(options),
         }
     }
 }
@@ -175,7 +227,7 @@ impl EncoderTrait for PngEncoder {
     }
 
     fn encode_inner<T: ZByteWriterTrait>(
-        &mut self, image: &Image, sink: T
+        &mut self, image: &Image, sink: T,
     ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
@@ -216,7 +268,7 @@ impl EncoderTrait for PngEncoder {
             ColorSpace::Luma,
             ColorSpace::LumaA,
             ColorSpace::RGB,
-            ColorSpace::RGBA
+            ColorSpace::RGBA,
         ]
     }
 
@@ -231,7 +283,7 @@ impl EncoderTrait for PngEncoder {
     fn default_depth(&self, depth: BitDepth) -> BitDepth {
         match depth {
             BitDepth::Sixteen | BitDepth::Float32 => BitDepth::Sixteen,
-            _ => BitDepth::Eight
+            _ => BitDepth::Eight,
         }
     }
     fn set_options(&mut self, opts: EncoderOptions) {
@@ -241,7 +293,7 @@ impl EncoderTrait for PngEncoder {
 
 impl<T> DecodeInto for PngDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     type BufferType = u8;
 
