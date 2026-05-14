@@ -333,7 +333,7 @@ where
                     return Ok(());
                 }
                 if header.chunk_type != PngChunkType::IDAT
-                    || header.chunk_type != PngChunkType::fdAT
+                    && header.chunk_type != PngChunkType::fdAT
                 {
                     is_final_chunk = true;
                     self.current_idat_bytes_left = 0;
@@ -581,7 +581,7 @@ where
                 }
 
                 if header.chunk_type != PngChunkType::IDAT
-                    || header.chunk_type != PngChunkType::fdAT
+                    && header.chunk_type != PngChunkType::fdAT
                 {
                     // if not idat, we save it in the global context so that `decode_headers` can pick it
                     self.non_parsed_header = Some(header);
