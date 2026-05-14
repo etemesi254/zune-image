@@ -408,7 +408,7 @@ where
                         // that all headers are decoded after calling decode_header()
 
                         let icc_bytes = self.bytes.peek_at(
-                            (true_position.saturating_sub(current_pos)) as usize,
+                            true_position.saturating_sub(current_pos) as usize,
                             profile_size as usize
                         );
                         match icc_bytes {

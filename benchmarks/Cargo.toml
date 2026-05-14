@@ -23,7 +23,6 @@ zune-png = { path = "../crates/zune-png" }
 
 # JPEG benchmarks
 mozjpeg = "0.10.5"
-jpeg-decoder = "0.3.0"
 zune-jpeg = { path = "../crates/zune-jpeg", features = [] }
 
 #other format
@@ -33,7 +32,7 @@ image = { version = "0.25.10", default-features = false, features = ["bmp", "hdr
 zune-imageprocs = { path = "../crates/zune-imageprocs" }
 
 # VIPS
-libvips = "1.7.0"
+libvips = "2.0.0"
 
 # Resizing
 fast_image_resize = { version = "6.0.0", features = ["rayon"] }

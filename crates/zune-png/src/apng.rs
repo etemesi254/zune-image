@@ -272,7 +272,6 @@ impl PixelDepth for u16 {
 ///     i += 1;
 /// }
 /// ```
-
 #[cfg(feature = "std")]
 #[allow(clippy::too_many_arguments)]
 pub fn post_process_image_apng<T: PixelDepth>(
@@ -343,7 +342,7 @@ pub fn post_process_image_apng<T: PixelDepth>(
 
     let frame_dims = frame_info.height * frame_info.width * nc;
     if current_frame.len() < frame_dims {
-        return Err(PngDecodeErrors::Generic(alloc::format!(
+        return Err(PngDecodeErrors::Generic(format!(
             "Current frame dimensions ({}) less than expected ({})",
             current_frame.len(),
             frame_dims

@@ -33,11 +33,6 @@ use crate::utils::{
     copy_rep_matches, copy_rep_matches_slow, fixed_copy_within, make_decode_table_entry,
 };
 
-
-
-
-
-
 pub(crate) struct DeflateHeaderTables {
     pub(crate) litlen_decode_table: [u32; LITLEN_ENOUGH],
     pub(crate) offset_decode_table: [u32; OFFSET_ENOUGH],
@@ -126,7 +121,7 @@ impl DeflateOptions {
     ///
     /// # Arguments
     /// - yes: When true, the decoder will confirm checksum
-    /// when false, the decoder will skip checksum verification
+    ///   when false, the decoder will skip checksum verification
     /// # Notes
     /// This does not have an influence for deflate decoding as
     /// it does not have a checksum
@@ -181,7 +176,7 @@ impl<'a> DeflateDecoder<'a> {
     ///
     /// # Arguments
     /// - `data`: The compressed data. Data can be of any type
-    /// gzip,zlib or raw deflate.
+    ///   gzip,zlib or raw deflate.
     ///
     /// # Returns
     /// A decoder instance which will pull compressed data from `data` to inflate the output output
@@ -209,7 +204,7 @@ impl<'a> DeflateDecoder<'a> {
     ///
     /// # Arguments
     /// - `data`: The compressed data. Data can be of any format i.e
-    /// gzip, zlib or raw deflate.
+    ///   gzip, zlib or raw deflate.
     /// - `options` : A set of user defined options which tune how the decompressor
     ///
     ///  # Returns
@@ -261,7 +256,7 @@ impl<'a> DeflateDecoder<'a> {
     /// This needs the `zlib` feature enabled to be available otherwise it's a
     /// compile time error
     ///
-    /// [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
+    /// [InflateDecodeErrors]:InflateDecodeErrors
     ///
     #[cfg(feature = "zlib")]
     pub fn decode_zlib(&mut self) -> Result<Vec<u8>, InflateDecodeErrors> {
@@ -370,7 +365,7 @@ impl<'a> DeflateDecoder<'a> {
     /// This needs the `gzip` feature enabled to be available, otherwise it's a
     /// compile time error
     ///
-    /// [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
+    /// [InflateDecodeErrors]:InflateDecodeErrors
     ///
     #[cfg(feature = "gzip")]
     pub fn decode_gzip(&mut self) -> Result<Vec<u8>, InflateDecodeErrors> {
@@ -544,7 +539,7 @@ impl<'a> DeflateDecoder<'a> {
     /// let bytes = decoder.decode_deflate().unwrap();
     /// ```
     ///
-    ///  [InflateDecodeErrors]:crate::errors::InflateDecodeErrors
+    ///  [InflateDecodeErrors]:InflateDecodeErrors
     pub fn decode_deflate(&mut self) -> Result<Vec<u8>, InflateDecodeErrors> {
         self.start_deflate_block()
     }
@@ -1162,10 +1157,10 @@ impl<'a> DeflateDecoder<'a> {
                 return Err(DecodeErrorStatus::InsufficientData);
             }
 
-            num_litlen_syms = 257 + (self.stream.get_bits(5)) as usize;
-            num_offset_syms = 1 + (self.stream.get_bits(5)) as usize;
+            num_litlen_syms = 257 + self.stream.get_bits(5) as usize;
+            num_offset_syms = 1 + self.stream.get_bits(5) as usize;
 
-            let num_explicit_precode_lens = 4 + (self.stream.get_bits(4)) as usize;
+            let num_explicit_precode_lens = 4 + self.stream.get_bits(4) as usize;
 
             self.stream.refill();
 
@@ -1391,7 +1386,7 @@ pub(crate) fn build_decode_table_inner(
         sorted_syms[offsets[pos] as usize] = sym as u16;
         offsets[pos] += 1;
     }
-    i = (offsets[0]) as usize;
+    i = offsets[0] as usize;
 
     /*
      * Check whether the lengths form a complete code (exactly fills the

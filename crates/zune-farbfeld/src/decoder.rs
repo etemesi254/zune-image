@@ -92,7 +92,7 @@ where
     pub fn output_buffer_size(&self) -> Option<usize> {
         if self.decoded_headers {
             Some(
-                (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
+                FARBFELD_COLORSPACE.num_components()/*RGBA*/
                     .checked_mul(self.width)?
                     .checked_mul(self.height)?
                     .checked_mul(2 /*depth*/)?
@@ -154,7 +154,7 @@ where
     pub fn decode(&mut self) -> Result<Vec<u16>, FarbFeldErrors> {
         self.decode_headers()?;
 
-        let size = (FARBFELD_COLORSPACE.num_components()/*RGBA*/)
+        let size = FARBFELD_COLORSPACE.num_components()/*RGBA*/
             .saturating_mul(self.width)
             .saturating_mul(self.height);
 

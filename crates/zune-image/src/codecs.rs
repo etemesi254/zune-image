@@ -243,7 +243,7 @@ impl ImageFormat {
             let boxed_data = Box::new(data);
 
             // Call the factory (this handles the specific new/try_new logic)
-            let decoder = (factory)(boxed_data, options)?;
+            let decoder = factory(boxed_data, options)?;
 
             return Ok(decoder);
         }

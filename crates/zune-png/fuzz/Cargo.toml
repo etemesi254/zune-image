@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-png = "0.17.7"
+png = "0.18.1"
 
 [dependencies.zune-png]
 path = ".."

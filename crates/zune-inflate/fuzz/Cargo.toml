@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-miniz_oxide = "0.7.1"
+miniz_oxide = "0.9.1"
 flate2 = { version = "1.0.17", features = ["zlib-ng"], default-features = false }
 
 [dependencies.zune-inflate]
