@@ -299,12 +299,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &mut pixels_written,
                         &mut upsampler_scratch_space,
                     )?;
-                    // The just-completed row's `raw_coeff` will be overwritten
-                    // by the next row's decode. Any RST checkpoint recorded
-                    // mid-row-`i` would now point at coefficient data that is
-                    // about to be clobbered, so drop it. The next row's first
-                    // RST will record a fresh, valid checkpoint; if EOF hits
-                    // before that, resume falls back to scan-start replay.
+                    // This row's coefficient buffers can be reused next, so
+                    // any checkpoint inside the row is no longer valid.
                     self.invalidate_scan_checkpoint();
                 }
 
@@ -345,6 +341,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         break;
                     }
                     Ok(Marker::SOS) => {
+                        self.invalidate_scan_checkpoint();
                         self.parse_marker_inner(Marker::SOS)?;
                         stream.reset();
                         B::reset_arith_tables(&mut self.entropy_tables);
@@ -766,6 +763,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // A latched RST means the entropy segment is already exhausted.
                 self.handle_rst(stream)?;
             } else if let Marker::SOS = m {
+                self.invalidate_scan_checkpoint();
                 self.parse_marker_inner(Marker::SOS)?;
                 stream.marker().take();
                 stream.reset();
@@ -821,6 +819,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ) -> Result<bool, DecodeErrors> {
         // Limit iterations to prevent DoS from malicious files.
         const MAX_INTER_SCAN_MARKERS: usize = 64;
+
+        // Once we leave the entropy segment, any RST checkpoint inside that
+        // segment is no longer safe: inter-scan setup markers may redefine
+        // DHT/DQT/DRI/DAC state before the next SOS. Falling back to the
+        // first-SOS replay path restores the scan-start snapshot instead.
+        self.invalidate_scan_checkpoint();
 
         // Parse the first marker that triggered this call
         self.parse_marker_inner(first_marker)?;

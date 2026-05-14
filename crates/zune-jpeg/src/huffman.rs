@@ -19,6 +19,7 @@ pub const HUFF_LOOKAHEAD: u8 = 9;
 
 /// A struct which contains necessary tables for decoding a JPEG
 /// huffman encoded bitstream
+#[derive(Clone)]
 pub struct HuffmanTable {
     // element `[0]` of each array is unused
     /// largest code of length k
