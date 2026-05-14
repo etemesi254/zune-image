@@ -12,6 +12,8 @@ use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
 use zune_inflate::DecodeStatus;
 
+use alloc::format;
+use alloc::vec;
 const XORIG: [usize; 7] = [0, 4, 0, 2, 0, 1, 0];
 const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
 const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
