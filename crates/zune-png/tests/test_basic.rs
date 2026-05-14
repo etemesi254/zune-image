@@ -11,6 +11,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use zune_core::bytestream::ZCursor;
+use zune_core::result::DecodingResult;
 
 fn open_and_read<P: AsRef<Path>>(path: P) -> Vec<u8> {
     read(path).unwrap()
@@ -46,14 +47,44 @@ fn test_decoding<P: AsRef<Path>>(path: P) {
 }
 
 #[test]
+fn test_16bpp_to_8bpp_interlaced() {
+    let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/bgai4a16.png";
+
+    let contents = open_and_read(path);
+    let opt = zune_core::options::DecoderOptions::new_fast().png_set_strip_to_8bit(true);
+    let mut decoder = zune_png::PngDecoder::new_with_options(ZCursor::new(&contents), opt);
+    let normal_decode = zune_png::PngDecoder::new(ZCursor::new(&contents))
+        .decode()
+        .unwrap();
+
+    let strip_decode = decoder.decode().unwrap().u8().unwrap();
+    if let DecodingResult::U16(new) = normal_decode {
+        for (pos, (a, b)) in new.iter().zip(strip_decode).enumerate() {
+            if (a >> 8) as u8 != b {
+                panic!("{pos}= ({:?} != {:?})", (a >> 8), b);
+            }
+        }
+    }
+}
+#[test]
 fn test_16bpp_to_8bpp_basic() {
     let path = env!("CARGO_MANIFEST_DIR").to_string() + "/tests/png_suite/basn6a16.png";
 
     let contents = open_and_read(path);
     let opt = zune_core::options::DecoderOptions::new_fast().png_set_strip_to_8bit(true);
-    let mut decoder = zune_png::PngDecoder::new_with_options(ZCursor::new(&contents),opt);
+    let mut decoder = zune_png::PngDecoder::new_with_options(ZCursor::new(&contents), opt);
+    let normal_decode = zune_png::PngDecoder::new(ZCursor::new(&contents))
+        .decode()
+        .unwrap();
 
-    let data = decoder.decode().unwrap().u8().unwrap();
+    let strip_decode = decoder.decode().unwrap().u8().unwrap();
+    if let DecodingResult::U16(new) = normal_decode {
+        for (pos, (a, b)) in new.iter().zip(strip_decode).enumerate() {
+            if (a >> 8) as u8 != b {
+                panic!("{pos}= ({:?} != {:?})", (a >> 8), b);
+            }
+        }
+    }
 }
 
 #[test]

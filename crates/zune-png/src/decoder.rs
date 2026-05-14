@@ -565,17 +565,20 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
     /// Decode data returning it into `Vec<u8>`.
     ///
-    /// Endianness of
-    /// returned bytes in case of image being 16 bits and the decoder
-    /// not converting 16 bit images to 8 bit images is given by
-    /// [`byte_endian()`](Self::byte_endian) method
+    /// ## 16 Bit Images
     ///
-    /// # Converting 16 bit to 8 bit images
+    /// For 16 Bit images, the endianess of the image will be in Big Endian, most
+    /// platforms are little endian so decoding to a `Vec<u8>` and then aliasing will cause problems, the best method
+    /// in case you want to handle decoding in your native endian use [decode] which handles endianess for you
+    ///
+    /// ## Converting 16 bit to 8 bit images
     /// When indicated by  [`DecoderOptions::png_set_strip_to_8bit`](zune_core::options::DecoderOptions::png_get_strip_to_8bit)
     /// the library will implicitly convert 16 bit to 8 bit by discarding the lower 8 bits
     ///
     /// returns: `Result<Vec<u8, Global>, PngErrors>`
     ///
+    ///
+    /// [decode]: PngDecoder::decode
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         self.decode_stream_raw()
     }
@@ -617,7 +620,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     }
     /// Decode PNG encoded images and return the vector of raw pixels but for 16-bit images
     /// represent them in a `Vec<u16>` if  [`DecoderOptions::png_set_strip_to_8bit`](zune_core::options::DecoderOptions::png_get_strip_to_8bit)
-    /// returns false
+    /// returns them in a `Vec<u8>`
     ///
     ///
     /// This returns an enum type [`DecodingResult`](zune_core::result::DecodingResult) which
@@ -650,7 +653,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     #[rustfmt::skip]
     pub fn decode(&mut self) -> Result<DecodingResult, PngDecodeErrors>
     {
-
         // Here we want to either return a `u8` or a `u16` depending on the
         // headers, so we pull two tricks
         //  1 - We either allocate u8 or u16 depending on the output
@@ -666,14 +668,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let bytes = self.decode_raw()?;
             return Ok(DecodingResult::U8(bytes));
         }
-        // configure that the decoder converts samples to native endian
-        if is_le()
-        {
-            self.options = self.options.set_byte_endian(ByteEndian::LE);
-        } else {
-            self.options = self.options.set_byte_endian(ByteEndian::BE);
-        }
-
         let info = &self.png_info;
         let bytes = if info.depth == 16 { 2 } else { 1 };
 
@@ -694,6 +688,12 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             b
         };
         self.decode_stream_into(out)?;
+
+        if is_le(){
+            // png is BE by default
+            // so all bytes are decoded as BE but case to LE, if the target platform is LE, swap
+            out_u16.iter_mut().for_each(|x| *x = x.swap_bytes());
+        }
 
         if self.png_info.depth <= 8
         {

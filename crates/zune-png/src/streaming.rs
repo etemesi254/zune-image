@@ -82,7 +82,12 @@ where
         &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
         final_image_out: &mut [u8], num_components: usize, width: usize,
     ) {
-        let bpp = num_components * if self.png_info.depth == 16 { 2 } else { 1 };
+        let bpp = num_components
+            * if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
+                2
+            } else {
+                1
+            };
 
         // We only need to find where the row starts once.
         let out_y = pass_y * YSPC[pass] + YORIG[pass];
@@ -221,7 +226,12 @@ where
                 state.row_size = self.calculate_pass_row_size(state.pass_w);
                 state.width_stride = state.row_size - 1;
 
-                let bytes_per_pixel = if self.png_info.depth == 16 { 2 } else { 1 };
+                let bytes_per_pixel =
+                    if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
+                        2
+                    } else {
+                        1
+                    };
                 state.out_chunk_size = state.pass_w * num_components * bytes_per_pixel;
                 state.current_row_idx = 0;
             }
@@ -268,8 +278,13 @@ where
         let max_out_chunk = w * self.colorspace().unwrap().num_components() * bytes_per_pixel;
 
         let initial_row_size = self.calculate_pass_row_size(initial_pass_w);
+        let out_bpp = if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
+            2
+        } else {
+            1
+        };
         let initial_out_chunk =
-            initial_pass_w * self.colorspace().unwrap().num_components() * bytes_per_pixel;
+            initial_pass_w * self.colorspace().unwrap().num_components() * out_bpp;
 
         let mut state = InterlaceState {
             current_pass: start_pass,
@@ -313,7 +328,6 @@ where
 
                 let header = self.read_chunk_header()?;
 
-
                 if finished {
                     self.non_parsed_header = Some(header);
                     return Ok(());
@@ -335,7 +349,7 @@ where
             if finished {
                 // no header, but stream also ended, just return
                 warn!("No header found after stream end, possibly corrupt image");
-                return  Ok(())
+                return Ok(());
             }
 
             let read_len = std::cmp::min(BUF_READ, self.current_idat_bytes_left);
@@ -356,8 +370,7 @@ where
                 skipped_zlib_header = true;
             }
 
-
-            'decoding:loop {
+            'decoding: loop {
                 let input_slice: &[u8] = if chunk_size == 0 && is_final_chunk {
                     &[]
                 } else {
@@ -405,7 +418,7 @@ where
                             w,
                             &mut state,
                         )?;
-                        if is_final_chunk{
+                        if is_final_chunk {
                             return Ok(());
                         }
                         // sometimes we can have a case where the bytes read were
@@ -524,7 +537,12 @@ where
 
         let row_size = self.calculate_row_size(width);
         let width_stride = row_size - 1;
-        let bytes_per_channel = if self.png_info.depth == 16 { 2 } else { 1 };
+        let bytes_per_channel =
+            if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
+                2
+            } else {
+                1
+            };
         let out_chunk_size = width * num_components * bytes_per_channel;
 
         let will_post_process = self.will_post_process();
@@ -581,7 +599,7 @@ where
             if finished {
                 // no header, but stream also ended, just return
                 warn!("No header found after stream end, possibly corrupt image");
-                return  Ok(())
+                return Ok(());
             }
 
             // Read bytes from the IDAT stream
@@ -596,7 +614,7 @@ where
                 skipped_zlib_header = true;
             }
 
-            'decoding:loop {
+            'decoding: loop {
                 let input_slice: &[u8] = if self.current_idat_bytes_left == 0 && is_final_chunk {
                     &[]
                 } else {
@@ -936,10 +954,15 @@ where
             return Ok(());
         }
 
-        // --- 6. FAST PATH NO-OP (Direct Copy) ---
-        // If no processing is required, safely copy over the exact length.
-        let copy_len = final_output.len().min(raw_input.len());
-        final_output[..copy_len].copy_from_slice(&raw_input[..copy_len]);
+        if self.png_info.depth == 16 && self.options.png_get_strip_to_8bit() {
+            // strip 16 bit to 8 bit
+            assert_eq!(raw_input.len(), final_output.len() * 2);
+            // for stripping, we take two bytes from raw input and output 1 byte, the top byte
+            for (raw_in, raw_out) in raw_input.chunks_exact(2).zip(final_output) {
+                let value = u16::from_be_bytes(raw_in.try_into().unwrap());
+                *raw_out = (value >> 8) as u8;
+            }
+        }
 
         Ok(())
     }
@@ -953,7 +976,8 @@ where
     fn will_post_process(&self) -> bool {
         let add_alpha =
             self.options.png_get_add_alpha_channel() && !self.png_info.color.has_alpha();
-        self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha
+        let depth_thing = self.options.png_get_strip_to_8bit() && self.png_info.depth == 16;
+        self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha | depth_thing
     }
 }
 
