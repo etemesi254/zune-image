@@ -15,6 +15,7 @@ use zune_core::result::DecodingResult;
 
 use crate::apng::{ActlChunk, FrameInfo, SingleFrame};
 use crate::constants::PNG_SIGNATURE;
+use crate::decoder::DecodingState::{DecodingBody, DecodingHeaders};
 use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::error::PngDecodeErrors::GenericStatic;
@@ -28,7 +29,8 @@ use crate::utils::{convert_u16_to_u8_slice, is_le};
 /// chunk and pLTE chunk.
 ///
 // NB: (cae), using typed structs leads to a slow down so just use an array of u8,
-// slowdown may be due to LLVM not decoding it correctly
+// slowdown may be due to LLVM not decoding it correctly and converting it to memcpy/mov's where
+// it can
 #[derive(Copy, Clone, Debug)]
 #[repr(transparent)]
 pub(crate) struct PLTEEntry(pub(crate) [u8; 4]);
@@ -126,6 +128,12 @@ pub struct PngInfo {
     // use get_colorspace().num_components()
     pub(crate) filter_method: FilterMethod, // for internal use,no need to expose
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DecodingState {
+    DecodingHeaders,
+    DecodingBody,
+    Done,
+}
 
 /// A PNG decoder instance.
 ///
@@ -149,16 +157,19 @@ pub struct PngDecoder<T> {
     pub(crate) palette: Vec<PLTEEntry>,
     pub(crate) frames: Vec<SingleFrame>,
     pub(crate) actl_info: Option<ActlChunk>,
+    pub(crate) non_parsed_header: Option<PngChunk>,
+    pub(crate) decoding_state: DecodingState,
+    pub(crate) seen_headers: bool,
     pub(crate) trns_bytes: [u16; 4],
     pub(crate) seen_hdr: bool,
+    // number of fCTL frames seen, tracks how many animations have been decoded,
+    pub(crate) num_fctl_seen: usize,
     pub(crate) seen_ptle: bool,
-    pub(crate) seen_headers: bool,
     pub(crate) seen_trns: bool,
     pub(crate) seen_iend: bool,
     pub(crate) current_frame: usize,
     pub(crate) called_from_decode_into: bool,
     pub(crate) current_idat_bytes_left: usize,
-    pub(crate) seen_idat: bool,
 }
 
 impl<T: ZByteReaderTrait> PngDecoder<T> {
@@ -194,17 +205,19 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             options: options,
             palette: Vec::new(),
             png_info: PngInfo::default(),
+            non_parsed_header: None,
+            decoding_state: DecodingState::DecodingHeaders,
             actl_info: None,
             frames: vec![],
             seen_ptle: false,
+            num_fctl_seen: 1,
             seen_trns: false,
-            seen_headers: false,
             seen_iend: false,
             trns_bytes: [0; 4],
             current_frame: 0,
             called_from_decode_into: true,
             current_idat_bytes_left: 0,
-            seen_idat: false,
+            seen_headers: false,
         }
     }
 
@@ -292,19 +305,26 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// # Note
     /// Png has an  unofficial specification that allows it to
     /// support Animated files, or otherwise known as
-    /// APNG  (with extension .apng) supported in various capaccities
+    /// APNG  (with extension .apng) supported in various capacities
     /// in software.
     ///
     /// Such animated files can be decoded by this decoder, returning individual frames
     /// There are functions provided that allow you to further process
     /// such chunks to get the animated frames
     pub fn is_animated(&self) -> bool {
-        self.actl_info.is_some() && self.frames.len() > self.current_frame
+        self.actl_info.is_some()
     }
 
     /// Return true if image has more frames available
     pub fn more_frames(&self) -> bool {
-        self.actl_info.is_some() && self.frames.len() > self.current_frame
+        if let Some(actl) = self.actl_info.as_ref() {
+            // From https://wiki.mozilla.org/APNG_Specification
+
+            // `num_frames` indicates the total number of frames in the animation. This must equal the number of `fcTL` chunks.
+            // `num_fctl_seen` counts the number of fctl chunks seen
+            return self.num_fctl_seen != actl.num_frames as usize;
+        }
+        false
     }
 
     pub(crate) fn read_chunk_header(&mut self) -> Result<PngChunk, PngDecodeErrors> {
@@ -332,32 +352,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             _ => PngChunkType::unkn
         };
 
-        //  let mut crc_bytes = [0; 4];
-        //
-        //  let crc_ref = self.stream.peek_at(chunk_length, 4)?;
-        //
-        //  crc_bytes.copy_from_slice(crc_ref);
-        //
-        // let crc = u32::from_be_bytes(crc_bytes);
-        // if self.options.png_get_confirm_crc() {
-        //     use crate::crc::crc32_slice8;
-        //
-        //     // go back and point to chunk type.
-        //     self.stream.rewind(4)?;
-        //     // read chunk type + chunk data
-        //     let bytes = self.stream.peek_at(0, chunk_length + 4)?;
-        //
-        //     // calculate crc
-        //     let calc_crc = !crc32_slice8(bytes, u32::MAX);
-        //
-        //     if crc != calc_crc {
-        //         return Err(PngDecodeErrors::BadCrc(crc, calc_crc));
-        //     }
-        //     // go point after the chunk type
-        //     // The other parts expect the bit-reader to point to the
-        //     // start of the chunk data.
-        //     self.stream.skip(4)?;
-        // }
 
         Ok(PngChunk {
             length: chunk_length,
@@ -375,9 +369,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         self.decode_headers_inner()
     }
     pub fn decode_headers_inner(&mut self) -> Result<(), PngDecodeErrors> {
-        if (self.seen_headers && self.seen_iend) || (self.seen_idat) {
+        if self.decoding_state != DecodingHeaders || self.seen_iend {
             return Ok(());
         }
+
         if !self.seen_hdr {
             // READ PNG signature
             let signature = self.stream.get_u64_be_err()?;
@@ -385,31 +380,32 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             if signature != PNG_SIGNATURE {
                 return Err(PngDecodeErrors::BadSignature);
             }
-            // check if first chunk is ihdr here
-            if self.stream.peek_at(4, 4)? != b"IHDR" {
-                return Err(PngDecodeErrors::GenericStatic(
-                    "First chunk not IHDR, Corrupt PNG"
-                ));
-            }
         }
         loop {
-            let header = self.read_chunk_header()?;
+            // on streaming.rs it stops if it finds a header that is not IDAT,
+            // so it stores that header in non_parsed_header for subsequent use,
+            // we should first check if that header exist and parse that and if not, we parse our
+            // normal headers
+            let header = {
+                if let Some(header) = self.non_parsed_header.take()
+                { header } else { self.read_chunk_header()? }
+            };
 
-            if header.chunk_type == PngChunkType::IDAT {
-                self.seen_idat = true;
+            if header.chunk_type == PngChunkType::IDAT || header.chunk_type == PngChunkType::fdAT {
                 // Stop parsing headers. We are ready to stream pixels.
                 // Save the length so our streaming loop knows how much to read
                 self.current_idat_bytes_left = header.length;
+                self.decoding_state = DecodingBody;
+                if header.chunk_type == PngChunkType::fdAT {
+                    // starts with a 4 byte sequence, skip that
+                    self.stream.skip(4)?;
+                    self.current_idat_bytes_left = self.current_idat_bytes_left.saturating_sub(4);
+                }
                 break;
             }
             self.parse_header(header)?;
 
             if header.chunk_type == PngChunkType::IEND {
-                break;
-            }
-            // break here, we already have content for one
-            // frame, subsequent calls will fetch the next frames
-            if header.chunk_type == PngChunkType::fcTL {
                 break;
             }
         }
@@ -426,7 +422,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 self.parse_plte(header)?;
             }
             PngChunkType::IDAT => {
-                self.parse_idat(header)?;
+                // IDAT is streamed, so not be dealt with here
+                unreachable!("Should be dealt with in caller")
             }
             PngChunkType::tRNS => {
                 self.parse_trns(header)?;
@@ -456,7 +453,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 self.parse_text(header)?;
             }
             PngChunkType::fcTL => {
-                // may read more headers internally
                 self.parse_fctl(header)?;
             }
             PngChunkType::IEND => self.seen_iend = true,
@@ -511,7 +507,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// - `Some(info)` : The information present in the header
     /// - `None` : Indicates headers were not decoded
     pub const fn info(&self) -> Option<&PngInfo> {
-        if self.seen_headers {
+        if self.seen_hdr {
             Some(&self.png_info)
         } else {
             None
@@ -615,7 +611,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// ```
     pub fn frame_info(&self) -> Option<FrameInfo> {
         if let Some(frame) = self.frames.get(self.current_frame) {
-            return frame.fctl_info;
+            return Some(frame.fctl_info);
         }
         None
     }
@@ -654,6 +650,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     #[rustfmt::skip]
     pub fn decode(&mut self) -> Result<DecodingResult, PngDecodeErrors>
     {
+
         // Here we want to either return a `u8` or a `u16` depending on the
         // headers, so we pull two tricks
         //  1 - We either allocate u8 or u16 depending on the output
@@ -662,9 +659,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         //  2 - We convert samples to native endian, so that transmuting is a no-op in case of
         //      16 bit images in the next step
       
-        if !self.seen_headers || !self.seen_iend {
-            self.decode_headers()?;
-        }
+    self.decode_headers()?;
+
         // in case we are to strip 16 bit to 8 bit, use decode_raw which does that for us
         if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
             let bytes = self.decode_raw()?;

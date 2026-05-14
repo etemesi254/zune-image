@@ -4,7 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use alloc::{format, vec};
+use alloc::format;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
@@ -12,7 +12,7 @@ use zune_inflate::DeflateDecoder;
 
 use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
 use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
-use crate::enums::{FilterMethod, InterlaceMethod, PngChunkType, PngColor};
+use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngDecodeErrors;
 use crate::PngDecoder;
 
@@ -128,7 +128,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             is_part_of_seq: false,
         };
 
-        self.frames.push(SingleFrame::new(vec![], Some(frame_info)));
+        self.frames.push(SingleFrame::new(frame_info));
 
         Ok(())
     }
@@ -152,30 +152,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // skip crc chunk
         self.stream.skip(4)?;
         self.seen_ptle = true;
-        Ok(())
-    }
-
-    pub(crate) fn parse_idat(&mut self, png_chunk: PngChunk) -> Result<(), PngDecodeErrors> {
-        if self.frames.is_empty() {
-            self.frames.push(SingleFrame::new(vec![], None));
-        }
-        // get a reference to the IDAT chunk stream and push it,
-        // we will later pass these to the deflate decoder as a whole, to get the whole
-        // uncompressed stream.
-
-        let chunk = self.frames[0].chunk_mut();
-        let prev_len = chunk.len();
-        chunk.resize(chunk.len() + png_chunk.length, 0);
-        self.stream.read_exact_bytes(&mut chunk[prev_len..])?;
-
-        // the first frame always contains the idat chunks
-        // so we push this chunk there
-        // self.frames[0].push_chunk(idat_stream);
-        //self.idat_chunks.extend_from_slice(idat_stream);
-
-        // skip crc
-        self.stream.skip(4)?;
-
         Ok(())
     }
 
@@ -469,70 +445,17 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
     /// Parse the FCTL chunk
     pub(crate) fn parse_fctl(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
-        // after a fcTL chunk, what follows is either
-        // idat chunks or fdAT chunks
-        // so we usually want to collect them together
-        // so this furthers the stream
-
-        // parse the fctl info that brought us here
+        // From https://wiki.mozilla.org/APNG_Specification
+        //
+        // The `fcTL` chunk is an ancillary chunk as defined in the PNG Specification.
+        // It must appear before the `IDAT` or `fdAT` chunks of the frame to which it applies,
+        //
         let fctl_info = self.parse_fctl_external(chunk)?;
 
-        let mut should_add_fctl = true;
-        loop {
-            let next_header = self.read_chunk_header()?;
-
-            if next_header.chunk_type == PngChunkType::IEND {
-                // moves behind chunk length and chunk header
-                // the caller will read it as IEND and terminate
-                self.stream.rewind(8)?;
-                self.seen_iend = true;
-                break;
-            }
-            // we have a chunk, this chunk if idat is associated with the first frame
-            else if next_header.chunk_type == PngChunkType::IDAT {
-                self.parse_idat(next_header)?;
-                // set fctl information
-                self.frames[0].set_fctl(fctl_info);
-            } else if next_header.chunk_type == PngChunkType::fcTL {
-                // next frame, stop and go back
-                //
-                // we will decode the frame we have before we
-                // go to the next frame
-                self.stream.rewind(8)?;
-                break;
-            } else if next_header.chunk_type == PngChunkType::fdAT {
-                if should_add_fctl {
-                    // fctl + fdat only in the first frame
-                    //
-                    // captures fctl->fdat sequence of apng
-                    self.frames.push(SingleFrame::new(vec![], Some(fctl_info)));
-                }
-                // get frame data
-                // skip four  bytes since it's usually sequence number
-                let chunk = self.frames.last_mut().unwrap().chunk_mut();
-                let prev_len = chunk.len();
-                // skip the header
-                self.stream.skip(4)?;
-                // allocate space for header ignoring content
-                chunk.resize(chunk.len() + next_header.length.saturating_sub(4), 0);
-
-                self.stream.read_exact_bytes(&mut chunk[prev_len..])?;
-                // skip crc
-                self.stream.skip(4)?;
-            } else {
-                warn!(
-                    "Found marker {:?} in between fctl when it shouldn't be there",
-                    next_header.chunk_type
-                );
-                // Will this recurse?
-                self.parse_header(next_header)?;
-                // return Err(PngDecodeErrors::Generic(format!(
-                //     "Found marker {:?} in between fctl, when it shouldn't be there",
-                //     next_header.chunk_type
-                // )));
-            }
-            should_add_fctl = false;
-        }
+        self.num_fctl_seen += 1;
+        self.frames.push(SingleFrame::new(fctl_info));
+        // let the current frame be the last frame there
+        self.current_frame = self.frames.len() - 1;
 
         Ok(())
     }
