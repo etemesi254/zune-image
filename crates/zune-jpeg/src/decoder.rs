@@ -31,10 +31,10 @@ use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::parse_dac;
 use crate::headers::{
     parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
-    parse_start_of_frame
+    parse_start_of_frame, with_marker_body
 };
 use crate::huffman::HuffmanTable;
-use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
+use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
@@ -77,22 +77,16 @@ pub type ColorConvert16Ptr = fn(&[i16; 16], &[i16; 16], &[i16; 16], &mut [u8], &
 /// Carry out IDCT (type 3 dct) on ach block of 64 i16's
 pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
-/// State recorded once headers complete, used for scan-phase replay/resume.
+/// Scan-phase state kept so `decode_into` can retry or replay after SOS.
 ///
-/// Stored on the decoder behind an `Option<Box<...>>` so that one-shot
-/// decoding (the path that never resumes) carries only a null pointer's
-/// worth of overhead. The box is created on the SOS marker and either
-/// dropped when the scan completes successfully or kept alive across a
-/// recoverable EOF so the next `decode_into` call can resume.
-///
-/// `append_snapshot` rolls back inline metadata on scan replay.
-/// `sos_snapshot` restores scan parameters before replay.
-/// `rst_checkpoint` resumes from the latest restart boundary when present.
+/// Full replay starts at the first SOS; `rst_checkpoint` can resume from a
+/// later restart boundary when one is still valid.
 #[derive(Clone)]
 pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position: usize,
     pub(crate) append_snapshot:     HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:        SosParamsSnapshot,
+    pub(crate) header_snapshot:     ScanHeaderStateSnapshot,
     pub(crate) rst_checkpoint:      Option<Box<ScanCheckpoint>>
 }
 
@@ -110,15 +104,23 @@ pub(crate) struct SosParamsSnapshot {
     pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS]
 }
 
+/// Marker-defined decode state restored for first-SOS replay.
+///
+/// Inter-scan markers may redefine tables or decode configuration, so replay
+/// must restore the values that were active when scan decoding first began.
+#[derive(Clone)]
+pub(crate) struct ScanHeaderStateSnapshot {
+    pub(crate) qt_tables:        [Option<[i32; 64]>; MAX_COMPONENTS],
+    pub(crate) entropy_tables:   EntropyTables,
+    pub(crate) restart_interval: usize,
+    pub(crate) input_colorspace: ColorSpace,
+    pub(crate) is_mjpeg:         bool
+}
+
 /// Saved state at a restart-interval boundary during scan decoding.
 ///
-/// Allocation-free by construction: this struct only carries `Copy` scalars
-/// and fixed-size arrays, so per-RST checkpoint capture performs no heap
-/// work. The coefficient and component buffers themselves are *not* snapshotted
-/// here — they persist on [`JpegDecoder`] (`Components::raw_coeff`,
-/// `progressive_mcus_buffer`, `progressive_block_buffer`) across
-/// `decode_into` calls. Resume just needs to know where in the bitstream to
-/// pick up and what the DC predictor state was at that boundary.
+/// Coefficient buffers stay on `JpegDecoder`; the checkpoint only stores the
+/// bitstream position, output position, scan state, and DC predictors.
 ///
 /// Resume contract: the caller must pass the same output buffer to
 /// `decode_into` on retry so previously-written pixels are preserved.
@@ -180,6 +182,7 @@ pub(crate) struct ICCChunk {
 }
 
 // A separate struct to allow &borrowing tables while &mut borrowing components
+#[derive(Clone)]
 pub(crate) struct EntropyTables {
     /// DC Huffman Tables with a maximum of 4 tables for each  component
     pub(crate) dc_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
@@ -279,9 +282,9 @@ pub struct JpegDecoder<T> {
     /// This is intentionally a plain scalar (not an enum variant or boxed
     /// payload) so that one-shot decoding pays no per-call match cost.
     header_resume_position: usize,
-    /// Scan-phase resume state. `Some` from SOS until the scan completes;
-    /// `None` during header parsing and after a successful decode. Boxed
-    /// so the decoder struct stays compact for the common one-shot path.
+    /// Scan-phase resume state. `Some` from SOS onward; `None` during
+    /// header parsing. Boxed so the decoder struct stays compact for the
+    /// common one-shot path.
     scan_state: Option<Box<ScanDecodeState>>,
     /// Persistent coefficient buffers for multi-SOS baseline decoding.
     ///
@@ -289,7 +292,16 @@ pub struct JpegDecoder<T> {
     /// next `decode_into` retry can resume from where it stopped without
     /// copying anything. The inner `Vec`s are reused across `decode_into`
     /// calls; capacity is reclaimed only when the decoder is dropped.
-    pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS]
+    pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Scratch buffer that header marker parsers fill with the marker body
+    /// before mutating decoder state.
+    ///
+    /// Reading the full marker body up front (length + payload) means that
+    /// any `ExhaustedData` failure happens *before* any side effects are
+    /// committed to the decoder; a retry replays the same marker bytes
+    /// idempotently. The buffer is reused across markers so header parsing
+    /// stays allocation-free in steady state.
+    pub(crate) marker_body_scratch: Vec<u8>
 }
 
 impl<T> JpegDecoder<T>
@@ -334,14 +346,34 @@ where
         }
     }
 
+    fn capture_scan_header_state(&self) -> ScanHeaderStateSnapshot {
+        ScanHeaderStateSnapshot {
+            qt_tables:        self.qt_tables,
+            entropy_tables:   self.entropy_tables.clone(),
+            restart_interval: self.restart_interval,
+            input_colorspace: self.input_colorspace,
+            is_mjpeg:         self.is_mjpeg
+        }
+    }
+
+    fn restore_scan_header_state(&mut self, snapshot: &ScanHeaderStateSnapshot) {
+        self.qt_tables = snapshot.qt_tables;
+        self.entropy_tables = snapshot.entropy_tables.clone();
+        self.restart_interval = snapshot.restart_interval;
+        self.input_colorspace = snapshot.input_colorspace;
+        self.is_mjpeg = snapshot.is_mjpeg;
+    }
+
     fn enter_scan_state(&mut self) -> Result<(), DecodeErrors> {
         let scan_start_position = self.stream_position()?;
         let append_snapshot = HeaderAppendStateSnapshot::capture(self);
         let sos_snapshot = self.capture_sos_params();
+        let header_snapshot = self.capture_scan_header_state();
         self.scan_state = Some(Box::new(ScanDecodeState {
             scan_start_position,
             append_snapshot,
             sos_snapshot,
+            header_snapshot,
             rst_checkpoint: None
         }));
         Ok(())
@@ -358,8 +390,8 @@ where
     // arrays into the existing `Box<ScanCheckpoint>` (or allocates the box
     // exactly once at the first RST in a scan). The decoded coefficient and
     // component buffers themselves are *not* copied here — they live on the
-    // decoder (`Components::raw_coeff`, `progressive_mcus_buffer`,
-    // `progressive_block_buffer`) and persist across `decode_into` retries.
+    // decoder (`Components::raw_coeff`, `progressive_mcus_buffer`) and
+    // persist across `decode_into` retries.
     pub(crate) fn checkpoint_scan(
         &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
         dc_predictions: [(i32, i32); MAX_COMPONENTS]
@@ -475,7 +507,8 @@ where
             extended_xmp_segments: vec![],
             header_resume_position: 0,
             scan_state: None,
-            progressive_mcus_buffer: core::array::from_fn(|_| Vec::new())
+            progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
+            marker_body_scratch: Vec::new()
         }
     }
     /// Decode a buffer already in memory
@@ -674,8 +707,11 @@ where
     ///  - DAC -> Images using Arithmetic tables
     ///  - JPG(n)
     fn decode_headers_internal(&mut self) -> Result<(), DecodeErrors> {
-        // If we already entered the scan phase nothing to do.
-        if self.scan_state.is_some() {
+        // Idempotent: once headers are complete (which today implies we
+        // have also entered the scan phase) further calls are no-ops.
+        // `header_resume_position` is intentionally not reset; callers
+        // are not expected to drive header parsing again.
+        if self.headers_decoded || self.scan_state.is_some() {
             return Ok(());
         }
         let resume_position = self.header_resume_position;
@@ -807,21 +843,16 @@ where
         Ok(MarkerStep::Continue)
     }
 
-    // Read a length-prefixed marker payload and skip past it. Shared by the
-    // unknown-marker path in `decode_headers_internal` and the catch-all arm
-    // in `parse_marker_inner` so the length validation lives in one place.
+    // Read a length-prefixed marker payload and discard its body. Shared by
+    // the unknown-marker path in `decode_headers_internal` and the catch-all
+    // arm in `parse_marker_inner`. The full body is buffered (and immediately
+    // dropped) so this remains atomic for resumability purposes: an EOF mid-
+    // payload surfaces before any decoder state is mutated.
     fn skip_marker_payload(&mut self) -> Result<(), DecodeErrors> {
-        let length = self.stream.get_u16_be_err()?;
-
-        if length < 2 {
-            return Err(DecodeErrors::Format(format!(
-                "Found a marker with invalid length : {length}"
-            )));
-        }
-
-        warn!("Skipping {} bytes", length - 2);
-        self.stream.skip((length - 2) as usize)?;
-        Ok(())
+        with_marker_body(self, |_, _body| {
+            warn!("Skipping {} bytes", _body.body().len());
+            Ok(())
+        })
     }
 
     // Skip a marker we don't recognise, then checkpoint past it so we don't
@@ -832,16 +863,11 @@ where
         Ok(())
     }
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
-        // Snapshot append-only metadata so any error path leaves the decoder
-        // in the same shape as before the marker started. Required for both
-        // header-phase resume and the non-strict inline-marker dispatch from
-        // `mcu.rs::check_stream_marker_after_mcu_width`.
-        let snapshot = HeaderAppendStateSnapshot::capture(self);
-        let result = self.parse_marker_dispatch(m);
-        if result.is_err() {
-            snapshot.rollback(self);
-        }
-        result
+        // Marker parsers are atomic: they read the full marker body into the
+        // scratch buffer before mutating any decoder state, so a parser that
+        // returns an error has already left the decoder in the same shape as
+        // before the marker started. No explicit rollback is needed here.
+        self.parse_marker_dispatch(m)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -849,38 +875,34 @@ where
         match m {
             Marker::SOF(0..=2) => {
                 // choose marker
-                let marker =
+                let (marker, is_progressive) =
                     match m {
                         Marker::SOF(0 | 1) =>
-                            SOFMarkers::BaselineDct,
-                        Marker::SOF(2) => {
-                            self.is_progressive = true;
-                            SOFMarkers::ProgressiveDctHuffman
-                        }
+                            (SOFMarkers::BaselineDct, false),
+                        Marker::SOF(2) =>
+                            (SOFMarkers::ProgressiveDctHuffman, true),
                         _ => unreachable!(),
                     };
 
                 trace!("Image encoding scheme =`{marker:?}`");
                 // get components
                 parse_start_of_frame(marker, self)?;
+                self.is_progressive = is_progressive;
             }
             #[cfg(feature = "arith")]
             Marker::SOF(9..=10) => {
                 // choose marker
-                self.is_arithmetic = true;
-                let marker = match m {
-                    Marker::SOF(9) => SOFMarkers::ExtendedSequentialDctArithmetic,
-                    Marker::SOF(10) => {
-                        self.is_progressive = true;
-                        self.is_arithmetic = true;
-                        SOFMarkers::ProgressiveDctArithmetic
-                    }
+                let (marker, is_progressive) = match m {
+                    Marker::SOF(9) => (SOFMarkers::ExtendedSequentialDctArithmetic, false),
+                    Marker::SOF(10) => (SOFMarkers::ProgressiveDctArithmetic, true),
                     _ => unreachable!()
                 };
 
                 trace!("Image encoding scheme =`{marker:?}`");
                 // get components
                 parse_start_of_frame(marker, self)?;
+                self.is_arithmetic = true;
+                self.is_progressive = is_progressive;
             }
             // Start of Frame Segments not supported
             Marker::SOF(v) => {
@@ -896,26 +918,25 @@ where
             }
             //APP(0) segment
             Marker::APP(0) => {
-                let mut length = self.stream.get_u16_be_err()?;
-
-                if length < 2 {
-                    return Err(DecodeErrors::Format(format!(
-                        "Found a marker with invalid length:{length}\n"
-                    )));
-                }
-                // skip for now
-                if length > 5 {
-                    let mut buffer = [0u8; 5];
-                    self.stream.read_exact_bytes(&mut buffer)?;
-                    if &buffer == b"AVI1\0" {
-                        self.is_mjpeg = true;
+                // APP0 is normally the JFIF identifier (`b"JFIF\0"`), which
+                // carries pixel-density metadata we currently ignore. The
+                // single thing we care about here is the Motion-JPEG marker
+                // — Microsoft's AVI/AVI2 container stores per-frame JPEGs
+                // with an `b"AVI1\0"` identifier in APP0 instead of JFIF.
+                // When we see it, we tag the decoder as MJPEG so downstream
+                // logic can apply MJPEG-specific concessions (e.g. missing
+                // DHT segments fall back to the standard tables). The
+                // body-length guard tolerates JFIF bodies shorter than five
+                // bytes by simply not matching them — anything that isn't
+                // exactly the AVI1 signature is silently skipped.
+                //
+                // Atomic read: full body buffered first, then inspected.
+                with_marker_body(self, |decoder, body| {
+                    if body.body().len() >= 5 && &body.body()[..5] == b"AVI1\0" {
+                        decoder.is_mjpeg = true;
                     }
-                    length -= 5;
-                }
-
-                self.stream.skip(length.saturating_sub(2) as usize)?;
-
-                //parse_app(buf, m, &mut self.info)?;
+                    Ok(())
+                })?;
             }
             Marker::APP(1) => {
                 parse_app1(self)?;
@@ -950,16 +971,20 @@ where
                 )));
             }
             Marker::DRI => {
-                if self.stream.get_u16_be_err()? != 4 {
-                    return Err(DecodeErrors::Format(
-                        "Bad DRI length, Corrupt JPEG".to_string()
-                    ));
-                }
-
-                self.restart_interval = usize::from(self.stream.get_u16_be_err()?);
-                trace!("DRI marker present ({})", self.restart_interval);
-
-                self.todo = self.restart_interval;
+                with_marker_body(self, |decoder, body| {
+                    let body = body.body();
+                    if body.len() != 2 {
+                        return Err(DecodeErrors::Format(
+                            "Bad DRI length, Corrupt JPEG".to_string()
+                        ));
+                    }
+                    let restart_interval = usize::from(u16::from_be_bytes([body[0], body[1]]));
+                    trace!("DRI marker present ({restart_interval})");
+                    // Commit phase.
+                    decoder.restart_interval = restart_interval;
+                    decoder.todo = restart_interval;
+                    Ok(())
+                })?;
             }
             Marker::APP(14) => {
                 parse_app14(self)?;
@@ -1129,6 +1154,16 @@ where
     ///
     /// If the buffer is bigger than expected, we ignore the end padding bytes
     ///
+    /// # Resumability
+    ///
+    /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
+    /// decoder keeps enough state to resume; the caller can grow the input
+    /// stream and call `decode_into` again.
+    ///
+    /// On success the decoder keeps scan-start replay state, so a later
+    /// `decode_into` call is well-defined and produces bit-identical pixels.
+    /// Replay re-runs entropy decoding from the first SOS.
+    ///
     /// # Example
     ///
     /// - Read  headers and then alloc a buffer big enough to hold the image
@@ -1148,15 +1183,14 @@ where
     ///
     ///
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
-        // Read the scan-resume state without cloning it. We pull out the
-        // cheap, `Copy` snapshot fields; the boxed `rst_checkpoint` stays
-        // in place so the inner decoder can pick it up directly. When
-        // headers haven't completed yet, `scan_plan` is `None` and we
-        // just run header decoding below.
+        // Pull the scan-resume state out into owned locals so the restore
+        // below can freely mutate `self`. When headers haven't completed
+        // yet, `scan_plan` is `None` and we just run header decoding below.
         struct ScanPlan {
             scan_start_position:   usize,
             outer_append_snapshot: HeaderAppendStateSnapshot,
             outer_sos_snapshot:    SosParamsSnapshot,
+            outer_header_snapshot: ScanHeaderStateSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
             checkpoint_view:       Option<CheckpointView>
@@ -1172,6 +1206,7 @@ where
             scan_start_position:   state.scan_start_position,
             outer_append_snapshot: state.append_snapshot,
             outer_sos_snapshot:    state.sos_snapshot,
+            outer_header_snapshot: state.header_snapshot.clone(),
             checkpoint_view:       state.rst_checkpoint.as_deref().map(|checkpoint| {
                 CheckpointView {
                     append_snapshot: checkpoint.append_snapshot,
@@ -1186,6 +1221,7 @@ where
                 scan_start_position,
                 outer_append_snapshot,
                 outer_sos_snapshot,
+                outer_header_snapshot,
                 checkpoint_view
             } = plan;
             // Roll back inline metadata from a previous scan attempt.
@@ -1214,10 +1250,7 @@ where
 
             if let Some(view) = checkpoint_view {
                 self.stream.set_position(view.stream_position)?;
-                // Restore per-component DC predictor state from the checkpoint.
-                // At an RST boundary these are zero (handle_rst resets them),
-                // but we keep the values self-describing rather than relying
-                // on that invariant from another module.
+                // Restore DC predictor state from the checkpoint.
                 for (i, comp) in
                     self.components.iter_mut().enumerate().take(MAX_COMPONENTS)
                 {
@@ -1226,13 +1259,16 @@ where
                     comp.dc_diff = dc_diff;
                 }
             } else {
+                self.restore_scan_header_state(&outer_header_snapshot);
                 self.stream.set_position(scan_start_position)?;
-                // Fresh scan replay: DC predictors restart at zero.
+                // Full replay restores first-SOS tables/config and predictors.
                 for comp in &mut self.components {
                     comp.dc_pred = 0;
                     comp.dc_diff = 0;
                 }
             }
+            // Progressive replay keeps the coefficient buffer: each scan
+            // overwrites its own bands before final output is produced.
             self.todo =
                 if self.restart_interval == 0 { 0x7fff_ffff } else { self.restart_interval };
 
@@ -1255,21 +1291,45 @@ where
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
 
+        let result: Result<(), DecodeErrors>;
         if self.is_arithmetic {
             #[cfg(feature = "arith")]
             {
-                if self.is_progressive {
+                result = if self.is_progressive {
                     self.decode_mcu_ycbcr_progressive::<BitStreamArithmetic>(out)
                 } else {
                     self.decode_mcu_ycbcr_baseline::<BitStreamArithmetic>(out)
-                }
+                };
             }
             #[cfg(not(feature = "arith"))]
             unreachable!();
         } else if self.is_progressive {
-            self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out)
+            result = self.decode_mcu_ycbcr_progressive::<BitStreamHuffman>(out);
         } else {
-            self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out)
+            result = self.decode_mcu_ycbcr_baseline::<BitStreamHuffman>(out);
+        }
+
+        match result {
+            Ok(()) => {
+                // Drop the RST checkpoint so a post-success replay starts
+                // from scan-start with zeroed DC predictors instead of
+                // pointing at stale entropy data. `scan_state` is expected
+                // to still be `Some` here (it was set when SOS was parsed
+                // and is only cleared on hard error), but we guard with
+                // `if let` rather than `expect` so a future change that
+                // clears it on success degrades to a no-op instead of a
+                // release-mode panic; the debug assertion keeps that
+                // invariant visible during development.
+                debug_assert!(
+                    self.scan_state.is_some(),
+                    "scan_state should be Some after a successful scan decode"
+                );
+                if let Some(state) = self.scan_state.as_deref_mut() {
+                    state.rst_checkpoint = None;
+                }
+                Ok(())
+            }
+            Err(e) => Err(e)
         }
     }
 

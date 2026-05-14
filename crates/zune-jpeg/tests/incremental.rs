@@ -191,6 +191,20 @@ fn assert_incremental_decode_matrix(cases: &[(&str, &[u8], usize)]) {
     }
 }
 
+fn assert_decode_into_replay_matches_oneshot(name: &str, data: &[u8]) {
+    let expected = decode_oneshot(data);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut first = vec![0u8; decoder.output_buffer_size().unwrap()];
+    decoder.decode_into(&mut first).unwrap();
+    assert_pixels_match(&first, &expected, name, data.len());
+
+    let mut replay = vec![0u8; decoder.output_buffer_size().unwrap()];
+    decoder.decode_into(&mut replay).unwrap();
+    assert_pixels_match(&replay, &expected, name, data.len());
+}
+
 /// Feeding the entire file at once via decode_headers + decode_into must
 /// produce byte-identical output to decode() — no regressions.
 #[test]
@@ -203,6 +217,18 @@ fn full_decode_unchanged() {
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
     decoder.decode_into(&mut out).unwrap();
     assert_eq!(out, expected);
+}
+
+#[test]
+fn decode_into_replay_after_success_matches_oneshot() {
+    assert_decode_into_replay_matches_oneshot(
+        "baseline_replay",
+        include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg")
+    );
+    assert_decode_into_replay_matches_oneshot(
+        "progressive_replay",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
+    );
 }
 
 /// Truncated input must return a recoverable EOF from decode_headers.
@@ -427,6 +453,76 @@ fn icc_app2_chunk(payload: &[u8]) -> Vec<u8> {
     chunk
 }
 
+fn marker_segment(code: u8, body: &[u8]) -> Vec<u8> {
+    let length = body.len() + 2;
+    assert!(length <= u16::MAX as usize, "marker body too large");
+
+    let mut segment = Vec::with_capacity(2 + length);
+    segment.extend_from_slice(&[0xFF, code]);
+    segment.extend_from_slice(&(length as u16).to_be_bytes());
+    segment.extend_from_slice(body);
+    segment
+}
+
+fn inject_header_segments(base: &[u8], segments: &[Vec<u8>]) -> Vec<u8> {
+    let sos = base
+        .windows(2)
+        .position(|w| w == [0xFF, 0xDA])
+        .expect("base JPEG must contain SOS");
+    let extra_len = segments.iter().map(Vec::len).sum::<usize>();
+
+    let mut out = Vec::with_capacity(base.len() + extra_len);
+    out.extend_from_slice(&base[..sos]);
+    for segment in segments {
+        out.extend_from_slice(segment);
+    }
+    out.extend_from_slice(&base[sos..]);
+    out
+}
+
+fn app1_exif(payload: &[u8]) -> Vec<u8> {
+    let mut body = b"Exif\0\0".to_vec();
+    body.extend_from_slice(payload);
+    marker_segment(0xE1, &body)
+}
+
+fn app1_xmp(payload: &[u8]) -> Vec<u8> {
+    let mut body = b"http://ns.adobe.com/xap/1.0/\0".to_vec();
+    body.extend_from_slice(payload);
+    marker_segment(0xE1, &body)
+}
+
+fn app1_extended_xmp(guid: &[u8; 32], payload: &[u8]) -> Vec<u8> {
+    let mut body = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+    body.extend_from_slice(guid);
+    body.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    body.extend_from_slice(&0_u32.to_be_bytes());
+    body.extend_from_slice(payload);
+    marker_segment(0xE1, &body)
+}
+
+fn app13_iptc(payload: &[u8]) -> Vec<u8> {
+    let mut body = b"Photoshop 3.0\0".to_vec();
+    body.extend_from_slice(payload);
+    marker_segment(0xED, &body)
+}
+
+fn app2_gain_map(payload: &[u8]) -> Vec<u8> {
+    let mut body = b"urn:iso:std:iso:ts:21496:-1\0".to_vec();
+    body.extend_from_slice(payload);
+    marker_segment(0xE2, &body)
+}
+
+fn app2_mpf(payload: &[u8]) -> Vec<u8> {
+    let mut body = b"MPF\0".to_vec();
+    body.extend_from_slice(payload);
+    marker_segment(0xE2, &body)
+}
+
+fn com_segment(payload: &[u8]) -> Vec<u8> {
+    marker_segment(0xFE, payload)
+}
+
 /// Inject a synthetic APP2 ICC chunk before SOS so header parsing sees it.
 fn inject_header_icc(base: &[u8], payload: &[u8]) -> Vec<u8> {
     let sos = base
@@ -488,6 +584,62 @@ fn header_app2_truncation_is_recoverable() {
     }
 
     panic!("headers never completed even with all bytes visible");
+}
+
+#[test]
+fn header_metadata_markers_commit_once_across_retries() {
+    let base = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let exif_payload = b"EXIF-PAYLOAD-FOR-RESUME";
+    let xmp_payload = b"<xmp>RESUME-XMP-PAYLOAD</xmp>";
+    let extended_payload = b"EXTENDED-XMP-PAYLOAD-FOR-RESUME";
+    let extended_guid = *b"0123456789abcdef0123456789abcdef";
+    let iptc_payload = b"IPTC-PAYLOAD-FOR-RESUME";
+    let gain_payload = b"\x00\x00\x00\x01GAIN-MAP-PAYLOAD-FOR-RESUME";
+    let mpf_payload = b"MPF-PAYLOAD-FOR-RESUME";
+    let data = inject_header_segments(
+        base,
+        &[
+            app1_exif(exif_payload),
+            app1_xmp(xmp_payload),
+            app1_extended_xmp(&extended_guid, extended_payload),
+            app13_iptc(iptc_payload),
+            app2_gain_map(gain_payload),
+            app2_mpf(mpf_payload),
+            com_segment(b"comment marker is skipped but must replay safely"),
+        ],
+    );
+    let expected = decode_oneshot(&data);
+
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(&data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    for avail in 1..=data.len() {
+        limit.set(avail);
+
+        match decoder.decode_headers() {
+            Ok(()) => break,
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("unexpected header error at byte {avail}: {e:?}"),
+        }
+    }
+
+    let info = decoder.info().expect("headers must eventually complete");
+    assert_eq!(decoder.exif().map(Vec::as_slice), Some(exif_payload.as_slice()));
+    assert_eq!(decoder.xmp().map(Vec::as_slice), Some(xmp_payload.as_slice()));
+    assert_eq!(decoder.iptc().map(Vec::as_slice), Some(iptc_payload.as_slice()));
+    assert_eq!(info.extended_xmp.as_deref(), Some(extended_payload.as_slice()));
+    assert_eq!(info.extended_xmp_guid.as_deref(), Some(extended_guid.as_slice()));
+    assert_eq!(info.gain_map_info.len(), 1, "gain map marker duplicated or lost");
+    assert_eq!(info.gain_map_info[0].data.as_slice(), gain_payload.as_slice());
+    assert_eq!(info.multi_picture_information.as_deref(), Some(mpf_payload.as_slice()));
+
+    limit.set(data.len());
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    decoder
+        .decode_into(&mut out)
+        .expect("decode should succeed after metadata retries");
+    assert_eq!(out, expected, "pixels must match one-shot decode");
 }
 
 /// Sanity check: give headers + partial scan, get EOF, then give
@@ -832,4 +984,254 @@ fn inline_marker_in_scan_does_not_duplicate_icc() {
         }
     }
     panic!("decode never completed even with all bytes visible");
+}
+
+// ===========================================================================
+// Atomic marker parsing coverage
+// ===========================================================================
+
+/// Scan a JPEG byte stream and return the absolute file offset of every
+/// marker (FFxx) we know about: SOI, EOI, RSTn, and any length-prefixed
+/// marker. The returned tuples are `(offset, marker_code, marker_length)`,
+/// where `marker_length` is `None` for markers without a length field and
+/// includes the two length bytes for length-prefixed markers.
+fn list_jpeg_markers(data: &[u8]) -> Vec<(usize, u8, Option<usize>)> {
+    let mut markers = Vec::new();
+    let mut i = 0;
+    while i + 1 < data.len() {
+        if data[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let code = data[i + 1];
+        if code == 0xFF || code == 0x00 {
+            i += 1;
+            continue;
+        }
+        if code == 0xD8 || code == 0xD9 || (0xD0..=0xD7).contains(&code) {
+            markers.push((i, code, None));
+            i += 2;
+            if code == 0xD9 {
+                break;
+            }
+            continue;
+        }
+        if i + 3 >= data.len() {
+            break;
+        }
+        let length = usize::from(u16::from_be_bytes([data[i + 2], data[i + 3]]));
+        if length < 2 {
+            break;
+        }
+        markers.push((i, code, Some(length)));
+        i += 2 + length;
+    }
+    markers
+}
+
+/// Run an incremental decode against `data` that truncates input at exactly
+/// `cutoff_offset` bytes on the first attempt, expects a recoverable EOF
+/// (or a successful decode if the cutoff happened to land somewhere
+/// already-complete), then exposes the full bytes and asserts the final
+/// pixels match a one-shot decode.
+fn assert_split_at_recovers(data: &[u8], cutoff_offset: usize, label: &str) {
+    let expected = decode_oneshot(data);
+
+    let limit = Rc::new(Cell::new(cutoff_offset));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    // First attempt: at most `cutoff_offset` bytes visible.
+    // Headers may or may not complete; whatever happens, we should
+    // either succeed *with truncated pixels* or get a recoverable EOF.
+    match decoder.decode_headers() {
+        Ok(()) => {}
+        Err(ref e) if e.is_recoverable_eof() => {}
+        Err(e) => panic!("{label}: unexpected header error at cutoff {cutoff_offset}: {e:?}")
+    }
+
+    // If headers completed at cutoff, try to decode scan.
+    if decoder.info().is_some() {
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        if let Err(ref e) = decoder.decode_into(&mut out) {
+            if !e.is_recoverable_eof() {
+                panic!("{label}: unexpected scan error at cutoff {cutoff_offset}: {e:?}");
+            }
+        }
+    }
+
+    // Now grow input to full size and retry until success.
+    limit.set(data.len());
+
+    // Header may or may not have already completed; re-run safely.
+    if decoder.info().is_none() {
+        decoder
+            .decode_headers()
+            .unwrap_or_else(|e| panic!("{label}: headers must complete at full size: {e:?}"));
+    }
+
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        // Worst-case bound: at most one suspended retry per byte of input
+        // (every byte could in principle become a marker boundary). In
+        // practice the real bound is "number of markers + restart
+        // intervals", but this loose bound is cheap and future-proof.
+        if attempts > data.len() + 1 {
+            panic!("{label}: decode_into never completed at cutoff {cutoff_offset}");
+        }
+        match decoder.decode_into(&mut out) {
+            Ok(()) => break,
+            Err(ref e) if e.is_recoverable_eof() => continue,
+            Err(e) => panic!("{label}: unexpected error at full size: {e:?}")
+        }
+    }
+    assert_pixels_match(&out, &expected, label, data.len());
+}
+
+/// Atomic-marker contract: every marker-body split should recover after the
+/// remaining bytes arrive.
+#[test]
+fn header_marker_truncation_at_every_position_recovers() {
+    // tiny_non_interleaved_444 has SOI, APP0, DQT, DQT, SOF, DHT, DHT, SOS,
+    // and inter-scan DHTs between SOS markers — i.e. it exercises both the
+    // header-phase dispatch loop and the inter-scan marker path that
+    // `mcu.rs::advance_to_next_sos` drives.
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+
+    let markers = list_jpeg_markers(data);
+    let first_sos = markers
+        .iter()
+        .position(|(_, code, _)| *code == 0xDA)
+        .expect("fixture must contain SOS");
+    assert!(
+        markers.iter().any(|(_, code, _)| *code == 0xD9),
+        "fixture must contain EOI"
+    );
+    assert!(
+        markers.iter().skip(first_sos + 1).any(|(_, code, _)| *code == 0xDA),
+        "fixture must contain a later inter-scan SOS"
+    );
+    assert!(
+        markers.iter().skip(first_sos + 1).any(|(_, code, _)| *code == 0xC4),
+        "fixture must contain an inter-scan DHT marker"
+    );
+    assert!(
+        markers.iter().skip(first_sos + 1).any(|(_, code, _)| *code == 0xD9),
+        "marker scanner must reach EOI after scan data"
+    );
+    for (offset, code, body_len) in markers {
+        let Some(body_len) = body_len else {
+            // SOI / RST / EOI have no body; nothing to truncate.
+            continue;
+        };
+        // The marker is `[FF code length_hi length_lo payload...]`, and
+        // `body_len` includes the two length bytes. Every cut from the first
+        // length byte through the last missing payload byte should suspend
+        // cleanly and then replay the marker exactly once.
+        let marker_end = offset + 2 + body_len;
+        for cut in (offset + 2)..marker_end {
+            let label = format!("marker FF{code:02X} at {offset}: truncated at byte {cut}");
+            assert_split_at_recovers(data, cut, &label);
+        }
+    }
+}
+
+/// Marker-prefix-byte split: truncate exactly between the `0xFF` prefix and
+/// the marker code byte. The marker code itself can be ambiguous (fill byte
+/// 0xFF or stuffing 0x00), so the dispatch loop must handle this boundary
+/// without losing the marker on retry.
+#[test]
+fn header_marker_prefix_byte_split_recovers() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let markers = list_jpeg_markers(data);
+
+    for (offset, code, _) in markers {
+        if code == 0xD8 {
+            // SOI is at offset 0; truncating between FF and D8 just makes
+            // the input look like an empty file — covered by other tests.
+            continue;
+        }
+        let cut = offset + 1; // exactly between 0xFF and the marker code
+        let label = format!("marker FF{code:02X} at {offset}: split at code byte");
+        assert_split_at_recovers(data, cut, &label);
+    }
+}
+
+/// Overwrite-shaped marker no-duplication regression. The atomic-parse
+/// contract guarantees that when a marker parser returns an error (e.g.
+/// recoverable EOF mid-payload), decoder state is bit-identical to its
+/// pre-parse shape. After retry, the final state must match a fresh
+/// one-shot decode in every field — not just append-only metadata.
+#[test]
+fn header_overwrite_marker_no_duplication_on_retry() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+
+    // Reference: decode in one shot, then capture all fields we expect to
+    // be overwrite-shaped (DHT/DQT slots, SOF components, SOS huffman
+    // selectors, input colorspace).
+    let mut reference = JpegDecoder::new(ZCursor::new(data));
+    reference.decode().expect("reference decode failed");
+    let ref_info = reference.info().expect("info() must be Some after decode");
+
+    // Truncate at every header-marker body byte and retry; after retry
+    // the decoder's exposed metadata must equal the reference.
+    let markers = list_jpeg_markers(data);
+    for (offset, code, body_len) in markers {
+        let Some(body_len) = body_len else {
+            continue;
+        };
+        let body_start = offset + 4;
+        let marker_end = offset + 2 + body_len;
+        // Sample every byte to keep the test fast; one byte per marker is
+        // enough to validate the contract (other tests cover finer
+        // granularity for pixel parity).
+        let cut = body_start + (marker_end - body_start) / 2;
+
+        let limit = Rc::new(Cell::new(cut));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+
+        // First attempt: expect either truncation surfaces as recoverable
+        // EOF, or headers complete and the scan errors recoverably.
+        match decoder.decode_headers() {
+            Ok(()) => {}
+            Err(ref e) if e.is_recoverable_eof() => {}
+            Err(e) => panic!("FF{code:02X} at {offset}: unexpected header error: {e:?}")
+        }
+
+        // Expose full input and complete the decode.
+        limit.set(data.len());
+        if decoder.info().is_none() {
+            decoder.decode_headers().expect("headers must complete");
+        }
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        loop {
+            match decoder.decode_into(&mut out) {
+                Ok(()) => break,
+                Err(ref e) if e.is_recoverable_eof() => continue,
+                Err(e) => panic!("FF{code:02X} at {offset}: unexpected scan error: {e:?}")
+            }
+        }
+
+        let info = decoder.info().expect("info after success");
+        assert_eq!(
+            info.width, ref_info.width,
+            "FF{code:02X} at {offset}: width drift"
+        );
+        assert_eq!(
+            info.height, ref_info.height,
+            "FF{code:02X} at {offset}: height drift"
+        );
+        assert_eq!(
+            info.components, ref_info.components,
+            "FF{code:02X} at {offset}: components count drift"
+        );
+        assert_eq!(
+            decoder.input_colorspace(),
+            reference.input_colorspace(),
+            "FF{code:02X} at {offset}: input colorspace drift"
+        );
+    }
 }

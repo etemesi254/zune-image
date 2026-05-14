@@ -170,6 +170,7 @@ struct DCLeadingBins {
     sn: StatisticsEntry,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ArithDCTables {
     /// Conditionally chosen by previous DCT difference
     ///
@@ -207,6 +208,7 @@ struct ACLeadingBins {
     spnx1: StatisticsEntry,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ArithACTables {
     v: [ACLeadingBins; 63],
     /// X2..X15 for sz < 2^i, at <= Kx
