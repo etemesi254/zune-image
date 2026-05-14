@@ -3,7 +3,148 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
+//! A fast, correct, and safe PNG and APNG decoder.
+//!
+//! This crate provides a flexible decoder for Portable Network Graphics (PNG) images,
+//! including full support for Animated PNGs (APNG). It is designed to be highly performant
+//! while correctly handling edge cases, various bit depths (8-bit and 16-bit), and complex
+//! APNG compositing lifecycles.
+//!
+//! # Features
+//! - **Standard PNG Support:** Decodes static PNGs across all standard color types and depths.
+//! - **Animated PNG (APNG) Support:** Provides tools to extract, dispose, and blend animated frames correctly.
+//! - **16-bit to 8-bit Stripping:** Optional native stripping of 16-bit images down to 8-bit.
+//! - **Endianness Handling:** Automatically manages byte swapping for 16-bit depth images on Little Endian systems.
+//! - **Zero-Allocation Decoding:** Ability to decode directly into pre-allocated buffers.
+//!
+//! # Basic Usage (Static Images)
+//!
+//! Decoding a standard, single-frame PNG is straightforward. You initialize the decoder,
+//! read the headers to understand the image properties, and then decode the pixels.
+//!
+//! ```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_core::result::DecodingResult;
+//! use zune_png::PngDecoder;
+//!
+//! // 1. Provide the raw bytes to the decoder
+//! let file_data = std::fs::read("image.png").unwrap();
+//! let mut decoder = PngDecoder::new(ZCursor::new(&file_data));
+//!
+//! // 2. Decode headers to populate image info
+//! decoder.decode_headers().unwrap();
+//!
+//! // 3. Retrieve useful metadata
+//! let (width, height) = decoder.dimensions().unwrap();
+//! let colorspace = decoder.colorspace().unwrap();
+//!
+//! // 4. Decode the image data
+//! match decoder.decode().unwrap() {
+//!     DecodingResult::U8(pixels) => {
+//!         // Handle standard 8-bit per channel images
+//!         println!("Decoded {} bytes", pixels.len());
+//!     }
+//!     DecodingResult::U16(pixels) => {
+//!         // Handle 16-bit per channel images
+//!         println!("Decoded {} 16-bit samples", pixels.len());
+//!     }
+//!     _ => unreachable!(),
+//! }
+//! ```
+//!
+//! # Animated Images (APNG)
+//!
+//! APNG files store multiple frames that must be composited sequentially onto a main canvas.
+//! The APNG specification defines a strict lifecycle for rendering frames:
+//! 1. **Disposal**: The canvas is modified based on the *previous* frame's disposal rules (e.g., cleared or reverted).
+//! 2. **Blending**: The *current* frame is drawn onto the canvas using its blend operation.
+//!
+//! To correctly decode an APNG, you must maintain the state of the main canvas and a backup canvas
+//! across iterations. The `post_process_image_apng` utility function correctly abstracts the math and
+//! state management needed for handling `DisposeOp` and `BlendOp` across both `u8` and `u16` depths.
+//!
+//! ## Example: Decoding an APNG
+//!
+//! ```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_core::result::DecodingResult;
+//! use zune_png::{PngDecoder, FrameInfo, post_process_image_apng};
+//!
+//! let file_data = std::fs::read("animated.png").unwrap();
+//! let mut decoder = PngDecoder::new(ZCursor::new(&file_data));
+//!
+//! decoder.decode_headers().unwrap();
+//!
+//! if decoder.is_animated() {
+//!     let info = decoder.info().unwrap().clone();
+//!     let colorspace = decoder.colorspace().unwrap();
+//!     let components = colorspace.num_components();
+//!
+//!     // 1. Allocate buffers for the entire canvas size
+//!     let buffer_size = info.width * info.height * components;
+//!     let mut output_canvas = vec![0u8; buffer_size];
+//!     let mut backup_canvas = vec![0u8; buffer_size];
+//!
+//!     // 2. Track the previous frame's rules for proper disposal
+//!     let mut prev_frame_info: Option<FrameInfo> = None;
+//!
+//!     // 3. Loop through all frames
+//!     while decoder.more_frames() {
+//!         decoder.decode_headers().unwrap();
+//!
+//!         // Clone the current frame info so we can store it at the end of the loop
+//!         let frame = decoder.frame_info().unwrap().clone();
+//!
+//!         match decoder.decode().unwrap() {
+//!             DecodingResult::U8(frame_pixels) => {
+//!                 // 4. Run the compositing lifecycle
+//!                 post_process_image_apng(
+//!                     &info,
+//!                     colorspace,
+//!                     &frame,
+//!                     prev_frame_info.as_ref(), // Pass previous rules for disposal
+//!                     &frame_pixels,
+//!                     &mut backup_canvas,       // Used internally for DisposeOp::Previous
+//!                     &mut output_canvas,       // The main rendering surface
+//!                     None                      // Optional gamma override
+//!                 ).unwrap();
+//!
+//!                 // `output_canvas` now contains the fully composited current frame!
+//!                 // You can save it, display it, or push it to a video encoder here.
+//!
+//!                 // 5. Save current frame info to act as disposal instructions for the next loop
+//!                 prev_frame_info = Some(frame);
+//!             }
+//!             DecodingResult::U16(_) => {
+//!                 // post_process_image_apng is generic and supports U16 as well!
+//!                 // (Implementation omitted for brevity)
+//!             }
+//!             _ => {}
+//!         }
+//!     }
+//! }
+//! ```
+//! # Zero-Allocation Decoding
+//!
+//! For performance-critical applications, or when processing many images in a loop, you can avoid
+//! allocations by decoding directly into a pre-allocated slice using `decode_into()`.
+//!
+//! ```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_png::PngDecoder;
+//!
+//! let file_data = std::fs::read("image.png").unwrap();
+//! let mut decoder = PngDecoder::new(ZCursor::new(&file_data));
+//!
+//! decoder.decode_headers().unwrap();
+//!
+//! // Calculate the exact bytes needed for the output
+//! let buffer_size = decoder.output_buffer_size().unwrap();
+//! let mut output = vec![0u8; buffer_size]; // Allocate once!
+//!
+//! // Decode directly into the slice
+//! decoder.decode_into(&mut output).unwrap();
+//! ```
 use alloc::vec::Vec;
 use alloc::{vec};
 
@@ -221,16 +362,17 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         }
     }
 
-    /// Get image dimensions or none if they aren't decoded
+    /// Get the global image dimensions (width, height) in pixels.
     ///
-    /// In case image is animated, this doesn't return the current frame's dimension
-    /// rather the image dimension, for that use `frame_info()` and access the correct
-    /// struct value to get the dimensions
+    /// # Animated PNGs (APNG)
+    /// If the image is animated, this returns the dimensions of the **global output canvas**,
+    /// *not* the dimensions of the current frame being decoded. Individual frames can be smaller
+    /// than the canvas. To get the dimensions of a specific frame, use [`frame_info()`](Self::frame_info).
     ///
     /// # Returns
-    /// - `Some((width,height))`
-    /// - `None`: The image headers haven't been decoded
-    ///   or there was an error decoding them
+    /// - `Some((width, height))`
+    /// - `None`: If the image headers haven't been decoded yet (`IHDR` chunk not reached)
+    ///   or there was an error decoding them.
     pub fn dimensions(&self) -> Option<(usize, usize)> {
         if !self.seen_hdr {
             return None;
@@ -255,18 +397,20 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             _ => unreachable!()
         }
     }
-    /// Get image colorspace
+    /// Get the colorspace that the *decoded* output pixels will be in.
     ///
-    /// If an image is a palette type, the colorspace is
-    /// either RGB or RGBA depending on existence a transparency chunk
+    /// This decoder handles internal format conversions for you. It guarantees the returned
+    /// colorspace matches the actual decoded byte layout, which may differ from the raw file:
     ///
-    /// If an image has a transparency chunk, the colorspace
-    /// will include that
+    /// - **Transparency (`tRNS`):** If a palette, grayscale, or RGB image contains a `tRNS` chunk,
+    ///   the decoder automatically applies it. The returned colorspace will be upgraded to include
+    ///   Alpha (e.g., `RGB` becomes `RGBA`).
+    /// - **Forced Alpha:** If `DecoderOptions::png_set_add_alpha_channel(true)` is set,
+    ///   this will consistently return an Alpha-variant colorspace.
     ///
     /// # Returns
-    ///  - `Some(colorspace)`: The colorspace which the decoded bytes will be in
-    ///  - `None`: If the image headers haven't been decoded, or there was an error
-    ///    during decoding
+    ///  - `Some(ColorSpace)`: The final colorspace of the decoded bytes.
+    ///  - `None`: If the image headers haven't been decoded yet.
     pub const fn colorspace(&self) -> Option<ColorSpace> {
         if !self.seen_hdr {
             return None;
@@ -300,22 +444,37 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             }
         }
     }
-    /// Returns true if the image is animated
+    /// Returns `true` if the image is an Animated PNG (APNG) containing multiple frames.
     ///
-    /// # Note
-    /// Png has an  unofficial specification that allows it to
-    /// support Animated files, or otherwise known as
-    /// APNG  (with extension .apng) supported in various capacities
-    /// in software.
+    /// **Important:** This method relies on header information. You must call [`decode_headers`](Self::decode_headers)
+    /// before calling this, otherwise it will always return `false`.
     ///
-    /// Such animated files can be decoded by this decoder, returning individual frames
-    /// There are functions provided that allow you to further process
-    /// such chunks to get the animated frames
+    /// # Note on APNG
+    /// The APNG specification is an extension of the standard PNG format. Animated files
+    /// contain a global animation control chunk (`acTL`) and multiple frame-specific chunks.
+    /// If this returns `true`, you should use a `while decoder.more_frames()` loop to extract the sequence.
     pub fn is_animated(&self) -> bool {
         self.actl_info.is_some()
     }
 
-    /// Return true if image has more frames available
+    /// Returns `true` if there are still unread frames remaining in an animated image.
+    ///
+    /// This function evaluates the number of frame control (`fcTL`) chunks seen so far
+    /// against the total frame count declared in the animation header.
+    ///
+    /// It is designed to be used as the condition in a `while` loop when decoding APNGs.
+    /// For static (non-animated) images, or if all frames have already been decoded, this
+    /// will safely return `false`.
+    ///
+    /// # Example
+    /// ```no_run
+    /// // Assuming decoder is initialized and headers are decoded
+    /// while decoder.more_frames() {
+    ///     decoder.decode_headers().unwrap();
+    ///     let current_frame_info = decoder.frame_info().unwrap();
+    ///     let pixels = decoder.decode().unwrap();
+    /// }
+    /// ```
     pub fn more_frames(&self) -> bool {
         if let Some(actl) = self.actl_info.as_ref() {
             // From https://wiki.mozilla.org/APNG_Specification
@@ -368,7 +527,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     pub fn decode_headers(&mut self) -> Result<(), PngDecodeErrors> {
         self.decode_headers_inner()
     }
-    pub fn decode_headers_inner(&mut self) -> Result<(), PngDecodeErrors> {
+    pub(crate) fn decode_headers_inner(&mut self) -> Result<(), PngDecodeErrors> {
         if self.decoding_state != DecodingHeaders || self.seen_iend {
             return Ok(());
         }
@@ -582,14 +741,24 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     pub fn decode_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
         self.decode_stream_raw()
     }
-
-    /// Return the **yet to be decoded** frame's frame information
+    /// Return the metadata (`FrameInfo`) for the *next* frame waiting to be decoded.
     ///
-    /// This contains information about the yet do be decoded frame after
-    /// reading the headers
+    /// Because APNG frames can have varying dimensions, offsets, and compositing operations,
+    /// you must retrieve this information to know how to properly handle the raw pixels
+    /// returned by the next call to `decode()`, `decode_raw()`, or `decode_into()`.
     ///
-    /// Once any function that decodes raw pixels is called (`decode`,`decode_raw`,`decode_into`)
-    /// this will point to the next frame to be decoded.
+    /// **Lifecycle:**
+    /// 1. Call `decode_headers()` to parse the upcoming frame's control chunk.
+    /// 2. Call `frame_info()` to read the metadata.
+    /// 3. Call `decode()` to extract the pixels for that frame.
+    ///
+    /// Once a decode function is called, the internal state advances, and this function will
+    /// then point to the subsequent frame (if any).
+    ///
+    /// # Returns
+    /// - `Some(FrameInfo)`: The metadata for the pending frame.
+    /// - `None`: If no frame control chunk has been decoded yet.
+    ///
     /// # Example
     ///
     /// This example gets frame information of an animated image
