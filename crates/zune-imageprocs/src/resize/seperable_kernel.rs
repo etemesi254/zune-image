@@ -287,6 +287,9 @@ pub fn resample_separable_precomputed<T>(
         .map_or(1, std::num::NonZero::get)
         .div_ceil(2);
 
+    #[cfg(not(feature = "threads"))]
+    let num_threads = 1;
+    
     let use_threads = num_threads > 1;
     #[cfg(not(feature = "threads"))]
     let use_threads = false;
