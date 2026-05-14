@@ -980,22 +980,3 @@ where
         self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha | depth_thing
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use zune_core::bytestream::ZCursor;
-
-    #[test]
-    fn decode_normal() {
-        let path = "/Users/etemesi/rust/zune-image/crates/zune-png/tests/random/animated_ball.png";
-        let data = std::fs::read(path).unwrap();
-        let mut decoder = crate::PngDecoder::new(ZCursor::new(data));
-        decoder.decode_headers().unwrap();
-
-        while decoder.more_frames() {
-            decoder.decode_headers().unwrap();
-            let frameN = decoder.decode().unwrap();
-            println!("Done Decoding\n");
-        }
-    }
-}
