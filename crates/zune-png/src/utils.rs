@@ -67,7 +67,7 @@ pub(crate) fn expand_palette_sub_byte(
 
     if depth == 4 {
         let out_bytes_per_loop = components * 2; // 2 pixels per byte
-        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+        let mut out_chunks = out.chunks_mut(out_bytes_per_loop);
 
         for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
             if px_processed >= width {
@@ -95,7 +95,7 @@ pub(crate) fn expand_palette_sub_byte(
         }
     } else if depth == 2 {
         let out_bytes_per_loop = components * 4; // 4 pixels per byte
-        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+        let mut out_chunks = out.chunks_mut(out_bytes_per_loop);
 
         for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
             if px_processed >= width {
@@ -120,7 +120,7 @@ pub(crate) fn expand_palette_sub_byte(
         }
     } else if depth == 1 {
         let out_bytes_per_loop = components * 8; // 8 pixels per byte
-        let mut out_chunks = out.chunks_exact_mut(out_bytes_per_loop);
+        let mut out_chunks = out.chunks_mut(out_bytes_per_loop);
 
         for (&in_byte, out_chunk) in input.iter().zip(out_chunks.by_ref()) {
             if px_processed >= width {
