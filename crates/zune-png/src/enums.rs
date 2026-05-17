@@ -8,7 +8,7 @@
 #![allow(clippy::upper_case_acronyms, non_camel_case_types)]
 
 /// Chunk type according to table 5.3 of
-/// the jpeg spec, see https://www.w3.org/TR/2003/REC-PNG-20031110/
+/// the PNG spec, see https://www.w3.org/TR/2003/REC-PNG-20031110/
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PngChunkType {
     IHDR,
