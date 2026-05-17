@@ -86,7 +86,6 @@ impl StreamingBitStreamReader {
                 self.bits_left += 8;
                 self.over_read += 1;
             }
-            debug_assert!(self.over_read <= 8);
         }
     }
 

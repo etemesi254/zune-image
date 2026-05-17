@@ -46,48 +46,38 @@ zune-png provides the `post_process_image_apng` utility to handle the complex st
 ```rust
 use zune_core::bytestream::ZCursor;
 use zune_core::result::DecodingResult;
-use zune_png::{PngDecoder, FrameInfo, post_process_image_apng};
+use zune_png::{PngDecoder, FrameInfo, ApngContext};
 
 fn decode_apng() {
     let file_data = std::fs::read("animated.png").unwrap();
     let mut decoder = PngDecoder::new(ZCursor::new(&file_data));
 
     decoder.decode_headers().unwrap();
+    
+    // Get useful information about the image
+    let colorspace = decoder.colorspace().unwrap();
+    let info = decoder.info().unwrap().clone();
 
-    if decoder.is_animated() {
-        let info = decoder.info().unwrap().clone();
-        let colorspace = decoder.colorspace().unwrap();
+    // Allocate the main canvas
+    let buffer_size = info.width * info.height * colorspace.num_components();
+    let mut output = vec![0; buffer_size];
 
-        // Allocate the main canvas and a backup canvas for frame disposal
-        let buffer_size = info.width * info.height * colorspace.num_components();
-        let mut output_canvas = vec![0u8; buffer_size];
-        let mut backup_canvas = vec![0u8; buffer_size];
+    // Initialize the APNG context BEFORE the loop.
+    // This handles the backup canvas and gamma table internally.
+    let mut ctx = ApngContext::<u8>::new(&info, colorspace, info.gamma);
 
-        let mut prev_frame_info: Option<FrameInfo> = None;
+    while decoder.more_frames() {
+        decoder.decode_headers().unwrap();
 
-        while decoder.more_frames() {
-            decoder.decode_headers().unwrap();
-            let frame = decoder.frame_info().unwrap().clone();
+        let frame = decoder.frame_info().unwrap().clone();
+        let pix = decoder.decode_raw().unwrap();
 
-            if let DecodingResult::U8(frame_pixels) = decoder.decode().unwrap() {
-                // Run the compositing lifecycle (Disposal -> Blending)
-                post_process_image_apng(
-                    &info,
-                    colorspace,
-                    &frame,
-                    prev_frame_info.as_ref(),
-                    &frame_pixels,
-                    &mut backup_canvas,
-                    &mut output_canvas,
-                    None
-                ).unwrap();
+        // Process the frame. The context automatically handles disposal of the
+        // previous frame and state tracking!
+        ctx.process_frame(&frame, &pix, &mut output).unwrap();
 
-                // `output_canvas` now holds the fully rendered frame!
-                // Do something with it (e.g., save or display) here.
-
-                prev_frame_info = Some(frame);
-            }
-        }
+        // The `output` buffer now contains the fully composited frame.
+        // e.g you can encode each frame separately
     }
 }
 ```

@@ -16,6 +16,7 @@ use crate::utils::{copy_rep_matches_slow, fixed_copy_within};
 mod streaming_bitstream;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum DynamicTreePhase {
     /// Reading HLIT, HDIST, and HCLEN
     #[default]
@@ -51,6 +52,10 @@ pub(crate) enum DeflateState {
     /// Block is completely done
     Done,
 }
+/// A streaming deflate decoder instance.
+///
+/// The decoder allows one to incrementally increase both input and output buffers
+/// as more data comes in, useful for streaming scenarios like PNG IDAT decoding
 #[derive(Default)]
 pub struct StreamingDecoder {
     is_last_block: bool,
@@ -61,11 +66,22 @@ pub struct StreamingDecoder {
     dest_offset: usize,
     // We need to store this across calls if we get interrupted reading tables
     is_final_chunk: bool,
+    // max bytes to be read
+    max_bytes: usize,
+    // Keep track of bytes shifted out of the buffer to track absolute total
+    window_slid_bytes: usize,
 }
 impl StreamingDecoder {
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        StreamingDecoder {
+            max_bytes: usize::MAX,
+            ..Default::default()
+        }
+    }
+    /// Set maximum bytes the decoder should decode
+    pub fn set_limit(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes;
     }
 }
 
@@ -284,9 +300,13 @@ impl StreamingDecoder {
     }
 }
 impl StreamingDecoder {
-    /// Current offset in the deflate buffer the dest is pointint to
+    /// Current offset in the deflate buffer the dest is pointing to
     pub fn current_dest_offset(&self) -> usize {
         self.dest_offset
+    }
+    /// Return the total decoded bytes in this context
+    pub fn decoded_bytes(&self) -> usize {
+        self.window_slid_bytes + self.dest_offset
     }
     /// A streaming Deflate decoder that processes compressed data in arbitrary-sized chunks.
     ///
@@ -425,7 +445,8 @@ impl StreamingDecoder {
             }
             // Attempt to refill at the start of every state cycle
             self.stream.refill(chunk);
-
+            // Calculate the max allowed offset for the current out_block slice
+            let max_dest_offset = self.max_bytes.saturating_sub(self.window_slid_bytes);
             match self.state {
                 DeflateState::ReadingBlockHeader => {
                     if !self.stream.has(3) {
@@ -495,19 +516,34 @@ impl StreamingDecoder {
                         };
                         continue;
                     }
+                    let total_written = self.dest_offset + self.window_slid_bytes;
 
-                    let available = out_block.len().saturating_sub(self.dest_offset);
+                    let global_remaining = max_dest_offset.saturating_sub(total_written);
 
-                    if *bytes_left > available {
-                        return DecodeStatus::NeedsMoreOutput {
-                            at_least: *bytes_left - available,
-                        };
+                    // If fulfilling this block breaches the limit, error out immediately.
+                    // This prevents allocating or copying data for malformed payloads or bombs.
+                    if *bytes_left > global_remaining {
+                        return DecodeStatus::Error(InflateDecodeErrors::new_with_error(
+                            DecodeErrorStatus::OutputLimitExceeded(
+                                self.max_bytes,
+                                total_written + *bytes_left, // The total size it attempted to reach
+                            ),
+                        ));
                     }
+
+                    let available_out = out_block.len().saturating_sub( self.dest_offset);
+
+                    // If the output buffer is full, we must pause and yield to the caller
+                    if available_out == 0 {
+                        return DecodeStatus::NeedsMoreOutput { at_least: 1 };
+                    }
+
                     // Step 1: Drain any bytes trapped in the bit reader's `buffer`
-                    // Since we aligned to a byte boundary earlier, `bits_left` is guaranteed
-                    // to be a multiple of 8.
                     assert_eq!(self.stream.get_bits_left() % 8, 0);
-                    while *bytes_left > 0 && self.stream.get_bits_left() >= 8 {
+                    while *bytes_left > 0
+                        && self.stream.get_bits_left() >= 8
+                        && self.dest_offset < out_block.len()
+                    {
                         let byte = self.stream.get_bits(8) as u8;
                         out_block[self.dest_offset] = byte;
                         self.dest_offset += 1;
@@ -518,40 +554,46 @@ impl StreamingDecoder {
                         continue; // Loop around to check if we are Done or need the next BlockHeader
                     }
 
-                    // Step 2: The bit buffer is empty. We can now do a fast bulk copy
-                    // directly from the unread portion of the slice.
+                    // If we stopped draining because the output buffer filled up, yield.
+                    if self.dest_offset == out_block.len() {
+                        return DecodeStatus::NeedsMoreOutput {
+                            at_least: *bytes_left,
+                        };
+                    }
+
+                    // Step 2: The bit buffer is empty. Fast bulk copy directly from the slice.
                     let remaining_in_chunk = self.stream.remaining_bytes(chunk);
-                    let bytes_to_copy = (*bytes_left).min(remaining_in_chunk);
+                    let available_out_for_bulk = out_block.len() - self.dest_offset;
+
+                    // Copy the minimum of what is remaining across all 3 constraints
+                    let bytes_to_copy = (*bytes_left)
+                        .min(remaining_in_chunk)
+                        .min(available_out_for_bulk);
 
                     if bytes_to_copy > 0 {
                         let start = self.stream.position;
                         let end = start + bytes_to_copy;
 
-                        let end_position = self.dest_offset + bytes_to_copy;
-                        if end_position > out_block.len() {
-                            return DecodeStatus::NeedsMoreOutput {
-                                at_least: end_position - out_block.len(),
-                            };
-                        }
                         out_block[self.dest_offset..self.dest_offset + bytes_to_copy]
                             .copy_from_slice(&chunk[start..end]);
 
-                        // Advance the stream's position directly since we bypassed the bit-buffer
                         self.stream.position += bytes_to_copy;
                         *bytes_left -= bytes_to_copy;
                         self.dest_offset += bytes_to_copy;
                     }
 
-                    // Step 3: Check if we finished copying
-                    if *bytes_left > 0 {
-                        // We exhausted the current chunk but still need more bytes
-                        return DecodeStatus::NeedsMoreInput;
-                    } else {
+                    if *bytes_left == 0 {
                         self.state = if self.is_last_block {
                             DeflateState::Done
                         } else {
                             DeflateState::ReadingBlockHeader
                         };
+                    } else if self.dest_offset == out_block.len() {
+                        return DecodeStatus::NeedsMoreOutput {
+                            at_least: *bytes_left,
+                        };
+                    } else {
+                        return DecodeStatus::NeedsMoreInput;
                     }
                 }
 
@@ -740,6 +782,7 @@ impl StreamingDecoder {
     /// were discarded, and the remaining data was shifted to index 0.
     pub fn slide_window(&mut self, amount: usize) {
         self.dest_offset -= amount;
+        self.window_slid_bytes += amount;
     }
     pub(crate) fn decode_data(
         &mut self, chunk: &[u8], out_block: &mut [u8],
@@ -930,6 +973,15 @@ impl StreamingDecoder {
 
             // --- THE SLOW LOOP (Safe boundary parsing) ---
             loop {
+                if self.stream.over_read > 10 {
+                    return Err(DecodeStatus::Error(InflateDecodeErrors::new_with_error(DecodeErrorStatus::Generic("Stream filled with more than accepted number of fill bytes, this is a corrupt block"))));
+                }
+                let total_decompressed = self.window_slid_bytes + self.dest_offset;
+                if total_decompressed > self.max_bytes {
+                    return Err(DecodeStatus::Error(InflateDecodeErrors::new_with_error(
+                        DecodeErrorStatus::OutputLimitExceeded(self.max_bytes, total_decompressed),
+                    )));
+                }
                 // Take a zero-cost snapshot of the bitstream BEFORE we consume any codes
                 let snapshot_pos = self.stream.position;
                 let snapshot_bits = self.stream.bits_left;

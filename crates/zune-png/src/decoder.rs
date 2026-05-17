@@ -551,7 +551,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             };
 
             if header.chunk_type == PngChunkType::IDAT || header.chunk_type == PngChunkType::fdAT {
-                // Stop parsing headers. We are ready to stream pixels.
+                //  Stop parsing headers. We are ready to stream pixels.
                 // Save the length so our streaming loop knows how much to read
                 self.current_idat_bytes_left = header.length;
                 self.decoding_state = DecodingBody;
@@ -567,6 +567,15 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             if header.chunk_type == PngChunkType::IEND {
                 break;
             }
+        }
+        // some checks
+        if !self.seen_hdr {
+            // we allow arbitrary headers, IHDR does not have to be the first,
+            // but we do not allow IDAT being seen without a IHDR
+            return Err(PngDecodeErrors::GenericStatic("IHDR not encountered in fisrst scan"));
+        }
+        if self.png_info.color == PngColor::Palette && !self.seen_ptle {
+            return Err(PngDecodeErrors::GenericStatic("Palette image without the corresponding PLTE chunk"));
         }
         self.seen_headers = true;
         Ok(())
@@ -831,6 +840,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         //      16 bit images in the next step
       
     self.decode_headers()?;
+
 
         // in case we are to strip 16 bit to 8 bit, use decode_raw which does that for us
         if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
