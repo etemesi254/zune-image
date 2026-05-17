@@ -66,7 +66,11 @@ impl<T: ZByteReaderTrait> DecoderTrait for Jpeg2000Decoder<T> {
                     4 => ColorSpace::RGBA,
                     _ => ColorSpace::MultiBand(NonZeroU32::new(u32::from(*num_channels)).unwrap()),
                 };
-                icc_bytes = Some(profile);
+                #[allow(unused_assignments)]
+                {
+                    icc_bytes = Some(profile);
+                }
+
                 self.colorspace = colorspace;
                 return Err(ImageErrors::ImageDecodeErrors(
                     "Unsupported ICC color type".to_string(),
