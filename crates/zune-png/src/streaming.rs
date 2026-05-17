@@ -57,7 +57,7 @@ where
 {
     /// Inner shared logic in between interlaced
     /// and standard png decoding
-    #[inline(never)] // We explicitly don't want this inlined to preserve I-Cache
+    #[inline(never)]
     fn process_zlib_stream<F>(
         &mut self, decoder: &mut zune_inflate::StreamingDecoder, byte_buf: &mut [u8],
         deflate_buf: &mut [u8], final_out: &mut [u8], mut extract_callback: F,
@@ -412,7 +412,6 @@ where
         //  Find the first non-empty pass
         let mut start_pass = 0;
         let (mut initial_pass_w, mut initial_pass_h) = self.adam7_dimensions(start_pass)?;
-        let mut interlaced_dims = [(0, 0); 7];
 
         while initial_pass_w == 0 || initial_pass_h == 0 {
             start_pass += 1;
@@ -480,7 +479,6 @@ where
         for p in 0..7 {
             let (pw, ph) = self.adam7_dimensions(p)?;
             if pw > 0 && ph > 0 {
-                interlaced_dims[p] = (pw, ph);
                 let row_bytes = self.calculate_pass_row_size(pw);
                 total_expected_bytes += ph * row_bytes;
             }
@@ -614,7 +612,7 @@ where
         let will_post_process = self.will_post_process();
 
         // 2. Setup Single-Allocation Ping-Pong Buffers
-        // We allocate exactly enough space for TWO raw rows side-by-side.
+        // We allocate exactly enough space for two raw rows side-by-side.
         // This ensures the current and previous rows are right next to each other in cache.
         // But we only allocate it if we will need it, and it is only needed on images we will post process
         // e.g by palettes etc

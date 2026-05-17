@@ -551,7 +551,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             };
 
             if header.chunk_type == PngChunkType::IDAT || header.chunk_type == PngChunkType::fdAT {
-                //  Stop parsing headers. We are ready to stream pixels.
+                // Stop parsing headers. We are ready to stream pixels.
                 // Save the length so our streaming loop knows how much to read
                 self.current_idat_bytes_left = header.length;
                 self.decoding_state = DecodingBody;
