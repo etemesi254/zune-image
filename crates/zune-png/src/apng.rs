@@ -7,6 +7,7 @@
  */
 #![allow(dead_code, unused_imports)] // when building for no_std
 use alloc::vec::Vec;
+use alloc::format;
 
 use zune_core::colorspace::ColorSpace;
 
@@ -315,6 +316,7 @@ where
     ///     // let bytes = zune_png::PngEncoder::new(&output, encoder_opts).encode(&mut vec![]);
     /// }
     /// ```
+    #[cfg(feature = "std")]
     pub fn process_frame(
         &mut self, frame_info: &FrameInfo, current_frame: &[T], output: &mut [T],
     ) -> Result<(), PngDecodeErrors> {

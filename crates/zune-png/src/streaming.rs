@@ -1,3 +1,5 @@
+use crate::alloc::string::ToString;
+
 use crate::decoder::{DecodingState, PLTEEntry};
 use crate::enums::{FilterMethod, PngChunkType, PngColor};
 use crate::error::PngDecodeErrors;
