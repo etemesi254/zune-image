@@ -20,12 +20,11 @@ const YORIG: [usize; 7] = [0, 0, 4, 0, 2, 0, 1];
 const XSPC: [usize; 7] = [8, 8, 4, 4, 2, 2, 1];
 const YSPC: [usize; 7] = [8, 8, 8, 4, 4, 2, 2];
 
-// this is the single read size per decode of deflate
-// A bit larger than typical ZLIB idat chunks (which are 8KB)
-// but this allows us to reduce the copy_within shifts in the decoder
-const BUF_READ: usize = 32_768;
-// Maximum deflate history that can be used by an image
-const MAX_DEFLATE_HISTORY: usize = 32_768;
+// Minimum bytes read on a delfate buffer
+const BUF_READ: usize = 65536;
+// Maximum deflate chunk size
+// Covers both compressed and uncompressed deflate chunks
+const MAX_DEFLATE_CHUNK: usize = 65536;
 
 struct InterlaceState {
     // Current interlace pass, bounded from 0 to 7
@@ -46,6 +45,11 @@ struct InterlaceState {
     is_complete: bool,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum ProcessingStatus {
+    Continue,
+    Stop,
+}
 impl<T> PngDecoder<T>
 where
     T: ZByteReaderTrait,
@@ -81,6 +85,7 @@ where
         let row_bytes = row_bits.div_ceil(8);
         row_bytes + 1 // +1 for the filter byte
     }
+    #[allow(clippy::too_many_arguments)]
     fn scatter_interlaced_row(
         &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
         final_image_out: &mut [u8], num_components: usize, width: usize,
@@ -144,9 +149,10 @@ where
     fn extract_rows_interlaced(
         &mut self, deflate_buf: &[u8], processed_bytes: &mut usize, decode_dest: usize,
         final_out: &mut [u8], width: usize, state: &mut InterlaceState,
-    ) -> Result<(), PngDecodeErrors> {
+    ) -> Result<ProcessingStatus, PngDecodeErrors> {
         let num_components = self.colorspace().unwrap().num_components();
         let will_post_process = self.will_post_process();
+
 
         while (decode_dest - *processed_bytes) >= state.row_size && !state.is_complete {
             let in_stride = &deflate_buf[*processed_bytes..*processed_bytes + state.row_size];
@@ -193,7 +199,7 @@ where
             } else {
                 // FAST PATH: No post-processing needed.
                 // Skip `post_processed_row` entirely and scatter directly from `curr_row`.
-                let valid_curr_row = &curr_row[..state.out_chunk_size.min(curr_row.len())];
+                let valid_curr_row = curr_row.get(..state.out_chunk_size).unwrap();
 
                 self.scatter_interlaced_row(
                     state.current_pass,
@@ -215,7 +221,7 @@ where
                 loop {
                     if state.current_pass > 6 {
                         state.is_complete = true;
-                        return Ok(());
+                        return Ok(ProcessingStatus::Continue);
                     }
                     let dims = self.adam7_dimensions(state.current_pass)?;
                     state.pass_w = dims.0;
@@ -239,13 +245,11 @@ where
                 state.current_row_idx = 0;
             }
         }
-        Ok(())
+        Ok(ProcessingStatus::Continue)
     }
 
     fn decode_stream_interlaced(&mut self, final_out: &mut [u8]) -> Result<(), PngDecodeErrors> {
-        if !self.seen_headers {
-            self.decode_headers_inner()?;
-        }
+        self.decode_headers_inner()?;
 
         let w = if let Some(e) = self.frame_info().as_ref() {
             e.width
@@ -305,7 +309,7 @@ where
         };
 
         // --- 3. Setup Deflate ---
-        let buf_size = core::cmp::max(65536, MAX_DEFLATE_HISTORY + max_row_size + 4096);
+        let buf_size = core::cmp::max(65536, MAX_DEFLATE_CHUNK + max_row_size + 4096);
         // allocations we make, buf_size is generally enough to hold 2 rows, including
         //
         // Furthermore, we split it into 1 allocation of two buffers so that we reduce alloc pressure
@@ -316,6 +320,18 @@ where
         let (byte_buf, deflate_buf) = major_buf.split_at_mut(BUF_READ);
 
         let mut decoder = zune_inflate::StreamingDecoder::new();
+        // calculate maximum expected bytes used for interlaced decoding
+        // so that we set that up as a limit
+        let mut total_expected_bytes: usize = 0;
+        for p in 0..7 {
+            let (pw, ph) = self.adam7_dimensions(p)?;
+            if pw > 0 && ph > 0 {
+                let row_bytes = self.calculate_pass_row_size(pw);
+                total_expected_bytes += ph * row_bytes;
+            }
+        }
+        decoder.set_limit(total_expected_bytes);
+
         let mut processed_bytes = 0;
 
         let mut skipped_zlib_header = false;
@@ -328,6 +344,7 @@ where
             if self.current_idat_bytes_left == 0 && !is_final_chunk {
                 // Skip the CRC of the previous IDAT chunk
                 self.stream.skip(4)?;
+
 
                 let header = self.read_chunk_header()?;
 
@@ -354,7 +371,10 @@ where
                 warn!("No header found after stream end, possibly corrupt image");
                 return Ok(());
             }
-
+            if self.stream.eof()? {
+                // TODO: should i eof or indicate an error?
+                return Ok(());
+            }
             let read_len = core::cmp::min(BUF_READ, self.current_idat_bytes_left);
 
             let chunk_size = if read_len > 0 {
@@ -377,7 +397,12 @@ where
                 let input_slice: &[u8] = if chunk_size == 0 && is_final_chunk {
                     &[]
                 } else {
-                    &byte_buf[chunk_pos..chunk_size]
+                    let slice = if let Some(v) = byte_buf.get(chunk_pos..chunk_size) {
+                        v
+                    } else {
+                        return Err(PngDecodeErrors::GenericStatic("Invalid Truncated ZLIB"));
+                    };
+                    slice
                 };
 
                 let status = decoder.decode_chunk(input_slice, is_final_chunk, deflate_buf);
@@ -386,7 +411,7 @@ where
                     DecodeStatus::NeedsMoreInput => break,
 
                     DecodeStatus::NeedsMoreOutput { .. } => {
-                        self.extract_rows_interlaced(
+                        let result = self.extract_rows_interlaced(
                             deflate_buf,
                             &mut processed_bytes,
                             decoder.current_dest_offset(),
@@ -395,12 +420,15 @@ where
                             &mut state,
                         )?;
 
+                        if result == ProcessingStatus::Stop {
+                            return Ok(());
+                        }
                         if state.is_complete {
                             return Ok(());
                         }
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
-                        let keep_amount = core::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
+                        let keep_amount = core::cmp::max(MAX_DEFLATE_CHUNK, unread_bytes);
 
                         let slide_amount =
                             decoder.current_dest_offset().saturating_sub(keep_amount);
@@ -413,6 +441,7 @@ where
                     }
 
                     DecodeStatus::Finished => {
+
                         self.extract_rows_interlaced(
                             deflate_buf,
                             &mut processed_bytes,
@@ -435,8 +464,14 @@ where
                         break 'decoding;
                     }
 
-                    DecodeStatus::Error(e) => return Err(PngDecodeErrors::ZlibDecodeErrors(e)),
-                    _ => unreachable!(),
+                    DecodeStatus::Error(e) => {
+                        return Err(PngDecodeErrors::ZlibDecodeErrors(e));
+                    }
+                    DecodeStatus::InputBackReferenceTooSmall { .. } => {
+                        return Err(PngDecodeErrors::Generic(
+                            "Back reference longer than bytes decoded".to_string(),
+                        ))
+                    }
                 }
             }
         }
@@ -488,9 +523,8 @@ where
     }
     /// Decode a single stream
     pub(crate) fn decode_stream_raw(&mut self) -> Result<Vec<u8>, PngDecodeErrors> {
-        if !self.seen_headers {
-            self.decode_headers_inner()?;
-        }
+        self.decode_headers()?;
+
         // make buffer
         let mut final_out = vec![0u8; self.output_frame_size()?];
         // decode into buffer
@@ -528,8 +562,8 @@ where
         if !self.seen_headers {
             self.decode_headers_inner()?;
         }
-        let width = if let Some(e) = self.frame_info().as_ref() {
-            e.width
+        let (width, height) = if let Some(e) = self.frame_info().as_ref() {
+            (e.width, e.height)
         } else {
             return Err(PngDecodeErrors::Generic(format!(
                 "No frame found for {:?}",
@@ -558,11 +592,13 @@ where
         let mut raw_buffers = vec![0u8; width_stride * 2 * usize::from(will_post_process)];
 
         // 3. Setup Deflate Buffers
-        let buf_size = core::cmp::max(65536, MAX_DEFLATE_HISTORY + row_size + 4096);
+        let buf_size = core::cmp::max(65536, MAX_DEFLATE_CHUNK + row_size + 4096);
         let mut major_buf = vec![0u8; buf_size + BUF_READ];
         let (byte_buf, deflate_buf) = major_buf.split_at_mut(BUF_READ);
 
         let mut decoder = zune_inflate::StreamingDecoder::new();
+        let decoder_limit = row_size * height;
+        decoder.set_limit(decoder_limit);
         let mut processed_bytes = 0;
         let mut current_row_idx = 0;
         let mut final_out_pos = 0;
@@ -605,6 +641,10 @@ where
                 return Ok(());
             }
 
+            if self.stream.eof()? {
+                // TODO: should i eof or indicate an error?
+                return Ok(());
+            }
             // Read bytes from the IDAT stream
             let read_len = core::cmp::min(byte_buf.len(), self.current_idat_bytes_left);
             let chunk_size = self.stream.read_bytes(&mut byte_buf[..read_len])?;
@@ -621,14 +661,19 @@ where
                 let input_slice: &[u8] = if self.current_idat_bytes_left == 0 && is_final_chunk {
                     &[]
                 } else {
-                    &byte_buf[chunk_pos..chunk_size]
+                    let slice = if let Some(v) = byte_buf.get(chunk_pos..chunk_size) {
+                        v
+                    } else {
+                        return Err(PngDecodeErrors::GenericStatic("Invalid Truncated ZLIB"));
+                    };
+                    slice
                 };
 
                 match decoder.decode_chunk(input_slice, is_final_chunk, deflate_buf) {
                     DecodeStatus::NeedsMoreInput => break,
 
                     DecodeStatus::NeedsMoreOutput { .. } => {
-                        self.extract_rows(
+                        let result = self.extract_rows(
                             width,
                             deflate_buf,
                             &mut processed_bytes,
@@ -640,9 +685,12 @@ where
                             out_chunk_size,
                             &mut raw_buffers,
                         )?;
+                        if result == ProcessingStatus::Stop {
+                            return Ok(());
+                        }
 
                         let unread_bytes = decoder.current_dest_offset() - processed_bytes;
-                        let keep_amount = core::cmp::max(MAX_DEFLATE_HISTORY, unread_bytes);
+                        let keep_amount = core::cmp::max(MAX_DEFLATE_CHUNK, unread_bytes);
                         let slide_amount =
                             decoder.current_dest_offset().saturating_sub(keep_amount);
 
@@ -666,6 +714,7 @@ where
                             out_chunk_size,
                             &mut raw_buffers,
                         )?;
+
                         if is_final_chunk {
                             return Ok(());
                         }
@@ -680,8 +729,14 @@ where
                         break 'decoding;
                     }
 
-                    DecodeStatus::Error(e) => return Err(PngDecodeErrors::ZlibDecodeErrors(e)),
-                    _ => unreachable!(),
+                    DecodeStatus::Error(e) => {
+                        return Err(PngDecodeErrors::ZlibDecodeErrors(e));
+                    }
+                    DecodeStatus::InputBackReferenceTooSmall { .. } => {
+                        return Err(PngDecodeErrors::Generic(
+                            "Back reference longer than bytes decoded".to_string(),
+                        ))
+                    }
                 }
             }
         }
@@ -696,7 +751,10 @@ where
         &mut self, width: usize, deflate_buf: &[u8], processed_bytes: &mut usize,
         decode_dest: usize, row_size: usize, current_row_idx: &mut usize, final_out: &mut [u8],
         final_out_pos: &mut usize, out_chunk_size: usize, raw_buffers: &mut [u8],
-    ) -> Result<(), PngDecodeErrors> {
+    ) -> Result<ProcessingStatus, PngDecodeErrors> {
+        if *final_out_pos >= final_out.len() {
+            return Ok(ProcessingStatus::Stop);
+        }
         let width_stride = row_size - 1;
         let filter_bpp = usize::from(self.png_info.color.num_components())
             * if self.png_info.depth == 16 { 2 } else { 1 };
@@ -728,7 +786,14 @@ where
                     filter_bpp,
                 )?;
 
-                let dest_slice = &mut final_out[*final_out_pos..*final_out_pos + out_chunk_size];
+                let f_len = final_out.len();
+                let dest_slice = &mut final_out
+                    [*final_out_pos..core::cmp::min(*final_out_pos + out_chunk_size, f_len)];
+                // Some specific fuzzed inputs
+                if dest_slice.is_empty() {
+                    return Ok(ProcessingStatus::Stop);
+                }
+
                 self.post_process_row_direct(curr_row, dest_slice, width)?;
             } else {
                 // FAST PATH (Zero-Copy): No post-processing needed.
@@ -737,7 +802,16 @@ where
                 // split_at_mut safely gives us read access to what we've already written,
                 // and write access to the remaining space.
                 let (finished, remaining) = final_out.split_at_mut(*final_out_pos);
-                let dest_slice = &mut remaining[..out_chunk_size];
+                let dest_slice = if let Some(slice) = remaining.get_mut(..out_chunk_size) {
+                    slice
+                } else {
+                    let msg = "ZLIB PNG bigger than image width and height";
+                    if self.options.strict_mode() {
+                        return Err(PngDecodeErrors::GenericStatic(msg));
+                    }
+                    warn!("{}", msg);
+                    return Ok(ProcessingStatus::Stop);
+                };
 
                 let prev_row = if is_first_row {
                     &[]
@@ -762,7 +836,7 @@ where
             *current_row_idx += 1;
         }
 
-        Ok(())
+        Ok(ProcessingStatus::Continue)
     }
 }
 impl<T> PngDecoder<T> {
@@ -983,3 +1057,16 @@ where
         self.seen_trns | self.seen_ptle | (self.png_info.depth < 8) | add_alpha | depth_thing
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use crate::PngDecoder;
+//
+//     #[test]
+//     fn test_hello() {
+//         let file =std::fs::File::open("/Users/etemesi/rust/zune-image/crates/zune-png/fuzz/artifacts/decode_buffer/crash-aecfcbe042276408b27784e383d4132d22263b01").unwrap();
+//         let data = std::io::BufReader::new(file);
+//         let mut decoder = PngDecoder::new(data);
+//         decoder.decode_raw().unwrap();
+//     }
+// }

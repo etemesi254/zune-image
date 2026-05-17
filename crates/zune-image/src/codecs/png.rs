@@ -54,11 +54,8 @@ where
             match self.depth().unwrap().bit_type() {
                 BitType::U8 => {
                     let mut output = vec![0; buffer_size];
-                    let mut canvas_backup = vec![0; buffer_size];
-
-                    // Track the previous frame's information for the disposal phase
-                    let mut prev_frame_info: Option<FrameInfo> = None;
-
+                    let mut apng_ctx = ApngContext::<u8>::new(self.info().unwrap(),colorspace);
+                    
                     while self.more_frames() {
                         self.decode_headers()?;
 
@@ -68,16 +65,8 @@ where
                         let pix = self.decode_raw()?;
 
                         // Use the new APNG post-processing function
-                        post_process_image_apng(
-                            &info,
-                            colorspace,
-                            &frame,
-                            prev_frame_info.as_ref(),
-                            &pix,
-                            &mut canvas_backup,
-                            &mut output,
-                            None,
-                        )?;
+                        apng_ctx.process_frame(&frame,&pix, &mut output)?;
+                     
 
                         // Create the frame from the fully composited output
                         let im_frame = Frame::from_u8(
@@ -87,15 +76,13 @@ where
                             usize::from(frame.delay_denom),
                         );
                         output_frames.push(im_frame);
-
-                        // At the end of the loop, the current frame becomes the previous frame
-                        prev_frame_info = Some(frame);
+                        
                     }
                 }
                 BitType::U16 => {
                     let mut output = vec![0; buffer_size];
-                    let mut canvas_backup = vec![0; buffer_size];
-                    let mut prev_frame_info: Option<FrameInfo> = None;
+
+                    let mut apng_ctx = ApngContext::<u16>::new(self.info().unwrap(),colorspace);
 
                     while self.more_frames() {
                         self.decode_headers()?;
@@ -103,17 +90,8 @@ where
                         let frame = self.frame_info().unwrap();
 
                         if let DecodingResult::U16(pix) = self.decode()? {
-                            post_process_image_apng(
-                                &info,
-                                colorspace,
-                                &frame,
-                                prev_frame_info.as_ref(),
-                                &pix,
-                                &mut canvas_backup,
-                                &mut output,
-                                None,
-                            )?;
-
+                            
+                            apng_ctx.process_frame(&frame,&pix, &mut output)?;
                             // Create the frame from the fully composited output
                             let im_frame = Frame::from_u16(
                                 &output,
@@ -122,8 +100,6 @@ where
                                 usize::from(frame.delay_denom),
                             );
                             output_frames.push(im_frame);
-
-                            prev_frame_info = Some(frame);
                         } else {
                             unreachable!("Invalid image state, please report");
                         }

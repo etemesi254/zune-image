@@ -3,7 +3,6 @@
  *
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-
 use alloc::format;
 
 use zune_core::bytestream::ZByteReaderTrait;
@@ -269,7 +268,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     }
 
     pub(crate) fn parse_exif(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
-        let data = self.stream.peek_at(0, chunk.length).unwrap();
+        let data = self.stream.peek_at(0, chunk.length)?;
 
         // recommended that we check for first four bytes compatibility
         // so do it here
@@ -297,7 +296,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Parse the iCCP chunk
     pub(crate) fn parse_iccp(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         let length = core::cmp::min(chunk.length, 79);
-        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_bytes = self.stream.peek_at(0, length)?;
         let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
 
         if let Some(pos) = keyword_position {
@@ -314,7 +313,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let _ = self.stream.read_u8();
 
             // read remaining chunk
-            let data = self.stream.peek_at(0, remainder).unwrap();
+            let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
             if let Ok(icc_uncompressed) = DeflateDecoder::new(data).decode_zlib() {
@@ -336,7 +335,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Parse the text chunk
     pub(crate) fn parse_text(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         let length = core::cmp::min(chunk.length, 79);
-        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_bytes = self.stream.peek_at(0, length)?;
         let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
 
         if let Some(pos) = keyword_position {
@@ -348,7 +347,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
             // read remaining chunk
 
-            let text = self.stream.peek_at(0, remainder).unwrap().to_vec();
+            let text = self.stream.peek_at(0, remainder)?.to_vec();
 
             let text_chunk = TextChunk { keyword, text };
             self.png_info.text_chunk.push(text_chunk);
@@ -366,7 +365,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Parse the itXT chunk
     pub(crate) fn parse_itxt(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         let length = core::cmp::min(chunk.length, 79);
-        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_bytes = self.stream.peek_at(0, length)?;
         let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
 
         if let Some(pos) = keyword_position {
@@ -380,7 +379,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
             self.stream.skip(bytes_to_skip)?;
             let remainder = chunk.length.saturating_sub(bytes_to_skip);
-            let raw_data = self.stream.peek_at(0, remainder).unwrap().to_vec();
+            let raw_data = self.stream.peek_at(0, remainder)?.to_vec();
 
             let itxt_chunk = ItxtChunk {
                 keyword,
@@ -401,7 +400,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     /// Parse zTxt chunk
     pub(crate) fn parse_ztxt(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
         let length = core::cmp::min(chunk.length, 79);
-        let keyword_bytes = self.stream.peek_at(0, length).unwrap();
+        let keyword_bytes = self.stream.peek_at(0, length)?;
         let keyword_position = keyword_bytes.iter().position(|x| *x == 0);
 
         if let Some(pos) = keyword_position {
@@ -420,7 +419,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             let _ = self.stream.read_u8();
 
             // read remaining chunk
-            let data = self.stream.peek_at(0, remainder).unwrap();
+            let data = self.stream.peek_at(0, remainder)?;
 
             // decode to vec
             if let Ok(ztxt) = DeflateDecoder::new(data).decode_zlib() {
@@ -451,6 +450,19 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // It must appear before the `IDAT` or `fdAT` chunks of the frame to which it applies,
         //
         let fctl_info = self.parse_fctl_external(chunk)?;
+        // confirm dimensions
+        if fctl_info.width > self.png_info.width {
+            return Err(PngDecodeErrors::Generic(format!(
+                "Frame FCTL width ({}) is larger than image width ({})",
+                fctl_info.width, self.png_info.width
+            )));
+        }
+        if fctl_info.height > self.png_info.height {
+            return Err(PngDecodeErrors::Generic(format!(
+                "Frame FCTL height ({}) is larger than image height ({})",
+                fctl_info.height, self.png_info.height
+            )));
+        }
 
         self.num_fctl_seen += 1;
         self.frames.push(SingleFrame::new(fctl_info));

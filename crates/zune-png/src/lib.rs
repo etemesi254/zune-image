@@ -153,7 +153,7 @@
 //!
 //! The library supports animated images decoding, up to post processing for 8-bit images.
 //!
-//! To understand more see [post_process_image_apng]
+//! To understand more see [ApngContext]
 //!
 //! # Alternatives
 //! - [png](https://crates.io/crates/png) crate
@@ -167,9 +167,9 @@ extern crate core;
 
 #[cfg(feature = "std")]
 #[allow(deprecated)]
-pub use {apng::post_process_image_apng,apng::post_process_image};
+pub use apng::post_process_image;
 
-pub use apng::{BlendOp, DisposeOp,FrameInfo};
+pub use apng::{ApngContext, BlendOp, DisposeOp, FrameInfo};
 pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
 pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;
@@ -185,5 +185,5 @@ pub mod error;
 mod filters;
 mod headers;
 mod options;
-mod utils;
 mod streaming;
+mod utils;
