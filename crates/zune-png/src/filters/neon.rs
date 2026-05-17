@@ -5,17 +5,61 @@ use core::arch::aarch64::*;
 #[inline]
 #[target_feature(enable = "neon")]
 pub unsafe fn de_filter_sub_neon<const SIZE: usize>(raw: &[u8], current: &mut [u8]) {
-    let mut zero = [0u8; 16];
+    let len = raw.len();
+    let full_chunks = len / SIZE;
+    let remainder = len % SIZE;
+
     let mut a = vdupq_n_u8(0);
 
-    for (raw_chunk, out_chunk) in raw.chunks_exact(SIZE).zip(current.chunks_exact_mut(SIZE)) {
-        zero[0..SIZE].copy_from_slice(raw_chunk);
+    // Chunks where we have >= 16 bytes from chunk start in both `raw` and `current`.
+    let safe_chunks = if len >= 16 { (len - 16) / SIZE } else { 0 };
 
-        let d = vld1q_u8(zero.as_ptr());
-        a = vaddq_u8(d, a);
-        vst1q_u8(zero.as_mut_ptr(), a);
+    // Safe interior: safe slicing guarantees we don't exceed the slice bounds.
+    for i in 0..safe_chunks {
+        let start = i * SIZE;
 
-        out_chunk.copy_from_slice(&zero[0..SIZE]);
+        let raw_slice = &raw[start..];
+        let out_slice = &mut current[start..];
+
+        unsafe {
+            let d = vld1q_u8(raw_slice.as_ptr());
+            a = vaddq_u8(d, a);
+            vst1q_u8(out_slice.as_mut_ptr(), a);
+        }
+    }
+
+    // Remaining chunks (last full chunk(s) + remainder): use staging buffer
+    let mut zero = [0u8; 16];
+
+    for i in safe_chunks..full_chunks {
+        let start = i * SIZE;
+        let end = start + SIZE;
+
+        zero[..SIZE].copy_from_slice(&raw[start..end]);
+
+        unsafe {
+            let d = vld1q_u8(zero.as_ptr());
+            a = vaddq_u8(d, a);
+            vst1q_u8(zero.as_mut_ptr(), a);
+        }
+
+        current[start..end].copy_from_slice(&zero[..SIZE]);
+    }
+
+    // Remainder (< SIZE bytes)
+    if remainder > 0 {
+        zero = [0u8; 16];
+        let start = full_chunks * SIZE;
+
+        zero[..remainder].copy_from_slice(&raw[start..]);
+
+        unsafe {
+            let d = vld1q_u8(zero.as_ptr());
+            a = vaddq_u8(d, a);
+            vst1q_u8(zero.as_mut_ptr(), a);
+        }
+
+        current[start..].copy_from_slice(&zero[..remainder]);
     }
 }
 
