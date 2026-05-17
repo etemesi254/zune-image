@@ -8,7 +8,7 @@
 #![allow(dead_code, unused_imports)] // when building for no_std
 use alloc::vec::Vec;
 use alloc::format;
-
+use alloc::vec;
 use zune_core::colorspace::ColorSpace;
 
 use crate::error::PngDecodeErrors;
@@ -227,6 +227,7 @@ where
     ///
     /// * `info`: PNG information containing the global width and height of the animation.
     /// * `colorspace`: The image colorspace, obtained from the decoder via `get_colorspace()`.
+    #[cfg(feature = "std")]
     pub fn new(info: &PngInfo, colorspace: ColorSpace) -> Self {
         let nc = colorspace.num_components();
         let gamma_value = info.gamma.unwrap_or(2.2);
