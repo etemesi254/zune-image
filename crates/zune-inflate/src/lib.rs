@@ -88,6 +88,7 @@
 //!
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate alloc;
+extern crate core;
 
 pub use crate::decoder::{DeflateDecoder, DeflateOptions};
 pub use crate::encoder::DeflateEncoder;

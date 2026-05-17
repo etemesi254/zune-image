@@ -154,7 +154,7 @@ pub const LITLEN_DECODE_BITS: usize =
 pub const DEFLATE_MAX_MATCH_LEN: usize = 258;
 
 /// Number of bytes copied per every loop
-pub const FASTCOPY_BYTES: usize = 16;
+pub const FASTCOPY_BYTES: usize = 8;
 
 /// Worst case maximum number of output bytes writtern during each iteration of the
 /// fastloop.

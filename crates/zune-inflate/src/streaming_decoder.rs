@@ -531,7 +531,7 @@ impl StreamingDecoder {
                         ));
                     }
 
-                    let available_out = out_block.len().saturating_sub( self.dest_offset);
+                    let available_out = out_block.len().saturating_sub(self.dest_offset);
 
                     // If the output buffer is full, we must pause and yield to the caller
                     if available_out == 0 {
