@@ -123,6 +123,7 @@ pub(crate) fn create_and_exec_workflow_from_cmd(
                 ImageFormat::guess_format(std::io::Cursor::new(&header[..bytes_read]))
             {
                 if format.has_decoder() {
+                    trace!("Decoding input {} as image format {:?}",in_file_str, format);
                     if is_web {
                         if let Some((stream, initial_data, content_length)) = web_parts {
                             // Construct the WebBuffer right here with the live connection
