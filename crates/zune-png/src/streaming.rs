@@ -277,7 +277,7 @@ where
                 if { $b_size } <= x_spc_bytes {
                     for (src_pixel, out_chunk) in src_pixels
                         .chunks_exact($b_size)
-                        .zip(out_space.chunks_mut(x_spc_bytes))
+                        .zip(out_space.chunks_exact_mut(x_spc_bytes))
                     {
                         out_chunk[..$b_size].copy_from_slice(src_pixel);
                     }
