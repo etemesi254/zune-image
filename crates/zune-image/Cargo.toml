@@ -15,7 +15,7 @@ description = "An image library, containing necessary capabilities to decode, ma
 log = ["zune-core/log"]
 ppm = ["zune-ppm"]
 jpeg = ["zune-jpeg", "jpeg-encoder"]
-png=["zune-png",]
+png = ["zune-png", ]
 psd = ["zune-psd"]
 farbfeld = ["zune-farbfeld"]
 qoi = ["zune-qoi"]
@@ -24,10 +24,15 @@ hdr = ["zune-hdr"]
 bmp = ["zune-bmp"]
 heic = ["zune-heic"]
 webp = ["image-webp"]
+jpeg_2000 = ["hayro-jpeg2000"]
 # Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
+# Common image formats (criteria is browser support)
+common_formats = ["jpeg", "png", "webp", "bmp"]
+# Extra formats, not commonly present but usually available in some capacity or the other
+extra_formats = ["jpeg-xl", "hdr", "farbfeld", "qoi", "ppm", "heic", "jpeg_2000"]
 # All image formats
-image_formats = ["jpeg", "ppm", "png", "psd", "farbfeld", "qoi", "jpeg-xl", "hdr", "bmp", "webp", "heic"]
+image_formats = ["common_formats", "extra_formats"]
 # External crates that help us handle metadata
 metadata = ["kamadak-exif"]
 # Every supported thing
@@ -45,7 +50,6 @@ docs = []
 all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
 
 [dependencies]
-#zune-imageprocs = { path = "../zune-imageprocs", optional = true }
 # Core primitives
 zune-core = { path = "../zune-core", version = "^0.5.1", features = ["std"] }
 # Images
@@ -58,21 +62,25 @@ zune-jpegxl = { path = "../zune-jpegxl", version = "^0.5.2", optional = true }
 zune-hdr = { path = "../zune-hdr", version = "^0.5.2", optional = true }
 zune-bmp = { path = "../zune-bmp", version = "^0.5.2", optional = true }
 zune-heic = { path = "../zune-heic", version = "0.5.0", optional = true }
-zune-png = {path = "../zune-png",version = "0.5.2",optional = true}
+zune-png = { path = "../zune-png", version = "0.5.2", optional = true }
+
 # Channel conversions in a safe way
 bytemuck = { version = "1.24.0", default-features = false }
+
 # Serializing info
 serde = { version = "^1.0", optional = true }
+
 # External image APIs
 jpeg-encoder = { version = "0.7.0", optional = true, features = ["simd", "std"] }
 jxl-oxide = { version = "0.12.5", optional = true }
+hayro-jpeg2000 = { version = "0.3.5", optional = true }
+image-webp = { version = "0.2.4", optional = true }
+
 # metadata
 kamadak-exif = { version = "0.6.1", optional = true }
 
-image-webp = { version = "0.2.4", optional = true }
 log = "0.4.29"
 ureq = { version = "3.3.0", optional = true }
-png = "0.18.1"
 
 [dev-dependencies]
 num-complex = "0.4.3" # Runs generate-fractals

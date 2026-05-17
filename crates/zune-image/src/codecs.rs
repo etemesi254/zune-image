@@ -50,6 +50,7 @@ mod exr;
 pub mod farbfeld;
 pub mod hdr;
 pub mod jpeg;
+pub mod jpeg_2000;
 pub mod jpeg_xl;
 pub mod png;
 pub mod ppm;
@@ -58,7 +59,6 @@ pub mod qoi;
 
 pub mod heic;
 pub mod webp;
-
 /// The 'for<'a>' means this function pointer can handle a reader
 /// with ANY lifetime and return a decoder tied to THAT same lifetime.
 ///
@@ -189,6 +189,8 @@ pub enum ImageFormat {
     WEBP,
     /// Apple HEIC/HEIF file
     HEIC,
+    /// JPEG 2000 decoding (supported via hayro-jpeg200(
+    JPEG_2000,
     /// Custom register hooked decoders,
     ///
     /// To use this see the example on [crate::codecs::register_decoder]
@@ -781,6 +783,16 @@ where
             return Some((ImageFormat::HEIC, reader.consume()));
         }
     }
+    #[cfg(feature = "jpeg_2000")]
+    {
+        let reference = reader.peek_at(0, 16).ok()?;
+        const JP2_MAGIC: &[u8] = b"\x00\x00\x00\x0C\x6A\x50\x20\x20";
+        const CODESTREAM_MAGIC: &[u8] = b"\xFF\x4F\xFF\x51";
+
+        if reference.starts_with(JP2_MAGIC) || reference.starts_with(CODESTREAM_MAGIC) {
+            return Some((ImageFormat::JPEG_2000, reader.consume()));
+        }
+    }
 
     None
 }
@@ -910,4 +922,12 @@ fn register_builtins(map: &mut HashMap<ImageFormat, DecoderFactory>) {
             data, opts,
         )))
     });
+    #[cfg(feature = "jpeg_2000")]
+    {
+        (map.insert(ImageFormat::JPEG_2000, |data, opts| {
+            Ok(Box::new(
+                codecs::jpeg_2000::Jpeg2000Decoder::new_with_options(data, opts),
+            ))
+        }));
+    }
 }
