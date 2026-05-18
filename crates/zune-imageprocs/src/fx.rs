@@ -215,7 +215,6 @@ impl OperationsTrait for Fx {
             args[idx] = std::f64::consts::E;
         }
         let num_threads = image.operation_options().num_threads_child();
-        let use_threads = image.operation_options().use_threads();
 
         for frame in image.frames_mut() {
             let channels = frame.channels_mut(colorspace, false);

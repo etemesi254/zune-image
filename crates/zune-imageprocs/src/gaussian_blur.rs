@@ -21,7 +21,7 @@ use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-
+use zune_image::planar_regions::{PlanarRegionMut, PlanarRegionOut};
 /// Applies a fast Gaussian blur to the image.
 ///
 /// A true Gaussian blur is computationally expensive because it requires convolving the
@@ -80,56 +80,64 @@ impl OperationsTrait for GaussianBlur {
         OperationColorValues::Linear
     }
 
-    #[allow(clippy::too_many_lines)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.dimensions();
         let depth = image.depth();
+        trace!("Running gaussian blur using parallel regions");
 
-        let num_threads = image.operation_options().num_threads_child();
-        trace!("Running gaussian blur with {num_threads} spatial threads");
+        let radii = create_box_gauss(self.sigma);
+
+        // Allocate our single scratch image upfront
+        let mut scratch = image.clone();
+
+        // TODO: CAE investigate blurs and alpha channel
+        let ignore_alpha = false;
 
         match depth.bit_type() {
             BitType::U8 => {
-                for channel in image.channels_mut(false) {
-                    let mut temp = vec![0; width * height];
-                    gaussian_blur_u8(
-                        channel.reinterpret_as_mut::<u8>()?,
-                        &mut temp,
-                        width,
-                        height,
-                        self.sigma,
-                        num_threads,
-                    );
-                }
+                // 1. Horizontal Passes (In-Place)
+                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_u8(region, &radii);
+                })?;
+
+                // 2. Vertical Passes (Out-of-Place Ping-Pong!)
+                // Pass 1: Image -> Scratch
+                image.par_process_regions_out_of_place::<u8, _>(&mut scratch, ignore_alpha, |region| {
+                    vertical_blur_region_u8(region, radii[0]);
+                })?;
+
+                // Pass 2: Scratch -> Image
+                scratch.par_process_regions_out_of_place::<u8, _>(image, ignore_alpha, |region| {
+                    vertical_blur_region_u8(region, radii[1]);
+                })?;
+
+                // Pass 3: Image -> Scratch
+                image.par_process_regions_out_of_place::<u8, _>(&mut scratch, ignore_alpha, |region| {
+                    vertical_blur_region_u8(region, radii[2]);
+                })?;
             }
             BitType::U16 => {
-                for channel in image.channels_mut(false) {
-                    let mut temp = vec![0; width * height];
-                    gaussian_blur_u16(
-                        channel.reinterpret_as_mut::<u16>()?,
-                        &mut temp,
-                        width,
-                        height,
-                        self.sigma,
-                        num_threads,
-                    );
-                }
+                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_u16(region, &radii);
+                })?;
+
+                image.par_process_regions_out_of_place::<u16, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_u16(region, radii[0]))?;
+                scratch.par_process_regions_out_of_place::<u16, _>(image, ignore_alpha, |region| vertical_blur_region_u16(region, radii[1]))?;
+                image.par_process_regions_out_of_place::<u16, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_u16(region, radii[2]))?;
             }
             BitType::F32 => {
-                for channel in image.channels_mut(false) {
-                    let mut temp = vec![0.0; width * height];
-                    gaussian_blur_f32(
-                        channel.reinterpret_as_mut()?,
-                        &mut temp,
-                        width,
-                        height,
-                        self.sigma,
-                        num_threads,
-                    );
-                }
+                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_f32(region, &radii);
+                })?;
+
+                image.par_process_regions_out_of_place::<f32, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_f32(region, radii[0]))?;
+                scratch.par_process_regions_out_of_place::<f32, _>(image, ignore_alpha, |region| vertical_blur_region_f32(region, radii[1]))?;
+                image.par_process_regions_out_of_place::<f32, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_f32(region, radii[2]))?;
             }
             d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
+
+        // The final result of the 3rd vertical pass ends up in the scratch buffer.
+        *image = scratch;
 
         Ok(())
     }
@@ -174,229 +182,82 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
     radii
 }
 
-pub fn gaussian_blur_u8(
-    in_out_image: &mut [u8], scratch_space: &mut [u8], width: usize, height: usize, sigma: f32,
-    num_threads: usize,
-) {
-    let blur_radii = create_box_gauss(sigma);
-    assert_eq!(blur_radii.len(), 3, "Update pass operations");
+// --- HORIZONTAL ADAPTERS (IN-PLACE) ---
 
-    let chunk_height = (height + num_threads - 1) / num_threads.max(1);
-    let chunk_size = chunk_height * width;
+fn horizontal_blur_region_u8(region: &mut PlanarRegionMut<'_, u8>, radii: &[usize; 3]) {
+    let width = region.width;
+    // Tiny, L1-cache friendly scratch space local to this thread
+    let mut scratch_row = vec![0u8; width];
 
-    #[cfg(feature = "threads")]
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    // 1. Horizontal Passes
-    if use_threads {
-        #[cfg(feature = "threads")]
-        std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image
-                .chunks_mut(chunk_size)
-                .zip(scratch_space.chunks_mut(chunk_size))
-            {
-                s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk
-                        .chunks_exact_mut(width)
-                        .zip(scratch_chunk.chunks_exact_mut(width))
-                    {
-                        crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
-                        crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
-                        crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
-                    }
-                });
-            }
-        });
-    } else {
-        for (in_row, scratch_row) in in_out_image
-            .chunks_exact_mut(width)
-            .zip(scratch_space.chunks_exact_mut(width))
-        {
-            crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
-            crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
-            crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
-        }
-    }
-
-    // 2. Vertical Passes
-    for (pos, blur_radius) in blur_radii.iter().enumerate() {
-        let (input, output): (&[u8], &mut [u8]) = if pos % 2 == 0 {
-            (scratch_space, in_out_image)
-        } else {
-            (in_out_image, scratch_space)
-        };
-
-        if use_threads {
-            #[cfg(feature = "threads")]
-            std::thread::scope(|s| {
-                for (i, out_chunk) in output.chunks_mut(chunk_size).enumerate() {
-                    let y_start = i * chunk_height;
-                    let radius = *blur_radius;
-                    s.spawn(move || {
-                        box_blur_vertical_u8_chunk(
-                            input, out_chunk, width, height, radius, y_start,
-                        );
-                    });
-                }
-            });
-        } else {
-            box_blur_vertical_u8_chunk(input, output, width, height, *blur_radius, 0);
+    for channel in region.channels.iter_mut() {
+        for row in channel.chunks_exact_mut(width) {
+            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[0]);
+            crate::box_blur::box_blur_inner(&mut scratch_row, row, width, radii[1]);
+            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[2]);
+            // Final result is in scratch_row, copy back
+            row.copy_from_slice(&scratch_row);
         }
     }
 }
 
-pub fn gaussian_blur_u16(
-    in_out_image: &mut [u16], scratch_space: &mut [u16], width: usize, height: usize, sigma: f32,
-    num_threads: usize,
-) {
-    let blur_radii = create_box_gauss(sigma);
-    let chunk_height = (height + num_threads - 1) / num_threads.max(1);
-    let chunk_size = chunk_height * width;
+fn horizontal_blur_region_u16(region: &mut PlanarRegionMut<'_, u16>, radii: &[usize; 3]) {
+    let width = region.width;
+    let mut scratch_row = vec![0u16; width];
 
-    #[cfg(feature = "threads")]
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    if use_threads {
-        #[cfg(feature = "threads")]
-        std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image
-                .chunks_mut(chunk_size)
-                .zip(scratch_space.chunks_mut(chunk_size))
-            {
-                s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk
-                        .chunks_exact_mut(width)
-                        .zip(scratch_chunk.chunks_exact_mut(width))
-                    {
-                        crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
-                        crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
-                        crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
-                    }
-                });
-            }
-        });
-    } else {
-        for (in_row, scratch_row) in in_out_image
-            .chunks_exact_mut(width)
-            .zip(scratch_space.chunks_exact_mut(width))
-        {
-            crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[0]);
-            crate::box_blur::box_blur_inner(scratch_row, in_row, width, blur_radii[1]);
-            crate::box_blur::box_blur_inner(in_row, scratch_row, width, blur_radii[2]);
-        }
-    }
-
-    for (pos, blur_radius) in blur_radii.iter().enumerate() {
-        let (input, output): (&[u16], &mut [u16]) = if pos % 2 == 0 {
-            (scratch_space, in_out_image)
-        } else {
-            (in_out_image, scratch_space)
-        };
-
-        if use_threads {
-            #[cfg(feature = "threads")]
-            std::thread::scope(|s| {
-                for (i, out_chunk) in output.chunks_mut(chunk_size).enumerate() {
-                    let y_start = i * chunk_height;
-                    let radius = *blur_radius;
-                    s.spawn(move || {
-                        box_blur_vertical_u16_chunk(
-                            input, out_chunk, width, height, radius, y_start,
-                        );
-                    });
-                }
-            });
-        } else {
-            box_blur_vertical_u16_chunk(input, output, width, height, *blur_radius, 0);
+    for channel in region.channels.iter_mut() {
+        for row in channel.chunks_exact_mut(width) {
+            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[0]);
+            crate::box_blur::box_blur_inner(&mut scratch_row, row, width, radii[1]);
+            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[2]);
+            row.copy_from_slice(&scratch_row);
         }
     }
 }
 
-pub fn gaussian_blur_f32(
-    in_out_image: &mut [f32], scratch_space: &mut [f32], width: usize, height: usize, sigma: f32,
-    num_threads: usize,
-) {
-    let blur_radii = create_box_gauss(sigma);
-    let chunk_height = (height + num_threads - 1) / num_threads.max(1);
-    let chunk_size = chunk_height * width;
+fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[usize; 3]) {
+    let width = region.width;
+    let mut scratch_row = vec![0.0f32; width];
 
-    #[cfg(feature = "threads")]
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    if use_threads {
-        #[cfg(feature = "threads")]
-        std::thread::scope(|s| {
-            for (in_chunk, scratch_chunk) in in_out_image
-                .chunks_mut(chunk_size)
-                .zip(scratch_space.chunks_mut(chunk_size))
-            {
-                s.spawn(move || {
-                    for (in_row, scratch_row) in in_chunk
-                        .chunks_exact_mut(width)
-                        .zip(scratch_chunk.chunks_exact_mut(width))
-                    {
-                        crate::box_blur::box_blur_f32_inner(
-                            in_row,
-                            scratch_row,
-                            width,
-                            blur_radii[0],
-                        );
-                        crate::box_blur::box_blur_f32_inner(
-                            scratch_row,
-                            in_row,
-                            width,
-                            blur_radii[1],
-                        );
-                        crate::box_blur::box_blur_f32_inner(
-                            in_row,
-                            scratch_row,
-                            width,
-                            blur_radii[2],
-                        );
-                    }
-                });
-            }
-        });
-    } else {
-        for (in_row, scratch_row) in in_out_image
-            .chunks_exact_mut(width)
-            .zip(scratch_space.chunks_exact_mut(width))
-        {
-            crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[0]);
-            crate::box_blur::box_blur_f32_inner(scratch_row, in_row, width, blur_radii[1]);
-            crate::box_blur::box_blur_f32_inner(in_row, scratch_row, width, blur_radii[2]);
+    for channel in region.channels.iter_mut() {
+        for row in channel.chunks_exact_mut(width) {
+            crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[0]);
+            crate::box_blur::box_blur_f32_inner(&mut scratch_row, row, width, radii[1]);
+            crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[2]);
+            row.copy_from_slice(&scratch_row);
         }
     }
+}
 
-    for (pos, blur_radius) in blur_radii.iter().enumerate() {
-        let (input, output): (&[f32], &mut [f32]) = if pos % 2 == 0 {
-            (scratch_space, in_out_image)
-        } else {
-            (in_out_image, scratch_space)
-        };
 
-        if use_threads {
-            #[cfg(feature = "threads")]
-            std::thread::scope(|s| {
-                for (i, out_chunk) in output.chunks_mut(chunk_size).enumerate() {
-                    let y_start = i * chunk_height;
-                    let radius = *blur_radius;
-                    s.spawn(move || {
-                        box_blur_vertical_f32_chunk(
-                            input, out_chunk, width, height, radius, y_start,
-                        );
-                    });
-                }
-            });
-        } else {
-            box_blur_vertical_f32_chunk(input, output, width, height, *blur_radius, 0);
-        }
+// --- VERTICAL ADAPTERS (OUT-OF-PLACE) ---
+
+fn vertical_blur_region_u8(region: &mut PlanarRegionOut<'_, u8>, radius: usize) {
+    if region.src_channels.is_empty() { return; }
+    let width = region.width;
+    let height = region.src_channels[0].len() / width;
+
+    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
+        box_blur_vertical_u8_chunk(src, dest, width, height, radius, region.y_offset);
+    }
+}
+
+fn vertical_blur_region_u16(region: &mut PlanarRegionOut<'_, u16>, radius: usize) {
+    if region.src_channels.is_empty() { return; }
+    let width = region.width;
+    let height = region.src_channels[0].len() / width;
+
+    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
+        box_blur_vertical_u16_chunk(src, dest, width, height, radius, region.y_offset);
+    }
+}
+
+fn vertical_blur_region_f32(region: &mut PlanarRegionOut<'_, f32>, radius: usize) {
+    if region.src_channels.is_empty() { return; }
+    let width = region.width;
+    let height = region.src_channels[0].len() / width;
+
+    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
+        box_blur_vertical_f32_chunk(src, dest, width, height, radius, region.y_offset);
     }
 }
 

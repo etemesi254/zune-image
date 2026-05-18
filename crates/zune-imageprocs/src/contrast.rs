@@ -65,10 +65,6 @@ impl Contrast {
 }
 
 impl OperationsTrait for Contrast {
-    fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Gamma
-    }
-
     fn name(&self) -> &'static str {
         "contrast"
     }
@@ -81,83 +77,29 @@ impl OperationsTrait for Contrast {
 
         match depth.bit_type() {
             BitType::U8 => {
-                let lut = build_lut_u8(factor);
+                let lut_u8 = build_lut_u8(factor);
 
-                #[cfg(feature = "threads")]
-                {
-                    std::thread::scope(|s| {
-                        let mut errors = vec![];
-                        for channel in image.channels_mut(true) {
-                            let lut_ref = &lut; // Share reference across threads
-                            let result = s.spawn(move || {
-                                let data = channel.reinterpret_as_mut::<u8>()?;
-                                contrast_u8(data, lut_ref);
-                                Ok::<(), ImageErrors>(())
-                            });
-                            errors.push(result);
-                        }
-                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
-                    })?;
-                }
-                #[cfg(not(feature = "threads"))]
-                {
-                    for channel in image.channels_mut(true) {
-                        let data = channel.reinterpret_as_mut::<u8>()?;
-                        contrast_u8(data, &lut);
+                image.par_process_regions::<u8, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        contrast_u8(channel, &lut_u8);
                     }
-                }
+                })?;
             }
             BitType::U16 => {
                 let lut = build_lut_u16(factor);
-
-                #[cfg(feature = "threads")]
-                {
-                    std::thread::scope(|s| {
-                        let mut errors = vec![];
-                        for channel in image.channels_mut(true) {
-                            let lut_ref = &lut;
-                            let result = s.spawn(move || {
-                                let data = channel.reinterpret_as_mut::<u16>()?;
-                                contrast_u16(data, lut_ref);
-                                Ok::<(), ImageErrors>(())
-                            });
-                            errors.push(result);
-                        }
-                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
-                    })?;
-                }
-                #[cfg(not(feature = "threads"))]
-                {
-                    for channel in image.channels_mut(true) {
-                        let data = channel.reinterpret_as_mut::<u16>()?;
-                        contrast_u16(data, &lut);
+                image.par_process_regions::<u16, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        contrast_u16(channel, &lut);
                     }
-                }
+                })?;
             }
             BitType::F32 => {
                 // F32 cannot use a LUT, so we just pass the pre-computed factor
-                #[cfg(feature = "threads")]
-                {
-                    std::thread::scope(|s| {
-                        let mut errors = vec![];
-                        for channel in image.channels_mut(true) {
-                            let result = s.spawn(|| {
-                                let data = channel.reinterpret_as_mut::<f32>()?;
-                                contrast_f32(data, factor);
-                                Ok::<(), ImageErrors>(())
-                            });
-                            errors.push(result);
-                        }
-                        errors.into_iter().map(|x| x.join().unwrap()).collect::<Result<Vec<()>, ImageErrors>>()
-                    })?;
-                }
-                #[cfg(not(feature = "threads"))]
-                {
-                    for channel in image.channels_mut(true) {
-                        let data = channel.reinterpret_as_mut::<f32>()?;
-                        contrast_f32(data, factor);
+                image.par_process_regions::<f32, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        contrast_f32(channel, factor);
                     }
-                }
+                })?;
             }
             d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
@@ -175,6 +117,10 @@ impl OperationsTrait for Contrast {
 
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
+    }
+
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
     }
 }
 

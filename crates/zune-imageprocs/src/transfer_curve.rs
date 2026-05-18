@@ -3,12 +3,10 @@ mod trc;
 pub use trc::TransferFunction;
 use zune_core::bit_depth::BitType;
 use zune_core::log::warn;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-use crate::utils::execute_on;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConversionType {
@@ -83,74 +81,63 @@ impl OperationsTrait for TransferCurve {
             }
         }
         let depth = image.depth();
-        let eight_bit_lut = if image.depth().bit_type() == BitType::U8 {
-            match self.conversion_type {
-                ConversionType::GammaToLinear => Some(build_8_bit_gamma_to_linear_lut_table(
-                    self.transfer_function,
-                )),
-                ConversionType::LinearToGamma => Some(build_8_bit_linear_to_gamma_lut_table(
-                    self.transfer_function,
-                )),
-            }
-        } else {
-            None
-        };
-        let sixteen_bit_lut = if image.depth().bit_type() == BitType::U16 {
-            match self.conversion_type {
-                ConversionType::GammaToLinear => Some(build_sixteen_bit_gamma_to_linear_lut_table(
-                    self.transfer_function,
-                )),
-                ConversionType::LinearToGamma => Some(build_sixteen_bit_linear_to_gamma_lut_table(
-                    self.transfer_function,
-                )),
-            }
-        } else {
-            None
-        };
-        let conversion_function = |input: &mut Channel| -> Result<(), ImageErrors> {
-            match depth.bit_type() {
-                BitType::U8 => {
-                    if let Some(lut_table) = eight_bit_lut.as_ref() {
-                        let channel = input.reinterpret_as_mut::<u8>()?;
+        match depth.bit_type() {
+            BitType::U8 => {
+                let lut_table = match self.conversion_type {
+                    ConversionType::GammaToLinear => {
+                        build_8_bit_gamma_to_linear_lut_table(self.transfer_function)
+                    }
+                    ConversionType::LinearToGamma => {
+                        build_8_bit_linear_to_gamma_lut_table(self.transfer_function)
+                    }
+                };
+                image.par_process_regions::<u8, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
                         for x in channel.iter_mut() {
                             *x = lut_table[*x as usize];
                         }
-                    } else {
-                        return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
-                }
-                BitType::U16 => {
-                    if let Some(lut_table) = sixteen_bit_lut.as_ref() {
-                        let channel = input.reinterpret_as_mut::<u16>()?;
+                })?;
+            }
+            BitType::U16 => {
+                let lut_table = match self.conversion_type {
+                    ConversionType::GammaToLinear => {
+                        build_sixteen_bit_gamma_to_linear_lut_table(self.transfer_function)
+                    }
+                    ConversionType::LinearToGamma => {
+                        build_sixteen_bit_linear_to_gamma_lut_table(self.transfer_function)
+                    }
+                };
+                image.par_process_regions::<u16, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
                         for x in channel.iter_mut() {
                             *x = lut_table[*x as usize];
                         }
-                    } else {
-                        return Err(ImageErrors::GenericStr("LUT table was not provided"));
                     }
-                }
-                BitType::F32 => {
-                    // F32 is just all of them slowly by slowly
-                    let channel = input.reinterpret_as_mut::<f32>()?;
-                    match self.conversion_type {
-                        ConversionType::GammaToLinear => {
+                })?;
+            }
+
+            BitType::F32 => {
+                // all of them, slowly by slowly
+                image.par_process_regions::<f32, _>(true, |region| match self.conversion_type {
+                    ConversionType::GammaToLinear => {
+                        for channel in region.channels.iter_mut() {
                             for x in channel.iter_mut() {
                                 *x = self.transfer_function.linearize(*x);
                             }
                         }
-                        ConversionType::LinearToGamma => {
+                    }
+                    ConversionType::LinearToGamma => {
+                        for channel in region.channels.iter_mut() {
                             for x in channel.iter_mut() {
                                 *x = self.transfer_function.gamma(*x);
                             }
                         }
                     }
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                })?;
             }
-            Ok(())
-        };
-
-        execute_on(conversion_function, image, true)?;
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        }
 
         match self.conversion_type {
             ConversionType::GammaToLinear => image.metadata_mut().set_linear(true),
@@ -164,6 +151,7 @@ impl OperationsTrait for TransferCurve {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
+#[must_use]
 pub fn build_8_bit_gamma_to_linear_lut_table(transfer_function: TransferFunction) -> [u8; 256] {
     let mut lut_table = [0u8; 256];
     for (i, item) in lut_table.iter_mut().enumerate() {
@@ -172,6 +160,7 @@ pub fn build_8_bit_gamma_to_linear_lut_table(transfer_function: TransferFunction
     lut_table
 }
 
+#[must_use]
 pub fn build_8_bit_linear_to_gamma_lut_table(transfer_function: TransferFunction) -> [u8; 256] {
     let mut lut_table = [0u8; 256];
     for (i, item) in lut_table.iter_mut().enumerate() {

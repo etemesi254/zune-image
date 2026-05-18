@@ -11,13 +11,12 @@
 //!  A description can be found [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
 //!
 use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
-use crate::utils::execute_on;
 /// A bilateral filter operation for edge-preserving smoothing.
 ///
 /// Unlike standard Gaussian blurs that average all pixels in a neighborhood, a bilateral
@@ -77,18 +76,21 @@ impl OperationsTrait for BilateralFilter {
     fn name(&self) -> &'static str {
         "Bilateral Filter"
     }
+
     fn operation_color_values(&self) -> OperationColorValues {
         OperationColorValues::Linear
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth();
-        let (w, h) = image.dimensions();
         if self.d < 1 {
             return Ok(());
         }
 
-        // initialize bilateral coefficients outside of the main loop
+        // 1. Pre-allocate the destination buffer by cloning the source image
+        let mut dest_image = image.clone();
+
+        // 2. Initialize coefficients once
         let coeffs = init_bilateral(
             self.d,
             self.sigma_color,
@@ -96,38 +98,97 @@ impl OperationsTrait for BilateralFilter {
             usize::from(depth.max_value()) + 1,
         );
 
-        let bilateral_fn = |channel: &mut Channel| {
-            let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
-
-            match depth.bit_type() {
-                BitType::U8 => bilateral_filter_int::<u8>(
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?,
-                    w,
-                    h,
-                    &coeffs,
-                ),
-                BitType::U16 => bilateral_filter_int::<u16>(
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?,
-                    w,
-                    h,
-                    &coeffs,
-                ),
-
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                }
+        // 3. Dispatch the parallel out-of-place primitive based on bit depth
+        match depth.bit_type() {
+            BitType::U8 => {
+                image.par_process_regions_out_of_place::<u8, _>(
+                    &mut dest_image,
+                    true, // ignore_alpha as per documentation
+                    |region| bilateral_filter_region::<u8>(region, &coeffs)
+                )?;
             }
-            *channel = new_channel;
-            Ok(())
-        };
+            BitType::U16 => {
+                image.par_process_regions_out_of_place::<u16, _>(
+                    &mut dest_image,
+                    true,
+                    |region| bilateral_filter_region::<u16>(region, &coeffs)
+                )?;
+            }
+            d => {
+                return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
+            }
+        }
 
-        execute_on(bilateral_fn, image, true)
+        // 4. Overwrite the original image with the processed destination
+        *image = dest_image;
+
+        Ok(())
     }
 
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16]
+    }
+}
+fn bilateral_filter_region<T>(
+    region: &mut PlanarRegionOut<'_, T>,
+    coeffs: &BilateralCoeffs
+) where
+    T: Copy + NumOps<T> + Default + Send + Sync,
+    i32: std::convert::From<T>,
+{
+    let radius = coeffs.radius as i32;
+    let width = region.width;
+
+    if region.src_channels.is_empty() {
+        return;
+    }
+
+    // Since src_channels contains the FULL image slices, we can derive the global height
+    let global_height = region.src_channels[0].len() / width;
+
+    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
+
+        // Iterate only over the lines this specific region is responsible for
+        for local_y in 0..region.height {
+
+            // Map to the absolute image coordinates for neighborhood lookups
+            let global_y = region.y_offset + local_y;
+
+            for x in 0..width {
+                let val0 = i32::from(src[global_y * width + x]);
+
+                let mut sum = 0.0_f64;
+                let mut wsum = 0.0_f64;
+                let mut k = 0usize;
+
+                let mut dy = -radius;
+                while dy <= radius {
+                    let mut dx = -radius;
+                    while dx <= radius {
+                        let r = ((dy * dy + dx * dx) as f64).sqrt();
+                        if r <= radius as f64 {
+                            // Clamp against the GLOBAL height, not the region height
+                            let sy = (global_y as i32 + dy).clamp(0, global_height as i32 - 1) as usize;
+                            let sx = (x as i32 + dx).clamp(0, width as i32 - 1) as usize;
+
+                            // Read safely from the full source buffer
+                            let val = i32::from(src[sy * width + sx]);
+                            let abs_diff = (val - val0).unsigned_abs() as usize;
+
+                            let w = coeffs.space_weight[k] * coeffs.color_weight[abs_diff];
+                            sum += f64::from(val) * w;
+                            wsum += w;
+                            k += 1;
+                        }
+                        dx += 1;
+                    }
+                    dy += 1;
+                }
+
+                // Write to the chunked destination buffer using LOCAL coordinates
+                dest[local_y * width + x] = T::from_f64((sum / wsum).round());
+            }
+        }
     }
 }
 
@@ -179,50 +240,6 @@ fn init_bilateral(
         space_weight,
         radius: usize::try_from(radius).unwrap_or_default(),
     };
-}
-
-fn bilateral_filter_int<T>(
-    src: &[T], dest: &mut [T], width: usize, height: usize, coeffs: &BilateralCoeffs,
-) where
-    T: Copy + NumOps<T> + Default + Send + Sync,
-    i32: std::convert::From<T>,
-{
-    let radius = coeffs.radius as i32;
-
-    for y in 0..height {
-        for x in 0..width {
-            let val0 = i32::from(src[y * width + x]);
-
-            let mut sum = 0.0_f64;
-            let mut wsum = 0.0_f64;
-            let mut k = 0usize;
-
-            let mut dy = -radius;
-            while dy <= radius {
-                let mut dx = -radius;
-                while dx <= radius {
-                    // Replicate-pad by clamping — identical semantics to PadMethod::Replicate
-                    let r = ((dy * dy + dx * dx) as f64).sqrt();
-                    if r <= radius as f64 {
-                        let sy = (y as i32 + dy).clamp(0, height as i32 - 1) as usize;
-                        let sx = (x as i32 + dx).clamp(0, width as i32 - 1) as usize;
-
-                        let val = i32::from(src[sy * width + sx]);
-                        let abs_diff = (val - val0).unsigned_abs() as usize;
-
-                        let w = coeffs.space_weight[k] * coeffs.color_weight[abs_diff];
-                        sum += f64::from(val) * w;
-                        wsum += w;
-                        k += 1;
-                    }
-                    dx += 1;
-                }
-                dy += 1;
-            }
-
-            dest[y * width + x] = T::from_f64((sum / wsum).round());
-        }
-    }
 }
 
 #[cfg(test)]

@@ -19,12 +19,10 @@
 //! # Gotchas
 //! -`f32` depth doesn't do any clamping, hence values may get out of range
 use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
-use crate::utils::execute_on;
 
 /// Adjusts the exposure and black level of an image.
 ///
@@ -88,9 +86,6 @@ impl OperationsTrait for Exposure {
         "Exposure"
     }
 
-    fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Linear
-    }
     #[allow(
         clippy::cast_sign_loss,
         clippy::cast_lossless,
@@ -103,12 +98,6 @@ impl OperationsTrait for Exposure {
 
         // Build LUTs outside the closure so they are only calculated once
         // per execute_impl call, rather than per channel/thread.
-        let mut lut_u8 = vec![0_u8; if bit_type == BitType::U8 { 256 } else { 0 }];
-        if bit_type == BitType::U8 {
-            for (i, item) in lut_u8.iter_mut().enumerate() {
-                *item = ((i as f32 - black) * exposure).clamp(0.0, 255.0) as u8;
-            }
-        }
 
         let mut lut_u16 = vec![0_u16; if bit_type == BitType::U16 { 65536 } else { 0 }];
         if bit_type == BitType::U16 {
@@ -117,39 +106,59 @@ impl OperationsTrait for Exposure {
             }
         }
 
-        let exposure_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            match bit_type {
-                BitType::U8 => {
-                    assert_eq!(lut_u8.len(),256);
-                    let raw_px = channel.reinterpret_as_mut::<u8>()?;
-                    for x in raw_px.iter_mut() {
-                        *x = lut_u8[*x as usize];
-                    }
+        match bit_type {
+            BitType::U8 => {
+                let mut lut_u8 = [0_u8; 256];
+                for (i, item) in lut_u8.iter_mut().enumerate() {
+                    *item = ((i as f32 - black) * exposure).clamp(0.0, 255.0) as u8;
                 }
-                BitType::U16 => {
-                    assert_eq!(lut_u16.len(),65536);
-                    let raw_px = channel.reinterpret_as_mut::<u16>()?;
-                    for x in raw_px.iter_mut() {
-                        *x = lut_u16[*x as usize];
+
+                image.par_process_regions::<u8, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        for pix in channel.iter_mut() {
+                            *pix = lut_u8[usize::from(*pix)];
+                        }
                     }
-                }
-                BitType::F32 => {
-                    let raw_px = channel.reinterpret_as_mut::<f32>()?;
-                    for x in raw_px.iter_mut() {
-                        // F32 cannot use a LUT, execute normally
-                        *x = (*x - black) * exposure;
-                    }
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                })?;
             }
-            Ok(())
-        };
+            BitType::U16 => {
+                let mut lut_u16 = vec![0_u16; 65536];
+                for (i, item) in lut_u16.iter_mut().enumerate() {
+                    *item = ((i as f32 - black) * exposure).clamp(0.0, 65535.0) as u16;
+                }
+                let lut_u16_bound: &[u16; 65536] = lut_u16.as_slice().try_into().unwrap();
 
-        // execute_on automatically handles multithreading across channels
-        execute_on(exposure_fn, image, true)
+                image.par_process_regions::<u16, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        for pix in channel.iter_mut() {
+                            *pix = lut_u16_bound[usize::from(*pix)];
+                        }
+                    }
+                })?;
+            }
+            BitType::F32 => {
+                image.par_process_regions::<f32, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        for pix in channel.iter_mut() {
+                            *pix = (*pix - black) * exposure;
+                        }
+                    }
+                })?;
+            }
+            _ => {
+                return Err(ImageErrors::ImageOperationNotImplemented(
+                    self.name(),
+                    bit_type,
+                ))
+            }
+        }
+        Ok(())
     }
-
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
+    }
+
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 }

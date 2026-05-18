@@ -96,60 +96,53 @@ impl OperationsTrait for HsvAdjust {
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let orig_color = image.colorspace();
-        // convert to RGBA, this preserves alpha when it exists
-        // were we to do rgb, we have to worry about preserving alpha
-        // we also do this so that we know where R,G and B components are, e.g if color was ARGB
-        // we'd have gotten the components wrong
+
+        // Convert to RGBA to ensure R, G, and B components are predictably
+        // at indices 0, 1, and 2. This also preserves the alpha channel.
         image.convert_color(ColorSpace::RGBA)?;
-        // then we can manipulate the values
+
         let depth = image.depth();
 
-        for frames in image.frames_mut() {
-            let channels = frames.channels_vec();
+        // We set ignore_alpha to true. The parallel primitive will automatically
+        // handle the channel separation and pass exactly 3 channels (R, G, B) to our closure.
+        let ignore_alpha = true;
 
-            let (r, rest) = channels.split_at_mut(1);
-            let (g, b) = rest.split_at_mut(1);
-
-            match depth.bit_type() {
-                BitType::U8 => {
-                    modulate_hsl::<u8>(
-                        r[0].reinterpret_as_mut()?,
-                        g[0].reinterpret_as_mut()?,
-                        b[0].reinterpret_as_mut()?,
-                        self.hue,
-                        self.saturation,
-                        self.lightness
-                    );
-                }
-                BitType::U16 => {
-                    modulate_hsl::<u16>(
-                        r[0].reinterpret_as_mut()?,
-                        g[0].reinterpret_as_mut()?,
-                        b[0].reinterpret_as_mut()?,
-                        self.hue,
-                        self.saturation,
-                        self.lightness
-                    );
-                }
-                BitType::F32 => {
-                    modulate_hsl::<f32>(
-                        r[0].reinterpret_as_mut()?,
-                        g[0].reinterpret_as_mut()?,
-                        b[0].reinterpret_as_mut()?,
-                        self.hue,
-                        self.saturation,
-                        self.lightness
-                    );
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+        match depth.bit_type() {
+            BitType::U8 => {
+                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
+                    if let [r, g, b, ..] = region.channels {
+                        modulate_hsl::<u8>(
+                            r, g, b, self.hue, self.saturation, self.lightness
+                        );
+                    }
+                })?;
             }
+            BitType::U16 => {
+                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
+                    if let [r, g, b, ..] = region.channels {
+                        modulate_hsl::<u16>(
+                            r, g, b, self.hue, self.saturation, self.lightness
+                        );
+                    }
+                })?;
+            }
+            BitType::F32 => {
+                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
+                    if let [r, g, b, ..] = region.channels {
+                        modulate_hsl::<f32>(
+                            r, g, b, self.hue, self.saturation, self.lightness
+                        );
+                    }
+                })?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
-        // convert to original color
+
+        // Convert back to the original colorspace
         image.convert_color(orig_color)?;
 
         Ok(())
     }
-
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::F32, BitType::U8, BitType::U16]
     }

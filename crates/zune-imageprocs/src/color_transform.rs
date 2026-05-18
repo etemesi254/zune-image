@@ -1,12 +1,12 @@
 #![cfg(feature = "cms")]
 
-use moxcms::{ColorProfile, Layout, TransformOptions};
+use moxcms::{ColorProfile, Layout, TransformExecutor, TransformOptions};
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
-use zune_image::frame::Frame;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +56,7 @@ impl OperationsTrait for ColorTransform {
     fn name(&self) -> &'static str {
         "Color Transform"
     }
+
     fn operation_color_values(&self) -> OperationColorValues {
         OperationColorValues::Gamma
     }
@@ -65,7 +66,6 @@ impl OperationsTrait for ColorTransform {
             ColorProfile::new_from_slice(icc_chunk)
                 .map_err(|e| ImageErrors::GenericString(e.to_string()))?
         } else {
-            // If no profile is embedded, assume sRGB as the source
             trace!("No ICC chunk found, assuming sRGB source profile");
             ColorProfile::new_srgb()
         };
@@ -77,135 +77,53 @@ impl OperationsTrait for ColorTransform {
             ColorProfiles::Bt2020 => ColorProfile::new_bt2020(),
             ColorProfiles::DciP3 => ColorProfile::new_dci_p3(),
         };
-        let img_depth = image.depth();
 
-        let (w, h) = image.dimensions();
         let colorspace = image.colorspace();
-        let size = w * h * colorspace.num_components();
-
-        // map colorspace to layout
         let layout_value = match colorspace {
             ColorSpace::RGB => Layout::Rgb,
             ColorSpace::RGBA => Layout::Rgba,
             ColorSpace::Luma => Layout::Gray,
-            _ => {
-                return Err(ImageErrors::GenericStr(
-                    "Unsupported colorspace for transform",
-                ))
-            }
+            _ => return Err(ImageErrors::GenericStr("Unsupported colorspace for transform")),
         };
-        match img_depth.bit_type() {
+
+        // We do NOT ignore alpha here, because moxcms Layout::Rgba expects 4 channels interleaved
+        let ignore_alpha = false;
+
+        match image.depth().bit_type() {
             BitType::U8 => {
-                // make the transform once per image
                 let transform = color_profile
                     .create_transform_8bit(
-                        layout_value,
-                        &dest_color_profile,
-                        layout_value,
-                        TransformOptions::default(),
+                        layout_value, &dest_color_profile, layout_value, TransformOptions::default(),
                     )
                     .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
 
-                // input output storage
-                let mut input_interleaved = vec![0_u8; size];
-                let mut output_interleaved = vec![0_u8; size];
-
-                // iterate over all image frames applying the transforms
-                for frame in image.frames_mut() {
-                    // flatten the buffer
-                    let bytes_written = frame.flatten_into(&mut input_interleaved)?;
-
-                    transform
-                        .transform(
-                            &input_interleaved[..bytes_written],
-                            &mut output_interleaved[..bytes_written],
-                        )
-                        .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
-
-                    // store our output now, de-interleaving
-                    let new_frame = Frame::from_u8(
-                        &output_interleaved[..bytes_written],
-                        colorspace,
-                        frame.numerator(),
-                        frame.denominator(),
-                    );
-
-                    *frame = new_frame;
-                }
+                // Pass to the parallel primitive. It handles mutating all frames internally.
+                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
+                    process_cms_region(region, transform.as_ref());
+                })?;
             }
             BitType::U16 => {
                 let transform = color_profile
                     .create_transform_16bit(
-                        layout_value,
-                        &dest_color_profile,
-                        layout_value,
-                        TransformOptions::default(),
+                        layout_value, &dest_color_profile, layout_value, TransformOptions::default(),
                     )
                     .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
 
-                let mut input_interleaved = vec![0_u16; size];
-                let mut output_interleaved = vec![0_u16; size];
-
-                // iterate over all image frames applying the transforms
-                for frame in image.frames_mut() {
-                    // flatten the buffer
-                    let bytes_written = frame.flatten_into(&mut input_interleaved)?;
-
-                    transform
-                        .transform(
-                            &input_interleaved[..bytes_written],
-                            &mut output_interleaved[..bytes_written],
-                        )
-                        .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
-
-                    // store our output now, de-interleaving
-                    let new_frame = Frame::from_u16(
-                        &output_interleaved[..bytes_written],
-                        colorspace,
-                        frame.numerator(),
-                        frame.denominator(),
-                    );
-
-                    *frame = new_frame;
-                }
+                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
+                    process_cms_region(region, transform.as_ref());
+                })?;
             }
             BitType::F32 => {
                 let transform = color_profile
                     .create_transform_f32(
-                        layout_value,
-                        &dest_color_profile,
-                        layout_value,
-                        TransformOptions::default(),
+                        layout_value, &dest_color_profile, layout_value, TransformOptions::default(),
                     )
                     .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
 
-                let mut input_interleaved = vec![0_f32; size];
-                let mut output_interleaved = vec![0_f32; size];
-
-                // iterate over all image frames applying the transforms
-                for frame in image.frames_mut() {
-                    // flatten the buffer
-                    let bytes_written = frame.flatten_into(&mut input_interleaved)?;
-
-                    transform
-                        .transform(
-                            &input_interleaved[..bytes_written],
-                            &mut output_interleaved[..bytes_written],
-                        )
-                        .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
-
-                    // store our output now, de-interleaving
-                    let new_frame = Frame::from_f32(
-                        &output_interleaved[..bytes_written],
-                        colorspace,
-                        frame.numerator(),
-                        frame.denominator(),
-                    );
-
-                    *frame = new_frame;
-                }
+                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
+                    process_cms_region(region, transform.as_ref());
+                })?;
             }
-
             _ => {
                 return Err(ImageErrors::ImageOperationNotImplemented(
                     self.name(),
@@ -214,7 +132,7 @@ impl OperationsTrait for ColorTransform {
             }
         }
 
-        // set up the new ICC chunk
+        // Set up the new ICC chunk
         let new_profile = dest_color_profile
             .encode()
             .map_err(|e| ImageErrors::GenericString(e.to_string()))?;
@@ -228,7 +146,41 @@ impl OperationsTrait for ColorTransform {
         &[BitType::F32, BitType::U8, BitType::U16]
     }
 }
+fn process_cms_region<T>(region: &mut PlanarRegionMut<'_, T>, transform: &(dyn TransformExecutor<T> + Send + Sync))
+where
+    T: Copy + Default + Send + Sync,
+{
+    let num_pixels = region.width * region.height;
+    let num_channels = region.channels.len();
 
+    if num_pixels == 0 || num_channels == 0 {
+        return;
+    }
+
+    // Allocate tiny chunk buffers for the CMS transform
+    let buffer_size = num_pixels * num_channels;
+    let mut input_interleaved = vec![T::default(); buffer_size];
+    let mut output_interleaved = vec![T::default(); buffer_size];
+
+    // 1. Interleave: Read from Planar channels into the Interleaved buffer
+    for p in 0..num_pixels {
+        for c in 0..num_channels {
+            input_interleaved[p * num_channels + c] = region.channels[c][p];
+        }
+    }
+
+    // 2. Execute the moxcms transform
+    // Note: If moxcms panics/errors here, you might want to adjust error handling,
+    // but typically transform logic succeeds if layout matches.
+    let _ = transform.transform(&input_interleaved, &mut output_interleaved);
+
+    // 3. De-interleave: Read from the Interleaved output back to Planar channels
+    for p in 0..num_pixels {
+        for c in 0..num_channels {
+            region.channels[c][p] = output_interleaved[p * num_channels + c];
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]

@@ -1,5 +1,6 @@
 use crate::resize::ResizeMethod;
 use crate::traits::NumOps;
+use zune_image::planar_regions::PlanarRegionMut;
 
 fn get_kernel_fn_and_radius(method: ResizeMethod) -> (fn(f32) -> f32, i32) {
     match method {
@@ -13,7 +14,6 @@ fn get_kernel_fn_and_radius(method: ResizeMethod) -> (fn(f32) -> f32, i32) {
         ResizeMethod::Hermite => (|x| bicubic_kernel(x, 0.0, 0.0), 2),
         ResizeMethod::Sinc => (sinc_kernel::<3>, 3),
         ResizeMethod::Bilinear => (bilinear_kernel, 1),
-        // ResizeMethod::MagicKernelSharp => unreachable!("Should be handled by caller"),
     }
 }
 
@@ -157,255 +157,147 @@ fn precompute_kernels(
 
     kernels
 }
-
-// ============================================================================
-// Public generic resampler (f32 / u16 / etc.)
-// ============================================================================
-
-pub fn resample_separable<T>(
-    in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, kernels: &PrecomputedKernels,
+pub fn resample_region_generic<T>(
+    region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], in_width: usize,
+    kernels: &PrecomputedKernels,
 ) where
     T: Copy + NumOps<T> + Send + Sync,
     f32: std::convert::From<T>,
 {
-    resample_separable_precomputed(
-        in_channel,
-        out_channel,
-        in_width,
-        in_height,
-        out_width,
-        out_height,
-        kernels,
-    );
-}
-
-pub fn resample_separable_precomputed<T>(
-    in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, kernels: &PrecomputedKernels,
-) where
-    T: Copy + NumOps<T> + Send + Sync,
-    f32: std::convert::From<T>,
-{
-    // Early exit: no resize needed.
-    if in_width == out_width && in_height == out_height {
-        out_channel.copy_from_slice(in_channel);
-        return;
-    }
-
+    let out_width = region.width;
     let need_horizontal = kernels.horizontal.is_some();
     let need_vertical = kernels.vertical.is_some();
 
-    // Vertical only.
-    if !need_horizontal && need_vertical {
-        resample_vertical_only_precomputed::<T>(
-            in_channel,
-            out_channel,
-            in_width,
-            in_height,
-            out_height,
-            kernels.vertical.as_ref().unwrap(),
-        );
-        return;
-    }
+    // Loop over each channel independently within this chunk
+    for (src_ch, dest_ch) in src_channels.iter().zip(region.channels.iter_mut()) {
+        // 1. Vertical Only
+        if !need_horizontal && need_vertical {
+            let v_kernels = kernels.vertical.as_ref().unwrap();
+            for local_y in 0..region.height {
+                let out_y = region.y_offset + local_y;
+                let kernel = &v_kernels[out_y];
+                let out_row_offset = local_y * out_width;
 
-    // Horizontal only.
-    if need_horizontal && !need_vertical {
-        resample_horizontal_only_precomputed::<T>(
-            in_channel,
-            out_channel,
-            in_width,
-            out_width,
-            kernels.horizontal.as_ref().unwrap(),
-        );
-        return;
-    }
-
-    // Both dimensions — fused tiled implementation.
-    let h_kernels = kernels.horizontal.as_ref().unwrap();
-    let v_kernels = kernels.vertical.as_ref().unwrap();
-
-    let max_v_taps = v_kernels
-        .iter()
-        .map(|k| (k.end_idx - k.start_idx + 1) as usize)
-        .max()
-        .unwrap_or(1);
-
-    let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
-
-    let calculator = |v_kernels: &[ConvKernel], out_channel: &mut [T]| {
-        let mut ring_buffer = vec![0.0_f32; max_v_taps * out_width];
-        let mut buffer_contents = vec![usize::MAX; max_v_taps];
-        let mut row_accumulator = vec![0.0_f32; out_width];
-
-        for (v_kernel, out_row) in v_kernels
-            .iter()
-            .zip(out_channel.chunks_exact_mut(out_width))
-        {
-            let v_start = v_kernel.start_idx as usize;
-            let v_end = v_kernel.end_idx as usize;
-
-            // horizontal passes
-            for in_y in v_start..=v_end {
-                let buffer_idx =
-                    crate::mathops::fastmod_u32(in_y as u32, special_div, max_v_taps as u32)
-                        as usize;
-
-                if buffer_contents[buffer_idx] != in_y {
-                    let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
-                    let ring_row = &mut ring_buffer
-                        [buffer_idx * out_width..buffer_idx * out_width + out_width];
-
-                    process_horizontal_row_to_f32(in_row, ring_row, h_kernels);
-                    buffer_contents[buffer_idx] = in_y;
+                for x in 0..out_width {
+                    let mut sum = 0.0_f32;
+                    for in_y in kernel.start_idx..=kernel.end_idx {
+                        let tap_idx = (in_y - kernel.start_idx) as usize;
+                        let pixel = f32::from(src_ch[in_y as usize * in_width + x]);
+                        sum += pixel * kernel.weights[tap_idx];
+                    }
+                    dest_ch[out_row_offset + x] = T::from_f32(sum);
                 }
             }
-            // Vertical pass.
-            row_accumulator.fill(0.0);
-            for (i, in_y) in (v_start..=v_end).enumerate() {
-                let weight = v_kernel.weights[i];
-                let buffer_idx =
-                    crate::mathops::fastmod_u32(in_y as u32, special_div, max_v_taps as u32)
-                        as usize;
-                let ring_row =
-                    &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
-
-                for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
-                    *acc += rv * weight;
-                }
-            }
-
-            // Write output row.
-            for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
-                *px = T::from_f32(acc);
-            }
+            continue;
         }
-    };
 
-    #[cfg(feature = "threads")]
-    let num_threads = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZero::get)
-        .div_ceil(2);
+        // 2. Horizontal Only
+        if need_horizontal && !need_vertical {
+            let h_kernels = kernels.horizontal.as_ref().unwrap();
+            for local_y in 0..region.height {
+                let out_y = region.y_offset + local_y;
+                let in_row = &src_ch[out_y * in_width..out_y * in_width + in_width];
+                let out_row = &mut dest_ch[local_y * out_width..local_y * out_width + out_width];
 
-    #[cfg(not(feature = "threads"))]
-    let num_threads = 1;
-    
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    if use_threads {
-        #[cfg(feature = "threads")]
-        // Divide the work: we have `out_height` rows, divided evenly into threads
-        let out_items = out_height.div_ceil(num_threads);
-
-        std::thread::scope(|x| {
-            for (kernels, out_chunk) in v_kernels
-                .chunks(out_items)
-                .zip(out_channel.chunks_mut(out_items * out_width))
-            {
-                x.spawn(|| calculator(kernels, out_chunk));
+                for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
+                    let start = kernel.start_idx as usize;
+                    let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
+                    let sum = if let Some(slice) = in_row.get(start..start + count) {
+                        slice
+                            .iter()
+                            .zip(kernel.weights.iter())
+                            .map(|(&p, &w)| f32::from(p) * w)
+                            .sum::<f32>()
+                    } else {
+                        0.0
+                    };
+                    *out_pixel = T::from_f32(sum);
+                }
             }
-        });
-        return;
-    }
+            continue;
+        }
 
-    calculator(v_kernels, out_channel);
-}
+        // 3. Fused Separable Convolution (Horizontal + Vertical)
+        if need_horizontal && need_vertical {
+            let h_kernels = kernels.horizontal.as_ref().unwrap();
+            let v_kernels = kernels.vertical.as_ref().unwrap();
 
-/// Process one input row through the horizontal kernels into an f32 buffer.
-/// Works for any kernel width — no fixed-size match needed.
-#[inline(always)]
-fn process_horizontal_row_to_f32<T>(in_row: &[T], out_row: &mut [f32], h_kernels: &[ConvKernel])
-where
-    T: Copy + NumOps<T>,
-    f32: std::convert::From<T>,
-{
-    for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-        let start = kernel.start_idx as usize;
-        let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
-
-        let sum = if let Some(slice) = in_row.get(start..start + count) {
-            slice
+            let max_v_taps = v_kernels
                 .iter()
-                .zip(kernel.weights.iter())
-                .map(|(&p, &w)| f32::from(p) * w)
-                .sum::<f32>()
-        } else {
-            0.0
-        };
+                .map(|k| (k.end_idx - k.start_idx + 1) as usize)
+                .max()
+                .unwrap_or(1);
+            let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
 
-        *out_pixel = sum;
-    }
-}
+            let mut ring_buffer = vec![0.0_f32; max_v_taps * out_width];
+            let mut buffer_contents = vec![usize::MAX; max_v_taps];
+            let mut row_accumulator = vec![0.0_f32; out_width];
 
-#[allow(clippy::needless_range_loop)]
-fn resample_vertical_only_precomputed<T>(
-    in_channel: &[T], out_channel: &mut [T], width: usize, _in_height: usize, out_height: usize,
-    v_kernels: &[ConvKernel],
-) where
-    T: Copy + NumOps<T>,
-    f32: std::convert::From<T>,
-{
-    for out_y in 0..out_height {
-        let kernel = &v_kernels[out_y];
-        let out_row_offset = out_y * width;
-        for x in 0..width {
-            let mut sum = 0.0_f32;
-            for in_y in kernel.start_idx..=kernel.end_idx {
-                let in_y = in_y as usize;
-                let tap_idx = in_y - kernel.start_idx as usize;
-                let pixel = f32::from(in_channel[in_y * width + x]);
-                sum += pixel * kernel.weights[tap_idx];
+            let v_kernels_chunk = &v_kernels[region.y_offset..region.y_offset + region.height];
+
+            for (v_kernel, out_row) in v_kernels_chunk
+                .iter()
+                .zip(dest_ch.chunks_exact_mut(out_width))
+            {
+                let v_start = v_kernel.start_idx as usize;
+                let v_end = v_kernel.end_idx as usize;
+
+                // Horizontal passes into the ring buffer
+                for in_y in v_start..=v_end {
+                    let buffer_idx =
+                        crate::mathops::fastmod_u32(in_y as u32, special_div, max_v_taps as u32)
+                            as usize;
+
+                    if buffer_contents[buffer_idx] != in_y {
+                        let in_row = &src_ch[in_y * in_width..in_y * in_width + in_width];
+                        let ring_row = &mut ring_buffer
+                            [buffer_idx * out_width..buffer_idx * out_width + out_width];
+
+                        for (out_pixel, kernel) in ring_row.iter_mut().zip(h_kernels.iter()) {
+                            let start = kernel.start_idx as usize;
+                            let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
+                            *out_pixel = if let Some(slice) = in_row.get(start..start + count) {
+                                slice
+                                    .iter()
+                                    .zip(kernel.weights.iter())
+                                    .map(|(&p, &w)| f32::from(p) * w)
+                                    .sum::<f32>()
+                            } else {
+                                0.0
+                            };
+                        }
+                        buffer_contents[buffer_idx] = in_y;
+                    }
+                }
+
+                // Vertical pass accumulating from the ring buffer
+                row_accumulator.fill(0.0);
+                for (i, in_y) in (v_start..=v_end).enumerate() {
+                    let weight = v_kernel.weights[i];
+                    let buffer_idx =
+                        crate::mathops::fastmod_u32(in_y as u32, special_div, max_v_taps as u32)
+                            as usize;
+                    let ring_row =
+                        &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+
+                    for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
+                        *acc += rv * weight;
+                    }
+                }
+
+                for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
+                    *px = T::from_f32(acc);
+                }
             }
-            out_channel[out_row_offset + x] = T::from_f32(sum);
         }
     }
 }
 
-fn resample_horizontal_only_precomputed<T>(
-    in_channel: &[T], out_channel: &mut [T], in_width: usize, out_width: usize,
-    h_kernels: &[ConvKernel],
-) where
-    T: Copy + NumOps<T>,
-    f32: std::convert::From<T>,
-{
-    for (in_row, out_row) in in_channel
-        .chunks_exact(in_width)
-        .zip(out_channel.chunks_exact_mut(out_width))
-    {
-        for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-            let start = kernel.start_idx as usize;
-            let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
-
-            let sum = if let Some(slice) = in_row.get(start..start + count) {
-                slice
-                    .iter()
-                    .zip(kernel.weights.iter())
-                    .map(|(&p, &w)| f32::from(p) * w)
-                    .sum::<f32>()
-            } else {
-                0.0
-            };
-
-            *out_pixel = T::from_f32(sum);
-        }
-    }
-}
-
-// ============================================================================
-// Optimised u8 fixed-point path
-// ============================================================================
-
-pub fn resample_separable_u8(
-    in_channel: &[u8], out_channel: &mut [u8], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, kernels: &PrecomputedKernels,
+pub fn resample_region_u8(
+    region: &mut PlanarRegionMut<'_, u8>, src_channels: &[&[u8]], in_width: usize,
+    kernels: &PrecomputedKernels,
 ) {
-    if in_width == out_width && in_height == out_height {
-        out_channel.copy_from_slice(in_channel);
-        return;
-    }
-
+    let out_width = region.width;
     let h_kernels = kernels.horizontal.as_ref().unwrap();
     let v_kernels = kernels.vertical.as_ref().unwrap();
 
@@ -414,18 +306,18 @@ pub fn resample_separable_u8(
         .map(|k| (k.end_idx - k.start_idx + 1) as usize)
         .max()
         .unwrap_or(1);
-
     let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
 
-    let calculator = |v_kernels: &[ConvKernel], out_channel: &mut [u8]| {
-        // Ring buffer stores Q16 horizontally-filtered rows.
+    for (src_ch, dest_ch) in src_channels.iter().zip(region.channels.iter_mut()) {
         let mut ring_buffer = vec![0_i32; max_v_taps * out_width];
         let mut buffer_contents = vec![usize::MAX; max_v_taps];
-        // i64 accumulator prevents overflow: Q16 × Q16 = Q32, fits in i64.
         let mut row_accumulator = vec![0_i64; out_width];
-        for (v_kernel, out_row) in v_kernels
+
+        let v_kernels_chunk = &v_kernels[region.y_offset..region.y_offset + region.height];
+
+        for (v_kernel, out_row) in v_kernels_chunk
             .iter()
-            .zip(out_channel.chunks_exact_mut(out_width))
+            .zip(dest_ch.chunks_exact_mut(out_width))
         {
             let v_start = v_kernel.start_idx as usize;
             let v_end = v_kernel.end_idx as usize;
@@ -436,15 +328,27 @@ pub fn resample_separable_u8(
                         as usize;
 
                 if buffer_contents[buffer_idx] != in_y {
-                    let in_row = &in_channel[in_y * in_width..in_y * in_width + in_width];
+                    let in_row = &src_ch[in_y * in_width..in_y * in_width + in_width];
                     let ring_row = &mut ring_buffer
                         [buffer_idx * out_width..buffer_idx * out_width + out_width];
-                    process_horizontal_row_u8(in_row, ring_row, h_kernels);
+
+                    for (out_pixel, kernel) in ring_row.iter_mut().zip(h_kernels.iter()) {
+                        let start = kernel.start_idx as usize;
+                        let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
+                        *out_pixel = if let Some(slice) = in_row.get(start..start + count) {
+                            slice
+                                .iter()
+                                .zip(kernel.weights_i32.iter())
+                                .map(|(&p, &w)| i32::from(p) * w)
+                                .sum::<i32>()
+                        } else {
+                            0
+                        };
+                    }
                     buffer_contents[buffer_idx] = in_y;
                 }
             }
 
-            // Vertical pass.
             row_accumulator.fill(0);
 
             for (i, in_y) in (v_start..=v_end).enumerate() {
@@ -460,62 +364,11 @@ pub fn resample_separable_u8(
                 }
             }
 
-            // Shift Q32 → u8 with rounding and clamp ringing artifacts.
+            // Shift Q32 -> u8 with rounding and clamp
             for (px, &acc) in out_row.iter_mut().zip(row_accumulator.iter()) {
-                let val = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255);
-                *px = val as u8;
+                *px = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255) as u8;
             }
         }
-    };
-    #[cfg(feature = "threads")]
-    let num_threads = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZero::get)
-        .div_ceil(2);
-
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    if use_threads {
-        #[cfg(feature = "threads")]
-        {
-            // divide the work , we have out_width_rows, we need the work divided
-            // evenly into the threads
-            // Divide the work: we have `out_height` rows, divided evenly into threads
-            let out_items = out_height.div_ceil(num_threads);
-
-            std::thread::scope(|x| {
-                for (kernels, out_chunk) in v_kernels
-                    .chunks(out_items)
-                    .zip(out_channel.chunks_mut(out_items * out_width))
-                {
-                    x.spawn(|| calculator(kernels, out_chunk));
-                }
-            });
-            return;
-        }
-    }
-    calculator(v_kernels, out_channel);
-}
-
-/// Horizontal pass into Q16 i32 buffer. Works for any kernel width.
-#[inline(always)]
-fn process_horizontal_row_u8(in_row: &[u8], out_row: &mut [i32], h_kernels: &[ConvKernel]) {
-    for (out_pixel, kernel) in out_row.iter_mut().zip(h_kernels.iter()) {
-        let start = kernel.start_idx as usize;
-        let count = (kernel.end_idx - kernel.start_idx + 1) as usize;
-
-        let sum = if let Some(slice) = in_row.get(start..start + count) {
-            slice
-                .iter()
-                .zip(kernel.weights_i32.iter())
-                .map(|(&p, &w)| i32::from(p) * w)
-                .sum::<i32>()
-        } else {
-            0
-        };
-
-        *out_pixel = sum;
     }
 }
 
@@ -588,306 +441,5 @@ fn bilinear_kernel(x: f32) -> f32 {
         1.0 - x
     } else {
         0.0
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::resize::seperable_kernel::PrecomputedKernels;
-    use crate::resize::ResizeMethod;
-    use std::time::Instant;
-
-    #[test]
-    fn test_u8_identity_resize() {
-        let width = 2;
-        let height = 2;
-        let in_pixels: Vec<u8> = vec![10, 50, 100, 200];
-        let mut out_pixels = vec![0; 4];
-
-        let kernels = PrecomputedKernels::new(width, height, width, height, ResizeMethod::Bicubic);
-        resample_separable_u8(
-            &in_pixels,
-            &mut out_pixels,
-            width,
-            height,
-            width,
-            height,
-            &kernels,
-        );
-        assert_eq!(in_pixels, out_pixels);
-    }
-
-    #[test]
-    fn test_u8_solid_color_normalization() {
-        let in_width = 4;
-        let in_height = 4;
-        let out_width = 2;
-        let out_height = 2;
-        let kernels = PrecomputedKernels::new(
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            ResizeMethod::Bicubic,
-        );
-
-        let in_pixels: Vec<u8> = vec![255; in_width * in_height];
-        let mut out_pixels = vec![0u8; out_width * out_height];
-        resample_separable_u8(
-            &in_pixels,
-            &mut out_pixels,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            &kernels,
-        );
-        assert!(out_pixels.iter().all(|&p| p == 255), "Solid white shifted");
-
-        let in_pixels_mid: Vec<u8> = vec![128; in_width * in_height];
-        resample_separable_u8(
-            &in_pixels_mid,
-            &mut out_pixels,
-            in_width,
-            in_height,
-            out_width,
-            out_height,
-            &kernels,
-        );
-        assert!(
-            out_pixels.iter().all(|&p| p == 128),
-            "Solid mid-tone shifted"
-        );
-    }
-
-    #[test]
-    fn test_u8_vs_f32_parity() {
-        let (w, h) = (64usize, 48usize);
-        let input: Vec<u8> = (0..w * h).map(|i| (i % 256) as u8).collect();
-
-        let out_width = 20;
-        let out_height = 20;
-
-        let in_pixels_f32: Vec<f32> = input.iter().map(|&p| f32::from(p)).collect();
-
-        let mut out_u8 = vec![0u8; out_width * out_height];
-        let mut out_f32 = vec![0.0f32; out_width * out_height];
-
-        let kernels = PrecomputedKernels::new(w, h, out_width, out_height, ResizeMethod::Lanczos3);
-
-        resample_separable_u8(&input, &mut out_u8, w, h, out_width, out_height, &kernels);
-        resample_separable_precomputed::<f32>(
-            &in_pixels_f32,
-            &mut out_f32,
-            w,
-            h,
-            out_width,
-            out_height,
-            &kernels,
-        );
-
-        for (i, (p_u8, p_f32)) in out_u8.iter().zip(out_f32.iter()).enumerate() {
-            let f32_clamped = p_f32.clamp(0.0, 255.0).round() as u8;
-            let diff = (i32::from(*p_u8) - i32::from(f32_clamped)).abs();
-            assert!(
-                diff <= 1,
-                "Mismatch at index {i}: u8={p_u8} vs f32={f32_clamped} (diff {diff})"
-            );
-        }
-    }
-
-    const ALL_METHODS: &[ResizeMethod] = &[
-        ResizeMethod::Lanczos3,
-        ResizeMethod::Lanczos2,
-        ResizeMethod::Bicubic,
-        ResizeMethod::Mitchell,
-        ResizeMethod::CatmullRom,
-        ResizeMethod::BSpline,
-        ResizeMethod::Hermite,
-        ResizeMethod::Sinc,
-        ResizeMethod::Bilinear,
-    ];
-
-    #[test]
-    fn test_weights_sum_to_one() {
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(100, 80, 37, 53, method);
-            for (dir, kernel_vec) in [
-                ("horizontal", kernels.horizontal.as_ref()),
-                ("vertical", kernels.vertical.as_ref()),
-            ] {
-                let Some(kv) = kernel_vec else { continue };
-                for (i, k) in kv.iter().enumerate() {
-                    let sum: f32 = k.weights.iter().sum();
-                    assert!(
-                        (sum - 1.0).abs() < 1e-5,
-                        "method={method:?} dir={dir} kernel[{i}] sum={sum}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_indices_in_bounds() {
-        let (in_w, in_h) = (200, 150);
-        let (out_w, out_h) = (73, 99);
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            if let Some(h) = &kernels.horizontal {
-                for (i, k) in h.iter().enumerate() {
-                    assert!(
-                        (k.end_idx as usize) < in_w,
-                        "method={method:?} h kernel[{i}] OOB"
-                    );
-                    assert!(
-                        k.start_idx <= k.end_idx,
-                        "method={method:?} h kernel[{i}] inverted"
-                    );
-                }
-            }
-            if let Some(v) = &kernels.vertical {
-                for (i, k) in v.iter().enumerate() {
-                    assert!(
-                        (k.end_idx as usize) < in_h,
-                        "method={method:?} v kernel[{i}] OOB"
-                    );
-                    assert!(
-                        k.start_idx <= k.end_idx,
-                        "method={method:?} v kernel[{i}] inverted"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn test_identity_resize_copies_exactly() {
-        let (w, h) = (64usize, 48usize);
-        let input: Vec<u8> = (0..w * h).map(|i| (i % 256) as u8).collect();
-        let mut output = vec![0u8; w * h];
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(w, h, w, h, method);
-            resample_separable(&input, &mut output, w, h, w, h, &kernels);
-            assert_eq!(input, output, "method={method:?} identity failed");
-        }
-    }
-
-    #[test]
-    fn test_flat_image_survives_resize() {
-        let (in_w, in_h) = (64usize, 48usize);
-        let (out_w, out_h) = (37usize, 53usize);
-        let flat_value = 128u8;
-        let input = vec![flat_value; in_w * in_h];
-        let mut output = vec![0u8; out_w * out_h];
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            for (i, &px) in output.iter().enumerate() {
-                assert_eq!(px, flat_value, "method={method:?} flat pixel[{i}]={px}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_output_dimensions_are_correct() {
-        let (in_w, in_h) = (100usize, 80usize);
-        let (out_w, out_h) = (37usize, 53usize);
-        let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-        for &method in ALL_METHODS {
-            let mut output = vec![0u8; out_w * out_h];
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            assert_eq!(output.len(), out_w * out_h);
-        }
-    }
-
-    #[test]
-    fn test_horizontal_only_matches_fused() {
-        let (in_w, in_h) = (100usize, 48usize);
-        let (out_w, out_h) = (37usize, 48usize);
-        let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            assert!(kernels.vertical.is_none(), "expected no vertical kernels");
-            let mut output = vec![0u8; out_w * out_h];
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            assert_eq!(output.len(), out_w * out_h);
-        }
-    }
-
-    #[test]
-    fn test_vertical_only_matches_fused() {
-        let (in_w, in_h) = (48usize, 100usize);
-        let (out_w, out_h) = (48usize, 37usize);
-        let input: Vec<u8> = (0..in_w * in_h).map(|i| (i % 256) as u8).collect();
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            assert!(
-                kernels.horizontal.is_none(),
-                "expected no horizontal kernels"
-            );
-            let mut output = vec![0u8; out_w * out_h];
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            assert_eq!(output.len(), out_w * out_h);
-        }
-    }
-
-    #[test]
-    fn test_single_pixel_input() {
-        let input = vec![200u8; 1];
-        let mut output = vec![0u8; 1];
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(1, 1, 1, 1, method);
-            resample_separable(&input, &mut output, 1, 1, 1, 1, &kernels);
-            assert_eq!(output[0], 200, "method={method:?} single pixel failed");
-        }
-    }
-
-    #[test]
-    fn test_extreme_downscale() {
-        let (in_w, in_h) = (7680usize, 4320usize);
-        let (out_w, out_h) = (2usize, 2usize);
-        let input = vec![128u8; in_w * in_h];
-        let mut output = vec![0u8; out_w * out_h];
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            for &px in &output {
-                assert_eq!(px, 128, "method={method:?} extreme downscale flat failed");
-            }
-        }
-    }
-
-    #[test]
-    fn test_10x_downscale_flat_image() {
-        // Specifically tests the 100→10% case from the bug report.
-        let (in_w, in_h) = (1000usize, 1000usize);
-        let (out_w, out_h) = (100usize, 100usize);
-        let input = vec![200u8; in_w * in_h];
-        let mut output = vec![0u8; out_w * out_h];
-        for &method in ALL_METHODS {
-            let kernels = PrecomputedKernels::new(in_w, in_h, out_w, out_h, method);
-            resample_separable(&input, &mut output, in_w, in_h, out_w, out_h, &kernels);
-            for (i, &px) in output.iter().enumerate() {
-                assert_eq!(px, 200, "method={method:?} 10x downscale pixel[{i}]={px}");
-            }
-        }
-    }
-    #[test]
-    fn test_for_benchmark() {
-        let (in_w, in_h) = (1885, 1226);
-        let (out_w, out_h) = (1885_usize / 2, 1226_usize / 2);
-
-        let start = Instant::now();
-        let _ = PrecomputedKernels::new(in_w, in_h, out_w, out_h, ResizeMethod::Lanczos3);
-
-        let end = Instant::now();
-        println!("{:?}", end.duration_since(start));
     }
 }

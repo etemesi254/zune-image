@@ -2,10 +2,6 @@ use std::cmp::Ordering;
 use std::time::Instant;
 
 use crate::premul_alpha::PremultiplyAlpha;
-use crate::resize::seperable_kernel::{
-    resample_separable, resample_separable_u8, PrecomputedKernels,
-};
-use crate::resize::ResizeMethod;
 use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 use crate::utils::execute_on;
 use zune_core::bit_depth::{BitDepth, BitType};
@@ -214,89 +210,46 @@ impl OperationsTrait for AffineTransform {
         let (new_w, new_h) = get_affine_output_dimensions(w, h, self);
         let depth = image.depth().bit_type();
 
-        if self.is_axis_aligned() {
-            trace!("Affine transform is axis-aligned — using separable resampler");
-            let kernels = PrecomputedKernels::new(w, h, new_w, new_h, ResizeMethod::Bilinear);
-
-            let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-                let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
-                match depth {
-                    BitType::U8 => resample_separable_u8(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        &kernels,
-                    ),
-                    BitType::U16 => resample_separable::<u16>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        &kernels,
-                    ),
-                    BitType::F32 => resample_separable::<f32>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        &kernels,
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d)),
-                }
-                *channel = new_channel;
-                Ok(())
-            };
-            execute_on(affine_fn, image, false)?;
-        } else {
-            trace!("Affine transform is not axis-aligned — using 2D reverse-mapped sampler");
-            let opts = *image.operation_options();
-            let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-                let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
-                match depth {
-                    BitType::U8 => affine_transform_channel::<u8>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        self,
-                        &opts,
-                    ),
-                    BitType::U16 => affine_transform_channel::<u16>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        self,
-                        &opts,
-                    ),
-                    BitType::F32 => affine_transform_channel::<f32>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        w,
-                        h,
-                        new_w,
-                        new_h,
-                        self,
-                        &opts,
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d)),
-                }
-                *channel = new_channel;
-                Ok(())
-            };
-            execute_on(affine_fn, image, false)?;
-        }
+        let opts = *image.operation_options();
+        let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
+            match depth {
+                BitType::U8 => affine_transform_channel::<u8>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    w,
+                    h,
+                    new_w,
+                    new_h,
+                    self,
+                    &opts,
+                ),
+                BitType::U16 => affine_transform_channel::<u16>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    w,
+                    h,
+                    new_w,
+                    new_h,
+                    self,
+                    &opts,
+                ),
+                BitType::F32 => affine_transform_channel::<f32>(
+                    channel.reinterpret_as()?,
+                    new_channel.reinterpret_as_mut()?,
+                    w,
+                    h,
+                    new_w,
+                    new_h,
+                    self,
+                    &opts,
+                ),
+                d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d)),
+            }
+            *channel = new_channel;
+            Ok(())
+        };
+        execute_on(affine_fn, image, false)?;
 
         image.set_dimensions(new_w, new_h);
 
@@ -387,7 +340,6 @@ impl BilinearProcess for u8 {
 
             let mut curr_x_fx = base_x_fx + start as i64 * a_fx;
             let mut curr_y_fx = base_y_fx + start as i64 * c_fx;
-
 
             for px in &mut out_row[start..end] {
                 let ux = (curr_x_fx >> 16) as usize;

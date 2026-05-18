@@ -5,13 +5,14 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+use crate::gaussian_blur::GaussianBlur;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::OperationsTrait;
 
-use crate::gaussian_blur::{gaussian_blur_f32, gaussian_blur_u16, gaussian_blur_u8};
 /// Sharpens an image using the Unsharp Mask algorithm.
 ///
 /// Despite its name, the Unsharp Mask is the industry standard for *sharpening* images.
@@ -83,257 +84,143 @@ impl OperationsTrait for Sharpen {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.dimensions();
-
         let depth = image.depth();
 
-        #[cfg(not(feature = "threads"))]
-        {
-            trace!("Running unsharpen in single threaded mode");
+        // 1. Create the blurred copy utilizing our existing optimized operation
+        trace!("Generating unsharp mask via GaussianBlur");
+        let mut blur_image = image.clone();
+        let blur_op = GaussianBlur::new(self.sigma);
+        blur_op.execute_impl(&mut blur_image)?;
 
-            match depth.bit_type() {
-                BitType::U16 => {
-                    let mut blur_buffer = vec![0; width * height];
-                    let mut blur_scratch = vec![0; width * height];
+        // 2. Blend the blurred image and the original image in parallel
+        // We set ignore_alpha to true, as sharpening should not affect transparency
+        trace!("Blending unsharp mask with original image");
+        let ignore_alpha = true;
 
-                    for channel in image.channels_mut(true) {
-                        unsharpen_u16(
-                            channel.reinterpret_as_mut::<u16>()?,
-                            &mut blur_buffer,
-                            &mut blur_scratch,
-                            self.sigma,
-                            self.threshold,
-                            self.percentage as u16,
-                            width,
-                            height,
-                            1,
-                        );
-                    }
-                }
-
-                BitType::U8 => {
-                    let mut blur_buffer = vec![0; width * height];
-                    let mut blur_scratch = vec![0; width * height];
-
-                    for channel in image.channels_mut(true) {
-                        unsharpen_u8(
-                            channel.reinterpret_as_mut::<u8>()?,
-                            &mut blur_buffer,
-                            &mut blur_scratch,
-                            self.sigma,
-                            self.threshold as u8,
-                            self.percentage,
-                            width,
-                            height,
-                            1,
-                        );
-                    }
-                }
-                BitType::F32 => {
-                    let mut blur_buffer = vec![0.0; width * height];
-                    let mut blur_scratch = vec![0.0; width * height];
-                    for channel in image.channels_mut(true) {
-                        unsharpen_f32(
-                            channel.reinterpret_as_mut::<f32>()?,
-                            &mut blur_buffer,
-                            &mut blur_scratch,
-                            self.sigma,
-                            u8::try_from(self.threshold.clamp(0, 255)).unwrap_or(u8::MAX) as u16,
-                            self.percentage as u16,
-                            width,
-                            height,
-                            1,
-                        );
-                    }
-                }
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        match depth.bit_type() {
+            BitType::U8 => {
+                // blur_image acts as the immutable "src", image acts as the mutable "dest"
+                blur_image.par_process_regions_out_of_place::<u8, _>(
+                    image,
+                    ignore_alpha,
+                    |region| {
+                        unsharpen_region_u8(region, self.threshold as u8, self.percentage);
+                    },
+                )?;
             }
-        }
-        #[cfg(feature = "threads")]
-        {
-            // Calculate how many threads the blur should use internally
-            let num_channels = image.channels_ref(true).len();
-            let blur_threads = image.operation_options().num_threads_child();
-            trace!("Running unsharpen in multithreaded mode");
-            std::thread::scope(|s| {
-                let mut errors = vec![];
-                // blur each channel on a separate thread
-                for channel in image.channels_mut(true) {
-                    let result = s.spawn(|| match depth.bit_type() {
-                        BitType::U16 => {
-                            let mut blur_buffer = vec![0; width * height];
-                            let mut blur_scratch = vec![0; width * height];
-
-                            unsharpen_u16(
-                                channel.reinterpret_as_mut::<u16>()?,
-                                &mut blur_buffer,
-                                &mut blur_scratch,
-                                self.sigma,
-                                self.threshold,
-                                u16::from(self.percentage),
-                                width,
-                                height,
-                                blur_threads,
-                            );
-                            Ok(())
-                        }
-
-                        BitType::U8 => {
-                            let mut blur_buffer = vec![0; width * height];
-                            let mut blur_scratch = vec![0; width * height];
-
-                            unsharpen_u8(
-                                channel.reinterpret_as_mut::<u8>()?,
-                                &mut blur_buffer,
-                                &mut blur_scratch,
-                                self.sigma,
-                                u8::try_from(self.threshold.clamp(0, 255)).unwrap_or(u8::MAX),
-                                self.percentage,
-                                width,
-                                height,
-                                blur_threads,
-                            );
-                            Ok(())
-                        }
-                        BitType::F32 => {
-                            let mut blur_buffer = vec![0.0; width * height];
-                            let mut blur_scratch = vec![0.0; width * height];
-
-                            unsharpen_f32(
-                                channel.reinterpret_as_mut::<f32>()?,
-                                &mut blur_buffer,
-                                &mut blur_scratch,
-                                self.sigma,
-                                u8::try_from(self.threshold.clamp(0, 255)).unwrap_or(u8::MAX)
-                                    as u16,
-                                self.percentage as u16,
-                                width,
-                                height,
-                                blur_threads,
-                            );
-                            Ok(())
-                        }
-                        d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
-                    });
-                    errors.push(result);
-                }
-                errors
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
+            BitType::U16 => {
+                blur_image.par_process_regions_out_of_place::<u16, _>(
+                    image,
+                    ignore_alpha,
+                    |region| {
+                        unsharpen_region_u16(region, self.threshold, u16::from(self.percentage));
+                    },
+                )?;
+            }
+            BitType::F32 => {
+                blur_image.par_process_regions_out_of_place::<f32, _>(
+                    image,
+                    ignore_alpha,
+                    |region| {
+                        let f32_thresh = f32::from(
+                            u8::try_from(self.threshold.clamp(0, 255)).unwrap_or(u8::MAX),
+                        );
+                        unsharpen_region_f32(region, f32_thresh, f32::from(self.percentage));
+                    },
+                )?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
 
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
-        &[BitType::U8, BitType::U16,BitType::F32]
+        &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn unsharpen_u8(
-    channel: &mut [u8], blur_buffer: &mut [u8], blur_scratch_buffer: &mut [u8], sigma: f32,
-    threshold: u8, percentage: u8, width: usize, height: usize, blur_threads: usize,
-) {
-    // copy channel to scratch space
-    blur_buffer.copy_from_slice(channel);
-    // carry out gaussian blur
-    gaussian_blur_u8(blur_buffer, blur_scratch_buffer, width, height, sigma, blur_threads);
-
+fn unsharpen_region_u8(region: &mut PlanarRegionOut<'_, u8>, threshold: u8, percentage: u8) {
     let pct = i32::from(percentage);
     let thresh = i32::from(threshold);
 
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let orig = i32::from(*in_pix);
-        let blurred = i32::from(*blur_pix);
+    // Calculate 1D array bounds for this chunk
+    let start_idx = region.y_offset * region.width;
+    let end_idx = start_idx + (region.height * region.width);
 
-        // Signed difference allows us to lighten OR darken the pixel
-        let diff = orig - blurred;
+    for (blur_full, orig_chunk) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        if blur_full.len() >= end_idx {
+            // Slice the global blurred image down to match the local original chunk
+            let blur_chunk = &blur_full[start_idx..end_idx];
 
-        // Check against threshold using absolute magnitude
-        if diff.abs() > thresh {
-            // Apply the percentage intensity
-            let scaled_diff = (diff * pct) / 100;
+            for (b_pix, in_pix) in blur_chunk.iter().zip(orig_chunk.iter_mut()) {
+                let orig = i32::from(*in_pix);
+                let blurred = i32::from(*b_pix);
+                let diff = orig - blurred;
 
-            // Add back to original and clamp to valid u8 range
-            let new_val = orig + scaled_diff;
-            *in_pix = new_val.clamp(0, 255) as u8;
+                if diff.abs() > thresh {
+                    let scaled_diff = (diff * pct) / 100;
+                    *in_pix = (orig + scaled_diff).clamp(0, 255) as u8;
+                }
+            }
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn unsharpen_u16(
-    channel: &mut [u16], blur_buffer: &mut [u16], blur_scratch_buffer: &mut [u16], sigma: f32,
-    threshold: u16, percentage: u16, width: usize, height: usize, blur_threads: usize,
-) {
-    // copy channel to scratch space
-    blur_buffer.copy_from_slice(channel);
-    // carry out gaussian blur
-    gaussian_blur_u16(
-        blur_buffer,
-        blur_scratch_buffer,
-        width,
-        height,
-        sigma,
-        blur_threads,
-    );
-
+fn unsharpen_region_u16(region: &mut PlanarRegionOut<'_, u16>, threshold: u16, percentage: u16) {
     let pct = i32::from(percentage);
     let thresh = i32::from(threshold);
 
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let orig = i32::from(*in_pix);
-        let blurred = i32::from(*blur_pix);
+    let start_idx = region.y_offset * region.width;
+    let end_idx = start_idx + (region.height * region.width);
 
-        // Signed difference allows us to lighten OR darken the pixel
-        let diff = orig - blurred;
+    for (blur_full, orig_chunk) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        if blur_full.len() >= end_idx {
+            let blur_chunk = &blur_full[start_idx..end_idx];
 
-        if diff.abs() > thresh {
-            // Apply the percentage intensity
-            let scaled_diff = (diff * pct) / 100;
+            for (b_pix, in_pix) in blur_chunk.iter().zip(orig_chunk.iter_mut()) {
+                let orig = i32::from(*in_pix);
+                let blurred = i32::from(*b_pix);
+                let diff = orig - blurred;
 
-            // Add back to original and clamp to valid u16 range
-            let new_val = orig + scaled_diff;
-            *in_pix = new_val.clamp(0, 65535) as u16;
+                if diff.abs() > thresh {
+                    let scaled_diff = (diff * pct) / 100;
+                    *in_pix = (orig + scaled_diff).clamp(0, 65535) as u16;
+                }
+            }
         }
     }
 }
-#[allow(clippy::too_many_arguments)]
-fn unsharpen_f32(
-    channel: &mut [f32], blur_buffer: &mut [f32], blur_scratch_buffer: &mut [f32], sigma: f32,
-    threshold: u16, percentage: u16, width: usize, height: usize, blur_threads: usize,
-) {
-    // copy channel to scratch space
-    blur_buffer.copy_from_slice(channel);
-    // carry out gaussian blur
-    gaussian_blur_f32(
-        blur_buffer,
-        blur_scratch_buffer,
-        width,
-        height,
-        sigma,
-        blur_threads,
-    );
 
-    let pct = f32::from(percentage);
-    let thresh = f32::from(threshold);
+fn unsharpen_region_f32(region: &mut PlanarRegionOut<'_, f32>, threshold: f32, percentage: f32) {
+    let start_idx = region.y_offset * region.width;
+    let end_idx = start_idx + (region.height * region.width);
 
-    for (in_pix, blur_pix) in channel.iter_mut().zip(blur_buffer.iter()) {
-        let orig = f32::from(*in_pix);
-        let blurred = f32::from(*blur_pix);
+    for (blur_full, orig_chunk) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        if blur_full.len() >= end_idx {
+            let blur_chunk = &blur_full[start_idx..end_idx];
 
-        // Signed difference allows us to lighten OR darken the pixel
-        let diff = orig - blurred;
+            for (b_pix, in_pix) in blur_chunk.iter().zip(orig_chunk.iter_mut()) {
+                let orig = *in_pix;
+                let blurred = *b_pix;
+                let diff = orig - blurred;
 
-        if diff.abs() > thresh {
-            // Apply the percentage intensity
-            let scaled_diff = (diff * pct) / 100.00;
-
-            // Add back to original and clamp to valid u16 range
-            let new_val = orig + scaled_diff;
-            *in_pix = new_val.clamp(0.0, 1.0);
+                if diff.abs() > threshold {
+                    let scaled_diff = (diff * percentage) / 100.0;
+                    *in_pix = (orig + scaled_diff).clamp(0.0, 1.0);
+                }
+            }
         }
     }
 }

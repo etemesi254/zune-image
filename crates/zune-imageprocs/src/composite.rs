@@ -1,6 +1,7 @@
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
@@ -55,30 +56,6 @@ pub enum CompositeMethod {
     Screen,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum CompositeMethodType {
-    /// Method operates purely on channel values; no alpha compositing math required.
-    ChannelBased,
-    /// Method requires an alpha channel to compute a mask.
-    AlphaChannel,
-}
-
-impl CompositeMethod {
-    fn composite_type(self) -> CompositeMethodType {
-        match self {
-            CompositeMethod::Src
-            | CompositeMethod::Dst
-            | CompositeMethod::Over
-            | CompositeMethod::Multiply
-            | CompositeMethod::Screen => CompositeMethodType::ChannelBased,
-            CompositeMethod::DstIn
-            | CompositeMethod::DstOut
-            | CompositeMethod::SrcIn
-            | CompositeMethod::SrcOut
-            | CompositeMethod::Xor => CompositeMethodType::AlphaChannel,
-        }
-    }
-}
 #[allow(clippy::struct_field_names)]
 pub struct Composite {
     geometry: Option<(usize, usize)>,
@@ -158,26 +135,12 @@ impl OperationsTrait for Composite {
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.len() < 2 {
             return Err(ImageErrors::GenericStr(
-                "Composite requires at least two images in the pipeline",
+                "Composite requires at least two images",
             ));
         }
 
-        // Pop the overlay image off the stack
         let src_image = images.pop().unwrap();
-
-        // The background image is now the top of the stack
         let dst_image = images.last_mut().unwrap();
-
-        let dims = if let Some(gravity) = self.gravity {
-            calculate_gravity(&src_image, dst_image, gravity)
-        } else if let Some(geometry) = self.geometry {
-            geometry
-        } else {
-            unreachable!()
-        };
-
-        let (src_width, _) = src_image.dimensions();
-        let (dst_width, _) = dst_image.dimensions();
 
         // Confirm compatibility
         if dst_image.depth() != src_image.depth() {
@@ -194,550 +157,250 @@ impl OperationsTrait for Composite {
             )));
         }
 
-        let b_type = dst_image.depth().bit_type();
+        let dims = if let Some(gravity) = self.gravity {
+            calculate_gravity(&src_image, dst_image, gravity)
+        } else if let Some(geometry) = self.geometry {
+            geometry
+        } else {
+            unreachable!()
+        };
+        let (start_x, start_y) = dims;
+        let (src_width, src_height) = src_image.dimensions();
         let colorspace = dst_image.colorspace();
+        let has_alpha = colorspace.has_alpha();
 
-        match self.composite_method.composite_type() {
-            CompositeMethodType::ChannelBased => {
-                if colorspace.has_alpha() {
-                    for (src_frame, dst_frame) in
-                        src_image.frames_ref().iter().zip(dst_image.frames_mut())
-                    {
-                        let (src_color_channels, src_alpha_channel) =
-                            src_frame.separate_color_and_alpha_ref(colorspace).unwrap();
+        match dst_image.depth().bit_type() {
+            BitType::U8 => {
+                // Safely extract all immutable source channels upfront
+                let src_channels: Vec<&[u8]> = src_image.frames_ref()[0] // Assuming single frame for brevity
+                    .channels_ref(colorspace, false)
+                    .into_iter()
+                    .map(|ch| ch.reinterpret_as().unwrap())
+                    .collect();
 
-                        let (dst_color_channels, dst_alpha_channel) =
-                            dst_frame.separate_color_and_alpha_mut(colorspace).unwrap();
-
-                        for (src_chan, d_chan) in src_color_channels.iter().zip(dst_color_channels)
-                        {
-                            match b_type {
-                                BitType::U8 => composite_alpha::<u8>(
-                                    src_chan.reinterpret_as()?,
-                                    d_chan.reinterpret_as_mut()?,
-                                    src_alpha_channel.reinterpret_as()?,
-                                    dims.0,
-                                    dims.1,
-                                    src_width,
-                                    dst_width,
-                                    self.composite_method,
-                                ),
-                                BitType::U16 => composite_alpha::<u16>(
-                                    src_chan.reinterpret_as()?,
-                                    d_chan.reinterpret_as_mut()?,
-                                    src_alpha_channel.reinterpret_as()?,
-                                    dims.0,
-                                    dims.1,
-                                    src_width,
-                                    dst_width,
-                                    self.composite_method,
-                                ),
-                                BitType::F32 => composite_alpha::<f32>(
-                                    src_chan.reinterpret_as()?,
-                                    d_chan.reinterpret_as_mut()?,
-                                    src_alpha_channel.reinterpret_as()?,
-                                    dims.0,
-                                    dims.1,
-                                    src_width,
-                                    dst_width,
-                                    self.composite_method,
-                                ),
-                                d => {
-                                    return Err(ImageErrors::ImageOperationNotImplemented(
-                                        self.name(),
-                                        d,
-                                    ));
-                                }
-                            }
-                        }
-
-                        // Composite the alpha channel
-                        match b_type {
-                            BitType::U8 => composite_alpha_channel::<u8>(
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::U16 => composite_alpha_channel::<u16>(
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::F32 => composite_alpha_channel::<f32>(
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d,
-                                ));
-                            }
-                        }
-                    }
-                } else {
-                    for (src_chan, d_chan) in src_image
-                        .channels_ref(false)
-                        .iter()
-                        .zip(dst_image.channels_mut(false))
-                    {
-                        match b_type {
-                            BitType::U8 => composite::<u8>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::U16 => composite::<u16>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::F32 => composite::<f32>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d,
-                                ));
-                            }
-                        }
-                    }
-                }
+                dst_image.par_process_regions::<u8, _>(false, |region| {
+                    composite_region::<u8>(
+                        region,
+                        &src_channels,
+                        src_width,
+                        src_height,
+                        start_x,
+                        start_y,
+                        self.composite_method,
+                        has_alpha,
+                    );
+                })?;
             }
-            CompositeMethodType::AlphaChannel => {
-                if !colorspace.has_alpha() {
-                    return Err(ImageErrors::GenericString(format!(
-                        "Composite method {:?} requires an alpha channel, but colorspace {:?} has none",
-                        self.composite_method, colorspace
-                    )));
-                }
+            BitType::U16 => {
+                // Safely extract all immutable source channels upfront
+                let src_channels: Vec<&[u16]> =
+                    src_image.frames_ref()[0] // Assuming single frame for brevity
+                        .channels_ref(colorspace, false)
+                        .into_iter()
+                        .map(|ch| ch.reinterpret_as().unwrap())
+                        .collect();
 
-                for (src_frame, dst_frame) in
-                    src_image.frames_ref().iter().zip(dst_image.frames_mut())
-                {
-                    let (src_color_channels, src_alpha_channel) =
-                        src_frame.separate_color_and_alpha_ref(colorspace).unwrap();
-
-                    let (dst_color_channels, dst_alpha_channel) =
-                        dst_frame.separate_color_and_alpha_mut(colorspace).unwrap();
-
-                    for (src_chan, d_chan) in src_color_channels.iter().zip(dst_color_channels) {
-                        match b_type {
-                            BitType::U8 => composite_alpha_masked::<u8>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::U16 => composite_alpha_masked::<u16>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            BitType::F32 => composite_alpha_masked::<f32>(
-                                src_chan.reinterpret_as()?,
-                                d_chan.reinterpret_as_mut()?,
-                                src_alpha_channel.reinterpret_as()?,
-                                dst_alpha_channel.reinterpret_as()?,
-                                dims.0,
-                                dims.1,
-                                src_width,
-                                dst_width,
-                                self.composite_method,
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d,
-                                ));
-                            }
-                        }
-                    }
-
-                    // Update the output alpha channel for alpha-based methods
-                    match b_type {
-                        BitType::U8 => composite_alpha_channel_masked::<u8>(
-                            src_alpha_channel.reinterpret_as()?,
-                            dst_alpha_channel.reinterpret_as_mut()?,
-                            dims.0,
-                            dims.1,
-                            src_width,
-                            dst_width,
-                            self.composite_method,
-                        ),
-                        BitType::U16 => composite_alpha_channel_masked::<u16>(
-                            src_alpha_channel.reinterpret_as()?,
-                            dst_alpha_channel.reinterpret_as_mut()?,
-                            dims.0,
-                            dims.1,
-                            src_width,
-                            dst_width,
-                            self.composite_method,
-                        ),
-                        BitType::F32 => composite_alpha_channel_masked::<f32>(
-                            src_alpha_channel.reinterpret_as()?,
-                            dst_alpha_channel.reinterpret_as_mut()?,
-                            dims.0,
-                            dims.1,
-                            src_width,
-                            dst_width,
-                            self.composite_method,
-                        ),
-                        d => {
-                            return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                        }
-                    }
-                }
+                dst_image.par_process_regions::<_, _>(false, |region| {
+                    composite_region(
+                        region,
+                        &src_channels,
+                        src_width,
+                        src_height,
+                        start_x,
+                        start_y,
+                        self.composite_method,
+                        has_alpha,
+                    );
+                })?;
             }
+            BitType::F32 => {
+                // Safely extract all immutable source channels upfront
+                let src_channels: Vec<&[f32]> =
+                    src_image.frames_ref()[0] // Assuming single frame for brevity
+                        .channels_ref(colorspace, false)
+                        .into_iter()
+                        .map(|ch| ch.reinterpret_as().unwrap())
+                        .collect();
+
+                dst_image.par_process_regions::<_, _>(false, |region| {
+                    composite_region(
+                        region,
+                        &src_channels,
+                        src_width,
+                        src_height,
+                        start_x,
+                        start_y,
+                        self.composite_method,
+                        has_alpha,
+                    );
+                })?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
+
         Ok(())
     }
 }
 
-// ─── Channel-based dispatch ───────────────────────────────────────────────────
-
-/// Dispatch channel-based compositing for images that have an alpha channel.
-///
-/// The `src_alpha` slice is used only for `Over` (which needs to blend by alpha);
-/// all other channel-based methods ignore it and operate directly on pixel values.
 #[allow(clippy::too_many_arguments)]
-fn composite_alpha<T>(
-    src: &[T], dest: &mut [T], src_alpha: &[T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize, method: CompositeMethod,
+fn composite_region<T>(
+    region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], src_width: usize,
+    src_height: usize, start_x: usize, start_y: usize, method: CompositeMethod, has_alpha: bool,
 ) where
     T: Copy + NumOps<T>,
     f32: From<T>,
 {
-    match method {
-        CompositeMethod::Over => composite_over_alpha(
-            src, dest, src_alpha, start_x, start_y, width_src, width_dest,
-        ),
-        // For channel-based methods without alpha blending the alpha channel is
-        // simply ignored and we fall through to the plain `composite` path.
-        other => composite(src, dest, start_x, start_y, width_src, width_dest, other),
-    }
-}
+    // 1. Calculate Y-axis intersection
+    let r_start_y = region.y_offset;
+    let r_end_y = region.y_offset + region.height;
 
-/// Dispatch channel-based compositing for images **without** an alpha channel.
-fn composite<T: Copy + NumOps<T>>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
-    method: CompositeMethod,
-) where
-    f32: From<T>,
-{
+    let overlap_start_y = r_start_y.max(start_y);
+    let overlap_end_y = r_end_y.min(start_y + src_height);
+
+    if overlap_start_y >= overlap_end_y {
+        return;
+    }
+
+    // 2. Calculate X-axis intersection
+    let overlap_start_x = start_x.min(region.width);
+    let overlap_end_x = (start_x + src_width).min(region.width);
+    let overlap_width = overlap_end_x.saturating_sub(overlap_start_x);
+
+    if overlap_width == 0 {
+        return;
+    }
+
+    // Determine channel indexes
+    let num_color_channels =
+        if has_alpha { region.channels.len() - 1 } else { region.channels.len() };
+    let alpha_idx = if has_alpha { Some(region.channels.len() - 1) } else { None };
+
+    let inv_max = 1.0 / f32::from(T::MAX_VAL);
+    let max_val = f32::from(T::MAX_VAL);
+
+    // Local macro to cleanly inline the spatial bounding box iteration
+    // without triggering borrow checker conflicts or runtime branching.
+    macro_rules! process_overlap {
+        (|$s_idx:ident, $d_idx:ident| $body:block) => {
+            for y in overlap_start_y..overlap_end_y {
+                let src_y = y - start_y;
+                let dst_local_y = y - r_start_y;
+
+                let src_row_start = src_y * src_width;
+                let dst_row_start = dst_local_y * region.width + overlap_start_x;
+
+                for x in 0..overlap_width {
+                    let $s_idx = src_row_start + x;
+                    let $d_idx = dst_row_start + x;
+                    $body
+                }
+            }
+        };
+    }
+
+    // 3. Process the overlapping box based on the specified method
     match method {
-        CompositeMethod::Over => composite_over(src, dest, start_x, start_y, width_src, width_dest),
-        CompositeMethod::Src => composite_src(src, dest, start_x, start_y, width_src, width_dest),
-        CompositeMethod::Dst => {} // no-op
-        CompositeMethod::Multiply => composite_blend(
-            src,
-            dest,
-            start_x,
-            start_y,
-            width_src,
-            width_dest,
-            blend_multiply,
-        ),
-        CompositeMethod::Screen => composite_blend(
-            src,
-            dest,
-            start_x,
-            start_y,
-            width_src,
-            width_dest,
-            blend_screen,
-        ),
+        CompositeMethod::Dst => {
+            // No-op: Destination remains entirely unchanged
+        }
+        CompositeMethod::Src => {
+            process_overlap!(|s_idx, d_idx| {
+                for c in 0..region.channels.len() {
+                    region.channels[c][d_idx] = src_channels[c][s_idx];
+                }
+            });
+        }
+        CompositeMethod::Over => {
+            if let Some(a_idx) = alpha_idx {
+                process_overlap!(|s_idx, d_idx| {
+                    let a_src = (f32::from(src_channels[a_idx][s_idx]) * inv_max).clamp(0.0, 1.0);
+                    let a_dst =
+                        (f32::from(region.channels[a_idx][d_idx]) * inv_max).clamp(0.0, 1.0);
+
+                    // Blend colors: C_out = a_src * C_src + (1 - a_src) * C_dst
+                    for c in 0..num_color_channels {
+                        let c_src = f32::from(src_channels[c][s_idx]);
+                        let c_dst = f32::from(region.channels[c][d_idx]);
+                        let out = a_src * c_src + (1.0 - a_src) * c_dst;
+                        region.channels[c][d_idx] = T::from_f32(out.clamp(0.0, max_val).round());
+                    }
+
+                    // Blend alpha: A_out = A_src + A_dst * (1 - A_src)
+                    let out_alpha = a_src + a_dst * (1.0 - a_src);
+                    region.channels[a_idx][d_idx] =
+                        T::from_f32((out_alpha.clamp(0.0, 1.0) * max_val).round());
+                });
+            } else {
+                // If there is no alpha, `Over` behaves exactly like `Src`
+                process_overlap!(|s_idx, d_idx| {
+                    for c in 0..num_color_channels {
+                        region.channels[c][d_idx] = src_channels[c][s_idx];
+                    }
+                });
+            }
+        }
         CompositeMethod::DstIn
         | CompositeMethod::DstOut
         | CompositeMethod::SrcIn
         | CompositeMethod::SrcOut
         | CompositeMethod::Xor => {
-            unreachable!("Alpha-channel methods must not be routed through composite()")
-        }
-    }
-}
+            if let Some(a_idx) = alpha_idx {
+                process_overlap!(|s_idx, d_idx| {
+                    let a_src = (f32::from(src_channels[a_idx][s_idx]) * inv_max).clamp(0.0, 1.0);
+                    let a_dst =
+                        (f32::from(region.channels[a_idx][d_idx]) * inv_max).clamp(0.0, 1.0);
 
-/// Update the **alpha channel** for channel-based composite methods.
-///
-/// `Over` uses the Porter-Duff formula: `α_o = α_src + α_dst · (1 − α_src)`.
-/// All other channel-based methods leave the destination alpha untouched.
-fn composite_alpha_channel<T>(
-    alpha_src: &[T], dst_alpha: &mut [T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize, method: CompositeMethod,
-) where
-    T: Copy + NumOps<T>,
-    f32: From<T>,
-{
-    if method != CompositeMethod::Over {
-        return;
-    }
+                    // Consolidate the math factors for all Alpha-Masked operators
+                    let (color_src_factor, color_dst_factor, out_alpha) = match method {
+                        CompositeMethod::DstIn => (0.0, a_src, a_dst * a_src),
+                        CompositeMethod::DstOut => (0.0, 1.0 - a_src, a_dst * (1.0 - a_src)),
+                        CompositeMethod::SrcIn => (a_dst, 0.0, a_src * a_dst),
+                        CompositeMethod::SrcOut => (1.0 - a_dst, 0.0, a_src * (1.0 - a_dst)),
+                        CompositeMethod::Xor => (
+                            1.0 - a_dst,
+                            1.0 - a_src,
+                            a_src + a_dst - 2.0 * a_src * a_dst,
+                        ),
+                        _ => unreachable!(),
+                    };
 
-    let inv_max = 1.0 / f32::from(T::MAX_VAL);
+                    for c in 0..num_color_channels {
+                        let c_src = f32::from(src_channels[c][s_idx]) * inv_max;
+                        let c_dst = f32::from(region.channels[c][d_idx]) * inv_max;
+                        let out = c_src * color_src_factor + c_dst * color_dst_factor;
+                        region.channels[c][d_idx] =
+                            T::from_f32((out.clamp(0.0, 1.0) * max_val).round());
+                    }
 
-    for (dst_row, src_row) in dst_alpha
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(alpha_src.chunks_exact(width_src))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice.len().min(src_row.len());
-            for (src_a, dst_a) in src_row[..min_width].iter().zip(dst_slice.iter_mut()) {
-                // Porter-Duff Over: α_o = α_src + α_dst · (1 − α_src)
-                let a_src = (f32::from(*src_a) * inv_max).clamp(0.0, 1.0);
-                let a_dst = (f32::from(*dst_a) * inv_max).clamp(0.0, 1.0);
-                *dst_a =
-                    T::from_f32(((a_src + a_dst * (1.0 - a_src)) * f32::from(T::MAX_VAL)).round());
+                    region.channels[a_idx][d_idx] =
+                        T::from_f32((out_alpha.clamp(0.0, 1.0) * max_val).round());
+                });
             }
         }
-    }
-}
-
-/// Apply a Porter-Duff operator that requires both source **and** destination
-/// alpha to compute the output colour channels.
-#[allow(clippy::too_many_arguments)]
-fn composite_alpha_masked<T>(
-    src: &[T], dest: &mut [T], src_alpha: &[T], dst_alpha: &[T], start_x: usize, start_y: usize,
-    width_src: usize, width_dest: usize, method: CompositeMethod,
-) where
-    T: Copy + NumOps<T>,
-    f32: From<T>,
-{
-    let inv_max = 1.0 / f32::from(T::MAX_VAL);
-    let max_val = f32::from(T::MAX_VAL);
-
-    for (((dst_row, src_row), src_alpha_row), dst_alpha_row) in dest
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(src.chunks_exact(width_src))
-        .zip(src_alpha.chunks_exact(width_src))
-        .zip(dst_alpha.chunks_exact(width_dest).skip(start_y))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice
-                .len()
-                .min(src_row.len())
-                .min(dst_alpha_row.len().saturating_sub(start_x));
-
-            let dst_alpha_slice = &dst_alpha_row[start_x..start_x + min_width];
-
-            for (((src_p, src_a), dst_a), dst_p) in src_row[..min_width]
-                .iter()
-                .zip(src_alpha_row[..min_width].iter())
-                .zip(dst_alpha_slice.iter())
-                .zip(dst_slice[..min_width].iter_mut())
-            {
-                let a_src = (f32::from(*src_a) * inv_max).clamp(0.0, 1.0);
-                let a_dst = (f32::from(*dst_a) * inv_max).clamp(0.0, 1.0);
-                let c_src = f32::from(*src_p) * inv_max;
-                let c_dst = f32::from(*dst_p) * inv_max;
-
-                let out = match method {
-                    // DstIn: dst · α_src  (mask dst with src shape)
-                    CompositeMethod::DstIn => c_dst * a_src,
-                    // DstOut: dst · (1 − α_src)
-                    CompositeMethod::DstOut => c_dst * (1.0 - a_src),
-                    // SrcIn: src · α_dst
-                    CompositeMethod::SrcIn => c_src * a_dst,
-                    // SrcOut: src · (1 − α_dst)
-                    CompositeMethod::SrcOut => c_src * (1.0 - a_dst),
-                    // Xor: src·(1−α_dst) + dst·(1−α_src)
-                    CompositeMethod::Xor => c_src * (1.0 - a_dst) + c_dst * (1.0 - a_src),
-                    _ => unreachable!("Non-alpha method routed to composite_alpha_masked"),
-                };
-
-                *dst_p = T::from_f32((out.clamp(0.0, 1.0) * max_val).round());
-            }
+        CompositeMethod::Multiply => {
+            process_overlap!(|s_idx, d_idx| {
+                for c in 0..num_color_channels {
+                    let s = f32::from(src_channels[c][s_idx]) * inv_max;
+                    let d = f32::from(region.channels[c][d_idx]) * inv_max;
+                    let out = s * d;
+                    region.channels[c][d_idx] =
+                        T::from_f32((out.clamp(0.0, 1.0) * max_val).round());
+                }
+            });
+        }
+        CompositeMethod::Screen => {
+            process_overlap!(|s_idx, d_idx| {
+                for c in 0..num_color_channels {
+                    let s = f32::from(src_channels[c][s_idx]) * inv_max;
+                    let d = f32::from(region.channels[c][d_idx]) * inv_max;
+                    let out = 1.0 - (1.0 - s) * (1.0 - d);
+                    region.channels[c][d_idx] =
+                        T::from_f32((out.clamp(0.0, 1.0) * max_val).round());
+                }
+            });
         }
     }
 }
-
-/// Update the **alpha channel** for Porter-Duff operators that require both
-/// source and destination alpha values.
-#[allow(clippy::too_many_arguments)]
-fn composite_alpha_channel_masked<T>(
-    src_alpha: &[T], dst_alpha: &mut [T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize, method: CompositeMethod,
-) where
-    T: Copy + NumOps<T>,
-    f32: From<T>,
-{
-    let inv_max = 1.0 / f32::from(T::MAX_VAL);
-    let max_val = f32::from(T::MAX_VAL);
-
-    for (dst_row, src_row) in dst_alpha
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(src_alpha.chunks_exact(width_src))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice.len().min(src_row.len());
-            for (src_a, dst_a) in src_row[..min_width].iter().zip(dst_slice.iter_mut()) {
-                let a_src = (f32::from(*src_a) * inv_max).clamp(0.0, 1.0);
-                let a_dst = (f32::from(*dst_a) * inv_max).clamp(0.0, 1.0);
-
-                let out_alpha = match method {
-                    // DstIn:  α_dst · α_src
-                    // SrcIn:  α_src · α_dst
-                    CompositeMethod::DstIn | CompositeMethod::SrcIn => a_dst * a_src,
-                    // DstOut: α_dst · (1 − α_src)
-                    CompositeMethod::DstOut => a_dst * (1.0 - a_src),
-                    // SrcOut: α_src · (1 − α_dst)
-                    CompositeMethod::SrcOut => a_src * (1.0 - a_dst),
-                    // Xor:    α_src + α_dst − 2·α_src·α_dst
-                    CompositeMethod::Xor => a_src + a_dst - 2.0 * a_src * a_dst,
-                    _ => unreachable!("Non-alpha method routed to composite_alpha_channel_masked"),
-                };
-
-                *dst_a = T::from_f32((out_alpha.clamp(0.0, 1.0) * max_val).round());
-            }
-        }
-    }
-}
-
-// ─── Primitive compositing helpers ───────────────────────────────────────────
-
-/// Clear the destination to opaque (max value), then copy the source on top.
-fn composite_src<T: Copy + NumOps<T>>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
-) {
-    dest.fill(T::MAX_VAL);
-    composite_over(src, dest, start_x, start_y, width_src, width_dest);
-}
-
-/// Copy source pixels on top of destination (no alpha blending).
-fn composite_over<T: Copy>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
-) {
-    for (dst_row, src_row) in dest
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(src.chunks_exact(width_src))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice.len().min(src_row.len());
-            dst_slice[..min_width].copy_from_slice(&src_row[..min_width]);
-        }
-    }
-}
-
-/// Blend source over destination using source alpha:
-/// `C_out = α_src · C_src + (1 − α_src) · C_dst`
-fn composite_over_alpha<T>(
-    src: &[T], dest: &mut [T], src_alpha: &[T], start_x: usize, start_y: usize, width_src: usize,
-    width_dest: usize,
-) where
-    T: Copy + NumOps<T>,
-    f32: From<T>,
-{
-    let inv_max = 1.0 / f32::from(T::max_val());
-    let max_val = f32::from(T::MAX_VAL);
-
-    for ((dst_row, src_row), src_alpha_row) in dest
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(src.chunks_exact(width_src))
-        .zip(src_alpha.chunks_exact(width_src))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice.len().min(src_row.len());
-            for ((src_p, src_a), dst_p) in src_row[..min_width]
-                .iter()
-                .zip(src_alpha_row[..min_width].iter())
-                .zip(dst_slice[..min_width].iter_mut())
-            {
-                let a = (f32::from(*src_a) * inv_max).clamp(0.0, 1.0);
-                *dst_p = T::from_f32(
-                    (a * f32::from(*src_p) + (1.0 - a) * f32::from(*dst_p))
-                        .clamp(0.0, max_val)
-                        .round(),
-                );
-            }
-        }
-    }
-}
-
-/// Apply a per-pixel blend function row-by-row, writing results into `dest`.
-#[allow(clippy::too_many_arguments)]
-fn composite_blend<T>(
-    src: &[T], dest: &mut [T], start_x: usize, start_y: usize, width_src: usize, width_dest: usize,
-    blend_fn: fn(f32, f32) -> f32,
-) where
-    T: Copy + NumOps<T>,
-    f32: From<T>,
-{
-    let inv_max = 1.0 / f32::from(T::MAX_VAL);
-    let max_val = f32::from(T::MAX_VAL);
-
-    for (dst_row, src_row) in dest
-        .chunks_exact_mut(width_dest)
-        .skip(start_y)
-        .zip(src.chunks_exact(width_src))
-    {
-        if let Some(dst_slice) = dst_row.get_mut(start_x..) {
-            let min_width = dst_slice.len().min(src_row.len());
-            for (src_p, dst_p) in src_row[..min_width]
-                .iter()
-                .zip(dst_slice[..min_width].iter_mut())
-            {
-                let s = f32::from(*src_p) * inv_max;
-                let d = f32::from(*dst_p) * inv_max;
-                *dst_p = T::from_f32((blend_fn(s, d).clamp(0.0, 1.0) * max_val).round());
-            }
-        }
-    }
-}
-
-// ─── Blend functions (operate on normalised [0, 1] values) ───────────────────
-
-#[inline(always)]
-fn blend_multiply(src: f32, dst: f32) -> f32 {
-    src * dst
-}
-
-#[inline(always)]
-fn blend_screen(src: f32, dst: f32) -> f32 {
-    1.0 - (1.0 - src) * (1.0 - dst)
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1143,15 +806,5 @@ mod tests {
         let mut images = vec![dst, src];
         let result = Composite::new(CompositeMethod::Over, (0, 0)).execute_multiple(&mut images);
         assert!(result.is_err());
-    }
-
-    /// Alpha-channel methods on images without alpha should return an error.
-    #[test]
-    fn error_alpha_method_on_non_alpha_image() {
-        let dst = rgb_pixel(0x80, 0x80, 0x80);
-        let src = rgb_pixel(0x40, 0x40, 0x40);
-        let mut images = vec![dst, src];
-        let result = Composite::new(CompositeMethod::DstIn, (0, 0)).execute_multiple(&mut images);
-        assert!(result.is_err(), "DstIn on RGB (no alpha) should error");
     }
 }

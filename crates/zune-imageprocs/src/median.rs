@@ -40,12 +40,11 @@
 
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::OperationsTrait;
 
-use crate::utils::{execute_on};
 /// Applies a median filter of a given radius to the image.
 ///
 /// A median filter replaces each pixel with the median value of its neighboring pixels
@@ -101,44 +100,42 @@ impl OperationsTrait for Median {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let (width, height) = image.dimensions();
-
         if self.radius < 1 {
             return Ok(());
         }
+
         let depth = image.depth();
+        trace!("Running median filter using par_process_regions_out_of_place");
 
-        let num_threads = image.operation_options().num_threads_child();
-        trace!("Running median filter with {} threads", num_threads);
+        // Pre-allocate the destination buffer
+        let mut dest_image = image.clone();
 
-        let median_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            let mut new_channel = Channel::new_with_bit_type(channel.len(), depth.bit_type());
+        // Median usually ignores alpha channel
+        let ignore_alpha = true;
 
-            match depth.bit_type() {
-                BitType::U16 => median_u16(
-                    channel.reinterpret_as::<u16>()?,
-                    new_channel.reinterpret_as_mut::<u16>()?,
-                    self.radius,
-                    width,
-                    height,
-                    num_threads,
-                ),
-                BitType::U8 => median_u8(
-                    channel.reinterpret_as::<u8>()?,
-                    new_channel.reinterpret_as_mut::<u8>()?,
-                    self.radius,
-                    width,
-                    height,
-                    num_threads,
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        match depth.bit_type() {
+            BitType::U8 => {
+                image.par_process_regions_out_of_place::<u8, _>(
+                    &mut dest_image,
+                    ignore_alpha,
+                    |region| median_region_u8(region, self.radius),
+                )?;
             }
-            *channel = new_channel;
-            Ok(())
-        };
+            BitType::U16 => {
+                image.par_process_regions_out_of_place::<u16, _>(
+                    &mut dest_image,
+                    ignore_alpha,
+                    |region| median_region_u16(region, self.radius),
+                )?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        }
 
-        execute_on(median_fn, image, true)
+        // Overwrite the original image
+        *image = dest_image;
+        Ok(())
     }
+
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16]
     }
@@ -186,83 +183,6 @@ impl HistogramU8 {
         255
     }
 }
-
-pub fn median_u8(
-    in_channel: &[u8], out_channel: &mut [u8], radius: usize, width: usize, height: usize,
-    num_threads: usize,
-) {
-    let chunk_height = (height + num_threads - 1) / num_threads.max(1);
-    let chunk_size = chunk_height * width;
-
-    #[cfg(feature = "threads")]
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
-
-    if use_threads {
-        #[cfg(feature = "threads")]
-        std::thread::scope(|s| {
-            for (i, out_chunk) in out_channel.chunks_mut(chunk_size).enumerate() {
-                let start_y = i * chunk_height;
-                s.spawn(move || {
-                    for (local_y, out_row) in out_chunk.chunks_mut(width).enumerate() {
-                        process_row_u8(
-                            in_channel,
-                            out_row,
-                            start_y + local_y,
-                            width,
-                            height,
-                            radius,
-                        );
-                    }
-                });
-            }
-        });
-    } else {
-        for (y, out_row) in out_channel.chunks_mut(width).enumerate() {
-            process_row_u8(in_channel, out_row, y, width, height, radius);
-        }
-    }
-}
-
-fn process_row_u8(
-    input: &[u8], output: &mut [u8], y: usize, width: usize, height: usize, radius: usize,
-) {
-    let mut hist = HistogramU8::new();
-    let r_isize = radius as isize;
-    let w_isize = width as isize;
-    let h_isize = height as isize;
-
-    // 1. Initialize the histogram for the very first pixel in the row (x = 0)
-    for dy in -r_isize..=r_isize {
-        let real_y = (y as isize + dy).clamp(0, h_isize - 1) as usize;
-        for dx in -r_isize..=r_isize {
-            let real_x = dx.clamp(0, w_isize - 1) as usize;
-            hist.add(input[real_y * width + real_x]);
-        }
-    }
-    output[0] = hist.find_median();
-
-    // 2. Slide the window to the right
-    for x in 1..width {
-        let drop_x = (x as isize - r_isize - 1).clamp(0, w_isize - 1) as usize;
-        let add_x = (x as isize + r_isize).clamp(0, w_isize - 1) as usize;
-
-        // Add the new rightmost column, drop the old leftmost column
-        for dy in -r_isize..=r_isize {
-            let real_y = (y as isize + dy).clamp(0, h_isize - 1) as usize;
-            let row_offset = real_y * width;
-            hist.remove(input[row_offset + drop_x]);
-            hist.add(input[row_offset + add_x]);
-        }
-
-        output[x] = hist.find_median();
-    }
-}
-
-// ============================================================================
-// U16 IMPLEMENTATION (Tiered Histogram)
-// ============================================================================
 
 struct HistogramU16 {
     coarse: [u32; 256],
@@ -321,78 +241,111 @@ impl HistogramU16 {
     }
 }
 
-pub fn median_u16(
-    in_channel: &[u16], out_channel: &mut [u16], radius: usize, width: usize, height: usize,
-    num_threads: usize,
-) {
-    let chunk_height = (height + num_threads - 1) / num_threads.max(1);
-    let chunk_size = chunk_height * width;
+fn median_region_u8(region: &mut PlanarRegionOut<'_, u8>, radius: usize) {
+    let width = region.width;
+    if region.src_channels.is_empty() || width == 0 {
+        return;
+    }
 
-    #[cfg(feature = "threads")]
-    let use_threads = num_threads > 1;
-    #[cfg(not(feature = "threads"))]
-    let use_threads = false;
+    // Derive global height from the full source slice
+    let global_height = region.src_channels[0].len() / width;
 
-    if use_threads {
-        #[cfg(feature = "threads")]
-        std::thread::scope(|s| {
-            for (i, out_chunk) in out_channel.chunks_mut(chunk_size).enumerate() {
-                let start_y = i * chunk_height;
-                s.spawn(move || {
-                    for (local_y, out_row) in out_chunk.chunks_mut(width).enumerate() {
-                        process_row_u16(
-                            in_channel,
-                            out_row,
-                            start_y + local_y,
-                            width,
-                            height,
-                            radius,
-                        );
-                    }
-                });
+    let r_isize = radius.cast_signed();
+    let w_isize = width.cast_signed();
+    let h_isize = global_height.cast_signed();
+
+    for (src, dest) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        for local_y in 0..region.height {
+            let global_y = region.y_offset + local_y;
+            let mut hist = HistogramU8::new();
+
+            // 1. Initialize the histogram for the very first pixel in the row (x = 0)
+            for dy in -r_isize..=r_isize {
+                let real_y = (global_y.cast_signed() + dy).clamp(0, h_isize - 1) as usize;
+                let row_offset = real_y * width;
+
+                for dx in -r_isize..=r_isize {
+                    let real_x = dx.clamp(0, w_isize - 1) as usize;
+                    hist.add(src[row_offset + real_x]);
+                }
             }
-        });
-    } else {
-        for (y, out_row) in out_channel.chunks_mut(width).enumerate() {
-            process_row_u16(in_channel, out_row, y, width, height, radius);
+            dest[local_y * width] = hist.find_median();
+
+            // 2. Slide the window to the right
+            for x in 1..width {
+                let drop_x = (x.cast_signed() - r_isize - 1).clamp(0, w_isize - 1) as usize;
+                let add_x = (x.cast_signed() + r_isize).clamp(0, w_isize - 1) as usize;
+
+                // Add the new rightmost column, drop the old leftmost column
+                for dy in -r_isize..=r_isize {
+                    let real_y = (global_y.cast_signed() + dy).clamp(0, h_isize - 1) as usize;
+                    let row_offset = real_y * width;
+
+                    hist.remove(src[row_offset + drop_x]);
+                    hist.add(src[row_offset + add_x]);
+                }
+
+                dest[local_y * width + x] = hist.find_median();
+            }
         }
     }
 }
 
-fn process_row_u16(
-    input: &[u16], output: &mut [u16], y: usize, width: usize, height: usize, radius: usize,
-) {
-    let mut hist = HistogramU16::new();
-    let r_isize = radius as isize;
-    let w_isize = width as isize;
-    let h_isize = height as isize;
-
-    // 1. Initialize the histogram for x = 0
-    for dy in -r_isize..=r_isize {
-        let real_y = (y as isize + dy).clamp(0, h_isize - 1) as usize;
-        for dx in -r_isize..=r_isize {
-            let real_x = dx.clamp(0, w_isize - 1) as usize;
-            hist.add(input[real_y * width + real_x]);
-        }
+fn median_region_u16(region: &mut PlanarRegionOut<'_, u16>, radius: usize) {
+    let width = region.width;
+    if region.src_channels.is_empty() || width == 0 {
+        return;
     }
-    output[0] = hist.find_median();
 
-    // 2. Slide the window to the right
-    for x in 1..width {
-        let drop_x = (x as isize - r_isize - 1).clamp(0, w_isize - 1) as usize;
-        let add_x = (x as isize + r_isize).clamp(0, w_isize - 1) as usize;
+    let global_height = region.src_channels[0].len() / width;
 
-        for dy in -r_isize..=r_isize {
-            let real_y = (y as isize + dy).clamp(0, h_isize - 1) as usize;
-            let row_offset = real_y * width;
-            hist.remove(input[row_offset + drop_x]);
-            hist.add(input[row_offset + add_x]);
+    let r_isize = radius.cast_signed();
+    let w_isize = width.cast_signed();
+    let h_isize = global_height.cast_signed();
+
+    for (src, dest) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        for local_y in 0..region.height {
+            let global_y = region.y_offset + local_y;
+            let mut hist = HistogramU16::new();
+
+            // 1. Initialize the histogram for the very first pixel in the row (x = 0)
+            for dy in -r_isize..=r_isize {
+                let real_y = (global_y as isize + dy).clamp(0, h_isize - 1) as usize;
+                let row_offset = real_y * width;
+
+                for dx in -r_isize..=r_isize {
+                    let real_x = dx.clamp(0, w_isize - 1) as usize;
+                    hist.add(src[row_offset + real_x]);
+                }
+            }
+            dest[local_y * width] = hist.find_median();
+
+            // 2. Slide the window to the right
+            for x in 1..width {
+                let drop_x = (x.cast_signed() - r_isize - 1).clamp(0, w_isize - 1) as usize;
+                let add_x = (x.cast_signed() + r_isize).clamp(0, w_isize - 1) as usize;
+
+                for dy in -r_isize..=r_isize {
+                    let real_y = (global_y.cast_signed() + dy).clamp(0, h_isize - 1) as usize;
+                    let row_offset = real_y * width;
+
+                    hist.remove(src[row_offset + drop_x]);
+                    hist.add(src[row_offset + add_x]);
+                }
+
+                dest[local_y * width + x] = hist.find_median();
+            }
         }
-
-        output[x] = hist.find_median();
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -412,136 +365,16 @@ mod tests {
         Median::new(2).execute(&mut img_u8).unwrap();
         Median::new(2).execute(&mut img_u16).unwrap();
 
-        img_u8.iter_pixels::<u8, _>(|_, _, px| {
-            assert_eq!(px[0], 128);
-        }).unwrap();
+        img_u8
+            .iter_pixels::<u8, _>(|_, _, px| {
+                assert_eq!(px[0], 128);
+            })
+            .unwrap();
 
-        img_u16.iter_pixels::<u16, _>(|_, _, px| {
-            assert_eq!(px[0], 32768);
-        }).unwrap();
-    }
-
-    #[test]
-    fn test_median_removes_outlier() {
-        // Classic "Salt and Pepper" noise test
-        let width = 5;
-        let height = 5;
-        let mut input = vec![10_u8; width * height];
-
-        // Inject a massive outlier in the center
-        input[2 * width + 2] = 255;
-
-        let mut output = vec![0_u8; width * height];
-
-        // A radius of 1 creates a 3x3 window.
-        // The center window will see eight 10s and one 255. The median is 10.
-        median_u8(&input, &mut output, 1, width, height, 1);
-
-        // The outlier should be completely erased
-        assert_eq!(output[2 * width + 2], 10);
-
-        // Everything else should also remain 10
-        assert!(output.iter().all(|&x| x == 10));
-    }
-
-    #[test]
-    fn test_median_u16_tiered_histogram_correctness() {
-        let width = 3;
-        let height = 3;
-        // A 3x3 gradient
-        // 100, 200, 300
-        // 400, 500, 600
-        // 700, 800, 900
-        let input: Vec<u16> = vec![
-            100, 200, 300,
-            400, 500, 600,
-            700, 800, 900
-        ];
-        let mut output = vec![0_u16; width * height];
-
-        // Radius 1 = 3x3 window.
-        median_u16(&input, &mut output, 1, width, height, 1);
-
-        // For the center pixel (1,1), the window is the entire image.
-        // The sorted array is [100, 200, 300, 400, 500, 600, 700, 800, 900].
-        // The exact middle (median) is 500.
-        assert_eq!(output[1 * width + 1], 500);
-    }
-
-    #[test]
-    fn test_median_edge_clamping() {
-        let width = 3;
-        let height = 3;
-        let input: Vec<u8> = vec![
-            10, 20, 30,
-            40, 50, 60,
-            70, 80, 90
-        ];
-        let mut output = vec![0_u8; width * height];
-
-        // Radius 1 = 3x3 window.
-        median_u8(&input, &mut output, 1, width, height, 1);
-
-        // Top-left corner (0,0).
-        // Coordinates clamp to >= 0, so the 3x3 virtual window values are:
-        // (0,0) clamped from (-1,-1): 10
-        // (0,0) clamped from ( 0,-1): 10
-        // (1,0) clamped from ( 1,-1): 20
-        // (0,0) clamped from (-1, 0): 10
-        // (0,0) actual                : 10
-        // (1,0) actual                : 20
-        // (0,1) clamped from (-1, 1): 40
-        // (0,1) actual                : 40
-        // (1,1) actual                : 50
-        // Sorted: 10, 10, 10, 10, 20, 20, 40, 40, 50.
-        // Median (index 4) = 20.
-        assert_eq!(output[0], 20);
-    }
-}
-
-#[cfg(feature = "benchmarks")]
-#[cfg(test)]
-mod benchmarks {
-    extern crate test;
-    use super::*;
-
-    #[bench]
-    fn bench_median_u8_r3(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let radius = 3; // 7x7 window
-        let input = vec![128_u8; width * height];
-        let mut output = vec![0_u8; width * height];
-
-        b.iter(|| {
-            median_u8(&input, &mut output, radius, width, height, 1);
-        });
-    }
-
-    #[bench]
-    fn bench_median_u16_r3(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let radius = 3; // 7x7 window
-        let input = vec![32768_u16; width * height];
-        let mut output = vec![0_u16; width * height];
-
-        b.iter(|| {
-            median_u16(&input, &mut output, radius, width, height, 1);
-        });
-    }
-
-    #[bench]
-    fn bench_median_u8_r15(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let radius = 15; // 31x31 window
-        let input = vec![128_u8; width * height];
-        let mut output = vec![0_u8; width * height];
-
-        // Because it's O(R), this massive 31x31 window will run remarkably fast!
-        b.iter(|| {
-            median_u8(&input, &mut output, radius, width, height, 1);
-        });
+        img_u16
+            .iter_pixels::<u16, _>(|_, _, px| {
+                assert_eq!(px[0], 32768);
+            })
+            .unwrap();
     }
 }

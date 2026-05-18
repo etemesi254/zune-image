@@ -1,9 +1,9 @@
 use crate::traits::NumOps;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
-use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 pub struct HaldClut;
@@ -43,11 +43,11 @@ impl OperationsTrait for HaldClut {
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.len() < 2 {
             return Err(ImageErrors::GenericStr(
-                "Hald-CLUT requires at least two images (CLUT + Target)",
+                "Hald-CLUT requires at least two images",
             ));
         }
 
-        let mut clut_img = images.pop().unwrap();
+        let clut_img = images.pop().unwrap();
         let target_img = images.last_mut().unwrap();
 
         // Validate CLUT dimensions
@@ -85,85 +85,80 @@ impl OperationsTrait for HaldClut {
 
         let working_cs = target_img.colorspace();
 
-        // Ensure CLUT has the exact same color layout so our zip loops match
-        if clut_img.colorspace() != working_cs {
-            clut_img.convert_color(working_cs)?;
-        }
-        if target_depth != clut_depth {
-            // map to the next best thing
-            trace!("Image depths differ converting the most appropriate depth of depth of {:?}",new_depth.to_depth());
+        // Determine channel mapping to handle RGB vs BGR safely
+        let is_bgr = working_cs == ColorSpace::BGR || working_cs == ColorSpace::BGRA;
+        let (r_idx, g_idx, b_idx) = if is_bgr { (2, 1, 0) } else { (0, 1, 2) };
 
-            // convert both
-            clut_img.convert_depth(new_depth.to_depth())?;
-            target_img.convert_depth(new_depth.to_depth())?;
-        }
-
+        // Extract dimensions upfront
+        let target_width = target_img.width();
+        let target_height = target_img.height();
 
         for (target_frame, clut_frame) in target_img
             .frames_mut()
             .iter_mut()
             .zip(clut_img.frames_ref())
         {
-            // Safely split the channel array into multiple mutable references
-            let t_channels = target_frame.channels_mut(working_cs, false);
-
-            let (r_target, g_target, b_target) =
-                if working_cs == ColorSpace::BGR || working_cs == ColorSpace::BGRA {
-                    let (b_ch, rest) = t_channels.split_first_mut().unwrap();
-                    let (g_ch, rest2) = rest.split_first_mut().unwrap();
-                    let (r_ch, _) = rest2.split_first_mut().unwrap();
-                    (r_ch, g_ch, b_ch)
-                } else {
-                    let (r_ch, rest) = t_channels.split_first_mut().unwrap();
-                    let (g_ch, rest2) = rest.split_first_mut().unwrap();
-                    let (b_ch, _) = rest2.split_first_mut().unwrap();
-                    (r_ch, g_ch, b_ch)
-                };
-
             let c_channels = clut_frame.channels_ref(working_cs, false);
 
-            let (r_clut, g_clut, b_clut) =
-                if working_cs == ColorSpace::BGR || working_cs == ColorSpace::BGRA {
-                    (&c_channels[2], &c_channels[1], &c_channels[0])
-                } else {
-                    (&c_channels[0], &c_channels[1], &c_channels[2])
-                };
-
             match new_depth {
-                BitType::U8 => apply_hald_clut::<u8>(
-                    r_target.reinterpret_as_mut()?,
-                    g_target.reinterpret_as_mut()?,
-                    b_target.reinterpret_as_mut()?,
-                    r_clut.reinterpret_as()?,
-                    g_clut.reinterpret_as()?,
-                    b_clut.reinterpret_as()?,
-                    level,
-                    clut_w,
-                ),
-                BitType::U16 => apply_hald_clut::<u16>(
-                    r_target.reinterpret_as_mut()?,
-                    g_target.reinterpret_as_mut()?,
-                    b_target.reinterpret_as_mut()?,
-                    r_clut.reinterpret_as()?,
-                    g_clut.reinterpret_as()?,
-                    b_clut.reinterpret_as()?,
-                    level,
-                    clut_w,
-                ),
-                BitType::F32 => apply_hald_clut::<f32>(
-                    r_target.reinterpret_as_mut()?,
-                    g_target.reinterpret_as_mut()?,
-                    b_target.reinterpret_as_mut()?,
-                    r_clut.reinterpret_as()?,
-                    g_clut.reinterpret_as()?,
-                    b_clut.reinterpret_as()?,
-                    level,
-                    clut_w,
-                ),
+                BitType::U8 => {
+                    let clut_r = c_channels[r_idx].reinterpret_as::<u8>()?;
+                    let clut_g = c_channels[g_idx].reinterpret_as::<u8>()?;
+                    let clut_b = c_channels[b_idx].reinterpret_as::<u8>()?;
+
+                    // Call the frame-level primitive directly!
+                    Image::par_process_frame_regions::<u8, _>(
+                        target_frame,
+                        target_width,
+                        target_height,
+                        working_cs,
+                        true,
+                        |region| {
+                            apply_hald_clut_region::<u8>(
+                                region, clut_r, clut_g, clut_b, r_idx, g_idx, b_idx, level, clut_w,
+                            );
+                        },
+                    )?;
+                }
+                BitType::U16 => {
+                    let clut_r = c_channels[r_idx].reinterpret_as::<u16>()?;
+                    let clut_g = c_channels[g_idx].reinterpret_as::<u16>()?;
+                    let clut_b = c_channels[b_idx].reinterpret_as::<u16>()?;
+
+                    Image::par_process_frame_regions::<u16, _>(
+                        target_frame,
+                        target_width,
+                        target_height,
+                        working_cs,
+                        true,
+                        |region| {
+                            apply_hald_clut_region::<u16>(
+                                region, clut_r, clut_g, clut_b, r_idx, g_idx, b_idx, level, clut_w,
+                            );
+                        },
+                    )?;
+                }
+                BitType::F32 => {
+                    let clut_r = c_channels[r_idx].reinterpret_as::<f32>()?;
+                    let clut_g = c_channels[g_idx].reinterpret_as::<f32>()?;
+                    let clut_b = c_channels[b_idx].reinterpret_as::<f32>()?;
+
+                    Image::par_process_frame_regions::<f32, _>(
+                        target_frame,
+                        target_width,
+                        target_height,
+                        working_cs,
+                        true,
+                        |region| {
+                            apply_hald_clut_region::<f32>(
+                                region, clut_r, clut_g, clut_b, r_idx, g_idx, b_idx, level, clut_w,
+                            );
+                        },
+                    )?;
+                }
                 d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
         }
-
         // convert back
         if target_img.depth() != target_depth {
             target_img.convert_depth(target_depth)?;
@@ -176,50 +171,43 @@ impl OperationsTrait for HaldClut {
         Ok(())
     }
 }
-
 /// Applies a Hald-CLUT mapping to target RGB channels.
 ///
 /// Uses Trilinear Interpolation for smooth, professional-grade color mapping.
 /// Applies a Hald-CLUT mapping to target RGB channels.
 ///
 /// Uses Trilinear Interpolation for smooth, professional-grade color mapping.
-#[allow(clippy::too_many_arguments)]
-pub fn apply_hald_clut<T>(
-    r_target: &mut [T], g_target: &mut [T], b_target: &mut [T], r_clut: &[T], g_clut: &[T],
-    b_clut: &[T], level: usize, clut_w: usize,
+pub fn apply_hald_clut_region<T>(
+    region: &mut PlanarRegionMut<'_, T>, clut_r: &[T], clut_g: &[T], clut_b: &[T], r_idx: usize,
+    g_idx: usize, b_idx: usize, level: usize, clut_w: usize,
 ) where
     T: Copy + NumOps<T>,
 {
-    // dim is the number of nodes per axis. For 512px, dim = 64.
     let dim = level * level;
     let max_idx = (dim - 1) as f32;
     let max_val = T::max_val().to_f32();
+    let num_pixels = region.width * region.height;
 
-    // Standard Hald-CLUT Mapping:
-    // The image is a linear scan where Red changes fastest, then Green, then Blue.
     let get_clut_index = |ri: usize, gi: usize, bi: usize| -> usize {
-        // 1D index in the cube
         let p = bi * (dim * dim) + gi * dim + ri;
-
-        // Map 1D index to 2D image coordinates (x, y)
         let x = p % clut_w;
         let y = p / clut_w;
-
         y * clut_w + x
     };
 
     let lerp = |a: f32, b: f32, t: f32| -> f32 { a + (b - a) * t };
 
-    for ((r_out, g_out), b_out) in r_target
-        .iter_mut()
-        .zip(g_target.iter_mut())
-        .zip(b_target.iter_mut())
-    {
-        // 1. Normalize and scale to CLUT axis (0.0 .. 63.0)
+    // Linear pass over every pixel in this thread's specific chunk
+    for i in 0..num_pixels {
+        // Read the target colors
+        let r_in = region.channels[r_idx][i];
+        let g_in = region.channels[g_idx][i];
+        let b_in = region.channels[b_idx][i];
 
-        let rf = (r_out.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
-        let gf = (g_out.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
-        let bf = (b_out.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
+        // 1. Normalize and scale to CLUT axis
+        let rf = (r_in.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
+        let gf = (g_in.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
+        let bf = (b_in.to_f32() / max_val * max_idx).clamp(0.0, max_idx);
 
         let r0 = rf as usize;
         let g0 = gf as usize;
@@ -233,24 +221,18 @@ pub fn apply_hald_clut<T>(
         let dg = gf - g0 as f32;
         let db = bf - b0 as f32;
 
-        // 2. Sample 8 corners
+        // 2. Sample 8 corners (Thread safely jumps around the CLUT)
         let i000 = get_clut_index(r0, g0, b0);
         let i100 = get_clut_index(r1, g0, b0);
-
         let i010 = get_clut_index(r0, g1, b0);
         let i110 = get_clut_index(r1, g1, b0);
-
         let i001 = get_clut_index(r0, g0, b1);
         let i101 = get_clut_index(r1, g0, b1);
-
         let i011 = get_clut_index(r0, g1, b1);
         let i111 = get_clut_index(r1, g1, b1);
 
         // 3. Trilinear Interpolation
-        for (out_val, clut_chan) in [r_out, g_out, b_out]
-            .iter_mut()
-            .zip([r_clut, g_clut, b_clut])
-        {
+        for (out_idx, clut_chan) in [(r_idx, clut_r), (g_idx, clut_g), (b_idx, clut_b)] {
             let c00 = lerp(clut_chan[i000].to_f32(), clut_chan[i100].to_f32(), dr);
             let c10 = lerp(clut_chan[i010].to_f32(), clut_chan[i110].to_f32(), dr);
             let c01 = lerp(clut_chan[i001].to_f32(), clut_chan[i101].to_f32(), dr);
@@ -260,8 +242,9 @@ pub fn apply_hald_clut<T>(
             let c1 = lerp(c01, c11, dg);
 
             let res = lerp(c0, c1, db);
-            let value = res.clamp(0.0, max_val);
-            **out_val = T::from_f32(value);
+
+            // Write back to the target chunk safely
+            region.channels[out_idx][i] = T::from_f32(res.clamp(0.0, max_val));
         }
     }
 }

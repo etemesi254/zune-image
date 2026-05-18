@@ -120,3 +120,4 @@ pub mod iters;
 pub mod colors;
 pub mod web;
 pub mod operations_options;
+pub mod planar_regions;

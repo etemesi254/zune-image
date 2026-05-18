@@ -18,13 +18,11 @@
 use std::ops::Sub;
 
 use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
-use crate::utils::execute_on;
 
 /// Inverts the colors of an image.
 ///
@@ -84,17 +82,31 @@ impl OperationsTrait for Invert {
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth().bit_type();
 
-        let invert_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            match depth {
-                BitType::U8 => invert(channel.reinterpret_as_mut::<u8>()?),
-                BitType::U16 => invert(channel.reinterpret_as_mut::<u16>()?),
-                BitType::F32 => invert(channel.reinterpret_as_mut::<f32>()?),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+        match depth {
+            BitType::U8 => {
+                image.par_process_regions::<u8, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        invert(channel);
+                    }
+                })?;
             }
-            Ok(())
-        };
-
-        execute_on(invert_fn, image, true)
+            BitType::U16 => {
+                image.par_process_regions::<u16, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        invert(channel);
+                    }
+                })?;
+            }
+            BitType::F32 => {
+                image.par_process_regions::<f32, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        invert(channel);
+                    }
+                })?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        }
+        Ok(())
     }
 
     fn supported_types(&self) -> &'static [BitType] {
@@ -108,7 +120,7 @@ impl OperationsTrait for Invert {
 ///  is `pixel[x,y] = 255-pixel[x,y]`
 pub fn invert<T>(in_image: &mut [T])
 where
-    T: NumOps<T> + Sub<Output = T> + Copy
+    T: NumOps<T> + Sub<Output = T> + Copy,
 {
     for pixel in in_image.iter_mut() {
         *pixel = T::MAX_VAL - *pixel;
@@ -131,7 +143,7 @@ mod tests {
             0_u8,
             ColorSpace::MultiBand(NonZeroU32::new(6).unwrap()),
             100,
-            100
+            100,
         );
         Invert::new().execute(&mut image).unwrap();
     }

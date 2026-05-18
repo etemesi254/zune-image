@@ -5,6 +5,12 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+use zune_core::bit_depth::BitType;
+use zune_image::errors::ImageErrors;
+use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
+use zune_image::traits::{OperationColorValues, OperationsTrait};
+
 /// Linearly stretches the contrast of an image.
 ///
 /// This filter remaps the pixel values of an image so that a specified `lower` bound
@@ -63,161 +69,121 @@ impl OperationsTrait for StretchContrast {
         "Stretch Contrast"
     }
 
-    fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Gamma
-    }
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.depth();
+        if self.upper < self.lower {
+            return Err(ImageErrors::GenericStr("upper must be strictly greater than lower"));
+        }
 
-        let strech_contrast_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            match depth.bit_type() {
-                BitType::U8 => stretch_contrast(
-                    channel.reinterpret_as_mut::<u8>()?,
-                    self.lower as u8,
-                    self.upper as u8,
-                    u32::from(depth.max_value()),
-                )?,
-                BitType::U16 => stretch_contrast(
-                    channel.reinterpret_as_mut::<u16>()?,
-                    self.lower as _,
-                    self.upper as _,
-                    u32::from(depth.max_value()),
-                )?,
-                BitType::F32 => stretch_contrast_f32(
-                    channel.reinterpret_as_mut::<f32>()?,
-                    self.lower as _,
-                    self.upper as _,
-                )?,
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        let depth = image.depth();
+        let ignore_alpha = true; // Contrast usually ignores the alpha channel
+
+        match depth.bit_type() {
+            BitType::U8 => {
+                // 1. Build the LUT once (256 elements)
+                let lut = build_lut_u8(self.lower as u8, self.upper as u8);
+
+                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
+                    apply_lut_region(region, &lut);
+                })?;
             }
-            Ok(())
-        };
-        execute_on(strech_contrast_fn, image, true)
+            BitType::U16 => {
+                // 1. Build the LUT once (65536 elements)
+                let lut = build_lut_u16(self.lower as u16, self.upper as u16);
+
+                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
+                    apply_lut_region(region, &lut);
+                })?;
+            }
+            BitType::F32 => {
+                // F32 has millions of possible values, so we process it mathematically
+                let lower = self.lower;
+                let upper = self.upper;
+
+                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
+                    stretch_contrast_region_f32(region, lower, upper);
+                })?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        }
+
+        Ok(())
     }
+
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
-}
-use std::ops::Sub;
-
-use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
-use zune_image::errors::ImageErrors;
-use zune_image::image::Image;
-use zune_image::traits::{OperationColorValues, OperationsTrait};
-
-use crate::mathops::{compute_mod_u32, fastdiv_u32};
-use crate::traits::NumOps;
-use crate::utils::execute_on;
-
-///
-/// Linearly stretches the contrast in an image in place,
-/// sending lower to image minimum and upper to image maximum.
-///
-/// # Arguments
-///
-/// * `image`: Image channel pixels
-/// * `lower`:  The lower minimum for which pixels below this value
-///   become 0
-/// * `upper`:  Upper maximum for which pixels above this value become the maximum
-///   value
-/// * `maximum`: Maximum value for this pixel type.
-///
-/// - Modifies array in place
-///
-pub fn stretch_contrast<T>(
-    image: &mut [T], lower: T, upper: T, maximum: u32,
-) -> Result<(), &'static str>
-where
-    T: Ord + Sub<Output = T> + NumOps<T> + Copy,
-    u32: std::convert::From<T>,
-{
-    if upper < lower {
-        return Err("upper must be strictly greater than lower");
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Gamma
     }
+}
 
+fn build_lut_u8(lower: u8, upper: u8) -> [u8; 256] {
+    let mut lut = [0u8; 256];
+    let maximum = 255u32;
     let len = u32::from(upper.saturating_sub(lower)).saturating_add(1);
 
-    // using fast division is faster than the other one
-    // (weirdly) vectorized one.
-    //
-    // image dimensions: 5796 * 3984 RGB
-    //  using the vectorizable one: 303 ms
-    //  using fastdiv:              142 ms
-    //
-    // Probably due to better pipelining.
-    let mod_len = compute_mod_u32(u64::from(len));
-
-    for pixel in image.iter_mut() {
-        if *pixel >= upper {
-            *pixel = T::MAX_VAL;
-        } else if *pixel <= lower {
-            *pixel = T::MIN_VAL;
+    for i in 0..=255u8 {
+        if i >= upper {
+            lut[i as usize] = 255;
+        } else if i <= lower {
+            lut[i as usize] = 0;
         } else {
-            // TODO: (cae): Use a LUT table
-            let numerator = maximum * u32::from(*pixel - lower);
-            let scaled = fastdiv_u32(numerator, mod_len);
-            *pixel = T::from_u32(scaled);
+            let numerator = maximum * u32::from(i - lower);
+            lut[i as usize] = (numerator / len) as u8;
         }
     }
-    Ok(())
+    lut
 }
 
-pub fn stretch_contrast_f32(image: &mut [f32], lower: f32, upper: f32) -> Result<(), &'static str> {
-    if upper < lower {
-        return Err("upper must be strictly greater than lower");
-    }
-    let inv_range = 1. / (upper - lower);
-    for pixel in image.iter_mut() {
-        if *pixel > upper {
-            *pixel = f32::max_val();
-        } else if *pixel <= lower {
-            *pixel = f32::min_val();
+fn build_lut_u16(lower: u16, upper: u16) -> Vec<u16> {
+    // 65536 elements take ~131 KB. We use a Vec to avoid blowing up the stack.
+    let mut lut = vec![0u16; 65536];
+    let maximum = 65535u32;
+    let len = u32::from(upper.saturating_sub(lower)).saturating_add(1);
+
+    for i in 0..=65535u32 {
+        let val = i as u16;
+        if val >= upper {
+            lut[i as usize] = 65535;
+        } else if val <= lower {
+            lut[i as usize] = 0;
         } else {
-            *pixel = (*pixel - lower) * inv_range;
+            let numerator = maximum * u32::from(val - lower);
+            lut[i as usize] = (numerator / len) as u16;
         }
     }
-
-    Ok(())
+    lut
+}
+fn apply_lut_region<T>(region: &mut PlanarRegionMut<'_, T>, lut: &[T])
+where
+    T: Copy + Default + Send + Sync,
+    usize: From<T>, // Allows us to use the pixel value as an array index safely
+{
+    for channel in region.channels.iter_mut() {
+        for px in channel.iter_mut() {
+            *px = lut[usize::from(*px)];
+        }
+    }
 }
 
-#[cfg(feature = "benchmarks")]
-#[cfg(test)]
-mod benchmarks {
-    extern crate test;
+/// Computes the mathematical stretch directly on the f32 values
+fn stretch_contrast_region_f32(region: &mut PlanarRegionMut<'_, f32>, lower: f32, upper: f32) {
+    let inv_range = 1.0 / (upper - lower);
 
-    use nanorand::Rng;
-
-    use crate::stretch_contrast::{stretch_contrast, stretch_contrast_f32};
-
-    #[bench]
-    fn bench_stretch_contrast(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let dimensions = width * height;
-        let mut in_vec = vec![255_u16; dimensions];
-        nanorand::WyRand::new().fill(&mut in_vec);
-
-        b.iter(|| {
-            stretch_contrast(&mut in_vec, 3, 10, 65535).unwrap();
-        });
-    }
-
-    #[bench]
-    fn bench_stretch_contrast_f32(b: &mut test::Bencher) {
-        let width = 800;
-        let height = 800;
-        let dimensions = width * height;
-        let mut in_vec = vec![0.0; dimensions];
-        nanorand::WyRand::new().fill(&mut in_vec);
-
-        b.iter(|| {
-            stretch_contrast_f32(&mut in_vec, 0.2, 0.9).unwrap();
-        });
+    for channel in region.channels.iter_mut() {
+        for pixel in channel.iter_mut() {
+            if *pixel > upper {
+                *pixel = f32::MAX; // Or use your trait's f32::max_val() if preferred
+            } else if *pixel <= lower {
+                *pixel = f32::MIN; // Or use f32::min_val() / 0.0 depending on your spec
+            } else {
+                *pixel = (*pixel - lower) * inv_range;
+            }
+        }
     }
 }

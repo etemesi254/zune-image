@@ -25,13 +25,11 @@
 //!
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
-use crate::utils::execute_on;
 
 /// Brighten struct
 ///
@@ -86,24 +84,38 @@ impl OperationsTrait for Brighten {
         let max_val = image.depth().max_value();
         let depth = image.depth();
 
-        let brighten_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            match depth.bit_type() {
-                BitType::U8 => brighten(
-                    channel.reinterpret_as_mut::<u8>()?,
-                    self.value,
-                    u8::try_from(max_val.clamp(0, 255)).unwrap(),
-                ),
-                BitType::U16 => brighten(channel.reinterpret_as_mut::<u16>()?, self.value, max_val),
-                BitType::F32 => brighten_f32(
-                    channel.reinterpret_as_mut::<f32>()?,
-                    self.value,
-                    f32::from(max_val),
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        match depth.bit_type() {
+            BitType::U8 => {
+                image.par_process_regions::<u8, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        brighten(
+                            channel,
+                            self.value,
+                            u8::try_from(max_val.clamp(0, 255)).unwrap_or(u8::MAX),
+                        );
+                    }
+                })?;
             }
-            Ok(())
-        };
-        execute_on(brighten_fn, image, true)
+            BitType::U16 => {
+                image.par_process_regions::<u16, _>(true, |region| {
+                    for channel in region.channels.iter_mut() {
+                        brighten(channel, self.value, max_val);
+                    }
+                })?;
+            }
+            BitType::F32 => image.par_process_regions::<f32, _>(true, |region| {
+                for channel in region.channels.iter_mut() {
+                    brighten_f32(channel, self.value, f32::from(max_val));
+                }
+            })?,
+            _ => {
+                return Err(ImageErrors::ImageOperationNotImplemented(
+                    self.name(),
+                    depth.bit_type(),
+                ))
+            }
+        }
+        Ok(())
     }
     fn supported_colorspaces(&self) -> &'static [ColorSpace] {
         &[

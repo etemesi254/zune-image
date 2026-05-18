@@ -24,13 +24,12 @@
 //! - For `f32` naive execution is used
 //!
 use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
+use zune_image::errors::ImageErrors::ImageOperationNotImplemented;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
-use crate::utils::execute_on;
 
 fn build_gamma_lut<T: Default + NumOps<T> + Copy>(value: f32, max_value: u16) -> Vec<T> {
     let mut lut = vec![T::default(); usize::from(max_value) + 1];
@@ -97,7 +96,7 @@ fn build_gamma_lut<T: Default + NumOps<T> + Copy>(value: f32, max_value: u16) ->
 /// ```
 #[derive(Default)]
 pub struct Gamma {
-    value: f32
+    value: f32,
 }
 
 impl Gamma {
@@ -132,40 +131,41 @@ impl OperationsTrait for Gamma {
             None
         };
 
-        let gamma_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            match depth.bit_type() {
-                BitType::U16 => {
-                    if let Some(lut_u16) = gamma_u16.as_ref() {
-                        gamma(channel.reinterpret_as_mut::<u16>()?, lut_u16);
-                    } else {
-                        return  Err(ImageErrors::GenericStr("LUT not built"))
+        match depth.bit_type() {
+            BitType::U8 => {
+                image.par_process_regions::<u8, _>(true, |region| {
+                    if let Some(gamma_u8) = gamma_u8.as_ref() {
+                        for single_channel in &mut *region.channels {
+                            gamma(single_channel, gamma_u8);
+                        }
                     }
-                }
-                BitType::U8 => {
-                    if let Some(lut_u8) = gamma_u8.as_ref() {
-                        gamma(channel.reinterpret_as_mut::<u8>()?, lut_u8);
-                    } else {
-                        return  Err(ImageErrors::GenericStr("LUT not built"))
+                })?;
+            }
+            BitType::U16 => {
+                image.par_process_regions::<u16, _>(true, |region| {
+                    if let Some(gamma_u16) = gamma_u16.as_ref() {
+                        for single_channel in &mut *region.channels {
+                            gamma(single_channel, gamma_u16);
+                        }
                     }
-                }
-                BitType::F32 => {
-                    // for floats, we can't use LUT tables, the scope is too big
+                })?;
+            }
+            BitType::F32 => {
+                image.par_process_regions::<f32, _>(true, |region| {
                     let max_f32 = f32::from(max_value);
                     let value_inv = 1.0 / max_f32;
 
-                    channel.reinterpret_as_mut::<f32>()?.iter_mut().for_each(|x| {
-                        // Normalize -> Pow -> Scale back
-                        *x = max_f32 * (*x * value_inv).powf(self.value);
-                    });
-                }
-
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                }
+                    for channel in &mut *region.channels {
+                        channel.iter_mut().for_each(|x| {
+                            // Normalize -> Pow -> Scale back
+                            *x = max_f32 * (*x * value_inv).powf(self.value);
+                        });
+                    }
+                })?;
             }
-            Ok(())
-        };
-        execute_on(gamma_fn, image, true)
+            _ => return Err(ImageOperationNotImplemented(self.name(), depth.bit_type())),
+        }
+        Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
@@ -184,7 +184,7 @@ impl OperationsTrait for Gamma {
 )]
 pub fn gamma<T>(pixels: &mut [T], lut: &[T])
 where
-    T: Copy + NumOps<T> + Default
+    T: Copy + NumOps<T> + Default,
 {
     // now do gamma correction
     for px in pixels {
@@ -194,4 +194,16 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use zune_core::colorspace::ColorSpace;
+    use zune_image::image::Image;
+    use crate::FilterExt;
 
+    #[test]
+    fn test_imagr() {
+        let image = Image::fill(128_u8, ColorSpace::RGB, 100, 100);
+
+        image.gamma(2.4).unwrap();
+    }
+}

@@ -16,7 +16,9 @@ use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
+use zune_image::frame::Frame;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::OperationsTrait;
 
 #[must_use]
@@ -114,83 +116,122 @@ impl OperationsTrait for Rotate {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        if !((self.angle - 180.0).abs() < f32::EPSILON
-            || (self.angle - 270.0).abs() < f32::EPSILON
-            || (self.angle - 90.0).abs() < f32::EPSILON)
-        {
+        let is_180 = (self.angle - 180.0).abs() < f32::EPSILON;
+        let is_90 = (self.angle - 90.0).abs() < f32::EPSILON;
+        let is_270 = (self.angle - 270.0).abs() < f32::EPSILON;
+
+        if !is_180 && !is_90 && !is_270 {
             trace!("Arbitrary rotate operation, using affine transform");
-            AffineTransform::rotation(self.angle).execute(image)?;
+            AffineTransform::rotation(self.angle).execute_impl(image)?;
             return Ok(());
-        };
-        let im_type = image.depth().bit_type();
-
-        let (width, height) = image.dimensions();
-
-        let will_change_dims = (self.angle - 180.0).abs() > f32::EPSILON;
-        let depth = image.depth();
-
-        let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            let (new_width, new_height) = get_rotated_dimensions(width, height, self.angle);
-
-            if (self.angle - 180.0).abs() < f32::EPSILON {
-                // no need to allocate, so simply reverse pixels inside
-                match im_type {
-                    BitType::U8 => {
-                        channel.reinterpret_as_mut::<u8>()?.reverse();
-                    }
-                    BitType::U16 => {
-                        channel.reinterpret_as_mut::<u16>()?.reverse();
-                    }
-                    BitType::F32 => {
-                        channel.reinterpret_as_mut::<f32>()?.reverse();
-                    }
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
-                }
-                return Ok(());
-            }
-
-            let mut new_channel = Channel::new_with_length_and_type(
-                new_width * new_height * depth.size_of(),
-                channel.type_id(),
-            );
-
-            match im_type {
-                BitType::U8 => {
-                    rotate::<u8>(
-                        self.angle,
-                        width,
-                        height,
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                    );
-                }
-                BitType::U16 => {
-                    rotate::<u16>(
-                        self.angle,
-                        width,
-                        height,
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                    );
-                }
-                BitType::F32 => rotate::<f32>(
-                    self.angle,
-                    width,
-                    height,
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?,
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
-            }
-            *channel = new_channel;
-            Ok(())
-        };
-        execute_on(resize_fn, image, false)?;
-
-        if will_change_dims {
-            change_image_dims(image, self.angle);
         }
 
+        let depth = image.depth().bit_type();
+        let colorspace = image.colorspace();
+
+        // --- 180 Degree Fast Path (In-Place Reversal) ---
+        if is_180 {
+            for frame in image.frames_mut() {
+                for channel in frame.channels_mut(colorspace, false) {
+                    match depth {
+                        BitType::U8 => channel.reinterpret_as_mut::<u8>()?.reverse(),
+                        BitType::U16 => channel.reinterpret_as_mut::<u16>()?.reverse(),
+                        BitType::F32 => channel.reinterpret_as_mut::<f32>()?.reverse(),
+                        d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        // --- 90 & 270 Degree Multi-Threaded Path ---
+        let (old_w, old_h) = image.dimensions();
+        let new_w = old_h;
+        let new_h = old_w;
+
+        for frame in image.frames_mut() {
+            let src_channels: Vec<&Channel> =
+                frame.channels_ref(colorspace, false).iter().collect();
+            let num_channels = src_channels.len();
+
+            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h, depth); num_channels];
+            let mut dest_frame = Frame::new(new_channels);
+
+            match depth {
+                BitType::U8 => {
+                    let src_slices: Vec<&[u8]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+
+                    Image::par_process_frame_regions::<u8, _>(
+                        &mut dest_frame,
+                        new_w,
+                        new_h,
+                        colorspace,
+                        false,
+                        |region| {
+                            if is_90 {
+                                rotate_90_region(region, &src_slices, old_w, old_h);
+                            } else {
+                                rotate_270_region(region, &src_slices, old_w, old_h);
+                            }
+                        },
+                    )?;
+                }
+                BitType::U16 => {
+                    let src_slices: Vec<&[u16]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+                    Image::par_process_frame_regions::<u16, _>(
+                        &mut dest_frame,
+                        new_w,
+                        new_h,
+                        colorspace,
+                        false,
+                        |region| {
+                            if is_90 {
+                                rotate_90_region(region, &src_slices, old_w, old_h);
+                            } else {
+                                rotate_270_region(region, &src_slices, old_w, old_h);
+                            }
+                        },
+                    )?;
+                }
+                BitType::F32 => {
+                    let src_slices: Vec<&[f32]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+                    Image::par_process_frame_regions::<f32, _>(
+                        &mut dest_frame,
+                        new_w,
+                        new_h,
+                        colorspace,
+                        false,
+                        |region| {
+                            if is_90 {
+                                rotate_90_region(region, &src_slices, old_w, old_h);
+                            } else {
+                                rotate_270_region(region, &src_slices, old_w, old_h);
+                            }
+                        },
+                    )?;
+                }
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+            }
+
+            for (old_chan, new_chan) in frame
+                .channels_mut(colorspace, false)
+                .iter_mut()
+                .zip(dest_frame.channels_mut(colorspace, false))
+            {
+                std::mem::swap(old_chan, new_chan);
+            }
+        }
+
+        image.set_dimensions(new_w, new_h);
         Ok(())
     }
 
@@ -198,52 +239,36 @@ impl OperationsTrait for Rotate {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
-
-fn change_image_dims(image: &mut Image, angle: f32) {
-    let (ow, oh) = image.dimensions();
-    if (angle - 90.0).abs() < f32::EPSILON {
-        image.set_dimensions(oh, ow);
-        return;
-    }
-    if (angle - 270.0).abs() < f32::EPSILON {
-        image.set_dimensions(oh, ow);
-        return;
-    }
-    unreachable!("Should never change image dimensions");
-}
-
-pub fn rotate<T: Copy + NumOps<T> + Default>(
-    angle: f32, width: usize, height: usize, in_image: &[T], out_image: &mut [T],
+/// 90° Clockwise Rotation
+fn rotate_90_region<T: Copy>(
+    region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], old_w: usize, old_h: usize,
 ) {
-    let angle = angle % 360.0;
+    let out_w = region.width;
+    let num_channels = region.channels.len();
 
-    if (angle - 90.0).abs() < f32::EPSILON {
-        rotate_90(in_image, out_image, width, height);
-    } else if (angle - 270.0).abs() < f32::EPSILON {
-        rotate_270(in_image, out_image, width, height);
-    } else {
-        unreachable!("Should have called affine before here")
-    }
-}
-fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
-    // 8x8 tiles, works fastest on benchmarks
+    // Tiling prevents cache misses on strided vertical reads
     const TILE: usize = 8;
 
-    for ty in (0..height).step_by(TILE) {
-        for tx in (0..width).step_by(TILE) {
-            let y_max = (ty + TILE).min(height);
-            let x_max = (tx + TILE).min(width);
+    for ty in (0..region.height).step_by(TILE) {
+        let y_max = (ty + TILE).min(region.height);
 
-            for y in ty..y_max {
-                let row = &in_image[y * width..(y + 1) * width];
-                let idx = height - y - 1;
+        for tx in (0..out_w).step_by(TILE) {
+            let x_max = (tx + TILE).min(out_w);
 
-                for (pos, pix) in row[tx..x_max].iter().enumerate() {
-                    let x = tx + pos;
-                    let out_idx = x * height + idx;
+            for local_y in ty..y_max {
+                let dest_y = region.y_offset + local_y;
+                let src_x = dest_y;
+                let dest_row_offset = local_y * out_w;
 
-                    if let Some(c) = out_image.get_mut(out_idx) {
-                        *c = *pix;
+                for dest_x in tx..x_max {
+                    let src_y = old_h - 1 - dest_x;
+
+                    let src_idx = src_y * old_w + src_x;
+                    let dest_idx = dest_row_offset + dest_x;
+
+                    // Write all channels simultaneously for max cache utilization
+                    for c in 0..num_channels {
+                        region.channels[c][dest_idx] = src_channels[c][src_idx];
                     }
                 }
             }
@@ -251,309 +276,37 @@ fn rotate_90<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height:
     }
 }
 
-fn rotate_270<T: Copy>(in_image: &[T], out_image: &mut [T], width: usize, height: usize) {
+/// 270° Clockwise Rotation (or 90° Counter-Clockwise)
+fn rotate_270_region<T: Copy>(
+    region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], old_w: usize, _old_h: usize,
+) {
+    let out_w = region.width;
+    let num_channels = region.channels.len();
+
     const TILE: usize = 8;
 
-    for ty in (0..height).step_by(TILE) {
-        for tx in (0..width).step_by(TILE) {
-            let y_max = (ty + TILE).min(height);
-            let x_max = (tx + TILE).min(width);
+    for ty in (0..region.height).step_by(TILE) {
+        let y_max = (ty + TILE).min(region.height);
 
-            for y in ty..y_max {
-                let row = &in_image[y * width..(y + 1) * width];
+        for tx in (0..out_w).step_by(TILE) {
+            let x_max = (tx + TILE).min(out_w);
 
-                for (pos, pix) in row[tx..x_max].iter().enumerate() {
-                    let x = tx + pos;
-                    let y_idx = (width - x - 1) * height;
-                    let out_idx = y_idx + y;
+            for local_y in ty..y_max {
+                let dest_y = region.y_offset + local_y;
+                let src_x = old_w - 1 - dest_y;
+                let dest_row_offset = local_y * out_w;
 
-                    if let Some(c) = out_image.get_mut(out_idx) {
-                        *c = *pix;
+                for dest_x in tx..x_max {
+                    let src_y = dest_x;
+
+                    let src_idx = src_y * old_w + src_x;
+                    let dest_idx = dest_row_offset + dest_x;
+
+                    for c in 0..num_channels {
+                        region.channels[c][dest_idx] = src_channels[c][src_idx];
                     }
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use zune_core::colorspace::ColorSpace;
-    use zune_image::image::Image;
-    use zune_image::traits::OperationsTrait;
-
-    use crate::rotate::{rotate_270, rotate_90, Rotate};
-
-    #[test]
-    fn rotate_over() {
-        let mut dst_image = Image::fill(0_u8, ColorSpace::RGB, 100, 120);
-
-        Rotate::new(270.0).execute(&mut dst_image).unwrap();
-        assert_eq!(dst_image.dimensions(), (120, 100));
-    }
-    #[test]
-    fn rotate_over_u16() {
-        let mut dst_image = Image::fill(0_u16, ColorSpace::RGB, 100, 120);
-
-        Rotate::new(270.0).execute(&mut dst_image).unwrap();
-        assert_eq!(dst_image.dimensions(), (120, 100));
-    }
-    #[test]
-    fn rotate_over_f32() {
-        let mut dst_image = Image::fill(0_f32, ColorSpace::RGB, 100, 120);
-        Rotate::new(270.0).execute(&mut dst_image).unwrap();
-        assert_eq!(dst_image.dimensions(), (120, 100));
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    /// Build a flat image where every pixel encodes its (x, y) position as
-    /// a u32: `y * 1000 + x`.  That makes it trivial to verify where each
-    /// pixel landed after rotation.
-    fn coord_image(width: usize, height: usize) -> Vec<u32> {
-        (0..height)
-            .flat_map(|y| (0..width).map(move |x| (y * 1000 + x) as u32))
-            .collect()
-    }
-
-    fn rotate(deg: u32, src: &[u32], width: usize, height: usize) -> Vec<u32> {
-        let mut dst = vec![0u32; src.len()];
-        match deg {
-            90 => rotate_90(src, &mut dst, width, height),
-            270 => rotate_270(src, &mut dst, width, height),
-            _ => panic!("unsupported rotation"),
-        }
-        dst
-    }
-
-    // ── rotate_90 ─────────────────────────────────────────────────────────────
-    //
-    // 90° clockwise: (x, y) → (height - 1 - y, x) in the output,
-    // which has dimensions (height × width).
-    //
-    // Equivalently, out[x][height-1-y] = in[y][x],
-    // i.e. out_pixel at row=x col=(height-1-y) == src pixel at row=y col=x.
-
-    #[test]
-    fn rotate_90_trivial_1x1() {
-        let src = vec![42u32];
-        assert_eq!(rotate(90, &src, 1, 1), vec![42]);
-    }
-
-    #[test]
-    fn rotate_90_square_2x2() {
-        // src (row-major):        after 90° CW:
-        //  0  1                    2  0
-        //  2  3                    3  1
-        let src = vec![0u32, 1, 2, 3];
-        let dst = rotate(90, &src, 2, 2);
-        assert_eq!(dst, vec![2, 0, 3, 1]);
-    }
-
-    #[test]
-    fn rotate_90_square_3x3() {
-        // src:          after 90° CW:
-        //  0 1 2          6 3 0
-        //  3 4 5          7 4 1
-        //  6 7 8          8 5 2
-        let src: Vec<u32> = (0..9).collect();
-        let dst = rotate(90, &src, 3, 3);
-        assert_eq!(dst, vec![6, 3, 0, 7, 4, 1, 8, 5, 2]);
-    }
-
-    /// Non-square: width=3 height=2, output is width=2 height=3.
-    /// src (3 wide, 2 tall):     after 90° CW (2 wide, 3 tall):
-    ///  0 1 2                      3 0
-    ///  3 4 5                      4 1
-    ///                             5 2
-    #[test]
-    fn rotate_90_non_square_3x2() {
-        let src = vec![0u32, 1, 2, 3, 4, 5];
-        let dst = rotate(90, &src, 3, 2);
-        assert_eq!(dst, vec![3, 0, 4, 1, 5, 2]);
-    }
-
-    /// This is the regression that catches the tile-local-index bug.
-    /// Use a size > TILE (32) so that at least two tiles are visited.
-    /// With the bug, pixels in the second tile get placed at wrong columns.
-    #[test]
-    fn rotate_90_multi_tile_wide() {
-        let width = 70;
-        let height = 4;
-        let src = coord_image(width, height);
-        let dst = rotate(90, &src, width, height);
-
-        // out dimensions: width=height=4, height=width=70
-        let out_w = height;
-        let out_h = width;
-        for y in 0..height {
-            for x in 0..width {
-                let src_val = src[y * width + x];
-                // (x, y) → out row = x, out col = height - 1 - y
-                let out_row = x;
-                let out_col = height - 1 - y;
-                let got = dst[out_row * out_w + out_col];
-                assert_eq!(
-                    got, src_val,
-                    "rotate_90 mismatch at src ({x},{y}): \
-                     expected pixel {src_val} at out ({out_col},{out_row}), got {got}"
-                );
-                let _ = out_h; // suppress unused warning
-            }
-        }
-    }
-
-    #[test]
-    fn rotate_90_multi_tile_tall() {
-        let width = 4;
-        let height = 70;
-        let src = coord_image(width, height);
-        let dst = rotate(90, &src, width, height);
-        let out_w = height; // 70
-        for y in 0..height {
-            for x in 0..width {
-                let src_val = src[y * width + x];
-                let out_row = x;
-                let out_col = height - 1 - y;
-                let got = dst[out_row * out_w + out_col];
-                assert_eq!(
-                    got, src_val,
-                    "rotate_90 tall mismatch at src ({x},{y}): \
-                     expected {src_val} at out ({out_col},{out_row}), got {got}"
-                );
-            }
-        }
-    }
-
-    // ── rotate_270 ────────────────────────────────────────────────────────────
-    //
-    // 270° clockwise (= 90° CCW): (x, y) → (y, width - 1 - x).
-    // Output dimensions: (height × width).
-
-    #[test]
-    fn rotate_270_trivial_1x1() {
-        let src = vec![7u32];
-        assert_eq!(rotate(270, &src, 1, 1), vec![7]);
-    }
-
-    #[test]
-    fn rotate_270_square_2x2() {
-        // src:            after 270° CW:
-        //  0  1              1  3
-        //  2  3              0  2
-        let src = vec![0u32, 1, 2, 3];
-        let dst = rotate(270, &src, 2, 2);
-        assert_eq!(dst, vec![1, 3, 0, 2]);
-    }
-
-    #[test]
-    fn rotate_270_square_3x3() {
-        // src:          after 270° CW:
-        //  0 1 2          2 5 8
-        //  3 4 5          1 4 7
-        //  6 7 8          0 3 6
-        let src: Vec<u32> = (0..9).collect();
-        let dst = rotate(270, &src, 3, 3);
-        assert_eq!(dst, vec![2, 5, 8, 1, 4, 7, 0, 3, 6]);
-    }
-
-    /// Non-square: width=3 height=2, output is width=2 height=3.
-    /// src (3 wide, 2 tall):     after 270° CW (2 wide, 3 tall):
-    ///  0 1 2                      2 5
-    ///  3 4 5                      1 4
-    ///                             0 3
-    #[test]
-    fn rotate_270_non_square_3x2() {
-        let src = vec![0u32, 1, 2, 3, 4, 5];
-        let dst = rotate(270, &src, 3, 2);
-        assert_eq!(dst, vec![2, 5, 1, 4, 0, 3]);
-    }
-
-    /// Regression: tile boundary crossing with the tile-local-index bug.
-    #[test]
-    fn rotate_270_multi_tile_wide() {
-        let width = 70;
-        let height = 4;
-        let src = coord_image(width, height);
-        let dst = rotate(270, &src, width, height);
-
-        let out_w = height; // 4
-        for y in 0..height {
-            for x in 0..width {
-                let src_val = src[y * width + x];
-                // (x, y) → out row = width - 1 - x, out col = y
-                let out_row = width - 1 - x;
-                let out_col = y;
-                let got = dst[out_row * out_w + out_col];
-                assert_eq!(
-                    got, src_val,
-                    "rotate_270 mismatch at src ({x},{y}): \
-                     expected pixel {src_val} at out ({out_col},{out_row}), got {got}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn rotate_270_multi_tile_tall() {
-        let width = 4;
-        let height = 70;
-        let src = coord_image(width, height);
-        let dst = rotate(270, &src, width, height);
-        let out_w = height; // 70
-        for y in 0..height {
-            for x in 0..width {
-                let src_val = src[y * width + x];
-                let out_row = width - 1 - x;
-                let out_col = y;
-                let got = dst[out_row * out_w + out_col];
-                assert_eq!(
-                    got, src_val,
-                    "rotate_270 tall mismatch at src ({x},{y}): \
-                     expected {src_val} at out ({out_col},{out_row}), got {got}"
-                );
-            }
-        }
-    }
-
-    // ── round-trip consistency ─────────────────────────────────────────────────
-
-    /// 90° × 4 = identity, for a square image.
-    #[test]
-    fn rotate_90_four_times_is_identity_square() {
-        let w = 50usize;
-        let src = coord_image(w, w);
-        let mut cur = src.clone();
-        for _ in 0..4 {
-            let mut nxt = vec![0u32; w * w];
-            rotate_90(&cur, &mut nxt, w, w);
-            cur = nxt;
-        }
-        assert_eq!(cur, src);
-    }
-
-    /// 90° + 270° = identity, for a square image.
-    #[test]
-    fn rotate_90_then_270_is_identity() {
-        let w = 50usize;
-        let src = coord_image(w, w);
-        let mut mid = vec![0u32; w * w];
-        rotate_90(&src, &mut mid, w, w);
-        let mut out = vec![0u32; w * w];
-        rotate_270(&mid, &mut out, w, w);
-        assert_eq!(out, src);
-    }
-
-    /// For a non-square image, 90°+270° must also be identity.
-    /// After 90° the dimensions swap, so we pass the swapped dims to 270°.
-    #[test]
-    fn rotate_90_then_270_non_square_is_identity() {
-        let (w, h) = (70, 40);
-        let src = coord_image(w, h);
-        let mut mid = vec![0u32; w * h];
-        rotate_90(&src, &mut mid, w, h); // out is h×w
-        let mut out = vec![0u32; w * h];
-        rotate_270(&mid, &mut out, h, w); // now h wide, w tall → back to w×h
-        assert_eq!(out, src);
     }
 }

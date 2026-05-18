@@ -106,7 +106,7 @@ use crate::traits::NumOps;
 ///  [ 0.0,  0.0,  0.0, 1.0, 0.0]]
 /// ```
 pub struct ColorMatrix {
-    matrix: [[f32; 5]; 4]
+    matrix: [[f32; 5]; 4],
 }
 
 impl ColorMatrix {
@@ -152,36 +152,27 @@ impl OperationsTrait for ColorMatrix {
         image.convert_color(ColorSpace::RGBA)?;
 
         let depth = image.depth();
-        for frame in image.frames_mut() {
-            let channels = frame.channels_vec();
-
-            let (r, rest) = channels.split_at_mut(1);
-            let (g, rest) = rest.split_at_mut(1);
-            let (b, a) = rest.split_at_mut(1);
-
-            match depth.bit_type() {
-                BitType::U8 => color_matrix_component::<u8>(
-                    r[0].reinterpret_as_mut()?,
-                    g[0].reinterpret_as_mut()?,
-                    b[0].reinterpret_as_mut()?,
-                    a[0].reinterpret_as_mut()?,
-                    &self.matrix
-                ),
-                BitType::U16 => color_matrix_component::<u16>(
-                    r[0].reinterpret_as_mut()?,
-                    g[0].reinterpret_as_mut()?,
-                    b[0].reinterpret_as_mut()?,
-                    a[0].reinterpret_as_mut()?,
-                    &self.matrix
-                ),
-                BitType::F32 => color_matrix_component::<f32>(
-                    r[0].reinterpret_as_mut()?,
-                    g[0].reinterpret_as_mut()?,
-                    b[0].reinterpret_as_mut()?,
-                    a[0].reinterpret_as_mut()?,
-                    &self.matrix
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+        match depth.bit_type() {
+            BitType::U8 => image.par_process_regions::<u8, _>(false, |region| {
+                if let [r_slice, g_slice, b_slice, a_slice, ..] = region.channels {
+                    color_matrix_component(r_slice, g_slice, b_slice, a_slice, &self.matrix)
+                }
+            })?,
+            BitType::U16 => image.par_process_regions::<u16, _>(false, |region| {
+                if let [r_slice, g_slice, b_slice, a_slice, ..] = region.channels {
+                    color_matrix_component(r_slice, g_slice, b_slice, a_slice, &self.matrix);
+                }
+            })?,
+            BitType::F32 => image.par_process_regions::<f32, _>(false, |region| {
+                if let [r_slice, g_slice, b_slice, a_slice, ..] = region.channels {
+                    color_matrix_component(r_slice, g_slice, b_slice, a_slice, &self.matrix);
+                }
+            })?,
+            _ => {
+                return Err(ImageErrors::ImageOperationNotImplemented(
+                    self.name(),
+                    depth.bit_type(),
+                ))
             }
         }
         // convert back to original color
@@ -196,9 +187,9 @@ impl OperationsTrait for ColorMatrix {
 }
 
 fn color_matrix_component<T: NumOps<T> + Copy>(
-    c1: &mut [T], c2: &mut [T], c3: &mut [T], alpha: &mut [T], color_matrix: &[[f32; 5]; 4]
+    c1: &mut [T], c2: &mut [T], c3: &mut [T], alpha: &mut [T], color_matrix: &[[f32; 5]; 4],
 ) where
-    f32: From<T>
+    f32: From<T>,
 {
     assert_eq!(c1.len(), c2.len());
     assert_eq!(c2.len(), c3.len());
@@ -274,7 +265,7 @@ mod benchmarks {
             [0.2, 0.5, 0.3, 0.0, 0.0],
             [0.2, 0.5, 0.3, 0.0, 0.0],
             [0.2, 0.5, 0.3, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0, 0.0]
+            [0.0, 0.0, 0.0, 1.0, 0.0],
         ]);
 
         b.iter(|| {

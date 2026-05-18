@@ -8,14 +8,12 @@
 
 //! Sobel derivative filter
 use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
-
 use crate::traits::NumOps;
-use crate::utils::{apply_gradient_3x3, execute_on};
 
 /// Perform a sobel image derivative.
 ///
@@ -59,36 +57,46 @@ impl OperationsTrait for Sobel {
     }
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
         let depth = image.depth().bit_type();
-        let (width, height) = image.dimensions();
 
-        let sobel_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
-            match depth {
-                BitType::U8 => sobel_int::<u8>(
-                    channel.reinterpret_as()?,
-                    out_channel.reinterpret_as_mut()?,
-                    width,
-                    height,
-                ),
-                BitType::U16 => sobel_int::<u16>(
-                    channel.reinterpret_as()?,
-                    out_channel.reinterpret_as_mut()?,
-                    width,
-                    height,
-                ),
-                BitType::F32 => sobel_float::<f32>(
-                    channel.reinterpret_as()?,
-                    out_channel.reinterpret_as_mut()?,
-                    width,
-                    height,
-                ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        // Pre-allocate the destination buffer
+        let mut dest_image = image.clone();
+
+        // Sobel ignores alpha
+        let ignore_alpha = true;
+
+        match depth {
+            BitType::U8 => {
+                image.par_process_regions_out_of_place::<u8, _>(
+                    &mut dest_image,
+                    ignore_alpha,
+                    |region| {
+                        gradient_region(region, &SOBEL_GX_I32, &SOBEL_GY_I32);
+                    },
+                )?;
             }
-            *channel = out_channel;
-            Ok(())
-        };
+            BitType::U16 => {
+                image.par_process_regions_out_of_place::<u16, _>(
+                    &mut dest_image,
+                    ignore_alpha,
+                    |region| {
+                        gradient_region(region, &SOBEL_GX_I32, &SOBEL_GY_I32);
+                    },
+                )?;
+            }
+            BitType::F32 => {
+                image.par_process_regions_out_of_place::<f32, _>(
+                    &mut dest_image,
+                    ignore_alpha,
+                    |region| {
+                        gradient_region(region, &SOBEL_GX_F32, &SOBEL_GY_F32);
+                    },
+                )?;
+            }
+            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+        }
 
-        execute_on(sobel_fn, image, true)
+        *image = dest_image;
+        Ok(())
     }
 
     fn supported_types(&self) -> &'static [BitType] {
@@ -121,34 +129,63 @@ const SOBEL_GY_F32: [f32; 9] = [
      1.0,  2.0,  1.0,
 ];
 
-pub fn sobel_int<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
+pub fn gradient_region<T, Acc>(region: &mut PlanarRegionOut<'_, T>, gx: &[Acc; 9], gy: &[Acc; 9])
 where
-    T: Default + NumOps<T> + Copy+Send+Sync,
-    i32: From<T>,
+    T: NumOps<T> + Copy + Default + Send + Sync,
+    Acc: Copy
+        + Default
+        + std::ops::Add<Output = Acc>
+        + std::ops::Mul<Output = Acc>
+        + Into<f64>
+        + From<T>,
 {
-    apply_gradient_3x3(
-        in_channel,
-        out_channel,
-        width,
-        height,
-        &SOBEL_GX_I32,
-        &SOBEL_GY_I32,
-    );
-}
+    let width = region.width;
+    if region.src_channels.is_empty() || width == 0 {
+        return;
+    }
 
-pub fn sobel_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
-where
-    T: Default + NumOps<T> + Copy+Send+Sync,
-    f32: From<T>,
-{
-    apply_gradient_3x3(
-        in_channel,
-        out_channel,
-        width,
-        height,
-        &SOBEL_GX_F32,
-        &SOBEL_GY_F32,
-    );
+    // Derive global height safely from the full source slice
+    let global_height = region.src_channels[0].len() / width;
+
+    for (src, dest) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        for local_y in 0..region.height {
+            let global_y = region.y_offset + local_y;
+
+            for x in 0..width {
+                let mut sum_x = Acc::default();
+                let mut sum_y = Acc::default();
+
+                // 3x3 Kernel Window
+                for ky in 0..3usize {
+                    // Safe global edge clamping
+                    let sy = (global_y + ky).saturating_sub(1).min(global_height - 1);
+                    let row_offset = sy * width;
+
+                    for kx in 0..3usize {
+                        let sx = (x + kx).saturating_sub(1).min(width - 1);
+
+                        let px = Acc::from(src[row_offset + sx]);
+                        let k = ky * 3 + kx;
+
+                        sum_x = sum_x + px * gx[k];
+                        sum_y = sum_y + px * gy[k];
+                    }
+                }
+
+                // Compute Magnitude: sqrt(Gx^2 + Gy^2)
+                let gxf: f64 = sum_x.into();
+                let gyf: f64 = sum_y.into();
+                let magnitude = (gxf * gxf + gyf * gyf).sqrt();
+
+                dest[local_y * width + x] =
+                    T::from_f64(magnitude).zclamp(T::min_val(), T::max_val());
+            }
+        }
+    }
 }
 
 #[cfg(feature = "benchmarks")]

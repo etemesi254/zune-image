@@ -13,6 +13,7 @@
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 use crate::traits::NumOps;
@@ -59,7 +60,7 @@ use crate::traits::NumOps;
 /// ```
 ///
 pub struct Blend {
-    alpha: f32
+    alpha: f32,
 }
 
 impl Blend {
@@ -69,9 +70,7 @@ impl Blend {
     /// - src_alpha: Range is 0.0-1.0. If above 1.0 source will become the destination, if less than 0.0 dest will be unmodified.
     #[must_use]
     pub fn new(src_alpha: f32) -> Blend {
-        Blend {
-            alpha: src_alpha
-        }
+        Blend { alpha: src_alpha }
     }
 }
 
@@ -83,7 +82,7 @@ impl OperationsTrait for Blend {
     // Not in use, use execute_multiple
     fn execute_impl(&self, _image: &mut Image) -> Result<(), ImageErrors> {
         Err(ImageErrors::GenericStr(
-            "Blend requires multiple images; it must be called via execute_multiple"
+            "Blend requires multiple images; it must be called via execute_multiple",
         ))
     }
     fn operation_color_values(&self) -> OperationColorValues {
@@ -97,7 +96,7 @@ impl OperationsTrait for Blend {
     fn execute_multiple(&self, images: &mut Vec<Image>) -> Result<(), ImageErrors> {
         if images.len() < 2 {
             return Err(ImageErrors::GenericStr(
-                "Blend requires at least two images in the pipeline"
+                "Blend requires at least two images in the pipeline",
             ));
         }
 
@@ -114,56 +113,82 @@ impl OperationsTrait for Blend {
         // Confirm invariants between the two images
         if dst_image.dimensions() != src_image.dimensions() {
             return Err(ImageErrors::GenericStr(
-                "Image dimensions are incompatible for blend"
+                "Image dimensions are incompatible for blend",
             ));
         }
         if dst_image.depth() != src_image.depth() {
             return Err(ImageErrors::GenericStr(
-                "Image depths do not match for blend"
+                "Image depths do not match for blend",
             ));
         }
         if dst_image.colorspace() != src_image.colorspace() {
             return Err(ImageErrors::GenericStr(
-                "Image colorspace does not match for blend"
+                "Image colorspace does not match for blend",
             ));
         }
 
         let b_type = dst_image.depth().bit_type();
 
-        for (src_chan, d_chan) in src_image
-            .channels_ref(true)
-            .iter()
-            .zip(dst_image.channels_mut(true))
-        {
-            match b_type {
-                BitType::U8 => blend_single_channel::<u8>(
-                    src_chan.reinterpret_as()?,
-                    d_chan.reinterpret_as_mut()?,
-                    self.alpha
-                ),
-                BitType::U16 => blend_single_channel::<u16>(
-                    src_chan.reinterpret_as()?,
-                    d_chan.reinterpret_as_mut()?,
-                    self.alpha
-                ),
-                BitType::F32 => blend_single_channel::<f32>(
-                    src_chan.reinterpret_as()?,
-                    d_chan.reinterpret_as_mut()?,
-                    self.alpha
-                ),
-                d => {
-                    return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
-                }
+        match b_type {
+            BitType::U8 => {
+                src_image.par_process_regions_out_of_place::<u8, _>(
+                    dst_image,
+                    true, 
+                    |region| blend_region::<u8>(region, self.alpha),
+                )?;
+            }
+            BitType::U16 => {
+                src_image.par_process_regions_out_of_place::<u16, _>(
+                    dst_image,
+                    true,
+                    |region| blend_region::<u16>(region, self.alpha),
+                )?;
+            }
+            BitType::F32 => {
+                src_image.par_process_regions_out_of_place::<f32, _>(
+                    dst_image,
+                    true,
+                    |region| blend_region::<f32>(region, self.alpha),
+                )?;
+            }
+            d => {
+                return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d));
             }
         }
         Ok(())
     }
 }
 
+fn blend_region<T>(region: &mut PlanarRegionOut<'_, T>, alpha: f32)
+where
+    T: Copy + NumOps<T>,
+    f32: std::convert::From<T>,
+{
+    // Calculate the spatial bounds for this specific region chunk
+    let start_idx = region.y_offset * region.width;
+    let len = region.height * region.width;
+    let end_idx = start_idx + len;
+
+    // Iterate through the corresponding channels of both images
+    for (src_full, dest_chunk) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        // Safety boundary check
+        if src_full.len() >= end_idx {
+            // Slice the global source image down to the exact local chunk bounds
+            let src_chunk = &src_full[start_idx..end_idx];
+
+            // Execute your existing zero-allocation SIMD-friendly function!
+            blend_single_channel::<T>(src_chunk, dest_chunk, alpha);
+        }
+    }
+}
 pub fn blend_single_channel<T>(src: &[T], dest: &mut [T], src_alpha: f32)
 where
     f32: std::convert::From<T>,
-    T: Copy + NumOps<T>
+    T: Copy + NumOps<T>,
 {
     if src_alpha <= 0.0 {
         return;

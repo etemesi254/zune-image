@@ -10,25 +10,25 @@
 //!
 //!
 use std::cmp::PartialEq;
-use std::time::Instant;
 
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::colorspace::ColorCharacteristics;
 use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
+use zune_image::frame::Frame;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
-use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 use crate::premul_alpha::PremultiplyAlpha;
-use crate::resize::seperable_kernel::{resample_separable_u8, PrecomputedKernels};
-use crate::traits::NumOps;
-use crate::utils::execute_on;
+use crate::resize::seperable_kernel::{
+    resample_region_generic, resample_region_u8, PrecomputedKernels,
+};
+use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 
-pub(crate) mod seperable_kernel;
 mod polyphase_kernel;
+pub(crate) mod seperable_kernel;
 
 /// Resampling algorithms available for image resizing.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -53,7 +53,6 @@ pub enum ResizeMethod {
     /// Bilinear interpolation. Very fast, but produces blurry results when upscaling
     /// and aliasing artifacts when downscaling.
     Bilinear,
-    
     //MagicKernelSharp
 }
 
@@ -133,127 +132,148 @@ impl OperationsTrait for Resize {
         "Resize"
     }
 
-    fn operation_color_values(&self) -> OperationColorValues {
-        OperationColorValues::Linear
-    }
-    #[allow(clippy::too_many_lines)]
-    #[allow(unused_variables)]
+    #[allow(clippy::too_many_lines, unused_variables)]
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        // For any resize always convert gamma to linear.
-        // But check if that is the current image format
         let is_image_linear = image.metadata().color_trc() == Some(ColorCharacteristics::Linear);
-
         let transfer_function = image
             .metadata()
             .color_trc()
             .unwrap_or(ColorCharacteristics::sRGB);
 
         if !is_image_linear {
-            let start = Instant::now();
             trace!("Converting image to linear along resize method");
-            let transfers = TransferCurve::new(
+            TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::GammaToLinear,
-            );
-            transfers.execute_impl(image)?;
-            let duration = start.elapsed();
-            trace!("Image conversion to linear successfully completed in {duration:.2?}");
+            )
+            .execute_impl(image)?;
         }
-        // if alpha is present premultiply
+
         let is_premultiplied = image.metadata().is_premultiplied_alpha();
-        let has_alpha = image.colorspace().has_alpha();
+        let colorspace = image.colorspace();
+        let has_alpha = colorspace.has_alpha();
         let original_depth = image.depth();
+
         if !is_premultiplied && has_alpha {
-            // pre multiply looses color if its in u8
             image.convert_depth(BitDepth::Float32)?;
             trace!("Premultiplying alpha along resize method");
-            let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::PreMultiplied).execute_impl(image)?;
-            let duration = start.elapsed();
-            trace!("Premultiply successfully completed in {duration:.2?}");
         }
-        let (old_w, old_h) = image.dimensions();
-        let depth = image.depth().bit_type();
 
+        let (old_w, old_h) = image.dimensions();
         let (new_w, new_h) = calc_absolute_dimensions(self.dimensions, image);
+        let depth = image.depth().bit_type();
 
         trace!("Resize dims -> width:{new_w} height:{new_h}");
 
-        let new_length = new_w * new_h * image.depth().size_of();
-
         let precomputed_kernels = PrecomputedKernels::new(old_w, old_h, new_w, new_h, self.method);
 
-        let resize_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
-            let mut new_channel = Channel::new_with_bit_type(new_length, depth);
+        for frame in image.frames_mut() {
+            let src_channels: Vec<&Channel> =
+                frame.channels_ref(colorspace, false).iter().collect();
+            let num_channels = src_channels.len();
+
+            let new_channels = vec![Channel::new_with_bit_type(new_w * new_h, depth); num_channels];
+            let mut dest_frame = Frame::new(new_channels);
+
+            // 2. Dispatch to the frame primitive using the new dimensions
             match depth {
                 BitType::U8 => {
-                    resample_separable_u8(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        old_w,
-                        old_h,
+                    let src_slices: Vec<&[u8]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+                    Image::par_process_frame_regions::<u8, _>(
+                        &mut dest_frame,
                         new_w,
                         new_h,
-                        &precomputed_kernels,
-                    );
+                        colorspace,
+                        false,
+                        |region| {
+                            resample_region_u8(region, &src_slices, old_w, &precomputed_kernels);
+                        },
+                    )?;
                 }
-                BitType::U16 => resize::<u16>(
-                    channel.reinterpret_as()?,
-                    new_channel.reinterpret_as_mut()?,
-                    old_w,
-                    old_h,
-                    new_w,
-                    new_h,
-                    &precomputed_kernels,
-                ),
-
-                BitType::F32 => {
-                    resize::<f32>(
-                        channel.reinterpret_as()?,
-                        new_channel.reinterpret_as_mut()?,
-                        old_w,
-                        old_h,
+                BitType::U16 => {
+                    let src_slices: Vec<&[u16]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+                    
+                    Image::par_process_frame_regions::<u16, _>(
+                        &mut dest_frame,
                         new_w,
                         new_h,
-                        &precomputed_kernels,
-                    );
+                        colorspace,
+                        false,
+                        |region| {
+                            resample_region_generic::<u16>(
+                                region,
+                                &src_slices,
+                                old_w,
+                                &precomputed_kernels,
+                            );
+                        },
+                    )?;
+                }
+                BitType::F32 => {
+                    let src_slices: Vec<&[f32]> = src_channels
+                        .iter()
+                        .map(|c| c.reinterpret_as().unwrap())
+                        .collect();
+                    Image::par_process_frame_regions::<f32, _>(
+                        &mut dest_frame,
+                        new_w,
+                        new_h,
+                        colorspace,
+                        false,
+                        |region| {
+                            resample_region_generic::<f32>(
+                                region,
+                                &src_slices,
+                                old_w,
+                                &precomputed_kernels,
+                            );
+                        },
+                    )?;
                 }
                 d => return Err(ImageErrors::ImageOperationNotImplemented("resize", d)),
             }
-            *channel = new_channel;
-            Ok(())
-        };
-        execute_on(resize_fn, image, false)?;
+
+            // 3. Swap the processed, resized channels back into the original frame
+            for (old_chan, new_chan) in frame
+                .channels_mut(colorspace, false)
+                .iter_mut()
+                .zip(dest_frame.channels_mut(colorspace, false))
+            {
+                std::mem::swap(old_chan, new_chan);
+            }
+        }
+
         image.set_dimensions(new_w, new_h);
 
-        // convert back from premultiplied if we did not get the
-        // image as premultiplied
-        if !is_premultiplied & &has_alpha {
+        if !is_premultiplied && has_alpha {
             trace!("Un-premultiplying alpha along resize method");
-            let start = Instant::now();
             PremultiplyAlpha::new(AlphaState::NonPreMultiplied).execute_impl(image)?;
-            // return the depth originally there
             image.convert_depth(original_depth)?;
-            let duration = start.elapsed();
-            trace!("Un-premultiply successfully completed in {duration:.2?}");
         }
-        // convert back again to gamma
+
         if !is_image_linear {
-            let start = Instant::now();
             trace!("Converting image back to gamma along resize method");
-            let transfers = TransferCurve::new(
+            TransferCurve::new(
                 TransferFunction::from(transfer_function),
                 ConversionType::LinearToGamma,
-            );
-            transfers.execute_impl(image)?;
-            let duration = start.elapsed();
-            trace!("Image conversion to gamma successfully completed in {duration:.2?}");
+            )
+            .execute_impl(image)?;
         }
 
         Ok(())
     }
     fn supported_types(&self) -> &'static [BitType] {
         &[BitType::U8, BitType::U16, BitType::F32]
+    }
+    fn operation_color_values(&self) -> OperationColorValues {
+        OperationColorValues::Linear
     }
 }
 
@@ -295,37 +315,6 @@ pub fn ratio_dimensions_larger(
     let t = (old_w as f64 / percent) as usize;
     let u = (old_h as f64 / percent) as usize;
     (t, u)
-}
-/// Resize an image **channel** to new dimensions
-///
-/// # Arguments
-/// - in_image: A contiguous slice of a single channel of an image
-/// - out_image: Where we will store the new resized pixels
-/// - method: The resizing method to use
-/// - in_width: `in_image`'s width
-/// - in_height:  `in_image`'s height.
-/// - out_width: The expected width
-/// - out_height: The expected height.
-/// # Panics
-/// - `in_width*in_height` do not match `in_image.len()`.
-/// - `out_width*out_height` do not match `out_image.len()`.
-#[allow(clippy::too_many_arguments)]
-fn resize<T>(
-    in_image: &[T], out_image: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, precomputed_kernels: &PrecomputedKernels,
-) where
-    T: Copy + NumOps<T> + Default + Send + Sync,
-    f32: std::convert::From<T>,
-{
-    seperable_kernel::resample_separable(
-        in_image,
-        out_image,
-        in_width,
-        in_height,
-        out_width,
-        out_height,
-        precomputed_kernels,
-    );
 }
 
 fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (usize, usize) {

@@ -1,13 +1,12 @@
-use std::borrow::Cow;
+use rayon::prelude::*;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
-use zune_core::bit_depth::BitType;
-use zune_image::channel::Channel;
+
+use zune_core::bit_depth::{BitDepth, BitType};
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-
-use crate::gaussian_blur::gaussian_blur_f32;
+use crate::gaussian_blur::GaussianBlur;
 
 /// Structural Similarity Index Measure (SSIM)
 ///
@@ -34,7 +33,7 @@ impl SsimDetection {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     #[allow(clippy::type_complexity)]
     pub fn get_output_ptr(&self) -> Arc<Mutex<Option<(Vec<f32>, f32)>>> {
         Arc::clone(&self.output_scores)
@@ -45,6 +44,7 @@ impl OperationsTrait for SsimDetection {
     fn name(&self) -> &'static str {
         "SSIM Detection"
     }
+
     fn operation_color_values(&self) -> OperationColorValues {
         OperationColorValues::Linear
     }
@@ -74,152 +74,119 @@ impl OperationsTrait for SsimDetection {
                 "SSIM requires images of identical dimensions",
             ));
         }
-        let bit_type_img1 = img1.depth().bit_type();
-        let bit_type_img2 = img2.depth().bit_type();
 
-        let (width, height) = img1.dimensions();
-        let pixel_count = width * height;
+        // 1. Prepare base images (Cloned & Normalized to F32 0.0..1.0 range)
+        let mut x = img1.clone();
+        let mut y = img2.clone();
+        x.convert_depth(BitDepth::Float32)?;
+        y.convert_depth(BitDepth::Float32)?;
 
-        // if calculating s
-        // Constants for SSIM stability (Assuming F32 range 0.0 to 255.0)
-        let l = 255.0_f32;
-        let c1_const = (0.01 * l).powi(2);
-        let c2_const = (0.03 * l).powi(2);
-        let sigma = self.sigma; // Copy for the closure
+        let ignore_alpha = false;
 
-        // We determine the max value of the bit depth to correctly set the SSIM "L" constant
-        // L is the dynamic range of the pixel values.
+        // 2. Generate Intermediate Math Images (X^2, Y^2, XY) using region primitives
+        let mut x_sq = x.clone();
+        x_sq.par_process_regions::<f32, _>(ignore_alpha, |region| {
+            for ch in region.channels.iter_mut() {
+                for px in ch.iter_mut() {
+                    *px = *px * *px;
+                }
+            }
+        })?;
 
-        // We wrap the heavy math in a closure so we don't duplicate it
-        // across the thread/no-thread cfg branches.
-        let compute_channel_ssim =
-            |c1_ref: &Channel, c2_ref: &Channel| -> Result<f32, ImageErrors> {
-                // PROMOTE TO F32 SMARTLY: Borrow if F32, Allocate if U8/U16
-                let x_cow: Cow<[f32]> = match bit_type_img1 {
-                    BitType::U8 => Cow::Owned(
-                        c1_ref
-                            .reinterpret_as::<u8>()?
-                            .iter()
-                            .map(|&v| f32::from(v))
-                            .collect(),
-                    ),
-                    BitType::U16 => Cow::Owned(
-                        c1_ref
-                            .reinterpret_as::<u16>()?
-                            .iter()
-                            .map(|&v| f32::from(v))
-                            .collect(),
-                    ),
-                    BitType::F32 => Cow::Borrowed(c1_ref.reinterpret_as::<f32>()?),
-                    _ => unreachable!(),
-                };
+        let mut y_sq = y.clone();
+        y_sq.par_process_regions::<f32, _>(ignore_alpha, |region| {
+            for ch in region.channels.iter_mut() {
+                for px in ch.iter_mut() {
+                    *px = *px * *px;
+                }
+            }
+        })?;
 
-                let y_cow: Cow<[f32]> = match bit_type_img2 {
-                    BitType::U8 => Cow::Owned(
-                        c2_ref
-                            .reinterpret_as::<u8>()?
-                            .iter()
-                            .map(|&v| f32::from(v))
-                            .collect(),
-                    ),
-                    BitType::U16 => Cow::Owned(
-                        c2_ref
-                            .reinterpret_as::<u16>()?
-                            .iter()
-                            .map(|&v| f32::from(v))
-                            .collect(),
-                    ),
-                    BitType::F32 => Cow::Borrowed(c2_ref.reinterpret_as::<f32>()?),
-                    _ => unreachable!(),
-                };
+        let mut xy = x.clone();
+        y.par_process_regions_out_of_place::<f32, _>(&mut xy, ignore_alpha, |region| {
+            let start_idx = region.y_offset * region.width;
+            let end_idx = start_idx + (region.height * region.width);
 
-                let mut scratch = vec![0.0; pixel_count];
+            for (src_full, dest_chunk) in region
+                .src_channels
+                .iter()
+                .zip(region.dest_channels.iter_mut())
+            {
+                if src_full.len() >= end_idx {
+                    let src_chunk = &src_full[start_idx..end_idx];
+                    for (s, d) in src_chunk.iter().zip(dest_chunk.iter_mut()) {
+                        *d *= *s; // xy starts as x, we multiply by y
+                    }
+                }
+            }
+        })?;
 
-                // 1. Calculate Means
-                let mut mu_x = x_cow.to_vec();
-                gaussian_blur_f32(&mut mu_x, &mut scratch, width, height, sigma,4);
+        // 3. Apply Gaussian Blurs to all 5 images
+        let blur = GaussianBlur::new(self.sigma);
+        blur.execute_impl(&mut x)?; // Now mu_x
+        blur.execute_impl(&mut y)?; // Now mu_y
+        blur.execute_impl(&mut x_sq)?; // Now mu_x_sq
+        blur.execute_impl(&mut y_sq)?; // Now mu_y_sq
+        blur.execute_impl(&mut xy)?; // Now mu_xy
 
-                let mut mu_y = y_cow.to_vec();
-                gaussian_blur_f32(&mut mu_y, &mut scratch, width, height, sigma,4);
+        // 4. Compute Final SSIM per channel
+        // Zune standardizes F32 image bounds to [0.0, 1.0], so L = 1.0
+        let l = 1.0_f32;
+        let c1 = (0.01 * l).powi(2);
+        let c2 = (0.03 * l).powi(2);
 
-                // 2. Calculate Variances & Covariance
-                let mut x_sq = x_cow.iter().map(|&v| v * v).collect::<Vec<_>>();
-                gaussian_blur_f32(&mut x_sq, &mut scratch, width, height, sigma,4);
+        let num_channels = x.channels_ref(ignore_alpha).len();
+        let mut channel_scores = vec![0.0f32; num_channels];
 
-                let mut y_sq = y_cow.iter().map(|&v| v * v).collect::<Vec<_>>();
-                gaussian_blur_f32(&mut y_sq, &mut scratch, width, height, sigma,4);
+        // Standard Rayon iterator trivially zips the 5 images channel-by-channel
+        channel_scores
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(i, score)| {
+                let mu_x_ch = x.channels_ref(ignore_alpha)[i]
+                    .reinterpret_as::<f32>()
+                    .unwrap();
+                let mu_y_ch = y.channels_ref(ignore_alpha)[i]
+                    .reinterpret_as::<f32>()
+                    .unwrap();
+                let mu_x_sq_ch = x_sq.channels_ref(ignore_alpha)[i]
+                    .reinterpret_as::<f32>()
+                    .unwrap();
+                let mu_y_sq_ch = y_sq.channels_ref(ignore_alpha)[i]
+                    .reinterpret_as::<f32>()
+                    .unwrap();
+                let mu_xy_ch = xy.channels_ref(ignore_alpha)[i]
+                    .reinterpret_as::<f32>()
+                    .unwrap();
 
-                let mut xy = x_cow
-                    .iter()
-                    .zip(y_cow.iter())
-                    .map(|(&a, &b)| a * b)
-                    .collect::<Vec<_>>();
-                gaussian_blur_f32(&mut xy, &mut scratch, width, height, sigma,4);
-
-                // 3. Compute SSIM
                 let mut ssim_sum = 0.0;
-                for i in 0..pixel_count {
-                    let mu_x_sq = mu_x[i] * mu_x[i];
-                    let mu_y_sq = mu_y[i] * mu_y[i];
-                    let mu_x_mu_y = mu_x[i] * mu_y[i];
+                let len = mu_x_ch.len();
 
-                    let sigma_x_sq = (x_sq[i] - mu_x_sq).max(0.0);
-                    let sigma_y_sq = (y_sq[i] - mu_y_sq).max(0.0);
-                    let sigma_xy = xy[i] - mu_x_mu_y;
+                // The compiler easily auto-vectorizes this flat linear loop
+                for p in 0..len {
+                    let mu_x_sq = mu_x_ch[p] * mu_x_ch[p];
+                    let mu_y_sq = mu_y_ch[p] * mu_y_ch[p];
+                    let mu_x_mu_y = mu_x_ch[p] * mu_y_ch[p];
 
-                    let num = (2.0 * mu_x_mu_y + c1_const) * (2.0 * sigma_xy + c2_const);
-                    let den = (mu_x_sq + mu_y_sq + c1_const) * (sigma_x_sq + sigma_y_sq + c2_const);
+                    // Variances (clamped to 0.0 to prevent floating-point precision drift negatives)
+                    let sigma_x_sq = (mu_x_sq_ch[p] - mu_x_sq).max(0.0);
+                    let sigma_y_sq = (mu_y_sq_ch[p] - mu_y_sq).max(0.0);
+                    let sigma_xy = mu_xy_ch[p] - mu_x_mu_y;
+
+                    let num = (2.0 * mu_x_mu_y + c1) * (2.0 * sigma_xy + c2);
+                    let den = (mu_x_sq + mu_y_sq + c1) * (sigma_x_sq + sigma_y_sq + c2);
 
                     ssim_sum += num / den;
                 }
 
-                Ok(ssim_sum / pixel_count as f32)
-            };
+                *score = ssim_sum / (len as f32);
+            });
 
-        let channel_ssim_scores: Vec<f32>;
+        // 5. Final Outputs
+        let final_ssim = channel_scores.iter().sum::<f32>() / channel_scores.len() as f32;
 
-        #[cfg(feature = "threads")]
-        {
-            channel_ssim_scores = std::thread::scope(|s| {
-                let mut handles = Vec::new();
-
-                for (c1_ref, c2_ref) in img1
-                    .channels_ref(false)
-                    .iter()
-                    .zip(img2.channels_ref(false))
-                {
-                    // We can pass references directly into the scoped thread
-                    let handle = s.spawn(|| compute_channel_ssim(c1_ref, c2_ref));
-                    handles.push(handle);
-                }
-
-                handles
-                    .into_iter()
-                    .map(|h| h.join().unwrap())
-                    .collect::<Result<Vec<f32>, ImageErrors>>()
-            })?;
-        }
-
-        #[cfg(not(feature = "threads"))]
-        {
-            let mut scores = Vec::new();
-            for (c1_ref, c2_ref) in img1
-                .channels_ref(false)
-                .iter()
-                .zip(img2.channels_ref(false))
-            {
-                scores.push(compute_channel_ssim(c1_ref, c2_ref)?);
-            }
-            channel_ssim_scores = scores;
-        }
-
-        // Average the scores across all channels to get the final MSSIM
-        let final_ssim = channel_ssim_scores.iter().sum::<f32>() / channel_ssim_scores.len() as f32;
-
-        // Write to output safely
         if let Ok(mut scores) = self.output_scores.lock() {
-            // Save the channel array and the final average
-            *scores = Some((channel_ssim_scores, final_ssim));
+            *scores = Some((channel_scores, final_ssim));
         }
 
         Ok(())
@@ -229,10 +196,7 @@ impl OperationsTrait for SsimDetection {
         if let Ok(guard) = self.output_scores.lock() {
             if let Some((channels, global)) = &*guard {
                 // Calculate decibels: dB = -10 * log10(1 - SSIM)
-                // Cap it at 100 dB for perfect matches to avoid infinity
                 let db = if *global >= 1.0 { 100.0 } else { -10.0 * (1.0 - global).log10() };
-
-                // Map channels to names (Assuming standard RGB/RGBA order)
 
                 let mut channel_str = String::new();
                 for (i, &score) in channels.iter().enumerate() {
