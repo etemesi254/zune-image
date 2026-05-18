@@ -178,7 +178,7 @@ Caches (sum of all):
 | **Gamma**                | libvips / vips   | 9.62 ms    | 79.85 ms   | 126.36 MiB/s | 15.22 MiB/s |
 |                          | zune-image       | 8.11 ms    | 86.24 ms   | 149.90 MiB/s | 14.09 MiB/s |
 | **Gaussian blur**        | libvips / vips   | 27.33 ms   | 109.92 ms  | 44.46 MiB/s  | 11.06 MiB/s |
-|                          | zune-image       | 51.94 ms   | 317.97 ms  | 23.40 MiB/s  | 3.82 MiB/s  |
+|                          | zune-image       | 41.172 ms  | 304.61 ms  | 29.515 MiB/s | 3.98 MiB/s  |
 |                          | image-rs         | 221.33 ms  | 816.86 ms  | 5.49 MiB/s   | 1.49 MiB/s  |
 | **Premultiply**          | libvips / vips   | 18.10 ms   | 288.84 ms  | 67.14 MiB/s  | 4.21 MiB/s  |
 |                          | zune-image       | 3.42 ms    | 36.77 ms   | 354.93 MiB/s | 33.05 MiB/s |
@@ -204,4 +204,4 @@ Caches (sum of all):
 | **Resize mitchell**      | libvips / vips   | 11.71 ms   | 47.65 ms   | 103.78 MiB/s | 25.50 MiB/s |
 |                          | fir              | 28.74 ms   | 70.78 ms   | 42.29 MiB/s  | 17.17 MiB/s |
 |                          | zune-image       | 46.59 ms   | 293.26 ms  | 26.08 MiB/s  | 4.14 MiB/s  |
-|                          | image-rs         | 729.33 ms  | 2144.80 ms | 1.67 MiB/s   | 0.58 MiB/s  |                   | image-rs         | —            | 2144.80 ms | —               | 0.58 MiB/s  |
+|                          | image-rs         | 729.33 ms  | 2144.80 ms | 1.67 MiB/s   | 0.58 MiB/s  | 
