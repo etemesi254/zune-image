@@ -110,7 +110,7 @@ impl OperationsTrait for Exposure {
             BitType::U8 => {
                 let mut lut_u8 = [0_u8; 256];
                 for (i, item) in lut_u8.iter_mut().enumerate() {
-                    *item = ((i as f32 - black) * exposure).clamp(0.0, 255.0) as u8;
+                    *item = ((i as f32 - black) * exposure).clamp(0.0, 255.0).round() as u8;
                 }
 
                 image.par_process_regions::<u8, _>(true, |region| {

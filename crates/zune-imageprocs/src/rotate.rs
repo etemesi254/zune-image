@@ -115,6 +115,10 @@ impl OperationsTrait for Rotate {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
+        if self.angle.abs() < f32::EPSILON {
+            // zero rotation
+            return Ok(());
+        }
         let is_180 = (self.angle - 180.0).abs() < f32::EPSILON;
         let is_90 = (self.angle - 90.0).abs() < f32::EPSILON;
         let is_270 = (self.angle - 270.0).abs() < f32::EPSILON;

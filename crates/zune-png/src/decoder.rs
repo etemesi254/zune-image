@@ -145,8 +145,8 @@
 //! // Decode directly into the slice
 //! decoder.decode_into(&mut output).unwrap();
 //! ```
+use alloc::vec;
 use alloc::vec::Vec;
-use alloc::{vec};
 
 use zune_core::bit_depth::{BitDepth, ByteEndian};
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
@@ -309,7 +309,6 @@ pub struct PngDecoder<T> {
     pub(crate) seen_trns: bool,
     pub(crate) seen_iend: bool,
     pub(crate) current_frame: usize,
-    pub(crate) called_from_decode_into: bool,
     pub(crate) current_idat_bytes_left: usize,
 }
 
@@ -356,7 +355,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             seen_iend: false,
             trns_bytes: [0; 4],
             current_frame: 0,
-            called_from_decode_into: true,
             current_idat_bytes_left: 0,
             seen_headers: false,
         }
@@ -394,7 +392,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         match self.png_info.depth {
             1 | 2 | 4 | 8 => Some(BitDepth::Eight),
             16 => Some(BitDepth::Sixteen),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
     /// Get the colorspace that the *decoded* output pixels will be in.
@@ -419,7 +417,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             return match self.png_info.color {
                 PngColor::Luma | PngColor::LumaA => Some(ColorSpace::LumaA),
                 PngColor::Palette | PngColor::RGB | PngColor::RGBA => Some(ColorSpace::RGBA),
-                PngColor::Unknown => unreachable!()
+                PngColor::Unknown => unreachable!(),
             };
         }
         if !self.seen_trns {
@@ -429,7 +427,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 PngColor::LumaA => Some(ColorSpace::LumaA),
                 PngColor::RGB => Some(ColorSpace::RGB),
                 PngColor::RGBA => Some(ColorSpace::RGBA),
-                PngColor::Unknown => unreachable!()
+                PngColor::Unknown => unreachable!(),
             }
         } else {
             // for tRNS chunks, RGB=>RGBA
@@ -440,7 +438,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 PngColor::Luma => Some(ColorSpace::LumaA),
                 PngColor::LumaA => Some(ColorSpace::LumaA),
                 PngColor::RGBA => Some(ColorSpace::RGBA),
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
     }
@@ -508,9 +506,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             b"zTXt" => PngChunkType::zTXt,
             b"tEXt" => PngChunkType::tEXt,
             b"fdAT" => PngChunkType::fdAT,
-            _ => PngChunkType::unkn
+            _ => PngChunkType::unkn,
         };
-
 
         Ok(PngChunk {
             length: chunk_length,
@@ -546,8 +543,11 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             // we should first check if that header exist and parse that and if not, we parse our
             // normal headers
             let header = {
-                if let Some(header) = self.non_parsed_header.take()
-                { header } else { self.read_chunk_header()? }
+                if let Some(header) = self.non_parsed_header.take() {
+                    header
+                } else {
+                    self.read_chunk_header()?
+                }
             };
 
             if header.chunk_type == PngChunkType::IDAT || header.chunk_type == PngChunkType::fdAT {
@@ -572,10 +572,14 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         if !self.seen_hdr {
             // we allow arbitrary headers, IHDR does not have to be the first,
             // but we do not allow IDAT being seen without a IHDR
-            return Err(PngDecodeErrors::GenericStatic("IHDR not encountered in fisrst scan"));
+            return Err(PngDecodeErrors::GenericStatic(
+                "IHDR not encountered in fisrst scan",
+            ));
         }
         if self.png_info.color == PngColor::Palette && !self.seen_ptle {
-            return Err(PngDecodeErrors::GenericStatic("Palette image without the corresponding PLTE chunk"));
+            return Err(PngDecodeErrors::GenericStatic(
+                "Palette image without the corresponding PLTE chunk",
+            ));
         }
         self.seen_headers = true;
         Ok(())
@@ -624,7 +628,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
                 self.parse_fctl(header)?;
             }
             PngChunkType::IEND => self.seen_iend = true,
-            _ => default_chunk_handler(header.length, header.chunk, &mut self.stream)?
+            _ => default_chunk_handler(header.length, header.chunk, &mut self.stream)?,
         }
 
         if !self.seen_hdr {
@@ -721,13 +725,6 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // decode headers
         self.decode_headers()?;
 
-        // in case we are to decode from 16 bit to 8 bit, allocate separate and decode
-        if self.called_from_decode_into
-            && self.png_info.depth == 16
-            && self.options.png_get_strip_to_8bit()
-        {
-            todo!();
-        }
         self.decode_stream_into(out)
     }
 
@@ -828,9 +825,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
     ///     _=>{}
     /// }
     /// ```
-    #[rustfmt::skip]
-    pub fn decode(&mut self) -> Result<DecodingResult, PngDecodeErrors>
-    {
+    pub fn decode(&mut self) -> Result<DecodingResult, PngDecodeErrors> {
         // Here we want to either return a `u8` or a `u16` depending on the
         // headers, so we pull two tricks
         //  1 - We either allocate u8 or u16 depending on the output
@@ -838,9 +833,8 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         //      zero, and in creating an empty vec nothing is allocated on the heap
         //  2 - We convert samples to native endian, so that transmuting is a no-op in case of
         //      16 bit images in the next step
-      
-    self.decode_headers()?;
 
+        self.decode_headers()?;
 
         // in case we are to strip 16 bit to 8 bit, use decode_raw which does that for us
         if self.options.png_get_strip_to_8bit() && self.png_info.depth == 16 {
@@ -857,8 +851,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let mut out_u16: Vec<u16> = vec![0; new_len * usize::from(info.depth == 16)];
 
         // use either out_u8 or out_u16 depending on the expected type for the output
-        let out = if bytes == 1
-        {
+        let out = if bytes == 1 {
             &mut out_u8
         } else {
             let b = convert_u16_to_u8_slice(&mut out_u16);
@@ -868,19 +861,17 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         };
         self.decode_stream_into(out)?;
 
-        if is_le(){
+        if is_le() {
             // png is BE by default
             // so all bytes are decoded as BE but case to LE, if the target platform is LE, swap
             out_u16.iter_mut().for_each(|x| *x = x.swap_bytes());
         }
 
-        if self.png_info.depth <= 8
-        {
+        if self.png_info.depth <= 8 {
             return Ok(DecodingResult::U8(out_u8));
         }
 
-        if self.png_info.depth == 16
-        {
+        if self.png_info.depth == 16 {
             return Ok(DecodingResult::U16(out_u16));
         }
 

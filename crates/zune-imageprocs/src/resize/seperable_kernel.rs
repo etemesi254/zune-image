@@ -143,7 +143,7 @@ fn precompute_kernels(
             let max_idx = weights_i32
                 .iter()
                 .enumerate()
-                .max_by_key(|(_, &v)| v)
+                .max_by_key(|(_, &v)| v.abs())
                 .map_or(0, |(i, _)| i);
             weights_i32[max_idx] += diff;
         }

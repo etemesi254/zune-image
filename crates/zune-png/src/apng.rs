@@ -6,9 +6,9 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 #![allow(dead_code, unused_imports)] // when building for no_std
-use alloc::vec::Vec;
 use alloc::format;
 use alloc::vec;
+use alloc::vec::Vec;
 use zune_core::colorspace::ColorSpace;
 
 use crate::error::PngDecodeErrors;
@@ -209,7 +209,7 @@ pub struct ApngContext<T: PixelDepth> {
     canvas_backup: Vec<T>,
     prev_frame_info: Option<FrameInfo>,
     // Cached calculations
-    gamma_values: Vec<f32>,
+    gamma_values: Option<Vec<f32>>,
     gamma_value: f32,
 }
 
@@ -231,17 +231,7 @@ where
     pub fn new(info: &PngInfo, colorspace: ColorSpace) -> Self {
         let nc = colorspace.num_components();
         let gamma_value = info.gamma.unwrap_or(2.2);
-        let gamma_inv = 1.0 / gamma_value;
 
-        // Pre-calculate the gamma lookup table once per image
-        let max_sample = T::MAX_FLOAT;
-        let table_size = (max_sample + 1.0) as usize;
-        let mut gamma_values = vec![0.0; table_size];
-
-        for (i, item) in gamma_values.iter_mut().enumerate() {
-            let gam = (i as f32) / max_sample;
-            *item = f32::powf(gam, gamma_inv);
-        }
         let canvas_backup = vec![T::zero(); info.width * info.height * colorspace.num_components()];
 
         Self {
@@ -251,7 +241,7 @@ where
             nc,
             canvas_backup,
             prev_frame_info: None,
-            gamma_values,
+            gamma_values: None,
             gamma_value,
         }
     }
@@ -298,7 +288,7 @@ where
     ///
     /// // Initialize the APNG context BEFORE the loop.
     /// // This handles the backup canvas and gamma table internally.
-    /// let mut ctx = ApngContext::<u8>::new(&info, colorspace, info.gamma);
+    /// let mut ctx = ApngContext::<u8>::new(&info, colorspace);
     ///
     /// while decoder.more_frames() {
     ///     decoder.decode_headers().unwrap();
@@ -419,6 +409,20 @@ where
                             "Image needs alpha for BlendOp::Over",
                         ));
                     }
+                    // this will require gamma lut, lets build it
+                    if self.gamma_values.is_none() {
+                        let gamma_inv = 1.0 / self.gamma_value;
+
+                        let max_sample = T::MAX_FLOAT;
+                        let table_size = (max_sample + 1.0) as usize;
+                        let mut gamma_values = vec![0.0; table_size];
+
+                        for (i, item) in gamma_values.iter_mut().enumerate() {
+                            let gam = (i as f32) / max_sample;
+                            *item = f32::powf(gam, gamma_inv);
+                        }
+                        self.gamma_values = Some(gamma_values);
+                    }
 
                     for (src_comp, dst_comp) in src_width
                         .chunks_exact(self.nc)
@@ -442,25 +446,28 @@ where
                         let out_alpha =
                             foreground_alpha + background_alpha * (1.0 - foreground_alpha);
 
-                        if out_alpha > 0.0 {
-                            for (a, b) in src_comp.iter().zip(dst_comp.iter_mut()).take(self.nc - 1)
-                            {
-                                // Use the cached lookup table!
-                                let linfg = self.gamma_values[usize::from(*a)];
-                                let linbg = self.gamma_values[usize::from(*b)];
+                        if let Some(gamma_values) = self.gamma_values.as_ref() {
+                            if out_alpha > 0.0 {
+                                for (a, b) in
+                                    src_comp.iter().zip(dst_comp.iter_mut()).take(self.nc - 1)
+                                {
+                                    // Use the cached lookup table!
+                                    let linfg = gamma_values[usize::from(*a)];
+                                    let linbg = gamma_values[usize::from(*b)];
 
-                                let commpix = (linfg * foreground_alpha
-                                    + linbg * background_alpha * (1.0 - foreground_alpha))
-                                    / out_alpha;
+                                    let commpix = (linfg * foreground_alpha
+                                        + linbg * background_alpha * (1.0 - foreground_alpha))
+                                        / out_alpha;
 
-                                let gamout = f32::powf(commpix, self.gamma_value);
+                                    let gamout = f32::powf(commpix, self.gamma_value);
 
-                                *b = T::from_linear(gamout);
+                                    *b = T::from_linear(gamout);
+                                }
+                                // Write the final calculated alpha back to destination
+                                dst_comp[self.nc - 1] = T::from_linear(out_alpha);
+                            } else {
+                                dst_comp.fill(T::zero());
                             }
-                            // Write the final calculated alpha back to destination
-                            dst_comp[self.nc - 1] = T::from_linear(out_alpha);
-                        } else {
-                            dst_comp.fill(T::zero());
                         }
                     }
                 }

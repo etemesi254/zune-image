@@ -104,11 +104,11 @@ impl OperationsTrait for Blend {
             return Err(ImageErrors::GenericStr("Alpha is not normal"));
         }
 
+        let img_len = images.len();
         // Pop the overlay image off the stack
-        let src_image = images.pop().unwrap();
-
+        let src_image = &images[img_len - 1];
         // The background image is now the top of the stack
-        let dst_image = images.last_mut().unwrap();
+        let dst_image = &images[img_len - 2];
 
         // Confirm invariants between the two images
         if dst_image.dimensions() != src_image.dimensions() {
@@ -127,15 +127,19 @@ impl OperationsTrait for Blend {
             ));
         }
 
+        // Pop the overlay image off the stack
+        let src_image = images.pop().unwrap();
+
+        // The background image is now the top of the stack
+        let dst_image = images.last_mut().unwrap();
+
         let b_type = dst_image.depth().bit_type();
 
         match b_type {
             BitType::U8 => {
-                src_image.par_process_regions_out_of_place::<u8, _>(
-                    dst_image,
-                    true, 
-                    |region| blend_region::<u8>(region, self.alpha),
-                )?;
+                src_image.par_process_regions_out_of_place::<u8, _>(dst_image, true, |region| {
+                    blend_region::<u8>(region, self.alpha)
+                })?;
             }
             BitType::U16 => {
                 src_image.par_process_regions_out_of_place::<u16, _>(

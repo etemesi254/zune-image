@@ -75,7 +75,7 @@ pub fn spatial_region<T>(
         + Div<Output = T>
         + Send
         + Sync,
-    u32: std::convert::From<T>,
+    u64: std::convert::From<T>,
 {
     let width = region.width;
     if region.src_channels.is_empty() || width == 0 {

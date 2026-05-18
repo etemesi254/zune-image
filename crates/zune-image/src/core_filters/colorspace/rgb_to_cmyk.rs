@@ -131,11 +131,9 @@ pub fn rgb_to_cmyk_u16(r_to_c: &mut [u16], g_to_m: &mut [u16], b_to_y: &mut [u16
 }
 #[inline(always)]
 fn cmyk_to_rgb_f32_inner(c: f32, m: f32, y: f32, k: f32) -> [f32; 3] {
-    let k_inv = 1.0 / (k / 255.0 + 0.5);
-
-    let r = c * k_inv;
-    let g = m * k_inv;
-    let b = y * k_inv;
+    let r = (1.0 - c) * (1.0 - k);
+    let g = (1.0 - m) * (1.0 - k);
+    let b = (1.0 - y) * (1.0 - k);
 
     [r, g, b]
 }

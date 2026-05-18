@@ -20,11 +20,19 @@ pub fn handle_avg(
         if is_aarch64_feature_detected!("neon") {
             unsafe {
                 match components {
-                    3 => return crate::filters::neon::defilter_avg_neon::<3>(prev_row,raw, current),
-                    4 => return crate::filters::neon::defilter_avg_neon::<4>(prev_row,raw, current),
-                    6 => return crate::filters::neon::defilter_avg_neon::<6>(prev_row,raw, current),
-                    8 => return crate::filters::neon::defilter_avg_neon::<8>(prev_row,raw, current),
-                    _=>()
+                    3 => {
+                        return crate::filters::neon::defilter_avg_neon::<3>(prev_row, raw, current)
+                    }
+                    4 => {
+                        return crate::filters::neon::defilter_avg_neon::<4>(prev_row, raw, current)
+                    }
+                    6 => {
+                        return crate::filters::neon::defilter_avg_neon::<6>(prev_row, raw, current)
+                    }
+                    8 => {
+                        return crate::filters::neon::defilter_avg_neon::<8>(prev_row, raw, current)
+                    }
+                    _ => (),
                 }
             }
         }
@@ -94,13 +102,13 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
     {
         match components {
             3 => return portable_simd::defilter_sub_generic::<3>(raw, current),
-            4 => return portable_simd::defilter_avg_generic::<4>(raw, current),
+            4 => return portable_simd::defilter_sub_generic::<4>(raw, current),
             6 => return portable_simd::defilter_sub_generic::<6>(raw, current),
             8 => return portable_simd::defilter_sub_generic::<8>(raw, current),
             _ => (),
         }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "std"))]
     {
         use std::arch::is_aarch64_feature_detected;
 
@@ -143,14 +151,8 @@ pub fn handle_sub(raw: &[u8], current: &mut [u8], components: usize, use_sse2: b
 }
 
 pub fn handle_paeth(
-    prev_row: &[u8],
-    raw: &[u8],
-    current: &mut [u8],
-    components: usize,
-    use_sse4: bool,
+    prev_row: &[u8], raw: &[u8], current: &mut [u8], components: usize, use_sse4: bool,
 ) {
-
-
     #[cfg(feature = "sse")]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -168,7 +170,7 @@ pub fn handle_paeth(
                 8 => {
                     return crate::filters::sse4::de_filter_paeth_sse41::<8>(prev_row, raw, current)
                 }
-                _ => ()
+                _ => (),
             }
         }
     }
@@ -228,7 +230,6 @@ pub fn handle_paeth(
         _ => paeth_loop!(components, len, cur, r, p),
     }
 }
-
 
 pub fn handle_up(prev_row: &[u8], raw: &[u8], current: &mut [u8]) {
     for ((filt, recon), up) in raw.iter().zip(current).zip(prev_row) {

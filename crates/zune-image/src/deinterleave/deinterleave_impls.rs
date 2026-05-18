@@ -25,7 +25,7 @@ pub fn de_interleave_three_channels_u8(source: &[u8], c1: &mut [u8], c2: &mut [u
         {
             use crate::deinterleave::sse41::de_interleave_three_channels_sse3_u8;
 
-            if is_x86_feature_detected!("sse3") {
+            if is_x86_feature_detected!("sse4.1") {
                 unsafe {
                     return de_interleave_three_channels_sse3_u8(source, c1, c2, c3);
                 }
@@ -78,7 +78,7 @@ pub fn deinterleave_four_channels_u8(
         #[cfg(feature = "simd")]
         {
             use crate::deinterleave::avx2::de_interleave_four_channels_avx2;
-            if is_x86_feature_detected!("sse4.1") {
+            if is_x86_feature_detected!("avx2") {
                 unsafe {
                     return de_interleave_four_channels_avx2(source, c1, c2, c3, c4);
                 }

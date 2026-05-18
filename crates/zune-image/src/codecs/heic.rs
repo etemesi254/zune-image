@@ -7,7 +7,6 @@
 //!
 //!
 
-use zune_bmp::BmpDecoderErrors;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::colorspace::ColorSpace;

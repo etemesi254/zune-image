@@ -420,7 +420,7 @@ pub trait EncoderTrait {
         let data = self.encode(image, &mut sink)?;
 
         Ok(EncodeResult {
-            data: vec![],
+            data: sink,
             format: self.format(),
         })
     }
