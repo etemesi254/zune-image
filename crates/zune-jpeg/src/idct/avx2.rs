@@ -50,7 +50,6 @@ macro_rules! permute_store {
 
         // Clamp the values after packing, we can clamp more values at once
         let b = clamp_avx(a);
-        let mut tmp = [0;8];
         // /Undo shuffling
         let c = _mm256_permute4x64_epi64(b, shuffle(3, 1, 2, 0));
 
