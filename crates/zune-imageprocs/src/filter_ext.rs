@@ -622,6 +622,8 @@ pub trait FilterExt: Sized {
     ///
     /// Returns `ImageErrors` if the underlying operation fails.
     fn transpose(self) -> Result<Self, ImageErrors>;
+    
+    fn sobel(self) -> Result<Self, ImageErrors>;
 }
 
 impl FilterExt for Image {
@@ -726,5 +728,8 @@ impl FilterExt for Image {
     }
     fn transpose(self) -> Result<Self, ImageErrors> {
         apply_op(self, crate::transpose::Transpose::new())
+    }
+    fn sobel(self) -> Result<Self, ImageErrors> {
+        apply_op(self,crate::sobel::Sobel::new())
     }
 }

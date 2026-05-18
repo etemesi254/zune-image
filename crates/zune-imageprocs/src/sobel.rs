@@ -70,7 +70,7 @@ impl OperationsTrait for Sobel {
                     &mut dest_image,
                     ignore_alpha,
                     |region| {
-                        gradient_region(region, &SOBEL_GX_I32, &SOBEL_GY_I32);
+                        gradient_region_u8(region, &SOBEL_GX_I32, &SOBEL_GY_I32);
                     },
                 )?;
             }
@@ -129,23 +129,14 @@ const SOBEL_GY_F32: [f32; 9] = [
      1.0,  2.0,  1.0,
 ];
 
-pub fn gradient_region<T, Acc>(region: &mut PlanarRegionOut<'_, T>, gx: &[Acc; 9], gy: &[Acc; 9])
-where
-    T: NumOps<T> + Copy + Default + Send + Sync,
-    Acc: Copy
-        + Default
-        + std::ops::Add<Output = Acc>
-        + std::ops::Mul<Output = Acc>
-        + Into<f64>
-        + From<T>,
-{
+pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], gy: &[i32; 9]) {
     let width = region.width;
     if region.src_channels.is_empty() || width == 0 {
         return;
     }
 
-    // Derive global height safely from the full source slice
     let global_height = region.src_channels[0].len() / width;
+    let max_y = global_height.saturating_sub(1);
 
     for (src, dest) in region
         .src_channels
@@ -155,20 +146,157 @@ where
         for local_y in 0..region.height {
             let global_y = region.y_offset + local_y;
 
-            for x in 0..width {
+            let sy_prev = global_y.saturating_sub(1);
+            let sy_curr = global_y.min(max_y);
+            let sy_next = (global_y + 1).min(max_y);
+
+            let r0 = &src[sy_prev * width..(sy_prev + 1) * width];
+            let r1 = &src[sy_curr * width..(sy_curr + 1) * width];
+            let r2 = &src[sy_next * width..(sy_next + 1) * width];
+
+            let dest_row = &mut dest[local_y * width..(local_y + 1) * width];
+
+            let compute_edge = |x: usize| -> u8 {
+                let mut sum_x: i32 = 0;
+                let mut sum_y: i32 = 0;
+
+                for (ky, row) in [r0, r1, r2].iter().enumerate() {
+                    for kx in 0..3 {
+                        let sx = if kx == 0 {
+                            x.saturating_sub(1)
+                        } else if kx == 1 {
+                            x
+                        } else {
+                            (x + 1).min(width - 1)
+                        };
+
+                        let px = row[sx] as i32;
+                        let k = ky * 3 + kx;
+
+                        sum_x += px * gx[k];
+                        sum_y += px * gy[k];
+                    }
+                }
+
+                // Integer sum of squares
+                let mag_sq = sum_x * sum_x + sum_y * sum_y;
+                // Single f32 sqrt, then fast saturating cast
+                (mag_sq as f32).sqrt().round().min(255.0) as u8
+            };
+
+            if width == 1 {
+                dest_row[0] = compute_edge(0);
+                continue;
+            }
+
+            // --- LEFT EDGE ---
+            dest_row[0] = compute_edge(0);
+
+            // --- INTERIOR (Pure i32 math until the sqrt) ---
+            for x in 1..width - 1 {
+                let p00 = r0[x - 1] as i32;
+                let p01 = r0[x] as i32;
+                let p02 = r0[x + 1] as i32;
+
+                let p10 = r1[x - 1] as i32;
+                let p11 = r1[x] as i32;
+                let p12 = r1[x + 1] as i32;
+
+                let p20 = r2[x - 1] as i32;
+                let p21 = r2[x] as i32;
+                let p22 = r2[x + 1] as i32;
+
+                let sum_x = p00 * gx[0]
+                    + p01 * gx[1]
+                    + p02 * gx[2]
+                    + p10 * gx[3]
+                    + p11 * gx[4]
+                    + p12 * gx[5]
+                    + p20 * gx[6]
+                    + p21 * gx[7]
+                    + p22 * gx[8];
+
+                let sum_y = p00 * gy[0]
+                    + p01 * gy[1]
+                    + p02 * gy[2]
+                    + p10 * gy[3]
+                    + p11 * gy[4]
+                    + p12 * gy[5]
+                    + p20 * gy[6]
+                    + p21 * gy[7]
+                    + p22 * gy[8];
+
+                // Square the integers before casting to float.
+                // Max sum is ~1020, squared is ~1M, which easily fits in i32 without overflow.
+                let mag_sq = sum_x * sum_x + sum_y * sum_y;
+
+                // f32 is inherently faster than f64 and perfectly precise for 8-bit color space.
+                // Rust's `as u8` cast handles saturating natively, but we use .min(255.0) to be explicit.
+                dest_row[x] = (mag_sq as f32).sqrt().round().min(255.0) as u8;
+            }
+
+            // --- RIGHT EDGE ---
+            dest_row[width - 1] = compute_edge(width - 1);
+        }
+    }
+}
+pub fn gradient_region<T, Acc>(region: &mut PlanarRegionOut<'_, T>, gx: &[Acc; 9], gy: &[Acc; 9])
+where
+    T: NumOps<T> + Copy + Default + Send + Sync,
+    Acc: Copy
+    + Default
+    + std::ops::Add<Output = Acc>
+    + std::ops::Mul<Output = Acc>
+    + Into<f64>
+    + From<T>,
+{
+    let width = region.width;
+    if region.src_channels.is_empty() || width == 0 {
+        return;
+    }
+
+    let global_height = region.src_channels[0].len() / width;
+    let max_y = global_height.saturating_sub(1);
+
+    for (src, dest) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
+        for local_y in 0..region.height {
+            let global_y = region.y_offset + local_y;
+
+            // 1. Pre-calculate vertically clamped rows ONCE per output row
+            let sy_prev = global_y.saturating_sub(1);
+            let sy_curr = global_y.min(max_y);
+            let sy_next = (global_y + 1).min(max_y);
+
+            // Extract exact slices for the 3 working rows.
+            // The compiler knows these have length `width`.
+            let r0 = &src[sy_prev * width..(sy_prev + 1) * width];
+            let r1 = &src[sy_curr * width..(sy_curr + 1) * width];
+            let r2 = &src[sy_next * width..(sy_next + 1) * width];
+
+            // Slice the destination row so we can index it directly by `x`
+            let dest_row = &mut dest[local_y * width..(local_y + 1) * width];
+
+            // Helper closure for edge pixels (left and right columns)
+            let compute_edge = |x: usize| -> T {
                 let mut sum_x = Acc::default();
                 let mut sum_y = Acc::default();
 
-                // 3x3 Kernel Window
-                for ky in 0..3usize {
-                    // Safe global edge clamping
-                    let sy = (global_y + ky).saturating_sub(1).min(global_height - 1);
-                    let row_offset = sy * width;
+                for (ky, row) in [r0, r1, r2].iter().enumerate() {
+                    for kx in 0..3 {
+                        // Safe horizontal clamping for edges
+                        let sx = if kx == 0 {
+                            x.saturating_sub(1)
+                        } else if kx == 1 {
+                            x
+                        } else {
+                            (x + 1).min(width - 1)
+                        };
 
-                    for kx in 0..3usize {
-                        let sx = (x + kx).saturating_sub(1).min(width - 1);
-
-                        let px = Acc::from(src[row_offset + sx]);
+                        let px = Acc::from(row[sx]);
                         let k = ky * 3 + kx;
 
                         sum_x = sum_x + px * gx[k];
@@ -176,15 +304,78 @@ where
                     }
                 }
 
-                // Compute Magnitude: sqrt(Gx^2 + Gy^2)
+                let gxf: f64 = sum_x.into();
+                let gyf: f64 = sum_y.into();
+                let magnitude = (gxf * gxf + gyf * gyf).sqrt();
+                T::from_f64(magnitude).zclamp(T::min_val(), T::max_val())
+            };
+
+            // Handle 1-pixel wide images edge-case gracefully
+            if width == 1 {
+                dest_row[0] = compute_edge(0);
+                continue;
+            }
+
+            // --- 2. LEFT EDGE ---
+            dest_row[0] = compute_edge(0);
+
+            // --- 3. INTERIOR (Unrolled & Zero Bounds Checks) ---
+            // Because x goes from 1 to width-2, x-1..x+1 is guaranteed to
+            // be within 0..width, removing inner-loop panics/bounds checks.
+            for x in 1..width - 1 {
+                let p00 = Acc::from(r0[x - 1]);
+                let p01 = Acc::from(r0[x]);
+                let p02 = Acc::from(r0[x + 1]);
+
+                let p10 = Acc::from(r1[x - 1]);
+                let p11 = Acc::from(r1[x]);
+                let p12 = Acc::from(r1[x + 1]);
+
+                let p20 = Acc::from(r2[x - 1]);
+                let p21 = Acc::from(r2[x]);
+                let p22 = Acc::from(r2[x + 1]);
+
+                let sum_x = p00 * gx[0]
+                    + p01 * gx[1]
+                    + p02 * gx[2]
+                    + p10 * gx[3]
+                    + p11 * gx[4]
+                    + p12 * gx[5]
+                    + p20 * gx[6]
+                    + p21 * gx[7]
+                    + p22 * gx[8];
+
+                let sum_y = p00 * gy[0]
+                    + p01 * gy[1]
+                    + p02 * gy[2]
+                    + p10 * gy[3]
+                    + p11 * gy[4]
+                    + p12 * gy[5]
+                    + p20 * gy[6]
+                    + p21 * gy[7]
+                    + p22 * gy[8];
+
                 let gxf: f64 = sum_x.into();
                 let gyf: f64 = sum_y.into();
                 let magnitude = (gxf * gxf + gyf * gyf).sqrt();
 
-                dest[local_y * width + x] =
-                    T::from_f64(magnitude).zclamp(T::min_val(), T::max_val());
+                dest_row[x] = T::from_f64(magnitude).zclamp(T::min_val(), T::max_val());
             }
+
+            // --- 4. RIGHT EDGE ---
+            dest_row[width - 1] = compute_edge(width - 1);
         }
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::FilterExt;
+    use zune_core::colorspace::ColorSpace;
+    use zune_image::image::Image;
+    #[test]
+    fn test_sobel() {
+        let mut img = Image::fill(123_u8, ColorSpace::RGB, 1000, 1000);
+        let sobel_v = img.sobel().unwrap();
+    }
+}

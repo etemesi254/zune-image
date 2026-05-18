@@ -6,7 +6,7 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 //! Scharr derivative filter
-use crate::sobel::gradient_region;
+use crate::sobel::{gradient_region, gradient_region_u8};
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
@@ -65,7 +65,7 @@ impl OperationsTrait for Scharr {
                     &mut dest_image,
                     ignore_alpha,
                     |region| {
-                        gradient_region(region, &SCHARR_GX_I32, &SCHARR_GY_I32);
+                        gradient_region_u8(region, &SCHARR_GX_I32, &SCHARR_GY_I32);
                     },
                 )?;
             }
