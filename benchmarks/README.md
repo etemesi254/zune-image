@@ -182,51 +182,51 @@ Caches (sum of all):
 
 ## Image Processing
 
-| Benchmark              | Library          | Time      | Throughput  |
-|------------------------|------------------|-----------|-------------|
-| Affine transform 45°   | libvips          | 434.57 ms | 2.80 MiB/s  |
-| Affine transform 45°   | zune-image       | 368.68 ms | 3.30 MiB/s  |
+| Benchmark              | Library          | Time      | Throughput   |
+|------------------------|------------------|-----------|--------------|
+| Affine transform 45°   | libvips          | 434.57 ms | 2.80 MiB/s   |
+| Affine transform 45°   | zune-image       | 368.68 ms | 3.30 MiB/s   |
 |                        |
-| Sobel                  | libvips          | 144.52 ms | 8.41 MiB/s  |
-| Sobel                  | zune-image       | 427.62 ms | 2.84 MiB/s  |
+| Sobel                  | libvips          | 144.52 ms | 8.41 MiB/s   |
+| Sobel                  | zune-image       | 292.67 ms | 4.15 MiB/s   |
 |                        |
-| Gamma                  | libvips          | 79.85 ms  | 15.22 MiB/s |
-| Gamma                  | zune-image       | 86.24 ms  | 14.09 MiB/s |
+| Gamma                  | libvips          | 79.85 ms  | 15.22 MiB/s  |
+| Gamma                  | zune-image       | 86.24 ms  | 14.09 MiB/s  |
 |                        |
-| Gaussian blur          | vips             | 109.92 ms | 11.06 MiB/s |
-| Gaussian blur          | image-rs         | 816.86 ms | 1.49 MiB/s  |
-| Gaussian blur          | zune-image       | 317.97 ms | 3.82 MiB/s  |
+| Gaussian blur          | vips             | 109.92 ms | 11.06 MiB/s  |
+| Gaussian blur          | image-rs         | 816.86 ms | 1.49 MiB/s   |
+| Gaussian blur          | zune-image       | 317.97 ms | 3.82 MiB/s   |
 |                        |
-| Premultiply            | libvips          | 288.84 ms | 4.21 MiB/s  |
-| Premultiply            | zune-image       | 36.77 ms  | 33.05 MiB/s |
+| Premultiply            | libvips          | 288.84 ms | 4.21 MiB/s   |
+| Premultiply            | zune-image       | 36.77 ms  | 33.05 MiB/s  |
 |                        |
-| Rotate 90              | vips             | 78.99 ms  | 15.38 MiB/s |
-| Rotate 90              | image-rs         | 183.57 ms | 6.62 MiB/s  |
-| Rotate 90              | zune-image       | 163.34 ms | 7.44 MiB/s  |
-| Rotate 180             | libvips          | 71.33 ms  | 17.04 MiB/s |
-| Rotate 180             | zune-image       | 39.83 ms  | 30.51 MiB/s |
+| Rotate 90              | vips             | 78.99 ms  | 15.38 MiB/s  |
+| Rotate 90              | image-rs         | 183.57 ms | 6.62 MiB/s   |
+| Rotate 90              | zune-image       | 163.34 ms | 7.44 MiB/s   |
+| Rotate 180             | libvips          | 71.33 ms  | 17.04 MiB/s  |
+| Rotate 180             | zune-image       | 39.83 ms  | 30.51 MiB/s  |
 |                        |
-| Invert                 | libvips          | 63.12 ms  | 19.25 MiB/s |
-| Invert                 | zune-image       | 35.82 ms  | 33.93 MiB/s |
+| Invert                 | libvips          | 63.12 ms  | 19.25 MiB/s  |
+| Invert                 | zune-image       | 35.82 ms  | 33.93 MiB/s  |
 |                        |
-| Resize linear kernel   | vips             | 41.81 ms  | 29.07 MiB/s |
-| Resize linear kernel   | image-rs         | 1498.6 ms | 0.83 MiB/s  |
-| Resize linear kernel   | zune-image       | 233.02 ms | 5.21 MiB/s  |
-| Resize linear kernel   | fir              | 66.68 ms  | 18.22 MiB/s |
-| Resize linear kernel   | stb-image-resize | 688.50 ms | 1.77 MiB/s  |
-| Resize lanczos kernel  | vips             | 50.11 ms  | 24.25 MiB/s |
-| Resize lanczos kernel  | image-rs         | 2142.5 ms | 0.58 MiB/s  |
-| Resize lanczos kernel  | zune-image       | 275.84 ms | 4.41 MiB/s  |
-| Resize lanczos kernel  | fir              | 77.18 ms  | 15.74 MiB/s |
-| Resize lanczos kernel  | stb-image-resize | 690.96 ms | 1.76 MiB/s  |
+| Resize linear kernel   | vips             | 41.81 ms  | 29.07 MiB/s  |
+| Resize linear kernel   | image-rs         | 1498.6 ms | 0.83 MiB/s   |
+| Resize linear kernel   | zune-image       | 233.02 ms | 5.21 MiB/s   |
+| Resize linear kernel   | fir              | 66.68 ms  | 18.22 MiB/s  |
+| Resize linear kernel   | stb-image-resize | 688.50 ms | 1.77 MiB/s   |
+| Resize lanczos kernel  | vips             | 50.11 ms  | 24.25 MiB/s  |
+| Resize lanczos kernel  | image-rs         | 2142.5 ms | 0.58 MiB/s   |
+| Resize lanczos kernel  | zune-image       | 275.84 ms | 4.41 MiB/s   |
+| Resize lanczos kernel  | fir              | 77.18 ms  | 15.74 MiB/s  |
+| Resize lanczos kernel  | stb-image-resize | 690.96 ms | 1.76 MiB/s   |
 |                        |
-| Flip horizontal        | libvips          | 67.74 ms  | 17.94 MiB/s |
-| Flip horizontal        | zune-image       | 41.06 ms  | 29.60 MiB/s |
-| Flip vertical          | libvips          | 56.87 ms  | 21.37 MiB/s |
-| Flip vertical          | zune-image       | 38.87 ms  | 31.27 MiB/s |
+| Flip horizontal        | libvips          | 67.74 ms  | 17.94 MiB/s  |
+| Flip horizontal        | zune-image       | 41.06 ms  | 29.60 MiB/s  |
+| Flip vertical          | libvips          | 56.87 ms  | 21.37 MiB/s  |
+| Flip vertical          | zune-image       | 38.87 ms  | 31.27 MiB/s  |
 |                        |
-| Resize mitchell kernel | vips             | 47.65 ms  | 25.50 MiB/s |
-| Resize mitchell kernel | image-rs         | 2144.8 ms | 0.58 MiB/s  |
-| Resize mitchell kernel | zune-image       | 293.26 ms | 4.14 MiB/s  |
-| Resize mitchell kernel | fir              | 70.78 ms  | 17.17 MiB/s |
-| Resize mitchell kernel | stb-image-resize | 690.55 ms | 1.76 MiB/s  |
+| Resize mitchell kernel | vips             | 47.65 ms  | 25.50 MiB/s  |
+| Resize mitchell kernel | image-rs         | 2144.8 ms | 0.58 MiB/s   |
+| Resize mitchell kernel | zune-image       | 293.26 ms | 4.14 MiB/s   |
+| Resize mitchell kernel | fir              | 70.78 ms  | 17.17 MiB/s  |
+| Resize mitchell kernel | stb-image-resize | 690.55 ms | 1.76 MiB/s   |
