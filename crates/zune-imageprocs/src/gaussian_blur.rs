@@ -15,13 +15,14 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
-use crate::mathops::{compute_mod_u32, fastdiv_u32};
+use crate::transpose::Transpose;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
+use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-use zune_image::planar_regions::{PlanarRegionMut, PlanarRegionOut};
+
 /// Applies a fast Gaussian blur to the image.
 ///
 /// A true Gaussian blur is computationally expensive because it requires convolving the
@@ -87,57 +88,50 @@ impl OperationsTrait for GaussianBlur {
         let radii = create_box_gauss(self.sigma);
 
         // Allocate our single scratch image upfront
-        let mut scratch = image.clone();
 
         // TODO: CAE investigate blurs and alpha channel
         let ignore_alpha = false;
 
         match depth.bit_type() {
             BitType::U8 => {
+                Transpose::new().execute_impl(image)?;
                 // 1. Horizontal Passes (In-Place)
                 image.par_process_regions::<u8, _>(ignore_alpha, |region| {
                     horizontal_blur_region_u8(region, &radii);
                 })?;
-
-                // 2. Vertical Passes (Out-of-Place Ping-Pong!)
-                // Pass 1: Image -> Scratch
-                image.par_process_regions_out_of_place::<u8, _>(&mut scratch, ignore_alpha, |region| {
-                    vertical_blur_region_u8(region, radii[0]);
-                })?;
-
-                // Pass 2: Scratch -> Image
-                scratch.par_process_regions_out_of_place::<u8, _>(image, ignore_alpha, |region| {
-                    vertical_blur_region_u8(region, radii[1]);
-                })?;
-
-                // Pass 3: Image -> Scratch
-                image.par_process_regions_out_of_place::<u8, _>(&mut scratch, ignore_alpha, |region| {
-                    vertical_blur_region_u8(region, radii[2]);
+                // Transpose
+                Transpose::new().execute_impl(image)?;
+                // 2. Redo horizontal one
+                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_u8(region, &radii);
                 })?;
             }
             BitType::U16 => {
                 image.par_process_regions::<u16, _>(ignore_alpha, |region| {
                     horizontal_blur_region_u16(region, &radii);
                 })?;
-
-                image.par_process_regions_out_of_place::<u16, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_u16(region, radii[0]))?;
-                scratch.par_process_regions_out_of_place::<u16, _>(image, ignore_alpha, |region| vertical_blur_region_u16(region, radii[1]))?;
-                image.par_process_regions_out_of_place::<u16, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_u16(region, radii[2]))?;
+                // Transpose
+                Transpose::new().execute_impl(image)?;
+                // 2. Redo horizontal one
+                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_u16(region, &radii);
+                })?;
+                Transpose::new().execute_impl(image)?;
             }
             BitType::F32 => {
                 image.par_process_regions::<f32, _>(ignore_alpha, |region| {
                     horizontal_blur_region_f32(region, &radii);
                 })?;
-
-                image.par_process_regions_out_of_place::<f32, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_f32(region, radii[0]))?;
-                scratch.par_process_regions_out_of_place::<f32, _>(image, ignore_alpha, |region| vertical_blur_region_f32(region, radii[1]))?;
-                image.par_process_regions_out_of_place::<f32, _>(&mut scratch, ignore_alpha, |region| vertical_blur_region_f32(region, radii[2]))?;
+                // Transpose
+                Transpose::new().execute_impl(image)?;
+                // 2. Redo horizontal one
+                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
+                    horizontal_blur_region_f32(region, &radii);
+                })?;
+                Transpose::new().execute_impl(image)?;
             }
             d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
         }
-
-        // The final result of the 3rd vertical pass ends up in the scratch buffer.
-        *image = scratch;
 
         Ok(())
     }
@@ -224,247 +218,6 @@ fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[us
             crate::box_blur::box_blur_f32_inner(&mut scratch_row, row, width, radii[1]);
             crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[2]);
             row.copy_from_slice(&scratch_row);
-        }
-    }
-}
-
-
-// --- VERTICAL ADAPTERS (OUT-OF-PLACE) ---
-
-fn vertical_blur_region_u8(region: &mut PlanarRegionOut<'_, u8>, radius: usize) {
-    if region.src_channels.is_empty() { return; }
-    let width = region.width;
-    let height = region.src_channels[0].len() / width;
-
-    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
-        box_blur_vertical_u8_chunk(src, dest, width, height, radius, region.y_offset);
-    }
-}
-
-fn vertical_blur_region_u16(region: &mut PlanarRegionOut<'_, u16>, radius: usize) {
-    if region.src_channels.is_empty() { return; }
-    let width = region.width;
-    let height = region.src_channels[0].len() / width;
-
-    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
-        box_blur_vertical_u16_chunk(src, dest, width, height, radius, region.y_offset);
-    }
-}
-
-fn vertical_blur_region_f32(region: &mut PlanarRegionOut<'_, f32>, radius: usize) {
-    if region.src_channels.is_empty() { return; }
-    let width = region.width;
-    let height = region.src_channels[0].len() / width;
-
-    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
-        box_blur_vertical_f32_chunk(src, dest, width, height, radius, region.y_offset);
-    }
-}
-
-// ============================================================================
-// CACHE-FRIENDLY & SPATIALLY AWARE VERTICAL CHUNK PROCESSORS
-// ============================================================================
-
-#[inline(always)]
-fn box_blur_vertical_u8_chunk(
-    input: &[u8], output_chunk: &mut [u8], width: usize, height: usize, radius: usize,
-    y_start: usize,
-) {
-    if radius == 0 || height <= 1 {
-        let start_idx = y_start * width;
-        let end_idx = start_idx + output_chunk.len();
-        if start_idx < input.len() {
-            output_chunk.copy_from_slice(&input[start_idx..end_idx.min(input.len())]);
-        }
-        return;
-    }
-
-    let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 {
-        return;
-    }
-
-    let diameter = (radius * 2 + 1) as u32;
-    let diameter = diameter.min(height as u32);
-    let m_radius = compute_mod_u32(u64::from(diameter));
-
-    let mut sums = vec![0u32; width];
-
-    // Initialize the window precisely for y_start by pre-summing the vertical slice
-    for dy in 0..=(radius * 2) {
-        let real_y = if dy < radius {
-            let diff = radius - dy;
-            y_start.saturating_sub(diff)
-        } else {
-            let diff = dy - radius;
-            (y_start + diff).min(height - 1)
-        };
-        let row = &input[real_y * width..real_y * width + width];
-        for (x, &val) in row.iter().enumerate() {
-            sums[x] += u32::from(val);
-        }
-    }
-
-    // Write the very first row of this chunk
-    let out_row = &mut output_chunk[0..width];
-    for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = fastdiv_u32(*sum, m_radius) as u8;
-    }
-
-    // Slide window safely down the rest of the chunk
-    for y in 1..chunk_height {
-        let global_y = y_start + y;
-        let top_y = if global_y > radius { global_y - radius - 1 } else { 0 };
-        let bottom_y = (global_y + radius).min(height - 1);
-
-        let top_row = &input[top_y * width..top_y * width + width];
-        let bottom_row = &input[bottom_y * width..bottom_y * width + width];
-        let out_row = &mut output_chunk[y * width..y * width + width];
-
-        for (((sum, &top), &bottom), out) in sums
-            .iter_mut()
-            .zip(top_row.iter())
-            .zip(bottom_row.iter())
-            .zip(out_row.iter_mut())
-        {
-            *sum = sum.wrapping_add(u32::from(bottom)).wrapping_sub(u32::from(top));
-            *out = fastdiv_u32(*sum, m_radius) as u8;
-        }
-    }
-}
-
-#[inline(always)]
-fn box_blur_vertical_u16_chunk(
-    input: &[u16], output_chunk: &mut [u16], width: usize, height: usize, radius: usize,
-    y_start: usize,
-) {
-    if radius == 0 || height <= 1 {
-        let start_idx = y_start * width;
-        let end_idx = start_idx + output_chunk.len();
-        if start_idx < input.len() {
-            output_chunk.copy_from_slice(&input[start_idx..end_idx.min(input.len())]);
-        }
-        return;
-    }
-
-    let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 {
-        return;
-    }
-
-    let diameter = (radius * 2 + 1) as u32;
-    let diameter = diameter.min(height as u32);
-    let m_radius = compute_mod_u32(u64::from(diameter));
-
-    let mut sums = vec![0u32; width];
-
-    for dy in 0..=(radius * 2) {
-        let real_y = if dy < radius {
-            let diff = radius - dy;
-            y_start.saturating_sub(diff)
-        } else {
-            let diff = dy - radius;
-            (y_start + diff).min(height - 1)
-        };
-        let row = &input[real_y * width..real_y * width + width];
-        for (x, &val) in row.iter().enumerate() {
-            sums[x] += u32::from(val);
-        }
-    }
-
-    let out_row = &mut output_chunk[0..width];
-    for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = fastdiv_u32(*sum, m_radius) as u16;
-    }
-
-    for y in 1..chunk_height {
-        let global_y = y_start + y;
-        let top_y = if global_y > radius { global_y - radius - 1 } else { 0 };
-        let bottom_y = (global_y + radius).min(height - 1);
-
-        let top_row = &input[top_y * width..top_y * width + width];
-        let bottom_row = &input[bottom_y * width..bottom_y * width + width];
-        let out_row = &mut output_chunk[y * width..y * width + width];
-
-        for (((sum, &top), &bottom), out) in sums
-            .iter_mut()
-            .zip(top_row.iter())
-            .zip(bottom_row.iter())
-            .zip(out_row.iter_mut())
-        {
-            *sum = sum.wrapping_add(u32::from(bottom)).wrapping_sub(u32::from(top));
-            *out = fastdiv_u32(*sum, m_radius) as u16;
-        }
-    }
-}
-
-#[inline(always)]
-fn box_blur_vertical_f32_chunk(
-    input: &[f32], output_chunk: &mut [f32], width: usize, height: usize, radius: usize,
-    y_start: usize,
-) {
-    if radius == 0 || height <= 1 {
-        let start_idx = y_start * width;
-        let end_idx = start_idx + output_chunk.len();
-        if start_idx < input.len() {
-            output_chunk.copy_from_slice(&input[start_idx..end_idx.min(input.len())]);
-        }
-        return;
-    }
-
-    let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 {
-        return;
-    }
-
-    let chunk_height = output_chunk.len() / width;
-    if chunk_height == 0 {
-        return;
-    }
-
-    let weight = (radius * 2 + 1) as f64; // Use f64
-    let inv_weight = 1.0 / weight;
-
-    // 1. Allocate sums as f64
-    let mut sums = vec![0.0f64; width];
-
-    for dy in 0..=(radius * 2) {
-        let real_y = if dy < radius {
-            let diff = radius - dy;
-            y_start.saturating_sub(diff)
-        } else {
-            let diff = dy - radius;
-            (y_start + diff).min(height - 1)
-        };
-        let row = &input[real_y * width..real_y * width + width];
-        for (x, &val) in row.iter().enumerate() {
-            sums[x] += f64::from(val); // Accumulate as f64
-        }
-    }
-
-    let out_row = &mut output_chunk[0..width];
-    for (x, sum) in sums.iter().enumerate() {
-        out_row[x] = (sum * inv_weight) as f32; // Cast down
-    }
-
-    for y in 1..chunk_height {
-        let global_y = y_start + y;
-        let top_y = if global_y > radius { global_y - radius - 1 } else { 0 };
-        let bottom_y = (global_y + radius).min(height - 1);
-
-        let top_row = &input[top_y * width..top_y * width + width];
-        let bottom_row = &input[bottom_y * width..bottom_y * width + width];
-        let out_row = &mut output_chunk[y * width..y * width + width];
-
-        for (((sum, &top), &bottom), out) in sums
-            .iter_mut()
-            .zip(top_row.iter())
-            .zip(bottom_row.iter())
-            .zip(out_row.iter_mut())
-        {
-            // Calculate with f64 precision
-            *sum = *sum + f64::from(bottom) - f64::from(top);
-            *out = (*sum * inv_weight) as f32; // Cast down
         }
     }
 }

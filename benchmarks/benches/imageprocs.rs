@@ -25,6 +25,7 @@ use zune_imageprocs::premul_alpha::PremultiplyAlpha;
 use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::sobel::Sobel;
+use zune_imageprocs::transpose::Transpose;
 
 fn vips_sobel_bench(input: &VipsImage) {
     let im = libvips::ops::sobel(input).unwrap();
@@ -466,11 +467,34 @@ fn bench_affine_transform(c: &mut Criterion) {
         vips_affine_transform_bench,
     )
 }
+
+fn zune_image_transpose(input: &Image) {
+    // vips by default uses 2.4 for gamma, so no need to specify
+    let im = Transpose::new().clone_and_execute(input).unwrap();
+    im.flatten_frames::<u8>();
+    black_box(im);
+}
+
+fn bench_transpose(c: &mut Criterion) {
+    let path = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
+
+    let data = read(path).unwrap();
+    let zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
+
+    let mut group = c.benchmark_group("imageprocs: transpose");
+
+    group.bench_function("zune-image", |b| {
+        b.iter(|| {
+            zune_image_transpose(&zune_im);
+            black_box(());
+        })
+    });
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull);
+    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull,bench_transpose);
 
 criterion_main!(benches);

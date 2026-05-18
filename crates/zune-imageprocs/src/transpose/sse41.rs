@@ -70,9 +70,12 @@
 use std::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
+use rayon::prelude::*;
 
 #[allow(clippy::erasing_op, clippy::identity_op)]
 #[rustfmt::skip]
+#[target_feature(enable = "sse4.1")]
+#[inline]
 unsafe fn transpose_8_by_8_u16(
     in_matrix: &[u16], out: &mut [u16], in_stride: usize, out_stride: usize,
 )
@@ -131,6 +134,7 @@ unsafe fn transpose_8_by_8_u16(
 }
 
 #[target_feature(enable = "sse4.1")]
+#[inline]
 unsafe fn transpose_8_by_8_u8(
     in_matrix: &[u8], out: &mut [u8], in_stride: usize, out_stride: usize
 ) {
@@ -222,160 +226,203 @@ unsafe fn transpose_8_by_8_u8(
     _mm_storel_epi64(out.get_unchecked_mut(pos..).as_mut_ptr().cast(), sv_3);
 }
 
+
+
 pub unsafe fn transpose_sse41_u16(
     in_matrix: &[u16], out_matrix: &mut [u16], width: usize, height: usize
 ) {
-    const SMALL_WIDTH_THRESHOLD: usize = 8;
+    const BLOCK: usize = 8;
 
-    let dimensions = width * height;
-
-    assert_eq!(
-        in_matrix.len(),
-        dimensions,
-        "In matrix dimensions do not match width and height"
-    );
-
-    assert_eq!(
-        out_matrix.len(),
-        dimensions,
-        "Out matrix dimensions do not match width and height"
-    );
-
-    if width < SMALL_WIDTH_THRESHOLD {
+    // If the image is smaller than a single SIMD block, just fallback to scalar
+    if width < BLOCK || height < BLOCK {
         return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
     }
 
-    // get how many iterations we can go per width
-    //
-    // ┌───────┬─────────┬────────┬───────┬──────┬──┐
-    // │       │         │        │       │      │  │
-    // │   8   │    8    │   8    │   8   │  8   │ l│
-    // │       │         │        │       │      │  │
-    // │       │         │        │       │      │  │
-    // └───────┴─────────┴────────┴───────┴──────┴──┘
-    //
-    // We want to figure out how many times we can divide the width into
-    // 8
-    let width_iterations = width / 8;
-    let sin_height = 8 * width;
+    let src_w = width;
+    let src_h = height;
+    let dest_w = height; // Transposed width
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
-        for j in 0..width_iterations {
-            let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
+    // Calculate the sizes that fit perfectly into 8x8 blocks
+    let main_src_w = src_w - (src_w % BLOCK);
+    let main_src_h = src_h - (src_h % BLOCK);
 
-            transpose_8_by_8_u16(
-                &in_width_stride[(j * 8)..],
-                out_height_stride,
-                width,
-                height
-            );
-        }
-    }
-    // Deal with the part that hasn't been copied
-    //
-    //
-    //┌──────────┬─────┐
-    //│          │     │
-    //│          │     │
-    //│  Done    │ B   │
-    //│          │     │
-    //│          │     │
-    //├──────────┘-----│
-    //│      C         │
-    //└────────────────┘
-    // Everything in region b and C isn't done
-    let rem_w = width - (width & 7);
-    let rem_h = height - (height & 7);
+    // Split the destination matrix into the main chunk and the bottom fringe
+    let (main_dest, bottom_dest) = out_matrix.split_at_mut(main_src_w * dest_w);
 
-    for i in rem_h..height {
-        for j in 0..width {
-            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
-        }
-    }
-    for i in rem_w..width {
-        for j in 0..height {
-            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
+    // Process the main matrix in parallel, 8 destination rows at a time
+    main_dest
+        .par_chunks_mut(BLOCK * dest_w)
+        .enumerate()
+        .for_each(|(band_idx, dest_band)| {
+            let dest_y_start = band_idx * BLOCK; // Maps to src_x
+
+            // 1. Process 8x8 SIMD blocks across this band
+            for dest_x in (0..main_src_h).step_by(BLOCK) {
+                let src_x = dest_y_start;
+                let src_y = dest_x;
+
+                let in_offset = src_y * src_w + src_x;
+                let out_offset = dest_x;
+
+                unsafe {
+                    transpose_8_by_8_u16(
+                        &in_matrix[in_offset..],
+                        &mut dest_band[out_offset..],
+                        src_w,
+                        dest_w,
+                    );
+                }
+            }
+
+            // 2. Scalar fallback for the right fringe of THIS specific band
+            for dest_x in main_src_h..src_h {
+                let src_y = dest_x;
+                for local_y in 0..BLOCK {
+                    let dest_y_global = dest_y_start + local_y;
+                    let src_x = dest_y_global;
+                    dest_band[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
+                }
+            }
+        });
+
+    // Process the bottom fringe of the destination matrix sequentially
+    let start_dest_y = main_src_w;
+    for local_y in 0..(src_w % BLOCK) {
+        let dest_y = start_dest_y + local_y;
+        let src_x = dest_y;
+        for dest_x in 0..src_h {
+            let src_y = dest_x;
+            bottom_dest[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
         }
     }
 }
+
 
 pub unsafe fn transpose_sse41_u8(
     in_matrix: &[u8], out_matrix: &mut [u8], width: usize, height: usize
 ) {
-    const SMALL_WIDTH_THRESHOLD: usize = 8;
+    const BLOCK: usize = 8;
 
-    let dimensions = width * height;
-
-    assert_eq!(
-        in_matrix.len(),
-        dimensions,
-        "In matrix dimensions do not match width and height"
-    );
-
-    assert_eq!(
-        out_matrix.len(),
-        dimensions,
-        "Out matrix dimensions do not match width and height"
-    );
-
-    if width < SMALL_WIDTH_THRESHOLD {
+    if width < BLOCK || height < BLOCK {
         return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
     }
 
-    // get how many iterations we can go per width
-    //
-    // ┌───────┬─────────┬────────┬───────┬──────┬──┐
-    // │       │         │        │       │      │  │
-    // │   8   │    8    │   8    │   8   │  8   │ l│
-    // │       │         │        │       │      │  │
-    // │       │         │        │       │      │  │
-    // └───────┴─────────┴────────┴───────┴──────┴──┘
-    //
-    // We want to figure out how many times we can divide the width into
-    // 8
-    let width_iterations = width / 8;
-    let sin_height = 8 * width;
+    let src_w = width;
+    let src_h = height;
+    let dest_w = height;
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
-        for j in 0..width_iterations {
-            let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
+    let main_src_w = src_w - (src_w % BLOCK);
+    let main_src_h = src_h - (src_h % BLOCK);
 
-            transpose_8_by_8_u8(
-                &in_width_stride[(j * 8)..],
-                out_height_stride,
-                width,
-                height
-            );
-        }
-    }
-    // Deal with the part that hasn't been copied
-    //
-    //
-    //┌──────────┬─────┐
-    //│          │     │
-    //│          │     │
-    //│  Done    │ B   │
-    //│          │     │
-    //│          │     │
-    //├──────────┘-----│
-    //│      C         │
-    //└────────────────┘
-    // Everything in region b and C isn't done
-    let rem_w = width - (width & 7);
-    let rem_h = height - (height & 7);
+    let (main_dest, bottom_dest) = out_matrix.split_at_mut(main_src_w * dest_w);
 
-    for i in rem_h..height {
-        for j in 0..width {
-            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
-        }
-    }
-    for i in rem_w..width {
-        for j in 0..height {
-            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
+    main_dest
+        .par_chunks_mut(BLOCK * dest_w)
+        .enumerate()
+        .for_each(|(band_idx, dest_band)| {
+            let dest_y_start = band_idx * BLOCK;
+
+            for dest_x in (0..main_src_h).step_by(BLOCK) {
+                let src_x = dest_y_start;
+                let src_y = dest_x;
+                let in_offset = src_y * src_w + src_x;
+                let out_offset = dest_x;
+
+                unsafe {
+                    transpose_8_by_8_u8(
+                        &in_matrix[in_offset..],
+                        &mut dest_band[out_offset..],
+                        src_w,
+                        dest_w,
+                    );
+                }
+            }
+
+            for dest_x in main_src_h..src_h {
+                let src_y = dest_x;
+                for local_y in 0..BLOCK {
+                    let dest_y_global = dest_y_start + local_y;
+                    let src_x = dest_y_global;
+                    dest_band[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
+                }
+            }
+        });
+
+    let start_dest_y = main_src_w;
+    for local_y in 0..(src_w % BLOCK) {
+        let dest_y = start_dest_y + local_y;
+        let src_x = dest_y;
+        for dest_x in 0..src_h {
+            let src_y = dest_x;
+            bottom_dest[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
         }
     }
 }
 
+
+pub unsafe fn transpose_sse_float(
+    in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize
+) {
+    // Note: F32 uses a 4x4 SIMD block instead of 8x8
+    const BLOCK: usize = 4;
+
+    if width < BLOCK || height < BLOCK {
+        return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
+    }
+
+    let src_w = width;
+    let src_h = height;
+    let dest_w = height;
+
+    let main_src_w = src_w - (src_w % BLOCK);
+    let main_src_h = src_h - (src_h % BLOCK);
+
+    let (main_dest, bottom_dest) = out_matrix.split_at_mut(main_src_w * dest_w);
+
+    main_dest
+        .par_chunks_mut(BLOCK * dest_w)
+        .enumerate()
+        .for_each(|(band_idx, dest_band)| {
+            let dest_y_start = band_idx * BLOCK;
+
+            for dest_x in (0..main_src_h).step_by(BLOCK) {
+                let src_x = dest_y_start;
+                let src_y = dest_x;
+                let in_offset = src_y * src_w + src_x;
+                let out_offset = dest_x;
+
+                unsafe {
+                    transpose_sse_float_4x4_inner(
+                        &in_matrix[in_offset..],
+                        &mut dest_band[out_offset..],
+                        src_w,
+                        dest_w,
+                    );
+                }
+            }
+
+            for dest_x in main_src_h..src_h {
+                let src_y = dest_x;
+                for local_y in 0..BLOCK {
+                    let dest_y_global = dest_y_start + local_y;
+                    let src_x = dest_y_global;
+                    dest_band[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
+                }
+            }
+        });
+
+    let start_dest_y = main_src_w;
+    for local_y in 0..(src_w % BLOCK) {
+        let dest_y = start_dest_y + local_y;
+        let src_x = dest_y;
+        for dest_x in 0..src_h {
+            let src_y = dest_x;
+            bottom_dest[local_y * dest_w + dest_x] = in_matrix[src_y * src_w + src_x];
+        }
+    }
+}
+
+#[target_feature(enable = "sse4.1")]
 unsafe fn transpose_sse_float_4x4_inner(
     in_matrix: &[f32], out: &mut [f32], in_stride: usize, out_stride: usize
 ) {
@@ -405,70 +452,107 @@ unsafe fn transpose_sse_float_4x4_inner(
     );
 }
 
-pub unsafe fn transpose_sse_float(
-    in_matrix: &[f32], out_matrix: &mut [f32], width: usize, height: usize
-) {
-    const SMALL_WIDTH_THRESHOLD: usize = 4;
 
-    let dimensions = width * height;
+#[cfg(test)]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(feature = "sse41")]
+mod transpose_equivalence_tests {
+    use super::*;
+    use crate::transpose::transpose_scalar;
 
-    assert_eq!(
-        in_matrix.len(),
-        dimensions,
-        "In matrix dimensions do not match width and height"
-    );
-
-    assert_eq!(
-        out_matrix.len(),
-        dimensions,
-        "Out matrix dimensions do not match width and height"
-    );
-
-    if width < SMALL_WIDTH_THRESHOLD {
-        return crate::transpose::transpose_scalar(in_matrix, out_matrix, width, height);
+    /// A robust selection of sizes to test SIMD block boundaries and fringes
+    fn test_dimensions() -> Vec<(usize, usize)> {
+        vec![
+            (1, 1),       // Tiny (bypasses SIMD)
+            (3, 5),       // Smaller than an 8x8 or 4x4 block
+            (4, 4),       // Exact match for f32 SIMD block
+            (8, 8),       // Exact match for u8/u16 SIMD block
+            (16, 16),     // Perfect multiple of blocks
+            (9, 7),       // Awkward fringe
+            (15, 17),     // Awkward fringe > block size
+            (31, 33),     // Larger uneven boundaries
+            (128, 128),   // Decent cache-sized chunk
+        ]
     }
 
-    // We want to figure out how many times we can divide the width into
-    // 4 since inner loop transposes by 4
-    let width_iterations = width / 4;
-    let sin_height = 4 * width;
+    #[test]
+    fn test_transpose_u8_equivalence() {
+        if !is_x86_feature_detected!("sse4.1") {
+            return; // Skip if the runner doesn't support the instruction set
+        }
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
-        for j in 0..width_iterations {
-            let out_height_stride = &mut out_matrix[(j * height * 4) + (i * 4)..];
+        for (width, height) in test_dimensions() {
+            let len = width * height;
+            // Generate predictable sequential data
+            let input: Vec<u8> = (0..len).map(|i| (i % 255) as u8).collect();
 
-            transpose_sse_float_4x4_inner(
-                &in_width_stride[(j * 4)..],
-                out_height_stride,
-                width,
-                height
+            let mut scalar_out = vec![0u8; len];
+            let mut simd_out = vec![0u8; len];
+
+            transpose_scalar(&input, &mut scalar_out, width, height);
+            unsafe {
+                transpose_sse41_u8(&input, &mut simd_out, width, height);
+            }
+
+            assert_eq!(
+                scalar_out, simd_out,
+                "u8 Transpose mismatch at width={} height={}",
+                width, height
             );
         }
     }
-    // Deal with the part that hasn't been copied
-    //
-    //
-    //┌──────────┬─────┐
-    //│          │     │
-    //│          │     │
-    //│  Done    │ B   │
-    //│          │     │
-    //│          │     │
-    //├──────────┘-----│
-    //│      C         │
-    //└────────────────┘
-    // Everything in region b and C isn't done
-    let rem_w = width - (width & 3);
-    let rem_h = height - (height & 3);
 
-    for i in rem_h..height {
-        for j in 0..width {
-            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
+    #[test]
+    fn test_transpose_u16_equivalence() {
+        if !is_x86_feature_detected!("sse4.1") {
+            return;
+        }
+
+        for (width, height) in test_dimensions() {
+            let len = width * height;
+            let input: Vec<u16> = (0..len).map(|i| (i % 65535) as u16).collect();
+
+            let mut scalar_out = vec![0u16; len];
+            let mut simd_out = vec![0u16; len];
+
+            transpose_scalar(&input, &mut scalar_out, width, height);
+            unsafe {
+                transpose_sse41_u16(&input, &mut simd_out, width, height);
+            }
+
+            assert_eq!(
+                scalar_out, simd_out,
+                "u16 Transpose mismatch at width={} height={}",
+                width, height
+            );
         }
     }
-    for i in rem_w..width {
-        for j in 0..height {
-            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
+
+    #[test]
+    fn test_transpose_f32_equivalence() {
+        if !is_x86_feature_detected!("sse4.1") {
+            return;
+        }
+
+        for (width, height) in test_dimensions() {
+            let len = width * height;
+            let input: Vec<f32> = (0..len).map(|i| i as f32).collect();
+
+            let mut scalar_out = vec![0.0f32; len];
+            let mut simd_out = vec![0.0f32; len];
+
+            transpose_scalar(&input, &mut scalar_out, width, height);
+            unsafe {
+                transpose_sse_float(&input, &mut simd_out, width, height);
+            }
+
+            // Since transposition only moves data and performs no math,
+            // exact equality (==) is completely safe here despite using f32.
+            assert_eq!(
+                scalar_out, simd_out,
+                "f32 Transpose mismatch at width={} height={}",
+                width, height
+            );
         }
     }
 }

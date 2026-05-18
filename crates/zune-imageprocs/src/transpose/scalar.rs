@@ -6,74 +6,56 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-pub fn transpose_scalar<T: Copy + Default>(
-    in_matrix: &[T], out_matrix: &mut [T], width: usize, height: usize
+use rayon::prelude::*;
+
+/// The L1 cache-friendly block size.
+const BLOCK_SIZE: usize = 32;
+
+/// A parallel, cache-oblivious scalar transpose using safe Rayon chunks.
+pub fn transpose_scalar<T: Copy + Send + Sync>(
+    in_matrix: &[T],
+    out_matrix: &mut [T],
+    width: usize,  // Source width
+    height: usize, // Source height
 ) {
-    // A slightly more optimized scalar transpose,
-    // 2x faster than the naive one
-    //
-    // The only difference with the naive is that you
-    // do tiling transpose, this allows us to use the cache better
-    // at the compromise that it is complicated.
-    //
-    // The gist of it is that we do scalar a single 8 by 8 transpose and write to an immediate
-    // buffer and then write that buffer to our destination
-    let dimensions = width * height;
-    assert_eq!(
-        in_matrix.len(),
-        dimensions,
-        "In matrix dimensions do not match width and height"
-    );
+    if width == 0 || height == 0 {
+        return;
+    }
 
-    assert_eq!(
-        out_matrix.len(),
-        dimensions,
-        "Out matrix dimensions do not match width and height"
-    );
+    // The destination image has swapped dimensions
+    let dest_width = height;
+    // Every thread will process a horizontal band of the DESTINATION image.
+    // A band consists of BLOCK_SIZE rows (which equals dest_width * BLOCK_SIZE pixels).
+    let pixels_per_band = dest_width * BLOCK_SIZE;
 
-    let mut temp_matrix: [T; 64] = [T::default(); 64];
+    out_matrix
+        .par_chunks_mut(pixels_per_band)
+        .enumerate()
+        .for_each(|(band_idx, dest_band)| {
+            let y_dst_start = band_idx * BLOCK_SIZE;
+            let band_height = dest_band.len() / dest_width;
 
-    let width_iterations = width / 8;
-    let sin_height = 8 * width;
+            // Process the band in blocks along the x-axis
+            for x_block in (0..dest_width).step_by(BLOCK_SIZE) {
+                let x_end = (x_block + BLOCK_SIZE).min(dest_width);
 
-    for (i, in_width_stride) in in_matrix.chunks_exact(sin_height).enumerate() {
-        for j in 0..width_iterations {
-            let out_height_stride = &mut out_matrix[(j * height * 8) + (i * 8)..];
+                // Note: We put `x` on the outside and `y` on the inside of this block loop.
+                // This results in sequential reads from the source matrix, which the CPU
+                // prefetcher loves, and strided writes to the destination matrix, which
+                // is fine because the 32x32 block fits entirely inside the L1 cache.
+                for x_dst in x_block..x_end {
+                    let src_row_offset = x_dst * width;
 
-            let in_width = in_width_stride[(j * 8)..].chunks(width);
+                    for y_local in 0..band_height {
+                        let y_dst = y_dst_start + y_local;
 
-            for (k, w_d) in in_width.enumerate().take(8) {
-                for (l, h) in w_d.iter().enumerate().take(8) {
-                    temp_matrix[(l * 8) + k] = *h;
-                    // Optimizer is really trying stuff here
-                    // Not a perf boost but a code bloat, so tell it
-                    // to listen to me, the MASTER.
-                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                    unsafe {
-                        std::arch::asm!("");
+                        // x_dst maps to source Y, y_dst maps to source X
+                        let src_idx = src_row_offset + y_dst;
+                        let dst_idx = y_local * dest_width + x_dst;
+
+                        dest_band[dst_idx] = in_matrix[src_idx];
                     }
                 }
             }
-            // copy out height stride in chunks of 8
-            let mut stride_start = 0;
-
-            for small_m in temp_matrix.chunks_exact(8) {
-                out_height_stride[stride_start..stride_start + 8].copy_from_slice(small_m);
-                stride_start += height;
-            }
-        }
-    }
-    let rem_w = width - (width & 7) - 1;
-    let rem_h = height - (height & 7) - 1;
-
-    for i in rem_h..height {
-        for j in 0..width {
-            out_matrix[(j * height) + i] = in_matrix[(i * width) + j];
-        }
-    }
-    for i in rem_w..width {
-        for j in 0..height {
-            out_matrix[(i * height) + j] = in_matrix[(j * width) + i];
-        }
-    }
+        });
 }
