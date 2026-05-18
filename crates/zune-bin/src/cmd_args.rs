@@ -485,30 +485,35 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform a box blur")
             .value_name("radius")
             .long_help(BOX_BLUR_HELP)
-            .value_parser(value_parser!(usize)),
+            .value_parser(value_parser!(usize))
+            .action(ArgAction::Append),
         Arg::new("blur")
             .long("blur")
             .help("Perform a gaussian blur")
             .value_name("sigma")
             .long_help(GAUSSIAN_BLUR_HELP)
-            .value_parser(value_parser!(f32)),
+            .value_parser(value_parser!(f32))
+            .action(ArgAction::Append),
         Arg::new("sharpen")
             .long("sharpen")
             .help("Perform an unsharp mask")
             .long_help(UNSHARPEN_HELP)
             .value_names(["sigma", "threshold", "percentage"])
-            .value_parser(value_parser!(f32)),
+            .value_parser(value_parser!(f32))
+            .action(ArgAction::Append),
         Arg::new("statistic")
             .long("statistic")
             .help("Replace each pixel with corresponding statistic from the neighbourhood")
             .long_help(STATISTIC_HELP)
-            .value_names(["radius", "statistic"]),
+            .value_names(["radius", "statistic"])
+            .action(ArgAction::Append),
         Arg::new("mean-blur")
             .long("mean-blur")
             .help("Perform a mean blur")
             .long_help(MEAN_BLUR_HELP)
             .value_name("radius")
-            .value_parser(value_parser!(usize)),
+            .value_parser(value_parser!(usize))
+            .action(ArgAction::Append),
         Arg::new("sobel")
             .long("sobel")
             .help("Perform a 3x3 sobel convolution operation")
@@ -532,26 +537,32 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
             .help("Perform a median blur on an image, this replaces a pixel with the median of it's neighbours")
             .long_help(MEDIAN_BLUR_HELP)
             .value_name("radius")
-            .value_parser(value_parser!(usize)),
+            .value_parser(value_parser!(usize))
+            .action(ArgAction::Append),
         Arg::new("color-transform")
             .long("color-transform")
             .help("Parse the ICC chunk of an image and perform a color transform")
             .long_help(COLOR_TRANSFORM_HELP)
             .default_missing_value("rgb")
             .value_parser(PossibleValuesParser::new(["rgb", "adobe-rgb", "display-p3", "bt-2020"]))
-            .value_name("color-transform"),
+            .value_name("color-transform")
+                        .action(ArgAction::Append)
+        ,
         Arg::new("affine-transform")
             .long("affine-transform")
             .allow_hyphen_values(true)
             .value_names(["a", "b", "c", "d", "tx", "ty"])
             .value_parser(value_parser!(f32))
             .help("Affine transform an image")
-            .long_help(AFFINE_TRANSFORM_HELP),
+            .long_help(AFFINE_TRANSFORM_HELP)
+            .action(ArgAction::Append)
+        ,
         Arg::new("bilateral")
             .long("bilateral")
             .value_name("D,COLOR,SPACE")
             .help("Apply a bilateral filter/edge smoothing (e.g., '9,75.0,75.0')")
-            .long_help(BILATERAL_FILTER_HELP),
+            .long_help(BILATERAL_FILTER_HELP)
+            .action(ArgAction::Append),
         Arg::new("hald-clut")
             .long("hald-clut")
             .help("Apply a Hald-CLUT color grade using the last two loaded images.")
@@ -564,8 +575,7 @@ fn add_filters() -> (Vec<Arg>, ArgGroup) {
         .multiple(true);
 
     (
-        args.map(|f| f.help_heading(GROUP).group(GROUP).action(ArgAction::Append))
-            .to_vec(),
+        args.map(|f| f.help_heading(GROUP).group(GROUP)).to_vec(),
         arg_group,
     )
 }
