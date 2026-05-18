@@ -253,6 +253,59 @@ pub fn iec619662_from_linear(linear: f32) -> f32 {
         1.099_296_826_809_44_f32 * f32::powf(linear, 0.45f32) - 0.099_296_826_809_44_f32
     }
 }
+// PQ Constants
+const PQ_M1: f32 = 2610.0 / 16384.0;
+const PQ_M2: f32 = (2523.0 / 4096.0) * 128.0;
+const PQ_C1: f32 = 3424.0 / 4096.0;
+const PQ_C2: f32 = (2413.0 / 4096.0) * 32.0;
+const PQ_C3: f32 = (2392.0 / 4096.0) * 32.0;
+
+#[inline]
+/// Linear transfer function for PQ (SMPTE ST 2084)
+pub fn pq_to_linear(gamma: f32) -> f32 {
+    let v = gamma.max(0.0).min(1.0);
+    let v_pow = v.powf(1.0 / PQ_M2);
+    let num = (v_pow - PQ_C1).max(0.0);
+    let den = PQ_C2 - PQ_C3 * v_pow;
+    (num / den).powf(1.0 / PQ_M1)
+}
+
+#[inline]
+/// Gamma transfer function for PQ (SMPTE ST 2084)
+pub fn pq_from_linear(linear: f32) -> f32 {
+    let l = linear.max(0.0).min(1.0);
+    let l_pow = l.powf(PQ_M1);
+    let num = PQ_C1 + PQ_C2 * l_pow;
+    let den = 1.0 + PQ_C3 * l_pow;
+    (num / den).powf(PQ_M2)
+}
+
+// HLG Constants
+const HLG_A: f32 = 0.17883277;
+const HLG_B: f32 = 0.28466892;
+const HLG_C: f32 = 0.55991073;
+
+#[inline]
+/// Linear transfer function for HLG
+pub fn hlg_to_linear(gamma: f32) -> f32 {
+    let v = gamma.max(0.0).min(1.0);
+    if v <= 0.5 {
+        (v * v) / 3.0
+    } else {
+        ((v - HLG_C) / HLG_A).exp() + HLG_B
+    }
+}
+
+#[inline]
+/// Gamma transfer function for HLG
+pub fn hlg_from_linear(linear: f32) -> f32 {
+    let l = linear.max(0.0).min(1.0);
+    if l <= 1.0 / 12.0 {
+        (3.0 * l).sqrt()
+    } else {
+        HLG_A * (12.0 * l - HLG_B).ln() + HLG_C
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -281,7 +334,11 @@ pub enum TransferFunction {
     /// IEC 61966 Transfer function
     Iec61966,
     /// Linear transfer function
-    Linear
+    Linear,
+    /// Perceptual Quantizer (SMPTE ST 2084) - standard for HDR10
+    PQ,
+    /// Hybrid Log-Gamma (ARIB STD-B67) - broadcast HDR
+    HLG,
 }
 
 impl From<u8> for TransferFunction {
@@ -298,6 +355,8 @@ impl From<u8> for TransferFunction {
             8 => TransferFunction::Smpte240,
             9 => TransferFunction::Linear,
             10 => TransferFunction::Iec61966,
+            11 => TransferFunction::Linear,
+            12 => TransferFunction::PQ,
             _ => TransferFunction::Srgb
         }
     }
@@ -316,7 +375,10 @@ impl From<ColorCharacteristics> for TransferFunction {
             ColorCharacteristics::Bt1361 => Self::Bt1361,
             ColorCharacteristics::Smpte240 => Self::Smpte240,
             ColorCharacteristics::Iec61966 => Self::Iec61966,
-            ColorCharacteristics::Linear => Self::Linear
+            ColorCharacteristics::Linear => Self::Linear,
+            ColorCharacteristics::PQ => Self::PQ,
+            ColorCharacteristics::HLG => Self::HLG,
+            _=>Self::Srgb,
         }
     }
 }
@@ -334,7 +396,9 @@ impl TransferFunction {
             TransferFunction::Bt1361 => bt1361_to_linear(v),
             TransferFunction::Smpte240 => smpte240_to_linear(v),
             TransferFunction::Linear => trc_linear(v),
-            TransferFunction::Iec61966 => iec61966_to_linear(v)
+            TransferFunction::Iec61966 => iec61966_to_linear(v),
+            TransferFunction::PQ => pq_to_linear(v),
+            TransferFunction::HLG => hlg_to_linear(v),
         }
     }
 
@@ -351,7 +415,9 @@ impl TransferFunction {
             TransferFunction::Bt1361 => bt1361_from_linear(v),
             TransferFunction::Smpte240 => smpte240_from_linear(v),
             TransferFunction::Linear => trc_linear(v),
-            TransferFunction::Iec61966 => iec619662_from_linear(v)
+            TransferFunction::Iec61966 => iec619662_from_linear(v),
+            TransferFunction::PQ => pq_from_linear(v),
+            TransferFunction::HLG => hlg_from_linear(v),
         }
     }
 }
