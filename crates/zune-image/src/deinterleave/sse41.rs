@@ -130,12 +130,11 @@ pub unsafe fn de_interleave_four_channels_sse41(
         // Data is in [r,g,b,a,r,g,b,r,g,b,a,r,g,b,a]
         //
 
-        // We load 64 bytes to ensure that when we write, we do a write of 16 which
-        // fits nicely into a sse register.
+
         let t1 = _mm_loadu_si128(source_chunk[00..].as_ptr().cast());
-        let t2 = _mm_loadu_si128(source_chunk[08..].as_ptr().cast());
-        let t3 = _mm_loadu_si128(source_chunk[16..].as_ptr().cast());
-        let t4 = _mm_loadu_si128(source_chunk[24..].as_ptr().cast());
+        let t2 = _mm_loadu_si128(source_chunk[16..].as_ptr().cast());
+        let t3 = _mm_loadu_si128(source_chunk[32..].as_ptr().cast());
+        let t4 = _mm_loadu_si128(source_chunk[48..].as_ptr().cast());
 
         // convert data into
         // rrrr,gggg,bbbb,aaaa

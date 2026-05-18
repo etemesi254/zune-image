@@ -90,7 +90,7 @@ macro_rules! decode_huff {
                 // panic, because Huffman codes are sensitive, probably everything
                 // after this will be corrupt, so no need to continue.
                 // panic!("Bad Huffman code length");
-                return Err(DecodeErrors::Format(format!("Bad Huffman Code 0x{:X}, corrupt JPEG",$symbol)))
+                return Err(DecodeErrors::FormatStatic("Bad Huffman Code Corrupt JPEG"))
             }
 
             $symbol >>= (16-code_length);
@@ -929,6 +929,8 @@ impl BitStream for BitStreamHuffman {
         }
         if self.eob_run > 0 {
             // only run if block does not consists of purely zeroes
+            // changing this to iter_any makes perf regress by 10%
+            //   time:   [+10.836% +11.589% +12.376%] (p = 0.00 < 0.05)
             if &block[1..] != &[0; 63] {
                 self.refill(reader)?;
 

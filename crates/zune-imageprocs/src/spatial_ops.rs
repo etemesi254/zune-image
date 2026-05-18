@@ -85,12 +85,12 @@ where
 pub(crate) fn find_mean<T>(data: &[T]) -> T
 where
     T: Default + Copy + NumOps<T>,
-    u32: std::convert::From<T>,
+    u64: std::convert::From<T>,
 {
-    let mut sum = u32::default();
-    let len = data.len() as u32;
+    let mut sum = u64::default();
+    let len = data.len() as u64;
     for datum in data {
-        sum += u32::from(*datum);
+        sum += u64::from(*datum);
     }
-    T::from_u32(sum / len)
+    T::from_u64(sum / len)
 }

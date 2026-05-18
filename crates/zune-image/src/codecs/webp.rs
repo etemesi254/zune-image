@@ -3,7 +3,6 @@
 use std::io::{BufRead, Seek, Write};
 
 use image_webp::{ColorType, DecodingError, WebPEncoder};
-use jxl_oxide::color::WhitePoint::E;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
 use zune_core::colorspace::ColorSpace;

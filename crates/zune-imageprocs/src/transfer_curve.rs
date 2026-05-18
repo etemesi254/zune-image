@@ -155,7 +155,7 @@ impl OperationsTrait for TransferCurve {
 pub fn build_8_bit_gamma_to_linear_lut_table(transfer_function: TransferFunction) -> [u8; 256] {
     let mut lut_table = [0u8; 256];
     for (i, item) in lut_table.iter_mut().enumerate() {
-        *item = (transfer_function.linearize(i as f32 * (1. / 255.0)) * 255.).min(255.) as u8;
+        *item = (transfer_function.linearize(i as f32 * (1. / 255.0)) * 255.).min(255.).round() as u8;
     }
     lut_table
 }
@@ -164,7 +164,7 @@ pub fn build_8_bit_gamma_to_linear_lut_table(transfer_function: TransferFunction
 pub fn build_8_bit_linear_to_gamma_lut_table(transfer_function: TransferFunction) -> [u8; 256] {
     let mut lut_table = [0u8; 256];
     for (i, item) in lut_table.iter_mut().enumerate() {
-        *item = (transfer_function.gamma(i as f32 * (1. / 255.0)) * 255.).min(255.) as u8;
+        *item = (transfer_function.gamma(i as f32 * (1. / 255.0)) * 255.).min(255.).round() as u8;
     }
     lut_table
 }
@@ -175,7 +175,7 @@ fn build_sixteen_bit_gamma_to_linear_lut_table(transfer_function: TransferFuncti
     for (i, item) in lut_table.iter_mut().enumerate() {
         *item = (transfer_function.linearize(i as f32 * (1. / max_colors as f32))
             * max_colors as f32)
-            .min(max_colors as f32) as u16;
+            .min(max_colors as f32).round() as u16;
     }
     lut_table
 }
@@ -184,7 +184,7 @@ fn build_sixteen_bit_linear_to_gamma_lut_table(transfer_function: TransferFuncti
     let mut lut_table = vec![0u16; max_colors + 1];
     for (i, item) in lut_table.iter_mut().enumerate() {
         *item = (transfer_function.gamma(i as f32 * (1. / max_colors as f32)) * max_colors as f32)
-            .min(max_colors as f32) as u16;
+            .min(max_colors as f32).round() as u16;
     }
     lut_table
 }

@@ -133,7 +133,7 @@ pub fn build_lut_u8(factor: f32) -> [u8; 256] {
     let mut lut = [0_u8; 256];
     for (i, item) in lut.iter_mut().enumerate() {
         let float_pix = i as f32;
-        *item = ((factor * (float_pix - 128.0)) + 128.0).clamp(0.0, 255.0) as u8;
+        *item = ((factor * (float_pix - 128.0)) + 128.0).clamp(0.0, 255.0).round() as u8;
     }
     lut
 }

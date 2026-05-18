@@ -31,15 +31,15 @@ use crate::errors::{DecodeErrors, UnsupportedSchemes};
 use crate::headers::parse_dac;
 use crate::headers::{
     parse_app1, parse_app13, parse_app14, parse_app2, parse_dqt, parse_huffman, parse_sos,
-    parse_start_of_frame
+    parse_start_of_frame,
 };
 use crate::huffman::HuffmanTable;
-use crate::idct::{choose_idct_func, choose_idct_1x1_func, choose_idct_4x4_func};
+use crate::idct::{choose_idct_1x1_func, choose_idct_4x4_func, choose_idct_func};
 use crate::marker::Marker;
 use crate::misc::SOFMarkers;
 use crate::upsampler::{
     choose_horizontal_samp_function, choose_hv_samp_function, choose_v_samp_function,
-    generic_sampler, upsample_no_op
+    generic_sampler, upsample_no_op,
 };
 
 /// Maximum components
@@ -91,23 +91,23 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 #[derive(Clone)]
 pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position: usize,
-    pub(crate) append_snapshot:     HeaderAppendStateSnapshot,
-    pub(crate) sos_snapshot:        SosParamsSnapshot,
-    pub(crate) rst_checkpoint:      Option<Box<ScanCheckpoint>>
+    pub(crate) append_snapshot: HeaderAppendStateSnapshot,
+    pub(crate) sos_snapshot: SosParamsSnapshot,
+    pub(crate) rst_checkpoint: Option<Box<ScanCheckpoint>>,
 }
 
 /// SOS fields restored before replaying scan data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SosParamsSnapshot {
-    pub(crate) z_order:         [usize; MAX_COMPONENTS],
-    pub(crate) num_scans:       u8,
+    pub(crate) z_order: [usize; MAX_COMPONENTS],
+    pub(crate) num_scans: u8,
     pub(crate) scan_subsampled: bool,
-    pub(crate) spec_start:      u8,
-    pub(crate) spec_end:        u8,
-    pub(crate) succ_high:       u8,
-    pub(crate) succ_low:        u8,
-    pub(crate) dc_huff_tables:  [usize; MAX_COMPONENTS],
-    pub(crate) ac_huff_tables:  [usize; MAX_COMPONENTS]
+    pub(crate) spec_start: u8,
+    pub(crate) spec_end: u8,
+    pub(crate) succ_high: u8,
+    pub(crate) succ_low: u8,
+    pub(crate) dc_huff_tables: [usize; MAX_COMPONENTS],
+    pub(crate) ac_huff_tables: [usize; MAX_COMPONENTS],
 }
 
 /// Saved state at a restart-interval boundary during scan decoding.
@@ -127,33 +127,33 @@ pub(crate) struct ScanCheckpoint {
     /// Stream position immediately after the RST marker.
     pub(crate) stream_position: usize,
     /// Next MCU row to decode.
-    pub(crate) mcu_row:         usize,
+    pub(crate) mcu_row: usize,
     /// Next MCU column to decode in `mcu_row`.
-    pub(crate) mcu_col:         usize,
+    pub(crate) mcu_col: usize,
     /// Number of output bytes stable at this checkpoint.
-    pub(crate) pixels_written:  usize,
+    pub(crate) pixels_written: usize,
     /// SOS/component table state at this checkpoint.
-    pub(crate) sos_snapshot:    SosParamsSnapshot,
+    pub(crate) sos_snapshot: SosParamsSnapshot,
     /// Append-only metadata state at this checkpoint.
     pub(crate) append_snapshot: HeaderAppendStateSnapshot,
     /// Per-component DC predictor state at the checkpoint: `(dc_pred, dc_diff)`.
-    pub(crate) dc_predictions:  [(i32, i32); MAX_COMPONENTS]
+    pub(crate) dc_predictions: [(i32, i32); MAX_COMPONENTS],
 }
 
 // Snapshot append-only metadata so marker or scan replay can roll it back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HeaderAppendStateSnapshot {
-    icc:  usize,
-    xmp:  usize,
-    gain: usize
+    icc: usize,
+    xmp: usize,
+    gain: usize,
 }
 
 impl HeaderAppendStateSnapshot {
     fn capture<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Self {
         Self {
-            icc:  decoder.icc_data.len(),
-            xmp:  decoder.extended_xmp_segments.len(),
-            gain: decoder.info.gain_map_info.len()
+            icc: decoder.icc_data.len(),
+            xmp: decoder.extended_xmp_segments.len(),
+            gain: decoder.info.gain_map_info.len(),
         }
     }
 
@@ -169,78 +169,78 @@ enum MarkerStep {
     /// Continue reading further markers.
     Continue,
     /// Reached SOS; headers are done and scan starts at the current position.
-    EnteredScan
+    EnteredScan,
 }
 
 /// An encapsulation of an ICC chunk
 pub(crate) struct ICCChunk {
-    pub(crate) seq_no:      u8,
+    pub(crate) seq_no: u8,
     pub(crate) num_markers: u8,
-    pub(crate) data:        Vec<u8>
+    pub(crate) data: Vec<u8>,
 }
 
 // A separate struct to allow &borrowing tables while &mut borrowing components
 pub(crate) struct EntropyTables {
     /// DC Huffman Tables with a maximum of 4 tables for each  component
-    pub(crate) dc_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    pub(crate) dc_huffman: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// AC Huffman Tables with a maximum of 4 tables for each component
-    pub(crate) ac_huffman:    [Option<HuffmanTable>; MAX_COMPONENTS],
+    pub(crate) ac_huffman: [Option<HuffmanTable>; MAX_COMPONENTS],
     /// Arithmetic coding initial conditioning parameters and statistics (has a default value)
     #[cfg(feature = "arith")]
     pub(crate) dc_arithmetic: [ArithDCTables; MAX_COMPONENTS],
     /// Arithmetic coding initial conditioning parameters and statistics  (has a default value)
     #[cfg(feature = "arith")]
-    pub(crate) ac_arithmetic: [ArithACTables; MAX_COMPONENTS]
+    pub(crate) ac_arithmetic: [ArithACTables; MAX_COMPONENTS],
 }
 
 /// A JPEG Decoder Instance.
 #[allow(clippy::upper_case_acronyms, clippy::struct_excessive_bools)]
 pub struct JpegDecoder<T> {
     /// Struct to hold image information from SOI
-    pub(crate) info:             ImageInfo,
+    pub(crate) info: ImageInfo,
     ///  Quantization tables, will be set to none and the tables will
     /// be moved to `components` field
-    pub(crate) qt_tables:        [Option<[i32; 64]>; MAX_COMPONENTS],
+    pub(crate) qt_tables: [Option<[i32; 64]>; MAX_COMPONENTS],
     // Entropy coding tables
-    pub(crate) entropy_tables:   EntropyTables,
+    pub(crate) entropy_tables: EntropyTables,
     /// Image components, holds information like DC prediction and quantization
     /// tables of a component
-    pub(crate) components:       Vec<Components>,
+    pub(crate) components: Vec<Components>,
     /// maximum horizontal component of all channels in the image
-    pub(crate) h_max:            usize,
+    pub(crate) h_max: usize,
     // maximum vertical component of all channels in the image
-    pub(crate) v_max:            usize,
+    pub(crate) v_max: usize,
     /// mcu's  width (interleaved scans)
-    pub(crate) mcu_width:        usize,
+    pub(crate) mcu_width: usize,
     /// MCU height(interleaved scans
-    pub(crate) mcu_height:       usize,
+    pub(crate) mcu_height: usize,
     /// Number of MCU's in the x plane
-    pub(crate) mcu_x:            usize,
+    pub(crate) mcu_x: usize,
     /// Number of MCU's in the y plane
-    pub(crate) mcu_y:            usize,
+    pub(crate) mcu_y: usize,
     /// Is the image interleaved?
-    pub(crate) is_interleaved:   bool,
+    pub(crate) is_interleaved: bool,
     /// Image input colorspace, should be YCbCr for a sane image, might be
     /// grayscale too
     pub(crate) input_colorspace: ColorSpace,
     // Is the image using arithmetic coding?
-    pub(crate) is_arithmetic:    bool,
+    pub(crate) is_arithmetic: bool,
     // Progressive image details
     /// Is the image progressive?
-    pub(crate) is_progressive:   bool,
+    pub(crate) is_progressive: bool,
 
     /// Start of spectral scan
-    pub(crate) spec_start:       u8,
+    pub(crate) spec_start: u8,
     /// End of spectral scan
-    pub(crate) spec_end:         u8,
+    pub(crate) spec_end: u8,
     /// Successive approximation bit position high
-    pub(crate) succ_high:        u8,
+    pub(crate) succ_high: u8,
     /// Successive approximation bit position low
-    pub(crate) succ_low:         u8,
+    pub(crate) succ_low: u8,
     /// Number of components.
-    pub(crate) num_scans:        u8,
+    pub(crate) num_scans: u8,
     /// For a scan, check if any component has vertical/horizontal sampling.
-    pub(crate) scan_subsampled:  bool,
+    pub(crate) scan_subsampled: bool,
     // Function pointers, for pointy stuff.
     /// Dequantize and idct function
     // This is determined at runtime which function to run, statically it's
@@ -255,22 +255,22 @@ pub struct JpegDecoder<T> {
     pub(crate) idct_1x1_func: IDCTPtr,
     // Color convert function which acts on 16 YCbCr values
     pub(crate) color_convert_16: ColorConvert16Ptr,
-    pub(crate) z_order:          [usize; MAX_COMPONENTS],
+    pub(crate) z_order: [usize; MAX_COMPONENTS],
     /// restart markers
     pub(crate) restart_interval: usize,
-    pub(crate) todo:             usize,
+    pub(crate) todo: usize,
     // decoder options
-    pub(crate) options:          DecoderOptions,
+    pub(crate) options: DecoderOptions,
     // byte-stream
-    pub(crate) stream:           ZReader<T>,
+    pub(crate) stream: ZReader<T>,
     // Indicate whether headers have been decoded
-    pub(crate) headers_decoded:  bool,
-    pub(crate) seen_sof:         bool,
+    pub(crate) headers_decoded: bool,
+    pub(crate) seen_sof: bool,
 
     // exif data, lifted from app2
     pub(crate) icc_data: Vec<ICCChunk>,
     pub(crate) is_mjpeg: bool,
-    pub(crate) coeff:    usize, // Solves some weird bug :)
+    pub(crate) coeff: usize, // Solves some weird bug :)
     /// Extended XMP segments
     pub(crate) extended_xmp_segments: Vec<ExtendedXmpSegment>,
     /// Stream position where the header parser should resume on a future
@@ -289,21 +289,20 @@ pub struct JpegDecoder<T> {
     /// next `decode_into` retry can resume from where it stopped without
     /// copying anything. The inner `Vec`s are reused across `decode_into`
     /// calls; capacity is reclaimed only when the decoder is dropped.
-    pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS]
+    pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
 }
 
 impl<T> JpegDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     // Mark the current stream position as a safe resume point at a marker
     // boundary; on a future retry decode_headers_internal will seek here
     // instead of restarting from SOI.
     fn stream_position(&mut self) -> Result<usize, DecodeErrors> {
         let position = self.stream.position()?;
-        usize::try_from(position).map_err(|_| {
-            DecodeErrors::FormatStatic("Stream position does not fit in usize")
-        })
+        usize::try_from(position)
+            .map_err(|_| DecodeErrors::FormatStatic("Stream position does not fit in usize"))
     }
 
     fn checkpoint_headers(&mut self) -> Result<(), DecodeErrors> {
@@ -314,23 +313,23 @@ where
 
     fn capture_sos_params(&self) -> SosParamsSnapshot {
         SosParamsSnapshot {
-            z_order:         self.z_order,
-            num_scans:       self.num_scans,
+            z_order: self.z_order,
+            num_scans: self.num_scans,
             scan_subsampled: self.scan_subsampled,
-            spec_start:      self.spec_start,
-            spec_end:        self.spec_end,
-            succ_high:       self.succ_high,
-            succ_low:        self.succ_low,
-            dc_huff_tables:  core::array::from_fn(|i| {
+            spec_start: self.spec_start,
+            spec_end: self.spec_end,
+            succ_high: self.succ_high,
+            succ_low: self.succ_low,
+            dc_huff_tables: core::array::from_fn(|i| {
                 self.components
                     .get(i)
                     .map_or(0, |component| component.dc_huff_table)
             }),
-            ac_huff_tables:  core::array::from_fn(|i| {
+            ac_huff_tables: core::array::from_fn(|i| {
                 self.components
                     .get(i)
                     .map_or(0, |component| component.ac_huff_table)
-            })
+            }),
         }
     }
 
@@ -342,7 +341,7 @@ where
             scan_start_position,
             append_snapshot,
             sos_snapshot,
-            rst_checkpoint: None
+            rst_checkpoint: None,
         }));
         Ok(())
     }
@@ -362,7 +361,7 @@ where
     // `progressive_block_buffer`) and persist across `decode_into` retries.
     pub(crate) fn checkpoint_scan(
         &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
-        dc_predictions: [(i32, i32); MAX_COMPONENTS]
+        dc_predictions: [(i32, i32); MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
         let stream_position = self.stream_position()?;
         let sos_snapshot = self.capture_sos_params();
@@ -376,11 +375,11 @@ where
                 pixels_written,
                 sos_snapshot,
                 append_snapshot,
-                dc_predictions
+                dc_predictions,
             };
             match &mut state.rst_checkpoint {
                 Some(existing) => **existing = snapshot,
-                None => state.rst_checkpoint = Some(Box::new(snapshot))
+                None => state.rst_checkpoint = Some(Box::new(snapshot)),
             }
         }
         Ok(())
@@ -410,7 +409,7 @@ where
         ) {
             self.color_convert_16 = choose_ycbcr_to_rgb_convert_func(
                 self.options.jpeg_get_out_colorspace(),
-                &self.options
+                &self.options,
             )
             .unwrap();
         }
@@ -420,9 +419,9 @@ where
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
         JpegDecoder {
-            info:                  ImageInfo::default(),
-            qt_tables:             [None, None, None, None],
-            entropy_tables:        EntropyTables {
+            info: ImageInfo::default(),
+            qt_tables: [None, None, None, None],
+            entropy_tables: EntropyTables {
                 dc_huffman: [None, None, None, None],
                 ac_huffman: [None, None, None, None],
                 #[cfg(feature = "arith")]
@@ -430,52 +429,52 @@ where
                     ArithDCTables::default(),
                     ArithDCTables::default(),
                     ArithDCTables::default(),
-                    ArithDCTables::default()
+                    ArithDCTables::default(),
                 ],
                 #[cfg(feature = "arith")]
                 ac_arithmetic: [
                     ArithACTables::default(),
                     ArithACTables::default(),
                     ArithACTables::default(),
-                    ArithACTables::default()
-                ]
+                    ArithACTables::default(),
+                ],
             },
-            components:        vec![],
+            components: vec![],
             // Interleaved information
-            h_max:             1,
-            v_max:             1,
-            mcu_height:        0,
-            mcu_width:         0,
-            mcu_x:             0,
-            mcu_y:             0,
-            is_interleaved:    false,
-            is_arithmetic:     false,
-            is_progressive:    false,
-            spec_start:        0,
-            spec_end:          0,
-            succ_high:         0,
-            succ_low:          0,
-            num_scans:         0,
-            scan_subsampled:   false, 
-            idct_func:         choose_idct_func(&options),
-            idct_4x4_func:     choose_idct_4x4_func(&options),
-            idct_1x1_func:     choose_idct_1x1_func(&options),
-            color_convert_16:  color_convert,
-            input_colorspace:  ColorSpace::YCbCr,
-            z_order:           [0; MAX_COMPONENTS],
-            restart_interval:  0,
-            todo:              0x7fff_ffff,
-            options:           options,
-            stream:            ZReader::new(buffer),
-            headers_decoded:   false,
-            seen_sof:          false,
-            icc_data:          vec![],
-            is_mjpeg:          false,
-            coeff:             1,
+            h_max: 1,
+            v_max: 1,
+            mcu_height: 0,
+            mcu_width: 0,
+            mcu_x: 0,
+            mcu_y: 0,
+            is_interleaved: false,
+            is_arithmetic: false,
+            is_progressive: false,
+            spec_start: 0,
+            spec_end: 0,
+            succ_high: 0,
+            succ_low: 0,
+            num_scans: 0,
+            scan_subsampled: false,
+            idct_func: choose_idct_func(&options),
+            idct_4x4_func: choose_idct_4x4_func(&options),
+            idct_1x1_func: choose_idct_1x1_func(&options),
+            color_convert_16: color_convert,
+            input_colorspace: ColorSpace::YCbCr,
+            z_order: [0; MAX_COMPONENTS],
+            restart_interval: 0,
+            todo: 0x7fff_ffff,
+            options: options,
+            stream: ZReader::new(buffer),
+            headers_decoded: false,
+            seen_sof: false,
+            icc_data: vec![],
+            is_mjpeg: false,
+            coeff: 1,
             extended_xmp_segments: vec![],
             header_resume_position: 0,
             scan_state: None,
-            progressive_mcus_buffer: core::array::from_fn(|_| Vec::new())
+            progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
         }
     }
     /// Decode a buffer already in memory
@@ -540,7 +539,7 @@ where
             Some(
                 usize::from(self.width())
                     .checked_mul(usize::from(self.height()))?
-                    .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
+                    .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?,
             )
         } else {
             None
@@ -732,7 +731,7 @@ where
                         /*No reason to use this*/
                         {
                             return Err(DecodeErrors::FormatStatic(
-                                "[strict-mode]: Extra bytes between headers"
+                                "[strict-mode]: Extra bytes between headers",
                             ));
                         }
 
@@ -849,16 +848,14 @@ where
         match m {
             Marker::SOF(0..=2) => {
                 // choose marker
-                let marker =
-                    match m {
-                        Marker::SOF(0 | 1) =>
-                            SOFMarkers::BaselineDct,
-                        Marker::SOF(2) => {
-                            self.is_progressive = true;
-                            SOFMarkers::ProgressiveDctHuffman
-                        }
-                        _ => unreachable!(),
-                    };
+                let marker = match m {
+                    Marker::SOF(0 | 1) => SOFMarkers::BaselineDct,
+                    Marker::SOF(2) => {
+                        self.is_progressive = true;
+                        SOFMarkers::ProgressiveDctHuffman
+                    }
+                    _ => unreachable!(),
+                };
 
                 trace!("Image encoding scheme =`{marker:?}`");
                 // get components
@@ -875,7 +872,7 @@ where
                         self.is_arithmetic = true;
                         SOFMarkers::ProgressiveDctArithmetic
                     }
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
 
                 trace!("Image encoding scheme =`{marker:?}`");
@@ -952,7 +949,7 @@ where
             Marker::DRI => {
                 if self.stream.get_u16_be_err()? != 4 {
                     return Err(DecodeErrors::Format(
-                        "Bad DRI length, Corrupt JPEG".to_string()
+                        "Bad DRI length, Corrupt JPEG".to_string(),
                     ));
                 }
 
@@ -968,9 +965,7 @@ where
                 parse_app13(self)?;
             }
             _ => {
-                warn!(
-                    "Capabilities for processing marker \"{m:?}\" not implemented"
-                );
+                warn!("Capabilities for processing marker \"{m:?}\" not implemented");
                 self.skip_marker_payload()?;
             }
         }
@@ -1154,39 +1149,40 @@ where
         // headers haven't completed yet, `scan_plan` is `None` and we
         // just run header decoding below.
         struct ScanPlan {
-            scan_start_position:   usize,
+            scan_start_position: usize,
             outer_append_snapshot: HeaderAppendStateSnapshot,
-            outer_sos_snapshot:    SosParamsSnapshot,
+            outer_sos_snapshot: SosParamsSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>
+            checkpoint_view: Option<CheckpointView>,
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
             append_snapshot: HeaderAppendStateSnapshot,
-            sos_snapshot:    SosParamsSnapshot,
+            sos_snapshot: SosParamsSnapshot,
             stream_position: usize,
-            dc_predictions:  [(i32, i32); MAX_COMPONENTS]
+            dc_predictions: [(i32, i32); MAX_COMPONENTS],
         }
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
-            scan_start_position:   state.scan_start_position,
+            scan_start_position: state.scan_start_position,
             outer_append_snapshot: state.append_snapshot,
-            outer_sos_snapshot:    state.sos_snapshot,
-            checkpoint_view:       state.rst_checkpoint.as_deref().map(|checkpoint| {
-                CheckpointView {
+            outer_sos_snapshot: state.sos_snapshot,
+            checkpoint_view: state
+                .rst_checkpoint
+                .as_deref()
+                .map(|checkpoint| CheckpointView {
                     append_snapshot: checkpoint.append_snapshot,
-                    sos_snapshot:    checkpoint.sos_snapshot,
+                    sos_snapshot: checkpoint.sos_snapshot,
                     stream_position: checkpoint.stream_position,
-                    dc_predictions:  checkpoint.dc_predictions
-                }
-            })
+                    dc_predictions: checkpoint.dc_predictions,
+                }),
         });
         if let Some(plan) = scan_plan {
             let ScanPlan {
                 scan_start_position,
                 outer_append_snapshot,
                 outer_sos_snapshot,
-                checkpoint_view
+                checkpoint_view,
             } = plan;
             // Roll back inline metadata from a previous scan attempt.
             let resume_append_snapshot =
@@ -1218,9 +1214,7 @@ where
                 // At an RST boundary these are zero (handle_rst resets them),
                 // but we keep the values self-describing rather than relying
                 // on that invariant from another module.
-                for (i, comp) in
-                    self.components.iter_mut().enumerate().take(MAX_COMPONENTS)
-                {
+                for (i, comp) in self.components.iter_mut().enumerate().take(MAX_COMPONENTS) {
                     let (dc_pred, dc_diff) = view.dc_predictions[i];
                     comp.dc_pred = dc_pred;
                     comp.dc_diff = dc_diff;
@@ -1301,8 +1295,6 @@ where
         Ok(())
     }
 
-
-
     /// Create a new decoder with the specified options to be used for decoding
     /// an image
     ///
@@ -1319,7 +1311,7 @@ where
         // no sampling, return early
         // check if horizontal max ==1
         if self.h_max == self.v_max && self.h_max == 1 {
-            return ;
+            return;
         }
 
         for comp in &mut self.components {
@@ -1351,7 +1343,6 @@ where
             comp.setup_upsample_scanline();
             comp.up_sampler = samp_factor;
         }
-
     }
     #[must_use]
     /// Get the width of the image as a u16
@@ -1387,7 +1378,7 @@ where
 
 #[derive(Default, Clone, Eq, PartialEq, Debug)]
 pub struct GainMapInfo {
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 #[derive(Default, Clone, Eq, PartialEq, Debug)]

@@ -34,8 +34,8 @@ pub(crate) unsafe fn convert_rgb_to_grayscale_u8_sse41(
 
     for (((r_chunk, g_chunk), b_chunk), out) in r
         .chunks_exact(CHUNK_SIZE)
-        .zip(b.chunks_exact(CHUNK_SIZE))
         .zip(g.chunks_exact(CHUNK_SIZE))
+        .zip(b.chunks_exact(CHUNK_SIZE))
         .zip(gr.chunks_exact_mut(CHUNK_SIZE))
     {
         // PS I'm not sure if this is valid, we chunked 8 values

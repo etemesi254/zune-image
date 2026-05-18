@@ -53,26 +53,32 @@ impl OperationsTrait for Append {
             ));
         }
 
-        // Take all images out
-        let imgs: Vec<Image> = std::mem::take(images);
 
-        // Validate against the first image
-        let first = &imgs[0];
-        let depth = first.depth();
-        let colorspace = first.colorspace();
+        {
+            // Validate against the first image
+            let first = &images[0];
+            let depth = first.depth();
+            let colorspace = first.colorspace();
 
-        for img in &imgs[1..] {
-            if img.depth() != depth {
-                return Err(ImageErrors::GenericStr(
-                    "Image depths do not match for append",
-                ));
-            }
-            if img.colorspace() != colorspace {
-                return Err(ImageErrors::GenericStr(
-                    "Image colorspaces do not match for append",
-                ));
+            for img in &images[1..] {
+                if img.depth() != depth {
+                    return Err(ImageErrors::GenericStr(
+                        "Image depths do not match for append",
+                    ));
+                }
+                if img.colorspace() != colorspace {
+                    return Err(ImageErrors::GenericStr(
+                        "Image colorspaces do not match for append",
+                    ));
+                }
             }
         }
+        // Take all images out
+        let imgs: Vec<Image> = std::mem::take(images);
+        let first = &images[0];
+
+        let depth = first.depth();
+        let colorspace = first.colorspace();
 
         // Compute final dimensions
         let (new_width, new_height) = match self.direction {

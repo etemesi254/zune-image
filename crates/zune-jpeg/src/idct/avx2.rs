@@ -58,7 +58,7 @@ macro_rules! permute_store {
         _mm_storeu_si128(
             ($out)
                 .get_mut($index..$index + 8)
-                .unwrap_or(&mut tmp)
+                .unwrap()
                 .as_mut_ptr()
                 .cast(),
             _mm256_extractf128_si256::<0>(c),

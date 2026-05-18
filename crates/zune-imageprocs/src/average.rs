@@ -65,6 +65,24 @@ impl OperationsTrait for AverageSequence {
             ));
         }
 
+        {
+            let base_image = &images[0];
+            let b_dims = base_image.dimensions();
+            let b_depth = base_image.depth();
+            let b_colorspace = base_image.colorspace();
+            let other_images = &images[1..];
+
+            for img in other_images.as_ref() {
+                if img.dimensions() != b_dims
+                    || img.depth() != b_depth
+                    || img.colorspace() != b_colorspace
+                {
+                    return Err(ImageErrors::GenericStr(
+                        "All images in the sequence must have identical dimensions, depths, and colorspaces."
+                    ));
+                }
+            }
+        }
         // 1. Drain the stack. We take ownership of all images.
         let sequence: Vec<Image> = std::mem::take(images);
 
@@ -74,20 +92,9 @@ impl OperationsTrait for AverageSequence {
         let other_images = iter;
 
         // 3. Validate invariants
-        let b_dims = base_image.dimensions();
         let b_depth = base_image.depth();
         let b_colorspace = base_image.colorspace();
 
-        for img in other_images.as_ref() {
-            if img.dimensions() != b_dims
-                || img.depth() != b_depth
-                || img.colorspace() != b_colorspace
-            {
-                return Err(ImageErrors::GenericStr(
-                    "All images in the sequence must have identical dimensions, depths, and colorspaces."
-                ));
-            }
-        }
 
         let bit_type = b_depth.bit_type();
 

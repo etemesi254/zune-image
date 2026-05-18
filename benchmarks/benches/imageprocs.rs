@@ -315,7 +315,6 @@ fn bench_inner_resize_zune_vips_image_rs<T, U, V, W>(
         zune_im.height() as u32,
         PixelType::U8x3,
     );
-    let stb_image = vec![0; zune_im.width() * zune_im.height() * 3];
     let mut group = c.benchmark_group(name);
 
     group.throughput(Throughput::Bytes(data.len() as u64));

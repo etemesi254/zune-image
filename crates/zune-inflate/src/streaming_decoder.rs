@@ -781,7 +781,7 @@ impl StreamingDecoder {
     /// Tells the decoder that the first `amount` bytes of the output buffer
     /// were discarded, and the remaining data was shifted to index 0.
     pub fn slide_window(&mut self, amount: usize) {
-        self.dest_offset -= amount;
+        self.dest_offset = self.dest_offset.saturating_sub(amount);
         self.window_slid_bytes += amount;
     }
     pub(crate) fn decode_data(

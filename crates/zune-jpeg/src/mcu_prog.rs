@@ -339,7 +339,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
-        let dc_pos = self.components[k].dc_huff_table & (MAX_COMPONENTS - 1);
+        let dc_pos = self.components[k].dc_huff_table /MAX_COMPONENTS;
         let width_stride = self.components[k].width_stride / 8;
 
         for i in 0..mcu_height {

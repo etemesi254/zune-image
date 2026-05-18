@@ -14,7 +14,7 @@ use crate::enums::PngColor;
 /// Return true if the system is little endian
 pub const fn is_le() -> bool {
     // see if le and be conversion return the same number
-    u16::from_le_bytes([234, 231]) == u16::from_ne_bytes([234, 231])
+    cfg!(target_endian = "little")
 }
 
 pub(crate) fn expand_palette(
@@ -88,7 +88,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry1.0[..3]);
 
                 if components == 4 {
-                    out_chunk[3] = entry1.0[3];
+                    out_chunk[offset+3] = entry1.0[3];
                 }
             }
             px_processed += 2;
@@ -113,7 +113,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[3] = entry.0[3];
+                    out_chunk[offset+3] = entry.0[3];
                 }
             }
             px_processed += 4;
@@ -138,7 +138,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[3] = entry.0[3];
+                    out_chunk[offset+3] = entry.0[3];
                 }
             }
             px_processed += 8;
@@ -170,7 +170,7 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
     if SIXTEEN_BITS {
         match color {
             PngColor::Luma => {
-                let trns_byte = trns_bytes[0].to_ne_bytes();
+                let trns_byte = trns_bytes[0].to_be_bytes();
 
                 for (in_chunk, chunk) in input.chunks_exact(2).zip(out.chunks_exact_mut(4)) {
                     chunk[..2].copy_from_slice(in_chunk);
@@ -185,9 +185,9 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                 }
             }
             PngColor::RGB => {
-                let r = trns_bytes[0].to_ne_bytes();
-                let g = trns_bytes[1].to_ne_bytes();
-                let b = trns_bytes[2].to_ne_bytes();
+                let r = trns_bytes[0].to_be_bytes();
+                let g = trns_bytes[1].to_be_bytes();
+                let b = trns_bytes[2].to_be_bytes();
 
                 // copy all trns chunks into one big vector
                 let mut all: [u8; 6] = [0; 6];

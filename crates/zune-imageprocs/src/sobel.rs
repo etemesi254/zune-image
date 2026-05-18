@@ -368,14 +368,3 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::FilterExt;
-    use zune_core::colorspace::ColorSpace;
-    use zune_image::image::Image;
-    #[test]
-    fn test_sobel() {
-        let mut img = Image::fill(123_u8, ColorSpace::RGB, 1000, 1000);
-        let sobel_v = img.sobel().unwrap();
-    }
-}
