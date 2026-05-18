@@ -85,16 +85,8 @@ impl OperationsTrait for GaussianBlur {
         let (width, height) = image.dimensions();
         let depth = image.depth();
 
-        #[cfg(feature = "threads")]
-        let num_threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        #[cfg(not(feature = "threads"))]
-        let num_threads = 1;
-
-        if num_threads > 1 {
-            trace!("Running gaussian blur with {num_threads} spatial threads");
-        } else {
-            trace!("Running gaussian blur in single threaded mode");
-        }
+        let num_threads = image.operation_options().num_threads_child();
+        trace!("Running gaussian blur with {num_threads} spatial threads");
 
         match depth.bit_type() {
             BitType::U8 => {

@@ -214,6 +214,8 @@ impl OperationsTrait for Fx {
         if let Some(idx) = e_idx {
             args[idx] = std::f64::consts::E;
         }
+        let num_threads = image.operation_options().num_threads_child();
+        let use_threads = image.operation_options().use_threads();
 
         for frame in image.frames_mut() {
             let channels = frame.channels_mut(colorspace, false);
@@ -258,14 +260,7 @@ impl OperationsTrait for Fx {
                         .map(|c| c.reinterpret_as_mut::<$type>().unwrap())
                         .collect();
 
-
-                    // 2. Determine thread count (Fallback to 1 for WASM)
-                    let num_threads = if cfg!(target_arch = "wasm32") {
-                        1
-                    } else {
-                        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
-                    };
-
+                    
                     let chunk_height = height.div_ceil(num_threads);
                     let pixels_per_chunk = chunk_height * width;
 

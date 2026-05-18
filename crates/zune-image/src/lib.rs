@@ -119,3 +119,4 @@ pub mod utils;
 pub mod iters;
 pub mod colors;
 pub mod web;
+pub mod operations_options;

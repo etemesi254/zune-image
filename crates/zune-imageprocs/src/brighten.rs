@@ -54,7 +54,7 @@ use crate::utils::execute_on;
 /// ```
 #[derive(Default)]
 pub struct Brighten {
-    value: f32
+    value: f32,
 }
 
 impl Brighten {
@@ -91,15 +91,15 @@ impl OperationsTrait for Brighten {
                 BitType::U8 => brighten(
                     channel.reinterpret_as_mut::<u8>()?,
                     self.value,
-                    u8::try_from(max_val.clamp(0, 255)).unwrap()
+                    u8::try_from(max_val.clamp(0, 255)).unwrap(),
                 ),
                 BitType::U16 => brighten(channel.reinterpret_as_mut::<u16>()?, self.value, max_val),
                 BitType::F32 => brighten_f32(
                     channel.reinterpret_as_mut::<f32>()?,
                     self.value,
-                    f32::from(max_val)
+                    f32::from(max_val),
                 ),
-                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d))
+                d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
             }
             Ok(())
         };
@@ -110,7 +110,7 @@ impl OperationsTrait for Brighten {
             ColorSpace::RGBA,
             ColorSpace::RGB,
             ColorSpace::LumaA,
-            ColorSpace::Luma
+            ColorSpace::Luma,
         ]
     }
 
@@ -131,13 +131,14 @@ impl OperationsTrait for Brighten {
 ///
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
-    channel: &mut [T], value: f32, _max_value: T
+    channel: &mut [T], value: f32, _max_value: T,
 ) {
     let t_min = T::MIN_VAL.to_f32();
     let t_max = T::MAX_VAL.to_f32();
     let scale_v = value.clamp(-1f32, 1f32) * (t_max - t_min);
-    for x in channel
-        .iter_mut() { *x = T::from_f32((x.to_f32() + scale_v).zclamp(t_min, t_max)); }
+    for x in channel.iter_mut() {
+        *x = T::from_f32((x.to_f32() + scale_v).zclamp(t_min, t_max));
+    }
 }
 
 /// Brighten operation
@@ -151,6 +152,7 @@ pub fn brighten<T: Copy + PartialOrd + NumOps<T> + Default>(
 /// returns: ()
 ///
 pub fn brighten_f32(channel: &mut [f32], value: f32, max_value: f32) {
-    for x in channel
-        .iter_mut() { *x = (*x + value).clamp(0.0, max_value); }
+    for x in channel.iter_mut() {
+        *x = (*x + value).clamp(0.0, max_value);
+    }
 }

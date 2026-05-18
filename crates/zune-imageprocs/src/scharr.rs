@@ -9,12 +9,12 @@
 use zune_core::bit_depth::BitType;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
+use zune_image::errors::ImageErrors::ImageOperationNotImplemented;
 use zune_image::image::Image;
 use zune_image::traits::OperationsTrait;
 
-
 use crate::traits::NumOps;
-use crate::utils::apply_gradient_3x3;
+use crate::utils::{apply_gradient_3x3, execute_on};
 
 /// Perform a scharr image derivative.
 ///
@@ -58,79 +58,35 @@ impl OperationsTrait for Scharr {
         let depth = image.depth().bit_type();
         let (width, height) = image.dimensions();
 
-        #[cfg(not(feature = "threads"))]
-        {
-            for channel in image.channels_mut(true) {
-                let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
-                match depth {
-                    BitType::U8 => scharr_int::<u8>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height,
-                    ),
-                    BitType::U16 => scharr_int::<u16>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height,
-                    ),
-                    BitType::F32 => scharr_float::<f32>(
-                        channel.reinterpret_as()?,
-                        out_channel.reinterpret_as_mut()?,
-                        width,
-                        height,
-                    ),
-                    d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
-                }
-                *channel = out_channel;
-            }
-        }
-        #[cfg(feature = "threads")]
-        {
-            std::thread::scope(|s| {
-                let mut t_results = vec![];
-                for channel in image.channels_mut(true) {
-                    let result = s.spawn(|| {
-                        let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
-                        match depth {
-                            BitType::U8 => scharr_int::<u8>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height,
-                            ),
-                            BitType::U16 => scharr_int::<u16>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height,
-                            ),
-                            BitType::F32 => scharr_float::<f32>(
-                                channel.reinterpret_as()?,
-                                out_channel.reinterpret_as_mut()?,
-                                width,
-                                height,
-                            ),
-                            d => {
-                                return Err(ImageErrors::ImageOperationNotImplemented(
-                                    self.name(),
-                                    d,
-                                ))
-                            }
-                        }
-                        *channel = out_channel;
-                        Ok(())
-                    });
-                    t_results.push(result);
-                }
+        let scharr_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
+            let mut out_channel = Channel::new_with_bit_type(channel.len(), depth);
+            match depth {
+                BitType::U8 => scharr_int::<u8>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height,
+                ),
 
-                t_results
-                    .into_iter()
-                    .map(|x| x.join().unwrap())
-                    .collect::<Result<Vec<()>, ImageErrors>>()
-            })?;
-        }
+                BitType::U16 => scharr_int::<u16>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height,
+                ),
+
+                BitType::F32 => scharr_float::<f32>(
+                    channel.reinterpret_as()?,
+                    out_channel.reinterpret_as_mut()?,
+                    width,
+                    height,
+                ),
+                _ => return Err(ImageOperationNotImplemented(self.name(), depth)),
+            }
+            *channel = out_channel;
+            Ok(())
+        };
+        execute_on(scharr_fn, image, true)?;
 
         Ok(())
     }
@@ -166,7 +122,7 @@ const SCHARR_GY_F32: [f32; 9] = [
 
 pub fn scharr_int<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
-    T: Default + NumOps<T> + Copy+Send+Sync,
+    T: Default + NumOps<T> + Copy + Send + Sync,
     i32: From<T>,
 {
     apply_gradient_3x3(
@@ -181,7 +137,7 @@ where
 
 pub fn scharr_float<T>(in_channel: &[T], out_channel: &mut [T], width: usize, height: usize)
 where
-    T: Default + NumOps<T> + Copy+Send+Sync,
+    T: Default + NumOps<T> + Copy + Send + Sync,
     f32: From<T>,
 {
     apply_gradient_3x3(

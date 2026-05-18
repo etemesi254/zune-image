@@ -108,11 +108,7 @@ impl OperationsTrait for Median {
         }
         let depth = image.depth();
 
-        #[cfg(feature = "threads")]
-        let num_threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        #[cfg(not(feature = "threads"))]
-        let num_threads = 1;
-
+        let num_threads = image.operation_options().num_threads_child();
         trace!("Running median filter with {} threads", num_threads);
 
         let median_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {

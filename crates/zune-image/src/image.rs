@@ -24,6 +24,7 @@ use crate::core_filters::depth::Depth;
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
 use crate::frame::Frame;
+use crate::operations_options::ImageOperationOptions;
 use crate::metadata::ImageMetadata;
 use crate::traits::{OperationsTrait, ZuneInts};
 
@@ -38,6 +39,7 @@ pub struct Image {
     pub(crate) background_color: Color,
     pub(crate) frames: Vec<Frame>,
     pub(crate) metadata: ImageMetadata,
+    pub(crate) operation_options: ImageOperationOptions,
 }
 
 impl PartialEq<Self> for Image {
@@ -68,6 +70,7 @@ impl Image {
             frames: vec![Frame::new(channels)],
             background_color: Color::white(),
             metadata: meta,
+            operation_options: ImageOperationOptions::default(),
         }
     }
     /// Create an image from multiple frames.
@@ -85,6 +88,7 @@ impl Image {
             frames,
             metadata: meta,
             background_color: Color::white(),
+            operation_options: ImageOperationOptions::default(),
         }
     }
 
@@ -137,6 +141,15 @@ impl Image {
         &mut self.metadata
     }
 
+    pub const fn operation_options(&self) -> &ImageOperationOptions {
+        &self.operation_options
+    }
+    pub const fn operation_options_mut(&mut self) -> &mut ImageOperationOptions {
+        &mut self.operation_options
+    }
+    pub fn set_operation_options(&mut self, options: ImageOperationOptions) {
+        self.operation_options = options;
+    }
     /// Return an immutable reference to all image frames
     ///
     /// # Returns
@@ -270,7 +283,9 @@ impl Image {
             self.flatten_frames::<u16>()
         } else {
             let mut im_clone = self.clone();
-            Depth::new(BitDepth::Sixteen).execute(&mut im_clone).unwrap();
+            Depth::new(BitDepth::Sixteen)
+                .execute(&mut im_clone)
+                .unwrap();
             im_clone.flatten_frames::<u16>()
         }
     }

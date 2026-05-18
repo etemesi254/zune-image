@@ -153,9 +153,7 @@ impl OperationsTrait for Sharpen {
         {
             // Calculate how many threads the blur should use internally
             let num_channels = image.channels_ref(true).len();
-            let total_cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-            let blur_threads = (total_cores / num_channels).max(1);
-
+            let blur_threads = image.operation_options().num_threads_child();
             trace!("Running unsharpen in multithreaded mode");
             std::thread::scope(|s| {
                 let mut errors = vec![];

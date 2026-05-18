@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::time::Instant;
 
 use crate::premul_alpha::PremultiplyAlpha;
@@ -14,6 +15,7 @@ use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
+use zune_image::operations_options::ImageOperationOptions;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 // -----------------------------------------------------------------------------
@@ -43,20 +45,24 @@ fn div_ceil(a: i64, b: i64) -> i64 {
 
 #[inline(always)]
 fn update_exact_bounds(v: i64, base: i64, max_val: i64, t_min: &mut i64, t_max: &mut i64) {
-    if v == 0 {
-        if base < 0 || base > max_val {
-            *t_max = -1; // invalid
+    match v.cmp(&0) {
+        Ordering::Less => {
+            let t1 = div_floor(-base, v);
+            let t2 = div_ceil(max_val - base, v);
+            *t_min = (*t_min).max(t2);
+            *t_max = (*t_max).min(t1);
         }
-    } else if v > 0 {
-        let t1 = div_ceil(-base, v);
-        let t2 = div_floor(max_val - base, v);
-        *t_min = (*t_min).max(t1);
-        *t_max = (*t_max).min(t2);
-    } else {
-        let t1 = div_floor(-base, v);
-        let t2 = div_ceil(max_val - base, v);
-        *t_min = (*t_min).max(t2);
-        *t_max = (*t_max).min(t1);
+        Ordering::Equal => {
+            if base < 0 || base > max_val {
+                *t_max = -1; // invalid
+            }
+        }
+        Ordering::Greater => {
+            let t1 = div_ceil(-base, v);
+            let t2 = div_floor(max_val - base, v);
+            *t_min = (*t_min).max(t1);
+            *t_max = (*t_max).min(t2);
+        }
     }
 }
 
@@ -250,6 +256,7 @@ impl OperationsTrait for AffineTransform {
             execute_on(affine_fn, image, false)?;
         } else {
             trace!("Affine transform is not axis-aligned — using 2D reverse-mapped sampler");
+            let opts = *image.operation_options();
             let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
                 let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
                 match depth {
@@ -261,6 +268,7 @@ impl OperationsTrait for AffineTransform {
                         new_w,
                         new_h,
                         self,
+                        &opts,
                     ),
                     BitType::U16 => affine_transform_channel::<u16>(
                         channel.reinterpret_as()?,
@@ -270,6 +278,7 @@ impl OperationsTrait for AffineTransform {
                         new_w,
                         new_h,
                         self,
+                        &opts,
                     ),
                     BitType::F32 => affine_transform_channel::<f32>(
                         channel.reinterpret_as()?,
@@ -279,6 +288,7 @@ impl OperationsTrait for AffineTransform {
                         new_w,
                         new_h,
                         self,
+                        &opts,
                     ),
                     d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d)),
                 }
@@ -321,7 +331,7 @@ impl OperationsTrait for AffineTransform {
 }
 
 pub trait BilinearProcess: Copy + Default + Send + Sync {
-   #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn process_rows(
         in_channel: &[Self], out_band: &mut [Self], band_start_y: usize, in_width: usize,
         in_height: usize, out_width: usize, inv: &AffineTransform, min_x: f32, min_y: f32,
@@ -378,7 +388,7 @@ impl BilinearProcess for u8 {
             let mut curr_x_fx = base_x_fx + start as i64 * a_fx;
             let mut curr_y_fx = base_y_fx + start as i64 * c_fx;
 
-            // Pure branchless inner loop!
+
             for px in &mut out_row[start..end] {
                 let ux = (curr_x_fx >> 16) as usize;
                 let uy = (curr_y_fx >> 16) as usize;
@@ -603,9 +613,10 @@ pub fn get_affine_output_dimensions(
 }
 
 #[allow(clippy::many_single_char_names)]
+#[allow(clippy::too_many_arguments)]
 pub fn affine_transform_channel<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, transform: &AffineTransform,
+    out_height: usize, transform: &AffineTransform, opts: &ImageOperationOptions,
 ) where
     T: BilinearProcess,
 {
@@ -628,40 +639,39 @@ pub fn affine_transform_channel<T>(
         min_y = min_y.min(cy);
     }
 
-    #[cfg(feature = "threads")]
-    {
-        let num_threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .div_ceil(2)
-            .max(1);
+    if opts.use_threads() {
+        #[cfg(feature = "threads")]
+        {
+            let num_threads_child = opts.num_threads_child();
 
-        if num_threads > 1 {
-            let rows_per_thread = out_height.div_ceil(num_threads);
+            if num_threads_child > 1 {
+                let rows_per_thread = out_height.div_ceil(num_threads_child);
 
-            std::thread::scope(|s| {
-                for (chunk_idx, out_band) in out_channel
-                    .chunks_mut(rows_per_thread * out_width)
-                    .enumerate()
-                {
-                    let band_start_y = chunk_idx * rows_per_thread;
-                    let inv_ref = &inv;
+                std::thread::scope(|s| {
+                    for (chunk_idx, out_band) in out_channel
+                        .chunks_mut(rows_per_thread * out_width)
+                        .enumerate()
+                    {
+                        let band_start_y = chunk_idx * rows_per_thread;
+                        let inv_ref = &inv;
 
-                    s.spawn(move || {
-                        T::process_rows(
-                            in_channel,
-                            out_band,
-                            band_start_y,
-                            in_width,
-                            in_height,
-                            out_width,
-                            inv_ref,
-                            min_x,
-                            min_y,
-                        );
-                    });
-                }
-            });
-            return;
+                        s.spawn(move || {
+                            T::process_rows(
+                                in_channel,
+                                out_band,
+                                band_start_y,
+                                in_width,
+                                in_height,
+                                out_width,
+                                inv_ref,
+                                min_x,
+                                min_y,
+                            );
+                        });
+                    }
+                });
+                return;
+            }
         }
     }
 
@@ -776,8 +786,7 @@ mod tests {
 
     #[test]
     fn is_axis_aligned_for_scale_and_translate() {
-        let t = AffineTransform::scale(2.0, 3.0)
-            .then(&AffineTransform::translation(5.0, 5.0));
+        let t = AffineTransform::scale(2.0, 3.0).then(&AffineTransform::translation(5.0, 5.0));
         assert!(t.is_axis_aligned());
     }
 
@@ -814,8 +823,14 @@ mod tests {
         let (w, h) = get_affine_output_dimensions(10, 10, &t);
         let expected = (10.0_f32 * 2.0_f32.sqrt()).ceil() as usize;
         // Allow ±1 pixel for floating-point rounding
-        assert!((w as i64 - expected as i64).abs() <= 1, "w={w} expected≈{expected}");
-        assert!((h as i64 - expected as i64).abs() <= 1, "h={h} expected≈{expected}");
+        assert!(
+            (w as i64 - expected as i64).abs() <= 1,
+            "w={w} expected≈{expected}"
+        );
+        assert!(
+            (h as i64 - expected as i64).abs() <= 1,
+            "h={h} expected≈{expected}"
+        );
     }
 
     #[test]
@@ -843,12 +858,24 @@ mod tests {
         let t = AffineTransform::identity();
         let (ow, oh) = get_affine_output_dimensions(w, h, &t);
         let mut output = vec![0u8; ow * oh];
-        affine_transform_channel(&input, &mut output, w, h, ow, oh, &t);
+        affine_transform_channel(
+            &input,
+            &mut output,
+            w,
+            h,
+            ow,
+            oh,
+            &t,
+            &ImageOperationOptions::default(),
+        );
         // Centre pixels should match (edges may differ due to clamping)
         for row in 1..h - 1 {
             for col in 1..w - 1 {
-                assert_eq!(output[row * ow + col], input[row * w + col],
-                           "mismatch at ({col},{row})");
+                assert_eq!(
+                    output[row * ow + col],
+                    input[row * w + col],
+                    "mismatch at ({col},{row})"
+                );
             }
         }
     }
@@ -865,14 +892,28 @@ mod tests {
             let t = AffineTransform::rotation(angle);
             let (ow, oh) = get_affine_output_dimensions(w, h, &t);
             let mut output = vec![0u8; ow * oh];
-            affine_transform_channel(&input, &mut output, w, h, ow, oh, &t);
+            affine_transform_channel(
+                &input,
+                &mut output,
+                w,
+                h,
+                ow,
+                oh,
+                &t,
+                &ImageOperationOptions::default(),
+            );
 
             // Interior output pixels (away from transparent border) must be val
             let interior: Vec<u8> = output.iter().cloned().filter(|&p| p > 0).collect();
             let all_correct = interior.iter().all(|&p| (p as i32 - val as i32).abs() <= 2);
-            assert!(all_correct,
-                    "rotation {angle}°: some non-border pixels deviate from {val}: {:?}",
-                    interior.iter().filter(|&&p| (p as i32 - val as i32).abs() > 2).collect::<Vec<_>>());
+            assert!(
+                all_correct,
+                "rotation {angle}°: some non-border pixels deviate from {val}: {:?}",
+                interior
+                    .iter()
+                    .filter(|&&p| (p as i32 - val as i32).abs() > 2)
+                    .collect::<Vec<_>>()
+            );
         }
     }
 
@@ -887,9 +928,20 @@ mod tests {
         // return degenerate values — just test for no panic.
         let mut output = vec![0u8; w * h];
         // Should not panic
-        affine_transform_channel(&input, &mut output, w, h, w, h, &singular);
-        assert!(output.iter().all(|&p| p == 0),
-                "singular transform should produce all-zero output");
+        affine_transform_channel(
+            &input,
+            &mut output,
+            w,
+            h,
+            w,
+            h,
+            &singular,
+            &ImageOperationOptions::default(),
+        );
+        assert!(
+            output.iter().all(|&p| p == 0),
+            "singular transform should produce all-zero output"
+        );
     }
 
     // -------------------------------------------------------------------------

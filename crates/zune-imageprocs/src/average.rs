@@ -71,14 +71,14 @@ impl OperationsTrait for AverageSequence {
         // 2. Separate the first image to use as our output canvas
         let mut iter = sequence.into_iter();
         let mut base_image = iter.next().unwrap();
-        let other_images: Vec<Image> = iter.collect();
+        let other_images = iter;
 
         // 3. Validate invariants
         let b_dims = base_image.dimensions();
         let b_depth = base_image.depth();
         let b_colorspace = base_image.colorspace();
 
-        for img in &other_images {
+        for img in other_images.as_ref() {
             if img.dimensions() != b_dims
                 || img.depth() != b_depth
                 || img.colorspace() != b_colorspace
@@ -102,7 +102,7 @@ impl OperationsTrait for AverageSequence {
                 match bit_type {
                     BitType::U8 => {
                         let mut other_slices = Vec::with_capacity(other_images.len());
-                        for img in &other_images {
+                        for img in other_images.as_ref() {
                             let chan = &img.frames_ref()[frame_idx]
                                 .channels_ref(b_colorspace, false)[c_idx];
                             other_slices.push(chan.reinterpret_as::<u8>()?);
@@ -116,7 +116,7 @@ impl OperationsTrait for AverageSequence {
                     }
                     BitType::U16 => {
                         let mut other_slices = Vec::with_capacity(other_images.len());
-                        for img in &other_images {
+                        for img in other_images.as_ref() {
                             let chan = &img.frames_ref()[frame_idx]
                                 .channels_ref(b_colorspace, false)[c_idx];
                             other_slices.push(chan.reinterpret_as::<u16>()?);
@@ -130,7 +130,7 @@ impl OperationsTrait for AverageSequence {
                     }
                     BitType::F32 => {
                         let mut other_slices = Vec::with_capacity(other_images.len());
-                        for img in &other_images {
+                        for img in other_images.as_ref() {
                             let chan = &img.frames_ref()[frame_idx]
                                 .channels_ref(b_colorspace, false)[c_idx];
                             other_slices.push(chan.reinterpret_as::<f32>()?);
