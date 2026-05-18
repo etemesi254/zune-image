@@ -197,15 +197,12 @@ Caches (sum of all):
 | **Resize linear**        | libvips / vips   | 9.4833 ms  | 41.81 ms   | 128.14 MiB/s | 29.07 MiB/s |
 |                          | fir              | 26.091 ms  | 66.68 ms   | 46.575 MiB/s | 18.22 MiB/s |
 |                          | zune-image       | 35.818 ms  | 233.02 ms  | 33.927 MiB/s | 5.21 MiB/s  |
-|                          | stb-image-resize | 383.65 ms  | 688.50 ms  | 3.1674 MiB/s | 1.77 MiB/s  |
 |                          | image-rs         | 467.35 ms  | 1498.60 ms | 2.6001 MiB/s | 0.83 MiB/s  |
 | **Resize lanczos**       | libvips / vips   | 13.65 ms   | 50.11 ms   | 89.00 MiB/s  | 24.25 MiB/s |
 |                          | fir              | 28.27 ms   | 77.18 ms   | 42.98 MiB/s  | 15.74 MiB/s |
 |                          | zune-image       | 43.83 ms   | 275.84 ms  | 27.72 MiB/s  | 4.41 MiB/s  |
-|                          | stb-image-resize | 390.69 ms  | 690.96 ms  | 3.11 MiB/s   | 1.76 MiB/s  |
 |                          | image-rs         | 744.61 ms  | 2142.50 ms | 1.63 MiB/s   | 0.58 MiB/s  |
 | **Resize mitchell**      | libvips / vips   | 11.71 ms   | 47.65 ms   | 103.78 MiB/s | 25.50 MiB/s |
 |                          | fir              | 28.74 ms   | 70.78 ms   | 42.29 MiB/s  | 17.17 MiB/s |
 |                          | zune-image       | 46.59 ms   | 293.26 ms  | 26.08 MiB/s  | 4.14 MiB/s  |
-|                          | stb-image-resize | 388.48 ms  | 690.55 ms  | 3.13 MiB/s   | 1.76 MiB/s  |
 |                          | image-rs         | 729.33 ms  | 2144.80 ms | 1.67 MiB/s   | 0.58 MiB/s  |                   | image-rs         | —            | 2144.80 ms | —               | 0.58 MiB/s  |
