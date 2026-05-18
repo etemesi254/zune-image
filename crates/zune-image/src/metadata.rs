@@ -12,7 +12,7 @@
 //! from one image to another
 
 use zune_core::bit_depth::BitDepth;
-use zune_core::colorspace::{ColorCharacteristics, ColorSpace};
+use zune_core::colorspace::{ColorCharacteristics, ColorPrimaries, ColorSpace};
 
 use crate::codecs::ImageFormat;
 
@@ -24,7 +24,7 @@ mod exif;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum AlphaState {
     PreMultiplied,
-    NonPreMultiplied
+    NonPreMultiplied,
 }
 
 /// Image metadata
@@ -36,20 +36,28 @@ pub enum AlphaState {
 pub struct ImageMetadata {
     // REMEMBER: If you add a field here add it's serialization
     // to src/serde
-    pub(crate) color_trc:     Option<ColorCharacteristics>,
+    pub(crate) color_trc: Option<ColorCharacteristics>,
     pub(crate) default_gamma: Option<f32>,
-    pub(crate) width:         usize,
-    pub(crate) height:        usize,
-    pub(crate) colorspace:    ColorSpace,
-    pub(crate) depth:         BitDepth,
-    pub(crate) format:        Option<ImageFormat>,
-    pub(crate) alpha:         AlphaState,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) colorspace: ColorSpace,
+    pub(crate) depth: BitDepth,
+    pub(crate) format: Option<ImageFormat>,
+    pub(crate) alpha: AlphaState,
     #[cfg(feature = "metadata")]
-    pub(crate) exif:          Option<Vec<::exif::Field>>,
-    pub(crate) icc_chunk:     Option<Vec<u8>>,
+    pub(crate) exif: Option<Vec<::exif::Field>>,
+    pub(crate) icc_chunk: Option<Vec<u8>>,
     // whether or not the image is in linear colorspace or
     // rgb
-    pub(crate) is_linear:     bool
+    pub(crate) is_linear: bool,
+    /// The transfer function/gamma curve (from cICP or sRGB chunks)
+    pub transfer_curve: Option<ColorCharacteristics>,
+    /// The explicit xy coordinates of the colors (from cHRM)
+    pub color_primaries: Option<ColorPrimaries>,
+    /// The target color space standard (from cICP color_primaries field, e.g., 9 for Rec2020)
+    pub color_standard: Option<u8>,
+    /// Maximum Content Light Level in nits (from cLLI chunk)
+    pub max_cll: Option<u32>,
 }
 
 impl Default for ImageMetadata {
@@ -67,7 +75,11 @@ impl Default for ImageMetadata {
             exif: None,
 
             icc_chunk: None,
-            is_linear: false
+            is_linear: false,
+            transfer_curve: None,
+            color_primaries: None,
+            color_standard: None,
+            max_cll: None,
         }
     }
 }

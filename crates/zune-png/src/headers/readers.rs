@@ -10,10 +10,10 @@ use zune_core::log::{trace, warn};
 use zune_inflate::DeflateDecoder;
 
 use crate::apng::{ActlChunk, BlendOp, DisposeOp, FrameInfo, SingleFrame};
-use crate::decoder::{ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
+use crate::decoder::{ChrmInfo, CicpInfo, ItxtChunk, PLTEEntry, PngChunk, TextChunk, TimeInfo, ZtxtChunk};
 use crate::enums::{FilterMethod, InterlaceMethod, PngColor};
 use crate::error::PngDecodeErrors;
-use crate::PngDecoder;
+use crate::{ClliInfo, PhysInfo, PngDecoder};
 
 impl<T: ZByteReaderTrait> PngDecoder<T> {
     pub(crate) fn parse_ihdr(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
@@ -504,5 +504,121 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         // skip crc
         self.stream.skip(4)?;
         Ok(fctl_info)
+    }
+    /// Parse the pHYs chunk (Physical Pixel Dimensions)
+    pub(crate) fn parse_phys(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        if chunk.length != 9  {
+            return Err(PngDecodeErrors::Generic(format!("Invalid pHYs chunk length {:?}",chunk.length)));
+        }
+
+        let ppu_x = self.stream.get_u32_be();
+        let ppu_y = self.stream.get_u32_be();
+        let unit_specifier = self.stream.read_u8();
+
+        let phys_info = PhysInfo {
+            ppu_x,
+            ppu_y,
+            unit_specifier, // 0 = unknown, 1 = meter
+        };
+        self.png_info.phys_info = Some(phys_info);
+
+        // skip crc
+        self.stream.skip(4)?;
+        Ok(())
+    }
+
+    /// Parse the cLLI chunk (Content Light Level Information)
+    pub(crate) fn parse_clli(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        if chunk.length != 8 {
+            return Err(PngDecodeErrors::GenericStatic("Invalid cLLI chunk length"));
+        }
+
+        let max_cll = self.stream.get_u32_be();
+        let max_fall = self.stream.get_u32_be();
+
+        let clli_info = ClliInfo { max_cll, max_fall };
+        self.png_info.clli_info = Some(clli_info);
+
+        // skip crc
+        self.stream.skip(4)?;
+        Ok(())
+    }
+
+    /// Parse the cICP chunk (Coding-Independent Code Points)
+    pub(crate) fn parse_cicp(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        if chunk.length != 4 {
+            return Err(PngDecodeErrors::GenericStatic("Invalid cICP chunk length"));
+        }
+
+        let color_primaries = self.stream.read_u8();
+        let transfer_function = self.stream.read_u8();
+        let matrix_coefficients = self.stream.read_u8();
+        let video_full_range_flag = self.stream.read_u8();
+
+        let cicp_info = CicpInfo {
+            color_primaries,
+            transfer_function,
+            matrix_coefficients,
+            video_full_range_flag,
+        };
+
+        self.png_info.cicp_info = Some(cicp_info);
+
+        // skip crc
+        self.stream.skip(4)?;
+        Ok(())
+    }
+
+    /// Parse the sBIT chunk (Significant Bits)
+    pub(crate) fn parse_sbit(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        // sBIT length depends on the color type (1 to 4 bytes).
+        // It's safest to read exactly the chunk length and validate it against max expected.
+        if chunk.length == 0 || chunk.length > 4 {
+            return Err(PngDecodeErrors::GenericStatic("Invalid sBIT chunk length"));
+        }
+
+        let mut sbit_bytes = [0u8; 4];
+        for i in 0..chunk.length {
+            sbit_bytes[i] = self.stream.read_u8();
+        }
+
+        self.png_info.sbit_info = Some(sbit_bytes);
+
+        // skip crc
+        self.stream.skip(4)?;
+        Ok(())
+    }
+
+    /// Parse the cHRM chunk (Primary Chromaticities and White Point)
+    pub(crate) fn parse_chrm(&mut self, chunk: PngChunk) -> Result<(), PngDecodeErrors> {
+        if chunk.length != 32 {
+            return Err(PngDecodeErrors::GenericStatic("Invalid cHRM chunk length"));
+        }
+
+        // Values are encoded as (value * 100,000)
+        let white_point_x = self.stream.get_u32_be();
+        let white_point_y = self.stream.get_u32_be();
+        let red_x = self.stream.get_u32_be();
+        let red_y = self.stream.get_u32_be();
+        let green_x = self.stream.get_u32_be();
+        let green_y = self.stream.get_u32_be();
+        let blue_x = self.stream.get_u32_be();
+        let blue_y = self.stream.get_u32_be();
+
+        let chrm_info = ChrmInfo {
+            white_point_x,
+            white_point_y,
+            red_x,
+            red_y,
+            green_x,
+            green_y,
+            blue_x,
+            blue_y,
+        };
+        self.png_info.chrm_info = Some(chrm_info);
+
+        // skip crc
+        self.stream.skip(4)?;
+        Ok(())
     }
 }
