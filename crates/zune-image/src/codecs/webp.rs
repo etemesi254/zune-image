@@ -77,7 +77,11 @@ impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
             #[cfg(feature = "metadata")]
             exif: None,
             icc_chunk: None,
-            is_linear: false
+            is_linear: false,
+            transfer_curve: None,
+            color_primaries: None,
+            color_standard: None,
+            max_cll: None,
         }))
     }
 }
