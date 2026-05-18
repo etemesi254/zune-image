@@ -342,8 +342,7 @@ mod neon_transpose_tests {
 
             assert_eq!(
                 scalar_out, simd_out,
-                "NEON u8 Transpose mismatch at width={} height={}",
-                width, height
+                "NEON u8 Transpose mismatch at width={width} height={height}",
             );
         }
     }
@@ -368,8 +367,7 @@ mod neon_transpose_tests {
 
             assert_eq!(
                 scalar_out, simd_out,
-                "NEON u16 Transpose mismatch at width={} height={}",
-                width, height
+                "NEON u16 Transpose mismatch at width={width} height={height}",
             );
         }
     }
@@ -394,8 +392,7 @@ mod neon_transpose_tests {
 
             assert_eq!(
                 scalar_out, simd_out,
-                "NEON f32 Transpose mismatch at width={} height={}",
-                width, height
+                "NEON f32 Transpose mismatch at width={width} height={height}",
             );
         }
     }

@@ -235,6 +235,37 @@ pub struct ZtxtChunk {
     /// Uncompressed text
     pub text: Vec<u8>,
 }
+#[derive(Clone, Default, Copy)]
+pub struct ChrmInfo {
+    pub white_point_x: u32,
+    pub white_point_y: u32,
+    pub red_x: u32,
+    pub red_y: u32,
+    pub green_x: u32,
+    pub green_y: u32,
+    pub blue_x: u32,
+    pub blue_y: u32,
+}
+#[derive(Clone, Default, Copy)]
+
+pub struct PhysInfo {
+    pub ppu_x: u32,
+    pub ppu_y: u32,
+    pub unit_specifier: u8,
+}
+#[derive(Clone, Default, Copy, Debug)]
+pub struct CicpInfo {
+    pub color_primaries: u8,
+    pub transfer_function: u8,
+    pub matrix_coefficients: u8,
+    pub video_full_range_flag: u8,
+}
+
+#[derive(Clone, Default, Copy)]
+pub struct ClliInfo {
+    pub max_cll: u32,
+    pub max_fall: u32,
+}
 
 /// Represents PNG information that can be extracted
 /// from a png file.
@@ -260,6 +291,14 @@ pub struct PngInfo {
     pub ztxt_chunk: Vec<ZtxtChunk>,
     /// tEXt chunk
     pub text_chunk: Vec<TextChunk>,
+    /// cLLI chunk (Content Light Level Information)
+    pub clli_info: Option<ClliInfo>,
+    ///  pHYs chunk (Physical Pixel Dimensions)
+    pub phys_info: Option<PhysInfo>,
+    /// cICP chunk (Coding-Independent Code Points)
+    pub cicp_info: Option<CicpInfo>,
+    pub chrm_info: Option<ChrmInfo>,
+    pub sbit_info: Option<[u8; 4]>,
     // no need to expose these ones
     pub(crate) depth: u8,
     // use bit_depth
@@ -506,6 +545,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             b"zTXt" => PngChunkType::zTXt,
             b"tEXt" => PngChunkType::tEXt,
             b"fdAT" => PngChunkType::fdAT,
+            b"cHRM" => PngChunkType::cHRM,
+            b"cLLI" => PngChunkType::cLLI,
+            b"cICP" => PngChunkType::cICP,
+            b"sBIT" => PngChunkType::sBIT,
             _ => PngChunkType::unkn,
         };
 
@@ -587,47 +630,29 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
     pub(crate) fn parse_header(&mut self, header: PngChunk) -> Result<(), PngDecodeErrors> {
         match header.chunk_type {
-            PngChunkType::IHDR => {
-                self.parse_ihdr(header)?;
-            }
-            PngChunkType::PLTE => {
-                self.parse_plte(header)?;
-            }
             PngChunkType::IDAT => {
                 // IDAT is streamed, so not be dealt with here
                 unreachable!("Should be dealt with in caller")
             }
-            PngChunkType::tRNS => {
-                self.parse_trns(header)?;
-            }
-            PngChunkType::gAMA => {
-                self.parse_gama(header)?;
-            }
-            PngChunkType::acTL => {
-                self.parse_actl(header)?;
-            }
-            PngChunkType::tIME => {
-                self.parse_time(header)?;
-            }
-            PngChunkType::eXIf => {
-                self.parse_exif(header)?;
-            }
-            PngChunkType::iCCP => {
-                self.parse_iccp(header)?;
-            }
-            PngChunkType::iTXt => {
-                self.parse_itxt(header)?;
-            }
-            PngChunkType::zTXt => {
-                self.parse_ztxt(header)?;
-            }
-            PngChunkType::tEXt => {
-                self.parse_text(header)?;
-            }
-            PngChunkType::fcTL => {
-                self.parse_fctl(header)?;
-            }
+            PngChunkType::IHDR => self.parse_ihdr(header)?,
+            PngChunkType::PLTE => self.parse_plte(header)?,
+            PngChunkType::tRNS => self.parse_trns(header)?,
+            PngChunkType::gAMA => self.parse_gama(header)?,
+            PngChunkType::acTL => self.parse_actl(header)?,
+            PngChunkType::tIME => self.parse_time(header)?,
+            PngChunkType::eXIf => self.parse_exif(header)?,
+            PngChunkType::iCCP => self.parse_iccp(header)?,
+            PngChunkType::iTXt => self.parse_itxt(header)?,
+            PngChunkType::zTXt => self.parse_ztxt(header)?,
+            PngChunkType::tEXt => self.parse_text(header)?,
+            PngChunkType::fcTL => self.parse_fctl(header)?,
+            PngChunkType::cHRM => self.parse_chrm(header)?,
+            PngChunkType::sBIT => self.parse_sbit(header)?,
+            PngChunkType::cICP => self.parse_cicp(header)?,
+            PngChunkType::cLLI => self.parse_clli(header)?,
+            PngChunkType::pHYs => self.parse_phys(header)?,
             PngChunkType::IEND => self.seen_iend = true,
+
             _ => default_chunk_handler(header.length, header.chunk, &mut self.stream)?,
         }
 

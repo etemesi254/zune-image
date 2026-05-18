@@ -19,7 +19,7 @@ pub enum PngChunkType {
     cHRM,
     gAMA,
     iCCP,
-    sBit,
+    sBIT,
     sRGB,
     bKGD,
     hIST,
@@ -33,6 +33,8 @@ pub enum PngChunkType {
     fcTL,
     acTL,
     fdAT,
+    cICP,
+    cLLI,
     unkn
 }
 
@@ -42,7 +44,7 @@ impl PngChunkType {
     pub const fn should_appear_before_ptle(self) -> bool {
         matches!(
             self,
-            Self::cHRM | Self::gAMA | Self::iCCP | Self::sBit | Self::sRGB
+            Self::cHRM | Self::gAMA | Self::iCCP | Self::sBIT | Self::sRGB
         )
     }
     /// Return true if a chunk should appear
@@ -60,7 +62,7 @@ impl PngChunkType {
                 | Self::cHRM
                 | Self::gAMA
                 | Self::iCCP
-                | Self::sBit
+                | Self::sBIT
                 | Self::sRGB
                 | Self::bKGD
                 | Self::hIST

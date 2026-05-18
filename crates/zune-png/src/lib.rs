@@ -170,7 +170,9 @@ extern crate core;
 pub use apng::post_process_image;
 
 pub use apng::{ApngContext, BlendOp, DisposeOp, FrameInfo};
-pub use decoder::{ItxtChunk, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk};
+pub use decoder::{
+    ChrmInfo, ClliInfo, ItxtChunk, PhysInfo, PngDecoder, PngInfo, TextChunk, TimeInfo, ZtxtChunk,
+};
 pub use encoder::PngEncoder;
 pub use enums::InterlaceMethod;
 pub use zune_core;

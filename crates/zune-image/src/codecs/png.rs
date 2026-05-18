@@ -14,7 +14,7 @@ use std::io::Cursor;
 
 use zune_core::bit_depth::{BitDepth, BitType};
 use zune_core::bytestream::{ZByteReaderTrait, ZByteWriterTrait};
-use zune_core::colorspace::ColorSpace;
+use zune_core::colorspace::{ColorCharacteristics, ColorPrimaries, ColorSpace, SingleColorPrimary};
 use zune_core::log::warn;
 use zune_core::options::EncoderOptions;
 use zune_core::result::DecodingResult;
@@ -147,12 +147,40 @@ where
         let (width, height) = self.dimensions().unwrap();
         let depth = self.depth().unwrap();
 
+        let info = self.info().unwrap();
+        // 1. Map the cICP transfer function
+        let transfer_curve = info.cicp_info.as_ref().map(|cicp| {
+            match cicp.transfer_function {
+                1 | 13 => ColorCharacteristics::sRGB,
+                8 => ColorCharacteristics::Linear,
+                16 => ColorCharacteristics::PQ,
+                18 => ColorCharacteristics::HLG,
+                v => ColorCharacteristics::Unknown(v),
+            }
+        });
+
+        // 2. Map the cHRM chunk to ColorPrimaries struct
+        let color_primaries = info.chrm_info.as_ref().map(|chrm| {
+            ColorPrimaries {
+                red: SingleColorPrimary { x: chrm.red_x as f64 / 100_000.0, y: chrm.red_y as f64 / 100_000.0, z: 0.0 },
+                green: SingleColorPrimary { x: chrm.green_x as f64 / 100_000.0, y: chrm.green_y as f64 / 100_000.0, z: 0.0 },
+                blue: SingleColorPrimary { x: chrm.blue_x as f64 / 100_000.0, y: chrm.blue_y as f64 / 100_000.0, z: 0.0 },
+                white_point: SingleColorPrimary { x: chrm.white_point_x as f64 / 100_000.0, y: chrm.white_point_y as f64 / 100_000.0, z: 0.0 },
+            }
+        });
+
+        // 3. Extract the Brightness limits
+        let max_cll = info.clli_info.as_ref().map(|clli| clli.max_cll);
         let mut metadata = ImageMetadata {
             format: Some(ImageFormat::PNG),
             colorspace: self.colorspace().unwrap(),
-            depth: depth,
-            width: width,
-            height: height,
+            depth,
+            width,
+            height,
+            transfer_curve,
+            color_primaries,
+            max_cll,
+            color_standard: info.cicp_info.as_ref().map(|c| c.color_primaries),
             default_gamma: self.info().unwrap().gamma,
             ..Default::default()
         };
