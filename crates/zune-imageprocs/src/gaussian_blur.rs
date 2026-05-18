@@ -15,6 +15,7 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
+use crate::traits::NumOps;
 use crate::transpose::Transpose;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
@@ -97,24 +98,24 @@ impl OperationsTrait for GaussianBlur {
                 Transpose::new().execute_impl(image)?;
                 // 1. Horizontal Passes (In-Place)
                 image.par_process_regions::<u8, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_u8(region, &radii);
+                    horizontal_blur_region(region, &radii);
                 })?;
                 // Transpose
                 Transpose::new().execute_impl(image)?;
                 // 2. Redo horizontal one
                 image.par_process_regions::<u8, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_u8(region, &radii);
+                    horizontal_blur_region(region, &radii);
                 })?;
             }
             BitType::U16 => {
                 image.par_process_regions::<u16, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_u16(region, &radii);
+                    horizontal_blur_region(region, &radii);
                 })?;
                 // Transpose
                 Transpose::new().execute_impl(image)?;
                 // 2. Redo horizontal one
                 image.par_process_regions::<u16, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_u16(region, &radii);
+                    horizontal_blur_region(region, &radii);
                 })?;
                 Transpose::new().execute_impl(image)?;
             }
@@ -178,32 +179,64 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
 
 // --- HORIZONTAL ADAPTERS (IN-PLACE) ---
 
-fn horizontal_blur_region_u8(region: &mut PlanarRegionMut<'_, u8>, radii: &[usize; 3]) {
+fn horizontal_blur_region<T: NumOps<T> + Default + Copy + Clone>(
+    region: &mut PlanarRegionMut<'_, T>, radii: &[usize; 3],
+) where
+    u32: std::convert::From<T>,
+{
     let width = region.width;
-    // Tiny, L1-cache friendly scratch space local to this thread
-    let mut scratch_row = vec![0u8; width];
+
+    // Allocate double-buffered scratch space for 4 rows
+    let mut scratch_1 = vec![T::default(); width * 4];
+    let mut scratch_2 = vec![T::default(); width * 4];
 
     for channel in region.channels.iter_mut() {
-        for row in channel.chunks_exact_mut(width) {
-            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[0]);
-            crate::box_blur::box_blur_inner(&scratch_row, row, width, radii[1]);
-            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[2]);
-            // Final result is in scratch_row, copy back
-            row.copy_from_slice(&scratch_row);
+        let mut chunk_iter = channel.chunks_exact_mut(width * 4);
+
+        for chunk in chunk_iter.by_ref() {
+            let (r0, rest) = chunk.split_at_mut(width);
+            let (r1, rest) = rest.split_at_mut(width);
+            let (r2, r3) = rest.split_at_mut(width);
+
+            let (s1_0, rest) = scratch_1.split_at_mut(width);
+            let (s1_1, rest) = rest.split_at_mut(width);
+            let (s1_2, s1_3) = rest.split_at_mut(width);
+
+            let (s2_0, rest) = scratch_2.split_at_mut(width);
+            let (s2_1, rest) = rest.split_at_mut(width);
+            let (s2_2, s2_3) = rest.split_at_mut(width);
+
+            // Pass 1: Chunk -> Scratch 1
+            crate::box_blur::box_blur_inner_4x(
+                [r0, r1, r2, r3],
+                [s1_0, s1_1, s1_2, s1_3],
+                width,
+                radii[0],
+            );
+            // Pass 2: Scratch 1 -> Scratch 2
+            crate::box_blur::box_blur_inner_4x(
+                [s1_0, s1_1, s1_2, s1_3],
+                [s2_0, s2_1, s2_2, s2_3],
+                width,
+                radii[1],
+            );
+            // Pass 3: Scratch 2 -> Chunk (In-place return)
+            crate::box_blur::box_blur_inner_4x(
+                [s2_0, s2_1, s2_2, s2_3],
+                [r0, r1, r2, r3],
+                width,
+                radii[2],
+            );
         }
-    }
-}
 
-fn horizontal_blur_region_u16(region: &mut PlanarRegionMut<'_, u16>, radii: &[usize; 3]) {
-    let width = region.width;
-    let mut scratch_row = vec![0u16; width];
+        // Clean up any remaining 1 to 3 rows sequentially using the 1D blur
+        for row in chunk_iter.into_remainder().chunks_exact_mut(width) {
+            let s1 = &mut scratch_1[0..width];
+            let s2 = &mut scratch_2[0..width];
 
-    for channel in region.channels.iter_mut() {
-        for row in channel.chunks_exact_mut(width) {
-            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[0]);
-            crate::box_blur::box_blur_inner(&mut scratch_row, row, width, radii[1]);
-            crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[2]);
-            row.copy_from_slice(&scratch_row);
+            crate::box_blur::box_blur_inner(row, s1, width, radii[0]);
+            crate::box_blur::box_blur_inner(s1, s2, width, radii[1]);
+            crate::box_blur::box_blur_inner(s2, row, width, radii[2]);
         }
     }
 }

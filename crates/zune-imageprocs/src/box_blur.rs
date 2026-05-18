@@ -425,6 +425,141 @@ pub(crate) fn box_blur_f32_vertical_inner(
     }
 }
 
+pub(crate) fn box_blur_inner_4x<T>(
+    in_rows: [&[T]; 4],
+    out_rows: [&mut [T]; 4],
+    width: usize,
+    radius: usize,
+) where
+    T: Copy+NumOps<T>,
+    u32: std::convert::From<T>,
+{
+    let diameter = (radius * 2) + 1;
+    if width <= 1 || diameter <= 1 {
+        return;
+    }
+    let m_radius = crate::mathops::compute_mod_u32(diameter as u64);
+
+    let [in0, in1, in2, in3] = in_rows;
+    let [out0, out1, out2, out3] = out_rows;
+
+    let mut acc0: u32 = 0;
+    let mut acc1: u32 = 0;
+    let mut acc2: u32 = 0;
+    let mut acc3: u32 = 0;
+
+    // --- INITIALIZATION (x = 0) ---
+    let safe_r = radius.min(width - 1);
+
+    acc0 += (radius as u32) * u32::from(in0[0]);
+    acc1 += (radius as u32) * u32::from(in1[0]);
+    acc2 += (radius as u32) * u32::from(in2[0]);
+    acc3 += (radius as u32) * u32::from(in3[0]);
+
+    for x in 0..=safe_r {
+        acc0 += u32::from(in0[x]);
+        acc1 += u32::from(in1[x]);
+        acc2 += u32::from(in2[x]);
+        acc3 += u32::from(in3[x]);
+    }
+
+    if radius > safe_r {
+        let diff = (radius - safe_r) as u32;
+        acc0 += diff * u32::from(in0[width - 1]);
+        acc1 += diff * u32::from(in1[width - 1]);
+        acc2 += diff * u32::from(in2[width - 1]);
+        acc3 += diff * u32::from(in3[width - 1]);
+    }
+
+    out0[0] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
+    out1[0] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
+    out2[0] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
+    out3[0] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+
+    // --- FAST PATH: 3-Phase Branchless Loop ---
+    if width > diameter {
+        // 1. LEFT EDGE (Ramp-up)
+        // 'leaving' is clamped to 0. 'entering' is x + radius.
+        let l0 = u32::from(in0[0]);
+        let l1 = u32::from(in1[0]);
+        let l2 = u32::from(in2[0]);
+        let l3 = u32::from(in3[0]);
+
+        for x in 1..=radius {
+            let right_idx = x + radius;
+
+            acc0 = acc0 + u32::from(in0[right_idx]) - l0;
+            acc1 = acc1 + u32::from(in1[right_idx]) - l1;
+            acc2 = acc2 + u32::from(in2[right_idx]) - l2;
+            acc3 = acc3 + u32::from(in3[right_idx]) - l3;
+
+            out0[x] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
+            out1[x] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
+            out2[x] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
+            out3[x] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+        }
+
+        // 2. STEADY STATE (Middle)
+        // No bounds checking. We slice exactly what we need.
+        let mid_len = width - diameter;
+
+        let in0_l = &in0[0..mid_len]; let in0_e = &in0[diameter..width]; let out0_m = &mut out0[(radius + 1)..(width - radius)];
+        let in1_l = &in1[0..mid_len]; let in1_e = &in1[diameter..width]; let out1_m = &mut out1[(radius + 1)..(width - radius)];
+        let in2_l = &in2[0..mid_len]; let in2_e = &in2[diameter..width]; let out2_m = &mut out2[(radius + 1)..(width - radius)];
+        let in3_l = &in3[0..mid_len]; let in3_e = &in3[diameter..width]; let out3_m = &mut out3[(radius + 1)..(width - radius)];
+
+        for i in 0..mid_len {
+            // ILP Heaven: 4 parallel additions and 4 parallel subtractions
+            acc0 = acc0 + u32::from(in0_e[i]) - u32::from(in0_l[i]);
+            acc1 = acc1 + u32::from(in1_e[i]) - u32::from(in1_l[i]);
+            acc2 = acc2 + u32::from(in2_e[i]) - u32::from(in2_l[i]);
+            acc3 = acc3 + u32::from(in3_e[i]) - u32::from(in3_l[i]);
+
+            out0_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
+            out1_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
+            out2_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
+            out3_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+        }
+
+        // 3. RIGHT EDGE (Ramp-down)
+        // 'entering' is clamped to the last pixel. 'leaving' continues to increment.
+        let e0 = u32::from(in0[width - 1]);
+        let e1 = u32::from(in1[width - 1]);
+        let e2 = u32::from(in2[width - 1]);
+        let e3 = u32::from(in3[width - 1]);
+
+        for x in (width - radius)..width {
+            let left_idx = x - radius - 1;
+
+            acc0 = acc0 + e0 - u32::from(in0[left_idx]);
+            acc1 = acc1 + e1 - u32::from(in1[left_idx]);
+            acc2 = acc2 + e2 - u32::from(in2[left_idx]);
+            acc3 = acc3 + e3 - u32::from(in3[left_idx]);
+
+            out0[x] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
+            out1[x] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
+            out2[x] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
+            out3[x] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+        }
+    } else {
+        // --- SLOW PATH (Fallback for tiny images or huge radii) ---
+        for x in 1..width {
+            let left_idx = if x <= radius { 0 } else { x - radius - 1 };
+            let right_idx = (x + radius).min(width - 1);
+
+            acc0 = acc0 + u32::from(in0[right_idx]) - u32::from(in0[left_idx]);
+            acc1 = acc1 + u32::from(in1[right_idx]) - u32::from(in1[left_idx]);
+            acc2 = acc2 + u32::from(in2[right_idx]) - u32::from(in2[left_idx]);
+            acc3 = acc3 + u32::from(in3[right_idx]) - u32::from(in3[left_idx]);
+
+            out0[x] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
+            out1[x] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
+            out2[x] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
+            out3[x] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+        }
+    }
+}
+
 // --------------------------------------------------------------------------
 // Tests and Benchmarks
 // --------------------------------------------------------------------------
