@@ -204,7 +204,7 @@ pub fn box_blur_f32(
 
 pub(crate) fn box_blur_inner<T>(in_image: &[T], out_image: &mut [T], width: usize, radius: usize)
 where
-    T: Copy + NumOps<T>,
+    T: Copy+NumOps<T>,
     u32: std::convert::From<T>,
 {
     let diameter = (radius * 2) + 1;
@@ -231,16 +231,58 @@ where
 
         stride_out[0] = T::from_u32(fastdiv_u32(accumulator, m_radius));
 
-        // Sliding window
-        for x in 1..width {
-            let leaving = if x <= radius { stride_in[0] } else { stride_in[x - radius - 1] };
-            let right_idx = (x + radius).min(width - 1);
-            let entering = stride_in[right_idx];
+        // FAST PATH: If the image is wide enough, split into Left, Middle, and Right
+        if width > diameter {
+            // 1. LEFT edge (Ramp-up)
+            // 'leaving' is clamped to 0. 'entering' is x + radius.
+            let clamped_leaving = u32::from(stride_in[0]);
+            for x in 1..=radius {
+                let entering = u32::from(stride_in[x + radius]);
+                accumulator = accumulator + entering - clamped_leaving;
+                stride_out[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            }
 
-            accumulator += u32::from(entering);
-            accumulator -= u32::from(leaving);
+            // 2. STEADY STATE (Middle)
+            // No bounds checking, no branches! We zip three slices of the EXACT same length.
+            let leaving_slice = &stride_in[0..(width - diameter)];
+            let entering_slice = &stride_in[diameter..width];
+            let out_slice = &mut stride_out[(radius + 1)..(width - radius)];
 
-            stride_out[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            for ((&leaving, &entering), out) in leaving_slice
+                .iter()
+                .zip(entering_slice.iter())
+                .zip(out_slice.iter_mut())
+            {
+                // Using wrapping ops just in case, though standard +/- is usually fine here
+                accumulator = accumulator
+                    .wrapping_add(u32::from(entering))
+                    .wrapping_sub(u32::from(leaving));
+
+                *out = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            }
+
+            // 3. RIGHT edge
+            // 'entering' is clamped to the last pixel. 'leaving' continues to increment.
+            let clamped_entering = u32::from(stride_in[width - 1]);
+            for x in (width - radius)..width {
+                let leaving = u32::from(stride_in[x - radius - 1]);
+                accumulator = accumulator + clamped_entering - leaving;
+                stride_out[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            }
+        } else {
+            // SLOW PATH: For very small images or huge radii, fallback to the safe branchy version.
+            for x in 1..width {
+                let leaving = if x <= radius {
+                    stride_in[0]
+                } else {
+                    stride_in[x - radius - 1]
+                };
+                let right_idx = (x + radius).min(width - 1);
+                let entering = stride_in[right_idx];
+
+                accumulator = accumulator + u32::from(entering) - u32::from(leaving);
+                stride_out[x] = T::from_u32(fastdiv_u32(accumulator, m_radius));
+            }
         }
     }
 }
