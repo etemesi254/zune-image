@@ -216,6 +216,7 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         if chunk.length != 8 {
             warn!("Invalid chunk length for ACTL, skipping");
             self.stream.skip(chunk.length + 4)?;
+            return Ok(());
         }
         // extract num_frames
         let num_frames = self.stream.get_u32_be();
