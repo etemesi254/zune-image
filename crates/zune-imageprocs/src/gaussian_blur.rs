@@ -192,7 +192,7 @@ fn horizontal_blur_region_u8(region: &mut PlanarRegionMut<'_, u8>, radii: &[usiz
     for channel in region.channels.iter_mut() {
         for row in channel.chunks_exact_mut(width) {
             crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[0]);
-            crate::box_blur::box_blur_inner(&mut scratch_row, row, width, radii[1]);
+            crate::box_blur::box_blur_inner(&scratch_row, row, width, radii[1]);
             crate::box_blur::box_blur_inner(row, &mut scratch_row, width, radii[2]);
             // Final result is in scratch_row, copy back
             row.copy_from_slice(&scratch_row);

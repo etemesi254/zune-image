@@ -10,8 +10,7 @@
 //! The andlge can  be any arbitrary angle including normal 90,180 260.. and
 
 use crate::affine::AffineTransform;
-use crate::traits::NumOps;
-use crate::utils::execute_on;
+
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::channel::Channel;

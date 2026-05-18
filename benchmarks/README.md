@@ -82,153 +82,151 @@ Caches (sum of all):
 
 ```
 
-### Image decoding
+## HDR Decoding
 
-#### HDR IO
+| Benchmark    | Library | Time     | Throughput |
+|--------------|---------|----------|------------|
+| File IO      | hdr     | 8.333 ms | —          |
+| In-memory IO | hdr     | 6.606 ms | —          |
 
-| Group   | Benchmark     | Time (median) | Notes                     |
-|---------|---------------|--------------:|---------------------------|
-| HDR I/O | File I/O      |       8.61 ms | 3% outliers               |
-| HDR I/O | In-memory I/O |       6.72 ms | ~22% faster than file I/O |
+## Inflate / Zlib Decoding
 
+| Benchmark                    | Library      | Time      | Throughput  |
+|------------------------------|--------------|-----------|-------------|
+| PNG zlib                     | zlib-ng      | 131.92 ms | 89.4 MiB/s  |
+| PNG zlib                     | zune-inflate | 87.06 ms  | 135.5 MiB/s |
+| PNG zlib                     | libdeflate   | 72.17 ms  | 163.5 MiB/s |
+|                              |
+| enwiki zlib                  | zlib-ng      | 144.62 ms | 92.1 MiB/s  |
+| enwiki zlib                  | zune-inflate | 107.42 ms | 124.0 MiB/s |
+| enwiki zlib                  | libdeflate   | 74.94 ms  | 177.7 MiB/s |
+|                              |
+| gzip (tokio-rs source)       | zlib-ng      | 56.24 ms  | 226.1 MiB/s |
+| gzip (tokio-rs source)       | zune-inflate | 57.46 ms  | 221.2 MiB/s |
+| gzip (tokio-rs source)       | libdeflate   | 38.52 ms  | 330.1 MiB/s |
+|                              |
+| gzip (image-rs rustdoc json) | zlib-ng      | 4.555 ms  | 88.0 MiB/s  |
+| gzip (image-rs rustdoc json) | zune-inflate | 6.572 ms  | 61.0 MiB/s  |
+| gzip (image-rs rustdoc json) | libdeflate   | 3.318 ms  | 120.8 MiB/s |
 
-#### Inflate ZLIB decoding
-| Dataset      | Backend      | Time (median) |   Throughput | Relative    |
-|--------------|--------------|--------------:|-------------:|-------------|
-| PNG zlib     | libdeflate   |      73.04 ms | 161.52 MiB/s | Fastest     |
-| PNG zlib     | zune-inflate |      90.32 ms | 130.61 MiB/s | +24% slower |
-| PNG zlib     | zlib-ng      |     136.37 ms |  86.50 MiB/s | +87% slower |
-| Enwiki zlib  | libdeflate   |      74.24 ms | 179.39 MiB/s | Fastest     |
-| Enwiki zlib  | zune-inflate |      96.55 ms | 137.93 MiB/s | +30% slower |
-| Enwiki zlib  | zlib-ng      |     148.08 ms |  89.93 MiB/s | +99% slower |
-| Tokio gzip   | libdeflate   |      38.44 ms | 330.75 MiB/s | Fastest     |
-| Tokio gzip   | zlib-ng      |      55.60 ms | 228.64 MiB/s | +45% slower |
-| Tokio gzip   | zune-inflate |      57.23 ms | 222.13 MiB/s | +49% slower |
-| Rustdoc gzip | libdeflate   |       3.30 ms | 121.32 MiB/s | Fastest     |
-| Rustdoc gzip | zlib-ng      |       4.59 ms |  87.28 MiB/s | +39% slower |
-| Rustdoc gzip | zune-inflate |       6.02 ms |  66.60 MiB/s | +82% slower |
+## JPEG Decoding
 
-#### JPEG Decoding 
+| Benchmark                           | Library                   | Time      | Throughput  |
+|-------------------------------------|---------------------------|-----------|-------------|
+| No sampling baseline                | zune-jpeg                 | 114.73 ms | 10.59 MiB/s |
+| No sampling baseline                | mozjpeg                   | 119.90 ms | 10.14 MiB/s |
+|                                     |
+| Horizontal sub sampling             | zune-jpeg                 | 104.63 ms | 10.24 MiB/s |
+| Horizontal sub sampling             | mozjpeg                   | 101.82 ms | 10.52 MiB/s |
+|                                     |
+| Vertical sub sampling               | zune-jpeg                 | 105.82 ms | 10.07 MiB/s |
+| Vertical sub sampling               | mozjpeg                   | 147.96 ms | 7.21 MiB/s  |
+|                                     |
+| HV sampling                         | zune-jpeg                 | 99.38 ms  | 9.83 MiB/s  |
+| HV sampling                         | mozjpeg                   | 95.52 ms  | 10.23 MiB/s |
+|                                     |
+| Grayscale                           | zune-jpeg                 | 57.40 ms  | 21.17 MiB/s |
+| Grayscale                           | mozjpeg                   | 49.12 ms  | 24.74 MiB/s |
+|                                     |
+| Progressive HV sampling             | zune-jpeg                 | 356.36 ms | 3.22 MiB/s  |
+| Progressive HV sampling             | mozjpeg                   | 312.63 ms | 3.67 MiB/s  |
+|                                     |
+| Progressive horizontal sub sampling | zune-jpeg                 | 354.89 ms | 3.26 MiB/s  |
+| Progressive horizontal sub sampling | mozjpeg                   | 276.01 ms | 4.19 MiB/s  |
+|                                     |
+| No sampling progressive             | zune-jpeg                 | 423.85 ms | 3.12 MiB/s  |
+| No sampling progressive             | mozjpeg                   | 354.97 ms | 3.73 MiB/s  |
+|                                     |
+| Progressive vertical sub sampling   | zune-jpeg                 | 356.78 ms | 3.21 MiB/s  |
+| Progressive vertical sub sampling   | mozjpeg                   | 318.82 ms | 3.59 MiB/s  |
+|                                     |
+| Intrinsics                          | zune-jpeg (intrinsics)    | 116.86 ms | 10.40 MiB/s |
+| Intrinsics                          | zune-jpeg (no intrinsics) | 112.25 ms | 10.83 MiB/s |
+|                                     |
+| DRI / Restart markers               | one-shot                  | 6.469 ms  | 21.08 MiB/s |
+| DRI / Restart markers               | incremental resume        | 11.74 ms  | 11.62 MiB/s |
 
-| Scenario                | zune-jpeg |   mozjpeg | Winner    |
-|-------------------------|----------:|----------:|-----------|
-| Baseline decode         | 114.39 ms | 113.91 ms | Tie       |
-| Horizontal subsampling  | 103.71 ms | 102.48 ms | mozjpeg   |
-| Vertical subsampling    | 108.63 ms | 152.56 ms | zune-jpeg |
-| HV sampling             |  99.36 ms |  94.34 ms | mozjpeg   |
-| Grayscale               |  58.62 ms |  48.73 ms | mozjpeg   |
-| Progressive HV          | 356.41 ms | 323.81 ms | mozjpeg   |
-| Progressive horizontal  | 358.05 ms | 278.72 ms | mozjpeg   |
-| Progressive no sampling | 440.21 ms | 364.52 ms | mozjpeg   |
-| Progressive vertical    | 364.25 ms | 324.55 ms | mozjpeg   |
+## PNG Decoding
 
-#### PNG Decoding
-| Scenario        |  zune-png | image-rs/png |      spng | Winner   |
-|-----------------|----------:|-------------:|----------:|----------|
-| Palette image   |  89.37 ms |     92.69 ms |  95.97 ms | zune-png |
-| 16 bpp          | 515.83 ms |    268.30 ms |   1.179 s | image-rs |
-| Baseline        | 234.72 ms |    200.04 ms | 298.10 ms | image-rs |
-| Interlaced 8bpp | 315.74 ms |    362.45 ms | 397.79 ms | zune-png |
+| Benchmark       | Library      | Time      | Throughput  |
+|-----------------|--------------|-----------|-------------|
+| Palette image   | zune-png     | 106.53 ms | 48.93 MiB/s |
+| Palette image   | image-rs/png | 92.84 ms  | 56.15 MiB/s |
+| Palette image   | spng         | 85.12 ms  | 61.24 MiB/s |
+|                 |
+| 16 bpp          | zune-png     | 252.47 ms | 30.42 MiB/s |
+| 16 bpp          | image-rs/png | 266.37 ms | 28.84 MiB/s |
+| 16 bpp          | spng         | 1088.7 ms | 7.05 MiB/s  |
+|                 |
+| Baseline        | zune-png     | 226.61 ms | 26.44 MiB/s |
+| Baseline        | image-rs/png | 201.41 ms | 29.75 MiB/s |
+| Baseline        | spng         | 261.47 ms | 22.92 MiB/s |
+|                 |
+| Interlaced 8bpp | zune-png     | 268.57 ms | 37.56 MiB/s |
+| Interlaced 8bpp | image-rs/png | 360.80 ms | 27.96 MiB/s |
+| Interlaced 8bpp | spng         | 376.09 ms | 26.82 MiB/s |
 
+## QOI Decoding
 
-#### QOI Decoding
-| Decoder   |     Time |   Throughput | Relative      |
-|-----------|---------:|-------------:|---------------|
-| rapid-qoi |  7.00 ms | 207.32 MiB/s | 🥇 Fastest    |
-| zune-qoi  | 16.42 ms |  88.36 MiB/s | ~2.35× slower |
+| Benchmark     | Library   | Time     | Throughput  |
+|---------------|-----------|----------|-------------|
+| Simple decode | rapid-qoi | 6.996 ms | 207.4 MiB/s |
+| Simple decode | zune-qoi  | 16.36 ms | 88.7 MiB/s  |
 
-### Image processing
+## HEIF Decoding
 
-### Affine Transform
+| Benchmark   | Library              | Time      |
+|-------------|----------------------|-----------|
+| HEIF decode | zune-heif (software) | 255.47 ms |
+| HEIF decode | heic                 | 387.77 ms |
 
-| Backend    | Time (median) | Throughput |
-|------------|--------------:|-----------:|
-| libvips    |     420.96 ms | 2.89 MiB/s |
-| zune-image |     393.30 ms | 3.09 MiB/s |
+## Image Processing
 
-#### Sobel
-| Backend    | Time (median) | Throughput |
-|------------|--------------:|-----------:|
-| libvips    |     147.46 ms | 8.24 MiB/s |
-| zune-image |     278.61 ms | 4.36 MiB/s |
-
-#### Gamma Correction
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |      78.43 ms | 15.49 MiB/s |
-| zune-image |      96.78 ms | 12.56 MiB/s |
-
-#### Gaussian Blur
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |     107.90 ms | 11.26 MiB/s |
-| zune-image |     327.04 ms |  3.72 MiB/s |
-| image-rs   |     773.22 ms |  1.57 MiB/s |
-
-#### Premultiply Alpha
-
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |     285.60 ms |  4.25 MiB/s |
-| zune-image |      70.80 ms | 17.17 MiB/s |
-
-#### Rotate 90
-
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |     102.55 ms | 11.85 MiB/s |
-| zune-image |     128.09 ms |  9.49 MiB/s |
-| image-rs   |     211.46 ms |  5.75 MiB/s |
-
-#### Rotate 180
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |      85.94 ms | 14.14 MiB/s |
-| zune-image |      79.81 ms | 15.23 MiB/s |
-
-#### Invert 
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |      77.30 ms | 15.72 MiB/s |
-| zune-image |      76.81 ms | 15.82 MiB/s |
-
-#### Flip horizontal
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |      83.05 ms | 14.63 MiB/s |
-| zune-image |      80.38 ms | 15.12 MiB/s |
-
-#### Flip Vertical
-| Backend    | Time (median) |  Throughput |
-|------------|--------------:|------------:|
-| libvips    |      72.56 ms | 16.75 MiB/s |
-| zune-image |      80.51 ms | 15.09 MiB/s |
-
-#### Resize Linear Kernel
-| Backend          | Time (median) |  Throughput |
-|------------------|--------------:|------------:|
-| libvips          |      41.65 ms | 29.18 MiB/s |
-| fir              |      63.69 ms | 19.08 MiB/s |
-| zune-image       |     209.86 ms |  5.79 MiB/s |
-| stb-image-resize |     657.61 ms |  1.85 MiB/s |
-| image-rs         |       1.370 s |  0.91 MiB/s |
-
-
-#### Resize Lanczos Kernel
-| Backend          | Time (median) |  Throughput |
-|------------------|--------------:|------------:|
-| libvips          |      51.50 ms | 23.60 MiB/s |
-| fir              |      73.19 ms | 16.60 MiB/s |
-| zune-image       |     259.88 ms |  4.68 MiB/s |
-| stb-image-resize |     653.83 ms |  1.86 MiB/s |
-| image-rs         |       2.095 s |  0.59 MiB/s |
-
-
-#### Resize - Mitchell Kernel 
-| Backend          | Time (median) |  Throughput |
-|------------------|--------------:|------------:|
-| libvips          |      49.02 ms | 24.79 MiB/s |
-| fir              |      74.62 ms | 16.29 MiB/s |
-| zune-image       |     255.53 ms |  4.76 MiB/s |
-| stb-image-resize |     663.00 ms |  1.83 MiB/s |
-| image-rs         |       2.124 s |  0.59 MiB/s |
+| Benchmark              | Library          | Time      | Throughput  |
+|------------------------|------------------|-----------|-------------|
+| Affine transform 45°   | libvips          | 434.57 ms | 2.80 MiB/s  |
+| Affine transform 45°   | zune-image       | 368.68 ms | 3.30 MiB/s  |
+|                        |
+| Sobel                  | libvips          | 144.52 ms | 8.41 MiB/s  |
+| Sobel                  | zune-image       | 427.62 ms | 2.84 MiB/s  |
+|                        |
+| Gamma                  | libvips          | 79.85 ms  | 15.22 MiB/s |
+| Gamma                  | zune-image       | 86.24 ms  | 14.09 MiB/s |
+|                        |
+| Gaussian blur          | vips             | 109.92 ms | 11.06 MiB/s |
+| Gaussian blur          | image-rs         | 816.86 ms | 1.49 MiB/s  |
+| Gaussian blur          | zune-image       | 317.97 ms | 3.82 MiB/s  |
+|                        |
+| Premultiply            | libvips          | 288.84 ms | 4.21 MiB/s  |
+| Premultiply            | zune-image       | 36.77 ms  | 33.05 MiB/s |
+|                        |
+| Rotate 90              | vips             | 78.99 ms  | 15.38 MiB/s |
+| Rotate 90              | image-rs         | 183.57 ms | 6.62 MiB/s  |
+| Rotate 90              | zune-image       | 163.34 ms | 7.44 MiB/s  |
+| Rotate 180             | libvips          | 71.33 ms  | 17.04 MiB/s |
+| Rotate 180             | zune-image       | 39.83 ms  | 30.51 MiB/s |
+|                        |
+| Invert                 | libvips          | 63.12 ms  | 19.25 MiB/s |
+| Invert                 | zune-image       | 35.82 ms  | 33.93 MiB/s |
+|                        |
+| Resize linear kernel   | vips             | 41.81 ms  | 29.07 MiB/s |
+| Resize linear kernel   | image-rs         | 1498.6 ms | 0.83 MiB/s  |
+| Resize linear kernel   | zune-image       | 233.02 ms | 5.21 MiB/s  |
+| Resize linear kernel   | fir              | 66.68 ms  | 18.22 MiB/s |
+| Resize linear kernel   | stb-image-resize | 688.50 ms | 1.77 MiB/s  |
+| Resize lanczos kernel  | vips             | 50.11 ms  | 24.25 MiB/s |
+| Resize lanczos kernel  | image-rs         | 2142.5 ms | 0.58 MiB/s  |
+| Resize lanczos kernel  | zune-image       | 275.84 ms | 4.41 MiB/s  |
+| Resize lanczos kernel  | fir              | 77.18 ms  | 15.74 MiB/s |
+| Resize lanczos kernel  | stb-image-resize | 690.96 ms | 1.76 MiB/s  |
+|                        |
+| Flip horizontal        | libvips          | 67.74 ms  | 17.94 MiB/s |
+| Flip horizontal        | zune-image       | 41.06 ms  | 29.60 MiB/s |
+| Flip vertical          | libvips          | 56.87 ms  | 21.37 MiB/s |
+| Flip vertical          | zune-image       | 38.87 ms  | 31.27 MiB/s |
+|                        |
+| Resize mitchell kernel | vips             | 47.65 ms  | 25.50 MiB/s |
+| Resize mitchell kernel | image-rs         | 2144.8 ms | 0.58 MiB/s  |
+| Resize mitchell kernel | zune-image       | 293.26 ms | 4.14 MiB/s  |
+| Resize mitchell kernel | fir              | 70.78 ms  | 17.17 MiB/s |
+| Resize mitchell kernel | stb-image-resize | 690.55 ms | 1.76 MiB/s  |
