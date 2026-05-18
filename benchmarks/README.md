@@ -163,12 +163,11 @@ Caches (sum of all):
 |                       | zune-qoi       | 6.98 ms    | 16.36 ms   | 207.76 MiB/s | 88.70 MiB/s  |
 
 ## 6. HEIF decode
-| Benchmark             | Library        | macOS Time | Linux Time | macOS Thrpt  | Linux Thrpt  |
-|:----------------------|:---------------|:-----------|:-----------|:-------------|:-------------|
-| **HEIF decode**       | zune-heif (sw) | —          | 255.47 ms  | —            | —            |
-|                       | heic           | —          | 387.77 ms  | —            | —            |
-
-
+| Benchmark       | Library        | macOS Time | Linux Time | macOS Thrpt | Linux Thrpt |
+|:----------------|:---------------|:-----------|:-----------|:------------|:------------|
+| **HEIF decode** | zune-heif (hw) | 33.47 ms   | —          | —           | —           |
+|                 | zune-heif (sw) | 98.97 ms   | 255.47 ms  | —           | —           |
+|                 | heic           | 119.60 ms  | 387.77 ms  | —           | —           |
 ## 6. Image Processing Operations
 | Benchmark                | Library          | macOS Time | Linux Time | macOS Thrpt  | Linux Thrpt |
 |:-------------------------|:-----------------|:-----------|:-----------|:-------------|:------------|
