@@ -1313,13 +1313,7 @@ where
             Ok(()) => {
                 // Drop the RST checkpoint so a post-success replay starts
                 // from scan-start with zeroed DC predictors instead of
-                // pointing at stale entropy data. `scan_state` is expected
-                // to still be `Some` here (it was set when SOS was parsed
-                // and is only cleared on hard error), but we guard with
-                // `if let` rather than `expect` so a future change that
-                // clears it on success degrades to a no-op instead of a
-                // release-mode panic; the debug assertion keeps that
-                // invariant visible during development.
+                // pointing at stale entropy data.
                 debug_assert!(
                     self.scan_state.is_some(),
                     "scan_state should be Some after a successful scan decode"

@@ -32,21 +32,16 @@ use crate::misc::{SOFMarkers, UN_ZIGZAG};
 /// the parser starts mutating decoder fields.
 pub(crate) struct MarkerBody<'a> {
     body:     &'a [u8],
-    body_pos: u64,
     position: usize
 }
 
 impl<'a> MarkerBody<'a> {
-    fn new(body: &'a [u8], body_pos: u64) -> Self {
-        Self { body, body_pos, position: 0 }
+    fn new(body: &'a [u8]) -> Self {
+        Self { body, position: 0 }
     }
 
     pub(crate) fn body(&self) -> &'a [u8] {
         self.body
-    }
-
-    pub(crate) fn body_position(&self) -> u64 {
-        self.body_pos
     }
 
     fn remaining(&self) -> usize {
@@ -103,7 +98,6 @@ where
     let body_len = usize::from(length)
         .checked_sub(2)
         .ok_or(DecodeErrors::FormatStatic("Marker length < 2"))?;
-    let body_pos = decoder.stream.position()?;
 
     let mut bytes = core::mem::take(&mut decoder.marker_body_scratch);
     bytes.clear();
@@ -115,7 +109,7 @@ where
         return Err(e.into());
     }
 
-    let result = parse(decoder, MarkerBody::new(&bytes, body_pos));
+    let result = parse(decoder, MarkerBody::new(&bytes));
     bytes.clear();
     decoder.marker_body_scratch = bytes;
     result
@@ -707,7 +701,6 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
     }
 
     with_marker_body(decoder, |decoder, cursor| {
-        let body_start_pos = cursor.body_position();
         let body = cursor.body();
 
         let payload = if body.len() > ICC_PROFILE.len() + 2 && &body[..ICC_PROFILE.len()] == ICC_PROFILE
@@ -716,6 +709,21 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
             let rest = &body[ICC_PROFILE.len()..];
             let seq_no = rest[0];
             let num_markers = rest[1];
+
+            // Mirrors libjpeg-turbo jdicc.c: reject num_markers == 0
+            // and seq_no out of [1, num_markers]. No artificial cap on
+            // num_markers — the field is a u8 so 255 is the natural limit.
+            if num_markers == 0 {
+                return Err(DecodeErrors::Format(format!(
+                    "ICC profile claims {num_markers} chunks (must be >= 1)"
+                )));
+            }
+            if seq_no == 0 || seq_no > num_markers {
+                return Err(DecodeErrors::Format(format!(
+                    "ICC chunk seq_no {seq_no} out of range for {num_markers} chunks"
+                )));
+            }
+
             let data = rest[2..].to_vec();
             App2Payload::IccChunk(ICCChunk {
                 seq_no,
@@ -737,6 +745,10 @@ pub(crate) fn parse_app2<T: ZByteReaderTrait>(
             }
         } else if body.len() > MPF_DATA.len() && &body[..MPF_DATA.len()] == MPF_DATA {
             trace!("MPF Signature present");
+            // Compute body start position on-demand (only MPF needs it).
+            // After with_marker_body read the payload, the stream sits at
+            // body_start + body.len(); subtract to recover the origin.
+            let body_start_pos = decoder.stream.position()? - body.len() as u64;
             let mpf_offset = body_start_pos + MPF_DATA.len() as u64;
             let data = body[MPF_DATA.len()..].to_vec();
             App2Payload::Mpf { offset: mpf_offset, data }
