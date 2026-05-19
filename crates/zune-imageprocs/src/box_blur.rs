@@ -204,7 +204,7 @@ pub fn box_blur_f32(
 
 pub(crate) fn box_blur_inner<T>(in_image: &[T], out_image: &mut [T], width: usize, radius: usize)
 where
-    T: Copy+NumOps<T>,
+    T: Copy + NumOps<T>,
     u32: std::convert::From<T>,
 {
     let diameter = (radius * 2) + 1;
@@ -272,11 +272,7 @@ where
         } else {
             // SLOW PATH: For very small images or huge radii, fallback to the safe branchy version.
             for x in 1..width {
-                let leaving = if x <= radius {
-                    stride_in[0]
-                } else {
-                    stride_in[x - radius - 1]
-                };
+                let leaving = if x <= radius { stride_in[0] } else { stride_in[x - radius - 1] };
                 let right_idx = (x + radius).min(width - 1);
                 let entering = stride_in[right_idx];
 
@@ -426,12 +422,9 @@ pub(crate) fn box_blur_f32_vertical_inner(
 }
 
 pub(crate) fn box_blur_inner_4x<T>(
-    in_rows: [&[T]; 4],
-    out_rows: [&mut [T]; 4],
-    width: usize,
-    radius: usize,
+    in_rows: [&[T]; 4], out_rows: [&mut [T]; 4], width: usize, radius: usize,
 ) where
-    T: Copy+NumOps<T>,
+    T: Copy + NumOps<T>,
     u32: std::convert::From<T>,
 {
     let diameter = (radius * 2) + 1;
@@ -471,14 +464,14 @@ pub(crate) fn box_blur_inner_4x<T>(
         acc3 += diff * u32::from(in3[width - 1]);
     }
 
-    out0[0] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
-    out1[0] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
-    out2[0] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
-    out3[0] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+    out0[0] = T::from_u32(fastdiv_u32(acc0, m_radius));
+    out1[0] = T::from_u32(fastdiv_u32(acc1, m_radius));
+    out2[0] = T::from_u32(fastdiv_u32(acc2, m_radius));
+    out3[0] = T::from_u32(fastdiv_u32(acc3, m_radius));
 
     // --- FAST PATH: 3-Phase Branchless Loop ---
     if width > diameter {
-        // 1. LEFT EDGE (Ramp-up)
+        // 1. LEFT EDGE
         // 'leaving' is clamped to 0. 'entering' is x + radius.
         let l0 = u32::from(in0[0]);
         let l1 = u32::from(in1[0]);
@@ -493,35 +486,46 @@ pub(crate) fn box_blur_inner_4x<T>(
             acc2 = acc2 + u32::from(in2[right_idx]) - l2;
             acc3 = acc3 + u32::from(in3[right_idx]) - l3;
 
-            out0[x] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
-            out1[x] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
-            out2[x] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
-            out3[x] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+            out0[x] = T::from_u32(fastdiv_u32(acc0, m_radius));
+            out1[x] = T::from_u32(fastdiv_u32(acc1, m_radius));
+            out2[x] = T::from_u32(fastdiv_u32(acc2, m_radius));
+            out3[x] = T::from_u32(fastdiv_u32(acc3, m_radius));
         }
 
-        // 2. STEADY STATE (Middle)
+        // 2. (Middle)
         // No bounds checking. We slice exactly what we need.
         let mid_len = width - diameter;
 
-        let in0_l = &in0[0..mid_len]; let in0_e = &in0[diameter..width]; let out0_m = &mut out0[(radius + 1)..(width - radius)];
-        let in1_l = &in1[0..mid_len]; let in1_e = &in1[diameter..width]; let out1_m = &mut out1[(radius + 1)..(width - radius)];
-        let in2_l = &in2[0..mid_len]; let in2_e = &in2[diameter..width]; let out2_m = &mut out2[(radius + 1)..(width - radius)];
-        let in3_l = &in3[0..mid_len]; let in3_e = &in3[diameter..width]; let out3_m = &mut out3[(radius + 1)..(width - radius)];
+        let in0_l = &in0[0..mid_len];
+        let in0_e = &in0[diameter..width];
+        let out0_m = &mut out0[(radius + 1)..(width - radius)];
+
+        let in1_l = &in1[0..mid_len];
+        let in1_e = &in1[diameter..width];
+        let out1_m = &mut out1[(radius + 1)..(width - radius)];
+
+        let in2_l = &in2[0..mid_len];
+        let in2_e = &in2[diameter..width];
+        let out2_m = &mut out2[(radius + 1)..(width - radius)];
+
+        let in3_l = &in3[0..mid_len];
+        let in3_e = &in3[diameter..width];
+        let out3_m = &mut out3[(radius + 1)..(width - radius)];
+
 
         for i in 0..mid_len {
-            // ILP Heaven: 4 parallel additions and 4 parallel subtractions
             acc0 = acc0 + u32::from(in0_e[i]) - u32::from(in0_l[i]);
             acc1 = acc1 + u32::from(in1_e[i]) - u32::from(in1_l[i]);
             acc2 = acc2 + u32::from(in2_e[i]) - u32::from(in2_l[i]);
             acc3 = acc3 + u32::from(in3_e[i]) - u32::from(in3_l[i]);
 
-            out0_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc0, m_radius));
-            out1_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc1, m_radius));
-            out2_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc2, m_radius));
-            out3_m[i] = T::from_u32(crate::mathops::fastdiv_u32(acc3, m_radius));
+            out0_m[i] = T::from_u32(fastdiv_u32(acc0, m_radius));
+            out1_m[i] = T::from_u32(fastdiv_u32(acc1, m_radius));
+            out2_m[i] = T::from_u32(fastdiv_u32(acc2, m_radius));
+            out3_m[i] = T::from_u32(fastdiv_u32(acc3, m_radius));
         }
 
-        // 3. RIGHT EDGE (Ramp-down)
+        // 3. RIGHT EDGE
         // 'entering' is clamped to the last pixel. 'leaving' continues to increment.
         let e0 = u32::from(in0[width - 1]);
         let e1 = u32::from(in1[width - 1]);
@@ -559,10 +563,6 @@ pub(crate) fn box_blur_inner_4x<T>(
         }
     }
 }
-
-// --------------------------------------------------------------------------
-// Tests and Benchmarks
-// --------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

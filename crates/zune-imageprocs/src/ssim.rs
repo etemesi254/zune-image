@@ -130,7 +130,7 @@ impl OperationsTrait for SsimDetection {
         blur.execute_impl(&mut xy)?; // Now mu_xy
 
         // 4. Compute Final SSIM per channel
-        // Zune standardizes F32 image bounds to [0.0, 1.0], so L = 1.0
+        // F32 image bounds to [0.0, 1.0], so L = 1.0
         let l = 1.0_f32;
         let c1 = (0.01 * l).powi(2);
         let c2 = (0.03 * l).powi(2);
@@ -138,7 +138,6 @@ impl OperationsTrait for SsimDetection {
         let num_channels = x.channels_ref(ignore_alpha).len();
         let mut channel_scores = vec![0.0f32; num_channels];
 
-        // Standard Rayon iterator trivially zips the 5 images channel-by-channel
         channel_scores
             .par_iter_mut()
             .enumerate()
@@ -162,7 +161,6 @@ impl OperationsTrait for SsimDetection {
                 let mut ssim_sum = 0.0;
                 let len = mu_x_ch.len();
 
-                // The compiler easily auto-vectorizes this flat linear loop
                 for p in 0..len {
                     let mu_x_sq = mu_x_ch[p] * mu_x_ch[p];
                     let mu_y_sq = mu_y_ch[p] * mu_y_ch[p];

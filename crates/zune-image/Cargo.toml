@@ -25,13 +25,13 @@ bmp = ["zune-bmp"]
 heic = ["zune-heic"]
 webp = ["image-webp"]
 jpeg_2000 = ["hayro-jpeg2000"]
-
+uhdr = ["gainforge","moxcms"]
 # Serde serialization support
 serde-support = ["zune-core/serde", "serde"]
 # Common image formats (criteria is browser support)
 common_formats = ["jpeg", "png", "webp", "bmp"]
 # Extra formats, not commonly present but usually available in some capacity or the other
-extra_formats = ["jpeg-xl", "hdr", "farbfeld", "qoi", "ppm", "heic", "jpeg_2000","psd"]
+extra_formats = ["jpeg-xl", "hdr", "farbfeld", "qoi", "ppm", "heic", "jpeg_2000", "psd"]
 # All image formats
 image_formats = ["common_formats", "extra_formats"]
 # External crates that help us handle metadata
@@ -48,7 +48,7 @@ sse41 = []
 web = ["ureq"]
 docs = []
 
-all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log"]
+all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log", "uhdr"]
 
 [dependencies]
 # Core primitives
@@ -82,8 +82,10 @@ kamadak-exif = { version = "0.6.1", optional = true }
 
 log = "0.4.29"
 ureq = { version = "3.3.0", optional = true }
-rayon = "1.11.0"
-
+rayon = "1.12.0"
+# uhdr support
+gainforge = { version = "0.5", optional = true, features = ["uhdr"] }
+moxcms = { version = "0.8", optional = true }
 [dev-dependencies]
 num-complex = "0.4.6" # Runs generate-fractals
 nanorand = { version = "0.8.0", default-features = false, features = ["wyrand", "entropy"] } # testing purposes.

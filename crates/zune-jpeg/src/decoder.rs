@@ -535,6 +535,13 @@ where
     pub fn new(stream: T) -> JpegDecoder<T> {
         JpegDecoder::default(DecoderOptions::default(), stream)
     }
+    /// Return the inner stream
+    pub fn into_inner(self) -> T {
+        self.stream.consume()
+    }
+    pub fn inner_reader(&mut self) -> &mut ZReader<T> {
+        &mut self.stream
+    }
 
     /// Returns the image information
     ///

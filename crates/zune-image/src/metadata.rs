@@ -27,6 +27,12 @@ pub enum AlphaState {
     NonPreMultiplied,
 }
 
+#[derive(Debug, Clone)]
+pub struct GainMapImage {
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) pixels: Vec<u8>,
+}
 /// Image metadata
 ///
 /// Each image type has this information present
@@ -36,6 +42,7 @@ pub enum AlphaState {
 pub struct ImageMetadata {
     // REMEMBER: If you add a field here add it's serialization
     // to src/serde
+    /// The transfer function/gamma curve (from cICP or sRGB chunks)
     pub(crate) color_trc: Option<ColorCharacteristics>,
     pub(crate) default_gamma: Option<f32>,
     pub(crate) width: usize,
@@ -47,17 +54,16 @@ pub struct ImageMetadata {
     #[cfg(feature = "metadata")]
     pub(crate) exif: Option<Vec<::exif::Field>>,
     pub(crate) icc_chunk: Option<Vec<u8>>,
-    // whether or not the image is in linear colorspace or
-    // rgb
+    /// whether or not the image is in linear colorspace or gamma encoded
     pub(crate) is_linear: bool,
-    /// The transfer function/gamma curve (from cICP or sRGB chunks)
-    pub transfer_curve: Option<ColorCharacteristics>,
     /// The explicit xy coordinates of the colors (from cHRM)
-    pub color_primaries: Option<ColorPrimaries>,
+    pub(crate) color_primaries: Option<ColorPrimaries>,
     /// The target color space standard (from cICP color_primaries field, e.g., 9 for Rec2020)
-    pub color_standard: Option<u8>,
+    pub(crate) color_standard: Option<u8>,
     /// Maximum Content Light Level in nits (from cLLI chunk)
-    pub max_cll: Option<u32>,
+    pub(crate) max_cll: Option<u32>,
+    /// Gain map image (currently can be extracted from JPEG)
+    pub(crate) gain_map_image: Option<GainMapImage>,
 }
 
 impl Default for ImageMetadata {
@@ -73,13 +79,12 @@ impl Default for ImageMetadata {
             alpha: AlphaState::NonPreMultiplied,
             #[cfg(feature = "metadata")]
             exif: None,
-
             icc_chunk: None,
             is_linear: false,
-            transfer_curve: None,
             color_primaries: None,
             color_standard: None,
             max_cll: None,
+            gain_map_image: None,
         }
     }
 }
