@@ -66,22 +66,12 @@ impl<T: BufRead + Seek> DecoderTrait for ZuneWebpDecoder<T> {
     fn read_headers(&mut self) -> Result<Option<ImageMetadata>, ImageErrors> {
         let (w, h) = self.dimensions().expect("Failed to determine dimensions");
         Ok(Some(ImageMetadata {
-            color_trc: None,
-            default_gamma: None,
             width: w,
             height: h,
             colorspace: self.out_colorspace(),
             depth: BitDepth::Eight,
             format: Some(ImageFormat::WEBP),
-            alpha: AlphaState::NonPreMultiplied,
-            #[cfg(feature = "metadata")]
-            exif: None,
-            icc_chunk: None,
-            is_linear: false,
-            transfer_curve: None,
-            color_primaries: None,
-            color_standard: None,
-            max_cll: None,
+            ..ImageMetadata::default()
         }))
     }
 }

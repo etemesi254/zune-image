@@ -35,6 +35,8 @@ unsafe impl<T> Sync for ThreadSafePtr<T> {}
 
 // A reasonable upper bound for stack-allocating channel pointers.
 const MAX_SUPPORTED_CHANNELS: usize = 16;
+// number of available threads + number of available regions
+const REGION_DISTRIBUTION_SPLIT: usize = 1;
 
 impl Image {
     /// Processes a single frame in parallel.
@@ -48,7 +50,7 @@ impl Image {
         F: Fn(&mut PlanarRegionMut<'_, T>) + Send + Sync,
     {
         let num_threads = rayon::current_num_threads();
-        let target_regions = num_threads * 4;
+        let target_regions = num_threads * REGION_DISTRIBUTION_SPLIT;
         let lines_per_region = height.div_ceil(target_regions).max(1);
         let num_regions = height.div_ceil(lines_per_region);
 
@@ -153,7 +155,7 @@ impl Image {
         let height = self.height();
 
         let num_threads = rayon::current_num_threads();
-        let target_regions = num_threads * 4;
+        let target_regions = num_threads * REGION_DISTRIBUTION_SPLIT;
         let lines_per_region = height.div_ceil(target_regions).max(1);
         let num_regions = height.div_ceil(lines_per_region);
 
@@ -221,5 +223,18 @@ impl Image {
             });
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_planar_regions() {
+        let mut img = Image::fill(128_u8, ColorSpace::RGB, 1000, 1000);
+        img.par_process_regions::<u8, _>(true, |x| {
+            println!("{:?},{:?}", x.height, x.y_offset);
+        })
+        .unwrap();
     }
 }

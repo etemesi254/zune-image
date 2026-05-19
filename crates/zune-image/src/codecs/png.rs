@@ -54,8 +54,8 @@ where
             match self.depth().unwrap().bit_type() {
                 BitType::U8 => {
                     let mut output = vec![0; buffer_size];
-                    let mut apng_ctx = ApngContext::<u8>::new(self.info().unwrap(),colorspace);
-                    
+                    let mut apng_ctx = ApngContext::<u8>::new(self.info().unwrap(), colorspace);
+
                     while self.more_frames() {
                         self.decode_headers()?;
 
@@ -65,8 +65,7 @@ where
                         let pix = self.decode_raw()?;
 
                         // Use the new APNG post-processing function
-                        apng_ctx.process_frame(&frame,&pix, &mut output)?;
-                     
+                        apng_ctx.process_frame(&frame, &pix, &mut output)?;
 
                         // Create the frame from the fully composited output
                         let im_frame = Frame::from_u8(
@@ -76,13 +75,12 @@ where
                             usize::from(frame.delay_denom),
                         );
                         output_frames.push(im_frame);
-                        
                     }
                 }
                 BitType::U16 => {
                     let mut output = vec![0; buffer_size];
 
-                    let mut apng_ctx = ApngContext::<u16>::new(self.info().unwrap(),colorspace);
+                    let mut apng_ctx = ApngContext::<u16>::new(self.info().unwrap(), colorspace);
 
                     while self.more_frames() {
                         self.decode_headers()?;
@@ -90,8 +88,7 @@ where
                         let frame = self.frame_info().unwrap();
 
                         if let DecodingResult::U16(pix) = self.decode()? {
-                            
-                            apng_ctx.process_frame(&frame,&pix, &mut output)?;
+                            apng_ctx.process_frame(&frame, &pix, &mut output)?;
                             // Create the frame from the fully composited output
                             let im_frame = Frame::from_u16(
                                 &output,
@@ -149,24 +146,39 @@ where
 
         let info = self.info().unwrap();
         // 1. Map the cICP transfer function
-        let transfer_curve = info.cicp_info.as_ref().map(|cicp| {
-            match cicp.transfer_function {
+        let transfer_curve = info
+            .cicp_info
+            .as_ref()
+            .map(|cicp| match cicp.transfer_function {
                 1 | 13 => ColorCharacteristics::sRGB,
                 8 => ColorCharacteristics::Linear,
                 16 => ColorCharacteristics::PQ,
                 18 => ColorCharacteristics::HLG,
                 v => ColorCharacteristics::Unknown(v),
-            }
-        });
+            });
 
         // 2. Map the cHRM chunk to ColorPrimaries struct
-        let color_primaries = info.chrm_info.as_ref().map(|chrm| {
-            ColorPrimaries {
-                red: SingleColorPrimary { x: chrm.red_x as f64 / 100_000.0, y: chrm.red_y as f64 / 100_000.0, z: 0.0 },
-                green: SingleColorPrimary { x: chrm.green_x as f64 / 100_000.0, y: chrm.green_y as f64 / 100_000.0, z: 0.0 },
-                blue: SingleColorPrimary { x: chrm.blue_x as f64 / 100_000.0, y: chrm.blue_y as f64 / 100_000.0, z: 0.0 },
-                white_point: SingleColorPrimary { x: chrm.white_point_x as f64 / 100_000.0, y: chrm.white_point_y as f64 / 100_000.0, z: 0.0 },
-            }
+        let color_primaries = info.chrm_info.as_ref().map(|chrm| ColorPrimaries {
+            red: SingleColorPrimary {
+                x: chrm.red_x as f64 / 100_000.0,
+                y: chrm.red_y as f64 / 100_000.0,
+                z: 0.0,
+            },
+            green: SingleColorPrimary {
+                x: chrm.green_x as f64 / 100_000.0,
+                y: chrm.green_y as f64 / 100_000.0,
+                z: 0.0,
+            },
+            blue: SingleColorPrimary {
+                x: chrm.blue_x as f64 / 100_000.0,
+                y: chrm.blue_y as f64 / 100_000.0,
+                z: 0.0,
+            },
+            white_point: SingleColorPrimary {
+                x: chrm.white_point_x as f64 / 100_000.0,
+                y: chrm.white_point_y as f64 / 100_000.0,
+                z: 0.0,
+            },
         });
 
         // 3. Extract the Brightness limits
@@ -177,7 +189,7 @@ where
             depth,
             width,
             height,
-            transfer_curve,
+            color_trc: transfer_curve,
             color_primaries,
             max_cll,
             color_standard: info.cicp_info.as_ref().map(|c| c.color_primaries),

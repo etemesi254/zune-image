@@ -8,6 +8,9 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fast_image_resize::{PixelType, ResizeAlg};
 use image::imageops::FilterType;
 use image::DynamicImage;
+use libblur::{
+    AnisotropicRadius, BlurImageMut, EdgeMode, EdgeMode2D, FastBlurChannels, ThreadingPolicy,
+};
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
 use libvips::VipsImage;
 use zune_benches::sample_path;
@@ -490,11 +493,74 @@ fn bench_transpose(c: &mut Criterion) {
         })
     });
 }
+
+fn blur_gaussian_blur_bench(c: &mut Criterion) {
+    let path = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
+
+    let data = read(path).unwrap();
+    let zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
+    let vips_im = VipsImage::new_from_buffer(&data, ".jpg").unwrap();
+    let raw_pix = zune_im.flatten_frames::<u8>();
+    let mut out_side = vec![0; raw_pix[0].len()];
+    out_side.copy_from_slice(&raw_pix[0]);
+    let (w, h) = zune_im.dimensions();
+
+    let mut group = c.benchmark_group("imageprocs: gaussian blur - new");
+
+    group.bench_function("zune-image", |b| {
+        b.iter(|| {
+            let im = GaussianBlur::new(3.0).clone_and_execute(&zune_im).unwrap();
+            im.flatten_frames::<u8>();
+            black_box(());
+        });
+    });
+    group.bench_function("vips-image", |b| {
+        b.iter(|| {
+            let im = libvips::ops::gaussblur(&vips_im, 3.0).unwrap();
+            im.image_write_to_memory();
+            black_box(im);
+        })
+    });
+    group.bench_function("libblur (planar mode 3 passes)", |b| {
+        b.iter(|| {
+            for item in out_side.chunks_exact_mut(w * h) {
+                let mut dst_image =
+                    BlurImageMut::borrow(item, w as u32, h as u32, FastBlurChannels::Plane);
+                libblur::fast_gaussian(
+                    &mut dst_image,
+                    AnisotropicRadius::new(3),
+                    ThreadingPolicy::Adaptive,
+                    EdgeMode2D::new(EdgeMode::Clamp),
+                )
+                .unwrap();
+            }
+        })
+    });
+    group.bench_function("libblur (interleaved mode (3 channels))", |b| {
+        b.iter(|| {
+            let mut dst_image = BlurImageMut::borrow(
+                &mut out_side,
+                w as u32,
+                h as u32,
+                FastBlurChannels::Channels3,
+            );
+            libblur::fast_gaussian(
+                &mut dst_image,
+                AnisotropicRadius::new(3),
+                ThreadingPolicy::Adaptive,
+                EdgeMode2D::new(EdgeMode::Clamp),
+            )
+            .unwrap();
+        })
+    });
+
+    group.finish();
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull,bench_transpose);
+    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull,bench_transpose,blur_gaussian_blur_bench);
 
 criterion_main!(benches);
