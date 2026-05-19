@@ -221,6 +221,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // prior attempt; we don't need to copy anything back. Only the
             // per-component DC predictor state needs to be restored, which
             // is already handled in `decode_into` from the checkpoint.
+
+            // Restore bitstream decoder state for per-MCU resume.
+            stream.restore_snapshot(checkpoint.bitstream_state);
         }
 
         let is_hv = usize::from(self.is_interleaved);
@@ -703,6 +706,37 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
+            }
+
+            // Per-MCU checkpoint: save bitstream state after each successful
+            // MCU so we can resume here if the next MCU hits ExhaustedData.
+            // This is analogous to libjpeg-turbo's BITREAD_SAVE_STATE after
+            // each MCU in jdhuff.c.
+            //
+            // Only enabled for single-SOS (!PROGRESSIVE) Huffman streams:
+            // - PROGRESSIVE (multi-SOS) can't resume mid-scan since later
+            //   SOS passes overwrite the same coefficient bands.
+            // - Arithmetic coding can't resume per-MCU because A/C/CT are
+            //   coupled to the statistical context tables.
+            //
+            // Only checkpoint when the bitstream is clean (no overread).
+            // If overread_by > 0, the refill read past available data; the
+            // MCU succeeded on residual buffer bits but the state is tainted
+            // and must not be saved as a resume point.
+            if !PROGRESSIVE && B::supports_mcu_checkpoint() && stream.overread_by() == 0 {
+                let dc_predictions = core::array::from_fn(|idx| {
+                    self.components
+                        .get(idx)
+                        .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
+                });
+                let bs_state = stream.snapshot_state();
+                self.checkpoint_scan_with_bitstream(
+                    mcu_row,
+                    j + 1,
+                    ctx_pixels_written,
+                    dc_predictions,
+                    bs_state,
+                )?;
             }
 
             self.todo = self.todo.wrapping_sub(1);

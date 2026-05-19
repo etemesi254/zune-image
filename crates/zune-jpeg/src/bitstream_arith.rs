@@ -563,7 +563,22 @@ impl BitStreamArithmetic {
     }
 }
 
+/// Minimal snapshot for arithmetic bitstream — only captures enough to detect
+/// whether the stream was exhausted. True per-MCU resume is not feasible for
+/// arithmetic coding due to statistical context coupling.
+#[derive(Clone, Copy)]
+pub(crate) struct ArithBitstreamState {
+    pub(crate) marker:      Option<Marker>,
+    pub(crate) overread_by: usize,
+    pub(crate) seen_eoi:    bool,
+    pub(crate) eob_run:     i32
+}
+
 impl BitStream for BitStreamArithmetic {
+    /// Arithmetic coding does not support per-MCU checkpoint/restore because
+    /// the A/C/CT registers are tightly coupled to the statistical context
+    /// tables which mutate during decoding. Use RST/scan-start granularity.
+    type State = ArithBitstreamState;
     type DCEntropyTable = ArithDCTables;
     type ACEntropyTable = ArithACTables;
 
@@ -683,6 +698,46 @@ impl BitStream for BitStreamArithmetic {
     #[inline(always)]
     fn bits_left(&self) -> u8 {
         self.ct
+    }
+
+    #[inline(always)]
+    fn supports_mcu_checkpoint() -> bool {
+        false
+    }
+
+    #[inline(always)]
+    fn save_state(&self) -> ArithBitstreamState {
+        ArithBitstreamState {
+            marker:      self.marker,
+            overread_by: self.overread_by,
+            seen_eoi:    self.seen_eoi,
+            eob_run:     self.eob_run
+        }
+    }
+
+    /// Arithmetic restore is a no-op for the A/C/CT registers — those are
+    /// only reset via `reset()` at RST/scan boundaries. This restores the
+    /// marker/EOF detection state only.
+    #[inline(always)]
+    fn restore_state(&mut self, state: ArithBitstreamState) {
+        self.marker = state.marker;
+        self.overread_by = state.overread_by;
+        self.seen_eoi = state.seen_eoi;
+        self.eob_run = state.eob_run;
+    }
+
+    #[inline(always)]
+    fn snapshot_state(&self) -> crate::bitstream::BitstreamStateSnapshot {
+        crate::bitstream::BitstreamStateSnapshot::Arithmetic(self.save_state())
+    }
+
+    #[inline(always)]
+    fn restore_snapshot(&mut self, snapshot: crate::bitstream::BitstreamStateSnapshot) {
+        match snapshot {
+            crate::bitstream::BitstreamStateSnapshot::Arithmetic(s) => self.restore_state(s),
+            crate::bitstream::BitstreamStateSnapshot::None => {}
+            _ => unreachable!("Arithmetic stream given Huffman snapshot"),
+        }
     }
 
     /// Refill the bit buffer by (a maximum of) 32 bits

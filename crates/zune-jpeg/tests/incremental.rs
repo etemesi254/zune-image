@@ -40,7 +40,6 @@ impl<'a> GrowableCursor<'a> {
         }
     }
 
-    #[cfg(feature = "arith")]
     fn with_seek_log(
         data: &'a [u8], limit: Rc<Cell<usize>>, seek_log: Rc<RefCell<Vec<usize>>>
     ) -> Self {
@@ -1234,4 +1233,70 @@ fn header_overwrite_marker_no_duplication_on_retry() {
             "FF{code:02X} at {offset}: input colorspace drift"
         );
     }
+}
+
+/// Per-MCU checkpoint: truncating a non-RST image mid-scan and retrying
+/// must resume from a per-MCU checkpoint rather than replaying from scan
+/// start. We verify this by checking that the seek on retry goes to a
+/// position *after* scan start.
+#[test]
+fn per_mcu_checkpoint_avoids_full_scan_replay() {
+    // sampling_factors.jpg is baseline with NO RST markers — perfect for testing per-MCU.
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let expected = decode_oneshot(data);
+
+    // Find the SOS marker to know where scan data begins.
+    let sos_pos = data
+        .windows(2)
+        .position(|w| w == [0xFF, 0xDA])
+        .expect("test image must have SOS");
+
+    // The SOS header is followed by the entropy-coded data.
+    let sos_len = u16::from_be_bytes([data[sos_pos + 2], data[sos_pos + 3]]) as usize;
+    let entropy_start = sos_pos + 2 + sos_len;
+
+    // Truncate roughly 60% into the scan data.
+    let scan_data_len = data.len() - entropy_start;
+    let cutoff = entropy_start + scan_data_len * 60 / 100;
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be fully visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+    // First decode attempt — should fail with recoverable EOF.
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated scan should give recoverable EOF");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    // Clear seek log, expose full data, and retry.
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full data should allow decode to complete");
+    assert_pixels_match(&out, &expected, "per_mcu_checkpoint", data.len());
+
+    // Verify: the seek on retry should be to a position AFTER entropy_start,
+    // proving the checkpoint is at an MCU boundary (not scan start).
+    let seeks = seek_log.borrow();
+    assert!(
+        !seeks.is_empty(),
+        "retry must have performed at least one seek"
+    );
+    let resume_pos = seeks[0];
+    assert!(
+        resume_pos > entropy_start,
+        "per-MCU checkpoint should resume past entropy_start ({entropy_start}), \
+         but sought to {resume_pos} — indicates full scan replay instead of MCU resume"
+    );
 }

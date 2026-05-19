@@ -21,7 +21,7 @@ use zune_core::options::DecoderOptions;
 
 #[cfg(feature = "arith")]
 use crate::bitstream::BitStream;
-use crate::bitstream::BitStreamHuffman;
+use crate::bitstream::{BitstreamStateSnapshot, BitStreamHuffman};
 #[cfg(feature = "arith")]
 use crate::bitstream_arith::{ArithACTables, ArithDCTables, BitStreamArithmetic};
 use crate::color_convert::choose_ycbcr_to_rgb_convert_func;
@@ -127,19 +127,21 @@ pub(crate) struct ScanHeaderStateSnapshot {
 #[derive(Clone, Copy)]
 pub(crate) struct ScanCheckpoint {
     /// Stream position immediately after the RST marker.
-    pub(crate) stream_position: usize,
+    pub(crate) stream_position:  usize,
     /// Next MCU row to decode.
-    pub(crate) mcu_row:         usize,
+    pub(crate) mcu_row:          usize,
     /// Next MCU column to decode in `mcu_row`.
-    pub(crate) mcu_col:         usize,
+    pub(crate) mcu_col:          usize,
     /// Number of output bytes stable at this checkpoint.
-    pub(crate) pixels_written:  usize,
+    pub(crate) pixels_written:   usize,
     /// SOS/component table state at this checkpoint.
-    pub(crate) sos_snapshot:    SosParamsSnapshot,
+    pub(crate) sos_snapshot:     SosParamsSnapshot,
     /// Append-only metadata state at this checkpoint.
-    pub(crate) append_snapshot: HeaderAppendStateSnapshot,
+    pub(crate) append_snapshot:  HeaderAppendStateSnapshot,
     /// Per-component DC predictor state at the checkpoint: `(dc_pred, dc_diff)`.
-    pub(crate) dc_predictions:  [(i32, i32); MAX_COMPONENTS]
+    pub(crate) dc_predictions:   [(i32, i32); MAX_COMPONENTS],
+    /// Bitstream decoder state at the checkpoint (for per-MCU resume).
+    pub(crate) bitstream_state:  BitstreamStateSnapshot
 }
 
 // Snapshot append-only metadata so marker or scan replay can roll it back.
@@ -396,6 +398,22 @@ where
         &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
         dc_predictions: [(i32, i32); MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
+        self.checkpoint_scan_with_bitstream(
+            mcu_row,
+            mcu_col,
+            pixels_written,
+            dc_predictions,
+            BitstreamStateSnapshot::None
+        )
+    }
+
+    /// Like `checkpoint_scan` but also saves the bitstream decoder state for
+    /// per-MCU granularity resume.
+    pub(crate) fn checkpoint_scan_with_bitstream(
+        &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
+        dc_predictions: [(i32, i32); MAX_COMPONENTS],
+        bitstream_state: BitstreamStateSnapshot
+    ) -> Result<(), DecodeErrors> {
         let stream_position = self.stream_position()?;
         let sos_snapshot = self.capture_sos_params();
         let append_snapshot = HeaderAppendStateSnapshot::capture(self);
@@ -408,7 +426,8 @@ where
                 pixels_written,
                 sos_snapshot,
                 append_snapshot,
-                dc_predictions
+                dc_predictions,
+                bitstream_state
             };
             match &mut state.rst_checkpoint {
                 Some(existing) => **existing = snapshot,

@@ -107,8 +107,40 @@ macro_rules! decode_huff {
     };
 }
 
+/// Opaque snapshot of Huffman bitstream state at an MCU boundary.
+///
+/// Mirrors libjpeg-turbo's `bitread_perm_state` — the minimum state needed to
+/// resume decoding from a previously-completed MCU without re-reading earlier
+/// entropy data.
+#[derive(Clone, Copy)]
+pub(crate) struct HuffmanBitstreamState {
+    pub(crate) buffer:         u64,
+    pub(crate) aligned_buffer: u64,
+    pub(crate) bits_left:      u8,
+    pub(crate) marker:         Option<Marker>,
+    pub(crate) overread_by:    usize,
+    pub(crate) seen_eoi:       bool,
+    pub(crate) eob_run:        i32
+}
+
+/// Type-erased bitstream state snapshot stored in `ScanCheckpoint`.
+///
+/// This allows the checkpoint struct to remain non-generic while supporting
+/// both Huffman and Arithmetic bitstream types.
+#[derive(Clone, Copy)]
+pub(crate) enum BitstreamStateSnapshot {
+    Huffman(HuffmanBitstreamState),
+    #[cfg(feature = "arith")]
+    Arithmetic(crate::bitstream_arith::ArithBitstreamState),
+    /// No bitstream state (checkpoint at scan start / RST boundary where
+    /// the bitstream is freshly reset).
+    None
+}
+
 /// A common `BitStream` interface abstracting both Huffman and Arithmetic bitstream decoding
 pub(crate) trait BitStream {
+    /// Snapshot type for per-MCU checkpoint/restore.
+    type State: Copy;
     type DCEntropyTable;
     type ACEntropyTable;
 
@@ -192,6 +224,24 @@ pub(crate) trait BitStream {
 
     /// Tell us the bits left the two buffer
     fn bits_left(&self) -> u8;
+
+    /// Whether this bitstream type supports per-MCU checkpoint/restore.
+    /// Huffman coding supports it; arithmetic coding does not (the A/C/CT
+    /// registers are coupled to statistical context tables).
+    fn supports_mcu_checkpoint() -> bool;
+
+    /// Capture the bitstream state at an MCU boundary (libjpeg-turbo: BITREAD_SAVE_STATE).
+    fn save_state(&self) -> Self::State;
+
+    /// Restore a previously captured bitstream state (libjpeg-turbo: BITREAD_LOAD_STATE).
+    fn restore_state(&mut self, state: Self::State);
+
+    /// Capture and wrap the bitstream state into a type-erased snapshot for
+    /// storage in `ScanCheckpoint`.
+    fn snapshot_state(&self) -> BitstreamStateSnapshot;
+
+    /// Restore from a type-erased snapshot. Panics if variant doesn't match.
+    fn restore_snapshot(&mut self, snapshot: BitstreamStateSnapshot);
 }
 
 /// A `BitStream` struct, a bit by bit reader with super powers
@@ -324,6 +374,7 @@ impl BitStreamHuffman {
 }
 
 impl BitStream for BitStreamHuffman {
+    type State = HuffmanBitstreamState;
     type DCEntropyTable = HuffmanTable;
     type ACEntropyTable = HuffmanTable;
 
@@ -460,6 +511,50 @@ impl BitStream for BitStreamHuffman {
     #[inline(always)]
     fn bits_left(&self) -> u8 {
         self.bits_left
+    }
+
+    #[inline(always)]
+    fn supports_mcu_checkpoint() -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn save_state(&self) -> HuffmanBitstreamState {
+        HuffmanBitstreamState {
+            buffer:         self.buffer,
+            aligned_buffer: self.aligned_buffer,
+            bits_left:      self.bits_left,
+            marker:         self.marker,
+            overread_by:    self.overread_by,
+            seen_eoi:       self.seen_eoi,
+            eob_run:        self.eob_run
+        }
+    }
+
+    #[inline(always)]
+    fn restore_state(&mut self, state: HuffmanBitstreamState) {
+        self.buffer = state.buffer;
+        self.aligned_buffer = state.aligned_buffer;
+        self.bits_left = state.bits_left;
+        self.marker = state.marker;
+        self.overread_by = state.overread_by;
+        self.seen_eoi = state.seen_eoi;
+        self.eob_run = state.eob_run;
+    }
+
+    #[inline(always)]
+    fn snapshot_state(&self) -> BitstreamStateSnapshot {
+        BitstreamStateSnapshot::Huffman(self.save_state())
+    }
+
+    #[inline(always)]
+    fn restore_snapshot(&mut self, snapshot: BitstreamStateSnapshot) {
+        match snapshot {
+            BitstreamStateSnapshot::Huffman(s) => self.restore_state(s),
+            BitstreamStateSnapshot::None => {}
+            #[cfg(feature = "arith")]
+            _ => unreachable!("Huffman stream given arithmetic snapshot"),
+        }
     }
 
     /// Refill the bit buffer by (a maximum of) 32 bits
