@@ -14,7 +14,6 @@
     clippy::cast_sign_loss,
     clippy::cast_possible_truncation
 )]
-#![cfg(feature = "arith")]
 //! This file exposes a single struct that can decode an arithmetic encoded
 //! Bitstream in a JPEG file
 //!
@@ -736,7 +735,7 @@ impl BitStream for BitStreamArithmetic {
         match snapshot {
             crate::bitstream::BitstreamStateSnapshot::Arithmetic(s) => self.restore_state(s),
             crate::bitstream::BitstreamStateSnapshot::None => {}
-            _ => unreachable!("Arithmetic stream given Huffman snapshot"),
+            crate::bitstream::BitstreamStateSnapshot::Huffman(_) => unreachable!("Arithmetic stream given Huffman snapshot"),
         }
     }
 

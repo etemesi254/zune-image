@@ -254,6 +254,35 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     return Err(DecodeErrors::ExhaustedData);
                 }
 
+                // Per-row checkpoint: save bitstream state at the start of
+                // each MCU row so we can resume from here (rather than
+                // replaying from scan start) if ExhaustedData fires mid-row.
+                // Only active on retry calls to keep one-shot decode free of
+                // any overhead (this code is outside the hot MCU inner loop).
+                //
+                // Only for single-SOS baseline (all_components_in_first_scan):
+                // multi-SOS scans can't safely resume mid-scan because later
+                // SOS passes may overwrite coefficient bands.
+                if self.mcu_checkpoints_enabled
+                    && all_components_in_first_scan
+                    && !self.is_progressive
+                    && B::supports_mcu_checkpoint()
+                {
+                    let dc_predictions = core::array::from_fn(|idx| {
+                        self.components
+                            .get(idx)
+                            .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
+                    });
+                    let bs_state = stream.snapshot_state();
+                    self.checkpoint_scan_with_bitstream(
+                        i,
+                        start_col,
+                        pixels_written,
+                        dc_predictions,
+                        bs_state,
+                    )?;
+                }
+
                 // decode a whole MCU width,
                 // this takes into account interleaved components.
                 let mut mcu_width_context = McuWidthContext {
@@ -381,7 +410,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         if !all_components_in_first_scan {
-            self.finish_baseline_decoding(&progressive_mcus, mcu_width, pixels)?;
+            self.finish_baseline_decoding(progressive_mcus, mcu_width, pixels)?;
         }
 
         // it may happen that some images don't have the whole buffer
@@ -706,37 +735,6 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                     }
                 }
-            }
-
-            // Per-MCU checkpoint: save bitstream state after each successful
-            // MCU so we can resume here if the next MCU hits ExhaustedData.
-            // This is analogous to libjpeg-turbo's BITREAD_SAVE_STATE after
-            // each MCU in jdhuff.c.
-            //
-            // Only enabled for single-SOS (!PROGRESSIVE) Huffman streams:
-            // - PROGRESSIVE (multi-SOS) can't resume mid-scan since later
-            //   SOS passes overwrite the same coefficient bands.
-            // - Arithmetic coding can't resume per-MCU because A/C/CT are
-            //   coupled to the statistical context tables.
-            //
-            // Only checkpoint when the bitstream is clean (no overread).
-            // If overread_by > 0, the refill read past available data; the
-            // MCU succeeded on residual buffer bits but the state is tainted
-            // and must not be saved as a resume point.
-            if !PROGRESSIVE && B::supports_mcu_checkpoint() && stream.overread_by() == 0 {
-                let dc_predictions = core::array::from_fn(|idx| {
-                    self.components
-                        .get(idx)
-                        .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
-                });
-                let bs_state = stream.snapshot_state();
-                self.checkpoint_scan_with_bitstream(
-                    mcu_row,
-                    j + 1,
-                    ctx_pixels_written,
-                    dc_predictions,
-                    bs_state,
-                )?;
             }
 
             self.todo = self.todo.wrapping_sub(1);
