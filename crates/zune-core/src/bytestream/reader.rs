@@ -30,7 +30,7 @@ pub enum ZSeekFrom {
     ///
     /// It is possible to seek beyond the end of an object, but it's an error to
     /// seek before byte 0.
-    Current(i64)
+    Current(i64),
 }
 
 impl ZSeekFrom {
@@ -42,7 +42,7 @@ impl ZSeekFrom {
         match self {
             ZSeekFrom::Start(pos) => std::io::SeekFrom::Start(pos),
             ZSeekFrom::End(pos) => std::io::SeekFrom::End(pos),
-            ZSeekFrom::Current(pos) => std::io::SeekFrom::Current(pos)
+            ZSeekFrom::Current(pos) => std::io::SeekFrom::Current(pos),
         }
     }
 }
@@ -64,7 +64,7 @@ pub enum ZByteIoError {
     /// An error that occurred during a seek operation
     SeekError(&'static str),
     /// An error that occurred during a seek operation
-    SeekErrorOwned(String)
+    SeekErrorOwned(String),
 }
 
 impl core::fmt::Debug for ZByteIoError {
@@ -144,8 +144,8 @@ impl ZByteIoError {
 ///
 /// This prevents each implementation from providing its own
 pub struct ZReader<T> {
-    inner:       T,
-    temp_buffer: Vec<u8>
+    inner: T,
+    temp_buffer: Vec<u8>,
 }
 
 impl<T: ZByteReaderTrait> ZReader<T> {
@@ -153,8 +153,8 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     /// that implements the [ZByteReaderTrait]
     pub fn new(source: T) -> ZReader<T> {
         ZReader {
-            inner:       source,
-            temp_buffer: vec![]
+            inner: source,
+            temp_buffer: vec![],
         }
     }
     /// Destroy this reader returning
@@ -259,6 +259,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
             self.skip(position)?;
         }
         if num_bytes > 20 * 1024 * 1024 {
+            self.rewind(num_bytes)?;
             // resize of 20 MBs, skipping too much, so panic
             return Err(ZByteIoError::Generic("Too many bytes skipped"));
         }
@@ -273,7 +274,10 @@ impl<T: ZByteReaderTrait> ZReader<T> {
                 }
                 Ok(&self.temp_buffer)
             }
-            Err(e) => Err(e)
+            Err(e) => {
+                self.rewind(position)?;
+                Err(e)
+            }
         }
     }
     /// Read a fixed number of known bytes to a buffer and return the bytes or an error
@@ -292,7 +296,7 @@ impl<T: ZByteReaderTrait> ZReader<T> {
         let mut byte_store: [u8; N] = [0; N];
         match self.inner.read_exact_bytes(&mut byte_store) {
             Ok(_) => Ok(byte_store),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
     /// Read a fixed bytes to an array and if that is impossible, return an array containing
@@ -373,12 +377,11 @@ impl<T: ZByteReaderTrait> ZReader<T> {
     /// Read all bytes remaining in this input to sink until we hit eof
     ///
     /// # Returns
-    /// 
+    ///
     /// - `Ok(usize)`:  The actual number of bytes added to the sink
-    /// - `Err()` An error that occurred when reading bytes 
+    /// - `Err()` An error that occurred when reading bytes
     pub fn read_all(&mut self, buf: &mut alloc::vec::Vec<u8>) -> Result<usize, ZByteIoError> {
-         self.inner.read_remaining(buf)
-        
+        self.inner.read_remaining(buf)
     }
 }
 
@@ -386,7 +389,7 @@ enum Mode {
     // Big endian
     BE,
     // Little Endian
-    LE
+    LE,
 }
 macro_rules! get_single_type {
     ($name:tt,$name2:tt,$name3:tt,$name4:tt,$name5:tt,$name6:tt,$int_type:tt) => {
@@ -487,7 +490,7 @@ get_single_type!(
 #[cfg(feature = "std")]
 impl<T> std::io::Read for ZReader<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.read_bytes(buf)
