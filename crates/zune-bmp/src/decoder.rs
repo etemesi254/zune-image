@@ -558,8 +558,7 @@ where
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
                     let [b, g, r] = self
                         .bytes
-                        .read_fixed_bytes_or_error::<3>()
-                        .unwrap_or([0, 0, 0]);
+                        .read_fixed_bytes_or_zero::<3>();
 
                     x.red = r;
                     x.green = g;
@@ -1273,11 +1272,10 @@ where
                         // end of line
                         line -= 1;
                         if line < 0 {
-                            return if self.bytes.get_u16_be() == 1 {
+                            return if self.bytes.get_u16_be_err()? == 1 {
                                 // end of picture
                                 Ok(pixels)
                             } else {
-                                // panic!();
                                 let msg = "Next line is beyond picture bounds";
                                 Err(BmpDecoderErrors::GenericStatic(msg))
                             };
