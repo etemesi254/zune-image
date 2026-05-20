@@ -186,12 +186,23 @@ impl Components {
     /// # Requirements
     ///  - width stride of this element is set for the component.
     pub fn setup_upsample_scanline(&mut self) {
-        self.row = vec![0; self.width_stride * self.vertical_sample];
-        self.row_up = vec![0; self.width_stride * self.vertical_sample];
-        self.first_row_upsample_dest =
-            vec![128; self.vertical_sample * self.width_stride * self.sample_ratio.sample()];
-        self.upsample_dest =
-            vec![0; self.width_stride * self.sample_ratio.sample() * self.fix_an_annoying_bug * 8];
+        fn init_if_size_changed(buffer: &mut Vec<i16>, len: usize, value: i16) {
+            if buffer.len() != len {
+                buffer.clear();
+                buffer.resize(len, value);
+            }
+        }
+
+        let row_len = self.width_stride * self.vertical_sample;
+        init_if_size_changed(&mut self.row, row_len, 0);
+        init_if_size_changed(&mut self.row_up, row_len, 0);
+
+        let first_row_len = self.vertical_sample * self.width_stride * self.sample_ratio.sample();
+        init_if_size_changed(&mut self.first_row_upsample_dest, first_row_len, 128);
+
+        let upsample_len =
+            self.width_stride * self.sample_ratio.sample() * self.fix_an_annoying_bug * 8;
+        init_if_size_changed(&mut self.upsample_dest, upsample_len, 0);
     }
 }
 
