@@ -241,7 +241,7 @@ where
     fn scatter_interlaced_row(
         &self, pass: usize, pass_y: usize, pass_w: usize, post_processed_row: &[u8],
         final_image_out: &mut [u8], num_components: usize, width: usize,
-    ) {
+    ) -> Result<(), PngDecodeErrors> {
         let bpp = num_components
             * if self.png_info.depth == 16 && !self.options.png_get_strip_to_8bit() {
                 2
@@ -251,7 +251,10 @@ where
 
         // We only need to find where the row starts once.
         let out_y = pass_y * YSPC[pass] + YORIG[pass];
-        let row_start_idx = out_y * width * bpp;
+        let row_start_idx = out_y
+            .checked_mul(width)
+            .and_then(|x| x.checked_mul(bpp))
+            .ok_or(PngDecodeErrors::GenericStatic("Overflowed interlace pass"))?;
 
         // Slicing here restricts the memory window, helping the compiler elide inner bounds checks.
         let out_row_slice = &mut final_image_out[row_start_idx..];
@@ -263,7 +266,7 @@ where
             let total_bytes = pass_w * bpp;
             out_row_slice[x_orig_bytes..x_orig_bytes + total_bytes]
                 .copy_from_slice(&post_processed_row[..total_bytes]);
-            return;
+            return Ok(());
         }
 
         let x_spc_bytes = XSPC[pass] * bpp;
@@ -296,6 +299,8 @@ where
             8 => scatter!(8),
             _ => unreachable!(),
         }
+
+        Ok(())
     }
 
     fn extract_rows_interlaced(
@@ -346,7 +351,7 @@ where
                     final_out,
                     num_components,
                     width,
-                );
+                )?;
             } else {
                 // FAST PATH: No post-processing needed.
                 // Skip `post_processed_row` entirely and scatter directly from `curr_row`.
@@ -360,7 +365,7 @@ where
                     final_out,
                     num_components,
                     width,
-                );
+                )?;
             }
 
             *processed_bytes += state.row_size;
@@ -682,7 +687,6 @@ where
             let is_first_row = *current_row_idx == 0;
 
             if will_post_process {
-
                 // SLOW PATH: We must use temporary buffers because the previous row
                 // in `final_out` has already been transformed, and the PNG filter
                 // requires raw, unmodified previous row bytes.
