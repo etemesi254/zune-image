@@ -19,11 +19,11 @@ use zune_core::options::EncoderOptions;
 
 use crate::bit_depth::{JxlBitEncoder, MoreThan14Bits, UpTo8Bits};
 use crate::bit_writer::{
-    encode_hybrid_uint_lz77, encode_hybrid_unit_000, BitWriter, BorrowingBitWriter
+    encode_hybrid_uint_lz77, encode_hybrid_unit_000, BitWriter, BorrowingBitWriter,
 };
 use crate::color_convert::{
     fill_row_g16, fill_row_g8, fill_row_ga16, fill_row_ga8, fill_row_rgb16, fill_row_rgb8,
-    fill_row_rgba16, fill_row_rgba8
+    fill_row_rgba16, fill_row_rgba8,
 };
 use crate::errors::SUPPORTED_COLORSPACES;
 use crate::JxlEncodeErrors;
@@ -41,11 +41,11 @@ const K_MAX_NUM_SYMBOLS: usize = if K_NUM_RAW_SYMBOLS + 1 < K_NUM_LZ77 {
 };
 
 pub(crate) struct FrameState {
-    option:              EncoderOptions,
-    header:              BitWriter,
-    group_data:          Vec<[BitWriter; 4]>,
-    current_bit_writer:  usize,
-    bit_writer_byte_pos: usize
+    option: EncoderOptions,
+    header: BitWriter,
+    group_data: Vec<[BitWriter; 4]>,
+    current_bit_writer: usize,
+    bit_writer_byte_pos: usize,
 }
 
 /// A simple jxl encoder
@@ -96,24 +96,24 @@ pub(crate) struct FrameState {
 /// }
 /// ```
 pub struct JxlSimpleEncoder<'a> {
-    data:    &'a [u8],
-    options: EncoderOptions
+    data: &'a [u8],
+    options: EncoderOptions,
 }
 
 pub(crate) struct ChunkSampleCollector<'a, T: JxlBitEncoder> {
-    raw_counts:  &'a mut [u64; K_NUM_RAW_SYMBOLS],
+    raw_counts: &'a mut [u64; K_NUM_RAW_SYMBOLS],
     lz77_counts: &'a mut [u64; K_NUM_LZ77],
-    enc:         PhantomData<T>
+    enc: PhantomData<T>,
 }
 
 impl<'a, T: JxlBitEncoder> ChunkSampleCollector<'a, T> {
     pub fn new(
-        raw_counts: &'a mut [u64; K_NUM_RAW_SYMBOLS], lz77_counts: &'a mut [u64; K_NUM_LZ77]
+        raw_counts: &'a mut [u64; K_NUM_RAW_SYMBOLS], lz77_counts: &'a mut [u64; K_NUM_LZ77],
     ) -> ChunkSampleCollector<'a, T> {
         ChunkSampleCollector {
             raw_counts,
             lz77_counts,
-            enc: PhantomData::<T>
+            enc: PhantomData::<T>,
         }
     }
     pub fn encode_rle(&mut self, mut count: usize) {
@@ -150,18 +150,18 @@ fn packed_signed(value: i32) -> u32 {
 }
 
 pub(crate) struct PrefixCode {
-    pub raw_nbits:        [u8; K_NUM_RAW_SYMBOLS],
-    pub raw_bits:         [u8; K_NUM_RAW_SYMBOLS],
-    pub lz77_nbits:       [u8; K_NUM_LZ77],
-    pub lz77_bits:        [u16; K_NUM_LZ77],
-    pub lz77_cache_bits:  [u64; K_LZ77CACHE_SIZE],
-    pub lz77_cache_nbits: [u8; K_LZ77CACHE_SIZE]
+    pub raw_nbits: [u8; K_NUM_RAW_SYMBOLS],
+    pub raw_bits: [u8; K_NUM_RAW_SYMBOLS],
+    pub lz77_nbits: [u8; K_NUM_LZ77],
+    pub lz77_bits: [u16; K_NUM_LZ77],
+    pub lz77_cache_bits: [u64; K_LZ77CACHE_SIZE],
+    pub lz77_cache_nbits: [u8; K_LZ77CACHE_SIZE],
 }
 
 impl PrefixCode {
     #[allow(clippy::needless_range_loop)]
     pub fn new<T: JxlBitEncoder>(
-        raw_counts: &[u64; K_NUM_RAW_SYMBOLS], lz77_counts: &[u64; K_NUM_LZ77]
+        raw_counts: &[u64; K_NUM_RAW_SYMBOLS], lz77_counts: &[u64; K_NUM_LZ77],
     ) -> PrefixCode {
         let mut raw_nbits = [0; K_NUM_RAW_SYMBOLS];
         let mut raw_bits = [0; K_NUM_RAW_SYMBOLS];
@@ -193,7 +193,7 @@ impl PrefixCode {
             num_raw + 1,
             &T::KMIN_RAW_LENGTH,
             &T::KMAX_RAW_LENGTH,
-            &mut level1_nbits
+            &mut level1_nbits,
         );
         let mut level2_nbits = [0; K_NUM_LZ77];
         let min_lengths = [0; K_NUM_LZ77];
@@ -210,7 +210,7 @@ impl PrefixCode {
             num_lz77,
             &min_lengths,
             &max_lengths,
-            &mut level2_nbits
+            &mut level2_nbits,
         );
 
         raw_nbits[..num_raw].copy_from_slice(&level1_nbits[..num_raw]);
@@ -224,7 +224,7 @@ impl PrefixCode {
             &raw_nbits[..num_raw],
             &mut raw_bits[..num_raw],
             &lz77_nbits,
-            &mut lz77_bits
+            &mut lz77_bits,
         );
 
         // prepare lz77 cache
@@ -247,7 +247,7 @@ impl PrefixCode {
             lz77_nbits,
             lz77_bits,
             lz77_cache_bits,
-            lz77_cache_nbits
+            lz77_cache_nbits,
         }
     }
     fn write_to(&self, writer: &mut BitWriter) {
@@ -272,7 +272,7 @@ impl PrefixCode {
             18,
             &code_length_nbits_min,
             &code_length_nbits_max,
-            &mut code_length_nbits
+            &mut code_length_nbits,
         );
 
         writer.put_bits(2, 0); // HSKIP = 0, i.e. don't skip code lengths.
@@ -357,7 +357,7 @@ fn bit_reverse(nbits: usize, bits: u16) -> u16
 /// Supports code lengths being split into two halves
 fn compute_canonical_code(
     first_chunk_nbits: &[u8], first_chunk_bits: &mut [u8], second_chunk_nbits: &[u8],
-    second_chunk_bits: &mut [u16]
+    second_chunk_bits: &mut [u16],
 ) {
     const K_MAX_CODE_LENGTH: usize = 15;
     let mut code_length_counts = [0; K_MAX_CODE_LENGTH + 1];
@@ -387,7 +387,7 @@ fn compute_canonical_code(
     for i in 0..first_chunk_bits.len() {
         first_chunk_bits[i] = bit_reverse(
             usize::from(first_chunk_nbits[i]),
-            next_code[usize::from(first_chunk_nbits[i])]
+            next_code[usize::from(first_chunk_nbits[i])],
         ) as u8;
         next_code[usize::from(first_chunk_nbits[i])] =
             next_code[usize::from(first_chunk_nbits[i])].wrapping_add(1);
@@ -396,7 +396,7 @@ fn compute_canonical_code(
     for i in 0..second_chunk_bits.len() {
         second_chunk_bits[i] = bit_reverse(
             usize::from(second_chunk_nbits[i]),
-            next_code[usize::from(second_chunk_nbits[i])]
+            next_code[usize::from(second_chunk_nbits[i])],
         );
         next_code[usize::from(second_chunk_nbits[i])] =
             next_code[usize::from(second_chunk_nbits[i])].wrapping_add(1);
@@ -407,7 +407,7 @@ fn compute_canonical_code(
 /// max_limit[i] and sum 2**-nbits[i] == 1, so to minimize sum(nbits[i] *
 /// freqs[i]).
 fn compute_code_lengths_non_zero(
-    freqs: &[u64], n: usize, min_limit: &mut [u8], max_limit: &[u8], nbits: &mut [u8]
+    freqs: &[u64], n: usize, min_limit: &mut [u8], max_limit: &[u8], nbits: &mut [u8],
 ) {
     let mut precision: u64 = 0;
     let mut shortest_length = 255;
@@ -439,7 +439,7 @@ fn compute_code_lengths_non_zero(
 
 fn compute_code_lengths_non_zero_impl(
     freqs: &[u64], n: usize, precision: usize, infty: u64, min_limit: &[u8], max_limit: &[u8],
-    nbits: &mut [u8]
+    nbits: &mut [u8],
 ) {
     let len = ((1 << precision) + 1) * (n + 1);
 
@@ -492,7 +492,7 @@ fn compute_code_lengths_non_zero_impl(
 }
 
 fn compute_code_lengths(
-    freqs: &[u64], n: usize, min_limit_in: &[u8], max_limit_in: &[u8], nbits: &mut [u8]
+    freqs: &[u64], n: usize, min_limit_in: &[u8], max_limit_in: &[u8], nbits: &mut [u8],
 ) {
     assert!(n <= K_MAX_NUM_SYMBOLS);
 
@@ -517,7 +517,7 @@ fn compute_code_lengths(
         ni,
         &mut min_limit,
         &max_limit,
-        &mut num_bits
+        &mut num_bits,
     );
 
     ni = 0;
@@ -537,22 +537,22 @@ pub(crate) trait Enc<T: JxlBitEncoder> {
 }
 
 pub(crate) struct ChunkEncoder<'a, T: JxlBitEncoder> {
-    output:      &'a mut BitWriter,
+    output: &'a mut BitWriter,
     prefix_code: &'a PrefixCode,
-    encoder:     &'a T
+    encoder: &'a T,
 }
 
 impl<'a, T> ChunkEncoder<'a, T>
 where
-    T: JxlBitEncoder
+    T: JxlBitEncoder,
 {
     pub fn new(
-        prefix_code: &'a PrefixCode, encoder: &'a T, output: &'a mut BitWriter
+        prefix_code: &'a PrefixCode, encoder: &'a T, output: &'a mut BitWriter,
     ) -> ChunkEncoder<'a, T> {
         ChunkEncoder {
             prefix_code,
             encoder,
-            output
+            output,
         }
     }
     #[inline]
@@ -615,27 +615,27 @@ impl<'a, T: JxlBitEncoder> Enc<T> for ChunkSampleCollector<'a, T> {
 
 pub(crate) struct ChannelRowProcessor<T: Enc<U>, U: JxlBitEncoder> {
     run: usize,
-    x:   T,
-    u:   PhantomData<U>
+    x: T,
+    u: PhantomData<U>,
 }
 
 impl<T, U> ChannelRowProcessor<T, U>
 where
     T: Enc<U>,
-    U: JxlBitEncoder
+    U: JxlBitEncoder,
 {
     pub fn new(processor: T) -> ChannelRowProcessor<T, U> {
         ChannelRowProcessor {
             run: 0,
-            x:   processor,
-            u:   PhantomData::<U>
+            x: processor,
+            u: PhantomData::<U>,
         }
     }
 
     #[allow(clippy::explicit_counter_loop, clippy::too_many_arguments)]
     fn process_chunk(
         &mut self, row: &[U::Pixel], row_left: &[U::Pixel], row_top: &[U::Pixel],
-        row_topleft: &[U::Pixel], n: usize
+        row_topleft: &[U::Pixel], n: usize,
     ) {
         let mut residuals: [U::Upixel; K_CHUNK_SIZE] = [U::upixel_default(); K_CHUNK_SIZE];
 
@@ -691,7 +691,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn process_row(
         &mut self, row: &[U::Pixel], row_left: &[U::Pixel], row_top: &[U::Pixel],
-        row_topleft: &[U::Pixel], xs: usize
+        row_topleft: &[U::Pixel], xs: usize,
     ) {
         for x in (0..xs).step_by(K_CHUNK_SIZE) {
             self.process_chunk(
@@ -699,7 +699,7 @@ where
                 &row_left[x..],
                 &row_top[x..],
                 &row_topleft[x..],
-                min(K_CHUNK_SIZE, xs - x)
+                min(K_CHUNK_SIZE, xs - x),
             );
         }
     }
@@ -712,9 +712,9 @@ where
 fn collect_samples<B>(
     pixels: &[u8], x0: usize, y0: usize, xs: usize, row_stride: usize, row_count: usize,
     raw_counts: &mut [[u64; K_NUM_RAW_SYMBOLS]; 4], lz77_counts: &mut [[u64; K_NUM_LZ77]; 4],
-    channels: usize
+    channels: usize,
 ) where
-    B: JxlBitEncoder
+    B: JxlBitEncoder,
 {
     let mut channel_row_processors: [Option<ChannelRowProcessor<ChunkSampleCollector<B>, B>>; 4] =
         [None, None, None, None];
@@ -741,23 +741,23 @@ fn collect_samples<B>(
         1 + row_count,
         row_stride,
         channels,
-        channel_row_processors
+        channel_row_processors,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn process_image_area<A, BitDepth>(
     pixels: &[u8], x0: usize, y0: usize, xs: usize, yskip: usize, ys: usize, row_stride: usize,
-    channels: usize, mut processors: [Option<ChannelRowProcessor<A, BitDepth>>; 4]
+    channels: usize, mut processors: [Option<ChannelRowProcessor<A, BitDepth>>; 4],
 ) where
     BitDepth: JxlBitEncoder,
-    A: Enc<BitDepth>
+    A: Enc<BitDepth>,
 {
     const K_PADDING: usize = 32;
     const K_ALIGN: usize = 64;
     let k_align_pixels: usize = K_ALIGN / core::mem::size_of::<BitDepth::Pixel>();
-    let k_num_px: usize = (256 + K_PADDING * 2 + k_align_pixels).div_ceil(k_align_pixels)
-        * k_align_pixels;
+    let k_num_px: usize =
+        (256 + K_PADDING * 2 + k_align_pixels).div_ceil(k_align_pixels) * k_align_pixels;
 
     let g1 = vec![BitDepth::pixel_zero(); k_num_px];
     let g = [g1.clone(), g1];
@@ -784,7 +784,7 @@ fn process_image_area<A, BitDepth>(
                     crow[i] = &mut xe.1[0][..];
                     prow[i] = &mut xe.0[0][..];
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
         const K_OFFSET: usize = K_PADDING - 1;
@@ -803,14 +803,14 @@ fn process_image_area<A, BitDepth>(
                     rgba_row,
                     xs,
                     &mut l[0][K_PADDING..],
-                    &mut a[0][K_PADDING..]
+                    &mut a[0][K_PADDING..],
                 );
             } else {
                 fill_row_ga16::<BitDepth::Pixel>(
                     rgba_row,
                     xs,
                     &mut l[0][K_PADDING..],
-                    &mut a[0][K_PADDING..]
+                    &mut a[0][K_PADDING..],
                 );
             }
         } else if channels == 3 {
@@ -824,7 +824,7 @@ fn process_image_area<A, BitDepth>(
                     xs,
                     &mut yo[0][K_PADDING..],
                     &mut co[0][K_PADDING..],
-                    &mut cg[0][K_PADDING..]
+                    &mut cg[0][K_PADDING..],
                 );
             } else {
                 fill_row_rgb16::<BitDepth::Pixel>(
@@ -832,7 +832,7 @@ fn process_image_area<A, BitDepth>(
                     xs,
                     &mut yo[0][K_PADDING..],
                     &mut co[0][K_PADDING..],
-                    &mut cg[0][K_PADDING..]
+                    &mut cg[0][K_PADDING..],
                 );
             }
         } else if channels == 4 {
@@ -848,7 +848,7 @@ fn process_image_area<A, BitDepth>(
                     &mut yo[0][K_PADDING..],
                     &mut co[0][K_PADDING..],
                     &mut cg[0][K_PADDING..],
-                    &mut ca[0][K_PADDING..]
+                    &mut ca[0][K_PADDING..],
                 );
             } else {
                 fill_row_rgba16::<BitDepth::Pixel>(
@@ -857,7 +857,7 @@ fn process_image_area<A, BitDepth>(
                     &mut yo[0][K_PADDING..],
                     &mut co[0][K_PADDING..],
                     &mut cg[0][K_PADDING..],
-                    &mut ca[0][K_PADDING..]
+                    &mut ca[0][K_PADDING..],
                 );
             }
         }
@@ -894,7 +894,7 @@ fn process_image_area<A, BitDepth>(
 
 fn prepare_dc_global_common(
     is_single_group: bool, width: usize, height: usize, codes: &[PrefixCode],
-    output: &mut BitWriter
+    output: &mut BitWriter,
 ) {
     let length = if is_single_group { width * height * 16 } else { 0 };
 
@@ -918,7 +918,7 @@ fn prepare_dc_global_common(
     output.put_bits(1, 0); // First tree encoding option
 
     let indices = [
-        1, 2, 1, 4, 1, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0
+        1, 2, 1, 4, 1, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0, 0, 5, 0, 0, 0,
     ];
     // Huffman table + extra bits for the tree.
     let symbol_bits: [u8; 6] = [0b00, 0b10, 0b001, 0b101, 0b0011, 0b0111];
@@ -973,7 +973,7 @@ fn prepare_dc_global_common(
 fn write_a_c_section<B: JxlBitEncoder>(
     pixels: &[u8], x0: usize, y0: usize, xs: usize, ys: usize, row_stride: usize,
     is_single_group: bool, depth: &B, channels: usize, prefix_code: &[PrefixCode],
-    output: &mut [BitWriter; 4]
+    output: &mut [BitWriter; 4],
 ) {
     for i in 0..channels {
         if is_single_group && i == 0 {
@@ -1013,13 +1013,13 @@ fn write_a_c_section<B: JxlBitEncoder>(
         ys,
         row_stride,
         channels,
-        channel_row_processors
+        channel_row_processors,
     );
 }
 
 fn prepare_dc_global(
     is_single_group: bool, width: usize, height: usize, channels: usize, code: &[PrefixCode],
-    output: &mut BitWriter
+    output: &mut BitWriter,
 ) {
     prepare_dc_global_common(is_single_group, width, height, code, output);
 
@@ -1066,7 +1066,7 @@ impl<'a> JxlSimpleEncoder<'a> {
         let mut frame_state = match depth {
             BitDepth::Eight => self.encode_inner(UpTo8Bits())?,
             BitDepth::Sixteen => self.encode_inner(MoreThan14Bits())?,
-            _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth))
+            _ => return Err(JxlEncodeErrors::UnsupportedDepth(depth)),
         };
         prepare_header(&mut frame_state, true, true);
         // TODO: Make this an encode_inner function
@@ -1079,7 +1079,7 @@ impl<'a> JxlSimpleEncoder<'a> {
     }
 
     pub(crate) fn encode_inner<B: JxlBitEncoder + Send + Sync>(
-        &self, encoder: B
+        &self, encoder: B,
     ) -> Result<FrameState, JxlEncodeErrors> {
         let depth = self.options.depth();
         let width = self.options.width();
@@ -1108,7 +1108,8 @@ impl<'a> JxlSimpleEncoder<'a> {
             trace!("Configured threads: {:?}", self.options.num_threads());
         }
 
-        let expected = calculate_expected_input(&self.options);
+        let expected = calculate_expected_input(&self.options)
+            .ok_or(JxlEncodeErrors::Generic("Input dimensions overflowed"))?;
         let found = self.data.len();
 
         if expected != found {
@@ -1143,12 +1144,12 @@ impl<'a> JxlSimpleEncoder<'a> {
                 y_count,
                 &mut raw_counts,
                 &mut lz77_counts,
-                num_components
+                num_components,
             );
         }
 
         let mut base_raw_counts: [u64; K_NUM_RAW_SYMBOLS] = [
-            3843, 852, 1270, 1214, 1014, 727, 481, 300, 159, 51, 5, 1, 1, 1, 1, 1, 1, 1, 1
+            3843, 852, 1270, 1214, 1014, 727, 481, 300, 159, 51, 5, 1, 1, 1, 1, 1, 1, 1, 1,
         ];
 
         let doing_ycocg = num_components > 2;
@@ -1163,7 +1164,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 
         let base_lz77_counts: [u64; K_NUM_LZ77] = [
             29, 27, 25, 23, 21, 21, 19, 18, 21, 17, 16, 15, 15, 14, 13, 13, 137, 98, 61, 34, 1, 1,
-            1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0
+            1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,
         ];
 
         for lz77_count in lz77_counts.iter_mut() {
@@ -1188,7 +1189,7 @@ impl<'a> JxlSimpleEncoder<'a> {
             BitWriter::new(),
             BitWriter::new(),
             BitWriter::new(),
-            BitWriter::new()
+            BitWriter::new(),
         ];
 
         // The to #cfg's share a lot of code, but that is actually needed because otherwise
@@ -1237,7 +1238,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                     &encoder,
                     num_components,
                     &codes,
-                    writers
+                    writers,
                 );
                 // This thread is done, kill it and tell the caller that
                 // they can spawn another thread
@@ -1305,7 +1306,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
-                bit_writer_byte_pos: 0
+                bit_writer_byte_pos: 0,
             })
         }
         #[cfg(not(feature = "std"))]
@@ -1346,7 +1347,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                     &encoder,
                     num_components,
                     &codes,
-                    writers
+                    writers,
                 );
                 // This thread is done, kill it and tell the caller that
                 // they can spawn another thread
@@ -1361,7 +1362,7 @@ impl<'a> JxlSimpleEncoder<'a> {
                 header: BitWriter::new(),
                 group_data,
                 current_bit_writer: 0,
-                bit_writer_byte_pos: 0
+                bit_writer_byte_pos: 0,
             })
         }
     }
@@ -1370,7 +1371,7 @@ impl<'a> JxlSimpleEncoder<'a> {
 /// Write output from the frame to `output`
 #[allow(clippy::never_loop)]
 fn fast_lossless_write_output<T: ZByteWriterTrait>(
-    frame: &mut FrameState, output: &mut ZWriter<T>
+    frame: &mut FrameState, output: &mut ZWriter<T>,
 ) -> Result<(), JxlEncodeErrors> {
     let components = frame.option.colorspace().num_components();
 
@@ -1593,15 +1594,13 @@ fn prepare_header(frame: &mut FrameState, add_image_header: bool, is_last: bool)
     output.zero_pad();
 }
 
-fn calculate_expected_input(options: &EncoderOptions) -> usize {
+fn calculate_expected_input(options: &EncoderOptions) -> Option<usize> {
     options
         .width()
         .checked_mul(options.depth().size_of())
-        .unwrap()
-        .checked_mul(options.height())
-        .unwrap()
-        .checked_mul(options.colorspace().num_components())
-        .unwrap()
+        .and_then(|x| x.checked_add(options.height()))
+        .and_then(|x| x.checked_add(options.width()))
+        .and_then(|x| x.checked_add(options.colorspace().num_components()))
 }
 
 // #[test]
