@@ -29,19 +29,19 @@ use crate::JpegDecoder;
 pub const DCT_BLOCK: usize = 64;
 
 struct McuWidthContext<'a, B: BitStream> {
-    mcu_width:      usize,
+    mcu_width: usize,
     // Current MCU row, used when indexing progressive scratch buffers and checkpoints.
-    mcu_row:        usize,
+    mcu_row: usize,
     // First MCU column to decode in this row; non-zero when resuming from a restart checkpoint.
-    start_col:      usize,
+    start_col: usize,
     // Number of output bytes already committed before this MCU row.
     pixels_written: usize,
     // Shared coefficient scratch block reused for each decoded data unit.
-    tmp:            &'a mut [i32; 64],
+    tmp: &'a mut [i32; 64],
     // Entropy decoder state for the current scan.
-    stream:         &'a mut B,
+    stream: &'a mut B,
     // Full-image coefficient buffers for multi-SOS baseline scans.
-    progressive:    &'a mut [Vec<i16>; MAX_COMPONENTS]
+    progressive: &'a mut [Vec<i16>; MAX_COMPONENTS],
 }
 
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
@@ -62,7 +62,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ///
     /// This is the main decoder loop for the library, the hot path.
     pub(crate) fn decode_mcu_ycbcr_baseline<B: BitStream>(
-        &mut self, pixels: &mut [u8]
+        &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         // Move the persistent multi-SOS coefficient buffer out of `self` so
         // the inner decoder can borrow it mutably while still calling methods
@@ -70,8 +70,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // `decode_into` retries, which is what lets per-RST checkpoints stay
         // allocation-free.
         let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
-        let result =
-            self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
+        let result = self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
         self.progressive_mcus_buffer = progressive_mcus;
         result
     }
@@ -92,8 +91,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     )]
     #[inline(never)]
     fn decode_mcu_ycbcr_baseline_inner<B: BitStream>(
-        &mut self, pixels: &mut [u8],
-        progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS]
+        &mut self, pixels: &mut [u8], progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
 
@@ -262,7 +260,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     pixels_written,
                     tmp: &mut tmp,
                     stream: &mut stream,
-                    progressive: &mut *progressive_mcus
+                    progressive: &mut *progressive_mcus,
                 };
                 let terminate = if all_components_in_first_scan {
                     self.decode_mcu_width::<false, B>(&mut mcu_width_context)?
@@ -492,7 +490,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn decode_mcu_width<const PROGRESSIVE: bool, B: BitStream>(
-        &mut self, context: &mut McuWidthContext<'_, B>
+        &mut self, context: &mut McuWidthContext<'_, B>,
     ) -> Result<McuContinuation, DecodeErrors> {
         let is_one_by_one = !self.scan_subsampled;
 
@@ -519,7 +517,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     // the scan. The difference was ~1% or a bit more.
     #[allow(clippy::too_many_lines)]
     fn inner_decode_mcu_width<const PROGRESSIVE: bool, const SAMPLED: bool, B: BitStream>(
-        &mut self, context: &mut McuWidthContext<'_, B>
+        &mut self, context: &mut McuWidthContext<'_, B>,
     ) -> Result<McuContinuation, DecodeErrors> {
         // Destructure the context into local bindings up front. Reading the
         // hot loop through `context.<field>` keeps the optimizer from
@@ -584,8 +582,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                 let qt_table = &component.quantization_table;
                 let channel = if PROGRESSIVE {
-                    let offset =
-                        mcu_row * component.width_stride * 8 * component.vertical_sample;
+                    let offset = mcu_row
+                        .checked_mul(component.width_stride)
+                        .and_then(|x| {
+                            x.checked_mul(8)
+                                .and_then(|y| y.checked_mul(component.vertical_sample))
+                        })
+                        .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
                     // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
                     if offset >= progressive[k].len() {
                         return Err(DecodeErrors::FormatStatic("Would panic on slice iteration"));
@@ -716,12 +719,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             .get(idx)
                             .map_or((0, 0), |component| (component.dc_pred, component.dc_diff))
                     });
-                    self.checkpoint_scan(
-                        mcu_row,
-                        j + 1,
-                        ctx_pixels_written,
-                        dc_predictions
-                    )?;
+                    self.checkpoint_scan(mcu_row, j + 1, ctx_pixels_written, dc_predictions)?;
                 }
                 continue;
             }
