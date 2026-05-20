@@ -472,13 +472,13 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
 
         Ok(())
     }
-
     pub(crate) fn parse_fctl_external(
         &mut self, chunk: PngChunk,
     ) -> Result<FrameInfo, PngDecodeErrors> {
         if chunk.length != 26 {
             return Err(PngDecodeErrors::GenericStatic("Invalid fcTL length"));
         }
+
         let seq_number = self.stream.get_u32_be() as i32;
         let width = self.stream.get_u32_be() as usize;
         let height = self.stream.get_u32_be() as usize;
@@ -488,6 +488,28 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
         let delay_denom = self.stream.get_u16_be();
         let dispose_op = DisposeOp::from_int(self.stream.read_u8())?;
         let blend_op = BlendOp::from_int(self.stream.read_u8())?;
+
+        // Validate frame bounds against the image canvas.
+        // Prevent overflow and reject frames extending past the canvas.
+        let frame_right = x_offset.checked_add(width).ok_or_else(|| {
+            PngDecodeErrors::Generic(
+                "APNG frame x_offset + width overflowed".to_string(),
+            )
+        })?;
+
+        let frame_bottom = y_offset.checked_add(height).ok_or_else(|| {
+            PngDecodeErrors::Generic(
+                "APNG frame y_offset + height overflowed".to_string(),
+            )
+        })?;
+
+        if frame_right > self.png_info.width
+            || frame_bottom > self.png_info.height
+        {
+            return Err(PngDecodeErrors::Generic(
+                "APNG frame exceeds image bounds".to_string(),
+            ));
+        }
 
         let fctl_info = FrameInfo {
             seq_number,
@@ -501,8 +523,10 @@ impl<T: ZByteReaderTrait> PngDecoder<T> {
             blend_op,
             is_part_of_seq: true,
         };
+
         // skip crc
         self.stream.skip(4)?;
+
         Ok(fctl_info)
     }
     /// Parse the pHYs chunk (Physical Pixel Dimensions)
