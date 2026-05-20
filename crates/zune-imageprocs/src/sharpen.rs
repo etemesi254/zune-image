@@ -218,7 +218,7 @@ fn unsharpen_region_f32(region: &mut PlanarRegionOut<'_, f32>, threshold: f32, p
 
                 if diff.abs() > threshold {
                     let scaled_diff = (diff * percentage) / 100.0;
-                    *in_pix = (orig + scaled_diff).clamp(0.0, 1.0);
+                    *in_pix = orig + scaled_diff;
                 }
             }
         }
