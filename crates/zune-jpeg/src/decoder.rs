@@ -132,6 +132,8 @@ pub(crate) struct ScanCheckpoint {
     pub(crate) mcu_row:          usize,
     /// Next MCU column to decode in `mcu_row`.
     pub(crate) mcu_col:          usize,
+    /// Restart countdown at this checkpoint.
+    pub(crate) todo:             usize,
     /// Number of output bytes stable at this checkpoint.
     pub(crate) pixels_written:   usize,
     /// SOS/component table state at this checkpoint.
@@ -140,7 +142,7 @@ pub(crate) struct ScanCheckpoint {
     pub(crate) append_snapshot:  HeaderAppendStateSnapshot,
     /// Per-component DC predictor state at the checkpoint: `(dc_pred, dc_diff)`.
     pub(crate) dc_predictions:   [(i32, i32); MAX_COMPONENTS],
-    /// Bitstream decoder state at the checkpoint (for per-MCU resume).
+    /// Bitstream decoder state at the checkpoint (for fine-grained resume).
     pub(crate) bitstream_state:  BitstreamStateSnapshot
 }
 
@@ -288,6 +290,9 @@ pub struct JpegDecoder<T> {
     /// header parsing. Boxed so the decoder struct stays compact for the
     /// common one-shot path.
     scan_state: Option<Box<ScanDecodeState>>,
+    /// Number of output bytes known to be stable after the most recent
+    /// `decode_into` attempt.
+    pub(crate) pixels_decoded: usize,
     /// Persistent coefficient buffers for multi-SOS baseline decoding.
     ///
     /// Owned by the decoder so contents survive a recoverable EOF and the
@@ -295,11 +300,11 @@ pub struct JpegDecoder<T> {
     /// copying anything. The inner `Vec`s are reused across `decode_into`
     /// calls; capacity is reclaimed only when the decoder is dropped.
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
-    /// Whether per-MCU checkpointing is enabled for the current decode.
+    /// Whether per-row checkpointing is enabled for the current decode.
     ///
     /// Only `true` on a retry `decode_into` call (when `scan_state` was
     /// already `Some` on entry). This keeps the one-shot decode path free
-    /// of per-MCU overhead while still enabling fine-grained resume on
+    /// of per-row overhead while still enabling fine-grained resume on
     /// incremental retries.
     pub(crate) mcu_checkpoints_enabled: bool,
     /// Scratch buffer that header marker parsers fill with the marker body
@@ -415,7 +420,7 @@ where
     }
 
     /// Like `checkpoint_scan` but also saves the bitstream decoder state for
-    /// per-MCU granularity resume.
+    /// row-granularity resume.
     pub(crate) fn checkpoint_scan_with_bitstream(
         &mut self, mcu_row: usize, mcu_col: usize, pixels_written: usize,
         dc_predictions: [(i32, i32); MAX_COMPONENTS],
@@ -430,6 +435,7 @@ where
                 stream_position,
                 mcu_row,
                 mcu_col,
+                todo: self.todo,
                 pixels_written,
                 sos_snapshot,
                 append_snapshot,
@@ -533,6 +539,7 @@ where
             extended_xmp_segments: vec![],
             header_resume_position: 0,
             scan_state: None,
+            pixels_decoded: 0,
             mcu_checkpoints_enabled: false,
             progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
             marker_body_scratch: Vec::new()
@@ -612,6 +619,27 @@ where
         } else {
             None
         };
+    }
+
+    /// Return the number of output scanlines known to be stable after the
+    /// most recent `decode_into` attempt.
+    ///
+    /// This is useful after a recoverable EOF: callers can keep the same
+    /// output buffer, display the stable prefix, grow the input stream, and
+    /// call `decode_into` again to continue decoding.
+    #[must_use]
+    pub fn decoded_scanlines(&self) -> Option<usize> {
+        if !self.headers_decoded {
+            return None;
+        }
+
+        let row_stride = usize::from(self.width())
+            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
+        if row_stride == 0 {
+            return Some(0);
+        }
+
+        Some((self.pixels_decoded / row_stride).min(usize::from(self.height())))
     }
 
     /// Get an immutable reference to the decoder options
@@ -1235,12 +1263,18 @@ where
             append_snapshot: HeaderAppendStateSnapshot,
             sos_snapshot:    SosParamsSnapshot,
             stream_position: usize,
+            todo:            usize,
+            pixels_written:  usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
         }
-        // Enable per-MCU checkpointing only on retry calls (when scan_state
+        // Enable per-row checkpointing only on retry calls (when scan_state
         // already existed before this decode_into invocation). One-shot
         // decoding skips checkpoint overhead entirely.
-        self.mcu_checkpoints_enabled = self.scan_state.is_some();
+        let retrying_scan = self.scan_state.is_some();
+        self.mcu_checkpoints_enabled = retrying_scan;
+        if !retrying_scan {
+            self.pixels_decoded = 0;
+        }
 
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
@@ -1252,6 +1286,8 @@ where
                     append_snapshot: checkpoint.append_snapshot,
                     sos_snapshot:    checkpoint.sos_snapshot,
                     stream_position: checkpoint.stream_position,
+                    todo:            checkpoint.todo,
+                    pixels_written:  checkpoint.pixels_written,
                     dc_predictions:  checkpoint.dc_predictions
                 }
             })
@@ -1290,6 +1326,8 @@ where
 
             if let Some(view) = checkpoint_view {
                 self.stream.set_position(view.stream_position)?;
+                self.todo = view.todo;
+                self.pixels_decoded = view.pixels_written;
                 // Restore DC predictor state from the checkpoint.
                 for (i, comp) in
                     self.components.iter_mut().enumerate().take(MAX_COMPONENTS)
@@ -1301,16 +1339,19 @@ where
             } else {
                 self.restore_scan_header_state(&outer_header_snapshot);
                 self.stream.set_position(scan_start_position)?;
+                self.pixels_decoded = 0;
                 // Full replay restores first-SOS tables/config and predictors.
                 for comp in &mut self.components {
                     comp.dc_pred = 0;
                     comp.dc_diff = 0;
                 }
             }
-            // Progressive replay keeps the coefficient buffer: each scan
-            // overwrites its own bands before final output is produced.
-            self.todo =
-                if self.restart_interval == 0 { 0x7fff_ffff } else { self.restart_interval };
+            if checkpoint_view.is_none() {
+                // Progressive replay keeps the coefficient buffer: each scan
+                // overwrites its own bands before final output is produced.
+                self.todo =
+                    if self.restart_interval == 0 { 0x7fff_ffff } else { self.restart_interval };
+            }
 
             if self.is_arithmetic {
                 #[cfg(feature = "arith")]
@@ -1361,6 +1402,7 @@ where
                 if let Some(state) = self.scan_state.as_deref_mut() {
                     state.rst_checkpoint = None;
                 }
+                self.pixels_decoded = expected_size;
                 Ok(())
             }
             Err(e) => Err(e)

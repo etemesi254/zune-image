@@ -1235,31 +1235,31 @@ fn header_overwrite_marker_no_duplication_on_retry() {
     }
 }
 
-/// Per-MCU checkpoint: truncating a non-RST image mid-scan and retrying
-/// must eventually resume from a per-MCU checkpoint rather than replaying
-/// from scan start. Per-MCU checkpointing is only enabled on retry calls
-/// (when scan_state already exists), so the sequence is:
-///   1. First call: partial data → ExhaustedData (no checkpoints saved)
-///   2. Second call (retry, checkpoints now enabled): still partial → ExhaustedData
-///      (per-MCU checkpoints ARE saved this time)
-///   3. Third call: full data → resumes from per-MCU checkpoint
-#[test]
-fn per_mcu_checkpoint_avoids_full_scan_replay() {
-    // sampling_factors.jpg is baseline with NO RST markers — perfect for testing per-MCU.
-    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
-    let expected = decode_oneshot(data);
-
-    // Find the SOS marker to know where scan data begins.
+fn entropy_start(data: &[u8]) -> usize {
     let sos_pos = data
         .windows(2)
         .position(|w| w == [0xFF, 0xDA])
         .expect("test image must have SOS");
-
-    // The SOS header is followed by the entropy-coded data.
     let sos_len = u16::from_be_bytes([data[sos_pos + 2], data[sos_pos + 3]]) as usize;
-    let entropy_start = sos_pos + 2 + sos_len;
+    sos_pos + 2 + sos_len
+}
+
+/// Per-row checkpoint: truncating a non-RST image mid-scan and retrying
+/// must eventually resume from a row checkpoint rather than replaying
+/// from scan start. Per-row checkpointing is only enabled on retry calls
+/// (when scan_state already exists), so the sequence is:
+///   1. First call: partial data → ExhaustedData (no checkpoints saved)
+///   2. Second call (retry, checkpoints now enabled): still partial → ExhaustedData
+///      (per-row checkpoints ARE saved this time)
+///   3. Third call: full data → resumes from per-row checkpoint
+#[test]
+fn per_row_checkpoint_avoids_full_scan_replay() {
+    // sampling_factors.jpg is baseline with NO RST markers — perfect for testing per-row.
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let expected = decode_oneshot(data);
 
     // Truncate roughly 60% into the scan data.
+    let entropy_start = entropy_start(data);
     let scan_data_len = data.len() - entropy_start;
     let cutoff = entropy_start + scan_data_len * 60 / 100;
 
@@ -1274,7 +1274,7 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
 
     // First decode attempt — should fail with recoverable EOF.
-    // Per-MCU checkpoints are NOT saved on the first call (one-shot fast path).
+    // Per-row checkpoints are NOT saved on the first call (one-shot fast path).
     let err = decoder
         .decode_into(&mut out)
         .expect_err("truncated scan should give recoverable EOF");
@@ -1282,10 +1282,17 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
         err.is_recoverable_eof(),
         "expected recoverable EOF, got {err:?}"
     );
+    let first_scanlines = decoder
+        .decoded_scanlines()
+        .expect("headers are decoded, so partial progress should be known");
+    assert!(
+        first_scanlines > 0 && first_scanlines < usize::from(decoder.info().unwrap().height),
+        "expected a stable partial prefix, got {first_scanlines} scanlines"
+    );
 
-    // Second attempt — still truncated. Now per-MCU checkpoints are enabled
+    // Second attempt — still truncated. Now per-row checkpoints are enabled
     // (scan_state exists from the first call). This replays from scan start
-    // and saves per-MCU checkpoints as it decodes.
+    // and saves per-row checkpoints as it decodes.
     let err = decoder
         .decode_into(&mut out)
         .expect_err("still truncated, should give recoverable EOF again");
@@ -1294,17 +1301,22 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
         "expected recoverable EOF on second attempt, got {err:?}"
     );
 
-    // Third attempt — expose full data. Should resume from the per-MCU
+    // Third attempt — expose full data. Should resume from the per-row
     // checkpoint saved during the second attempt.
     seek_log.borrow_mut().clear();
     limit.set(data.len());
     decoder
         .decode_into(&mut out)
         .expect("full data should allow decode to complete");
-    assert_pixels_match(&out, &expected, "per_mcu_checkpoint", data.len());
+    assert_pixels_match(&out, &expected, "per_row_checkpoint", data.len());
+    assert_eq!(
+        decoder.decoded_scanlines(),
+        Some(usize::from(decoder.info().unwrap().height)),
+        "successful decode should report the full frame as stable"
+    );
 
     // Verify: the seek on the third call should be to a position AFTER
-    // entropy_start, proving the checkpoint is at an MCU boundary.
+    // entropy_start, proving the checkpoint is inside entropy data.
     let seeks = seek_log.borrow();
     assert!(
         !seeks.is_empty(),
@@ -1313,7 +1325,55 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
     let resume_pos = seeks[0];
     assert!(
         resume_pos > entropy_start,
-        "per-MCU checkpoint should resume past entropy_start ({entropy_start}), \
-         but sought to {resume_pos} — indicates full scan replay instead of MCU resume"
+        "per-row checkpoint should resume past entropy_start ({entropy_start}), \
+         but sought to {resume_pos} — indicates full scan replay instead of row resume"
+    );
+}
+
+#[test]
+fn per_row_checkpoint_preserves_vertical_upsampling_state() {
+    let data = include_bytes!("../../../test-images/jpeg/2029.jpg");
+    let expected = decode_oneshot(data);
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be fully visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated scan should give recoverable EOF");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("still truncated, should give recoverable EOF again");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF on second attempt, got {err:?}"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full data should allow decode to complete");
+    assert_pixels_match(&out, &expected, "per_row_vertical_upsampling", data.len());
+
+    let seeks = seek_log.borrow();
+    let resume_pos = seeks.first().copied();
+    assert!(
+        matches!(resume_pos, Some(pos) if pos > entropy_start),
+        "retry should resume inside entropy data, got {seeks:?}"
     );
 }

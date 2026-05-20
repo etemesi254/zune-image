@@ -222,7 +222,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             // per-component DC predictor state needs to be restored, which
             // is already handled in `decode_into` from the checkpoint.
 
-            // Restore bitstream decoder state for per-MCU resume.
+            // Restore bitstream decoder state for fine-grained resume.
             stream.restore_snapshot(checkpoint.bitstream_state);
         }
 
@@ -329,6 +329,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &mut pixels_written,
                         &mut upsampler_scratch_space,
                     )?;
+                    self.pixels_decoded = pixels_written;
                     // This row's coefficient buffers can be reused next, so
                     // any checkpoint inside the row is no longer valid.
                     self.invalidate_scan_checkpoint();
