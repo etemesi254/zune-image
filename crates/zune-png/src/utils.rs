@@ -218,7 +218,6 @@ pub fn expand_trns<const SIXTEEN_BITS: bool>(
                 let scale = DEPTH_SCALE_TABLE[usize::from(depth)];
 
                 let depth_mask = (1_u16 << depth) - 1;
-                // BUG: This overflowing is indicative of a wrong tRNS value
                 let trns_byte = (((trns_bytes[0]) & 255 & depth_mask) as u8) * scale;
 
                 for (in_byte, chunk) in input.iter().zip(out.chunks_exact_mut(2)) {
