@@ -617,6 +617,15 @@ impl<'a> DeflateDecoder<'a> {
 
                 // ensure there is enough space for a fast copy
                 if dest_offset + len + FASTCOPY_BYTES > out_block.len() {
+                    if dest_offset.wrapping_add(len) > out_block.len() {
+                        return Err(InflateDecodeErrors::new(
+                            DecodeErrorStatus::OutputLimitExceeded(
+                                self.options.limit,
+                                out_block.len(),
+                            ),
+                            out_block,
+                        ));
+                    }
                     // and if there is not, resize
                     let new_len = out_block.len() + RESIZE_BY + len;
 
@@ -1188,7 +1197,7 @@ impl<'a> DeflateDecoder<'a> {
                 precode_lens[usize::from(*i)] = bits;
             }
 
-         build_decode_table_inner(
+            build_decode_table_inner(
                 &precode_lens,
                 &PRECODE_DECODE_RESULTS,
                 &mut precode_decode_table,
@@ -1316,7 +1325,7 @@ impl<'a> DeflateDecoder<'a> {
             DEFLATE_MAX_OFFSET_CODEWORD_LENGTH,
         )?;
 
-       build_decode_table_inner(
+        build_decode_table_inner(
             &lens,
             &LITLEN_DECODE_RESULTS,
             &mut litlen_decode_table,
@@ -1332,7 +1341,6 @@ impl<'a> DeflateDecoder<'a> {
     }
 }
 
-
 /// Build the decode table for the precode
 #[allow(clippy::needless_range_loop)]
 pub(crate) fn build_decode_table_inner(
@@ -1343,8 +1351,7 @@ pub(crate) fn build_decode_table_inner(
 
     let mut len_counts: [u32; DEFLATE_MAX_CODEWORD_LENGTH + 1] =
         [0; DEFLATE_MAX_CODEWORD_LENGTH + 1];
-    let mut offsets: [u32; DEFLATE_MAX_CODEWORD_LENGTH + 1] =
-        [0; DEFLATE_MAX_CODEWORD_LENGTH + 1];
+    let mut offsets: [u32; DEFLATE_MAX_CODEWORD_LENGTH + 1] = [0; DEFLATE_MAX_CODEWORD_LENGTH + 1];
     let mut sorted_syms: [u16; DEFLATE_MAX_NUM_SYMS] = [0; DEFLATE_MAX_NUM_SYMS];
 
     let mut i;
@@ -1482,11 +1489,8 @@ pub(crate) fn build_decode_table_inner(
     while len <= table_bits {
         // Process all count codewords with length len
         loop {
-            let entry = make_decode_table_entry(
-                decode_results,
-                usize::from(sorted_syms[i]),
-                len as u32,
-            );
+            let entry =
+                make_decode_table_entry(decode_results, usize::from(sorted_syms[i]), len as u32);
             i += 1;
             // fill first entry for current codeword
             decode_table[codeword] = entry;
