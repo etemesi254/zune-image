@@ -184,7 +184,6 @@ where
             // Slice the global source image down to the exact local chunk bounds
             let src_chunk = &src_full[start_idx..end_idx];
 
-            // Execute your existing zero-allocation SIMD-friendly function!
             blend_single_channel::<T>(src_chunk, dest_chunk, alpha);
         }
     }
@@ -200,6 +199,7 @@ where
     if src_alpha >= 1.0 {
         // copy source to destination
         dest.copy_from_slice(src);
+        return;
     }
 
     let dest_alpha = 1.0 - src_alpha;
