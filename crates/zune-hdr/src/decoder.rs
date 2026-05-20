@@ -325,7 +325,7 @@ where
                 continue;
             }
 
-            let mut i = self.buf.read_u8();
+            let mut i = self.buf.read_u8_err()?;
 
             if i != 2 {
                 // undo byte read
