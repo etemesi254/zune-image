@@ -141,7 +141,6 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
     #[cfg(feature = "sse41")]
     {
         if is_x86_feature_detected!("sse4.1") {
-            trace!("Using SSE4.1 transpose u8 algorithm");
             unsafe {
                 return crate::transpose::sse41::transpose_sse41_u8(in_matrix, out_matrix, width, height);
             }
@@ -157,7 +156,6 @@ pub fn transpose_u8(in_matrix: &[u8], out_matrix: &mut [u8], width: usize, heigh
         }
     }
 
-    trace!("Using scalar transpose u8 algorithm");
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
 
@@ -181,7 +179,6 @@ pub fn transpose_float(in_matrix: &[f32], out_matrix: &mut [f32], width: usize, 
         }
     }
 
-    trace!("Using scalar transpose f32 algorithm");
     transpose_scalar(in_matrix, out_matrix, width, height);
 }
 
