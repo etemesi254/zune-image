@@ -25,16 +25,16 @@ const FARBFELD_BIT_DEPTH: BitDepth = BitDepth::Sixteen;
 /// One can modify the decoder accepted dimensions
 /// via `DecoderOptions`
 pub struct FarbFeldDecoder<T: ZByteReaderTrait> {
-    stream:          ZReader<T>,
-    width:           usize,
-    height:          usize,
+    stream: ZReader<T>,
+    width: usize,
+    height: usize,
     decoded_headers: bool,
-    options:         DecoderOptions
+    options: DecoderOptions,
 }
 
 impl<T> FarbFeldDecoder<T>
 where
-    T: ZByteReaderTrait
+    T: ZByteReaderTrait,
 {
     ///Create a new decoder.
     ///
@@ -47,11 +47,11 @@ where
     #[allow(clippy::redundant_field_names)]
     pub fn new_with_options(data: T, option: DecoderOptions) -> FarbFeldDecoder<T> {
         FarbFeldDecoder {
-            stream:          ZReader::new(data),
-            height:          0,
-            width:           0,
+            stream: ZReader::new(data),
+            height: 0,
+            width: 0,
             decoded_headers: false,
-            options:         option
+            options: option,
         }
     }
     /// Decode a header for this specific image
@@ -92,10 +92,11 @@ where
     pub fn output_buffer_size(&self) -> Option<usize> {
         if self.decoded_headers {
             Some(
-                FARBFELD_COLORSPACE.num_components()/*RGBA*/
+                FARBFELD_COLORSPACE
+                    .num_components() /*RGBA*/
                     .checked_mul(self.width)?
                     .checked_mul(self.height)?
-                    .checked_mul(2 /*depth*/)?
+                    .checked_mul(2 /*depth*/)?,
             )
         } else {
             None
@@ -154,9 +155,12 @@ where
     pub fn decode(&mut self) -> Result<Vec<u16>, FarbFeldErrors> {
         self.decode_headers()?;
 
-        let size = FARBFELD_COLORSPACE.num_components()/*RGBA*/
-            .saturating_mul(self.width)
-            .saturating_mul(self.height);
+        let size = FARBFELD_COLORSPACE
+            .num_components() /*RGBA*/
+            .checked_mul(self.width)
+            .ok_or(FarbFeldErrors::Generic("Overflowed int"))?
+            .checked_mul(self.height)
+            .ok_or(FarbFeldErrors::Generic("Overflowed int"))?;
 
         // NOTE: This can be done via data.align() + decode_into()
         // but that's unsafe, and doesn't please the Rust gods
