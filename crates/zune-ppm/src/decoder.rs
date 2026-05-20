@@ -192,7 +192,7 @@ where
         if self.height > self.options.max_height() {
             let msg = format!(
                 "Height {} greater than max height {}",
-                self.width,
+                self.height,
                 self.options.max_height()
             );
             return Err(PPMDecodeErrors::Generic(msg));
