@@ -1236,9 +1236,13 @@ fn header_overwrite_marker_no_duplication_on_retry() {
 }
 
 /// Per-MCU checkpoint: truncating a non-RST image mid-scan and retrying
-/// must resume from a per-MCU checkpoint rather than replaying from scan
-/// start. We verify this by checking that the seek on retry goes to a
-/// position *after* scan start.
+/// must eventually resume from a per-MCU checkpoint rather than replaying
+/// from scan start. Per-MCU checkpointing is only enabled on retry calls
+/// (when scan_state already exists), so the sequence is:
+///   1. First call: partial data → ExhaustedData (no checkpoints saved)
+///   2. Second call (retry, checkpoints now enabled): still partial → ExhaustedData
+///      (per-MCU checkpoints ARE saved this time)
+///   3. Third call: full data → resumes from per-MCU checkpoint
 #[test]
 fn per_mcu_checkpoint_avoids_full_scan_replay() {
     // sampling_factors.jpg is baseline with NO RST markers — perfect for testing per-MCU.
@@ -1270,6 +1274,7 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
 
     // First decode attempt — should fail with recoverable EOF.
+    // Per-MCU checkpoints are NOT saved on the first call (one-shot fast path).
     let err = decoder
         .decode_into(&mut out)
         .expect_err("truncated scan should give recoverable EOF");
@@ -1278,7 +1283,19 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
         "expected recoverable EOF, got {err:?}"
     );
 
-    // Clear seek log, expose full data, and retry.
+    // Second attempt — still truncated. Now per-MCU checkpoints are enabled
+    // (scan_state exists from the first call). This replays from scan start
+    // and saves per-MCU checkpoints as it decodes.
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("still truncated, should give recoverable EOF again");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF on second attempt, got {err:?}"
+    );
+
+    // Third attempt — expose full data. Should resume from the per-MCU
+    // checkpoint saved during the second attempt.
     seek_log.borrow_mut().clear();
     limit.set(data.len());
     decoder
@@ -1286,8 +1303,8 @@ fn per_mcu_checkpoint_avoids_full_scan_replay() {
         .expect("full data should allow decode to complete");
     assert_pixels_match(&out, &expected, "per_mcu_checkpoint", data.len());
 
-    // Verify: the seek on retry should be to a position AFTER entropy_start,
-    // proving the checkpoint is at an MCU boundary (not scan start).
+    // Verify: the seek on the third call should be to a position AFTER
+    // entropy_start, proving the checkpoint is at an MCU boundary.
     let seeks = seek_log.borrow();
     assert!(
         !seeks.is_empty(),

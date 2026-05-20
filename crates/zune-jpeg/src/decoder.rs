@@ -295,6 +295,13 @@ pub struct JpegDecoder<T> {
     /// copying anything. The inner `Vec`s are reused across `decode_into`
     /// calls; capacity is reclaimed only when the decoder is dropped.
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Whether per-MCU checkpointing is enabled for the current decode.
+    ///
+    /// Only `true` on a retry `decode_into` call (when `scan_state` was
+    /// already `Some` on entry). This keeps the one-shot decode path free
+    /// of per-MCU overhead while still enabling fine-grained resume on
+    /// incremental retries.
+    pub(crate) mcu_checkpoints_enabled: bool,
     /// Scratch buffer that header marker parsers fill with the marker body
     /// before mutating decoder state.
     ///
@@ -526,6 +533,7 @@ where
             extended_xmp_segments: vec![],
             header_resume_position: 0,
             scan_state: None,
+            mcu_checkpoints_enabled: false,
             progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
             marker_body_scratch: Vec::new()
         }
@@ -1208,6 +1216,7 @@ where
     /// ```
     ///
     ///
+    #[allow(clippy::too_many_lines)]
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
@@ -1228,6 +1237,11 @@ where
             stream_position: usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
         }
+        // Enable per-MCU checkpointing only on retry calls (when scan_state
+        // already existed before this decode_into invocation). One-shot
+        // decoding skips checkpoint overhead entirely.
+        self.mcu_checkpoints_enabled = self.scan_state.is_some();
+
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
             outer_append_snapshot: state.append_snapshot,
