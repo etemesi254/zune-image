@@ -67,14 +67,14 @@ pub fn spatial_region<T>(
     region: &mut PlanarRegionOut<'_, T>, radius: usize, operations: SpatialOperations,
 ) where
     T: PartialOrd
-        + Default
-        + Copy
-        + NumOps<T>
-        + Sub<Output = T>
-        + Add<Output = T>
-        + Div<Output = T>
-        + Send
-        + Sync,
+    + Default
+    + Copy
+    + NumOps<T>
+    + Sub<Output = T>
+    + Add<Output = T>
+    + Div<Output = T>
+    + Send
+    + Sync,
     u64: std::convert::From<T>,
 {
     let width = region.width;
@@ -82,10 +82,8 @@ pub fn spatial_region<T>(
         return;
     }
 
-    // Safely derive the absolute height of the image from the source slice
     let global_height = region.src_channels[0].len() / width;
 
-    // Resolve the function pointer once per chunk
     let ptr: fn(&[T]) -> T = match operations {
         SpatialOperations::Contrast => find_contrast::<T>,
         SpatialOperations::Maximum => find_max::<T>,
@@ -94,9 +92,8 @@ pub fn spatial_region<T>(
         SpatialOperations::Mean => find_mean::<T>,
     };
 
-    let neighbourhood_len = (2 * radius + 1) * (2 * radius + 1);
-
-    // Thread-local buffer allocation.
+    let diameter = 2 * radius + 1;
+    let neighbourhood_len = diameter * diameter;
     let mut buf = vec![T::default(); neighbourhood_len];
 
     for (src, dest) in region
@@ -107,19 +104,22 @@ pub fn spatial_region<T>(
         for local_y in 0..region.height {
             let global_y = region.y_offset + local_y;
 
-            for x in 0..width {
-                // Pass global_y and global_height so clamping math works correctly
-                collect_neighbourhood(src, width, global_height, x, global_y, radius, &mut buf);
+            // 1. Initialize the full neighbourhood at the start of the row (x = 0)
+            init_neighbourhood(src, width, global_height, 0, global_y, radius, &mut buf);
+            dest[local_y * width] = ptr(&buf);
+
+            // 2. Slide the window for the rest of the row
+            for x in 1..width {
+                slide_neighbourhood(src, width, global_height, x, global_y, radius, &mut buf);
                 dest[local_y * width + x] = ptr(&buf);
             }
         }
     }
 }
 
-/// Collect the `(2*radius+1)²` neighbourhood around `(cx, cy)` into `buf`,
-/// clamping out-of-bounds coordinates to replicate edge pixels.
+/// Collect the `(2*radius+1)²` neighbourhood from scratch at `(cx, cy)` into `buf`.
 #[inline(always)]
-fn collect_neighbourhood<T: Copy>(
+fn init_neighbourhood<T: Copy>(
     src: &[T], width: usize, global_height: usize, cx: usize, cy: usize, radius: usize,
     buf: &mut [T],
 ) {
@@ -135,5 +135,30 @@ fn collect_neighbourhood<T: Copy>(
             buf[i] = src[row_offset + sx];
             i += 1;
         }
+    }
+}
+
+/// Slide the `(2*radius+1)²` neighbourhood one pixel to the right.
+/// Discards the leftmost column and fetches the new rightmost column.
+#[inline(always)]
+fn slide_neighbourhood<T: Copy>(
+    src: &[T], width: usize, global_height: usize, cx: usize, cy: usize, radius: usize,
+    buf: &mut [T],
+) {
+    let diameter = 2 * radius + 1;
+
+    // Calculate the x-coordinate of the *new* rightmost column, clamping to the edge.
+    let sx = (cx + radius).min(width - 1);
+
+    for ky in 0..diameter {
+        let sy = (cy + ky).saturating_sub(radius).min(global_height - 1);
+        let row_offset = sy * width;
+        let row_start = ky * diameter;
+
+        // Shift the current row left by 1 pixel (memmove under the hood)
+        buf.copy_within((row_start + 1)..(row_start + diameter), row_start);
+
+        // Insert the newly exposed pixel at the end of the row
+        buf[row_start + diameter - 1] = src[row_offset + sx];
     }
 }
