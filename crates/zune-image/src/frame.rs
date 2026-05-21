@@ -13,12 +13,11 @@
 
 use std::any::TypeId;
 
-use bytemuck::Pod;
-use zune_core::colorspace::ColorSpace;
-
 use crate::channel::{Channel, ChannelErrors};
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::utils::swizzle_channels;
+use bytemuck::Pod;
+use zune_core::colorspace::ColorSpace;
 
 /// A single image frame
 ///
@@ -32,9 +31,18 @@ use crate::utils::swizzle_channels;
 /// this is how long this particular frame should be shown
 #[derive(Eq, PartialEq)]
 pub struct Frame {
-    pub(crate) channels:    Vec<Channel>,
-    pub(crate) numerator:   usize,
-    pub(crate) denominator: usize
+    pub(crate) channels: Vec<Channel>,
+    pub(crate) numerator: usize,
+    pub(crate) denominator: usize,
+}
+
+/// Byte order used when serializing `u16` samples.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum Endianness {
+    #[default]
+    Native,
+    Big,
+    Little,
 }
 
 impl Clone for Frame {
@@ -57,10 +65,11 @@ impl Clone for Frame {
             // safeguards to ensure that we justify starting threads
             if channels.len() > 1 && unsafe { channels[0].alias().len() > 1000 } {
                 let bit_type = channels[0].type_id();
+                let size_of = channels[0].size_of();
 
                 // create new channels
                 let mut new_channels =
-                    vec![Channel::new_with_capacity_and_type(1, bit_type); channels.len()];
+                    vec![Channel::new_with_capacity_and_type(1, size_of, bit_type); channels.len()];
 
                 std::thread::scope(|c| {
                     for (old, new) in channels.iter().zip(new_channels.iter_mut()) {
@@ -84,16 +93,16 @@ impl Clone for Frame {
                     }
                 });
                 return Frame {
-                    channels:    new_channels,
-                    numerator:   self.numerator,
-                    denominator: self.denominator
+                    channels: new_channels,
+                    numerator: self.numerator,
+                    denominator: self.denominator,
                 };
             }
         }
         Frame {
-            channels:    self.channels.clone(),
-            numerator:   self.numerator,
-            denominator: self.denominator
+            channels: self.channels.clone(),
+            numerator: self.numerator,
+            denominator: self.denominator,
         }
     }
 }
@@ -120,7 +129,7 @@ impl Frame {
         Frame {
             channels,
             numerator: 1,
-            denominator: 1
+            denominator: 1,
         }
     }
     /// Create a new frame from a slice of f32 pixels
@@ -136,14 +145,14 @@ impl Frame {
     /// # Panics
     /// Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_f32(
-        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[f32], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_f32(pixels, colorspace).unwrap();
 
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
     /// Create a new frame from a slice of u16 pixels
@@ -159,13 +168,13 @@ impl Frame {
     /// # Panics
     ///- Panics in case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_u16(
-        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[u16], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_u16(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -182,13 +191,13 @@ impl Frame {
     /// # Panics
     ///  In case the pixels aren't evenly divided by expected number of components on the colorspace
     pub fn from_u8(
-        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize
+        pixels: &[u8], colorspace: ColorSpace, numerator: usize, denominator: usize,
     ) -> Frame {
         let channels = deinterleave_u8(pixels, colorspace).unwrap();
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -236,12 +245,12 @@ impl Frame {
     ///
     /// ```
     pub fn new_with_duration(
-        channels: Vec<Channel>, numerator: usize, denominator: usize
+        channels: Vec<Channel>, numerator: usize, denominator: usize,
     ) -> Frame {
         Frame {
             channels,
             numerator,
-            denominator
+            denominator,
         }
     }
 
@@ -390,12 +399,12 @@ impl Frame {
     /// - Err(e) - An error occurred trying to represent the image as type `T`
     ///
     pub fn flatten_into<T: Clone + Default + 'static + Copy + Pod>(
-        &self, into: &mut [T]
+        &self, into: &mut [T],
     ) -> Result<usize, ChannelErrors> {
         swizzle_channels(&self.channels, into)
     }
 
-    /// convert `u16` channels  to native endian
+    /// convert `u16` channels  to a certain endian
     ///
     ///  # Arguments
     /// - Colorspace of the image
@@ -405,180 +414,133 @@ impl Frame {
     ///
     /// # Panics
     /// If channel isn't storing the u16 as it's internal  type
-    pub fn u16_to_native_endian(&self) -> Vec<u8> {
+    fn u16_to_an_endian<const BIG_ENDIAN: bool>(
+        &self, into: &mut [u8],
+    ) -> Result<usize, ChannelErrors> {
         // confirm all channels are in u16
         for channel in &self.channels {
             if channel.type_id() != TypeId::of::<u16>() {
-                panic!("Wrong type ID, expected u16 but got another type");
                 // wrong type id, that's an error
-                //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));
+                return Err(ChannelErrors::DifferentType(
+                    channel.type_id(),
+                    TypeId::of::<u16>(),
+                ));
             }
         }
         let length = self.channels[0].len() * self.channels.len();
+        if length < into.len() {
+            return Err(ChannelErrors::BufferTooSmall {
+                expected: length,
+                actual: into.len(),
+            });
+        }
 
-        let mut out_pixel = vec![0_u8; length];
-
+        let endian_det = |x: u16| {
+            if BIG_ENDIAN {
+                x.to_be_bytes()
+            } else {
+                x.to_ne_bytes()
+            }
+        };
         match self.channels.len() {
-            // reinterpret as u16 first then native endian
             1 => self.channels[0]
-                .reinterpret_as::<u16>()
-                .unwrap()
+                .reinterpret_as::<u16>()?
                 .iter()
-                .zip(out_pixel.chunks_exact_mut(2))
-                .for_each(|(x, y)| y.copy_from_slice(&x.to_ne_bytes())),
+                .zip(into.chunks_exact_mut(2))
+                .for_each(|(x, y)| y.copy_from_slice(&endian_det(*x))),
 
             2 => {
-                let luma_channel = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let alpha_channel = self.channels[1].reinterpret_as::<u16>().unwrap();
+                let luma_channel = self.channels[0].reinterpret_as::<u16>()?;
+                let alpha_channel = self.channels[1].reinterpret_as::<u16>()?;
 
-                for ((out, luma), alpha) in out_pixel
+                for ((out, luma), alpha) in into
                     .chunks_exact_mut(4)
                     .zip(luma_channel)
                     .zip(alpha_channel)
                 {
-                    out[0..2].copy_from_slice(&luma.to_ne_bytes());
-                    out[2..4].copy_from_slice(&alpha.to_ne_bytes());
+                    out[0..2].copy_from_slice(&(endian_det(*luma)));
+                    out[2..4].copy_from_slice(&(endian_det(*alpha)));
                 }
             }
             3 => {
-                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
+                let c1 = self.channels[0].reinterpret_as::<u16>()?;
+                let c2 = self.channels[1].reinterpret_as::<u16>()?;
+                let c3 = self.channels[2].reinterpret_as::<u16>()?;
 
                 for (((out, first), second), third) in
-                    out_pixel.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
+                    into.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
                 {
-                    out[0..2].copy_from_slice(&first.to_ne_bytes());
-                    out[2..4].copy_from_slice(&second.to_ne_bytes());
-                    out[4..6].copy_from_slice(&third.to_ne_bytes());
+                    out[0..2].copy_from_slice(&(endian_det(*first)));
+                    out[2..4].copy_from_slice(&(endian_det(*second)));
+                    out[4..6].copy_from_slice(&(endian_det(*third)));
                 }
             }
             4 => {
-                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
-                let c4 = self.channels[3].reinterpret_as::<u16>().unwrap();
+                let c1 = self.channels[0].reinterpret_as::<u16>()?;
+                let c2 = self.channels[1].reinterpret_as::<u16>()?;
+                let c3 = self.channels[2].reinterpret_as::<u16>()?;
+                let c4 = self.channels[3].reinterpret_as::<u16>()?;
 
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(8)
-                    .zip(c1)
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
+                for ((((out, first), second), third), fourth) in
+                    into.chunks_exact_mut(8).zip(c1).zip(c2).zip(c3).zip(c4)
                 {
-                    out[0..2].copy_from_slice(&first.to_ne_bytes());
-                    out[2..4].copy_from_slice(&second.to_ne_bytes());
-                    out[4..6].copy_from_slice(&third.to_ne_bytes());
-                    out[6..8].copy_from_slice(&fourth.to_ne_bytes());
+                    out[0..2].copy_from_slice(&endian_det(*first));
+                    out[2..4].copy_from_slice(&endian_det(*second));
+                    out[4..6].copy_from_slice(&endian_det(*third));
+                    out[6..8].copy_from_slice(&endian_det(*fourth));
                 }
             }
             // panics, all the way down
             n => {
                 let mut channels_ref = Vec::with_capacity(self.channels.len());
                 for channel in &self.channels {
-                    channels_ref.push(channel.reinterpret_as::<u16>().unwrap());
+                    channels_ref.push(channel.reinterpret_as::<u16>()?);
                 }
-                for (pos, pixel) in out_pixel.chunks_exact_mut(n * 2).enumerate() {
+                for (pos, pixel) in into.chunks_exact_mut(n * 2).enumerate() {
                     for (channel, out_p) in channels_ref.iter().zip(pixel.chunks_exact_mut(2)) {
-                        out_p.copy_from_slice(&channel[pos].to_ne_bytes());
+                        out_p.copy_from_slice(&endian_det(channel[pos]));
                     }
                 }
             }
         }
-        out_pixel
+        Ok(length)
     }
 
-    /// convert `u16` channels  to big endian
-    ///
-    ///  # Arguments
-    /// - Colorspace of the image
-    ///
-    /// # Returns
-    ///  - A vector with each two bytes representing a u16 value but
-    ///
-    /// # Panics
-    /// If channel isn't storing the u16 as it's internal type
-    pub fn u16_to_big_endian(&self, colorspace: ColorSpace) -> Vec<u8> {
-        // confirm all channels are in u16
+
+    pub fn u16_to_u8_endian_into(
+        &self, endianness: Endianness, into: &mut [u8],
+    ) -> Result<usize, ChannelErrors> {
+        match endianness {
+            Endianness::Native => {
+                #[cfg(target_endian = "little")]
+                {
+                    self.u16_to_an_endian::<false>(into)
+                }
+                #[cfg(target_endian = "big")]
+                {
+                    self.u16_to_an_endian::<true>(into)
+                }
+            }
+            Endianness::Big => self.u16_to_an_endian::<true>(into),
+            Endianness::Little => self.u16_to_an_endian::<false>(into),
+        }
+    }
+    pub fn u16_to_u8_endian(&self, endianness: Endianness) -> Result<Vec<u8>, ChannelErrors> {
         for channel in &self.channels {
             if channel.type_id() != TypeId::of::<u16>() {
-                panic!("Wrong type ID, expected u16 but got another type");
                 // wrong type id, that's an error
-                //return Err(ImageErrors::WrongTypeId(channel.get_type_id(), U16_TYPE_ID));
+                return Err(ChannelErrors::DifferentType(
+                    channel.type_id(),
+                    TypeId::of::<u16>(),
+                ));
             }
         }
-        let length = self.channels[0].len() * colorspace.num_components();
-
-        let mut out_pixel = vec![0_u8; length];
-
-        match colorspace.num_components() {
-            // reinterpret as u16 first then native endian
-            1 => self.channels[0]
-                .reinterpret_as::<u16>()
-                .unwrap()
-                .iter()
-                .zip(out_pixel.chunks_exact_mut(2))
-                .for_each(|(x, y)| y.copy_from_slice(&x.to_be_bytes())),
-
-            2 => {
-                let luma_channel = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let alpha_channel = self.channels[1].reinterpret_as::<u16>().unwrap();
-
-                for ((out, luma), alpha) in out_pixel
-                    .chunks_exact_mut(4)
-                    .zip(luma_channel)
-                    .zip(alpha_channel)
-                {
-                    out[0..2].copy_from_slice(&luma.to_be_bytes());
-                    out[2..4].copy_from_slice(&alpha.to_be_bytes());
-                }
-            }
-            3 => {
-                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
-
-                for (((out, first), second), third) in
-                    out_pixel.chunks_exact_mut(6).zip(c1).zip(c2).zip(c3)
-                {
-                    out[0..2].copy_from_slice(&first.to_be_bytes());
-                    out[2..4].copy_from_slice(&second.to_be_bytes());
-                    out[4..6].copy_from_slice(&third.to_be_bytes());
-                }
-            }
-            4 => {
-                let c1 = self.channels[0].reinterpret_as::<u16>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<u16>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<u16>().unwrap();
-                let c4 = self.channels[3].reinterpret_as::<u16>().unwrap();
-
-                for ((((out, first), second), third), fourth) in out_pixel
-                    .chunks_exact_mut(8)
-                    .zip(c1)
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                {
-                    out[0..2].copy_from_slice(&first.to_be_bytes());
-                    out[2..4].copy_from_slice(&second.to_be_bytes());
-                    out[4..6].copy_from_slice(&third.to_be_bytes());
-                    out[6..8].copy_from_slice(&fourth.to_be_bytes());
-                }
-            }
-            n => {
-                let mut channels_ref = Vec::with_capacity(self.channels.len());
-                for channel in &self.channels {
-                    channels_ref.push(channel.reinterpret_as::<u16>().unwrap());
-                }
-                for (pos, pixel) in out_pixel.chunks_exact_mut(n * 2).enumerate() {
-                    for (channel, out_p) in channels_ref.iter().zip(pixel.chunks_exact_mut(2)) {
-                        out_p.copy_from_slice(&channel[pos].to_be_bytes());
-                    }
-                }
-            }
-        }
-        out_pixel
+        let length = self.channels[0].len() * self.channels.len();
+        let mut output = vec![0; length];
+        self.u16_to_u8_endian_into(endianness, &mut output)?;
+        Ok(output)
     }
+
     /// Overwrite the current image channels with new channels
     ///
     /// # Argument
@@ -604,7 +566,7 @@ impl Frame {
     ///   frames length
     ///
     pub fn separate_color_and_alpha_ref(
-        &self, color_space: ColorSpace
+        &self, color_space: ColorSpace,
     ) -> Option<(&[Channel], &Channel)> {
         if !color_space.has_alpha() {
             return None;
@@ -648,7 +610,7 @@ impl Frame {
     ///   frames length
     ///
     pub fn separate_color_and_alpha_mut(
-        &mut self, color_space: ColorSpace
+        &mut self, color_space: ColorSpace,
     ) -> Option<(&mut [Channel], &mut Channel)> {
         if !color_space.has_alpha() {
             return None;
@@ -692,7 +654,7 @@ mod tests {
     use zune_core::colorspace::ColorSpace;
 
     use crate::channel::Channel;
-    use crate::frame::Frame;
+    use crate::frame::{Endianness, Frame};
     use crate::image::Image;
 
     #[test]
@@ -703,7 +665,31 @@ mod tests {
         channel.push(50000_u16);
 
         let frame = Frame::new(vec![channel]);
-        let frame_data = frame.u16_to_native_endian();
+        let frame_data = frame.u16_to_u8_endian(Endianness::Native).unwrap();
+
+        assert_eq!(&frame_data, &[80, 195]);
+    }
+    #[test]
+    fn test_conversion_to_big_endian() {
+        // test that native endian conversion works for us
+
+        let mut channel = Channel::new::<u16>();
+        channel.push(50000_u16);
+
+        let frame = Frame::new(vec![channel]);
+        let frame_data = frame.u16_to_u8_endian(Endianness::Big).unwrap();
+
+        assert_eq!(&frame_data, &[195, 80]);
+    }
+    #[test]
+    fn test_conversion_to_little_endian() {
+        // test that native endian conversion works for us
+
+        let mut channel = Channel::new::<u16>();
+        channel.push(50000_u16);
+
+        let frame = Frame::new(vec![channel]);
+        let frame_data = frame.u16_to_u8_endian(Endianness::Little).unwrap();
 
         assert_eq!(&frame_data, &[80, 195]);
     }
@@ -738,7 +724,7 @@ mod tests {
             0_u8,
             ColorSpace::MultiBand(NonZeroU32::new(5).unwrap()),
             100,
-            100
+            100,
         );
         let output = image.flatten_to_u8();
         assert_eq!(output[0].len(), 100 * 100 * 5);
@@ -750,7 +736,7 @@ mod tests {
             0_u8,
             ColorSpace::MultiBand(NonZeroU32::new(BAND as u32).unwrap()),
             100,
-            100
+            100,
         );
         image
             .channels_mut(false)
