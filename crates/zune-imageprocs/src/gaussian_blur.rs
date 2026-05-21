@@ -187,46 +187,31 @@ fn horizontal_blur_region<T: NumOps<T> + Default + Copy + Clone>(
     let width = region.width;
 
     // Allocate double-buffered scratch space for 4 rows
-    let mut scratch_1 = vec![T::default(); width * 4];
-    let mut scratch_2 = vec![T::default(); width * 4];
+    let mut scratch_1 = vec![T::default(); width * 5];
+    let mut scratch_2 = vec![T::default(); width * 5];
 
     for channel in region.channels.iter_mut() {
         let mut chunk_iter = channel.chunks_exact_mut(width * 4);
 
         for chunk in chunk_iter.by_ref() {
-            let (r0, rest) = chunk.split_at_mut(width);
-            let (r1, rest) = rest.split_at_mut(width);
-            let (r2, r3) = rest.split_at_mut(width);
+            let width_dims = [
+                0..width,
+                width..width * 2,
+                width * 2..width * 3,
+                width * 3..width * 4,
+            ];
+            let mut rows = chunk.get_disjoint_mut(width_dims.clone()).unwrap();
 
-            let (s1_0, rest) = scratch_1.split_at_mut(width);
-            let (s1_1, rest) = rest.split_at_mut(width);
-            let (s1_2, s1_3) = rest.split_at_mut(width);
+            let mut s1 = scratch_1.get_disjoint_mut(width_dims.clone()).unwrap();
 
-            let (s2_0, rest) = scratch_2.split_at_mut(width);
-            let (s2_1, rest) = rest.split_at_mut(width);
-            let (s2_2, s2_3) = rest.split_at_mut(width);
+            let mut s2 = scratch_2.get_disjoint_mut(width_dims.clone()).unwrap();
 
             // Pass 1: Chunk -> Scratch 1
-            crate::box_blur::box_blur_inner_4x(
-                [r0, r1, r2, r3],
-                [s1_0, s1_1, s1_2, s1_3],
-                width,
-                radii[0],
-            );
+            crate::box_blur::box_blur_inner_nx(&rows, &mut s1, width, radii[0]);
             // Pass 2: Scratch 1 -> Scratch 2
-            crate::box_blur::box_blur_inner_4x(
-                [s1_0, s1_1, s1_2, s1_3],
-                [s2_0, s2_1, s2_2, s2_3],
-                width,
-                radii[1],
-            );
+            crate::box_blur::box_blur_inner_nx(&s1, &mut s2, width, radii[1]);
             // Pass 3: Scratch 2 -> Chunk (In-place return)
-            crate::box_blur::box_blur_inner_4x(
-                [s2_0, s2_1, s2_2, s2_3],
-                [r0, r1, r2, r3],
-                width,
-                radii[2],
-            );
+            crate::box_blur::box_blur_inner_nx(&s2, &mut rows, width, radii[2]);
         }
 
         // Clean up any remaining 1 to 3 rows sequentially using the 1D blur
@@ -248,7 +233,7 @@ fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[us
     for channel in region.channels.iter_mut() {
         for row in channel.chunks_exact_mut(width) {
             crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[0]);
-            crate::box_blur::box_blur_f32_inner(&mut scratch_row, row, width, radii[1]);
+            crate::box_blur::box_blur_f32_inner(&scratch_row, row, width, radii[1]);
             crate::box_blur::box_blur_f32_inner(row, &mut scratch_row, width, radii[2]);
             row.copy_from_slice(&scratch_row);
         }
