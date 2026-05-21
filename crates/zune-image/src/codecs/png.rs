@@ -25,7 +25,7 @@ use crate::codecs::{create_options_for_encoder, ImageFormat};
 use crate::errors::ImageErrors;
 use crate::errors::ImageErrors::ImageDecodeErrors;
 use crate::errors::ImgEncodeErrors::ImageEncodeErrors;
-use crate::frame::Frame;
+use crate::frame::{Endianness, Frame};
 use crate::image::Image;
 use crate::metadata::ImageMetadata;
 use crate::traits::{DecodeInto, DecoderTrait, EncoderTrait};
@@ -247,7 +247,17 @@ impl EncoderTrait for PngEncoder {
     ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
-        let frame = &image.to_u8_be()[0];
+        let frames = image.frames_ref();
+        if frames.is_empty() {
+            return Err(ImageErrors::EncodeErrors(ImageEncodeErrors(
+                "No frame".to_string(),
+            )));
+        }
+        let frame = &image
+            .frames_ref()
+            .first()
+            .unwrap()
+            .u16_to_u8_endian(Endianness::Big)?;
 
         let mut encoder = zune_png::PngEncoder::new(frame, options);
 
