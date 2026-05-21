@@ -23,9 +23,9 @@ use crate::core_filters::colorspace::ColorspaceConv;
 use crate::core_filters::depth::Depth;
 use crate::deinterleave::{deinterleave_f32, deinterleave_u16, deinterleave_u8};
 use crate::errors::ImageErrors;
-use crate::frame::Frame;
-use crate::operations_options::ImageOperationOptions;
+use crate::frame::{Endianness, Frame};
 use crate::metadata::ImageMetadata;
+use crate::operations_options::ImageOperationOptions;
 use crate::traits::{OperationsTrait, ZuneInts};
 
 /// Maximum supported color channels
@@ -215,7 +215,7 @@ impl Image {
         } else if self.metadata.depth() == BitDepth::Sixteen {
             self.frames_ref()
                 .iter()
-                .map(|z| z.u16_to_native_endian())
+                .map(|z| z.u16_to_u8_endian(Endianness::Native).unwrap())
                 .collect()
         } else {
             todo!("Unimplemented")
@@ -291,13 +291,12 @@ impl Image {
     }
     #[allow(dead_code)]
     pub(crate) fn to_u8_be(&self) -> Vec<Vec<u8>> {
-        let colorspace = self.colorspace();
         if self.metadata.depth() == BitDepth::Eight {
             self.flatten_frames::<u8>()
         } else if self.metadata.depth() == BitDepth::Sixteen {
             self.frames_ref()
                 .iter()
-                .map(|z| z.u16_to_big_endian(colorspace))
+                .map(|z| z.u16_to_u8_endian(Endianness::Big).unwrap())
                 .collect()
         } else {
             todo!("Unimplemented")
