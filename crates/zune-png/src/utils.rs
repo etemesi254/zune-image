@@ -88,7 +88,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry1.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset+3] = entry1.0[3];
+                    out_chunk[offset + 3] = entry1.0[3];
                 }
             }
             px_processed += 2;
@@ -113,7 +113,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset+3] = entry.0[3];
+                    out_chunk[offset + 3] = entry.0[3];
                 }
             }
             px_processed += 4;
@@ -138,7 +138,7 @@ pub(crate) fn expand_palette_sub_byte(
                 out_chunk[offset..offset + 3].copy_from_slice(&entry.0[..3]);
 
                 if components == 4 {
-                    out_chunk[offset+3] = entry.0[3];
+                    out_chunk[offset + 3] = entry.0[3];
                 }
             }
             px_processed += 8;
