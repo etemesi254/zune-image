@@ -10,7 +10,6 @@
 //!
 
 use zune_core::bit_depth::BitType;
-use zune_core::log::trace;
 use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
