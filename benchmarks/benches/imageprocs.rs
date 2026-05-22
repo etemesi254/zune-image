@@ -505,7 +505,7 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
     out_side.copy_from_slice(&raw_pix[0]);
     let (w, h) = zune_im.dimensions();
 
-    let mut group = c.benchmark_group("imageprocs: gaussian blur - new");
+    let mut group = c.benchmark_group("imageprocs: gaussian blur - fast approximation");
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {
@@ -513,13 +513,6 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
             im.flatten_frames::<u8>();
             black_box(());
         });
-    });
-    group.bench_function("vips-image", |b| {
-        b.iter(|| {
-            let im = libvips::ops::gaussblur(&vips_im, 3.0).unwrap();
-            im.image_write_to_memory();
-            black_box(im);
-        })
     });
     group.bench_function("libblur (planar mode 3 passes)", |b| {
         b.iter(|| {
