@@ -128,7 +128,7 @@ const SOBEL_GY_F32: [f32; 9] = [
      0.0,  0.0,  0.0,
      1.0,  2.0,  1.0,
 ];
-
+#[inline(always)] // Try to get some calc elided
 pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], gy: &[i32; 9]) {
     let width = region.width;
     if region.src_channels.is_empty() || width == 0 {
@@ -192,19 +192,26 @@ pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], g
             // --- LEFT EDGE ---
             dest_row[0] = compute_edge(0);
 
-            // --- INTERIOR (Pure i32 math until the sqrt) ---
-            for x in 1..width - 1 {
-                let p00 = r0[x - 1] as i32;
-                let p01 = r0[x] as i32;
-                let p02 = r0[x + 1] as i32;
+            // Create sliding windows of size 3 for each row.
+            // We also slice dest_row to match the `1..width - 1` bounds.
+            let window_iter = r0.windows(3)
+                .zip(r1.windows(3))
+                .zip(r2.windows(3))
+                .zip(&mut dest_row[1..width - 1]);
 
-                let p10 = r1[x - 1] as i32;
-                let p11 = r1[x] as i32;
-                let p12 = r1[x + 1] as i32;
+            for (((w0, w1), w2), dest) in window_iter {
+                // w0, w1, and w2 are slices of exactly length 3.
+                let p00 = i32::from(w0[0]);
+                let p01 = i32::from(w0[1]);
+                let p02 = i32::from(w0[2]);
 
-                let p20 = r2[x - 1] as i32;
-                let p21 = r2[x] as i32;
-                let p22 = r2[x + 1] as i32;
+                let p10 = i32::from(w1[0]);
+                let p11 = i32::from(w1[1]);
+                let p12 = i32::from(w1[2]);
+
+                let p20 = i32::from(w2[0]);
+                let p21 = i32::from(w2[1]);
+                let p22 = i32::from(w2[2]);
 
                 let sum_x = p00 * gx[0]
                     + p01 * gx[1]
@@ -227,12 +234,10 @@ pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], g
                     + p22 * gy[8];
 
                 // Square the integers before casting to float.
-                // Max sum is ~1020, squared is ~1M, which easily fits in i32 without overflow.
                 let mag_sq = sum_x * sum_x + sum_y * sum_y;
 
-                // f32 is inherently faster than f64 and perfectly precise for 8-bit color space.
-                // Rust's `as u8` cast handles saturating natively, but we use .min(255.0) to be explicit.
-                dest_row[x] = (mag_sq as f32).sqrt().round().min(255.0) as u8;
+                // Write directly to the mutable reference of our destination slice
+                *dest = (mag_sq as f32).sqrt().round().min(255.0) as u8;
             }
 
             // --- RIGHT EDGE ---
