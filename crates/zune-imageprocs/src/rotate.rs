@@ -247,7 +247,6 @@ fn rotate_90_region<T: Copy>(
     region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], old_w: usize, old_h: usize,
 ) {
     let out_w = region.width;
-    let num_channels = region.channels.len();
 
     // Tiling prevents cache misses on strided vertical reads
     const TILE: usize = 8;
@@ -270,8 +269,8 @@ fn rotate_90_region<T: Copy>(
                     let dest_idx = dest_row_offset + dest_x;
 
                     // Write all channels simultaneously for max cache utilization
-                    for c in 0..num_channels {
-                        region.channels[c][dest_idx] = src_channels[c][src_idx];
+                    for (out_channel, in_channel) in region.channels.iter_mut().zip(src_channels) {
+                        out_channel[dest_idx] = in_channel[src_idx];
                     }
                 }
             }
