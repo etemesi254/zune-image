@@ -93,11 +93,11 @@ impl OperationsTrait for HaldClut {
         let target_width = target_img.width();
         let target_height = target_img.height();
 
-        for (target_frame, clut_frame) in target_img
-            .frames_mut()
-            .iter_mut()
-            .zip(clut_img.frames_ref())
-        {
+        let Some(clut_frame) = clut_img.frames_ref().first() else {
+            return Err(ImageErrors::GenericStr("No first frame in clut image"));
+        };
+
+        for target_frame in target_img.frames_mut().iter_mut() {
             let c_channels = clut_frame.channels_ref(working_cs, false);
 
             match new_depth {
@@ -107,7 +107,7 @@ impl OperationsTrait for HaldClut {
                     let clut_b = c_channels[b_idx].reinterpret_as::<u8>()?;
 
                     // Call the frame-level primitive directly!
-                    Image::par_process_frame_regions::<u8, _>(
+                    Image::par_process_frame_regions(
                         target_frame,
                         target_width,
                         target_height,
@@ -125,14 +125,14 @@ impl OperationsTrait for HaldClut {
                     let clut_g = c_channels[g_idx].reinterpret_as::<u16>()?;
                     let clut_b = c_channels[b_idx].reinterpret_as::<u16>()?;
 
-                    Image::par_process_frame_regions::<u16, _>(
+                    Image::par_process_frame_regions(
                         target_frame,
                         target_width,
                         target_height,
                         working_cs,
                         true,
                         |region| {
-                            apply_hald_clut_region::<u16>(
+                            apply_hald_clut_region(
                                 region, clut_r, clut_g, clut_b, r_idx, g_idx, b_idx, level, clut_w,
                             );
                         },
@@ -143,14 +143,14 @@ impl OperationsTrait for HaldClut {
                     let clut_g = c_channels[g_idx].reinterpret_as::<f32>()?;
                     let clut_b = c_channels[b_idx].reinterpret_as::<f32>()?;
 
-                    Image::par_process_frame_regions::<f32, _>(
+                    Image::par_process_frame_regions(
                         target_frame,
                         target_width,
                         target_height,
                         working_cs,
                         true,
                         |region| {
-                            apply_hald_clut_region::<f32>(
+                            apply_hald_clut_region(
                                 region, clut_r, clut_g, clut_b, r_idx, g_idx, b_idx, level, clut_w,
                             );
                         },
@@ -177,6 +177,7 @@ impl OperationsTrait for HaldClut {
 /// Applies a Hald-CLUT mapping to target RGB channels.
 ///
 /// Uses Trilinear Interpolation for smooth, professional-grade color mapping.
+#[allow(clippy::too_many_arguments)]
 pub fn apply_hald_clut_region<T>(
     region: &mut PlanarRegionMut<'_, T>, clut_r: &[T], clut_g: &[T], clut_b: &[T], r_idx: usize,
     g_idx: usize, b_idx: usize, level: usize, clut_w: usize,
