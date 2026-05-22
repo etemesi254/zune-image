@@ -1845,7 +1845,7 @@ where
     ///
     ///
     #[allow(clippy::too_many_lines)]
-    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+    fn prepare_for_scan_decode(&mut self) -> Result<(), DecodeErrors> {
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
@@ -2046,17 +2046,6 @@ where
 
         self.ensure_supported_encoding()?;
 
-        let expected_size = self.output_buffer_size().unwrap();
-
-        if out.len() < expected_size {
-            // too small of a size
-            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
-        }
-
-        // ensure we don't touch anyone else's scratch space
-        let out_len = core::cmp::min(out.len(), expected_size);
-        let out = &mut out[0..out_len];
-
         // By default, enable per-row checkpointing only after a previous
         // scan decode attempt has run. Incremental mode opts into the same
         // checkpoints on the first scan attempt so a streaming caller avoids
@@ -2071,10 +2060,13 @@ where
         }
         self.scan_decode_attempted = true;
 
-        let mut output = McuDecodeOutput::Pixels(out);
-        let result = self.decode_mcu_output(&mut output);
+        Ok(())
+    }
 
-        match result {
+    fn decode_mcu_output_with_success_cleanup(
+        &mut self, output: &mut McuDecodeOutput<'_, '_>
+    ) -> Result<(), DecodeErrors> {
+        match self.decode_mcu_output(output) {
             Ok(()) => {
                 // Drop the scan checkpoint so a post-success replay starts
                 // from scan-start with zeroed DC predictors instead of
@@ -2087,7 +2079,9 @@ where
                     state.scan_checkpoint = None;
                     state.progressive_checkpoint = None;
                 }
-                self.pixels_decoded = expected_size;
+                if let Some(pixels) = output.pixels_mut() {
+                    self.pixels_decoded = pixels.len();
+                }
                 if self.is_progressive {
                     self.progressive_displayed_scans = self.progressive_completed_scans;
                 }
@@ -2095,6 +2089,24 @@ where
             }
             Err(e) => Err(e)
         }
+    }
+
+    pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        self.prepare_for_scan_decode()?;
+
+        let expected_size = self.output_buffer_size().unwrap();
+
+        if out.len() < expected_size {
+            // too small of a size
+            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
+        }
+
+        // ensure we don't touch anyone else's scratch space
+        let out_len = core::cmp::min(out.len(), expected_size);
+        let out = &mut out[0..out_len];
+
+        let mut output = McuDecodeOutput::Pixels(out);
+        self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
     fn decode_mcu_output(
@@ -2144,6 +2156,17 @@ where
     /// meaningful; trailing padding columns / rows contain
     /// implementation-defined data.
     ///
+    /// # Resumability
+    ///
+    /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
+    /// decoder keeps enough state to resume; the caller can grow the input
+    /// stream and call `decode_raw` again with plane buffers sized from the
+    /// same [`planar_layout`](Self::planar_layout).
+    ///
+    /// On success the decoder keeps scan-start replay state, so a later
+    /// `decode_raw` call is well-defined and produces bit-identical planes.
+    /// Replay re-runs entropy decoding from the first SOS.
+    ///
     /// # Examples
     ///
     /// Decode a JPEG into raw YCbCr planes (libjpeg-turbo style) and access
@@ -2190,7 +2213,7 @@ where
     ///   of components.
     /// - Any error from the underlying decode pipeline.
     pub fn decode_raw(&mut self, planes: &mut [&mut [u8]]) -> Result<(), DecodeErrors> {
-        self.decode_headers_internal()?;
+        self.prepare_for_scan_decode()?;
 
         let n = self.components.len();
         if planes.len() != n {
@@ -2228,7 +2251,7 @@ where
             n_components: n
         };
         let mut output = McuDecodeOutput::RawPlanes(raw_planes);
-        self.decode_mcu_output(&mut output)
+        self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
     /// Decode raw planes using caller-supplied row strides.
@@ -2241,6 +2264,17 @@ where
     ///
     /// Only the logical plane area is written. Padding columns in the caller's
     /// stride and trailing DCT rows are left untouched.
+    ///
+    /// # Resumability
+    ///
+    /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
+    /// decoder keeps enough state to resume; the caller can grow the input
+    /// stream and call `decode_raw_strided` again with the same plane layout.
+    ///
+    /// On success the decoder keeps scan-start replay state, so a later
+    /// `decode_raw_strided` call is well-defined and produces bit-identical
+    /// logical plane samples. Replay re-runs entropy decoding from the first
+    /// SOS.
     ///
     /// # Examples
     ///
@@ -2294,7 +2328,7 @@ where
     pub fn decode_raw_strided(
         &mut self, planes: &mut [&mut [u8]], strides: &[usize]
     ) -> Result<(), DecodeErrors> {
-        self.decode_headers_internal()?;
+        self.prepare_for_scan_decode()?;
 
         let n = self.components.len();
         if planes.len() != n {
@@ -2346,7 +2380,7 @@ where
             n_components: n
         };
         let mut output = McuDecodeOutput::RawPlanes(raw_planes);
-        self.decode_mcu_output(&mut output)
+        self.decode_mcu_output_with_success_cleanup(&mut output)
     }
 
     /// Per-component [`ComponentID`] in declaration order

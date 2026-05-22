@@ -11,7 +11,7 @@
 //! Verifies that `is_recoverable_eof()` is reported on truncated input
 //! and that retrying with more data produces correct output.
 
-use zune_core::bytestream::ZCursor;
+use zune_core::bytestream::{ZByteReaderTrait, ZCursor};
 use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::JpegDecoder;
@@ -220,6 +220,276 @@ fn assert_decode_into_replay_matches_oneshot(name: &str, data: &[u8]) {
     assert_pixels_match(&replay, &expected, name, data.len());
 }
 
+fn allocate_raw_planes<T>(decoder: &JpegDecoder<T>) -> Vec<Vec<u8>>
+where
+    T: ZByteReaderTrait
+{
+    let layout = decoder.planar_layout().unwrap();
+    let n_components = decoder.num_components().unwrap();
+    (0..n_components)
+        .map(|index| vec![0u8; layout[index].byte_size])
+        .collect()
+}
+
+fn decode_raw_into_existing<T>(
+    decoder: &mut JpegDecoder<T>, planes: &mut [Vec<u8>]
+) -> Result<(), zune_jpeg::errors::DecodeErrors>
+where
+    T: ZByteReaderTrait
+{
+    let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    decoder.decode_raw(&mut plane_refs)
+}
+
+fn allocate_raw_strided_planes<T>(decoder: &JpegDecoder<T>) -> (Vec<Vec<u8>>, Vec<usize>)
+where
+    T: ZByteReaderTrait
+{
+    let layout = decoder.planar_layout().unwrap();
+    let n_components = decoder.num_components().unwrap();
+    let strides: Vec<usize> = (0..n_components)
+        .map(|index| layout[index].width + 5)
+        .collect();
+    let planes = (0..n_components)
+        .map(|index| vec![0xAAu8; strides[index] * layout[index].height])
+        .collect();
+    (planes, strides)
+}
+
+fn decode_raw_strided_into_existing<T>(
+    decoder: &mut JpegDecoder<T>, planes: &mut [Vec<u8>], strides: &[usize]
+) -> Result<(), zune_jpeg::errors::DecodeErrors>
+where
+    T: ZByteReaderTrait
+{
+    let mut plane_refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+    decoder.decode_raw_strided(&mut plane_refs, strides)
+}
+
+fn decode_raw_oneshot(data: &[u8]) -> Vec<Vec<u8>> {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().expect("one-shot raw headers failed");
+    let mut planes = allocate_raw_planes(&decoder);
+    decode_raw_into_existing(&mut decoder, &mut planes).expect("one-shot raw decode failed");
+    planes
+}
+
+fn assert_raw_planes_match(
+    actual: &[Vec<u8>], expected: &[Vec<u8>], name: &str, available: usize
+) {
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{name}: incremental and one-shot raw plane counts differ"
+    );
+
+    for (plane_index, (actual_plane, expected_plane)) in
+        actual.iter().zip(expected).enumerate()
+    {
+        assert_eq!(
+            actual_plane.len(),
+            expected_plane.len(),
+            "{name}: raw plane {plane_index} lengths differ"
+        );
+        if let Some(index) = actual_plane
+            .iter()
+            .zip(expected_plane)
+            .position(|(left, right)| left != right)
+        {
+            let start = index.saturating_sub(8);
+            let end = (index + 9).min(actual_plane.len());
+            panic!(
+                "{name}: first raw plane {plane_index} mismatch at {index} with {available} bytes visible: incremental={}, one-shot={}, incremental window={:?}, one-shot window={:?}",
+                actual_plane[index],
+                expected_plane[index],
+                &actual_plane[start..end],
+                &expected_plane[start..end]
+            );
+        }
+    }
+}
+
+fn assert_raw_strided_planes_match_padded(
+    actual: &[Vec<u8>], strides: &[usize], expected: &[Vec<u8>], name: &str,
+    data: &[u8], available: usize
+) {
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let layout = decoder.planar_layout().unwrap();
+    let n_components = decoder.num_components().unwrap();
+
+    assert_eq!(actual.len(), n_components, "{name}: strided plane count differs");
+    assert_eq!(strides.len(), n_components, "{name}: stride count differs");
+    assert_eq!(expected.len(), n_components, "{name}: padded plane count differs");
+
+    for index in 0..n_components {
+        let plane = layout[index];
+        assert_eq!(
+            actual[index].len(),
+            strides[index] * plane.height,
+            "{name}: strided plane {index} length differs"
+        );
+        for y in 0..plane.height {
+            for x in 0..plane.width {
+                let actual_value = actual[index][y * strides[index] + x];
+                let expected_value = expected[index][y * plane.stride + x];
+                assert_eq!(
+                    actual_value, expected_value,
+                    "{name}: strided raw plane {index} mismatch at ({x},{y}) with {available} bytes visible"
+                );
+            }
+            for x in plane.width..strides[index] {
+                assert_eq!(
+                    actual[index][y * strides[index] + x],
+                    0xAA,
+                    "{name}: strided padding modified in plane {index} at ({x},{y})"
+                );
+            }
+        }
+    }
+}
+
+fn assert_incremental_raw_decode_matches_oneshot(name: &str, data: &[u8], step: usize) {
+    assert!(step > 0, "incremental step must be non-zero");
+
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut header_done = false;
+    let mut planes: Vec<Vec<u8>> = Vec::new();
+    let mut available = 0_usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+
+        if !header_done {
+            match decoder.decode_headers() {
+                Ok(()) => {
+                    header_done = true;
+                    planes = allocate_raw_planes(&decoder);
+                }
+                Err(ref err) if err.is_recoverable_eof() => {
+                    assert!(
+                        available < data.len(),
+                        "raw headers still need more data with the full input visible"
+                    );
+                    continue;
+                }
+                Err(err) => panic!("unexpected raw header error at byte {available}: {err:?}")
+            }
+        }
+
+        match decode_raw_into_existing(&mut decoder, &mut planes) {
+            Ok(()) => {
+                assert_raw_planes_match(&planes, &expected, name, available);
+                return;
+            }
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw scan still needs more data with the full input visible"
+                );
+            }
+            Err(err) => panic!("unexpected raw scan error at byte {available}: {err:?}")
+        }
+    }
+}
+
+fn assert_incremental_raw_strided_decode_matches_oneshot(
+    name: &str, data: &[u8], step: usize
+) {
+    assert!(step > 0, "incremental step must be non-zero");
+
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(0_usize));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    let mut header_done = false;
+    let mut planes: Vec<Vec<u8>> = Vec::new();
+    let mut strides: Vec<usize> = Vec::new();
+    let mut available = 0_usize;
+
+    loop {
+        available = (available + step).min(data.len());
+        limit.set(available);
+
+        if !header_done {
+            match decoder.decode_headers() {
+                Ok(()) => {
+                    header_done = true;
+                    (planes, strides) = allocate_raw_strided_planes(&decoder);
+                }
+                Err(ref err) if err.is_recoverable_eof() => {
+                    assert!(
+                        available < data.len(),
+                        "raw strided headers still need more data with the full input visible"
+                    );
+                    continue;
+                }
+                Err(err) => {
+                    panic!("unexpected raw strided header error at byte {available}: {err:?}")
+                }
+            }
+        }
+
+        match decode_raw_strided_into_existing(&mut decoder, &mut planes, &strides) {
+            Ok(()) => {
+                assert_raw_strided_planes_match_padded(
+                    &planes, &strides, &expected, name, data, available
+                );
+                return;
+            }
+            Err(ref err) if err.is_recoverable_eof() => {
+                assert!(
+                    available < data.len(),
+                    "raw strided scan still needs more data with the full input visible"
+                );
+            }
+            Err(err) => panic!("unexpected raw strided scan error at byte {available}: {err:?}")
+        }
+    }
+}
+
+fn assert_decode_raw_replay_matches_oneshot(name: &str, data: &[u8]) {
+    let expected = decode_raw_oneshot(data);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let mut first = allocate_raw_planes(&decoder);
+    decode_raw_into_existing(&mut decoder, &mut first).unwrap();
+    assert_raw_planes_match(&first, &expected, name, data.len());
+
+    let mut replay = allocate_raw_planes(&decoder);
+    decode_raw_into_existing(&mut decoder, &mut replay).unwrap();
+    assert_raw_planes_match(&replay, &expected, name, data.len());
+}
+
+fn assert_decode_raw_strided_replay_matches_oneshot(name: &str, data: &[u8]) {
+    let expected = decode_raw_oneshot(data);
+
+    let mut decoder = JpegDecoder::new(ZCursor::new(data));
+    decoder.decode_headers().unwrap();
+    let (mut first, strides) = allocate_raw_strided_planes(&decoder);
+    decode_raw_strided_into_existing(&mut decoder, &mut first, &strides).unwrap();
+    assert_raw_strided_planes_match_padded(&first, &strides, &expected, name, data, data.len());
+
+    let (mut replay, replay_strides) = allocate_raw_strided_planes(&decoder);
+    assert_eq!(replay_strides, strides);
+    decode_raw_strided_into_existing(&mut decoder, &mut replay, &replay_strides).unwrap();
+    assert_raw_strided_planes_match_padded(
+        &replay,
+        &replay_strides,
+        &expected,
+        name,
+        data,
+        data.len()
+    );
+}
+
 /// Feeding the entire file at once via decode_headers + decode_into must
 /// produce byte-identical output to decode() — no regressions.
 #[test]
@@ -242,6 +512,30 @@ fn decode_into_replay_after_success_matches_oneshot() {
     );
     assert_decode_into_replay_matches_oneshot(
         "progressive_replay",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
+    );
+}
+
+#[test]
+fn decode_raw_replay_after_success_matches_oneshot() {
+    assert_decode_raw_replay_matches_oneshot(
+        "baseline_raw_replay",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg")
+    );
+    assert_decode_raw_replay_matches_oneshot(
+        "progressive_raw_replay",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
+    );
+}
+
+#[test]
+fn decode_raw_strided_replay_after_success_matches_oneshot() {
+    assert_decode_raw_strided_replay_matches_oneshot(
+        "baseline_raw_strided_replay",
+        include_bytes!("../../../test-images/jpeg/fox410.jpg")
+    );
+    assert_decode_raw_strided_replay_matches_oneshot(
+        "progressive_raw_strided_replay",
         include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg")
     );
 }
@@ -1451,6 +1745,20 @@ fn progressive_repeated_dc_eof_falls_back_to_scan_boundary() {
 }
 
 #[test]
+fn raw_incremental_parity() {
+    assert_incremental_raw_decode_matches_oneshot(
+        "synthetic_image_raw",
+        include_bytes!("../../../test-images/jpeg/synthetic_image.jpg"),
+        37
+    );
+    assert_incremental_raw_decode_matches_oneshot(
+        "down_sampled_grayscale_prog_raw",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+}
+
+#[test]
 fn progressive_unsafe_scans_replay_from_scan_boundary() {
     let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
     let expected = decode_oneshot(data);
@@ -1568,6 +1876,20 @@ fn progressive_arithmetic_restart_replays_dc_scan_boundary() {
 }
 
 #[test]
+fn raw_strided_incremental_parity() {
+    assert_incremental_raw_strided_decode_matches_oneshot(
+        "fox410_raw_strided",
+        include_bytes!("../../../test-images/jpeg/fox410.jpg"),
+        4096
+    );
+    assert_incremental_raw_strided_decode_matches_oneshot(
+        "down_sampled_grayscale_prog_raw_strided",
+        include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg"),
+        31
+    );
+}
+
+#[test]
 #[cfg(feature = "arith")]
 fn arithmetic_incremental_parity() {
     assert_incremental_decode_matrix(&[
@@ -1636,6 +1958,40 @@ fn arithmetic_restart_resume_uses_rst_checkpoint() {
         "retry should seek to first RST checkpoint at 857, got {seeks:?}"
     );
     assert_pixels_match(&out, &expected, "arith_seq_restart_checkpoint", data.len());
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn arithmetic_restart_raw_resume_uses_rst_checkpoint() {
+    let data = include_bytes!("../../../test-images/jpeg/arith/seq-restart.jpg");
+    let expected = decode_raw_oneshot(data);
+    let limit = Rc::new(Cell::new(874_usize));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be visible before first raw RST retry");
+    let mut planes = allocate_raw_planes(&decoder);
+    let err = decode_raw_into_existing(&mut decoder, &mut planes)
+        .expect_err("truncated raw scan after first RST should be recoverable");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decode_raw_into_existing(&mut decoder, &mut planes)
+        .expect("full input should resume raw decode from RST checkpoint");
+
+    let seeks = seek_log.borrow();
+    assert!(
+        seeks.contains(&857),
+        "raw retry should seek to first RST checkpoint at 857, got {seeks:?}"
+    );
+    assert_raw_planes_match(&planes, &expected, "arith_seq_restart_raw_checkpoint", data.len());
 }
 
 /// Sanity check: byte-by-byte incremental decode of a normal image (no

@@ -11,14 +11,6 @@
 //! Mirrors libjpeg-turbo's `jpeg_read_raw_data` semantics: each component's
 //! post-IDCT samples are written directly into a caller-provided plane,
 //! skipping upsampling and color conversion.
-//!
-//! Note: the existing baseline decoder has a long-standing layout quirk for
-//! `non_interleaved_*` fixtures (each component in its own SOS) where the
-//! per-stripe data is not laid out contiguously in `progressive_mcus`. The
-//! existing `post_process` path papers over this; the raw bypass faithfully
-//! reflects what the decoder actually writes, so non-interleaved fixtures
-//! are exercised only for API surface (validation, plane sizing) and not
-//! for sample-content sanity.
 
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::errors::DecodeErrors;
@@ -310,36 +302,26 @@ fn ycbcr_to_rgb(y: u8, cb: u8, cr: u8) -> [u8; 3] {
     ]
 }
 
-#[test]
-fn decode_raw_content_matches_decode_within_upsample_tolerance() {
-    // Decode the same image two ways and assert the planes, after
-    // nearest-neighbour upsampling and JFIF YCbCr -> RGB, are statistically
-    // close to the regular RGB output. This guards against plane-ordering,
-    // stride, and clamp-cast regressions.
-    //
-    // Tolerance is loose because zune-jpeg uses a fancier upsampler than the
-    // nearest-neighbour we apply in test code; we only assert that the mean
-    // absolute difference per channel is small.
-    let bytes = include_bytes!("../../../test-images/jpeg/2029.jpg");
-
+fn assert_raw_content_matches_decode_within_upsample_tolerance(
+    name: &str, bytes: &[u8], max_mean_delta: u64
+) {
     let rgb = {
-        let mut d = JpegDecoder::new(ZCursor::new(bytes));
-        d.decode().unwrap()
+        let mut decoder = JpegDecoder::new(ZCursor::new(bytes));
+        decoder.decode().unwrap()
     };
 
-    let mut d2 = JpegDecoder::new(ZCursor::new(bytes));
-    d2.decode_headers().unwrap();
-    let (w, h) = d2.dimensions().unwrap();
-    let layout = d2.planar_layout().unwrap();
-    let n = d2.num_components().unwrap();
-    assert_eq!(n, 3);
+    let mut raw_decoder = JpegDecoder::new(ZCursor::new(bytes));
+    raw_decoder.decode_headers().unwrap();
+    let (w, h) = raw_decoder.dimensions().unwrap();
+    let layout = raw_decoder.planar_layout().unwrap();
+    let n = raw_decoder.num_components().unwrap();
+    assert_eq!(n, 3, "{name}: expected YCbCr fixture");
     let mut planes: Vec<Vec<u8>> = (0..n).map(|i| vec![0u8; layout[i].byte_size]).collect();
     {
         let mut refs: Vec<&mut [u8]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
-        d2.decode_raw(&mut refs).unwrap();
+        raw_decoder.decode_raw(&mut refs).unwrap();
     }
 
-    // Upsample Cb / Cr to Y dimensions.
     let y_up = nearest_upsample(
         &planes[0],
         layout[0].width,
@@ -381,13 +363,54 @@ fn decode_raw_content_matches_decode_within_upsample_tolerance() {
     let avg_dr = sum_dr / total;
     let avg_dg = sum_dg / total;
     let avg_db = sum_db / total;
+    assert!(
+        avg_dr < max_mean_delta && avg_dg < max_mean_delta && avg_db < max_mean_delta,
+        "{name}: mean abs RGB delta too large: dr={avg_dr} dg={avg_dg} db={avg_db}"
+    );
+}
+
+#[test]
+fn decode_raw_content_matches_decode_within_upsample_tolerance() {
+    // Decode the same image two ways and assert the planes, after
+    // nearest-neighbour upsampling and JFIF YCbCr -> RGB, are statistically
+    // close to the regular RGB output. This guards against plane-ordering,
+    // stride, and clamp-cast regressions.
+    //
+    // Tolerance is loose because zune-jpeg uses a fancier upsampler than the
+    // nearest-neighbour we apply in test code; we only assert that the mean
+    // absolute difference per channel is small.
     // A plane swap, stride bug, or wrong YCbCr->RGB matrix would produce
     // mean absolute deltas in the dozens; nearest-vs-fancy-upsample alone
     // typically produces single-digit deltas on photographic content.
-    assert!(
-        avg_dr < 12 && avg_dg < 12 && avg_db < 12,
-        "mean abs RGB delta too large: dr={avg_dr} dg={avg_dg} db={avg_db}"
+    assert_raw_content_matches_decode_within_upsample_tolerance(
+        "interleaved_420",
+        include_bytes!("../../../test-images/jpeg/2029.jpg"),
+        12
     );
+}
+
+#[test]
+fn decode_raw_non_interleaved_content_matches_decode() {
+    for (name, bytes) in [
+        (
+            "non_interleaved_444",
+            &include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg")[..]
+        ),
+        (
+            "non_interleaved_420",
+            &include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg")[..]
+        ),
+        (
+            "non_interleaved_422",
+            &include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg")[..]
+        ),
+        (
+            "non_interleaved_440",
+            &include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg")[..]
+        )
+    ] {
+        assert_raw_content_matches_decode_within_upsample_tolerance(name, bytes, 24);
+    }
 }
 
 // decode_raw_strided: Skia-style logically-sized planes.
