@@ -11,7 +11,6 @@ use zune_image::channel::Channel;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
-use zune_image::operations_options::ImageOperationOptions;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
 // -----------------------------------------------------------------------------
@@ -210,7 +209,6 @@ impl OperationsTrait for AffineTransform {
         let (new_w, new_h) = get_affine_output_dimensions(w, h, self);
         let depth = image.depth().bit_type();
 
-        let opts = *image.operation_options();
         let affine_fn = |channel: &mut Channel| -> Result<(), ImageErrors> {
             let mut new_channel = Channel::new_with_bit_type(new_w * new_h, depth);
             match depth {
@@ -222,7 +220,6 @@ impl OperationsTrait for AffineTransform {
                     new_w,
                     new_h,
                     self,
-                    &opts,
                 ),
                 BitType::U16 => affine_transform_channel::<u16>(
                     channel.reinterpret_as()?,
@@ -232,7 +229,6 @@ impl OperationsTrait for AffineTransform {
                     new_w,
                     new_h,
                     self,
-                    &opts,
                 ),
                 BitType::F32 => affine_transform_channel::<f32>(
                     channel.reinterpret_as()?,
@@ -242,7 +238,6 @@ impl OperationsTrait for AffineTransform {
                     new_w,
                     new_h,
                     self,
-                    &opts,
                 ),
                 d => return Err(ImageErrors::ImageOperationNotImplemented("affine", d)),
             }
@@ -564,11 +559,11 @@ pub fn get_affine_output_dimensions(
     )
 }
 
-#[allow(clippy::many_single_char_names)]
+#[allow(clippy::many_single_char_names,unreachable_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn affine_transform_channel<T>(
     in_channel: &[T], out_channel: &mut [T], in_width: usize, in_height: usize, out_width: usize,
-    out_height: usize, transform: &AffineTransform, opts: &ImageOperationOptions,
+    out_height: usize, transform: &AffineTransform,
 ) where
     T: BilinearProcess,
 {
@@ -591,40 +586,34 @@ pub fn affine_transform_channel<T>(
         min_y = min_y.min(cy);
     }
 
-    if opts.use_threads() {
-        #[cfg(feature = "threads")]
-        {
-            let num_threads_child = opts.num_threads_child();
+    #[cfg(feature = "threads")]
+    {
+        let rows_per_thread = out_height.div_ceil(4);
 
-            if num_threads_child > 1 {
-                let rows_per_thread = out_height.div_ceil(num_threads_child);
+        std::thread::scope(|s| {
+            for (chunk_idx, out_band) in out_channel
+                .chunks_mut(rows_per_thread * out_width)
+                .enumerate()
+            {
+                let band_start_y = chunk_idx * rows_per_thread;
+                let inv_ref = &inv;
 
-                std::thread::scope(|s| {
-                    for (chunk_idx, out_band) in out_channel
-                        .chunks_mut(rows_per_thread * out_width)
-                        .enumerate()
-                    {
-                        let band_start_y = chunk_idx * rows_per_thread;
-                        let inv_ref = &inv;
-
-                        s.spawn(move || {
-                            T::process_rows(
-                                in_channel,
-                                out_band,
-                                band_start_y,
-                                in_width,
-                                in_height,
-                                out_width,
-                                inv_ref,
-                                min_x,
-                                min_y,
-                            );
-                        });
-                    }
+                s.spawn(move || {
+                    T::process_rows(
+                        in_channel,
+                        out_band,
+                        band_start_y,
+                        in_width,
+                        in_height,
+                        out_width,
+                        inv_ref,
+                        min_x,
+                        min_y,
+                    );
                 });
-                return;
             }
-        }
+        });
+        return;
     }
 
     T::process_rows(
@@ -810,16 +799,7 @@ mod tests {
         let t = AffineTransform::identity();
         let (ow, oh) = get_affine_output_dimensions(w, h, &t);
         let mut output = vec![0u8; ow * oh];
-        affine_transform_channel(
-            &input,
-            &mut output,
-            w,
-            h,
-            ow,
-            oh,
-            &t,
-            &ImageOperationOptions::default(),
-        );
+        affine_transform_channel(&input, &mut output, w, h, ow, oh, &t);
         // Centre pixels should match (edges may differ due to clamping)
         for row in 1..h - 1 {
             for col in 1..w - 1 {
@@ -844,16 +824,7 @@ mod tests {
             let t = AffineTransform::rotation(angle);
             let (ow, oh) = get_affine_output_dimensions(w, h, &t);
             let mut output = vec![0u8; ow * oh];
-            affine_transform_channel(
-                &input,
-                &mut output,
-                w,
-                h,
-                ow,
-                oh,
-                &t,
-                &ImageOperationOptions::default(),
-            );
+            affine_transform_channel(&input, &mut output, w, h, ow, oh, &t);
 
             // Interior output pixels (away from transparent border) must be val
             let interior: Vec<u8> = output.iter().cloned().filter(|&p| p > 0).collect();
@@ -880,16 +851,7 @@ mod tests {
         // return degenerate values — just test for no panic.
         let mut output = vec![0u8; w * h];
         // Should not panic
-        affine_transform_channel(
-            &input,
-            &mut output,
-            w,
-            h,
-            w,
-            h,
-            &singular,
-            &ImageOperationOptions::default(),
-        );
+        affine_transform_channel(&input, &mut output, w, h, w, h, &singular);
         assert!(
             output.iter().all(|&p| p == 0),
             "singular transform should produce all-zero output"
