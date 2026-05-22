@@ -4,6 +4,7 @@
  * This software is free software; You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 use alloc::format;
+use alloc::string::ToString;
 
 use zune_core::bytestream::ZByteReaderTrait;
 use zune_core::log::{trace, warn};
