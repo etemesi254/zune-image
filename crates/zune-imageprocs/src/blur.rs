@@ -24,6 +24,12 @@ use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
 
+mod fast_gaussian_blur;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BlurType {
+    FastGaussian { sigma: f32 },
+    BoxApprox(f32),
+}
 /// Applies a fast Gaussian blur to the image.
 ///
 /// A true Gaussian blur is computationally expensive because it requires convolving the
@@ -48,33 +54,33 @@ use zune_image::traits::{OperationColorValues, OperationsTrait};
 /// use zune_core::colorspace::ColorSpace;
 /// use zune_image::image::Image;
 /// use zune_image::traits::OperationsTrait;
-/// use zune_imageprocs::gaussian_blur::GaussianBlur;
 /// use zune_image::errors::ImageErrors;
+/// use zune_imageprocs::blur::Blur;
 ///
 /// let mut img = Image::fill(255_u8, ColorSpace::RGB, 100, 100);
 ///
 /// // Apply a Gaussian blur with a sigma of 5.0
-/// let blur = GaussianBlur::new(5.0);
+/// let blur = Blur::new(5.0);
 /// blur.execute(&mut img)?;
 /// # Ok::<(), ImageErrors>(())
 /// ```
 #[derive(Default)]
-pub struct GaussianBlur {
+pub struct Blur {
     sigma: f32,
 }
 
-impl GaussianBlur {
+impl Blur {
     /// Create a new gaussian blur filter
     ///
     /// # Arguments
     /// - sigma: How much to blur by.
     #[must_use]
-    pub fn new(sigma: f32) -> GaussianBlur {
-        GaussianBlur { sigma }
+    pub fn new(sigma: f32) -> Blur {
+        Blur { sigma }
     }
 }
 
-impl OperationsTrait for GaussianBlur {
+impl OperationsTrait for Blur {
     fn name(&self) -> &'static str {
         "Gaussian blur"
     }
@@ -88,50 +94,13 @@ impl OperationsTrait for GaussianBlur {
 
         let radii = create_box_gauss(self.sigma);
 
-        // Allocate our single scratch image upfront
+        let box_blur_type = BlurType::FastGaussian { sigma: self.sigma };
 
-        // TODO: CAE investigate blurs and alpha channel
-        let ignore_alpha = false;
-
-        match depth.bit_type() {
-            BitType::U8 => {
-                Transpose::new().execute_impl(image)?;
-                // 1. Horizontal Passes (In-Place)
-                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
-                    horizontal_blur_region(region, &radii);
-                })?;
-                // Transpose
-                Transpose::new().execute_impl(image)?;
-                // 2. Redo horizontal one
-                image.par_process_regions::<u8, _>(ignore_alpha, |region| {
-                    horizontal_blur_region(region, &radii);
-                })?;
+        match box_blur_type {
+            BlurType::FastGaussian { sigma } => {
+                impl_fast_gaussian_blur(sigma, image)?;
             }
-            BitType::U16 => {
-                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
-                    horizontal_blur_region(region, &radii);
-                })?;
-                // Transpose
-                Transpose::new().execute_impl(image)?;
-                // 2. Redo horizontal one
-                image.par_process_regions::<u16, _>(ignore_alpha, |region| {
-                    horizontal_blur_region(region, &radii);
-                })?;
-                Transpose::new().execute_impl(image)?;
-            }
-            BitType::F32 => {
-                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_f32(region, &radii);
-                })?;
-                // Transpose
-                Transpose::new().execute_impl(image)?;
-                // 2. Redo horizontal one
-                image.par_process_regions::<f32, _>(ignore_alpha, |region| {
-                    horizontal_blur_region_f32(region, &radii);
-                })?;
-                Transpose::new().execute_impl(image)?;
-            }
-            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
+            _ => todo!(),
         }
 
         Ok(())
@@ -179,38 +148,33 @@ fn create_box_gauss(sigma: f32) -> [usize; 3] {
 
 // --- HORIZONTAL ADAPTERS (IN-PLACE) ---
 
-fn horizontal_blur_region<T: NumOps<T> + Default + Copy + Clone>(
+fn horizontal_blur_region_box_blur<T: NumOps<T> + Default + Copy + Clone>(
     region: &mut PlanarRegionMut<'_, T>, radii: &[usize; 3],
 ) where
     u32: std::convert::From<T>,
 {
+    const CHUNK_SIZE: usize = 4;
     let width = region.width;
 
     // Allocate double-buffered scratch space for 4 rows
-    let mut scratch_1 = vec![T::default(); width * 5];
-    let mut scratch_2 = vec![T::default(); width * 5];
+    let mut scratch_1 = vec![T::default(); width * CHUNK_SIZE];
+    let mut scratch_2 = vec![T::default(); width * CHUNK_SIZE];
 
     for channel in region.channels.iter_mut() {
-        let mut chunk_iter = channel.chunks_exact_mut(width * 4);
+        let mut chunk_iter = channel.chunks_exact_mut(width * CHUNK_SIZE);
 
         for chunk in chunk_iter.by_ref() {
-            let width_dims = [
-                0..width,
-                width..width * 2,
-                width * 2..width * 3,
-                width * 3..width * 4,
-            ];
+            let width_dims: [Range<usize>; CHUNK_SIZE] =
+                core::array::from_fn(|x| width * x..(width * (x + 1)));
+
             let mut rows = chunk.get_disjoint_mut(width_dims.clone()).unwrap();
 
             let mut s1 = scratch_1.get_disjoint_mut(width_dims.clone()).unwrap();
 
             let mut s2 = scratch_2.get_disjoint_mut(width_dims.clone()).unwrap();
 
-            // Pass 1: Chunk -> Scratch 1
             crate::box_blur::box_blur_inner_nx(&rows, &mut s1, width, radii[0]);
-            // Pass 2: Scratch 1 -> Scratch 2
             crate::box_blur::box_blur_inner_nx(&s1, &mut s2, width, radii[1]);
-            // Pass 3: Scratch 2 -> Chunk (In-place return)
             crate::box_blur::box_blur_inner_nx(&s2, &mut rows, width, radii[2]);
         }
 
@@ -239,3 +203,7 @@ fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[us
         }
     }
 }
+
+use crate::blur::fast_gaussian_blur::impl_fast_gaussian_blur;
+use std::convert::TryFrom;
+use std::ops::Range;

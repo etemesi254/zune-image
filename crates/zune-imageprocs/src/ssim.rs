@@ -6,7 +6,7 @@ use zune_core::bit_depth::{BitDepth, BitType};
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-use crate::gaussian_blur::GaussianBlur;
+use crate::blur::Blur;
 
 /// Structural Similarity Index Measure (SSIM)
 ///
@@ -122,7 +122,7 @@ impl OperationsTrait for SsimDetection {
         })?;
 
         // 3. Apply Gaussian Blurs to all 5 images
-        let blur = GaussianBlur::new(self.sigma);
+        let blur = Blur::new(self.sigma);
         blur.execute_impl(&mut x)?; // Now mu_x
         blur.execute_impl(&mut y)?; // Now mu_y
         blur.execute_impl(&mut x_sq)?; // Now mu_x_sq

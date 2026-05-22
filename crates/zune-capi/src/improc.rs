@@ -5,13 +5,13 @@ use zune_image::core_filters::depth::Depth;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
+use zune_imageprocs::blur::Blur;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::contrast::Contrast;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
-use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
@@ -270,7 +270,7 @@ pub extern "C" fn zil_imgproc_brighten(image: *mut ZImage, value: f32, status: *
 ///
 #[no_mangle]
 pub extern "C" fn zil_imgproc_gaussian_blur(image: *mut ZImage, sigma: f32, status: *mut ZStatus) {
-    exec_imgproc(image, GaussianBlur::new(sigma), status)
+    exec_imgproc(image, Blur::new(sigma), status)
 }
 
 /// Linearly stretch the contrast of an image  in place, sending lower

@@ -13,7 +13,7 @@ use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
-use zune_imageprocs::gaussian_blur::GaussianBlur;
+use zune_imageprocs::blur::Blur;
 use zune_imageprocs::hald_clut::HaldClut;
 use zune_imageprocs::median::Median;
 use zune_imageprocs::scharr::Scharr;
@@ -40,7 +40,7 @@ pub fn parse_options(
         let indices = args.indices_of(argument).unwrap();
         for (sigma, idx) in values.zip(indices) {
             debug!("Parsed gaussian blur filter with sigma {sigma} at {idx}");
-            parsed_ops.push((idx, Box::new(GaussianBlur::new(*sigma))));
+            parsed_ops.push((idx, Box::new(Blur::new(*sigma))));
         }
     } else if argument == "sharpen" {
         let values: Vec<f32> = args.get_many::<f32>(argument).unwrap().copied().collect();
