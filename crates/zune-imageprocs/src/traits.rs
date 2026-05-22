@@ -87,6 +87,8 @@ pub trait NumOps<T> {
     /// Return this number casted to
     /// f32
     fn to_f32(self) -> f32;
+
+    fn to_i32(self) -> i32;
 }
 
 /// A trait implemented only for floats
@@ -170,6 +172,9 @@ macro_rules! numops_for_int {
             fn zclamp(self, min: $int, max: $int) -> $int {
                 <$int>::clamp(self, min, max)
             }
+            fn to_i32(self) -> i32 {
+                self as i32
+            }
         }
     };
 }
@@ -244,5 +249,9 @@ impl NumOps<f32> for f32 {
 
     fn to_f32(self) -> f32 {
         self
+    }
+
+    fn to_i32(self) -> i32 {
+        self as i32
     }
 }

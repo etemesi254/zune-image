@@ -5,13 +5,13 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
-use crate::gaussian_blur::GaussianBlur;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::OperationsTrait;
+use crate::blur::Blur;
 
 /// Sharpens an image using the Unsharp Mask algorithm.
 ///
@@ -89,7 +89,7 @@ impl OperationsTrait for Sharpen {
         // 1. Create the blurred copy utilizing our existing optimized operation
         trace!("Generating unsharp mask via GaussianBlur");
         let mut blur_image = image.clone();
-        let blur_op = GaussianBlur::new(self.sigma);
+        let blur_op = Blur::new(self.sigma);
         blur_op.execute_impl(&mut blur_image)?;
 
         // 2. Blend the blurred image and the original image in parallel

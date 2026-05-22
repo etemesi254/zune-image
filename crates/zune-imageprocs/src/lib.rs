@@ -75,7 +75,7 @@ pub mod filter_ext;
 pub mod flip;
 pub mod fx;
 pub mod gamma;
-pub mod gaussian_blur;
+pub mod blur;
 pub mod hald_clut;
 pub mod histogram;
 pub mod hsv_adjust;

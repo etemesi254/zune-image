@@ -24,6 +24,7 @@ use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
+use zune_imageprocs::blur::Blur;
 use zune_imageprocs::box_blur::BoxBlur;
 use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::color_matrix::ColorMatrix;
@@ -33,7 +34,6 @@ use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
-use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
@@ -379,7 +379,7 @@ impl WasmImage {
     /// @param sigma - A value of how much to blur the image by, larger values means
     /// more pronounced blurs
     pub fn gaussian_blur(&mut self, sigma: f32) -> Result<(), JsError> {
-        self.execute_ops(&GaussianBlur::new(sigma))
+        self.execute_ops(&Blur::new(sigma))
     }
 
     /// Adjust either the hue, saturation and lightness/value of the image

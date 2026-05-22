@@ -677,7 +677,7 @@ impl FilterExt for Image {
         apply_op(self, crate::gamma::Gamma::new(value))
     }
     fn gaussian_blur(self, sigma: f32) -> Result<Self, ImageErrors> {
-        apply_op(self, crate::gaussian_blur::GaussianBlur::new(sigma))
+        apply_op(self, crate::blur::Blur::new(sigma))
     }
     fn hsv_adjust(self, hue: f32, saturation: f32, lightness: f32) -> Result<Self, ImageErrors> {
         apply_op(

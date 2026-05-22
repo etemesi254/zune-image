@@ -20,9 +20,9 @@ use zune_image::image::Image;
 use zune_image::metadata::AlphaState;
 use zune_image::traits::OperationsTrait;
 use zune_imageprocs::affine::AffineTransform;
+use zune_imageprocs::blur::Blur;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
-use zune_imageprocs::gaussian_blur::GaussianBlur;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::premul_alpha::PremultiplyAlpha;
 use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
@@ -63,7 +63,7 @@ fn vips_gauss_blur_bench(input: &VipsImage) {
 
 fn zune_image_gauss_blur_bench(input: &Image) {
     // vips by default uses 2.4 for gamma, so no need to specify
-    let im = GaussianBlur::new(3.0).clone_and_execute(input).unwrap();
+    let im = Blur::new(3.0).clone_and_execute(input).unwrap();
     im.flatten_frames::<u8>();
     black_box(im);
 }
@@ -509,7 +509,7 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {
-            let im = GaussianBlur::new(3.0).clone_and_execute(&zune_im).unwrap();
+            let im = Blur::new(3.0).clone_and_execute(&zune_im).unwrap();
             im.flatten_frames::<u8>();
             black_box(());
         });
