@@ -1,5 +1,5 @@
 #![cfg(feature = "exmex")]
-#![allow(clippy::cast_possible_truncation,clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 use exmex::prelude::*;
 use zune_core::bit_depth::BitType;
 use zune_core::colorspace::ColorSpace;
@@ -214,7 +214,7 @@ impl OperationsTrait for Fx {
         if let Some(idx) = e_idx {
             args[idx] = std::f64::consts::E;
         }
-        let num_threads = image.operation_options().num_threads_child();
+        let num_threads = if cfg!(feature = "threads") { 4 } else { 1 };
 
         for frame in image.frames_mut() {
             let channels = frame.channels_mut(colorspace, false);
@@ -259,7 +259,7 @@ impl OperationsTrait for Fx {
                         .map(|c| c.reinterpret_as_mut::<$type>().unwrap())
                         .collect();
 
-                    
+
                     let chunk_height = height.div_ceil(num_threads);
                     let pixels_per_chunk = chunk_height * width;
 
