@@ -247,19 +247,27 @@ impl EncoderTrait for PngEncoder {
     ) -> Result<usize, ImageErrors> {
         let options = create_options_for_encoder(self.options, image);
 
-        let frames = image.frames_ref();
-        if frames.is_empty() {
+        let Some(frame) = image.frames_ref().first() else {
             return Err(ImageErrors::EncodeErrors(ImageEncodeErrors(
                 "No frame".to_string(),
             )));
-        }
-        let frame = &image
-            .frames_ref()
-            .first()
-            .unwrap()
-            .u16_to_u8_endian(Endianness::Big)?;
+        };
 
-        let mut encoder = zune_png::PngEncoder::new(frame, options);
+        let pixels = match image.depth() {
+            BitDepth::Eight => frame.flatten::<u8>(),
+            BitDepth::Sixteen => {
+                // PNG, big endian
+                frame.u16_to_u8_endian(Endianness::Big)?
+            }
+            d => {
+                return Err(ImageErrors::EncodeErrors(ImageEncodeErrors(format!(
+                    "Unsupported depth {:?}",
+                    d
+                ))))
+            }
+        };
+
+        let mut encoder = zune_png::PngEncoder::new(&pixels, options);
 
         #[allow(unused_mut)]
         let mut buf: Cursor<Vec<u8>> = std::io::Cursor::new(vec![]);
