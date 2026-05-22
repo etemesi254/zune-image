@@ -36,11 +36,10 @@ unsafe impl<T> Sync for ThreadSafePtr<T> {}
 // A reasonable upper bound for stack-allocating channel pointers.
 const MAX_SUPPORTED_CHANNELS: usize = 16;
 // number of available threads + number of available regions
-const REGION_DISTRIBUTION_SPLIT: usize = 1;
+const REGION_DISTRIBUTION_SPLIT: usize = 4;
 
 impl Image {
     /// Processes a single frame in parallel.
-    /// Perfect for when you are manually iterating over frames.
     pub fn par_process_frame_regions<T, F>(
         frame: &mut Frame, width: usize, height: usize, colorspace: ColorSpace, ignore_alpha: bool,
         op: F,
@@ -86,6 +85,7 @@ impl Image {
             for c in 0..num_channels {
                 let safe_end = std::cmp::min(end_idx, lengths[c]);
                 let slice_len = safe_end.saturating_sub(start_idx);
+                // safety, `i` will always be unique per chunk
 
                 unsafe {
                     current_channels[c] =

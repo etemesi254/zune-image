@@ -18,7 +18,7 @@ Tested on mac-os solana
 1. Install brew
 2. Install libvips
 ```shell
-brew install libvips
+brew install libvips,nasm
 ```
 1. Create a symlink to allow the system linker to find libraries
 
