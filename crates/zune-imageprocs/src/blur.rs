@@ -89,10 +89,8 @@ impl OperationsTrait for Blur {
     }
 
     fn execute_impl(&self, image: &mut Image) -> Result<(), ImageErrors> {
-        let depth = image.depth();
         trace!("Running gaussian blur using parallel regions");
 
-        let radii = create_box_gauss(self.sigma);
 
         let box_blur_type = BlurType::FastGaussian { sigma: self.sigma };
 
