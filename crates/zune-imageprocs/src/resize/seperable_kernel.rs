@@ -308,11 +308,12 @@ pub fn resample_region_u8(
         .unwrap_or(1);
     let special_div = crate::mathops::compute_mod_u32(max_v_taps as u64);
 
-    for (src_ch, dest_ch) in src_channels.iter().zip(region.channels.iter_mut()) {
-        let mut ring_buffer = vec![0_i32; max_v_taps * out_width];
-        let mut buffer_contents = vec![usize::MAX; max_v_taps];
-        let mut row_accumulator = vec![0_i64; out_width];
+    let mut ring_buffer = vec![0_i32; max_v_taps * out_width];
+    let mut buffer_contents = vec![usize::MAX; max_v_taps];
+    let mut row_accumulator = vec![0_i64; out_width];
 
+
+    for (src_ch, dest_ch) in src_channels.iter().zip(region.channels.iter_mut()) {
         let v_kernels_chunk = &v_kernels[region.y_offset..region.y_offset + region.height];
 
         for (v_kernel, out_row) in v_kernels_chunk
@@ -351,13 +352,12 @@ pub fn resample_region_u8(
 
             row_accumulator.fill(0);
 
-            for (i, in_y) in (v_start..=v_end).enumerate() {
-                let weight = i64::from(v_kernel.weights_i32[i]);
+            for (in_y, weight) in (v_start..=v_end).zip(&v_kernel.weights_i32) {
+                let weight = i64::from(*weight);
                 let buffer_idx =
                     crate::mathops::fastmod_u32(in_y as u32, special_div, max_v_taps as u32)
                         as usize;
-                let ring_row =
-                    &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
+                let ring_row = &ring_buffer[buffer_idx * out_width..buffer_idx * out_width + out_width];
 
                 for (acc, &rv) in row_accumulator.iter_mut().zip(ring_row.iter()) {
                     *acc += i64::from(rv) * weight;
@@ -369,6 +369,8 @@ pub fn resample_region_u8(
                 *px = ((acc + (1_i64 << 31)) >> 32).clamp(0, 255) as u8;
             }
         }
+        ring_buffer.fill(0);
+        buffer_contents.fill(usize::MAX);
     }
 }
 
@@ -441,5 +443,20 @@ fn bilinear_kernel(x: f32) -> f32 {
         1.0 - x
     } else {
         0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resize::ResizeDimensions;
+    use crate::FilterExt;
+    use zune_core::colorspace::ColorSpace;
+    use zune_image::image::Image;
+    #[test]
+    fn test_simple_decode() {
+        let img = Image::fill(128_u8, ColorSpace::RGB, 1000, 1000);
+        img.resize(ResizeDimensions::Percentage(50, 50), ResizeMethod::Lanczos3)
+            .unwrap();
     }
 }

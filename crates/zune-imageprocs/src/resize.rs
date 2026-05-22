@@ -27,7 +27,6 @@ use crate::resize::seperable_kernel::{
 };
 use crate::transfer_curve::{ConversionType, TransferCurve, TransferFunction};
 
-mod polyphase_kernel;
 pub(crate) mod seperable_kernel;
 
 /// Resampling algorithms available for image resizing.
