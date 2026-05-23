@@ -1,5 +1,6 @@
 #![cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+use zune_image::planar_regions::PlanarRegionOut;
 use crate::utils::as_mut_array;
 
 #[target_feature(enable = "avx2")]
