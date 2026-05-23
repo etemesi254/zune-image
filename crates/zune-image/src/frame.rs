@@ -331,45 +331,28 @@ impl Frame {
     /// - Ok(mem) -  A vector containing the image
     /// - Err(e) - An error occurred trying to represent the image as type `T`
     ///
+    #[allow(clippy::uninit_vec)]
     pub fn flatten<T: Clone + Default + 'static + Copy + Pod>(&self) -> Vec<T> {
         let out_pixels = match self.channels.len() {
             0 => vec![],
 
-            1 => self.channels[0].reinterpret_as::<T>().unwrap().to_vec(),
+            1..4 => {
+                let size = self.channels[0]
+                    .len()
+                    .checked_mul(self.channels.len())
+                    .expect("Overflowed an int");
 
-            2 => {
-                let luma_channel = self.channels[0].reinterpret_as::<T>().unwrap();
-                let alpha_channel = self.channels[1].reinterpret_as::<T>().unwrap();
-
-                luma_channel
-                    .iter()
-                    .zip(alpha_channel)
-                    .flat_map(|(x1, x2)| [*x1, *x2])
-                    .collect::<Vec<T>>()
-            }
-            3 => {
-                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .flat_map(|((x1, x2), x3)| [*x1, *x2, *x3])
-                    .collect::<Vec<T>>()
-            }
-            4 => {
-                let c1 = self.channels[0].reinterpret_as::<T>().unwrap();
-                let c2 = self.channels[1].reinterpret_as::<T>().unwrap();
-                let c3 = self.channels[2].reinterpret_as::<T>().unwrap();
-                let c4 = self.channels[3].reinterpret_as::<T>().unwrap();
-
-                c1.iter()
-                    .zip(c2)
-                    .zip(c3)
-                    .zip(c4)
-                    .flat_map(|(((x1, x2), x3), x4)| [*x1, *x2, *x3, *x4])
-                    .collect::<Vec<T>>()
+                // safety: We check that all those buffers are initialized
+                // with the assert after
+                //
+                // Reason: Speeds up operations on x86 that can use simd instructions now to improve speeds
+                let mut output = Vec::with_capacity(size);
+                unsafe {
+                    output.set_len(size);
+                }
+                let bytes_written = swizzle_channels(self.channels.as_ref(), &mut output).unwrap();
+                assert_eq!(bytes_written, size);
+                output
             }
             // panics, all the way down
             n => {
@@ -505,7 +488,6 @@ impl Frame {
         }
         Ok(length)
     }
-
 
     pub fn u16_to_u8_endian_into(
         &self, endianness: Endianness, into: &mut [u8],
