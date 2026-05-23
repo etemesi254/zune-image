@@ -1,8 +1,139 @@
 #![cfg(target_arch = "aarch64")]
 use zune_image::planar_regions::PlanarRegionOut;
 
+use crate::blur::fast_gaussian_blur::RING_SIZE;
 use crate::utils::as_mut_array;
 use core::arch::aarch64::*;
+
+#[target_feature(enable = "neon")]
+pub unsafe fn horizontal_blur_gaussian_inner_u8_neon(
+    in_rows: &[&[u8]; 4], ring_buffer: &mut [[i32; 4]; RING_SIZE], out_rows: &mut [&mut [u8]; 4],
+    width: usize, radius: usize,
+) {
+    let area_i32 = radius.pow(2) as i32;
+    let initial_sum = area_i32 >> 1;
+    let two = vdupq_n_s32(2);
+
+    let mut diffs = vdupq_n_s32(0);
+    let mut sums = vdupq_n_s32(initial_sum);
+    // Calculate the magic multiplier for exact 32-bit division
+    let magic_multiplier = (1u64 << 32).div_ceil(area_i32 as u64);
+
+    // Broadcast to a 64-bit vector (2 lanes of 32-bits) for the multiply long instruction
+    let magic_half = vdup_n_u32(magic_multiplier as u32);
+
+    ring_buffer.fill([0; 4]);
+
+    for i in 0..4 {
+        assert!(in_rows[i].len() >= width);
+        assert!(out_rows[i].len() >= width);
+    }
+
+    let start_x = -radius.cast_signed() * 2;
+    let width_isize = width.cast_signed();
+    let radius_isize = radius.cast_signed();
+
+    let mut tmp_buffer: [i32; 4] = [0; 4];
+    for x in start_x..width_isize {
+        let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+
+        if x >= 0 {
+            let ux = x as usize;
+            let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
+            let trail_idx_2 = ux % RING_SIZE;
+
+            let a_stored = vld1q_s32(ring_buffer[trail_idx_1].as_ptr());
+            let d_stored = vld1q_s32(ring_buffer[trail_idx_2].as_ptr());
+
+            // Single pass: output + diff update + ring write + summ update
+            // convert to float, divide and back to int
+
+            // division
+            {
+                // 1. Reinterpret sums as unsigned 32-bit (sums are strictly positive)
+                let sums_u32 = vreinterpretq_u32_s32(sums);
+
+                // 2. Unpack the 128-bit vector into two 64-bit halves (2 lanes of u32 each)
+                let sums_low = vget_low_u32(sums_u32);
+                let sums_high = vget_high_u32(sums_u32);
+
+                // 3. Multiply long: u32 * u32 -> u64
+                let prod_low = vmull_u32(sums_low, magic_half);
+                let prod_high = vmull_u32(sums_high, magic_half);
+
+                // 4. Shift right narrow: shift u64 right by 32 bits, narrowing back to u32
+                let result_low = vshrn_n_u64::<32>(prod_low);
+                let result_high = vshrn_n_u64::<32>(prod_high);
+
+                // 5. Combine back into a 128-bit vector and cast back to signed 32-bit
+                let blurred_val_u32 = vcombine_u32(result_low, result_high);
+                let blurred_val_int = vreinterpretq_s32_u32(blurred_val_u32);
+
+                vst1q_s32(tmp_buffer.as_mut_ptr().cast(), blurred_val_int);
+            }
+            // now store in rows
+            out_rows[0][ux] = tmp_buffer[0] as u8;
+            out_rows[1][ux] = tmp_buffer[1] as u8;
+            out_rows[2][ux] = tmp_buffer[2] as u8;
+            out_rows[3][ux] = tmp_buffer[3] as u8;
+
+            let pixel_val_array = [
+                i32::from(in_rows[0][next_x]),
+                i32::from(in_rows[1][next_x]),
+                i32::from(in_rows[2][next_x]),
+                i32::from(in_rows[3][next_x]),
+            ];
+            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+            // ring_buffer[ring_idx] = pixel_val
+            vst1q_s32(ring_buffer[ring_idx].as_mut_ptr().cast(), pixel_val);
+            // diffs[i] = (a_stored[i] - (d_stored[i] * two) + pixel_val) + diffs[i];
+            let left = {
+                // d_stored[i] * two
+                let d_new = vmulq_s32(d_stored, two);
+                // (a_stored[i] - (d_stored[i] * two)
+                let a_s = vsubq_s32(a_stored, d_new);
+                // (a_stored[i] - (d_stored[i] * two) + pixel_val)
+                vaddq_s32(a_s, pixel_val)
+            };
+
+            diffs = vaddq_s32(left, diffs);
+            sums = vaddq_s32(diffs, sums);
+        } else if x + radius_isize >= 0 {
+            let trail_idx = (x as usize) % RING_SIZE;
+            let stored_buf = ring_buffer[trail_idx];
+            let stored = vld1q_s32(stored_buf.as_ptr());
+
+            // Single pass: diff update + ring write + summ update
+            let pixel_val_array = [
+                i32::from(in_rows[0][next_x]),
+                i32::from(in_rows[1][next_x]),
+                i32::from(in_rows[2][next_x]),
+                i32::from(in_rows[3][next_x]),
+            ];
+            // pixel_val = in_rows[i][next_x].to_accum();
+            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+            // ring_buffer[ring_idx][i] = pixel_val;
+            ring_buffer[ring_idx] = pixel_val_array;
+            diffs = vaddq_s32(diffs, vsubq_s32(pixel_val, vmulq_s32(stored, two)));
+            sums = vaddq_s32(diffs, sums);
+        } else {
+            // Single pass: ring write + summ update, no trail reads
+            // Single pass: diff update + ring write + summ update
+            let pixel_val_array = [
+                i32::from(in_rows[0][next_x]),
+                i32::from(in_rows[1][next_x]),
+                i32::from(in_rows[2][next_x]),
+                i32::from(in_rows[3][next_x]),
+            ];
+            // pixel_val = in_rows[i][next_x].to_accum();
+            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+            ring_buffer[ring_idx] = pixel_val_array;
+            diffs = vaddq_s32(diffs, pixel_val);
+            sums = vaddq_s32(diffs, sums);
+        }
+    }
+}
 
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
@@ -54,7 +185,6 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
             ring_buffer.fill((sim_zero, sim_zero));
 
             for y in start_y..end_y {
-
                 if y >= 0 {
                     let uy = y as usize;
 
@@ -192,7 +322,7 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
 #[cfg(all(test, target_arch = "aarch64"))]
 mod tests {
     use super::*;
-    use crate::blur::fast_gaussian_blur::vertical_blur_region_fast_out;
+    use crate::blur::fast_gaussian_blur::{fast_gaussian_inner_nx, vertical_blur_region_fast_out};
     use nanorand::{Rng, WyRand};
     use zune_image::planar_regions::PlanarRegionOut;
 
@@ -263,6 +393,75 @@ mod tests {
                         "Mismatch at region x: {x}, y: {y} (width: {width}, radius: {radius}, offset: {y_offset}) | NEON: {n_val}, Generic: {g_val}",
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_neon_vs_generic_parity() {
+        let width = 256;
+
+        // Testing a few different radii (starting at 2 to avoid the area=1 overflow)
+        let test_radii = [2, 3, 5, 8, 15];
+        let mut rng = WyRand::new();
+
+        for radius in test_radii {
+            // 1. Generate random input data using nanorand
+            let in_data: [Vec<u8>; 4] = std::array::from_fn(|_| {
+                let mut row = vec![0u8; width];
+                rng.fill(&mut row);
+                row
+            });
+
+            // Borrow as slices for the function signature
+            let in_rows: [&[u8]; 4] = [&in_data[0], &in_data[1], &in_data[2], &in_data[3]];
+
+            // 2. Setup buffers for the NEON function
+            let mut ring_buffer_neon = [[0i32; 4]; RING_SIZE];
+            let mut out_data_neon: [Vec<u8>; 4] = std::array::from_fn(|_| vec![0u8; width]);
+            // We have to scope the mutable borrows
+            let (a, rest) = out_data_neon.split_at_mut(1);
+            let (b, rest) = rest.split_at_mut(1);
+            let (c, d) = rest.split_at_mut(1);
+            let mut out_rows_neon: [&mut [u8]; 4] =
+                [a[0].as_mut(), b[0].as_mut(), c[0].as_mut(), d[0].as_mut()];
+
+            // 3. Setup buffers for the Generic function
+            let mut ring_buffer_generic = [[0i32; 4]; RING_SIZE];
+            let mut out_data_generic: [Vec<u8>; 4] = std::array::from_fn(|_| vec![0u8; width]);
+            // We have to scope the mutable borrows
+            let (a, rest) = out_data_generic.split_at_mut(1);
+            let (b, rest) = rest.split_at_mut(1);
+            let (c, d) = rest.split_at_mut(1);
+            let mut out_rows_generic: [&mut [u8]; 4] =
+                [a[0].as_mut(), b[0].as_mut(), c[0].as_mut(), d[0].as_mut()];
+
+            // 4. Execute both functions
+            unsafe {
+                horizontal_blur_gaussian_inner_u8_neon(
+                    &in_rows,
+                    &mut ring_buffer_neon,
+                    &mut out_rows_neon,
+                    width,
+                    radius,
+                );
+            }
+
+            fast_gaussian_inner_nx::<u8, 4>(
+                &in_rows,
+                &mut ring_buffer_generic,
+                &mut out_rows_generic,
+                width,
+                radius,
+            );
+
+            // 5. Assert absolute parity
+            for i in 0..4 {
+                assert_eq!(
+                    out_data_neon[i], out_data_generic[i],
+                    "Mismatch found in row {} at radius {}!",
+                    i, radius
+                );
             }
         }
     }

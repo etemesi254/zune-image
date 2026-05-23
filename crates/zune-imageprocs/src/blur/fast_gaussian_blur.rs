@@ -60,6 +60,92 @@ impl BlurAccumulator for u16 {
     }
 }
 
+fn horizontal_blur_region_fast_out_u8(region: &mut PlanarRegionOut<'_, u8>, radius: usize) {
+    const N: usize = 4;
+
+    let width = region.width;
+    let height = region.height;
+    let y_offset = region.y_offset;
+
+    if width <= 1 || radius == 0 {
+        return;
+    }
+
+    let mut ring_buffer = vec![[0_i32; 4]; 1024];
+    let slice = as_mut_array(&mut ring_buffer).unwrap();
+
+    let mut smaller_ring_buffer = vec![[0_i32; 1]; 1024];
+
+    let remainder_ring = as_mut_array(&mut smaller_ring_buffer).unwrap();
+
+    for c in 0..region.src_channels.len() {
+        let src_channel = region.src_channels[c];
+        let dest_channel = &mut region.dest_channels[c];
+
+        let start_idx = y_offset * width;
+        let end_idx = start_idx + (height * width);
+        let src_chunk = &src_channel[start_idx..end_idx];
+
+        let chunk_size = width * N;
+
+        let mut src_iter = src_chunk.chunks_exact(chunk_size);
+        let mut dest_iter = dest_channel.chunks_exact_mut(chunk_size);
+
+        // Process N=4 rows simultaneously
+        for (in_chunk, out_chunk) in src_iter.by_ref().zip(dest_iter.by_ref()) {
+            let (s0, rest) = in_chunk.split_at(width);
+            let (s1, rest) = rest.split_at(width);
+            let (s2, s3) = rest.split_at(width);
+            let in_rows = [s0, s1, s2, s3];
+
+            let (r0, rest) = out_chunk.split_at_mut(width);
+            let (r1, rest) = rest.split_at_mut(width);
+            let (r2, r3) = rest.split_at_mut(width);
+            let mut out_rows = [r0, r1, r2, r3];
+            #[cfg(target_arch = "aarch64")]
+            {
+                if std::arch::is_aarch64_feature_detected!("neon") {
+                    unsafe {
+                        aarch64::horizontal_blur_gaussian_inner_u8_neon(
+                            &in_rows,
+                            slice,
+                            &mut out_rows,
+                            width,
+                            radius,
+                        );
+                    }
+                    continue;
+                }
+            }
+            #[cfg(target_arch = "x86_64")]
+            {
+                if std::arch::is_x86_feature_detected!("sse2") {
+                    unsafe {
+                        x86_64::horizontal_blur_gaussian_inner_u8_sse(
+                            &in_rows,
+                            slice,
+                            &mut out_rows,
+                            width,
+                            radius,
+                        )
+                    }
+                    continue;
+                }
+            }
+
+            fast_gaussian_inner_nx::<_, N>(&in_rows, slice, &mut out_rows, width, radius);
+        }
+
+        // Clean up remaining rows
+        for (in_row, out_row) in src_iter
+            .remainder()
+            .chunks_exact(width)
+            .zip(dest_iter.into_remainder().chunks_exact_mut(width))
+        {
+            fast_gaussian_inner_nx(&[in_row], remainder_ring, &mut [out_row], width, radius);
+        }
+    }
+}
 fn horizontal_blur_region_fast_out<T>(region: &mut PlanarRegionOut<'_, T>, radius: usize)
 where
     T: Default + Copy + Clone + BlurAccumulator,
@@ -168,8 +254,8 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
                 let pixel_val = in_rows[i][next_x].to_accum();
                 ring_buffer[ring_idx][i] = pixel_val;
 
-                diffs[i] += a_stored[i] - (d_stored[i] * two) + pixel_val;
-                summs[i] += diffs[i];
+                diffs[i] = (a_stored[i] - (d_stored[i] * two) + pixel_val) + diffs[i];
+                summs[i] = diffs[i] + summs[i];
             }
         } else if x + radius_isize >= 0 {
             let trail_idx = (x as usize) % RING_SIZE;
@@ -180,8 +266,8 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
                 let pixel_val = in_rows[i][next_x].to_accum();
                 ring_buffer[ring_idx][i] = pixel_val;
 
-                diffs[i] += pixel_val - (stored[i] * two);
-                summs[i] += diffs[i];
+                diffs[i] = (pixel_val - (stored[i] * two)) + diffs[i];
+                summs[i] = (diffs[i]) + summs[i];
             }
         } else {
             // Single pass: ring write + summ update, no trail reads
@@ -591,6 +677,11 @@ pub(crate) fn impl_fast_gaussian_blur(sigma: f32, image: &mut Image) -> Result<(
             "Gaussian Blur radius({radius}) >= 512"
         )));
     }
+    if radius <= 1 {
+        return Err(ImageErrors::GenericString(format!(
+            "Gaussian Blur radius is too small at {radius}"
+        )));
+    }
 
     // 1. Allocate our scratch image upfront for Out-Of-Place processing
     let mut scratch_img = image.clone();
@@ -602,7 +693,7 @@ pub(crate) fn impl_fast_gaussian_blur(sigma: f32, image: &mut Image) -> Result<(
                 &mut scratch_img,
                 ignore_alpha,
                 |region| {
-                    horizontal_blur_region_fast_out(region, radius);
+                    horizontal_blur_region_fast_out_u8(region, radius);
                 },
             )?;
 
