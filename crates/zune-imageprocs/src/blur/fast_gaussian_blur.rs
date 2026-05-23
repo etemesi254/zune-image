@@ -130,7 +130,6 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
     T: NumOps<T>,
 {
     let area_i32 = (radius * radius) as i32;
-    let area = T::Accum::from(area_i32);
     let initial_sum = T::Accum::from(area_i32 >> 1);
     let two = T::Accum::from(2);
 
@@ -145,45 +144,54 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
         assert!(out_rows[i].len() >= width);
     }
 
-    let start_x = -(radius as isize) * 2;
-    let width_isize = width as isize;
-    let radius_isize = radius as isize;
+    let start_x = -radius.cast_signed() * 2;
+    let width_isize = width.cast_signed();
+    let radius_isize = radius.cast_signed();
 
     for x in start_x..width_isize {
+        let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+
         if x >= 0 {
             let ux = x as usize;
-
-            for i in 0..N {
-                let blurred_val = T::div_by_mod(summs[i], special_num);
-                out_rows[i][ux] = T::from_accum(blurred_val);
-            }
-
-            // compiler will shift for me
             let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
             let trail_idx_2 = ux % RING_SIZE;
 
             let a_stored = ring_buffer[trail_idx_1];
             let d_stored = ring_buffer[trail_idx_2];
 
+            // Single pass: output + diff update + ring write + summ update
             for i in 0..N {
-                diffs[i] += a_stored[i] - (d_stored[i] * two);
+                let blurred_val = T::div_by_mod(summs[i], special_num);
+                out_rows[i][ux] = T::from_accum(blurred_val);
+
+                let pixel_val = in_rows[i][next_x].to_accum();
+                ring_buffer[ring_idx][i] = pixel_val;
+
+                diffs[i] += a_stored[i] - (d_stored[i] * two) + pixel_val;
+                summs[i] += diffs[i];
             }
         } else if x + radius_isize >= 0 {
             let trail_idx = (x as usize) % RING_SIZE;
             let stored = ring_buffer[trail_idx];
+
+            // Single pass: diff update + ring write + summ update
             for i in 0..N {
-                diffs[i] -= stored[i] * two;
+                let pixel_val = in_rows[i][next_x].to_accum();
+                ring_buffer[ring_idx][i] = pixel_val;
+
+                diffs[i] += pixel_val - (stored[i] * two);
+                summs[i] += diffs[i];
             }
-        }
+        } else {
+            // Single pass: ring write + summ update, no trail reads
+            for i in 0..N {
+                let pixel_val = in_rows[i][next_x].to_accum();
+                ring_buffer[ring_idx][i] = pixel_val;
 
-        let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
-        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
-
-        for i in 0..N {
-            let pixel_val = in_rows[i][next_x].to_accum();
-            ring_buffer[ring_idx][i] = pixel_val;
-            diffs[i] += pixel_val;
-            summs[i] += diffs[i];
+                diffs[i] += pixel_val;
+                summs[i] += diffs[i];
+            }
         }
     }
 }
