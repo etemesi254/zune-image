@@ -1,5 +1,6 @@
 #![cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
+use crate::utils::as_mut_array;
 
 #[target_feature(enable = "avx2")]
 pub unsafe fn vertical_blur_region_u8_avx2(
@@ -32,7 +33,9 @@ pub unsafe fn vertical_blur_region_u8_avx2(
     let full_height_isize = full_height as isize;
     let start_y = (y_offset as isize) - (radius_isize * 2);
     let end_y = (y_offset + current_height) as isize;
-    let mut ring_buffer = [sim_zero; RING_SIZE];
+    let mut ring_buffer_vec = vec![sim_zero; RING_SIZE];
+    let ring_buffer = as_mut_array(ring_buffer_vec.as_mut_slice()).unwrap();
+
 
     for c in 0..region.src_channels.len() {
         let src_channel = region.src_channels[c];
