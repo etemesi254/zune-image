@@ -51,10 +51,10 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
             let mut diffs_hi = sim_zero;
             let mut summs_lo = sim_init;
             let mut summs_hi = sim_init;
+            ring_buffer.fill((sim_zero, sim_zero));
 
             for y in start_y..end_y {
 
-                ring_buffer.fill((sim_zero, sim_zero));
                 if y >= 0 {
                     let uy = y as usize;
 
