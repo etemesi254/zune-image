@@ -101,3 +101,6 @@ pub mod traits;
 pub mod transfer_curve;
 pub mod transpose;
 mod utils;
+
+#[macro_use]
+pub(crate)  mod macro_utils;
