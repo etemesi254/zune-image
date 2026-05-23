@@ -5,15 +5,16 @@
  *
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
+#![allow(clippy::items_after_statements)]
 
 //! Sobel derivative filter
+use crate::simd_fn;
+use crate::traits::NumOps;
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-
-use crate::traits::NumOps;
 
 /// Perform a sobel image derivative.
 ///
@@ -128,8 +129,16 @@ const SOBEL_GY_F32: [f32; 9] = [
      0.0,  0.0,  0.0,
      1.0,  2.0,  1.0,
 ];
+simd_fn!(
+    fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], gy: &[i32; 9]) {
+        gradient_region_fallback(region, gx, gy);
+    }
+);
+
 #[inline(always)] // Try to get some calc elided
-pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], gy: &[i32; 9]) {
+pub fn gradient_region_fallback(
+    region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], gy: &[i32; 9],
+) {
     let width = region.width;
     if region.src_channels.is_empty() || width == 0 {
         return;
@@ -194,7 +203,8 @@ pub fn gradient_region_u8(region: &mut PlanarRegionOut<'_, u8>, gx: &[i32; 9], g
 
             // Create sliding windows of size 3 for each row.
             // We also slice dest_row to match the `1..width - 1` bounds.
-            let window_iter = r0.windows(3)
+            let window_iter = r0
+                .windows(3)
                 .zip(r1.windows(3))
                 .zip(r2.windows(3))
                 .zip(&mut dest_row[1..width - 1]);
@@ -249,11 +259,11 @@ pub fn gradient_region<T, Acc>(region: &mut PlanarRegionOut<'_, T>, gx: &[Acc; 9
 where
     T: NumOps<T> + Copy + Default + Send + Sync,
     Acc: Copy
-    + Default
-    + std::ops::Add<Output = Acc>
-    + std::ops::Mul<Output = Acc>
-    + Into<f64>
-    + From<T>,
+        + Default
+        + std::ops::Add<Output = Acc>
+        + std::ops::Mul<Output = Acc>
+        + Into<f64>
+        + From<T>,
 {
     let width = region.width;
     if region.src_channels.is_empty() || width == 0 {
@@ -372,4 +382,3 @@ where
         }
     }
 }
-
