@@ -1,5 +1,6 @@
 use zune_image::planar_regions::PlanarRegionOut;
 
+use crate::utils::as_mut_array;
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
@@ -19,7 +20,6 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
 
     let full_height = region.src_channels[0].len() / width;
 
-
     let area = (radius * radius) as i32;
     let initial_sum = area >> 1;
     let weight_f32 = 1.0 / (area as f32);
@@ -29,10 +29,13 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
     let sim_zero = vdupq_n_s32(0);
     let sim_weight = vdupq_n_f32(weight_f32);
 
-    let radius_isize = radius as isize;
-    let full_height_isize = full_height as isize;
-    let start_y = (y_offset as isize) - (radius_isize * 2);
-    let end_y = (y_offset + current_height) as isize;
+    let radius_isize = radius.cast_signed();
+    let full_height_isize = full_height.cast_signed();
+    let start_y = y_offset.cast_signed() - (radius_isize * 2);
+    let end_y = (y_offset + current_height).cast_signed();
+
+    let mut ring_buffer_vec = vec![(sim_zero, sim_zero); 1024];
+    let ring_buffer: &mut [_; 1024] = as_mut_array(ring_buffer_vec.as_mut_slice()).unwrap();
 
     for c in 0..region.src_channels.len() {
         let src_channel = region.src_channels[c];
@@ -48,8 +51,6 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
             let mut diffs_hi = sim_zero;
             let mut summs_lo = sim_init;
             let mut summs_hi = sim_init;
-
-            let mut ring_buffer = [(sim_zero, sim_zero); 1024];
 
             for y in start_y..end_y {
                 if y >= 0 {
@@ -79,7 +80,10 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
                         let final_u8x8 = vqmovn_u16(combined_u16);
 
                         // Store 8 pixels to the mutable destination slice
-                        vst1_u8(dest_channel.as_mut_ptr().add(dest_idx), final_u8x8);
+                        vst1_u8(
+                            dest_channel[dest_idx..dest_idx + 8].as_mut_ptr().cast(),
+                            final_u8x8,
+                        );
                     }
 
                     let trail_idx_1 = ((y - radius_isize) as usize) & RING_MASK;
@@ -156,6 +160,7 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
                     let trail_idx_2 = uy & RING_MASK;
                     let a = ring_buffer_tail[trail_idx_1];
                     let d = ring_buffer_tail[trail_idx_2];
+
                     for col in 0..tail_len {
                         diffs[col] += a[col] - (d[col] * 2);
                     }
@@ -172,7 +177,7 @@ pub unsafe fn vertical_blur_region_u8_neon(region: &mut PlanarRegionOut<'_, u8>,
                 let src_base = next_y * width + tail_start;
 
                 for col in 0..tail_len {
-                    let pixel_val = src_channel[src_base + col] as i32;
+                    let pixel_val = i32::from(src_channel[src_base + col]);
                     ring_buffer_tail[ring_idx][col] = pixel_val;
                     diffs[col] += pixel_val;
                     summs[col] += diffs[col];

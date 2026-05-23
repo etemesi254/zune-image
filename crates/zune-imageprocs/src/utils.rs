@@ -112,3 +112,16 @@ pub fn execute_on<T: Fn(&mut Channel) -> Result<(), ImageErrors> + Send + Sync>(
         Ok(())
     }
 }
+
+/// A mutable array impl that matches core::slice::as_mut_array but can be used on
+/// lower msrv ( the core was stabilized in 1.93 and the crate msrv is 1.78)
+pub(crate) fn as_mut_array<T: Copy, const N: usize>(array: &mut [T]) -> Option<&mut [T; N]> {
+    if array.len() == N {
+        let ptr = array.as_mut_ptr().cast();
+        // SAFETY: The underlying array of a slice can be reinterpreted as an actual array `[T; N]` if `N` is not greater than the slice's length.
+        let me = unsafe { &mut *ptr };
+        Some(me)
+    } else {
+        None
+    }
+}
