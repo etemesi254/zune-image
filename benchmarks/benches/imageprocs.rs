@@ -498,7 +498,7 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
     let path = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
 
     let data = read(path).unwrap();
-    let zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
+    let mut zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
     let vips_im = VipsImage::new_from_buffer(&data, ".jpg").unwrap();
     let raw_pix = zune_im.flatten_frames::<u8>();
     let mut out_side = vec![0; raw_pix[0].len()];
@@ -509,8 +509,7 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {
-            let im = Blur::new(3.0).clone_and_execute(&zune_im).unwrap();
-            im.flatten_frames::<u8>();
+             Blur::new(3.0).execute(&mut zune_im).unwrap();
             black_box(());
         });
     });
