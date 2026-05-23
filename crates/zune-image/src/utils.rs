@@ -1,4 +1,5 @@
 //! A set of miscellaneous functions that are good to have
+
 use std::cmp::min;
 use std::io::{BufRead, Seek};
 
@@ -17,6 +18,18 @@ fn swizzle_three_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
             return unsafe { swizzle_three_channels_avx(r, y) };
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { swizzle_three_channels_neon(r, y) };
+        }
+    }
+    swizzle_three_channels_fallback(r, y);
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn swizzle_three_channels_neon<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     swizzle_three_channels_fallback(r, y);
 }
 
@@ -52,6 +65,12 @@ fn swizzle_four_channels<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
             return unsafe { swizzle_four_channels_avx(r, y) };
         }
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { swizzle_four_channels_neon(r, y) };
+        }
+    }
     swizzle_four_channels_fallback(r, y);
 }
 
@@ -61,6 +80,11 @@ unsafe fn swizzle_four_channels_avx<T: Copy + Default>(r: &[&[T]], y: &mut [T]) 
     swizzle_four_channels_fallback(r, y); // the function below is inlined here
 }
 
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn swizzle_four_channels_neon<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
+    swizzle_four_channels_fallback(r, y);
+}
 #[inline(always)]
 fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
     // now swizzle
@@ -116,7 +140,7 @@ fn swizzle_four_channels_fallback<T: Copy + Default>(r: &[&[T]], y: &mut [T]) {
 /// }
 /// ```
 pub fn swizzle_channels<T: Copy + Default + 'static>(
-    channels: &[Channel], output: &mut [T]
+    channels: &[Channel], output: &mut [T],
 ) -> Result<usize, ChannelErrors> {
     match channels.len() {
         0 => Ok(0),
