@@ -31,109 +31,131 @@ pub unsafe fn horizontal_blur_gaussian_inner_u8_sse(
     let radius_isize = radius.cast_signed();
 
     let mut tmp_buffer: [i32; 4] = [0; 4];
-    for x in start_x..width_isize {
+
+    // -------------------------------------------------------------------------
+    // Phase 1: Pre-fill (x < -radius)
+    // No trail reads, just ring write and sum updates.
+    // -------------------------------------------------------------------------
+    for x in start_x..-radius_isize {
+        // Since x + radius is negative, clamping to 0 always yields 0.
+        let next_x = 0;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+        let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
+
+        _mm_storeu_si128(
+            ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
+            pixel_val,
+        );
+
+        diffs = _mm_add_epi32(diffs, pixel_val);
+        sums = _mm_add_epi32(diffs, sums);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2: Ramp-up (-radius <= x < 0)
+    // Reads one trail index (stored), updates diff, writes to ring, updates sum.
+    // -------------------------------------------------------------------------
+    for x in -radius_isize..0 {
+        let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+        let trail_idx = (x as usize) % RING_SIZE;
+
+        let stored = _mm_loadu_si128(ring_buffer[trail_idx].as_ptr() as *const __m128i);
+
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+        let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
+
+        _mm_storeu_si128(
+            ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
+            pixel_val,
+        );
+
+        let d_new = _mm_slli_epi32::<1>(stored); // stored * 2
+        diffs = _mm_add_epi32(diffs, _mm_sub_epi32(pixel_val, d_new));
+        sums = _mm_add_epi32(diffs, sums);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Main Body (x >= 0)
+    // Full pass: Output generation, 2 trail reads, diff update, sum update.
+    // -------------------------------------------------------------------------
+    for x in 0..width_isize {
         let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
         let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
 
-        if x >= 0 {
-            let ux = x as usize;
-            let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
-            let trail_idx_2 = ux % RING_SIZE;
+        let ux = x as usize;
+        let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
+        let trail_idx_2 = ux % RING_SIZE;
 
-            let a_stored = _mm_loadu_si128(ring_buffer[trail_idx_1].as_ptr() as *const __m128i);
-            let d_stored = _mm_loadu_si128(ring_buffer[trail_idx_2].as_ptr() as *const __m128i);
+        let a_stored = _mm_loadu_si128(ring_buffer[trail_idx_1].as_ptr() as *const __m128i);
+        let d_stored = _mm_loadu_si128(ring_buffer[trail_idx_2].as_ptr() as *const __m128i);
 
-            // --- The SSE2 Exact Division Trick ---
-            {
-                // 1. Multiply the EVEN lanes (0 and 2): u32 * u32 -> u64
-                let prod_even = _mm_mul_epu32(sums, magic_vec);
+        // --- The SSE2 Exact Division Trick ---
+        {
+            // 1. Multiply the EVEN lanes (0 and 2): u32 * u32 -> u64
+            let prod_even = _mm_mul_epu32(sums, magic_vec);
 
-                // 2. Shift sums right by 4 bytes to put ODD lanes into EVEN lanes, then multiply
-                let sums_odd = _mm_srli_si128::<4>(sums);
-                let prod_odd = _mm_mul_epu32(sums_odd, magic_vec);
+            // 2. Shift sums right by 4 bytes to put ODD lanes into EVEN lanes, then multiply
+            let sums_odd = _mm_srli_si128::<4>(sums);
+            let prod_odd = _mm_mul_epu32(sums_odd, magic_vec);
 
-                // 3. Shift the 64-bit products right by 32 bits to get the integer division result
-                // This leaves the result in the lower 32-bits of each 64-bit lane.
-                let res_even = _mm_srli_epi64::<32>(prod_even);
-                let res_odd = _mm_srli_epi64::<32>(prod_odd);
+            // 3. Shift the 64-bit products right by 32 bits to get the integer division result
+            // This leaves the result in the lower 32-bits of each 64-bit lane.
+            let res_even = _mm_srli_epi64::<32>(prod_even);
+            let res_odd = _mm_srli_epi64::<32>(prod_odd);
 
-                // 4. Shift the odd results left by 4 bytes so they sit in lanes 1 and 3
-                let res_odd_shifted = _mm_slli_si128::<4>(res_odd);
+            // 4. Shift the odd results left by 4 bytes so they sit in lanes 1 and 3
+            let res_odd_shifted = _mm_slli_si128::<4>(res_odd);
 
-                // 5. Bitwise OR them together to re-pack into [Lane0, Lane1, Lane2, Lane3]
-                let blurred_val_int = _mm_or_si128(res_even, res_odd_shifted);
+            // 5. Bitwise OR them together to re-pack into [Lane0, Lane1, Lane2, Lane3]
+            let blurred_val_int = _mm_or_si128(res_even, res_odd_shifted);
 
-                _mm_storeu_si128(tmp_buffer.as_mut_ptr() as *mut __m128i, blurred_val_int);
-            }
-
-            // Store to output
-            out_rows[0][ux] = tmp_buffer[0] as u8;
-            out_rows[1][ux] = tmp_buffer[1] as u8;
-            out_rows[2][ux] = tmp_buffer[2] as u8;
-            out_rows[3][ux] = tmp_buffer[3] as u8;
-
-            // Load next pixel
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
-
-            // ring_buffer[ring_idx] = pixel_val
-            _mm_storeu_si128(
-                ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
-                pixel_val,
-            );
-
-            // Calculate: a_stored - (d_stored * 2) + pixel_val
-            // Note: d_stored * 2 is just a left shift by 1.
-            let left = {
-                let d_new = _mm_slli_epi32::<1>(d_stored);
-                let a_s = _mm_sub_epi32(a_stored, d_new);
-                _mm_add_epi32(a_s, pixel_val)
-            };
-
-            diffs = _mm_add_epi32(left, diffs);
-            sums = _mm_add_epi32(diffs, sums);
-        } else if x + radius_isize >= 0 {
-            let trail_idx = (x as usize) % RING_SIZE;
-            let stored = _mm_loadu_si128(ring_buffer[trail_idx].as_ptr() as *const __m128i);
-
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
-
-            _mm_storeu_si128(
-                ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
-                pixel_val,
-            );
-
-            let d_new = _mm_slli_epi32::<1>(stored); // stored * 2
-            diffs = _mm_add_epi32(diffs, _mm_sub_epi32(pixel_val, d_new));
-            sums = _mm_add_epi32(diffs, sums);
-        } else {
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
-
-            _mm_storeu_si128(
-                ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
-                pixel_val,
-            );
-
-            diffs = _mm_add_epi32(diffs, pixel_val);
-            sums = _mm_add_epi32(diffs, sums);
+            _mm_storeu_si128(tmp_buffer.as_mut_ptr() as *mut __m128i, blurred_val_int);
         }
+
+        // Store to output
+        out_rows[0][ux] = tmp_buffer[0] as u8;
+        out_rows[1][ux] = tmp_buffer[1] as u8;
+        out_rows[2][ux] = tmp_buffer[2] as u8;
+        out_rows[3][ux] = tmp_buffer[3] as u8;
+
+        // Load next pixel
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+        let pixel_val = _mm_loadu_si128(pixel_val_array.as_ptr() as *const __m128i);
+
+        // ring_buffer[ring_idx] = pixel_val
+        _mm_storeu_si128(
+            ring_buffer[ring_idx].as_mut_ptr() as *mut __m128i,
+            pixel_val,
+        );
+
+        // Calculate: a_stored - (d_stored * 2) + pixel_val
+        // Note: d_stored * 2 is just a left shift by 1.
+        let left = {
+            let d_new = _mm_slli_epi32::<1>(d_stored);
+            let a_s = _mm_sub_epi32(a_stored, d_new);
+            _mm_add_epi32(a_s, pixel_val)
+        };
+
+        diffs = _mm_add_epi32(left, diffs);
+        sums = _mm_add_epi32(diffs, sums);
     }
 }
 

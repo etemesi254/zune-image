@@ -34,105 +34,120 @@ pub unsafe fn horizontal_blur_gaussian_inner_u8_neon(
     let radius_isize = radius.cast_signed();
 
     let mut tmp_buffer: [i32; 4] = [0; 4];
-    for x in start_x..width_isize {
+    let start_x = -radius.cast_signed() * 2;
+    let width_isize = width.cast_signed();
+    let radius_isize = radius.cast_signed();
+    let mut tmp_buffer: [i32; 4] = [0; 4];
+
+    // -------------------------------------------------------------------------
+    // Phase 1: Pre-fill (x < -radius)
+    // No trail reads, just ring write and sum updates.
+    // -------------------------------------------------------------------------
+    for x in start_x..-radius_isize {
+        // Because x + radius is < 0 here, next_x will always clamp to 0.
+        let next_x = 0;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+
+        let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+        ring_buffer[ring_idx] = pixel_val_array;
+
+        diffs = vaddq_s32(diffs, pixel_val);
+        sums = vaddq_s32(diffs, sums);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2: Ramp-up (-radius <= x < 0)
+    // Reads one trail index (stored), updates diff, writes to ring, updates sum.
+    // -------------------------------------------------------------------------
+    for x in -radius_isize..0 {
+        let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
+        let trail_idx = (x as usize) % RING_SIZE;
+
+        let stored_buf = ring_buffer[trail_idx];
+        let stored = vld1q_s32(stored_buf.as_ptr());
+
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+
+        let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+        ring_buffer[ring_idx] = pixel_val_array;
+
+        // diffs = diffs + (pixel_val - (stored * two))
+        diffs = vaddq_s32(diffs, vsubq_s32(pixel_val, vmulq_s32(stored, two)));
+        sums = vaddq_s32(diffs, sums);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Main Body (x >= 0)
+    // Full pass: Output generation, 2 trail reads, diff update, sum update.
+    // -------------------------------------------------------------------------
+    for x in 0..width_isize {
         let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
         let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
 
-        if x >= 0 {
-            let ux = x as usize;
-            let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
-            let trail_idx_2 = ux % RING_SIZE;
+        let ux = x as usize;
+        let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
+        let trail_idx_2 = ux % RING_SIZE;
 
-            let a_stored = vld1q_s32(ring_buffer[trail_idx_1].as_ptr());
-            let d_stored = vld1q_s32(ring_buffer[trail_idx_2].as_ptr());
+        let a_stored = vld1q_s32(ring_buffer[trail_idx_1].as_ptr());
+        let d_stored = vld1q_s32(ring_buffer[trail_idx_2].as_ptr());
 
-            // Single pass: output + diff update + ring write + summ update
-            // convert to float, divide and back to int
+        // --- Exact Division Trick ---
+        {
+            let sums_u32 = vreinterpretq_u32_s32(sums);
+            let sums_low = vget_low_u32(sums_u32);
+            let sums_high = vget_high_u32(sums_u32);
 
-            // division
-            {
-                // 1. Reinterpret sums as unsigned 32-bit (sums are strictly positive)
-                let sums_u32 = vreinterpretq_u32_s32(sums);
+            let prod_low = vmull_u32(sums_low, magic_half);
+            let prod_high = vmull_u32(sums_high, magic_half);
 
-                // 2. Unpack the 128-bit vector into two 64-bit halves (2 lanes of u32 each)
-                let sums_low = vget_low_u32(sums_u32);
-                let sums_high = vget_high_u32(sums_u32);
+            let result_low = vshrn_n_u64::<32>(prod_low);
+            let result_high = vshrn_n_u64::<32>(prod_high);
 
-                // 3. Multiply long: u32 * u32 -> u64
-                let prod_low = vmull_u32(sums_low, magic_half);
-                let prod_high = vmull_u32(sums_high, magic_half);
+            let blurred_val_u32 = vcombine_u32(result_low, result_high);
+            let blurred_val_int = vreinterpretq_s32_u32(blurred_val_u32);
 
-                // 4. Shift right narrow: shift u64 right by 32 bits, narrowing back to u32
-                let result_low = vshrn_n_u64::<32>(prod_low);
-                let result_high = vshrn_n_u64::<32>(prod_high);
-
-                // 5. Combine back into a 128-bit vector and cast back to signed 32-bit
-                let blurred_val_u32 = vcombine_u32(result_low, result_high);
-                let blurred_val_int = vreinterpretq_s32_u32(blurred_val_u32);
-
-                vst1q_s32(tmp_buffer.as_mut_ptr().cast(), blurred_val_int);
-            }
-            // now store in rows
-            out_rows[0][ux] = tmp_buffer[0] as u8;
-            out_rows[1][ux] = tmp_buffer[1] as u8;
-            out_rows[2][ux] = tmp_buffer[2] as u8;
-            out_rows[3][ux] = tmp_buffer[3] as u8;
-
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
-            // ring_buffer[ring_idx] = pixel_val
-            vst1q_s32(ring_buffer[ring_idx].as_mut_ptr().cast(), pixel_val);
-            // diffs[i] = (a_stored[i] - (d_stored[i] * two) + pixel_val) + diffs[i];
-            let left = {
-                // d_stored[i] * two
-                let d_new = vmulq_s32(d_stored, two);
-                // (a_stored[i] - (d_stored[i] * two)
-                let a_s = vsubq_s32(a_stored, d_new);
-                // (a_stored[i] - (d_stored[i] * two) + pixel_val)
-                vaddq_s32(a_s, pixel_val)
-            };
-
-            diffs = vaddq_s32(left, diffs);
-            sums = vaddq_s32(diffs, sums);
-        } else if x + radius_isize >= 0 {
-            let trail_idx = (x as usize) % RING_SIZE;
-            let stored_buf = ring_buffer[trail_idx];
-            let stored = vld1q_s32(stored_buf.as_ptr());
-
-            // Single pass: diff update + ring write + summ update
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            // pixel_val = in_rows[i][next_x].to_accum();
-            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
-            // ring_buffer[ring_idx][i] = pixel_val;
-            ring_buffer[ring_idx] = pixel_val_array;
-            diffs = vaddq_s32(diffs, vsubq_s32(pixel_val, vmulq_s32(stored, two)));
-            sums = vaddq_s32(diffs, sums);
-        } else {
-            // Single pass: ring write + summ update, no trail reads
-            // Single pass: diff update + ring write + summ update
-            let pixel_val_array = [
-                i32::from(in_rows[0][next_x]),
-                i32::from(in_rows[1][next_x]),
-                i32::from(in_rows[2][next_x]),
-                i32::from(in_rows[3][next_x]),
-            ];
-            // pixel_val = in_rows[i][next_x].to_accum();
-            let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
-            ring_buffer[ring_idx] = pixel_val_array;
-            diffs = vaddq_s32(diffs, pixel_val);
-            sums = vaddq_s32(diffs, sums);
+            vst1q_s32(tmp_buffer.as_mut_ptr().cast(), blurred_val_int);
         }
+
+        // Store in rows
+        out_rows[0][ux] = tmp_buffer[0] as u8;
+        out_rows[1][ux] = tmp_buffer[1] as u8;
+        out_rows[2][ux] = tmp_buffer[2] as u8;
+        out_rows[3][ux] = tmp_buffer[3] as u8;
+
+        let pixel_val_array = [
+            i32::from(in_rows[0][next_x]),
+            i32::from(in_rows[1][next_x]),
+            i32::from(in_rows[2][next_x]),
+            i32::from(in_rows[3][next_x]),
+        ];
+
+        let pixel_val = vld1q_s32(pixel_val_array.as_ptr().cast());
+        vst1q_s32(ring_buffer[ring_idx].as_mut_ptr().cast(), pixel_val);
+
+        let left = {
+            let d_new = vmulq_s32(d_stored, two);
+            let a_s = vsubq_s32(a_stored, d_new);
+            vaddq_s32(a_s, pixel_val)
+        };
+
+        diffs = vaddq_s32(left, diffs);
+        sums = vaddq_s32(diffs, sums);
     }
+
 }
 
 #[cfg(target_arch = "aarch64")]
