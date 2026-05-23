@@ -7,7 +7,7 @@ macro_rules! simd_fn {
         ) $body:block
     ) => {
         $(#[$meta])*
-        pub fn $name $(<$($gen)*>)? (
+       pub (crate) fn $name $(<$($gen)*>)? (
             $($arg : $argty),*
         ) {
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

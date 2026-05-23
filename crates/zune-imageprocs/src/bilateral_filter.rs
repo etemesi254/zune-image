@@ -10,13 +10,13 @@
 //!
 //!  A description can be found [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
 //!
+use crate::simd_fn;
+use crate::traits::NumOps;
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionOut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
-
-use crate::traits::NumOps;
 /// A bilateral filter operation for edge-preserving smoothing.
 ///
 /// Unlike standard Gaussian blurs that average all pixels in a neighborhood, a bilateral
@@ -47,7 +47,6 @@ pub struct BilateralFilter {
     sigma_color: f32,
     sigma_space: f32,
 }
-
 
 impl BilateralFilter {
     /// Create a new bilateral filter
@@ -104,14 +103,14 @@ impl OperationsTrait for BilateralFilter {
                 image.par_process_regions_out_of_place::<u8, _>(
                     &mut dest_image,
                     true, // ignore_alpha as per documentation
-                    |region| bilateral_filter_region::<u8>(region, &coeffs)
+                    |region| bilateral_filter_region_u8(region, &coeffs),
                 )?;
             }
             BitType::U16 => {
                 image.par_process_regions_out_of_place::<u16, _>(
                     &mut dest_image,
                     true,
-                    |region| bilateral_filter_region::<u16>(region, &coeffs)
+                    |region| bilateral_filter_region::<u16>(region, &coeffs),
                 )?;
             }
             d => {
@@ -129,10 +128,16 @@ impl OperationsTrait for BilateralFilter {
         &[BitType::U8, BitType::U16]
     }
 }
-fn bilateral_filter_region<T>(
-    region: &mut PlanarRegionOut<'_, T>,
-    coeffs: &BilateralCoeffs
-) where
+
+simd_fn!(
+    fn bilateral_filter_region_u8(region: &mut PlanarRegionOut<'_, u8>, coeffs: &BilateralCoeffs) {
+        bilateral_filter_region::<u8>(region, coeffs);
+    }
+);
+
+#[inline(always)]
+fn bilateral_filter_region<T>(region: &mut PlanarRegionOut<'_, T>, coeffs: &BilateralCoeffs)
+where
     T: Copy + NumOps<T> + Default + Send + Sync,
     i32: std::convert::From<T>,
 {
@@ -146,11 +151,13 @@ fn bilateral_filter_region<T>(
     // Since src_channels contains the FULL image slices, we can derive the global height
     let global_height = region.src_channels[0].len() / width;
 
-    for (src, dest) in region.src_channels.iter().zip(region.dest_channels.iter_mut()) {
-
+    for (src, dest) in region
+        .src_channels
+        .iter()
+        .zip(region.dest_channels.iter_mut())
+    {
         // Iterate only over the lines this specific region is responsible for
         for local_y in 0..region.height {
-
             // Map to the absolute image coordinates for neighborhood lookups
             let global_y = region.y_offset + local_y;
 
@@ -168,7 +175,8 @@ fn bilateral_filter_region<T>(
                         let r = ((dy * dy + dx * dx) as f64).sqrt();
                         if r <= radius as f64 {
                             // Clamp against the GLOBAL height, not the region height
-                            let sy = (global_y as i32 + dy).clamp(0, global_height as i32 - 1) as usize;
+                            let sy =
+                                (global_y as i32 + dy).clamp(0, global_height as i32 - 1) as usize;
                             let sx = (x as i32 + dx).clamp(0, width as i32 - 1) as usize;
 
                             // Read safely from the full source buffer
@@ -244,9 +252,9 @@ fn init_bilateral(
 
 #[cfg(test)]
 mod tests {
+    use crate::bilateral_filter::BilateralFilter;
     use zune_image::image::Image;
     use zune_image::traits::OperationsTrait;
-    use crate::bilateral_filter::BilateralFilter;
 
     /// Tests to see that the filter can run on supported bit depths
     #[test]
@@ -283,14 +291,18 @@ mod tests {
         let fill_value = 128_u8;
         let input = vec![fill_value; w * h];
         let mut image = Image::from_u8(&input, w, h, ColorSpace::Luma);
-        BilateralFilter::new(9, 50.0, 50.0).execute(&mut image).unwrap();
+        BilateralFilter::new(9, 50.0, 50.0)
+            .execute(&mut image)
+            .unwrap();
 
         let channel = image.flatten_to_u8();
         for &px in &channel[0] {
-            assert_eq!(px, fill_value, "constant image must survive bilateral filtering unchanged");
+            assert_eq!(
+                px, fill_value,
+                "constant image must survive bilateral filtering unchanged"
+            );
         }
     }
-
 
     /// A 1×1 image should pass through unchanged — the only pixel
     /// is both the centre and its sole neighbour.
@@ -299,7 +311,9 @@ mod tests {
         use zune_core::colorspace::ColorSpace;
 
         let mut image = Image::from_u8(&[200_u8], 1, 1, ColorSpace::Luma);
-        BilateralFilter::new(5, 25.0, 25.0).execute(&mut image).unwrap();
+        BilateralFilter::new(5, 25.0, 25.0)
+            .execute(&mut image)
+            .unwrap();
 
         let out = image.flatten_to_u8();
         assert_eq!(out[0][0], 200, "single pixel must be returned unchanged");
@@ -319,7 +333,9 @@ mod tests {
             .collect();
 
         let mut image = Image::from_u8(&input, w, h, ColorSpace::Luma);
-        BilateralFilter::new(9, 30.0, 30.0).execute(&mut image).unwrap();
+        BilateralFilter::new(9, 30.0, 30.0)
+            .execute(&mut image)
+            .unwrap();
 
         let out = image.flatten_to_u8();
         // Pixels well inside the dark half must stay dark
@@ -328,7 +344,10 @@ mod tests {
             assert!(dark_px < 64, "dark region smeared too much: {dark_px}");
             // Pixels well inside the bright half must stay bright
             let bright_px = out[0][row * w + w - 5];
-            assert!(bright_px > 192, "bright region smeared too much: {bright_px}");
+            assert!(
+                bright_px > 192,
+                "bright region smeared too much: {bright_px}"
+            );
         }
     }
 
@@ -345,19 +364,28 @@ mod tests {
         nanorand::WyRand::new_seed(7).fill(&mut input);
 
         let mut once = Image::from_u8(&input, w, h, ColorSpace::Luma);
-        BilateralFilter::new(5, 40.0, 40.0).execute(&mut once).unwrap();
+        BilateralFilter::new(5, 40.0, 40.0)
+            .execute(&mut once)
+            .unwrap();
         let after_one = once.flatten_to_u8()[0].clone();
 
         let mut twice = Image::from_u8(&input, w, h, ColorSpace::Luma);
-        BilateralFilter::new(5, 40.0, 40.0).execute(&mut twice).unwrap();
-        BilateralFilter::new(5, 40.0, 40.0).execute(&mut twice).unwrap();
+        BilateralFilter::new(5, 40.0, 40.0)
+            .execute(&mut twice)
+            .unwrap();
+        BilateralFilter::new(5, 40.0, 40.0)
+            .execute(&mut twice)
+            .unwrap();
         let after_two = twice.flatten_to_u8()[0].clone();
 
         // The second pass should change values by at most ~30 on a noisy image;
         // larger deltas would indicate numerical instability.
         for (a, b) in after_one.iter().zip(after_two.iter()) {
             let diff = (*a as i16 - *b as i16).abs();
-            assert!(diff <= 50, "second pass caused unexpectedly large change: {diff}");
+            assert!(
+                diff <= 50,
+                "second pass caused unexpectedly large change: {diff}"
+            );
         }
     }
 
@@ -368,7 +396,9 @@ mod tests {
 
         let input = vec![123_u8; 10 * 10];
         let mut image = Image::from_u8(&input, 10, 10, ColorSpace::Luma);
-        BilateralFilter::new(0, 25.0, 25.0).execute(&mut image).unwrap();
+        BilateralFilter::new(0, 25.0, 25.0)
+            .execute(&mut image)
+            .unwrap();
 
         let out = image.flatten_to_u8();
         for &px in &out[0] {

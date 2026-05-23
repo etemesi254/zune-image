@@ -37,6 +37,7 @@
     clippy::panic
 )]
 #![allow(
+    clippy::items_after_statements,
     clippy::needless_return,
     clippy::similar_names,
     clippy::inline_always,
