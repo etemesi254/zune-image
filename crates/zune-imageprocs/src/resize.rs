@@ -61,7 +61,7 @@ pub enum ResizeDimensions {
     /// Resizes the image by a percentage of its original width and height (e.g., `50`, `75`).
     Percentage(usize, usize),
     /// Forces the image to exactly these dimensions, ignoring the original aspect ratio.
-    IgnoreAspectRatio(usize, usize),
+    Exact(usize, usize),
     /// Scales the image to fit entirely within the specified bounding box while maintaining aspect ratio.
     FitWithin(usize, usize),
     /// Scales the image so that it completely covers the bounding box while maintaining aspect ratio (some parts of the image may overflow the box).
@@ -329,7 +329,7 @@ fn calc_absolute_dimensions(resize_dims: ResizeDimensions, image: &Image) -> (us
 
     let (new_w, new_h) = match resize_dims {
         // Force exact dimensions (ImageMagick `!`)
-        ResizeDimensions::IgnoreAspectRatio(w, h) => (w, h),
+        ResizeDimensions::Exact(w, h) => (w, h),
 
         // Percentage math
         ResizeDimensions::Percentage(percent_w, percent_h) => (

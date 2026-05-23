@@ -6,22 +6,20 @@
  * You can redistribute it or modify it under terms of the MIT, Apache License or Zlib license
  */
 
-use std::ops::{Deref, DerefMut};
-
 use wasm_bindgen::prelude::*;
-use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::ZCursor;
-use zune_core::colorspace::ColorSpace;
-use zune_core::log::{debug, error, info};
+use zune_core::log::{debug, info};
 use zune_core::options::DecoderOptions;
-// use zune_core::colorspace::ColorSpace;
-use zune_image::codecs::ImageFormat;
-use zune_image::core_filters::colorspace::ColorspaceConv;
-use zune_image::core_filters::depth::Depth;
+
+use crate::custom_operations::composite::WasmOverlayOp;
+use crate::enums::{
+    WasmColorProfiles, WasmColorspace, WasmCompositeMethod, WasmFlipDirection, WasmImageFormats,
+    WasmMirrorMode, WasmResizeMethod, WasmSpatialOperations, WasmThresholdMethod,
+};
+use crate::utils::set_panic_hook;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
-use zune_image::metadata::AlphaState;
-use zune_image::traits::OperationsTrait;
+use zune_image::pipelines::Pipeline;
 use zune_imageprocs::auto_orient::AutoOrient;
 use zune_imageprocs::bilateral_filter::BilateralFilter;
 use zune_imageprocs::blur::Blur;
@@ -30,23 +28,24 @@ use zune_imageprocs::brighten::Brighten;
 use zune_imageprocs::color_matrix::ColorMatrix;
 use zune_imageprocs::color_transform::ColorTransform;
 use zune_imageprocs::contrast::Contrast;
+use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::crop::Crop;
 use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
+use zune_imageprocs::fx::Fx;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
 use zune_imageprocs::median::Median;
-use zune_imageprocs::premul_alpha::PremultiplyAlpha;
+use zune_imageprocs::resize::{Resize, ResizeDimensions};
+use zune_imageprocs::rotate::Rotate;
+use zune_imageprocs::sharpen::Sharpen;
 use zune_imageprocs::sobel::Sobel;
-use zune_imageprocs::spatial::SpatialOps;
-use zune_imageprocs::spatial_ops::SpatialOperations;
 use zune_imageprocs::stretch_contrast::StretchContrast;
 use zune_imageprocs::threshold::{Threshold, ThresholdMethod};
+use zune_imageprocs::transpose::Transpose;
 
-use crate::enums::{WasmColorProfiles, WasmColorspace, WasmImageFormats, WasmSpatialOperations};
-use crate::utils::set_panic_hook;
-
+mod custom_operations;
 mod enums;
 mod utils;
 
@@ -79,456 +78,302 @@ fn print_initial_stats() {
     }
 }
 
-//
-// #[wasm_bindgen]
-// pub struct WasmImageMetadata
-// {
-//     width:      usize,
-//     height:     usize,
-//     depth:      BitDepth,
-//     colorspace: ColorSpace
-// }
+// ... your other imports
+
 #[wasm_bindgen]
-#[derive(Clone)]
 pub struct WasmImage {
-    image: Image
+    pipeline: Pipeline,
 }
+#[wasm_bindgen]
+impl WasmImage {
+    /// Create a new image from in-memory bytes
+    #[wasm_bindgen(constructor)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<WasmImage, JsError> {
+        let image = Image::read(ZCursor::from(bytes), DecoderOptions::new_fast())
+            .map_err(<ImageErrors as Into<JsError>>::into)?;
 
-impl Deref for WasmImage {
-    type Target = Image;
+        let mut pipeline = Pipeline::new();
+        pipeline.chain_image(image);
 
-    fn deref(&self) -> &Self::Target {
-        &self.image
-    }
-}
-
-impl DerefMut for WasmImage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.image
+        Ok(WasmImage { pipeline })
     }
 }
 
 #[wasm_bindgen]
 impl WasmImage {
-    /// Return the width of the image
-    ///
-    /// @returns: The image width as a `usize` in rust, the equivalent in wasm
-    #[wasm_bindgen(getter)]
-    pub fn width(&self) -> usize {
-        let (width, _) = self.image.dimensions();
-        width
+    /// Auto orient the image based on EXIF tag
+    pub fn auto_orient(mut self) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(AutoOrient));
+        self
     }
 
-    /// Return the height of the image
-    ///
-    /// @returns: The image width as a `usize` in rust, the equivalent in wasm
-    #[wasm_bindgen(getter)]
-    pub fn height(&self) -> usize {
-        let (_, height) = self.image.dimensions();
-        height
+    /// Apply a bilateral filter to reduce noise while preserving edges
+    pub fn bilateral_filter(mut self, d: i32, sigma_color: f32, sigma_space: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(BilateralFilter::new(d, sigma_color, sigma_space)));
+        self
     }
 
-    /// Linearly stretches the contrast in an image in place,
-    /// sending lower to image minimum and upper to image maximum.
-    ///
-    /// Values in the mid-range are scaled in respect to the lower and upper values using the formula
-    /// `(max_value-pix) / (upper-lower)` where max value is the
-    /// largest supported number for the said bit-depth (255 for u8, 1 for f32 images etc)
-    ///
-    /// @param lower - Lower minimum value for which pixels below this are clamped to the value
-    /// @param upper - Upper maximum value for which pixels above are clamped to the value
-    pub fn stretch_contrast(&mut self, lower: f32, upper: f32) -> Result<(), JsError> {
-        let ops = StretchContrast::new(lower, upper);
-        self.execute_ops(&ops)
+    /// Apply a box blur to the image
+    pub fn box_blur(mut self, radius: usize) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(BoxBlur::new(radius)));
+        self
     }
 
-    /// Internal operation executor that allows me to do some tracking
-    fn execute_ops(&mut self, ops: &dyn OperationsTrait) -> Result<(), JsError> {
-        let start = web_time::Instant::now();
-        match ops.execute(&mut self.image) {
-            Ok(()) => {
-                let end = web_time::Instant::now();
-                info!(
-                    "Successfully executed {} in {:?} ms",
-                    ops.name(),
-                    (end - start).as_millis()
-                );
-                Ok(())
-            }
-            Err(e) => {
-                error!("Executing {} failed because of {:?}", ops.name(), e);
-                Err(e.into())
-            }
-        }
+    /// Adjust the brightness of the image
+    pub fn brighten(mut self, by: f32) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Brighten::new(by)));
+        self
     }
 
-    /// Apply a brighten operation to the image
-    ///
-    /// This is a simple `(pix+constant)` operation where `pix` is a single image pixel and `constant`
-    /// is the value specified here
-    ///
-    /// @praram value -  Value to increase the channel values with, must be between -1 and 1, where 1 stands for maximum brightness
-    // /// and -1 for darkness
-    pub fn brighten(&mut self, value: f32) -> Result<(), JsError> {
-        let ops = Brighten::new(value);
-        self.execute_ops(&ops)
-    }
-    /// Apply a contrast operation to the image
-    ///
-    /// Algorithm used is from [here](https://www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/)
-    ///
-    /// @param contrast - The contrast adjustment factor.
-    pub fn contrast(&mut self, contrast: f32) -> Result<(), JsError> {
-        let ops = Contrast::new(contrast);
-        self.execute_ops(&ops)
-    }
-    /// Crop an image creating a sub-image from the initial image
-    ///
-    /// Origin is defined from the top left corner of the image.
-    ///
-    /// @param width -  The new image width
-    /// @param height - The new image height
-    /// @param x -  How far from the x origin the image should start from
-    /// @param y -  How far from the y origin the image should start from
-    ///
-    pub fn crop(&mut self, width: usize, height: usize, x: usize, y: usize) -> Result<(), JsError> {
-        self.execute_ops(&Crop::new(width, height, x, y))
+    /// Apply a color matrix operation.
+    /// Takes a flat array of 20 floats and converts it to the 4x5 matrix.
+    pub fn color_matrix(mut self, matrix: &[f32]) -> Result<WasmImage, JsError> {
+        let op = ColorMatrix::try_from_slice(matrix)
+            .ok_or_else(|| JsError::new("Length of matrix must be exactly 20"))?;
+        self.pipeline.chain_operations(Box::new(op));
+        Ok(self)
     }
 
-    /// Adjust an image's gamma value
-    ///
-    /// @param value - Gamma adjust parameter, typical range is from 0.8-3.0
-    pub fn gamma(&mut self, gamma: f32) -> Result<(), JsError> {
-        let ops = Gamma::new(gamma);
-        self.execute_ops(&ops)
+    /// Flip the image
+    pub fn flip(mut self, direction: WasmFlipDirection) -> WasmImage {
+        // Map your WASM enum to the internal FlipDirection
+        let dir = match direction {
+            WasmFlipDirection::Horizontal => FlipDirection::Horizontal,
+            WasmFlipDirection::Vertical => FlipDirection::Vertical,
+        };
+        self.pipeline.chain_operations(Box::new(Flip::new(dir)));
+        self
     }
 
-    /// Invert an image's pixels.
-    ///
-    /// The typical operation is `max-pixel`, where `max` is the maximum value
-    /// supported by that depth, and `pixel` is the current pixel of an image
-    pub fn invert(&mut self) -> Result<(), JsError> {
-        let ops = Invert::new();
-        self.execute_ops(&ops)
+    /// Transform the image's colors to match a target ICC color profile
+    pub fn color_transform(mut self, target_profile: WasmColorProfiles) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(ColorTransform::new(target_profile.into())));
+        self
     }
 
-    /// Binarize an image.
-    ///
-    /// THe operation is `pix = max(pix,thresh) > thresh? max_v : 0` where `pix`
-    /// is the image pixel, `thresh` is the threshold value and `max_v` is the
-    /// largest value the bitdepth supports
-    ///
-    /// @param threshold - The threshold value, values less than this are replaced with zero,
-    /// values greater than this are replaced with max supported integer for that bit depth
-    pub fn threshold(&mut self, threshold: f32) -> Result<(), JsError> {
-        let ops = Threshold::new(threshold, ThresholdMethod::Binary);
-        self.execute_ops(&ops)
+    /// Apply a 2D convolution matrix to the image
+    pub fn convolve(mut self, weights: &[f32], scale: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Convolve::new(weights.to_vec(), scale)));
+        self
     }
 
-    /// Convert an image to  grayscale
-    ///
-    /// A convenience function for {@link convert_color}
-    pub fn grayscale(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&ColorspaceConv::new(ColorSpace::Luma))
-    }
-    /// Convert a color from one colorspace into another.
-    ///
-    /// Some colorspace do not have a direct conversion, e.g CMYK -> HSV , so for
-    /// such we use intermediate conversion, e.g CMYK->RGB->HSV
-    ///
-    /// @param colorspace - Colorspace to convert the image to
-    pub fn convert_color(&mut self, colorspace: WasmColorspace) -> Result<(), JsError> {
-        self.execute_ops(&ColorspaceConv::new(colorspace.to_colorspace()))
+    /// Adjust the contrast of the image
+    pub fn contrast(mut self, contrast: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Contrast::new(contrast)));
+        self
     }
 
-    /// Carry out a mean filter on the image
-    ///
-    /// A mean filter replaces a pixel with the average of it's neighbors
-    ///
-    /// Execution speed depends on array radius and image size
-    ///
-    /// @param radius : radius of the filter
-    pub fn mean_filter(&mut self, radius: usize) -> Result<(), JsError> {
-        let ops = SpatialOps::new(radius, SpatialOperations::Mean);
-        self.execute_ops(&ops)
+    /// Crop the image to a specified rectangular region
+    pub fn crop(mut self, width: usize, height: usize, x: usize, y: usize) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Crop::new(width, height, x, y)));
+        self
     }
 
-    /// Return the image's colorspace
-    ///
-    /// @returns The current image colorspace
-    pub fn colorspace(&mut self) -> WasmColorspace {
-        WasmColorspace::from_colorspace(self.image.colorspace())
-    }
-    /// Auto orient the image based on exif tag
-    ///
-    /// This is a no-op if the image doesn't have an orientation
-    /// exif tag present.
-    pub fn auto_orient(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&AutoOrient)
-    }
-    /// Spatial operations implemented for images
-    ///
-    /// Spatial operations return one value from a pixel's surrounding based on a function
-    ///
-    /// E.g the `min` operation will return the minimum of the pixel in a given radius.
-    ///
-    /// @param radius - Image radius to consider, the larger the radius the longer the operation
-    /// @param operations - The operation being ran on the image, currently only a set of pre-configured operations can
-    /// be ran
-    pub fn spatial(
-        &mut self, radius: usize, operations: WasmSpatialOperations
-    ) -> Result<(), JsError> {
-        self.execute_ops(&SpatialOps::new(radius, operations.into()))
+    /// Adjust the exposure and black level of the image
+    pub fn exposure(mut self, exposure: f32, black: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Exposure::new(exposure, black)));
+        self
     }
 
-    /// Create a new image from a file
-    ///
-    /// @param file The file path that contains the image details,
-    /// if the image is a compression format supported, it will open it automatically
-    ///
-    /// @returns An image representation if everything goes well, otherwise panics
-    #[wasm_bindgen(constructor)]
-    pub fn from_file(file: String) -> Result<WasmImage, JsError> {
-        let c = Image::open(file).map_err(<ImageErrors as Into<JsError>>::into)?;
-
-        Ok(WasmImage { image: c })
+    /// Apply a custom mathematical expression to every pixel
+    pub fn fx(mut self, expression: String) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Fx::new(expression)));
+        self
     }
 
-    /// A bilateral filter is a non-linear, edge-preserving,
-    /// and noise-reducing smoothing filter for images.
-    ///
-    /// It is a type of non-linear filter that reduces noise while preserving edges.
-    /// The filter works by averaging the pixels in a neighborhood around a given pixel,
-    /// but the weights of the pixels are determined not only by their spatial distance from the given pixel,
-    /// but also by their intensity difference from the given pixel
-    ///
-    ///  A description can be found [here](https://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/MANDUCHI1/Bilateral_Filtering.html)
-    ///
-    ///
-    /// @param d - Diameter of each pixel neighborhood that is used during filtering. If it is non-positive, it is computed from sigma_space.
-    ///
-    /// @param sigma_color  - Filter sigma in the color space.
-    ///  A larger value of the parameter means that farther colors within the pixel neighborhood (see sigmaSpace)
-    ///  will be mixed together, resulting in larger areas of semi-equal color.
-    ///
-    /// @param sigma_space - Filter sigma in the coordinate space.
-    ///  A larger value of the parameter means that farther pixels will influence each other as
-    ///   long as their colors are close enough (see sigma_color ).
-    ///   When d>0, it specifies the neighborhood size regardless of sigma_space. Otherwise, d is proportional to sigma_space.
-    pub fn bilateral_filter(
-        &mut self, d: i32, sigma_color: f32, sigma_space: f32
-    ) -> Result<(), JsError> {
-        self.execute_ops(&BilateralFilter::new(d, sigma_color, sigma_space))
+    /// Apply gamma correction
+    pub fn gamma(mut self, value: f32) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Gamma::new(value)));
+        self
     }
 
-
-    /// Perform a mean/box blur of the image
-    ///
-    /// This returns the average pixels of a radius `radius` around a pixel
-    /// The execution is independent of size
-    ///
-    /// @param radius - The number of neighbours that would be included per blur pixel,
-    /// the larger the number the more pronounced the blur
-    pub fn box_blur(&mut self, radius: usize) -> Result<(), JsError> {
-        self.execute_ops(&BoxBlur::new(radius))
-    }
-    /// Adjust exposure of an image
-    ///
-    /// Formula for exposure is `pix = clamp((pix - black) * exposure)`
-    ///
-    /// @param exposure - Value to adjust pixels with, range is usually betweeen 0 and +infinity
-    /// value of `1` doesn't have an effect, `2` increases pixel intensity by 2
-    ///
-    /// @param black_point - Offset to adjust the pixels with before carrying out exposure, default value
-    /// would be `0.0` for it to have no range
-    pub fn exposure(&mut self, exposure: f32, black_point: f32) -> Result<(), JsError> {
-        self.execute_ops(&Exposure::new(exposure, black_point))
+    /// Apply a fast Gaussian blur
+    pub fn gaussian_blur(mut self, sigma: f32) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Blur::new(sigma)));
+        self
     }
 
-    /// Flip an image horizontally
-    ///
-    ///
-    /// ```text
-    ///old image     new image
-    ///┌─────────┐   ┌──────────┐
-    ///│a b c d e│   │e d b c a │
-    ///│f g h i j│   │j i h g f │
-    ///└─────────┘   └──────────┘
-    ///```
-    ///
-    pub fn flip_horizontal(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&Flip::new(FlipDirection::Horizontal))
+    /// Adjust Hue, Saturation, and Value
+    pub fn hsv_adjust(mut self, hue: f32, saturation: f32, lightness: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(HsvAdjust::new(hue, saturation, lightness)));
+        self
     }
 
-    /// Flip an image by reflecting pixels around the x-axis.( rotate image by 180 degrees)
-    ///
-    /// ```text
-    ///
-    ///old image     new image
-    /// ┌─────────┐   ┌──────────┐
-    /// │a b c d e│   │f g h i j │
-    /// │f g h i j│   │a b c d e │
-    /// └─────────┘   └──────────┘
-    /// ```
-    ///
-    pub fn flip_vertical(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&Flip::new(FlipDirection::Vertical))
-    }
-    /// Blur the image using a gaussian kernel with sigma `sigma`
-    ///
-    /// @param sigma - A value of how much to blur the image by, larger values means
-    /// more pronounced blurs
-    pub fn gaussian_blur(&mut self, sigma: f32) -> Result<(), JsError> {
-        self.execute_ops(&Blur::new(sigma))
+    /// Invert the colors of the image
+    pub fn invert(mut self) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Invert));
+        self
     }
 
-    /// Adjust either the hue, saturation and lightness/value of the image
-    ///
-    /// @param hue - The hue rotation argument. This is usually a value between 0 and 360 degrees
-    ///
-    /// @param saturation - The saturation scaling factor, a value of 0 produces a grayscale image, 1 has no effect, other values lie withing that
-    /// spectrum > 1 produces vibrant cartoonish color
-    ///
-    /// @param  lightness - The lightness scaling factor, a value greater than 0, values less than or equal to zero
-    /// produce a black image, higher values increase the brightness of the image, 1.0 doesn't do anything
-    /// to image lightness
-    pub fn hsv_adjust(&mut self, hue: f32, saturation: f32, lightness: f32) -> Result<(), JsError> {
-        self.execute_ops(&HsvAdjust::new(hue, saturation, lightness))
+    /// Apply a median filter to reduce noise
+    pub fn median_blur(mut self, radius: usize) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Median::new(radius)));
+        self
     }
 
-    /// Applies a median filter of given dimensions to an image. Each output pixel is the median
-    /// of the pixels in a `(2 * radius + 1) * (2 * radius + 1)` kernel of pixels in the input image.
-    ///
-    /// @param radius: The radius to consider for the image
-    pub fn median(&mut self, radius: usize) -> Result<(), JsError> {
-        self.execute_ops(&Median::new(radius))
-    }
-    /// Pre multiply the image alpha
-    ///
-    ///  Note: This operation is lossy, one cannot undo effects of it
-    /// (e.g where we are multiplying by zero), use with caution
-    pub fn premultiply(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&PremultiplyAlpha::new(AlphaState::PreMultiplied))
-    }
-    /// Undo alpha pre-multiplication
-    pub fn unpremultiply(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&PremultiplyAlpha::new(AlphaState::NonPreMultiplied))
+    /// Resize the image to exact dimensions
+    pub fn resize(mut self, width: usize, height: usize, method: WasmResizeMethod) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Resize::new(
+            ResizeDimensions::Exact(width, height),
+            method.into(),
+        )));
+        self
     }
 
-    /// Apply a color matrix operation on an RGBA image
-    ///
-    /// The matrix is a 4 by 5 matrix
-    ///
-    /// This multiplies color bands by  different factors and adds them together
-    /// to create one output pixel
-    ///
-    /// Equivalent to the operation
-    /// ```text
-    /// red   = m[0][0]*r + m[0][1]*g + m[0][2]*b + m[0][3]*a + m[0][4]
-    /// green = m[1][0]*r + m[1][1]*g + m[1][2]*b + m[1][3]*a + m[1][4]
-    /// blue  = m[2][0]*r + m[2][1]*g + m[2][2]*b + m[2][3]*a + m[2][4]
-    /// alpha = m[3][0]*r + m[3][1]*g + m[3][2]*b + m[3][3]*a + m[3][4]
-    ///```
-    ///
-    /// This is most similar to Android's [ColorMatrix](https://developer.android.com/reference/android/graphics/ColorMatrix) operation
-    ///  with the difference being that matrix values are always between 0 and 1 and the library will do appropriate scaling
-    ///
-    /// This is similar to imagemagick's [color-matrix](https://imagemagick.org/script/command-line-options.php?#color-matrix) operator
-    /// with some examples provided in the website at [Color matrix operator](https://imagemagick.org/Usage/color_mods/#color-matrix)
-    ///
-    ///
-    /// A playground to build color matrices can be found [here](https://fecolormatrix.com/) (external link, not affiliated)
-    ///
-    /// @param matrix -  An array of length 20 representing a matrix, 4 rows each representing color channels in the order R,G,B,A
-    ///  and each row has 5 columns with the effect of `[r,g,b,a,offset]` , the matrices are arranged from left to right, top to bottom
-    ///
-    pub fn color_matrix(&mut self, matrix: &[f32]) -> Result<(), JsError> {
-        match ColorMatrix::try_from_slice(matrix) {
-            None => Err(JsError::new("Length of matrix is not 20")),
-            Some(r) => self.execute_ops(&r)
-        }
+    /// Rotate the image by an arbitrary angle in degrees
+    pub fn rotate(mut self, angle: f32, bg_color: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Rotate::new_with_bg_color(angle, bg_color)));
+        self
     }
 
-    /// Returns `true` if image has an alpha, `false` otherwise
-    #[wasm_bindgen(getter)]
-    pub fn has_alpha(&self) -> bool {
-        self.image.colorspace().has_alpha()
+    /// Sharpen the image using an Unsharp Mask
+    pub fn sharpen(mut self, sigma: f32, threshold: u16, percentage: u8) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(Sharpen::new(sigma, threshold, percentage)));
+        self
     }
 
-    /// Save an image to a specified supported format returning the encoded bytes for that format
-    ///
-    /// @param format - The image format, not all formats have encoders, but most have.
-    pub fn save_to(&self, format: WasmImageFormats) -> Result<Vec<u8>, JsError> {
-        let mut dest = Vec::with_capacity(1000); // arbitrary number of how many bytes
-                                                 // will be encoded
+    /// Linearly stretches the contrast of the image
+    pub fn stretch_contrast(mut self, lower: f32, upper: f32) -> WasmImage {
+        self.pipeline
+            .chain_operations(Box::new(StretchContrast::new(lower, upper)));
+        self
+    }
 
-        self.image
-            .encode(format.to_format(), &mut dest)
+    /// Apply a fixed-level threshold to the image
+    pub fn threshold(mut self, threshold: f32, method: WasmThresholdMethod) -> WasmImage {
+        let m = match method {
+            WasmThresholdMethod::Binary => ThresholdMethod::Binary,
+            WasmThresholdMethod::BinaryInv => ThresholdMethod::BinaryInv,
+            WasmThresholdMethod::ThreshTrunc => ThresholdMethod::ThreshTrunc,
+            WasmThresholdMethod::ThreshToZero => ThresholdMethod::ThreshToZero,
+        };
+        self.pipeline
+            .chain_operations(Box::new(Threshold::new(threshold, m)));
+        self
+    }
+
+    /// Transpose the image (swap rows and columns)
+    pub fn transpose(mut self) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Transpose::new()));
+        self
+    }
+
+    /// Apply a Sobel edge detection filter
+    pub fn sobel(mut self) -> WasmImage {
+        self.pipeline.chain_operations(Box::new(Sobel::new()));
+        self
+    }
+
+    /// Execute the pipeline and return the encoded bytes
+    pub fn to_buffer(mut self, format: WasmImageFormats) -> Result<Vec<u8>, JsError> {
+        self.pipeline
+            .advance_to_end()
+            .map_err(<ImageErrors as Into<JsError>>::into)?;
+
+        let images = self.pipeline.images();
+        let img = images
+            .first()
+            .ok_or_else(|| JsError::new("No image found in pipeline"))?;
+
+        let mut dest = Vec::with_capacity(1024 * 1024); // Start with 1MB capacity to prevent early reallocations
+        img.encode(format.to_format(), &mut dest)
             .map_err(<ImageErrors as Into<JsError>>::into)?;
 
         Ok(dest)
     }
+}
 
-    /// Create a new image from in memory bytes of a compressed image
+impl WasmImage {
+    /// Internal helper to guarantee an image is loaded into the pipeline
+    /// without running any of the queued processing operations.
+    fn ensure_image(&mut self) -> Result<(), JsError> {
+        if self.pipeline.images().is_empty() {
+            // No image present. We attempt to advance the pipeline one step.
+            // If the pipeline is in the `Decode` state and has decoders queued,
+            // this will execute them and populate the `image` vector.
+            self.pipeline
+                .advance()
+                .map_err(<ImageErrors as Into<JsError>>::into)?;
+
+            // Check again to see if advancing actually produced an image
+            if self.pipeline.images().is_empty() {
+                return Err(JsError::new(
+                    "Cannot read metadata: Pipeline has no image and no decoders queued.",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[wasm_bindgen]
+impl WasmImage {
+    /// Return the original width of the image
+    pub fn width(&mut self) -> Result<usize, JsError> {
+        self.ensure_image()?;
+
+        let img = self.pipeline.images().first().unwrap();
+        let (width, _) = img.dimensions();
+        Ok(width)
+    }
+
+    /// Return the original height of the image
+    pub fn height(&mut self) -> Result<usize, JsError> {
+        self.ensure_image()?;
+
+        let img = self.pipeline.images().first().unwrap();
+        let (_, height) = img.dimensions();
+        Ok(height)
+    }
+
+    /// Return the image's original colorspace
+    pub fn colorspace(&mut self) -> Result<WasmColorspace, JsError> {
+        self.ensure_image()?;
+
+        let img = self.pipeline.images().first().unwrap();
+        Ok(WasmColorspace::from_colorspace(img.colorspace()))
+    }
+
+    /// Returns `true` if the original image has an alpha channel, `false` otherwise
+    pub fn has_alpha(&mut self) -> Result<bool, JsError> {
+        self.ensure_image()?;
+
+        let img = self.pipeline.images().first().unwrap();
+        Ok(img.colorspace().has_alpha())
+    }
+}
+
+#[wasm_bindgen]
+impl WasmImage {
+    /// Composite another image over this one
     ///
-    /// @param bytes The bytes containing encoded pixels in a specific format.
-    /// The library will infer the image format from the bytes themselves
-    ///
-    /// @returns An image representation if everything goes well, otherwise panics
-    #[wasm_bindgen(constructor)]
-    pub fn from_bytes(bytes: &[u8]) -> Result<WasmImage, JsError> {
-        let c = Image::read(ZCursor::from(bytes), DecoderOptions::new_fast())
+    /// @param overlay_bytes - The encoded bytes of the image to place on top
+    /// @param method - The blend mode or Porter-Duff operator to use
+    /// @param x - The x-coordinate to place the overlay
+    /// @param y - The y-coordinate to place the overlay
+    pub fn composite(
+        mut self, overlay_bytes: &[u8], method: WasmCompositeMethod, x: usize, y: usize,
+    ) -> Result<WasmImage, JsError> {
+        // Eagerly decode the overlay image so it is ready
+        let overlay = Image::read(ZCursor::from(overlay_bytes), DecoderOptions::new_fast())
             .map_err(<ImageErrors as Into<JsError>>::into)?;
 
-        Ok(WasmImage { image: c })
+        // Queue the isolated composite operation
+        let op = WasmOverlayOp::new(overlay, method.into(), x, y);
+        self.pipeline.chain_operations(Box::new(op));
+
+        Ok(self)
     }
-
-    /// Carry out color transform
-    ///
-    /// This reads the ICC chunk, parses the color profiles and transform the
-    /// current image based on that transform (so if no ICC chunk it's a no-op)
-    ///
-    pub fn color_transform(&mut self, to_format: WasmColorProfiles) -> Result<(), JsError> {
-        let ops = ColorTransform::new(to_format.into());
-        self.execute_ops(&ops)
-    }
-    /// Carry out a sobel transform
-    pub fn sobel(&mut self) -> Result<(), JsError> {
-        self.execute_ops(&Sobel::new())
-    }
-
-
-}
-
-/// Decode an image returning the pixels if the image is decodable
-/// or none otherwise
-#[wasm_bindgen]
-pub fn decode(bytes: &[u8]) -> Option<WasmImage> {
-    if let Some((format, content)) = ImageFormat::guess_format(ZCursor::new(bytes)) {
-        if let Ok(mut decoder) = format.decoder(content) {
-            let mut image = decoder.decode().unwrap();
-
-            // WASM works with 8 bit images, so convert this to an 8 biy image
-            Depth::new(BitDepth::Eight).execute(&mut image).unwrap();
-
-            return Some(WasmImage { image });
-        } else {
-            error!(
-                "Could not decode {:?}",
-                format.decoder(ZCursor::new(bytes)).err().unwrap()
-            )
-        }
-    }
-    None
-}
-
-/// Guess the image format returning an enum if we know the format
-///
-/// or None otherwise
-#[wasm_bindgen]
-pub fn guess_format(bytes: &[u8]) -> Option<WasmImageFormats> {
-    if let Some((format, _)) = ImageFormat::guess_format(ZCursor::new(bytes)) {
-        return Some(WasmImageFormats::from_formats(format));
-    }
-    None
 }

@@ -111,7 +111,7 @@ pub trait DecoderTrait {
 ///
 /// All operations that can be stored in a workflow
 /// need to encapsulate this struct.
-pub trait OperationsTrait: Send + Sync {
+pub trait OperationsTrait {
     /// Get the name of this operation
     fn name(&self) -> &'static str;
 

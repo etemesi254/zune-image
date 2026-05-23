@@ -164,84 +164,87 @@ impl OperationsTrait for Composite {
         } else {
             unreachable!()
         };
-        let (start_x, start_y) = dims;
-        let (src_width, src_height) = src_image.dimensions();
-        let colorspace = dst_image.colorspace();
-        let has_alpha = colorspace.has_alpha();
-
-        match dst_image.depth().bit_type() {
-            BitType::U8 => {
-                // Safely extract all immutable source channels upfront
-                let src_channels: Vec<&[u8]> = src_image.frames_ref()[0] // Assuming single frame for brevity
-                    .channels_ref(colorspace, false)
-                    .into_iter()
-                    .map(|ch| ch.reinterpret_as().unwrap())
-                    .collect();
-
-                dst_image.par_process_regions::<u8, _>(false, |region| {
-                    composite_region::<u8>(
-                        region,
-                        &src_channels,
-                        src_width,
-                        src_height,
-                        start_x,
-                        start_y,
-                        self.composite_method,
-                        has_alpha,
-                    );
-                })?;
-            }
-            BitType::U16 => {
-                // Safely extract all immutable source channels upfront
-                let src_channels: Vec<&[u16]> =
-                    src_image.frames_ref()[0] // Assuming single frame for brevity
-                        .channels_ref(colorspace, false)
-                        .into_iter()
-                        .map(|ch| ch.reinterpret_as().unwrap())
-                        .collect();
-
-                dst_image.par_process_regions::<_, _>(false, |region| {
-                    composite_region(
-                        region,
-                        &src_channels,
-                        src_width,
-                        src_height,
-                        start_x,
-                        start_y,
-                        self.composite_method,
-                        has_alpha,
-                    );
-                })?;
-            }
-            BitType::F32 => {
-                // Safely extract all immutable source channels upfront
-                let src_channels: Vec<&[f32]> =
-                    src_image.frames_ref()[0] // Assuming single frame for brevity
-                        .channels_ref(colorspace, false)
-                        .into_iter()
-                        .map(|ch| ch.reinterpret_as().unwrap())
-                        .collect();
-
-                dst_image.par_process_regions::<_, _>(false, |region| {
-                    composite_region(
-                        region,
-                        &src_channels,
-                        src_width,
-                        src_height,
-                        start_x,
-                        start_y,
-                        self.composite_method,
-                        has_alpha,
-                    );
-                })?;
-            }
-            d => return Err(ImageErrors::ImageOperationNotImplemented(self.name(), d)),
-        }
-
-        Ok(())
+        composite_two_images(&src_image, dst_image, dims.0, dims.1, self.composite_method)
     }
 }
 
+fn composite_two_images(
+    src_image: &Image, dst_image: &mut Image, w: usize, h: usize, method: CompositeMethod,
+) -> Result<(), ImageErrors> {
+    let (start_x, start_y) = (w, h);
+    let (src_width, src_height) = src_image.dimensions();
+    let colorspace = dst_image.colorspace();
+    let has_alpha = colorspace.has_alpha();
+
+    match dst_image.depth().bit_type() {
+        BitType::U8 => {
+            // Safely extract all immutable source channels upfront
+            let src_channels: Vec<&[u8]> = src_image.frames_ref()[0] // Assuming single frame for brevity
+                .channels_ref(colorspace, false)
+                .into_iter()
+                .map(|ch| ch.reinterpret_as().unwrap())
+                .collect();
+
+            dst_image.par_process_regions::<u8, _>(false, |region| {
+                composite_region::<u8>(
+                    region,
+                    &src_channels,
+                    src_width,
+                    src_height,
+                    start_x,
+                    start_y,
+                    method,
+                    has_alpha,
+                );
+            })?;
+        }
+        BitType::U16 => {
+            // Safely extract all immutable source channels upfront
+            let src_channels: Vec<&[u16]> = src_image.frames_ref()[0] // Assuming single frame for brevity
+                .channels_ref(colorspace, false)
+                .into_iter()
+                .map(|ch| ch.reinterpret_as().unwrap())
+                .collect();
+
+            dst_image.par_process_regions::<_, _>(false, |region| {
+                composite_region(
+                    region,
+                    &src_channels,
+                    src_width,
+                    src_height,
+                    start_x,
+                    start_y,
+                    method,
+                    has_alpha,
+                );
+            })?;
+        }
+        BitType::F32 => {
+            // Safely extract all immutable source channels upfront
+            let src_channels: Vec<&[f32]> = src_image.frames_ref()[0] // Assuming single frame for brevity
+                .channels_ref(colorspace, false)
+                .into_iter()
+                .map(|ch| ch.reinterpret_as().unwrap())
+                .collect();
+
+            dst_image.par_process_regions::<_, _>(false, |region| {
+                composite_region(
+                    region,
+                    &src_channels,
+                    src_width,
+                    src_height,
+                    start_x,
+                    start_y,
+                    method,
+                    has_alpha,
+                );
+            })?;
+        }
+        d => return Err(ImageErrors::ImageOperationNotImplemented("composite", d)),
+    }
+
+    Ok(())
+}
 #[allow(clippy::too_many_arguments)]
 fn composite_region<T>(
     region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], src_width: usize,

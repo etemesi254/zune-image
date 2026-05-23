@@ -11,6 +11,7 @@
 
 use crate::affine::AffineTransform;
 
+use crate::simd_fn;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::channel::Channel;
@@ -175,9 +176,9 @@ impl OperationsTrait for Rotate {
                         false,
                         |region| {
                             if is_90 {
-                                rotate_90_region(region, &src_slices, old_w, old_h);
+                                rotate_90_region_u8(region, &src_slices, old_w, old_h);
                             } else {
-                                rotate_270_region(region, &src_slices, old_w, old_h);
+                                rotate_270_region_u8(region, &src_slices, old_w, old_h);
                             }
                         },
                     )?;
@@ -242,7 +243,25 @@ impl OperationsTrait for Rotate {
         &[BitType::U8, BitType::U16, BitType::F32]
     }
 }
+
+simd_fn!(
+    fn rotate_90_region_u8(
+        region: &mut PlanarRegionMut<'_, u8>, src_channels: &[&[u8]], old_w: usize, old_h: usize,
+    ) {
+        rotate_90_region(region, src_channels, old_w, old_h);
+    }
+);
+
+simd_fn!(
+    fn rotate_270_region_u8(
+        region: &mut PlanarRegionMut<'_, u8>, src_channels: &[&[u8]], old_w: usize, old_h: usize,
+    ) {
+        rotate_270_region(region, src_channels, old_w, old_h);
+    }
+);
+
 /// 90° Clockwise Rotation
+#[inline(always)]
 fn rotate_90_region<T: Copy>(
     region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], old_w: usize, old_h: usize,
 ) {
@@ -278,6 +297,7 @@ fn rotate_90_region<T: Copy>(
     }
 }
 
+#[inline(always)]
 /// 270° Clockwise Rotation (or 90° Counter-Clockwise)
 fn rotate_270_region<T: Copy>(
     region: &mut PlanarRegionMut<'_, T>, src_channels: &[&[T]], old_w: usize, _old_h: usize,

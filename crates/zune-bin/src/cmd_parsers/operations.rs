@@ -398,7 +398,7 @@ pub fn parse_geometry(values: &str) -> Result<ResizeDimensions, String> {
     match (w, has_x, h) {
         // Both Width and Height provided (e.g., "1920x1080", "800x600^")
         (Some(width), true, Some(height)) => match modifier {
-            Some("!") => Ok(ResizeDimensions::IgnoreAspectRatio(width, height)),
+            Some("!") => Ok(ResizeDimensions::Exact(width, height)),
             Some("^") => Ok(ResizeDimensions::Fill(width, height)),
             Some(">") => Ok(ResizeDimensions::ShrinkToFit(width, height)),
             Some("<") => Ok(ResizeDimensions::EnlargeToFit(width, height)),
