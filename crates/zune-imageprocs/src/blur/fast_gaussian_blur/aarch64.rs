@@ -1,7 +1,7 @@
+#![cfg(target_arch = "aarch64")]
 use zune_image::planar_regions::PlanarRegionOut;
 
 use crate::utils::as_mut_array;
-#[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
 #[cfg(target_arch = "aarch64")]
