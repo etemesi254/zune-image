@@ -163,3 +163,85 @@ pub unsafe fn vertical_blur_region_u8_avx2(
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(target_arch = "x86_64")]
+mod tests {
+    use super::*;
+    use nanorand::{Rng, WyRand};
+    use zune_image::planar_regions::PlanarRegionOut;
+    use crate::blur::fast_gaussian_blur::vertical_blur_region_fast_out;
+
+    #[test]
+    fn test_hardware_simd_vs_generic() {
+        let mut rng = WyRand::new();
+
+        let test_cases = [
+            (8, 20, 3, 0),
+            (13, 20, 5, 0),
+            (3, 10, 2, 0),
+            (32, 50, 15, 10),
+            (17, 100, 25, 20),
+        ];
+
+        for (width, full_height, radius, y_offset) in test_cases {
+            let current_height = full_height - y_offset;
+            let full_pixels = width * full_height;
+            let region_pixels = width * current_height;
+
+            let mut src = vec![0u8; full_pixels];
+            rng.fill(&mut src);
+
+            let mut dest_simd = vec![0u8; region_pixels];
+            let mut dest_generic = vec![0u8; region_pixels];
+
+            let mut dest_channels_simd = [&mut dest_simd[..]];
+            let mut region_simd = PlanarRegionOut {
+                y_offset,
+                height: current_height,
+                width,
+                src_channels: &[&src[..]],
+                dest_channels: &mut dest_channels_simd,
+            };
+
+            let mut dest_channels_generic = [&mut dest_generic[..]];
+            let mut region_generic = PlanarRegionOut {
+                y_offset,
+                height: current_height,
+                width,
+                src_channels: &[&src[..]],
+                dest_channels: &mut dest_channels_generic,
+            };
+
+            // Calculate baseline generically
+            vertical_blur_region_fast_out::<u8>(&mut region_generic, radius);
+
+            // Execute specialized SIMD if supported by the host
+            let mut simd_executed = false;
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                if is_x86_feature_detected!("avx2") {
+                    unsafe { vertical_blur_region_u8_avx2(&mut region_simd, radius); }
+                    simd_executed = true;
+                }
+            }
+
+            if simd_executed {
+                for y in 0..current_height {
+                    for x in 0..width {
+                        let idx = y * width + x;
+                        let s_val = dest_simd[idx];
+                        let g_val = dest_generic[idx];
+
+                        assert_eq!(
+                            s_val, g_val,
+                            "Mismatch at region x: {}, y: {} (width: {}, radius: {}, offset: {}) | SIMD: {}, Generic: {}",
+                            x, y, width, radius, y_offset, s_val, g_val
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
