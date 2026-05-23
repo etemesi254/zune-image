@@ -1,7 +1,6 @@
-#[cfg(target_arch = "x86_64")]
+#![cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn vertical_blur_region_u8_avx2(
     region: &mut PlanarRegionOut<'_, u8>,
@@ -17,7 +16,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(
 
     let full_height = region.src_channels[0].len() / width;
 
-    const RING_MASK: usize = 1023;
+    const RING_SIZE: usize = 1024;
     const BLOCK: usize = 8;
 
     let area = (radius * radius) as i32;
@@ -33,6 +32,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(
     let full_height_isize = full_height as isize;
     let start_y = (y_offset as isize) - (radius_isize * 2);
     let end_y = (y_offset + current_height) as isize;
+    let mut ring_buffer = [sim_zero; RING_SIZE];
 
     for c in 0..region.src_channels.len() {
         let src_channel = region.src_channels[c];
@@ -46,7 +46,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(
 
             let mut diffs = sim_zero;
             let mut summs = sim_init;
-            let mut ring_buffer = [sim_zero; 1024];
+            ring_buffer.fill(sim_zero);
 
             for y in start_y..end_y {
                 if y >= 0 {
@@ -79,8 +79,8 @@ pub unsafe fn vertical_blur_region_u8_avx2(
                         );
                     }
 
-                    let trail_idx_1 = ((y - radius_isize) as usize) & RING_MASK;
-                    let trail_idx_2 = uy & RING_MASK;
+                    let trail_idx_1 = ((y - radius_isize) as usize) % RING_SIZE;
+                    let trail_idx_2 = uy % RING_SIZE;
 
                     let a = ring_buffer[trail_idx_1];
                     let d = ring_buffer[trail_idx_2];
@@ -90,14 +90,14 @@ pub unsafe fn vertical_blur_region_u8_avx2(
                     diffs = _mm256_add_epi32(diffs, sub_a_d);
 
                 } else if y + radius_isize >= 0 {
-                    let trail_idx = (y as usize) & RING_MASK;
+                    let trail_idx = (y as usize) % RING_SIZE;
                     let stored = ring_buffer[trail_idx];
                     let stored_x2 = _mm256_add_epi32(stored, stored);
                     diffs = _mm256_sub_epi32(diffs, stored_x2);
                 }
 
                 let next_y = (y + radius_isize).clamp(0, full_height_isize - 1) as usize;
-                let ring_idx = ((y + radius_isize) as usize) & RING_MASK;
+                let ring_idx = ((y + radius_isize) as usize) % RING_SIZE;
                 let src_idx = next_y * width + x_base;
 
                 // Load 8 bytes into a 128-bit register
@@ -120,7 +120,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(
         if tail_len > 0 {
             let mut diffs = [0i32; BLOCK];
             let mut summs = [initial_sum; BLOCK];
-            let mut ring_buffer_tail = [[0i32; BLOCK]; 1024];
+            let mut ring_buffer_tail = vec![[0i32; BLOCK]; 1024];
 
             for y in start_y..end_y {
                 if y >= 0 {
@@ -134,15 +134,15 @@ pub unsafe fn vertical_blur_region_u8_avx2(
                         }
                     }
 
-                    let trail_idx_1 = ((y - radius_isize) as usize) & RING_MASK;
-                    let trail_idx_2 = uy & RING_MASK;
+                    let trail_idx_1 = ((y - radius_isize) as usize) % RING_SIZE;
+                    let trail_idx_2 = uy % RING_SIZE;
                     let a = ring_buffer_tail[trail_idx_1];
                     let d = ring_buffer_tail[trail_idx_2];
                     for col in 0..tail_len {
                         diffs[col] += a[col] - (d[col] * 2);
                     }
                 } else if y + radius_isize >= 0 {
-                    let trail_idx = (y as usize) & RING_MASK;
+                    let trail_idx = y as usize % RING_SIZE;
                     let stored = ring_buffer_tail[trail_idx];
                     for col in 0..tail_len {
                         diffs[col] -= stored[col] * 2;
@@ -150,7 +150,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(
                 }
 
                 let next_y = (y + radius_isize).clamp(0, full_height_isize - 1) as usize;
-                let ring_idx = ((y + radius_isize) as usize) & RING_MASK;
+                let ring_idx = ((y + radius_isize) as usize) % RING_SIZE;
                 let src_base = next_y * width + tail_start;
 
                 for col in 0..tail_len {

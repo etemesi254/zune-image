@@ -1,9 +1,11 @@
 use crate::traits::NumOps;
+use crate::utils::as_mut_array;
 use zune_core::bit_depth::BitType;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionOut;
-use crate::utils::as_mut_array;
+
+const RING_SIZE: usize = 1024;
 
 mod aarch64;
 mod x86_64;
@@ -42,8 +44,6 @@ impl BlurAccumulator for u16 {
         val as u16
     }
 }
-
-
 
 fn horizontal_blur_region_fast_out<T>(region: &mut PlanarRegionOut<'_, T>, radius: usize)
 where
@@ -108,14 +108,12 @@ where
 }
 
 fn fast_gaussian_inner_nx<T, const N: usize>(
-    in_rows: &[&[T]; N], ring_buffer: &mut [[T::Accum; N]; 1024], out_rows: &mut [&mut [T]; N],
-    width: usize, radius: usize,
+    in_rows: &[&[T]; N], ring_buffer: &mut [[T::Accum; N]; RING_SIZE],
+    out_rows: &mut [&mut [T]; N], width: usize, radius: usize,
 ) where
     T: Copy + BlurAccumulator,
     T: NumOps<T>,
 {
-    const RING_MASK: usize = 1023;
-
     let area_i32 = (radius * radius) as i32;
     let area = T::Accum::from(area_i32);
     let initial_sum = T::Accum::from(area_i32 >> 1);
@@ -144,8 +142,9 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
                 out_rows[i][ux] = T::from_accum(blurred_val);
             }
 
-            let trail_idx_1 = ((x - radius_isize) as usize) & RING_MASK;
-            let trail_idx_2 = ux & RING_MASK;
+            // compiler will shift for me
+            let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
+            let trail_idx_2 = ux % RING_SIZE;
 
             let a_stored = ring_buffer[trail_idx_1];
             let d_stored = ring_buffer[trail_idx_2];
@@ -154,7 +153,7 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
                 diffs[i] += a_stored[i] - (d_stored[i] * two);
             }
         } else if x + radius_isize >= 0 {
-            let trail_idx = (x as usize) & RING_MASK;
+            let trail_idx = (x as usize) % RING_SIZE;
             let stored = ring_buffer[trail_idx];
             for i in 0..N {
                 diffs[i] -= stored[i] * two;
@@ -162,7 +161,7 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
         }
 
         let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
-        let ring_idx = ((x + radius_isize) as usize) & RING_MASK;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
 
         for i in 0..N {
             let pixel_val = in_rows[i][next_x].to_accum();
@@ -233,10 +232,9 @@ fn horizontal_blur_region_fast_out_f32(region: &mut PlanarRegionOut<'_, f32>, ra
 }
 
 fn fast_gaussian_inner_nx_f32<const N: usize>(
-    in_rows: &[&[f32]; N], ring_buffer: &mut [[f32; N]; 1024], out_rows: &mut [&mut [f32]; N],
+    in_rows: &[&[f32]; N], ring_buffer: &mut [[f32; N]; RING_SIZE], out_rows: &mut [&mut [f32]; N],
     width: usize, radius: usize,
 ) {
-    const RING_MASK: usize = 1023;
 
     let area = (radius * radius) as f32;
     let weight = 1.0 / area;
@@ -262,8 +260,8 @@ fn fast_gaussian_inner_nx_f32<const N: usize>(
                 out_rows[i][ux] = summs[i] * weight;
             }
 
-            let trail_idx_1 = ((x - radius_isize) as usize) & RING_MASK;
-            let trail_idx_2 = ux & RING_MASK;
+            let trail_idx_1 = ((x - radius_isize) as usize) % RING_SIZE;
+            let trail_idx_2 = ux % RING_SIZE;
 
             let a_stored = ring_buffer[trail_idx_1];
             let d_stored = ring_buffer[trail_idx_2];
@@ -272,7 +270,7 @@ fn fast_gaussian_inner_nx_f32<const N: usize>(
                 diffs[i] += a_stored[i] - (d_stored[i] * 2.0);
             }
         } else if x + radius_isize >= 0 {
-            let trail_idx = (x as usize) & RING_MASK;
+            let trail_idx = (x as usize) % RING_SIZE;
             let stored = ring_buffer[trail_idx];
             for i in 0..N {
                 diffs[i] -= stored[i] * 2.0;
@@ -280,7 +278,7 @@ fn fast_gaussian_inner_nx_f32<const N: usize>(
         }
 
         let next_x = (x + radius_isize).clamp(0, width_isize - 1) as usize;
-        let ring_idx = ((x + radius_isize) as usize) & RING_MASK;
+        let ring_idx = ((x + radius_isize) as usize) % RING_SIZE;
 
         for i in 0..N {
             let pixel_val = in_rows[i][next_x];
@@ -601,8 +599,7 @@ pub(crate) fn impl_fast_gaussian_blur(sigma: f32, image: &mut Image) -> Result<(
                     }
                     #[cfg(target_arch = "x86_64")]
                     {
-                        if std::arch::is_x86_feature_detected!("avx2"){
-
+                        if std::arch::is_x86_feature_detected!("avx2") {
                             unsafe {
                                 x86_64::vertical_blur_region_u8_avx2(region, radius);
                             }
