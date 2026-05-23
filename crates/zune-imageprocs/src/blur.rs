@@ -15,14 +15,15 @@
 //!
 //! For the math behind it see <https://blog.ivank.net/fastest-gaussian-blur.html>
 
+use std::ops::Range;
 use crate::traits::NumOps;
-use crate::transpose::Transpose;
 use zune_core::bit_depth::BitType;
 use zune_core::log::trace;
 use zune_image::errors::ImageErrors;
 use zune_image::image::Image;
 use zune_image::planar_regions::PlanarRegionMut;
 use zune_image::traits::{OperationColorValues, OperationsTrait};
+use crate::blur::fast_gaussian_blur::impl_fast_gaussian_blur;
 
 mod fast_gaussian_blur;
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -202,6 +203,3 @@ fn horizontal_blur_region_f32(region: &mut PlanarRegionMut<'_, f32>, radii: &[us
     }
 }
 
-use crate::blur::fast_gaussian_blur::impl_fast_gaussian_blur;
-use std::convert::TryFrom;
-use std::ops::Range;

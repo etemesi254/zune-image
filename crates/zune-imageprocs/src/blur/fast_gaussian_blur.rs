@@ -1,3 +1,4 @@
+use crate::mathops::{compute_mod_u32, fastdiv_u32};
 use crate::traits::NumOps;
 use crate::utils::as_mut_array;
 use zune_core::bit_depth::BitType;
@@ -23,25 +24,39 @@ pub trait BlurAccumulator: Copy + Default {
 
     fn to_accum(self) -> Self::Accum;
     fn from_accum(val: Self::Accum) -> Self;
+
+    fn div_by_mod(val: Self::Accum, other: u128) -> Self::Accum;
 }
 
 impl BlurAccumulator for u8 {
     type Accum = i32; // u8 is perfectly safe in 32-bit (Full SIMD Speed!)
+    #[inline(always)]
     fn to_accum(self) -> Self::Accum {
         i32::from(self)
     }
+    #[inline(always)]
     fn from_accum(val: Self::Accum) -> Self {
         val as u8
+    }
+    #[inline(always)]
+    fn div_by_mod(val: Self::Accum, other: u128) -> Self::Accum {
+        fastdiv_u32(val as _, other) as _
     }
 }
 
 impl BlurAccumulator for u16 {
     type Accum = i64; // u16 MUST use 64-bit to prevent overflow on large radii
+    #[inline(always)]
     fn to_accum(self) -> Self::Accum {
         i64::from(self)
     }
+    #[inline(always)]
     fn from_accum(val: Self::Accum) -> Self {
         val as u16
+    }
+    #[inline(always)]
+    fn div_by_mod(val: Self::Accum, other: u128) -> Self::Accum {
+        fastdiv_u32(val as _, other) as _
     }
 }
 
@@ -123,6 +138,7 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
     let mut summs = [initial_sum; N];
 
     ring_buffer.fill([T::Accum::default(); N]);
+    let special_num = compute_mod_u32(area_i32 as u64);
 
     for i in 0..N {
         assert!(in_rows[i].len() >= width);
@@ -138,7 +154,7 @@ fn fast_gaussian_inner_nx<T, const N: usize>(
             let ux = x as usize;
 
             for i in 0..N {
-                let blurred_val = summs[i] / area;
+                let blurred_val = T::div_by_mod(summs[i], special_num);
                 out_rows[i][ux] = T::from_accum(blurred_val);
             }
 
@@ -235,7 +251,6 @@ fn fast_gaussian_inner_nx_f32<const N: usize>(
     in_rows: &[&[f32]; N], ring_buffer: &mut [[f32; N]; RING_SIZE], out_rows: &mut [&mut [f32]; N],
     width: usize, radius: usize,
 ) {
-
     let area = (radius * radius) as f32;
     let weight = 1.0 / area;
 
