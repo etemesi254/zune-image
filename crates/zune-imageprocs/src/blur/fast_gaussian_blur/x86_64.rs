@@ -1,8 +1,8 @@
 #![cfg(target_arch = "x86_64")]
+use crate::blur::fast_gaussian_blur::RING_SIZE;
 use crate::utils::as_mut_array;
 use core::arch::x86_64::*;
 use zune_image::planar_regions::PlanarRegionOut;
-
 #[target_feature(enable = "sse2")]
 pub unsafe fn horizontal_blur_gaussian_inner_u8_sse(
     in_rows: &[&[u8]; 4], ring_buffer: &mut [[i32; 4]; RING_SIZE], out_rows: &mut [&mut [u8]; 4],
@@ -300,7 +300,7 @@ pub unsafe fn vertical_blur_region_u8_avx2(region: &mut PlanarRegionOut<'_, u8>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blur::fast_gaussian_blur::vertical_blur_region_fast_out;
+    use crate::blur::fast_gaussian_blur::{fast_gaussian_inner_nx, vertical_blur_region_fast_out};
     use nanorand::{Rng, WyRand};
     use zune_image::planar_regions::PlanarRegionOut;
 
@@ -398,12 +398,11 @@ mod tests {
             // 2. Setup Generic buffers and execute
             let mut ring_buffer_generic = [[0i32; 4]; RING_SIZE];
             let mut out_data_generic: [Vec<u8>; 4] = std::array::from_fn(|_| vec![0u8; width]);
-            let mut out_rows_generic: [&mut [u8]; 4] = [
-                &mut out_data_generic[0],
-                &mut out_data_generic[1],
-                &mut out_data_generic[2],
-                &mut out_data_generic[3],
-            ];
+            let (a, rest) = out_data_generic.split_at_mut(1);
+            let (b, rest) = rest.split_at_mut(1);
+            let (c, d) = rest.split_at_mut(1);
+            let mut out_rows_generic: [&mut [u8]; 4] =
+                [a[0].as_mut(), b[0].as_mut(), c[0].as_mut(), d[0].as_mut()];
 
             fast_gaussian_inner_nx::<u8, 4>(
                 &in_rows,
@@ -416,12 +415,12 @@ mod tests {
             // 3. Setup SIMD buffers
             let mut ring_buffer_simd = [[0i32; 4]; RING_SIZE];
             let mut out_data_simd: [Vec<u8>; 4] = std::array::from_fn(|_| vec![0u8; width]);
-            let mut out_rows_simd: [&mut [u8]; 4] = [
-                &mut out_data_simd[0],
-                &mut out_data_simd[1],
-                &mut out_data_simd[2],
-                &mut out_data_simd[3],
-            ];
+            // We have to scope the mutable borrows
+            let (a, rest) = out_data_simd.split_at_mut(1);
+            let (b, rest) = rest.split_at_mut(1);
+            let (c, d) = rest.split_at_mut(1);
+            let mut out_rows_simd: [&mut [u8]; 4] =
+                [a[0].as_mut(), b[0].as_mut(), c[0].as_mut(), d[0].as_mut()];
 
             // 4. Execute the appropriate SIMD function based on architecture
             unsafe {
