@@ -1256,10 +1256,67 @@ fn entropy_start(data: &[u8]) -> usize {
     sos_pos + 2 + sos_len
 }
 
+fn first_retry_seek_after_scan_eof(data: &[u8], incremental_mode: bool) -> usize {
+    let expected = decode_oneshot(data);
+    let entropy_start = entropy_start(data);
+    let cutoff = entropy_start + (data.len() - entropy_start) * 60 / 100;
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(incremental_mode);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be fully visible at cutoff");
+    assert_eq!(decoder.incremental_mode(), incremental_mode);
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated scan should give recoverable EOF");
+    assert!(
+        err.is_recoverable_eof(),
+        "expected recoverable EOF, got {err:?}"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full data should allow decode to complete");
+    assert_pixels_match(&out, &expected, "first_retry_seek", data.len());
+
+    let seeks = seek_log.borrow();
+    *seeks
+        .first()
+        .expect("retry must seek to scan start or a checkpoint")
+}
+
+#[test]
+fn incremental_mode_records_checkpoint_on_first_scan_attempt() {
+    let data = include_bytes!("../../../test-images/jpeg/sampling_factors.jpg");
+    let entropy_start = entropy_start(data);
+
+    let default_seek = first_retry_seek_after_scan_eof(data, false);
+    assert_eq!(
+        default_seek, entropy_start,
+        "default mode should replay from scan start on the first retry"
+    );
+
+    let incremental_seek = first_retry_seek_after_scan_eof(data, true);
+    assert!(
+        incremental_seek > entropy_start,
+        "incremental mode should resume from an entropy-data row checkpoint; \
+         entropy_start={entropy_start}, seek={incremental_seek}"
+    );
+}
+
 /// Per-row checkpoint: truncating a non-RST image mid-scan and retrying
 /// must eventually resume from a row checkpoint rather than replaying
-/// from scan start. Per-row checkpointing is only enabled on retry calls
-/// (when scan_state already exists), so the sequence is:
+/// from scan start. In default mode, per-row checkpointing is only enabled
+/// after a previous scan decode attempt has run, so the sequence is:
 ///   1. First call: partial data → ExhaustedData (no checkpoints saved)
 ///   2. Second call (retry, checkpoints now enabled): still partial → ExhaustedData
 ///      (per-row checkpoints ARE saved this time)
@@ -1309,9 +1366,9 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         "expected a stable partial prefix, got {first_scanlines} scanlines"
     );
 
-    // Second attempt — still truncated. Now per-row checkpoints are enabled
-    // (scan_state exists from the first call). This replays from scan start
-    // and saves per-row checkpoints as it decodes.
+    // Second attempt — still truncated. Now a previous scan decode attempt
+    // has run, so this replays from scan start and saves per-row checkpoints
+    // as it decodes.
     let err = decoder
         .decode_into(&mut out)
         .expect_err("still truncated, should give recoverable EOF again");
