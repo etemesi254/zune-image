@@ -17,7 +17,7 @@ use zune_core::log::{error, trace, warn};
 
 use crate::bitstream::BitStream;
 use crate::components::SampleRatios;
-use crate::decoder::MAX_COMPONENTS;
+use crate::decoder::{HeaderAppendStateSnapshot, MAX_COMPONENTS};
 use crate::errors::DecodeErrors;
 use crate::marker::Marker;
 use crate::mcu_prog::get_marker;
@@ -245,8 +245,20 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
             trace!("Decoding MCU width: {mcu_width}, height: {mcu_height}");
 
-            for i in resume_row..mcu_height {
-                let start_col = if i == resume_row { resume_col } else { 0 };
+            // Consume the resume position once into locals so later SOS scans
+            // start at row 0, and so we don't mutate the loop's range bound
+            // from inside the loop below.
+            let current_resume_row = resume_row;
+            let current_resume_col = resume_col;
+            resume_row = 0;
+            resume_col = 0;
+
+            for i in current_resume_row..mcu_height {
+                let start_col = if i == current_resume_row {
+                    current_resume_col
+                } else {
+                    0
+                };
                 if stream.overread_by() > 0 {
                     // The bitstream reader has exhausted available data.
                     // Return a recoverable error so the caller can feed more
@@ -261,11 +273,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // caller explicitly opted into incremental mode. Default
                 // one-shot decode keeps this disabled.
                 //
-                // Only for single-SOS baseline (all_components_in_first_scan):
-                // multi-SOS scans can't safely resume mid-scan because later
-                // SOS passes may overwrite coefficient bands.
+                // Multi-SOS baseline scans keep their full-image coefficient
+                // buffers on the decoder across retries, so row checkpoints
+                // are safe there too. They still report no stable output
+                // until final assembly has all component scans.
                 if self.mcu_checkpoints_enabled
-                    && all_components_in_first_scan
                     && !self.is_progressive
                     && B::supports_mcu_checkpoint()
                 {
@@ -373,8 +385,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         break;
                     }
                     Ok(Marker::SOS) => {
-                        self.invalidate_scan_checkpoint();
                         self.parse_marker_inner(Marker::SOS)?;
+                        self.invalidate_scan_checkpoint();
                         stream.reset();
                         B::reset_arith_tables(&mut self.entropy_tables);
                         continue 'sos;
@@ -795,8 +807,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // A latched RST means the entropy segment is already exhausted.
                 self.handle_rst(stream)?;
             } else if let Marker::SOS = m {
-                self.invalidate_scan_checkpoint();
                 self.parse_marker_inner(Marker::SOS)?;
+                self.invalidate_scan_checkpoint();
                 stream.marker().take();
                 stream.reset();
                 B::reset_arith_tables(&mut self.entropy_tables);
@@ -852,23 +864,47 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // Limit iterations to prevent DoS from malicious files.
         const MAX_INTER_SCAN_MARKERS: usize = 64;
 
-        // Once we leave the entropy segment, any RST checkpoint inside that
-        // segment is no longer safe: inter-scan setup markers may redefine
-        // DHT/DQT/DRI/DAC state before the next SOS. Falling back to the
-        // first-SOS replay path restores the scan-start snapshot instead.
-        self.invalidate_scan_checkpoint();
+        let inter_scan_snapshot = if self.scan_checkpoint().is_some() {
+            Some((
+                HeaderAppendStateSnapshot::capture(self),
+                self.capture_scan_header_state(),
+            ))
+        } else {
+            None
+        };
+
+        // Keep the previous scan checkpoint valid until the next SOS is fully
+        // parsed. If input ends between scans, rollback marker side effects so
+        // the retry can resume from that checkpoint and parse the markers again.
+        macro_rules! restore_inter_scan_on_eof {
+            ($result:expr) => {
+                match $result {
+                    Ok(value) => value,
+                    Err(e) => {
+                        if e.is_recoverable_eof() {
+                            if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
+                                append_snapshot.rollback(self);
+                                self.restore_scan_header_state(header_snapshot);
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
+            };
+        }
 
         // Parse the first marker that triggered this call
-        self.parse_marker_inner(first_marker)?;
+        restore_inter_scan_on_eof!(self.parse_marker_inner(first_marker));
         stream.reset();
         B::reset_arith_tables(&mut self.entropy_tables);
 
         for _ in 0..MAX_INTER_SCAN_MARKERS {
-            let marker = get_marker(&mut self.stream, stream)?;
+            let marker = restore_inter_scan_on_eof!(get_marker(&mut self.stream, stream));
 
             match marker {
                 Marker::SOS => {
-                    self.parse_marker_inner(Marker::SOS)?;
+                    restore_inter_scan_on_eof!(self.parse_marker_inner(Marker::SOS));
+                    self.invalidate_scan_checkpoint();
                     stream.reset();
                     B::reset_arith_tables(&mut self.entropy_tables);
                     trace!("Found SOS marker, continuing decode");
@@ -881,11 +917,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
                 Marker::DAC | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
                     trace!("Parsing inter-scan marker {marker:?}");
-                    self.parse_marker_inner(marker)?;
+                    restore_inter_scan_on_eof!(self.parse_marker_inner(marker));
                 }
                 Marker::APP(_) => {
                     trace!("Parsing inter-scan APP marker {marker:?}");
-                    self.parse_marker_inner(marker)?;
+                    restore_inter_scan_on_eof!(self.parse_marker_inner(marker));
                 }
                 other => {
                     if self.options.strict_mode() {
@@ -895,9 +931,15 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     // Non-strict: skip unknown marker
                     warn!("Skipping unexpected marker {other:?} between scans");
-                    let length = self.stream.get_u16_be_err()?;
+                    let length = restore_inter_scan_on_eof!(
+                        self.stream.get_u16_be_err().map_err(DecodeErrors::IoErrors)
+                    );
                     if length >= 2 {
-                        self.stream.skip((length - 2) as usize)?;
+                        restore_inter_scan_on_eof!(
+                            self.stream
+                                .skip((length - 2) as usize)
+                                .map_err(DecodeErrors::IoErrors)
+                        );
                     }
                 }
             }
