@@ -257,8 +257,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 // Per-row checkpoint: save bitstream state at the start of
                 // each MCU row so we can resume from here (rather than
                 // replaying from scan start) if ExhaustedData fires mid-row.
-                // Only active on retry calls to keep one-shot decode free of
-                // any overhead (this code is outside the hot MCU inner loop).
+                // Active on retry calls, or on the first attempt when the
+                // caller explicitly opted into incremental mode. Default
+                // one-shot decode keeps this disabled.
                 //
                 // Only for single-SOS baseline (all_components_in_first_scan):
                 // multi-SOS scans can't safely resume mid-scan because later

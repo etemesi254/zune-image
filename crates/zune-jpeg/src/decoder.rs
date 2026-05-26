@@ -302,11 +302,25 @@ pub struct JpegDecoder<T> {
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
     /// Whether per-row checkpointing is enabled for the current decode.
     ///
-    /// Only `true` on a retry `decode_into` call (when `scan_state` was
-    /// already `Some` on entry). This keeps the one-shot decode path free
-    /// of per-row overhead while still enabling fine-grained resume on
-    /// incremental retries.
+    /// By default this becomes `true` after a previous scan attempt has run,
+    /// keeping one-shot decode free of per-row overhead. `incremental_mode`
+    /// enables the same checkpoints on the first scan attempt for streaming
+    /// callers.
     pub(crate) mcu_checkpoints_enabled: bool,
+    /// Whether row checkpoints should also be recorded on the first scan
+    /// decode attempt.
+    ///
+    /// Disabled by default to keep one-shot decode free of checkpoint work;
+    /// streaming callers can opt in before `decode_into` to avoid replaying
+    /// from scan start after the first recoverable scan EOF.
+    incremental_mode: bool,
+    /// Whether this decoder has already attempted scan decoding.
+    ///
+    /// `scan_state` becomes `Some` as soon as headers reach SOS, including
+    /// after an explicit `decode_headers` call. This flag tracks the narrower
+    /// condition needed for default checkpoint gating: a previous
+    /// `decode_into` scan attempt actually ran.
+    scan_decode_attempted: bool,
     /// Scratch buffer that header marker parsers fill with the marker body
     /// before mutating decoder state.
     ///
@@ -541,6 +555,8 @@ where
             scan_state: None,
             pixels_decoded: 0,
             mcu_checkpoints_enabled: false,
+            incremental_mode: false,
+            scan_decode_attempted: false,
             progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
             marker_body_scratch: Vec::new()
         }
@@ -630,6 +646,33 @@ where
     #[must_use]
     pub fn decoded_output_bytes(&self) -> Option<usize> {
         Some(self.pixels_decoded.min(self.output_buffer_size()?))
+    }
+
+    /// Return whether incremental mode is enabled.
+    ///
+    /// Incremental mode records per-row checkpoints during the first scan
+    /// decode attempt, allowing a later retry after recoverable EOF to resume
+    /// from the latest stable row instead of replaying from scan start.
+    ///
+    /// It is disabled by default so one-shot decoding keeps the lowest
+    /// overhead path.
+    #[must_use]
+    pub const fn incremental_mode(&self) -> bool {
+        self.incremental_mode
+    }
+
+    /// Enable or disable incremental mode.
+    ///
+    /// Call this before the first `decode_into` scan attempt when the caller
+    /// expects input to arrive incrementally. In this mode baseline Huffman
+    /// single-SOS scans save row checkpoints on the first attempt, trading a
+    /// small amount of checkpoint work for less replay on the next retry.
+    ///
+    /// The default is `false`, which preserves the zero-overhead one-shot
+    /// path and only enables row checkpoints after a previous scan decode
+    /// attempt has run.
+    pub fn set_incremental_mode(&mut self, enabled: bool) {
+        self.incremental_mode = enabled;
     }
 
     /// Return the number of output scanlines known to be stable after the
@@ -1238,6 +1281,12 @@ where
     /// from hard failures: `Err(e)` where `e.is_recoverable_eof()` means feed
     /// more input and retry, while any other `Err` is non-recoverable.
     ///
+    /// By default, row checkpoints are enabled after a previous scan decode
+    /// attempt, so the first one-shot decode avoids checkpoint overhead. Call
+    /// [`set_incremental_mode`](Self::set_incremental_mode) before the first
+    /// scan attempt to record row checkpoints immediately when input is
+    /// expected to arrive incrementally.
+    ///
     /// On success the decoder keeps scan-start replay state, so a later
     /// `decode_into` call is well-defined and produces bit-identical pixels.
     /// Replay re-runs entropy decoding from the first SOS.
@@ -1283,15 +1332,6 @@ where
             pixels_written:  usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
         }
-        // Enable per-row checkpointing only on retry calls (when scan_state
-        // already existed before this decode_into invocation). One-shot
-        // decoding skips checkpoint overhead entirely.
-        let retrying_scan = self.scan_state.is_some();
-        self.mcu_checkpoints_enabled = retrying_scan;
-        if !retrying_scan {
-            self.pixels_decoded = 0;
-        }
-
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
             outer_append_snapshot: state.append_snapshot,
@@ -1387,6 +1427,17 @@ where
         // ensure we don't touch anyone else's scratch space
         let out_len = core::cmp::min(out.len(), expected_size);
         let out = &mut out[0..out_len];
+
+        // By default, enable per-row checkpointing only after a previous
+        // scan decode attempt has run. Incremental mode opts into the same
+        // checkpoints on the first scan attempt so a streaming caller avoids
+        // one scan-start replay.
+        let previous_scan_attempt = self.scan_decode_attempted;
+        self.mcu_checkpoints_enabled = previous_scan_attempt || self.incremental_mode;
+        if !previous_scan_attempt {
+            self.pixels_decoded = 0;
+        }
+        self.scan_decode_attempted = true;
 
         let result: Result<(), DecodeErrors>;
         if self.is_arithmetic {

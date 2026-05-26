@@ -40,6 +40,13 @@ kept across retries. If scan decoding returns recoverable EOF,
 `decoded_output_bytes()` and `decoded_scanlines()` report the stable prefix of
 the output buffer that can be displayed or copied before retrying.
 
+By default, row checkpoints are recorded only after a previous scan decode
+attempt, so one-shot decoding keeps the lowest-overhead path. Call
+`set_incremental_mode(true)` before the first `decode_into()` attempt when the
+caller expects input to arrive incrementally; this records checkpoints during
+the first baseline Huffman scan attempt and can reduce replay work on the next
+retry.
+
 ```Rust
 use zune_core::bytestream::ZCursor;
 use zune_jpeg::JpegDecoder;
@@ -57,6 +64,7 @@ loop {
 }
 
 let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+decoder.set_incremental_mode(true);
 
 loop {
   match decoder.decode_into(&mut pixels) {

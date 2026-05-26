@@ -175,6 +175,13 @@ fn decode_jpeg_opts(buf: &[u8], options: DecoderOptions) -> Vec<u8> {
     d.decode().unwrap()
 }
 
+fn decode_jpeg_incremental_mode(buf: &[u8]) -> Vec<u8> {
+    let mut d = JpegDecoder::new(ZCursor::new(buf));
+    d.set_incremental_mode(true);
+
+    d.decode().unwrap()
+}
+
 fn decode_no_samp_opts(c: &mut Criterion) {
     let a = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
 
@@ -336,6 +343,66 @@ fn decode_restart_resume(c: &mut Criterion) {
     });
 }
 
+fn decode_streaming_mode(c: &mut Criterion) {
+    let data = read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg"))
+        .unwrap();
+    let mut group = c.benchmark_group("jpeg: Incremental mode checkpoints");
+    group.throughput(Throughput::Bytes(data.len() as u64));
+
+    group.bench_function("one-shot default", |b| {
+        b.iter(|| black_box(decode_jpeg(data.as_slice())));
+    });
+
+    group.bench_function("one-shot incremental-mode", |b| {
+        b.iter(|| black_box(decode_jpeg_incremental_mode(data.as_slice())));
+    });
+
+    let partial = data.len() * 80 / 100;
+
+    group.bench_function("first retry default", |b| {
+        b.iter(|| {
+            let limit = Rc::new(Cell::new(partial));
+            let cursor = GrowableCursor::new(data.as_slice(), Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(cursor);
+            decoder.decode_headers().expect("headers should fit in 80%");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+            match decoder.decode_into(&mut out) {
+                Ok(()) => panic!("scan should not complete at 80% visibility"),
+                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}"),
+            }
+
+            limit.set(data.len());
+            decoder
+                .decode_into(&mut out)
+                .expect("scan should complete with full data");
+            black_box(out);
+        });
+    });
+
+    group.bench_function("first retry incremental-mode", |b| {
+        b.iter(|| {
+            let limit = Rc::new(Cell::new(partial));
+            let cursor = GrowableCursor::new(data.as_slice(), Rc::clone(&limit));
+            let mut decoder = JpegDecoder::new(cursor);
+            decoder.set_incremental_mode(true);
+            decoder.decode_headers().expect("headers should fit in 80%");
+            let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+            match decoder.decode_into(&mut out) {
+                Ok(()) => panic!("scan should not complete at 80% visibility"),
+                Err(e) => assert!(e.is_recoverable_eof(), "got: {e:?}"),
+            }
+
+            limit.set(data.len());
+            decoder
+                .decode_into(&mut out)
+                .expect("scan should complete with full data");
+            black_box(out);
+        });
+    });
+}
+
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
@@ -345,6 +412,6 @@ criterion_group!(name=benches;
     decode_hv_samp,criterion_benchmark_grayscale,
     decode_hv_samp_prog,decode_h_samp_prog,decode_no_samp_prog,decode_v_samp_prog,
     decode_no_samp_opts,
-    decode_restart_full,decode_restart_resume);
+    decode_restart_full,decode_restart_resume,decode_streaming_mode);
 
 criterion_main!(benches);
