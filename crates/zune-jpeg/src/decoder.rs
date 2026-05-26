@@ -80,7 +80,7 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 /// Scan-phase state kept so `decode_into` can retry or replay after SOS.
 ///
 /// Full replay starts at the first SOS; `rst_checkpoint` can resume from a
-/// later restart boundary when one is still valid.
+/// later restart or row boundary when one is still valid.
 #[derive(Clone)]
 pub(crate) struct ScanDecodeState {
     pub(crate) scan_start_position: usize,
@@ -117,7 +117,7 @@ pub(crate) struct ScanHeaderStateSnapshot {
     pub(crate) is_mjpeg:         bool
 }
 
-/// Saved state at a restart-interval boundary during scan decoding.
+/// Saved state at a restart-interval or MCU-row boundary during scan decoding.
 ///
 /// Coefficient buffers stay on `JpegDecoder`; the checkpoint only stores the
 /// bitstream position, output position, scan state, and DC predictors.
@@ -155,7 +155,7 @@ pub(crate) struct HeaderAppendStateSnapshot {
 }
 
 impl HeaderAppendStateSnapshot {
-    fn capture<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Self {
+    pub(crate) fn capture<T: ZByteReaderTrait>(decoder: &JpegDecoder<T>) -> Self {
         Self {
             icc:  decoder.icc_data.len(),
             xmp:  decoder.extended_xmp_segments.len(),
@@ -163,7 +163,7 @@ impl HeaderAppendStateSnapshot {
         }
     }
 
-    fn rollback<T: ZByteReaderTrait>(self, decoder: &mut JpegDecoder<T>) {
+    pub(crate) fn rollback<T: ZByteReaderTrait>(self, decoder: &mut JpegDecoder<T>) {
         decoder.icc_data.truncate(self.icc);
         decoder.extended_xmp_segments.truncate(self.xmp);
         decoder.info.gain_map_info.truncate(self.gain);
@@ -374,7 +374,7 @@ where
         }
     }
 
-    fn capture_scan_header_state(&self) -> ScanHeaderStateSnapshot {
+    pub(crate) fn capture_scan_header_state(&self) -> ScanHeaderStateSnapshot {
         ScanHeaderStateSnapshot {
             qt_tables:        self.qt_tables,
             entropy_tables:   self.entropy_tables.clone(),
@@ -384,7 +384,7 @@ where
         }
     }
 
-    fn restore_scan_header_state(&mut self, snapshot: &ScanHeaderStateSnapshot) {
+    pub(crate) fn restore_scan_header_state(&mut self, snapshot: &ScanHeaderStateSnapshot) {
         self.qt_tables = snapshot.qt_tables;
         self.entropy_tables = snapshot.entropy_tables.clone();
         self.restart_interval = snapshot.restart_interval;
@@ -413,8 +413,8 @@ where
             .and_then(|state| state.rst_checkpoint.as_deref())
     }
 
-    // Save a restart-boundary checkpoint at the most recently consumed RST
-    // marker. Allocation-free: this only writes `Copy` scalars and fixed-size
+    // Save a scan checkpoint at the current restart or MCU-row boundary.
+    // Allocation-free: this only writes `Copy` scalars and fixed-size
     // arrays into the existing `Box<ScanCheckpoint>` (or allocates the box
     // exactly once at the first RST in a scan). The decoded coefficient and
     // component buffers themselves are *not* copied here — they live on the
@@ -464,14 +464,16 @@ where
         Ok(())
     }
 
-    /// Drop the active RST checkpoint, if any.
+    /// Drop the active scan checkpoint, if any.
     ///
     /// Called from the single-SOS baseline path after each row's
-    /// `post_process` succeeds. The next iteration of the outer loop will
-    /// overwrite `Components::raw_coeff`, so any checkpoint that pointed at
-    /// the just-processed row is no longer safe to resume to. New checkpoints
-    /// get recorded as RSTs fire in the next row; if EOF happens before the
-    /// next row's first RST, the scan falls back to replaying from scan start.
+    /// `post_process` succeeds, and after a later SOS is fully parsed in the
+    /// multi-SOS path (`advance_to_next_sos`). In the single-SOS case the next
+    /// iteration of the outer loop will overwrite `Components::raw_coeff`, so
+    /// any checkpoint that pointed at the just-processed row is no longer safe
+    /// to resume to. New checkpoints get recorded as RSTs fire in the next row;
+    /// if EOF happens before the next row's first RST, the scan falls back to
+    /// replaying from scan start.
     pub(crate) fn invalidate_scan_checkpoint(&mut self) {
         if let Some(state) = self.scan_state.as_mut() {
             state.rst_checkpoint = None;

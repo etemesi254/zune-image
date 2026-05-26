@@ -1256,6 +1256,38 @@ fn entropy_start(data: &[u8]) -> usize {
     sos_pos + 2 + sos_len
 }
 
+fn sos_data_start(data: &[u8], sos_index: usize) -> usize {
+    let (offset, _, length) = list_jpeg_markers(data)
+        .into_iter()
+        .filter(|(_, code, _)| *code == 0xDA)
+        .nth(sos_index)
+        .expect("test image must contain the requested SOS marker");
+    offset + 2 + length.expect("SOS marker must have a length")
+}
+
+fn sos_marker_offset(data: &[u8], sos_index: usize) -> usize {
+    list_jpeg_markers(data)
+        .into_iter()
+        .filter(|(_, code, _)| *code == 0xDA)
+        .nth(sos_index)
+        .expect("test image must contain the requested SOS marker")
+        .0
+}
+
+fn multi_sos_first_scan_cutoff(data: &[u8]) -> usize {
+    let markers = list_jpeg_markers(data);
+    let sos_markers: Vec<_> = markers
+        .iter()
+        .copied()
+        .filter(|(_, code, _)| *code == 0xDA)
+        .collect();
+    assert!(sos_markers.len() > 1, "fixture must be baseline multi-SOS");
+    let first_scan_start = sos_data_start(data, 0);
+    let second_sos_offset = sos_markers[1].0;
+    assert!(first_scan_start < second_sos_offset);
+    second_sos_offset - 1
+}
+
 fn first_retry_seek_after_scan_eof(data: &[u8], incremental_mode: bool) -> usize {
     let expected = decode_oneshot(data);
     let entropy_start = entropy_start(data);
@@ -1310,6 +1342,156 @@ fn incremental_mode_records_checkpoint_on_first_scan_attempt() {
         incremental_seek > entropy_start,
         "incremental mode should resume from an entropy-data row checkpoint; \
          entropy_start={entropy_start}, seek={incremental_seek}"
+    );
+}
+
+#[test]
+fn baseline_multi_sos_resumes_from_scan_body_checkpoint_without_stable_scanlines() {
+    for (name, data) in [
+        (
+            "non_interleaved_444_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_444_64x64.jpg").as_slice()
+        ),
+        (
+            "non_interleaved_420_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_420_64x64.jpg").as_slice()
+        ),
+        (
+            "non_interleaved_422_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_422_64x64.jpg").as_slice()
+        ),
+        (
+            "non_interleaved_440_64x64",
+            include_bytes!("../../../test-images/jpeg/non_interleaved_440_64x64.jpg").as_slice()
+        )
+    ] {
+        let expected = decode_oneshot(data);
+        let cutoff = multi_sos_first_scan_cutoff(data);
+        let first_scan_start = sos_data_start(data, 0);
+        let second_sos_offset = sos_marker_offset(data, 1);
+        let limit = Rc::new(Cell::new(cutoff));
+        let seek_log = Rc::new(RefCell::new(Vec::new()));
+        let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+
+        decoder.decode_headers().expect("headers should be visible at cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        let err = decoder
+            .decode_into(&mut out)
+            .expect_err("multi-SOS first scan truncation should be recoverable");
+        assert!(err.is_recoverable_eof(), "{name}: got {err:?}");
+        assert_eq!(
+            decoder.decoded_output_bytes(),
+            Some(0),
+            "{name}: multi-SOS output is not stable until final assembly"
+        );
+        assert_eq!(
+            decoder.decoded_scanlines(),
+            Some(0),
+            "{name}: multi-SOS output rows are not stable until final assembly"
+        );
+
+        seek_log.borrow_mut().clear();
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should replay and finish multi-SOS baseline");
+        assert_pixels_match(&out, &expected, name, data.len());
+        assert_eq!(decoder.decoded_output_bytes(), Some(out.len()));
+        assert_eq!(
+            decoder.decoded_scanlines(),
+            Some(usize::from(decoder.info().unwrap().height))
+        );
+
+        let seeks = seek_log.borrow();
+        let first_retry_seek = seeks
+            .first()
+            .copied()
+            .expect("retry must seek to a multi-SOS scan checkpoint");
+        assert!(
+            first_retry_seek > first_scan_start && first_retry_seek < second_sos_offset,
+            "{name}: retry should resume inside the first scan body; \
+             first_scan_start={first_scan_start}, seek={first_retry_seek}, \
+             second_sos_offset={second_sos_offset}"
+        );
+    }
+}
+
+#[test]
+fn baseline_multi_sos_marker_boundaries_recover() {
+    let data = include_bytes!("../../../test-images/jpeg/tiny_non_interleaved_444.jpg");
+    let markers = list_jpeg_markers(data);
+    let first_sos = markers
+        .iter()
+        .position(|(_, code, _)| *code == 0xDA)
+        .expect("fixture must contain SOS");
+    assert!(
+        markers.iter().skip(first_sos + 1).any(|(_, code, _)| *code == 0xDA),
+        "fixture must contain a later inter-scan SOS"
+    );
+
+    for (offset, code, length) in markers.into_iter().skip(1) {
+        let mut cutoffs = vec![offset, offset + 1];
+        if let Some(length) = length {
+            cutoffs.push(offset + 2);
+            cutoffs.push(offset + 2 + length - 1);
+            cutoffs.push(offset + 2 + length);
+        }
+
+        cutoffs.sort_unstable();
+        cutoffs.dedup();
+
+        for cutoff in cutoffs {
+            if cutoff < data.len() {
+                let label = format!(
+                    "baseline multi-SOS marker FF{code:02X} at {offset}, cutoff {cutoff}"
+                );
+                assert_split_at_recovers(data, cutoff, &label);
+            }
+        }
+    }
+}
+
+#[test]
+fn baseline_huffman_restart_resume_uses_rst_checkpoint() {
+    let data = include_bytes!("../../../test-images/jpeg/four_components.jpg");
+    let expected = decode_oneshot(data);
+    let markers = list_jpeg_markers(data);
+    let rst_positions: Vec<_> = markers
+        .iter()
+        .filter_map(|(offset, code, _)| (0xD0..=0xD7).contains(code).then_some(*offset))
+        .collect();
+    assert!(rst_positions.len() > 3, "fixture must contain restart markers");
+
+    let cutoff = rst_positions[3] + 64;
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder.decode_headers().expect("headers should be visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated restart scan should be recoverable");
+    assert!(err.is_recoverable_eof(), "got {err:?}");
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should resume from a restart checkpoint");
+    assert_pixels_match(&out, &expected, "baseline_huffman_restart", data.len());
+
+    let restart_resume_positions: Vec<_> = rst_positions
+        .iter()
+        .map(|position| position + 2)
+        .collect();
+    let seeks = seek_log.borrow();
+    assert!(
+        seeks.iter().any(|position| restart_resume_positions.contains(position)),
+        "retry should seek to an RST checkpoint, got {seeks:?}; expected one of {restart_resume_positions:?}"
     );
 }
 
