@@ -236,8 +236,16 @@ fn decode_into_replay_after_success_matches_oneshot() {
 fn incomplete_data_returns_recoverable_eof() {
     // Empty input → recoverable EOF
     let mut dec = JpegDecoder::new(ZCursor::new(&[] as &[u8]));
+    assert!(dec.info().is_none());
+    assert_eq!(dec.output_buffer_size(), None);
+    assert_eq!(dec.decoded_output_bytes(), None);
+    assert_eq!(dec.decoded_scanlines(), None);
     let err = dec.decode_headers().unwrap_err();
     assert!(err.is_recoverable_eof(), "empty input: expected recoverable EOF, got: {err:?}");
+    assert!(dec.info().is_none());
+    assert_eq!(dec.output_buffer_size(), None);
+    assert_eq!(dec.decoded_output_bytes(), None);
+    assert_eq!(dec.decoded_scanlines(), None);
 
     // Truncated just after SOI → recoverable EOF
     let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
@@ -249,6 +257,10 @@ fn incomplete_data_returns_recoverable_eof() {
     let mut dec = JpegDecoder::new(ZCursor::new(&[0x00, 0x00]));
     let err = dec.decode_headers().unwrap_err();
     assert!(!err.is_recoverable_eof(), "bad magic: should not be recoverable, got: {err:?}");
+    assert!(dec.info().is_none());
+    assert_eq!(dec.output_buffer_size(), None);
+    assert_eq!(dec.decoded_output_bytes(), None);
+    assert_eq!(dec.decoded_scanlines(), None);
 
     // Non-EOF error variants → NOT recoverable
     use zune_jpeg::errors::DecodeErrors;
@@ -1271,6 +1283,8 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
     decoder
         .decode_headers()
         .expect("headers should be fully visible at cutoff");
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
 
     // First decode attempt — should fail with recoverable EOF.
@@ -1285,6 +1299,11 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
     let first_scanlines = decoder
         .decoded_scanlines()
         .expect("headers are decoded, so partial progress should be known");
+    let first_bytes = decoder
+        .decoded_output_bytes()
+        .expect("headers are decoded, so partial progress should be known");
+    assert!(first_bytes > 0, "scan EOF should expose a stable output prefix");
+    assert!(first_bytes < out.len(), "truncated decode should not report full output");
     assert!(
         first_scanlines > 0 && first_scanlines < usize::from(decoder.info().unwrap().height),
         "expected a stable partial prefix, got {first_scanlines} scanlines"
@@ -1300,6 +1319,8 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         err.is_recoverable_eof(),
         "expected recoverable EOF on second attempt, got {err:?}"
     );
+    assert!(decoder.decoded_output_bytes().unwrap() >= first_bytes);
+    assert!(decoder.decoded_scanlines().unwrap() >= first_scanlines);
 
     // Third attempt — expose full data. Should resume from the per-row
     // checkpoint saved during the second attempt.
@@ -1309,6 +1330,11 @@ fn per_row_checkpoint_avoids_full_scan_replay() {
         .decode_into(&mut out)
         .expect("full data should allow decode to complete");
     assert_pixels_match(&out, &expected, "per_row_checkpoint", data.len());
+    assert_eq!(
+        decoder.decoded_output_bytes(),
+        Some(out.len()),
+        "successful decode should report the full output buffer as stable"
+    );
     assert_eq!(
         decoder.decoded_scanlines(),
         Some(usize::from(decoder.info().unwrap().height)),
