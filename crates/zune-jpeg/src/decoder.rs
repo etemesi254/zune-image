@@ -621,6 +621,17 @@ where
         };
     }
 
+    /// Return the number of output bytes known to be stable after the most
+    /// recent `decode_into` attempt.
+    ///
+    /// On recoverable EOF this is the prefix the caller may display or copy,
+    /// provided the next retry uses the same decoder and output buffer. It is
+    /// `None` until headers are complete and the output layout is known.
+    #[must_use]
+    pub fn decoded_output_bytes(&self) -> Option<usize> {
+        Some(self.pixels_decoded.min(self.output_buffer_size()?))
+    }
+
     /// Return the number of output scanlines known to be stable after the
     /// most recent `decode_into` attempt.
     ///
@@ -629,17 +640,14 @@ where
     /// call `decode_into` again to continue decoding.
     #[must_use]
     pub fn decoded_scanlines(&self) -> Option<usize> {
-        if !self.headers_decoded {
-            return None;
-        }
-
+        let decoded_output_bytes = self.decoded_output_bytes()?;
         let row_stride = usize::from(self.width())
             .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
         if row_stride == 0 {
             return Some(0);
         }
 
-        Some((self.pixels_decoded / row_stride).min(usize::from(self.height())))
+        Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
     }
 
     /// Get an immutable reference to the decoder options
@@ -1220,7 +1228,15 @@ where
     ///
     /// On a recoverable EOF (`DecodeErrors::is_recoverable_eof()`) the
     /// decoder keeps enough state to resume; the caller can grow the input
-    /// stream and call `decode_into` again.
+    /// stream and call `decode_into` again. The caller must keep using the
+    /// same decoder and output buffer for retries. After a recoverable scan
+    /// EOF, [`decoded_output_bytes`](Self::decoded_output_bytes) and
+    /// [`decoded_scanlines`](Self::decoded_scanlines) describe the stable
+    /// prefix in that output buffer.
+    ///
+    /// Embedders should use the returned error to distinguish retryable EOF
+    /// from hard failures: `Err(e)` where `e.is_recoverable_eof()` means feed
+    /// more input and retry, while any other `Err` is non-recoverable.
     ///
     /// On success the decoder keeps scan-start replay state, so a later
     /// `decode_into` call is well-defined and produces bit-identical pixels.
@@ -1431,7 +1447,9 @@ where
     ///
     /// If the reader runs out of data the error will satisfy
     /// [`is_recoverable_eof()`](crate::errors::DecodeErrors::is_recoverable_eof);
-    /// the caller may retry after providing more data.
+    /// the caller may retry after providing more data. After success,
+    /// [`output_buffer_size`](Self::output_buffer_size) and [`info`](Self::info)
+    /// are available.
     pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
         self.decode_headers_internal()?;
         Ok(())

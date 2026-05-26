@@ -27,6 +27,51 @@ fn main()->Result<(),DecoderErrors> {
 The decoder supports more manipulations via `DecoderOptions`,
 see additional documentation in the library.
 
+### Incremental input
+
+`JpegDecoder` can be retried on the same decoder when the underlying reader can
+see more bytes later. Callers should treat `DecodeErrors::is_recoverable_eof()`
+as the signal to feed more input and retry; any other error is a hard decode
+failure.
+
+After `decode_headers()` succeeds, `info()` and `output_buffer_size()` are
+available. During `decode_into()`, the same decoder and output buffer must be
+kept across retries. If scan decoding returns recoverable EOF,
+`decoded_output_bytes()` and `decoded_scanlines()` report the stable prefix of
+the output buffer that can be displayed or copied before retrying.
+
+```Rust
+use zune_core::bytestream::ZCursor;
+use zune_jpeg::JpegDecoder;
+
+let mut decoder = JpegDecoder::new(ZCursor::new(&jpeg_bytes));
+
+loop {
+  match decoder.decode_headers() {
+    Ok(()) => break,
+    Err(error) if error.is_recoverable_eof() => {
+      // Make more input bytes visible to the same reader, then retry.
+    }
+    Err(error) => return Err(error)
+  }
+}
+
+let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+
+loop {
+  match decoder.decode_into(&mut pixels) {
+    Ok(()) => break,
+    Err(error) if error.is_recoverable_eof() => {
+      let stable_bytes = decoder.decoded_output_bytes().unwrap_or(0);
+      let stable_scanlines = decoder.decoded_scanlines().unwrap_or(0);
+      // Display or copy the stable prefix, feed more input, then retry
+      // with the same decoder and `pixels` buffer.
+    }
+    Err(error) => return Err(error)
+  }
+}
+```
+
 ## Goals
 
 The implementation aims to have the following goals achieved,
