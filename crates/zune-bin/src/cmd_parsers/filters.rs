@@ -15,7 +15,7 @@ use zune_imageprocs::color_transform::{ColorProfiles, ColorTransform};
 use zune_imageprocs::convolve::Convolve;
 use zune_imageprocs::blur::Blur;
 use zune_imageprocs::hald_clut::HaldClut;
-use zune_imageprocs::median::Median;
+use zune_imageprocs::median::MedianBlur;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sharpen::Sharpen;
 use zune_imageprocs::sobel::Sobel;
@@ -87,7 +87,7 @@ pub fn parse_options(
         let indices = args.indices_of(argument).unwrap();
         for (radius, idx) in values.zip(indices) {
             debug!("Parsed median blur with radius {radius} at {idx}");
-            parsed_ops.push((idx, Box::new(Median::new(*radius))));
+            parsed_ops.push((idx, Box::new(MedianBlur::new(*radius))));
         }
     } else if argument == "color-transform" {
         let values = args.get_many::<String>(argument).unwrap();

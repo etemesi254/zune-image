@@ -200,7 +200,7 @@ where
     }
 }
 
-struct BilateralCoeffs {
+pub (crate) struct BilateralCoeffs {
     color_weight: Vec<f64>,
     space_weight: Vec<f64>,
     radius: usize,

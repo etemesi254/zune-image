@@ -9,7 +9,8 @@ use fast_image_resize::{PixelType, ResizeAlg};
 use image::imageops::FilterType;
 use image::DynamicImage;
 use libblur::{
-    AnisotropicRadius, BlurImageMut, EdgeMode, EdgeMode2D, FastBlurChannels, ThreadingPolicy,
+    AnisotropicRadius, BlurImage, BlurImageMut, EdgeMode, EdgeMode2D, FastBlurChannels,
+    ThreadingPolicy,
 };
 use libvips::ops::{Angle, Direction, GammaOptions, Kernel, ResizeOptions};
 use libvips::VipsImage;
@@ -24,6 +25,7 @@ use zune_imageprocs::blur::Blur;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::invert::Invert;
+use zune_imageprocs::median::MedianBlur;
 use zune_imageprocs::premul_alpha::PremultiplyAlpha;
 use zune_imageprocs::resize::{Resize, ResizeDimensions, ResizeMethod};
 use zune_imageprocs::rotate::Rotate;
@@ -499,7 +501,6 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
 
     let data = read(path).unwrap();
     let mut zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
-    let vips_im = VipsImage::new_from_buffer(&data, ".jpg").unwrap();
     let raw_pix = zune_im.flatten_frames::<u8>();
     let mut out_side = vec![0; raw_pix[0].len()];
     out_side.copy_from_slice(&raw_pix[0]);
@@ -509,7 +510,7 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
 
     group.bench_function("zune-image", |b| {
         b.iter(|| {
-             Blur::new(3.0).execute(&mut zune_im).unwrap();
+            Blur::new(3.0).execute(&mut zune_im).unwrap();
             black_box(());
         });
     });
@@ -548,11 +549,46 @@ fn blur_gaussian_blur_bench(c: &mut Criterion) {
 
     group.finish();
 }
+
+fn blur_median_blur_bench(c: &mut Criterion) {
+    let path = sample_path().join("test-images/jpeg/benchmarks/speed_bench.jpg");
+
+    let data = read(path).unwrap();
+    let mut zune_im = Image::read(ZCursor::new(&data), DecoderOptions::default()).unwrap();
+    let raw_pix = zune_im.flatten_frames::<u8>();
+    let mut out_side = vec![0; raw_pix[0].len()];
+    out_side.copy_from_slice(&raw_pix[0]);
+    let (w, h) = zune_im.dimensions();
+    let src_image = BlurImage::borrow(&raw_pix[0], w as u32, h as u32, FastBlurChannels::Channels3);
+    let mut group = c.benchmark_group("imageprocs: median blur");
+
+    group.bench_function("zune-image", |b| {
+        b.iter(|| {
+            MedianBlur::new(10).execute(&mut zune_im).unwrap();
+            black_box(());
+        });
+    });
+
+    group.bench_function("libblur", |b| {
+        b.iter(|| {
+            let mut dst_image = BlurImageMut::borrow(
+                &mut out_side,
+                w as u32,
+                h as u32,
+                FastBlurChannels::Channels3,
+            );
+            libblur::median_blur(&src_image, &mut dst_image, 10, ThreadingPolicy::Adaptive)
+                .unwrap();
+        })
+    });
+
+    group.finish();
+}
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
         c.measurement_time(Duration::from_secs(10))
       };
-    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull,bench_transpose,blur_gaussian_blur_bench);
+    targets=bench_affine_transform,bench_sobel,bench_gamma,bench_gaussian,bench_premultiply_alpha,bench_rotate90,bench_rotate180,bench_invert,bench_resize_linear,bench_resize_bicubic,bench_flip_horizontal,bench_flip_vertical,bench_resize_caltmull,bench_transpose,blur_gaussian_blur_bench,blur_median_blur_bench);
 
 criterion_main!(benches);
