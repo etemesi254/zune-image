@@ -13,8 +13,7 @@ use zune_core::options::DecoderOptions;
 
 use crate::custom_operations::composite::WasmOverlayOp;
 use crate::enums::{
-    WasmColorProfiles, WasmColorspace, WasmCompositeMethod, WasmFlipDirection, WasmImageFormats,
-    WasmMirrorMode, WasmResizeMethod, WasmSpatialOperations, WasmThresholdMethod,
+    WasmColorProfiles, WasmColorspace, WasmCompositeMethod, WasmFlipDirection, WasmImageFormats, WasmResizeMethod, WasmSpatialOperations, WasmThresholdMethod,
 };
 use crate::utils::set_panic_hook;
 use zune_image::errors::ImageErrors;
@@ -36,7 +35,7 @@ use zune_imageprocs::fx::Fx;
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::hsv_adjust::HsvAdjust;
 use zune_imageprocs::invert::Invert;
-use zune_imageprocs::median::Median;
+use zune_imageprocs::median::MedianBlur;
 use zune_imageprocs::resize::{Resize, ResizeDimensions};
 use zune_imageprocs::rotate::Rotate;
 use zune_imageprocs::sharpen::Sharpen;
@@ -217,7 +216,7 @@ impl WasmImage {
     /// Apply a median filter to reduce noise
     pub fn median_blur(mut self, radius: usize) -> WasmImage {
         self.pipeline
-            .chain_operations(Box::new(Median::new(radius)));
+            .chain_operations(Box::new(MedianBlur::new(radius)));
         self
     }
 

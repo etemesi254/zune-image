@@ -13,7 +13,7 @@ use zune_imageprocs::exposure::Exposure;
 use zune_imageprocs::flip::{Flip, FlipDirection};
 use zune_imageprocs::gamma::Gamma;
 use zune_imageprocs::invert::Invert;
-use zune_imageprocs::median::Median;
+use zune_imageprocs::median::MedianBlur;
 use zune_imageprocs::scharr::Scharr;
 use zune_imageprocs::sobel::Sobel;
 use zune_imageprocs::stretch_contrast::StretchContrast;
@@ -358,5 +358,5 @@ pub extern "C" fn zil_imgproc_scharr(image: *mut ZImage, status: *mut ZStatus) {
 /// \param radius: The radius of the window
 #[no_mangle]
 pub extern "C" fn zil_imgproc_median_blur(image: *mut ZImage, radius: usize, status: *mut ZStatus) {
-    exec_imgproc(image, Median::new(radius), status)
+    exec_imgproc(image, MedianBlur::new(radius), status)
 }

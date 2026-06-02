@@ -694,7 +694,7 @@ impl FilterExt for Image {
         apply_op(self, crate::invert::Invert)
     }
     fn median_blur(self, radius: usize) -> Result<Self, ImageErrors> {
-        apply_op(self, crate::median::Median::new(radius))
+        apply_op(self, crate::median::MedianBlur::new(radius))
     }
     fn mirror(self, mode: MirrorMode) -> Result<Self, ImageErrors> {
         apply_op(self, crate::mirror::Mirror::new(mode))
