@@ -37,6 +37,64 @@
 //! let mut pixels = decoder.decode().unwrap();
 //! ```
 //!
+//! ## Incremental input
+//!
+//! `JpegDecoder` can be retried on the same decoder when the underlying reader can
+//! see more bytes later. Callers should treat `DecodeErrors::is_recoverable_eof()`
+//! as the signal to feed more input and retry; any other error is a hard decode
+//! failure.
+//!
+//! After `decode_headers()` succeeds, `info()` and `output_buffer_size()` are
+//! available. During `decode_into()`, the same decoder and output buffer must be
+//! kept across retries. If scan decoding returns recoverable EOF,
+//! `decoded_output_bytes()` and `decoded_scanlines()` report the stable prefix of
+//! the output buffer that can be displayed or copied before retrying.
+//!
+//! By default, row checkpoints are recorded only after a previous scan decode
+//! attempt, so one-shot decoding keeps the lowest-overhead path. Call
+//! `set_incremental_mode(true)` before the first `decode_into()` attempt when the
+//! caller expects input to arrive incrementally; this records checkpoints during
+//! the first baseline Huffman scan attempt and can reduce replay work on the next
+//! retry.
+//!
+//! ```no_run
+//! use zune_core::bytestream::ZCursor;
+//! use zune_jpeg::errors::DecodeErrors;
+//! use zune_jpeg::JpegDecoder;
+//!
+//! fn decode_incremental(jpeg_bytes: &[u8]) -> Result<Vec<u8>, DecodeErrors> {
+//!     let mut decoder = JpegDecoder::new(ZCursor::new(jpeg_bytes));
+//!
+//!     loop {
+//!         match decoder.decode_headers() {
+//!             Ok(()) => break,
+//!             Err(error) if error.is_recoverable_eof() => {
+//!                 // Make more input bytes visible to the same reader, then retry.
+//!             }
+//!             Err(error) => return Err(error)
+//!         }
+//!     }
+//!
+//!     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+//!     decoder.set_incremental_mode(true);
+//!
+//!     loop {
+//!         match decoder.decode_into(&mut pixels) {
+//!             Ok(()) => break,
+//!             Err(error) if error.is_recoverable_eof() => {
+//!                 let stable_bytes = decoder.decoded_output_bytes().unwrap_or(0);
+//!                 let stable_scanlines = decoder.decoded_scanlines().unwrap_or(0);
+//!                 // Display or copy the stable prefix, feed more input, then retry
+//!                 // with the same decoder and `pixels` buffer.
+//!             }
+//!             Err(error) => return Err(error)
+//!         }
+//!     }
+//!
+//!     Ok(pixels)
+//! }
+//! ```
+//!
 //! ## Migrating from version 0.4--
 //!
 //! ### Motivation
