@@ -31,8 +31,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ///
     /// This routine decodes a progressive image, stopping if it finds any error.
     ///
-    /// Progressive scans use a fresh coefficient buffer and do not record
-    /// per-RST checkpoints; refine passes make mid-scan resume unsafe.
+    /// Completed progressive scans are committed into the decoder-owned
+    /// coefficient buffer. The current scan decodes into a scratch copy so a
+    /// recoverable EOF can expose the last completed scan without reapplying
+    /// partially decoded refinement data on retry.
     #[allow(
         clippy::needless_range_loop,
         clippy::cast_sign_loss,
@@ -43,14 +45,26 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     pub(crate) fn decode_mcu_ycbcr_progressive<B: BitStream>(
         &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
+        // Move the committed coefficient buffer out of `self` so each scan can
+        // decode into a scratch copy while methods on `self` remain callable.
+        let mut block = core::mem::take(&mut self.progressive_mcus_buffer);
+        let result = self.decode_mcu_ycbcr_progressive_inner::<B>(pixels, &mut block);
+        self.progressive_mcus_buffer = block;
+        result
+    }
+
+    #[allow(
+        clippy::needless_range_loop,
+        clippy::cast_sign_loss,
+        clippy::redundant_else,
+        clippy::too_many_lines
+    )]
+    fn decode_mcu_ycbcr_progressive_inner<B: BitStream>(
+        &mut self, pixels: &mut [u8], block: &mut [Vec<i16>; MAX_COMPONENTS],
+    ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
         let mut mcu_height;
-
-        // Progressive retries replay from scan start with a fresh buffer.
-        let mut block: [Vec<i16>; MAX_COMPONENTS] = [vec![], vec![], vec![], vec![]];
         let mut mcu_width;
-
-        let mut seen_scans = 1;
 
         if self.input_colorspace == ColorSpace::Luma && self.is_interleaved {
             warn!("Grayscale image with down-sampled component, resetting component details");
@@ -89,52 +103,43 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         mcu_width *= 64;
 
-        // Refine scans read-modify-write coefficient data, so progressive
-        // recoverable EOF falls back to first-SOS replay.
+        if self.progressive_scan_checkpoint().is_none() {
+            self.progressive_completed_scans = 0;
+        }
         for (i, comp) in self.components.iter().enumerate() {
             let len = mcu_width * comp.vertical_sample * comp.horizontal_sample * mcu_height;
-            block[i] = vec![0; len];
+            if block[i].len() != len {
+                block[i].clear();
+                block[i].resize(len, 0);
+            } else if self.progressive_completed_scans == 0 {
+                block[i].fill(0);
+            }
         }
 
-        // Progressive does not use per-RST checkpoints.
         let mut stream = B::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
-        // there are multiple scans in the stream, this should resolve the first scan
-        let result = self.parse_entropy_coded_data(&mut stream, &mut block);
-
-        if let Err(ref e) = result {
-            // Always propagate ExhaustedData for incremental decoding support
-            // — the caller can retry with more data.
-            if e.is_recoverable_eof() {
-                return Err(result.err().unwrap());
-            }
-            if self.stream.eof()? {
-                return Err(DecodeErrors::ExhaustedData);
-            }
-            return if self.options.strict_mode() {
-                Err(result.err().unwrap())
-            } else {
-                error!("{}", result.err().unwrap());
-                // Go process it and return as much as we can, exiting here
-                return self.finish_progressive_decoding(&block, pixels);
-            };
+        if !self.decode_progressive_scan(&mut stream, block, pixels)? {
+            return self.finish_progressive_decoding(block, pixels);
         }
-        if stream.overread_by() > 0 {
-            return Err(DecodeErrors::ExhaustedData);
+        if self.progressive_completed_scans > self.options.jpeg_get_max_scans() {
+            return Err(DecodeErrors::Format(format!(
+                "Too many scans, exceeded limit of {}",
+                self.options.jpeg_get_max_scans()
+            )));
         }
 
-        // extract marker
-        let mut marker = get_marker(&mut self.stream, &mut stream)?;
+        let mut marker = match get_marker(&mut self.stream, &mut stream) {
+            Ok(marker) => marker,
+            Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
+        };
 
-        // if marker is EOI, we are done, otherwise continue scanning.
-        //
-        // In case we have a premature image, we print a warning or return
-        // an error, depending on the strictness of the decoder, so there
-        // is that logic to handle too
+        // If marker is EOI, we are done; otherwise continue scanning.
         'eoi: while marker != Marker::EOI {
             match marker {
                 Marker::SOS => {
-                    parse_sos(self)?;
+                    if let Err(e) = parse_sos(self) {
+                        return self.handle_progressive_inter_scan_error(e, block, pixels);
+                    }
 
                     stream.update_progressive_params(
                         self.succ_high,
@@ -142,62 +147,34 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_start,
                         self.spec_end,
                     );
-                    // after every SOS, marker, parse data for that scan.
-                    let result = self.parse_entropy_coded_data(&mut stream, &mut block);
+                    if !self.decode_progressive_scan(&mut stream, block, pixels)? {
+                        break 'eoi;
+                    }
 
-                    // Do not error out too fast, allows the decoder to continue as much as possible
-                    // even after errors — but always propagate ExhaustedData.
-                    if let Err(ref e) = result {
-                        if e.is_recoverable_eof() {
-                            return Err(result.err().unwrap());
-                        }
-                        if self.stream.eof()? {
-                            return Err(DecodeErrors::ExhaustedData);
-                        }
-                        return if self.options.strict_mode() {
-                            Err(result.err().unwrap())
-                        } else {
-                            error!("{}", result.err().unwrap());
-                            break 'eoi;
-                        };
+                    if self.progressive_completed_scans > self.options.jpeg_get_max_scans() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Too many scans, exceeded limit of {}",
+                            self.options.jpeg_get_max_scans()
+                        )));
                     }
-                    if stream.overread_by() > 0 {
-                        return Err(DecodeErrors::ExhaustedData);
-                    }
-                    // extract marker, might either indicate end of image or we continue
-                    // scanning(hence the continue statement to determine).
+
                     match get_marker(&mut self.stream, &mut stream) {
                         Ok(marker_n) => {
                             marker = marker_n;
-                            seen_scans += 1;
-                            if seen_scans > self.options.jpeg_get_max_scans() {
-                                return Err(DecodeErrors::Format(format!(
-                                    "Too many scans, exceeded limit of {}",
-                                    self.options.jpeg_get_max_scans()
-                                )));
-                            }
-
                             stream.reset();
                             B::reset_arith_tables(&mut self.entropy_tables);
                             continue 'eoi;
                         }
-                        Err(msg) => {
-                            if msg.is_recoverable_eof() {
-                                return Err(msg);
-                            }
-                            if self.options.strict_mode() {
-                                return Err(msg);
-                            }
-                            error!("{msg:?}");
-                            break 'eoi;
-                        }
+                        Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
                     }
                 }
                 Marker::RST(_n) => {
                     self.handle_rst(&mut stream)?;
                 }
                 _ => {
-                    self.parse_marker_inner(marker)?;
+                    if let Err(e) = self.parse_marker_inner(marker) {
+                        return self.handle_progressive_inter_scan_error(e, block, pixels);
+                    }
                 }
             }
 
@@ -205,23 +182,95 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 Ok(marker_n) => {
                     marker = marker_n;
                 }
-                Err(e) => {
-                    if e.is_recoverable_eof() {
-                        return Err(e);
-                    }
-                    if self.options.strict_mode() {
-                        return Err(e);
-                    }
-                    error!("{e}");
-                    // If we can't get the marker, just break away
-                    // allows us to decode some corrupt images
-                    // e.g https://github.com/etemesi254/zune-image/issues/294
-                    break 'eoi;
-                }
+                Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
             }
         }
 
-        self.finish_progressive_decoding(&block, pixels)
+        self.finish_progressive_decoding(block, pixels)
+    }
+
+    fn decode_progressive_scan<B: BitStream>(
+        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+    ) -> Result<bool, DecodeErrors> {
+        self.checkpoint_progressive_scan(self.progressive_completed_scans)?;
+        let mut touched_components = [false; MAX_COMPONENTS];
+        for scan_index in 0..usize::from(self.num_scans) {
+            let component = self.z_order[scan_index];
+            if component < MAX_COMPONENTS {
+                touched_components[component] = true;
+            }
+        }
+        let mut scan_block: [Vec<i16>; MAX_COMPONENTS] = core::array::from_fn(|idx| {
+            if touched_components[idx] {
+                block[idx].clone()
+            } else {
+                Vec::new()
+            }
+        });
+        let result = self.parse_entropy_coded_data(stream, &mut scan_block);
+
+        if let Err(e) = result {
+            // Completed scans are displayable, but a truncated scan is not:
+            // refinement passes read-modify-write coefficient data, so the
+            // scratch copy is discarded on recoverable EOF.
+            if e.is_recoverable_eof() {
+                self.finish_progressive_partial(block, pixels)?;
+                return Err(e);
+            }
+            if self.stream.eof()? {
+                self.finish_progressive_partial(block, pixels)?;
+                return Err(DecodeErrors::ExhaustedData);
+            }
+            if self.options.strict_mode() {
+                return Err(e);
+            }
+            error!("{e}");
+            return Ok(false);
+        }
+        if stream.overread_by() > 0 {
+            self.finish_progressive_partial(block, pixels)?;
+            return Err(DecodeErrors::ExhaustedData);
+        }
+
+        for idx in 0..MAX_COMPONENTS {
+            if touched_components[idx] {
+                core::mem::swap(&mut block[idx], &mut scan_block[idx]);
+            }
+        }
+        self.progressive_completed_scans += 1;
+        self.invalidate_progressive_scan_checkpoint();
+        Ok(true)
+    }
+
+    fn handle_progressive_inter_scan_error(
+        &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+    ) -> Result<(), DecodeErrors> {
+        if error.is_recoverable_eof() {
+            self.finish_progressive_partial(block, pixels)?;
+            return Err(error);
+        }
+        if self.options.strict_mode() {
+            return Err(error);
+        }
+        error!("{error}");
+        self.finish_progressive_decoding(block, pixels)
+    }
+
+    fn finish_progressive_partial(
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+    ) -> Result<(), DecodeErrors> {
+        if self.progressive_completed_scans == 0 {
+            self.pixels_decoded = 0;
+            self.progressive_displayed_scans = 0;
+            return Ok(());
+        }
+
+        if self.progressive_displayed_scans != self.progressive_completed_scans {
+            self.finish_progressive_decoding(block, pixels)?;
+            self.progressive_displayed_scans = self.progressive_completed_scans;
+        }
+        self.pixels_decoded = 0;
+        Ok(())
     }
 
     /// Reset progressive parameters
@@ -238,9 +287,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
     /// Parse a progressive scan's entropy-coded data into `buffer`.
     ///
-    /// Progressive scans always start at MCU `(0, 0)` — per-RST checkpoints
-    /// are not recorded for progressive (refine passes do read-modify-write
-    /// on `buffer`, so mid-scan resume would re-apply partial deltas).
+    /// Progressive scans always start at MCU `(0, 0)`. Per-RST checkpoints
+    /// are not recorded for progressive: refine passes read-modify-write
+    /// `buffer`, so retries restart at the current scan boundary using the
+    /// last committed coefficient buffer.
     #[allow(clippy::too_many_lines, clippy::cast_sign_loss)]
     fn parse_entropy_coded_data<B: BitStream>(
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
@@ -277,12 +327,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 } else {
                     self.parse_dc_refine_non_interleaved(stream, buffer, k)?;
                 }
+            } else if self.succ_high == 0 {
+                self.parse_ac_first_non_interleaved(stream, buffer, k)?;
             } else {
-                if self.succ_high == 0 {
-                    self.parse_ac_first_non_interleaved(stream, buffer, k)?;
-                } else {
-                    self.parse_ac_refine_non_interleaved(stream, buffer, k)?;
-                }
+                self.parse_ac_refine_non_interleaved(stream, buffer, k)?;
             }
         } else {
             if self.spec_end != 0 {
@@ -326,7 +374,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS], k: usize,
     ) -> Result<(), DecodeErrors> {
         let (mcu_width, mcu_height) = self.get_non_interleaved_dimensions(k);
-        let dc_pos = self.components[k].dc_huff_table /MAX_COMPONENTS;
+        let dc_pos = self.components[k].dc_huff_table / MAX_COMPONENTS;
         let width_stride = self.components[k].width_stride / 8;
 
         let mut cancel = self.cancel_debounced(mcu_width);

@@ -69,6 +69,34 @@
 //! current component scan, then decode later component scans, but output rows are
 //! not considered stable until final assembly has all component data.
 //!
+//! For progressive JPEGs, completed scans can be rendered as full-frame previews
+//! assembled from committed coefficient data. These preview pixels may change
+//! after later scans, so they are exposed through `decoded_preview_output_bytes()`,
+//! `decoded_preview_scanlines()`, and `decoded_scans()` rather than changing the
+//! stable-output meaning of `decoded_output_bytes()` and `decoded_scanlines()`.
+//!
+//! On recoverable EOF, callers can use the same output buffer in two ways:
+//!
+//! - `decoded_output_bytes()` / `decoded_scanlines()` describe stable final
+//!   pixels. These bytes will not need to be corrected by later retries. For
+//!   progressive JPEGs, this stable prefix remains zero until all scans complete.
+//! - `decoded_preview_output_bytes()` / `decoded_preview_scanlines()` describe a
+//!   progressive preview assembled from completed scans. This is useful for
+//!   browser-style display, but those pixels may be replaced by later scans.
+//!   These methods return `None` for non-progressive images and `Some(0)` for
+//!   progressive images before the first preview is rendered.
+//! - `decoded_scans()` reports how many progressive scans are represented in the
+//!   current preview. It returns `None` for non-progressive images; if the value
+//!   is unchanged across retries, no newer preview has been produced.
+//!
+//! Use the preview methods only after `decode_into()` returns a recoverable EOF.
+//! A positive preview byte count means the same output buffer now contains a
+//! complete provisional frame in `pixels[..preview_bytes]`. Treat that frame as
+//! replaceable: repaint it when `decoded_scans()` increases, then keep retrying
+//! with the same decoder and output buffer until `decode_into()` returns `Ok(())`.
+//! Do not append preview bytes to the final output stream; they are a display
+//! surface separate from the stable prefix reported by `decoded_output_bytes()`.
+//!
 //! ```no_run
 //! use zune_core::bytestream::ZCursor;
 //! use zune_jpeg::errors::DecodeErrors;
@@ -89,6 +117,7 @@
 //!
 //!     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
 //!     decoder.set_incremental_mode(true);
+//!     let mut displayed_preview_scans = 0;
 //!
 //!     loop {
 //!         match decoder.decode_into(&mut pixels) {
@@ -96,8 +125,20 @@
 //!             Err(error) if error.is_recoverable_eof() => {
 //!                 let stable_bytes = decoder.decoded_output_bytes().unwrap_or(0);
 //!                 let stable_scanlines = decoder.decoded_scanlines().unwrap_or(0);
-//!                 // Display or copy the stable prefix, feed more input, then retry
-//!                 // with the same decoder and `pixels` buffer.
+//!                 let preview_bytes = decoder.decoded_preview_output_bytes().unwrap_or(0);
+//!                 let preview_scanlines = decoder.decoded_preview_scanlines().unwrap_or(0);
+//!                 let preview_scans = decoder.decoded_scans().unwrap_or(0);
+//!
+//!                 if stable_bytes > 0 {
+//!                     // Display or copy the stable prefix in `pixels[..stable_bytes]`.
+//!                 } else if preview_bytes > 0 && preview_scans > displayed_preview_scans {
+//!                     // Display the progressive preview in `pixels[..preview_bytes]`.
+//!                     // `preview_scanlines` is full height once a preview is available,
+//!                     // and `preview_scans` tells how many completed scans it represents.
+//!                     displayed_preview_scans = preview_scans;
+//!                 }
+//!
+//!                 // Feed more input, then retry with the same decoder and `pixels` buffer.
 //!             }
 //!             Err(error) => return Err(error)
 //!         }
