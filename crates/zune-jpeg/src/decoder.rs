@@ -90,7 +90,22 @@ pub(crate) struct ScanDecodeState {
     pub(crate) append_snapshot:     HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:        SosParamsSnapshot,
     pub(crate) header_snapshot:     ScanHeaderStateSnapshot,
-    pub(crate) scan_checkpoint:     Option<Box<ScanCheckpoint>>
+    pub(crate) scan_checkpoint:     Option<Box<ScanCheckpoint>>,
+    pub(crate) progressive_checkpoint: Option<Box<ProgressiveScanCheckpoint>>
+}
+
+/// Saved state at the start of a progressive scan.
+///
+/// Progressive refinement scans update existing coefficients in place, so a
+/// retry must restart at a scan boundary using only completed scans. The
+/// coefficient buffers themselves stay on `JpegDecoder`.
+#[derive(Clone)]
+pub(crate) struct ProgressiveScanCheckpoint {
+    pub(crate) stream_position:  usize,
+    pub(crate) append_snapshot:  HeaderAppendStateSnapshot,
+    pub(crate) sos_snapshot:     SosParamsSnapshot,
+    pub(crate) header_snapshot:  ScanHeaderStateSnapshot,
+    pub(crate) completed_scans:  usize
 }
 
 /// SOS fields restored before replaying scan data.
@@ -304,9 +319,16 @@ pub struct JpegDecoder<T> {
     ///
     /// Owned by the decoder so contents survive a recoverable EOF and the
     /// next `decode_into` retry can resume from where it stopped without
-    /// copying anything. The inner `Vec`s are reused across `decode_into`
-    /// calls; capacity is reclaimed only when the decoder is dropped.
+    /// copying anything. Progressive decoding also uses these as the committed
+    /// coefficient buffers for completed scans. The inner `Vec`s are reused
+    /// across `decode_into` calls; capacity is reclaimed only when the decoder
+    /// is dropped.
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
+    /// Number of progressive scans committed into `progressive_mcus_buffer`.
+    pub(crate) progressive_completed_scans: usize,
+    /// Number of committed progressive scans currently rendered as preview
+    /// pixels in the output buffer.
+    pub(crate) progressive_displayed_scans: usize,
     /// Whether per-row checkpointing is enabled for the current decode.
     ///
     /// By default this becomes `true` after a previous scan attempt has run,
@@ -415,7 +437,8 @@ where
             append_snapshot,
             sos_snapshot,
             header_snapshot,
-            scan_checkpoint: None
+            scan_checkpoint: None,
+            progressive_checkpoint: None
         }));
         Ok(())
     }
@@ -424,6 +447,38 @@ where
         self.scan_state
             .as_deref()
             .and_then(|state| state.scan_checkpoint.as_deref())
+    }
+
+    pub(crate) fn progressive_scan_checkpoint(&self) -> Option<&ProgressiveScanCheckpoint> {
+        self.scan_state
+            .as_deref()
+            .and_then(|state| state.progressive_checkpoint.as_deref())
+    }
+
+    pub(crate) fn checkpoint_progressive_scan(
+        &mut self, completed_scans: usize
+    ) -> Result<(), DecodeErrors> {
+        let stream_position = self.stream_position()?;
+        let append_snapshot = HeaderAppendStateSnapshot::capture(self);
+        let sos_snapshot = self.capture_sos_params();
+        let header_snapshot = self.capture_scan_header_state();
+
+        if let Some(state) = self.scan_state.as_mut() {
+            state.progressive_checkpoint = Some(Box::new(ProgressiveScanCheckpoint {
+                stream_position,
+                append_snapshot,
+                sos_snapshot,
+                header_snapshot,
+                completed_scans
+            }));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn invalidate_progressive_scan_checkpoint(&mut self) {
+        if let Some(state) = self.scan_state.as_mut() {
+            state.progressive_checkpoint = None;
+        }
     }
 
     // Save a scan checkpoint at the current restart or MCU-row boundary.
@@ -575,6 +630,8 @@ where
             incremental_mode: false,
             scan_decode_attempted: false,
             progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
+                progressive_completed_scans: 0,
+                progressive_displayed_scans: 0,
             marker_body_scratch: Vec::new(),
             expects_dnl: false
         }
@@ -686,6 +743,62 @@ where
         Some(self.pixels_decoded.min(self.output_buffer_size()?))
     }
 
+    /// Return the number of progressive scans whose coefficients are safely
+    /// committed.
+    ///
+    /// Returns `None` until headers are decoded, and for non-progressive
+    /// images. For progressive images, the value is the number of completed
+    /// scans committed into the decoder-owned coefficient buffers. If the
+    /// value does not change across retries, the currently rendered preview has
+    /// not advanced to a newer scan.
+    #[must_use]
+    pub fn decoded_scans(&self) -> Option<usize> {
+        if !self.headers_decoded || !self.is_progressive {
+            return None;
+        }
+        Some(self.progressive_completed_scans)
+    }
+
+    /// Return the number of output bytes currently holding a progressive
+    /// preview image.
+    ///
+    /// Progressive previews are assembled from completed scans and may change
+    /// after later scans. They are separate from the stable final-output prefix
+    /// reported by [`decoded_output_bytes`](Self::decoded_output_bytes).
+    ///
+    /// Returns `None` until headers are decoded, and for non-progressive
+    /// images. For progressive images, returns `Some(0)` until the first
+    /// completed scan has been rendered, then returns the full output buffer
+    /// size for the current preview.
+    #[must_use]
+    pub fn decoded_preview_output_bytes(&self) -> Option<usize> {
+        if !self.headers_decoded || !self.is_progressive {
+            return None;
+        }
+        if self.progressive_displayed_scans == 0 {
+            return Some(0);
+        }
+        self.output_buffer_size()
+    }
+
+    /// Return the number of scanlines currently holding a progressive preview.
+    ///
+    /// Progressive previews are full-frame renders assembled from completed
+    /// scans, so this returns the image height once any completed scan has been
+    /// rendered into the output buffer. The final cap to image height mirrors
+    /// [`decoded_scanlines`](Self::decoded_scanlines) and keeps the method
+    /// conservative if the output layout ever changes.
+    #[must_use]
+    pub fn decoded_preview_scanlines(&self) -> Option<usize> {
+        let preview_bytes = self.decoded_preview_output_bytes()?;
+        let row_stride = usize::from(self.width())
+            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
+        if row_stride == 0 || preview_bytes == 0 {
+            return Some(0);
+        }
+        Some((preview_bytes / row_stride).min(usize::from(self.height())))
+    }
+
     /// Return whether incremental mode is enabled.
     ///
     /// Incremental mode records per-row checkpoints during the first scan
@@ -719,6 +832,7 @@ where
     /// This is useful after a recoverable EOF: callers can keep the same
     /// output buffer, display the stable prefix, grow the input stream, and
     /// call `decode_into` again to continue decoding.
+    ///
     #[must_use]
     pub fn decoded_scanlines(&self) -> Option<usize> {
         let decoded_output_bytes = self.decoded_output_bytes()?;
@@ -1372,7 +1486,12 @@ where
     /// same decoder and output buffer for retries. After a recoverable scan
     /// EOF, [`decoded_output_bytes`](Self::decoded_output_bytes) and
     /// [`decoded_scanlines`](Self::decoded_scanlines) describe the stable
-    /// prefix in that output buffer.
+    /// prefix in that output buffer. For progressive images, completed scans
+    /// can also be displayed as full-frame previews; use
+    /// [`decoded_preview_output_bytes`](Self::decoded_preview_output_bytes),
+    /// [`decoded_preview_scanlines`](Self::decoded_preview_scanlines), and
+    /// [`decoded_scans`](Self::decoded_scans) for that replaceable preview
+    /// surface.
     ///
     /// Embedders should use the returned error to distinguish retryable EOF
     /// from hard failures: `Err(e)` where `e.is_recoverable_eof()` means feed
@@ -1418,7 +1537,8 @@ where
             outer_header_snapshot: ScanHeaderStateSnapshot,
             /// Snapshots taken from the checkpoint (if any) so the seek and
             /// SOS-restore steps below do not need to touch `scan_state`.
-            checkpoint_view:       Option<CheckpointView>
+            checkpoint_view:       Option<CheckpointView>,
+            progressive_view:      Option<ProgressiveCheckpointView>
         }
         #[derive(Clone, Copy)]
         struct CheckpointView {
@@ -1428,6 +1548,14 @@ where
             todo:            usize,
             pixels_written:  usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
+        }
+        #[derive(Clone)]
+        struct ProgressiveCheckpointView {
+            append_snapshot: HeaderAppendStateSnapshot,
+            sos_snapshot:    SosParamsSnapshot,
+            header_snapshot: ScanHeaderStateSnapshot,
+            stream_position: usize,
+            completed_scans: usize
         }
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
@@ -1443,6 +1571,15 @@ where
                     pixels_written:  checkpoint.pixels_written,
                     dc_predictions:  checkpoint.dc_predictions
                 }
+            }),
+            progressive_view:      state.progressive_checkpoint.as_deref().map(|checkpoint| {
+                ProgressiveCheckpointView {
+                    append_snapshot: checkpoint.append_snapshot,
+                    sos_snapshot:    checkpoint.sos_snapshot,
+                    header_snapshot: checkpoint.header_snapshot.clone(),
+                    stream_position: checkpoint.stream_position,
+                    completed_scans: checkpoint.completed_scans
+                }
             })
         });
         if let Some(plan) = scan_plan {
@@ -1451,16 +1588,21 @@ where
                 outer_append_snapshot,
                 outer_sos_snapshot,
                 outer_header_snapshot,
-                checkpoint_view
+                checkpoint_view,
+                progressive_view
             } = plan;
             // Roll back inline metadata from a previous scan attempt.
-            let resume_append_snapshot =
-                checkpoint_view.map_or(outer_append_snapshot, |view| view.append_snapshot);
+            let resume_append_snapshot = progressive_view.as_ref().map_or_else(
+                || checkpoint_view.map_or(outer_append_snapshot, |view| view.append_snapshot),
+                |view| view.append_snapshot
+            );
             resume_append_snapshot.rollback(self);
 
             // Restore the SOS state for the chosen resume point.
-            let resume_sos_snapshot =
-                checkpoint_view.map_or(outer_sos_snapshot, |view| view.sos_snapshot);
+            let resume_sos_snapshot = progressive_view.as_ref().map_or_else(
+                || checkpoint_view.map_or(outer_sos_snapshot, |view| view.sos_snapshot),
+                |view| view.sos_snapshot
+            );
             self.z_order = resume_sos_snapshot.z_order;
             self.num_scans = resume_sos_snapshot.num_scans;
             self.scan_subsampled = resume_sos_snapshot.scan_subsampled;
@@ -1477,7 +1619,18 @@ where
                 component.ac_huff_table = resume_sos_snapshot.ac_huff_tables[i];
             }
 
-            if let Some(view) = checkpoint_view {
+            let had_progressive_view = progressive_view.is_some();
+            if let Some(view) = progressive_view {
+                self.restore_scan_header_state(&view.header_snapshot);
+                self.stream.set_position(view.stream_position)?;
+                self.progressive_completed_scans = view.completed_scans;
+                self.progressive_displayed_scans = view.completed_scans;
+                self.pixels_decoded = 0;
+                for comp in &mut self.components {
+                    comp.dc_pred = 0;
+                    comp.dc_diff = 0;
+                }
+            } else if let Some(view) = checkpoint_view {
                 self.stream.set_position(view.stream_position)?;
                 self.todo = view.todo;
                 self.pixels_decoded = view.pixels_written;
@@ -1493,15 +1646,19 @@ where
                 self.restore_scan_header_state(&outer_header_snapshot);
                 self.stream.set_position(scan_start_position)?;
                 self.pixels_decoded = 0;
+                if self.is_progressive {
+                    self.progressive_completed_scans = 0;
+                    self.progressive_displayed_scans = 0;
+                }
                 // Full replay restores first-SOS tables/config and predictors.
                 for comp in &mut self.components {
                     comp.dc_pred = 0;
                     comp.dc_diff = 0;
                 }
             }
-            if checkpoint_view.is_none() {
-                // Progressive replay keeps the coefficient buffer: each scan
-                // overwrites its own bands before final output is produced.
+            if checkpoint_view.is_none() && !had_progressive_view {
+                // First-SOS replay restarts progressive coefficient assembly;
+                // scan-boundary retries restore `todo` in `parse_entropy_coded_data`.
                 self.todo =
                     if self.restart_interval == 0 { 0x7fff_ffff } else { self.restart_interval };
             }
@@ -1533,6 +1690,9 @@ where
         self.mcu_checkpoints_enabled = previous_scan_attempt || self.incremental_mode;
         if !previous_scan_attempt {
             self.pixels_decoded = 0;
+            if self.is_progressive {
+                self.progressive_displayed_scans = 0;
+            }
         }
         self.scan_decode_attempted = true;
 
@@ -1565,8 +1725,12 @@ where
                 );
                 if let Some(state) = self.scan_state.as_deref_mut() {
                     state.scan_checkpoint = None;
+                    state.progressive_checkpoint = None;
                 }
                 self.pixels_decoded = expected_size;
+                if self.is_progressive {
+                    self.progressive_displayed_scans = self.progressive_completed_scans;
+                }
                 Ok(())
             }
             Err(e) => Err(e)
