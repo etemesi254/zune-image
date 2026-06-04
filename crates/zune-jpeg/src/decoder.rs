@@ -79,7 +79,7 @@ pub type IDCTPtr = fn(&mut [i32; 64], &mut [i16], usize);
 
 /// Scan-phase state kept so `decode_into` can retry or replay after SOS.
 ///
-/// Full replay starts at the first SOS; `rst_checkpoint` can resume from a
+/// Full replay starts at the first SOS; `scan_checkpoint` can resume from a
 /// later restart or row boundary when one is still valid.
 #[derive(Clone)]
 pub(crate) struct ScanDecodeState {
@@ -87,7 +87,7 @@ pub(crate) struct ScanDecodeState {
     pub(crate) append_snapshot:     HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:        SosParamsSnapshot,
     pub(crate) header_snapshot:     ScanHeaderStateSnapshot,
-    pub(crate) rst_checkpoint:      Option<Box<ScanCheckpoint>>
+    pub(crate) scan_checkpoint:     Option<Box<ScanCheckpoint>>
 }
 
 /// SOS fields restored before replaying scan data.
@@ -402,7 +402,7 @@ where
             append_snapshot,
             sos_snapshot,
             header_snapshot,
-            rst_checkpoint: None
+            scan_checkpoint: None
         }));
         Ok(())
     }
@@ -410,7 +410,7 @@ where
     pub(crate) fn scan_checkpoint(&self) -> Option<&ScanCheckpoint> {
         self.scan_state
             .as_deref()
-            .and_then(|state| state.rst_checkpoint.as_deref())
+            .and_then(|state| state.scan_checkpoint.as_deref())
     }
 
     // Save a scan checkpoint at the current restart or MCU-row boundary.
@@ -456,9 +456,9 @@ where
                 dc_predictions,
                 bitstream_state
             };
-            match &mut state.rst_checkpoint {
+            match &mut state.scan_checkpoint {
                 Some(existing) => **existing = snapshot,
-                None => state.rst_checkpoint = Some(Box::new(snapshot))
+                None => state.scan_checkpoint = Some(Box::new(snapshot))
             }
         }
         Ok(())
@@ -476,7 +476,7 @@ where
     /// replaying from scan start.
     pub(crate) fn invalidate_scan_checkpoint(&mut self) {
         if let Some(state) = self.scan_state.as_mut() {
-            state.rst_checkpoint = None;
+            state.scan_checkpoint = None;
         }
     }
 
@@ -1339,7 +1339,7 @@ where
             outer_append_snapshot: state.append_snapshot,
             outer_sos_snapshot:    state.sos_snapshot,
             outer_header_snapshot: state.header_snapshot.clone(),
-            checkpoint_view:       state.rst_checkpoint.as_deref().map(|checkpoint| {
+            checkpoint_view:       state.scan_checkpoint.as_deref().map(|checkpoint| {
                 CheckpointView {
                     append_snapshot: checkpoint.append_snapshot,
                     sos_snapshot:    checkpoint.sos_snapshot,
@@ -1461,7 +1461,7 @@ where
 
         match result {
             Ok(()) => {
-                // Drop the RST checkpoint so a post-success replay starts
+                // Drop the scan checkpoint so a post-success replay starts
                 // from scan-start with zeroed DC predictors instead of
                 // pointing at stale entropy data.
                 debug_assert!(
@@ -1469,7 +1469,7 @@ where
                     "scan_state should be Some after a successful scan decode"
                 );
                 if let Some(state) = self.scan_state.as_deref_mut() {
-                    state.rst_checkpoint = None;
+                    state.scan_checkpoint = None;
                 }
                 self.pixels_decoded = expected_size;
                 Ok(())
