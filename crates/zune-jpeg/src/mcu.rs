@@ -67,7 +67,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // Move the persistent multi-SOS coefficient buffer out of `self` so
         // the inner decoder can borrow it mutably while still calling methods
         // on `self`. The buffer is put back on return and survives across
-        // `decode_into` retries, which is what lets per-RST checkpoints stay
+        // `decode_into` retries, which is what lets scan checkpoints stay
         // allocation-free.
         let mut progressive_mcus = core::mem::take(&mut self.progressive_mcus_buffer);
         let result = self.decode_mcu_ycbcr_baseline_inner::<B>(pixels, &mut progressive_mcus);
@@ -147,7 +147,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut tmp = [0_i32; DCT_BLOCK];
 
         let comp_len = self.components.len();
-        // True when we are resuming from a previously-saved RST checkpoint;
+        // True when we are resuming from a previously-saved scan checkpoint;
         // in that case the per-component `raw_coeff` and `progressive_mcus`
         // buffers still hold the data from the prior `decode_into` call and
         // must not be re-zeroed. On a fresh decode they are (re-)allocated.

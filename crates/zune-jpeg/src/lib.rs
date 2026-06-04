@@ -62,6 +62,13 @@
 //! still report no stable output rows until the later component scans have been
 //! decoded and final assembly has run.
 //!
+//! Scan checkpoints store only scalar resume state: stream position, next MCU
+//! row/column, restart countdown, SOS parameters, DC predictors, and bitstream
+//! state. Coefficients for already-decoded component scans stay on the decoder
+//! across retries. For multi-SOS images this means a retry can continue inside the
+//! current component scan, then decode later component scans, but output rows are
+//! not considered stable until final assembly has all component data.
+//!
 //! ```no_run
 //! use zune_core::bytestream::ZCursor;
 //! use zune_jpeg::errors::DecodeErrors;
