@@ -1258,6 +1258,270 @@ fn progressive_non_strict_scratch_path_matches_direct_path() {
 }
 
 #[test]
+fn progressive_dc_first_resume_uses_fine_checkpoint() {
+    for (name, data) in [
+        (
+            "synthetic_image_dc_first",
+            include_bytes!("../../../test-images/jpeg/synthetic_image.jpg").as_slice()
+        ),
+        (
+            "down_sampled_grayscale_prog_dc_first",
+            include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").as_slice()
+        ),
+        (
+            "kiara_limited_progressive_four_components_dc_first",
+            include_bytes!(
+                "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
+            )
+            .as_slice()
+        )
+    ] {
+        let expected = decode_oneshot(data);
+        let scans = progressive_sos_scans(data);
+        assert!(scans.len() > 1, "{name}: fixture must contain multiple scans");
+        let first_scan = scans[0];
+        assert_eq!(first_scan.spec_start, 0, "{name}: first scan must be DC");
+        assert_eq!(first_scan.spec_end, 0, "{name}: first scan must be DC-only");
+        assert_eq!(first_scan.succ_high, 0, "{name}: first scan must be first DC");
+
+        let second_sos_offset = sos_marker_offset(data, 1);
+        let scan_len = second_sos_offset - first_scan.data_start;
+        let cutoff = first_scan.data_start + scan_len / 2;
+        assert!(
+            cutoff > first_scan.data_start && cutoff < second_sos_offset,
+            "{name}: cutoff must land inside first DC entropy data"
+        );
+
+        let limit = Rc::new(Cell::new(cutoff));
+        let seek_log = Rc::new(RefCell::new(Vec::new()));
+        let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+
+        decoder.decode_headers().expect("headers should be visible at cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        let err = decoder
+            .decode_into(&mut out)
+            .expect_err("truncated first DC scan should be recoverable");
+        assert!(err.is_recoverable_eof(), "{name}: got {err:?}");
+        assert_eq!(decoder.decoded_scans(), Some(0), "{name}: active DC scan is partial");
+
+        seek_log.borrow_mut().clear();
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should resume progressive first DC scan");
+        assert_pixels_match(&out, &expected, name, data.len());
+
+        let seeks = seek_log.borrow();
+        let first_seek = seeks
+            .first()
+            .copied()
+            .expect("retry should seek to a progressive checkpoint");
+        assert!(
+            first_seek > first_scan.data_start && first_seek < second_sos_offset,
+            "{name}: retry should resume inside first DC entropy data; \
+             scan_start={}, seek={first_seek}, next_sos={second_sos_offset}",
+            first_scan.data_start
+        );
+    }
+}
+
+#[test]
+fn progressive_repeated_dc_eof_falls_back_to_scan_boundary() {
+    let name = "synthetic_image_repeated_dc_eof";
+    let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+    let first_scan = scans[0];
+    let second_sos_offset = sos_marker_offset(data, 1);
+    let first_cutoff = first_scan.data_start
+        + (second_sos_offset - first_scan.data_start) / 3;
+    let second_cutoff = first_cutoff + 1;
+
+    let limit = Rc::new(Cell::new(first_cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().expect("headers should be visible");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+
+    let first_error = decoder.decode_into(&mut out).expect_err("first cutoff should need data");
+    assert!(first_error.is_recoverable_eof(), "got {first_error:?}");
+
+    seek_log.borrow_mut().clear();
+    limit.set(second_cutoff);
+    let second_error = decoder
+        .decode_into(&mut out)
+        .expect_err("one additional byte should still need data");
+    assert!(second_error.is_recoverable_eof(), "got {second_error:?}");
+    let fine_seek = seek_log.borrow()[0];
+    assert!(
+        fine_seek > first_scan.data_start && fine_seek < second_sos_offset,
+        "second attempt should use the fine checkpoint"
+    );
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder.decode_into(&mut out).expect("full input should finish");
+    assert_pixels_match(&out, &expected, name, data.len());
+    assert_eq!(
+        seek_log.borrow()[0],
+        first_scan.data_start,
+        "a repeated EOF after fine resume should fall back to the scan boundary"
+    );
+}
+
+#[test]
+fn progressive_unsafe_scans_replay_from_scan_boundary() {
+    let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+
+    for (name, scan_index) in [
+        (
+            "ac_first",
+            scans
+                .iter()
+                .position(|scan| scan.spec_start > 0 && scan.succ_high == 0)
+                .expect("fixture must contain an AC first scan")
+        ),
+        (
+            "ac_refine",
+            scans
+                .iter()
+                .position(|scan| scan.spec_start > 0 && scan.succ_high > 0)
+                .expect("fixture must contain an AC refinement scan")
+        )
+    ] {
+        let scan = scans[scan_index];
+        let scan_end = if scan_index + 1 < scans.len() {
+            sos_marker_offset(data, scan_index + 1)
+        } else {
+            data.len()
+        };
+        let cutoff = (scan.data_start + 64).min(scan_end - 1);
+        assert!(
+            cutoff > scan.data_start && cutoff < scan_end,
+            "{name}: cutoff must land inside active scan entropy data"
+        );
+
+        let limit = Rc::new(Cell::new(cutoff));
+        let seek_log = Rc::new(RefCell::new(Vec::new()));
+        let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+
+        decoder.decode_headers().expect("headers should be visible at cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        let err = decoder
+            .decode_into(&mut out)
+            .expect_err("truncated unsafe progressive scan should be recoverable");
+        assert!(err.is_recoverable_eof(), "{name}: got {err:?}");
+
+        seek_log.borrow_mut().clear();
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should replay unsafe progressive scan safely");
+        assert_pixels_match(&out, &expected, name, data.len());
+
+        let seeks = seek_log.borrow();
+        let first_seek = seeks
+            .first()
+            .copied()
+            .expect("retry should seek to active scan boundary");
+        assert_eq!(
+            first_seek, scan.data_start,
+            "{name}: unsafe progressive scan must replay from scan boundary"
+        );
+    }
+}
+
+#[test]
+fn progressive_scan_boundary_marker_eof_keeps_completed_preview() {
+    let name = "down_sampled_grayscale_prog_scan_boundary";
+    let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+    assert!(scans.len() > 1, "fixture must contain multiple scans");
+    let second_sos_offset = sos_marker_offset(data, 1);
+    let limit = Rc::new(Cell::new(second_sos_offset + 1));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+
+    decoder
+        .decode_headers()
+        .expect("headers should be visible before scan-boundary EOF");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("partial SOS marker should be recoverable");
+    assert!(err.is_recoverable_eof(), "got {err:?}");
+    assert_eq!(decoder.decoded_scans(), Some(1));
+    assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
+
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should resume after scan-boundary EOF");
+    assert_pixels_match(&out, &expected, name, data.len());
+}
+
+#[test]
+#[cfg(feature = "arith")]
+fn progressive_arithmetic_restart_replays_dc_scan_boundary() {
+    let name = "arith_prog_restart_dc_boundary";
+    let data = include_bytes!("../../../test-images/jpeg/arith/prog-restart.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+    assert!(scans.len() > 1, "fixture must contain multiple scans");
+    let first_scan = scans[0];
+    let second_sos_offset = sos_marker_offset(data, 1);
+    let rst_positions: Vec<_> = list_jpeg_markers(data)
+        .into_iter()
+        .filter_map(|(offset, code, _)| (0xD0..=0xD7).contains(&code).then_some(offset))
+        .collect();
+    assert!(
+        !rst_positions.is_empty(),
+        "fixture must contain progressive restart markers"
+    );
+    let cutoff = first_scan.data_start + (second_sos_offset - first_scan.data_start) / 2;
+
+    let limit = Rc::new(Cell::new(cutoff));
+    let seek_log = Rc::new(RefCell::new(Vec::new()));
+    let cursor = GrowableCursor::with_seek_log(data, Rc::clone(&limit), Rc::clone(&seek_log));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+
+    decoder.decode_headers().expect("headers should be visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated arithmetic progressive DC scan should be recoverable");
+    assert!(err.is_recoverable_eof(), "got {err:?}");
+
+    seek_log.borrow_mut().clear();
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should replay arithmetic progressive scan");
+    assert_pixels_match(&out, &expected, name, data.len());
+
+    let seeks = seek_log.borrow();
+    let first_seek = seeks
+        .first()
+        .copied()
+        .expect("retry should seek to progressive scan boundary");
+    assert_eq!(
+        first_seek, first_scan.data_start,
+        "arithmetic progressive scans must not use fine Huffman checkpoints"
+    );
+}
+
+#[test]
 #[cfg(feature = "arith")]
 fn arithmetic_incremental_parity() {
     assert_incremental_decode_matrix(&[
