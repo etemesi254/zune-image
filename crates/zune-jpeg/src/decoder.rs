@@ -12,12 +12,15 @@
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use alloc::sync::Arc;
 use alloc::{format, vec};
 
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
+
+use crate::cancel::{CancelCheck, Debounced, CANCEL_POLL_INTERVAL_MCUS};
 
 #[cfg(feature = "arith")]
 use crate::bitstream::BitStream;
@@ -268,6 +271,8 @@ pub struct JpegDecoder<T> {
     pub(crate) todo:             usize,
     // decoder options
     pub(crate) options:          DecoderOptions,
+    // cooperative cancellation check polled during decode
+    pub(crate) cancel:           Option<Arc<dyn CancelCheck>>,
     // byte-stream
     pub(crate) stream:           ZReader<T>,
     // Indicate whether headers have been decoded
@@ -546,6 +551,7 @@ where
             restart_interval:  0,
             todo:              0x7fff_ffff,
             options:           options,
+            cancel:            None,
             stream:            ZReader::new(buffer),
             headers_decoded:   false,
             seen_sof:          false,
@@ -756,6 +762,31 @@ where
     /// // now decode
     /// decoder.decode().unwrap();
     /// ```
+    /// Set a cooperative cancellation check that is polled during decoding,
+    /// about every 1024 MCUs of decoding work.
+    ///
+    /// Any `Fn() -> bool` that is `Send + Sync` works as the check (e.g. a
+    /// closure over an `Arc<AtomicBool>` or a deadline). If it fires, decoding
+    /// returns
+    /// [`DecodeErrors::Cancelled`](crate::errors::DecodeErrors::Cancelled).
+    /// Passing [`NeverCancel`](crate::NeverCancel) (or any check whose
+    /// [`may_cancel`](crate::CancelCheck::may_cancel) is `false`) clears it; the
+    /// default is no check, which costs a single predicted branch per poll.
+    pub fn set_cancel(&mut self, cancel: impl CancelCheck + 'static) {
+        self.cancel = if cancel.may_cancel() {
+            Some(Arc::new(cancel) as Arc<dyn CancelCheck>)
+        } else {
+            None
+        };
+    }
+
+    /// A stack-local [`Debounced`] view of the cancel check for the current
+    /// scan, with the poll interval scaled from MCUs to the scan's MCU-row
+    /// width. Owns a clone of the check, so it can live in a `&mut self` loop.
+    pub(crate) fn cancel_debounced(&self, mcu_width: usize) -> Debounced {
+        Debounced::new(self.cancel.clone(), CANCEL_POLL_INTERVAL_MCUS / mcu_width.max(1))
+    }
+
     pub fn set_options(&mut self, options: DecoderOptions) {
         self.options = options;
     }
