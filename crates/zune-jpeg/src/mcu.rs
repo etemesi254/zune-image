@@ -253,6 +253,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             resume_row = 0;
             resume_col = 0;
 
+            let mut cancel = self.cancel_debounced(mcu_width);
             for i in current_resume_row..mcu_height {
                 let start_col = if i == current_resume_row {
                     current_resume_col
@@ -307,6 +308,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     stream: &mut stream,
                     progressive: &mut *progressive_mcus,
                 };
+                if cancel.is_cancelled() {
+                    return Err(DecodeErrors::Cancelled);
+                }
                 let terminate = if all_components_in_first_scan {
                     self.decode_mcu_width::<false, B>(&mut mcu_width_context)?
                 } else {

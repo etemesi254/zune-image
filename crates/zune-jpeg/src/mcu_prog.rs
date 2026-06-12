@@ -329,7 +329,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let dc_pos = self.components[k].dc_huff_table /MAX_COMPONENTS;
         let width_stride = self.components[k].width_stride / 8;
 
+        let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..mcu_width {
                 let start = 64 * (j + i * width_stride);
                 let dc_pred_opt: Option<&mut i16> = buffer[k].get_mut(start);
@@ -361,7 +365,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let width_stride = self.components[k].width_stride / 8;
         let component_buffer = &mut buffer[k];
 
+        let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..mcu_width {
                 let start = 64 * (j + i * width_stride);
                 let dc_pred_id: Option<&mut i16> = component_buffer.get_mut(start);
@@ -383,7 +391,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let ac_pos = self.components[k].ac_huff_table;
         let component_buffer_data = &mut buffer[k];
 
+        let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..mcu_width {
                 if *stream.eob_run() > 0 {
                     // handle EOB runs here.
@@ -416,7 +428,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let component_buffer_data = &mut buffer[k];
         let width_stride = self.components[k].width_stride / 8;
 
+        let mut cancel = self.cancel_debounced(mcu_width);
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..mcu_width {
                 let start = 64 * (j + i * width_stride);
                 let data: &mut [i16; 64] = component_buffer_data
@@ -438,7 +454,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn parse_dc_first_interleaved<B: BitStream>(
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
+        let mut cancel = self.cancel_debounced(self.mcu_x);
         for i in 0..self.mcu_y {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..self.mcu_x {
                 for k in 0..self.num_scans {
                     let n = self.z_order[k as usize];
@@ -476,7 +496,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn parse_dc_refine_interleaved<B: BitStream>(
         &mut self, stream: &mut B, buffer: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
+        let mut cancel = self.cancel_debounced(self.mcu_x);
         for i in 0..self.mcu_y {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             for j in 0..self.mcu_x {
                 for k in 0..self.num_scans {
                     let n = self.z_order[k as usize];
@@ -678,7 +702,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut pixels_written = 0;
 
         // dequantize, idct and color convert.
+        let mut cancel = self.cancel_debounced(self.mcu_x);
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             'component: for (position, component) in &mut self.components.iter_mut().enumerate() {
                 if !component.needed {
                     continue 'component;
