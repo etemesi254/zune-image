@@ -74,6 +74,11 @@
 //! after later scans, so they are exposed through `decoded_preview_output_bytes()`,
 //! `decoded_preview_scanlines()`, and `decoded_scans()` rather than changing the
 //! stable-output meaning of `decoded_output_bytes()` and `decoded_scanlines()`.
+//! Progressive entropy decoding does not first write scan data to a separate
+//! decoder-owned preview pixel buffer: the active scan is decoded into scratch
+//! coefficient storage, completed scans are committed to decoder-owned coefficient
+//! buffers, and recoverable EOF may then render those committed coefficients into
+//! the caller-provided output slice as a replaceable preview.
 //!
 //! On recoverable EOF, callers can use the same output buffer in two ways:
 //!
