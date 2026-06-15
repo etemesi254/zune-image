@@ -762,9 +762,12 @@ where
     /// Return the number of output bytes currently holding a progressive
     /// preview image.
     ///
-    /// Progressive previews are assembled from completed scans and may change
-    /// after later scans. They are separate from the stable final-output prefix
-    /// reported by [`decoded_output_bytes`](Self::decoded_output_bytes).
+    /// Progressive previews are replaceable full-frame renders assembled from
+    /// completed scans. The bytes are already IDCT-processed, upsampled, and
+    /// color-converted into the caller's output buffer; raw coefficient planes
+    /// are not exposed. On the first scan attempt, preview preservation is
+    /// enabled only if [`set_incremental_mode`](Self::set_incremental_mode) was
+    /// called before decoding began.
     ///
     /// Returns `None` until headers are decoded, and for non-progressive
     /// images. For progressive images, returns `Some(0)` until the first
@@ -783,11 +786,8 @@ where
 
     /// Return the number of scanlines currently holding a progressive preview.
     ///
-    /// Progressive previews are full-frame renders assembled from completed
-    /// scans, so this returns the image height once any completed scan has been
-    /// rendered into the output buffer. The final cap to image height mirrors
-    /// [`decoded_scanlines`](Self::decoded_scanlines) and keeps the method
-    /// conservative if the output layout ever changes.
+    /// Progressive previews are full-frame renders, so this returns image height
+    /// once a preview has been rendered and `Some(0)` before then.
     #[must_use]
     pub fn decoded_preview_scanlines(&self) -> Option<usize> {
         let preview_bytes = self.decoded_preview_output_bytes()?;
@@ -815,13 +815,14 @@ where
     /// Enable or disable incremental mode.
     ///
     /// Call this before the first `decode_into` scan attempt when the caller
-    /// expects input to arrive incrementally. In this mode baseline Huffman
-    /// single-SOS scans save row checkpoints on the first attempt, trading a
-    /// small amount of checkpoint work for less replay on the next retry.
+    /// expects input to arrive incrementally. For baseline images, Huffman scans
+    /// save row checkpoints on the first attempt. For progressive images, the
+    /// active scan decodes through scratch coefficient storage so completed
+    /// scans can be rendered as previews if that first attempt reaches EOF.
     ///
-    /// The default is `false`, which preserves the zero-overhead one-shot
-    /// path and only enables row checkpoints after a previous scan decode
-    /// attempt has run.
+    /// The default is `false`, which keeps one-shot decoding on the
+    /// lowest-overhead path. After a recoverable EOF, later attempts may enable
+    /// the same incremental preservation automatically.
     pub fn set_incremental_mode(&mut self, enabled: bool) {
         self.incremental_mode = enabled;
     }
@@ -1486,12 +1487,10 @@ where
     /// same decoder and output buffer for retries. After a recoverable scan
     /// EOF, [`decoded_output_bytes`](Self::decoded_output_bytes) and
     /// [`decoded_scanlines`](Self::decoded_scanlines) describe the stable
-    /// prefix in that output buffer. For progressive images, completed scans
-    /// can also be displayed as full-frame previews; use
+    /// prefix in that output buffer. For progressive images, use
     /// [`decoded_preview_output_bytes`](Self::decoded_preview_output_bytes),
     /// [`decoded_preview_scanlines`](Self::decoded_preview_scanlines), and
-    /// [`decoded_scans`](Self::decoded_scans) for that replaceable preview
-    /// surface.
+    /// [`decoded_scans`](Self::decoded_scans) to inspect any rendered preview.
     ///
     /// Embedders should use the returned error to distinguish retryable EOF
     /// from hard failures: `Err(e)` where `e.is_recoverable_eof()` means feed

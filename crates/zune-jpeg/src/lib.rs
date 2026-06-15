@@ -54,8 +54,8 @@
 //! attempt, so one-shot decoding keeps the lowest-overhead path. Call
 //! `set_incremental_mode(true)` before the first `decode_into()` attempt when the
 //! caller expects input to arrive incrementally; this records checkpoints during
-//! the first baseline Huffman scan attempt and can reduce replay work on the next
-//! retry.
+//! baseline Huffman scans and enables progressive preview preservation on the
+//! first progressive decode attempt.
 //!
 //! Fine-grained row checkpoints currently apply within baseline Huffman scan
 //! bodies, including baseline multi-SOS / non-interleaved images. Those images may
@@ -69,16 +69,16 @@
 //! current component scan, then decode later component scans, but output rows are
 //! not considered stable until final assembly has all component data.
 //!
-//! For progressive JPEGs, completed scans can be rendered as full-frame previews
-//! assembled from committed coefficient data. These preview pixels may change
-//! after later scans, so they are exposed through `decoded_preview_output_bytes()`,
-//! `decoded_preview_scanlines()`, and `decoded_scans()` rather than changing the
-//! stable-output meaning of `decoded_output_bytes()` and `decoded_scanlines()`.
-//! Progressive entropy decoding does not first write scan data to a separate
-//! decoder-owned preview pixel buffer: the active scan is decoded into scratch
-//! coefficient storage, completed scans are committed to decoder-owned coefficient
-//! buffers, and recoverable EOF may then render those committed coefficients into
-//! the caller-provided output slice as a replaceable preview.
+//! For progressive JPEGs, incremental scan preservation can render completed
+//! scans as full-frame previews from committed coefficient data. The preview APIs
+//! report that replaceable frame separately from the stable final-output prefix,
+//! which remains zero until all scans complete. When preservation is enabled, the
+//! active scan decodes into scratch coefficient storage and is committed only
+//! after the scan completes. No decoder-owned preview pixel buffer is kept;
+//! recoverable EOF may render committed coefficients into the caller-provided
+//! output slice. Internal buffers are raw DCT coefficient planes, while preview
+//! bytes are already IDCT-processed, upsampled, and converted into the requested
+//! output colorspace.
 //!
 //! On recoverable EOF, callers can use the same output buffer in two ways:
 //!
@@ -86,10 +86,9 @@
 //!   pixels. These bytes will not need to be corrected by later retries. For
 //!   progressive JPEGs, this stable prefix remains zero until all scans complete.
 //! - `decoded_preview_output_bytes()` / `decoded_preview_scanlines()` describe a
-//!   progressive preview assembled from completed scans. This is useful for
-//!   browser-style display, but those pixels may be replaced by later scans.
-//!   These methods return `None` for non-progressive images and `Some(0)` for
-//!   progressive images before the first preview is rendered.
+//!   progressive preview assembled from completed scans. These methods return
+//!   `None` for non-progressive images and `Some(0)` for progressive images before
+//!   the first preview is rendered.
 //! - `decoded_scans()` reports how many progressive scans are represented in the
 //!   current preview. It returns `None` for non-progressive images; if the value
 //!   is unchanged across retries, no newer preview has been produced.
@@ -134,12 +133,13 @@
 //!                 let preview_scanlines = decoder.decoded_preview_scanlines().unwrap_or(0);
 //!                 let preview_scans = decoder.decoded_scans().unwrap_or(0);
 //!
-//!                 if stable_bytes > 0 {
+//!                 if stable_bytes > 0 && stable_scanlines > 0 {
 //!                     // Display or copy the stable prefix in `pixels[..stable_bytes]`.
-//!                 } else if preview_bytes > 0 && preview_scans > displayed_preview_scans {
-//!                     // Display the progressive preview in `pixels[..preview_bytes]`.
-//!                     // `preview_scanlines` is full height once a preview is available,
-//!                     // and `preview_scans` tells how many completed scans it represents.
+//!                 } else if preview_bytes > 0
+//!                     && preview_scanlines > 0
+//!                     && preview_scans > displayed_preview_scans
+//!                 {
+//!                     // Repaint the replaceable preview in `pixels[..preview_bytes]`.
 //!                     displayed_preview_scans = preview_scans;
 //!                 }
 //!
