@@ -32,9 +32,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// This routine decodes a progressive image, stopping if it finds any error.
     ///
     /// Completed progressive scans are committed into the decoder-owned
-    /// coefficient buffer. The current scan decodes into a scratch copy so a
-    /// recoverable EOF can expose the last completed scan without reapplying
-    /// partially decoded refinement data on retry.
+    /// coefficient buffer. When incremental scan preservation is enabled, the
+    /// current scan decodes into a scratch copy so a recoverable EOF can expose
+    /// the last completed scan without reapplying partially decoded refinement
+    /// data on retry.
     #[allow(
         clippy::needless_range_loop,
         clippy::cast_sign_loss,
@@ -45,8 +46,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     pub(crate) fn decode_mcu_ycbcr_progressive<B: BitStream>(
         &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
-        // Move the committed coefficient buffer out of `self` so each scan can
-        // decode into a scratch copy while methods on `self` remain callable.
+        // Move the coefficient buffers out so scan helpers can borrow `self`
+        // while receiving the buffers separately.
         let mut block = core::mem::take(&mut self.progressive_mcus_buffer);
         let result = self.decode_mcu_ycbcr_progressive_inner::<B>(pixels, &mut block);
         self.progressive_mcus_buffer = block;
@@ -118,7 +119,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let mut stream = B::new_progressive(self.succ_low, self.spec_start, self.spec_end);
 
-        if !self.decode_progressive_scan(&mut stream, block, pixels)? {
+        let preserve_progressive_scans = self.mcu_checkpoints_enabled;
+
+        if !self.decode_progressive_scan(&mut stream, block, pixels, preserve_progressive_scans)? {
             return self.finish_progressive_decoding(block, pixels);
         }
         if self.progressive_completed_scans > self.options.jpeg_get_max_scans() {
@@ -130,7 +133,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         let mut marker = match get_marker(&mut self.stream, &mut stream) {
             Ok(marker) => marker,
-            Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
+            Err(e) => {
+                return self.handle_progressive_inter_scan_error(
+                    e,
+                    block,
+                    pixels,
+                    preserve_progressive_scans,
+                )
+            }
         };
 
         // If marker is EOI, we are done; otherwise continue scanning.
@@ -138,7 +148,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             match marker {
                 Marker::SOS => {
                     if let Err(e) = parse_sos(self) {
-                        return self.handle_progressive_inter_scan_error(e, block, pixels);
+                        return self.handle_progressive_inter_scan_error(
+                            e,
+                            block,
+                            pixels,
+                            preserve_progressive_scans,
+                        );
                     }
 
                     stream.update_progressive_params(
@@ -147,7 +162,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         self.spec_start,
                         self.spec_end,
                     );
-                    if !self.decode_progressive_scan(&mut stream, block, pixels)? {
+                    if !self.decode_progressive_scan(
+                        &mut stream,
+                        block,
+                        pixels,
+                        preserve_progressive_scans,
+                    )? {
                         break 'eoi;
                     }
 
@@ -165,7 +185,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             B::reset_arith_tables(&mut self.entropy_tables);
                             continue 'eoi;
                         }
-                        Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
+                        Err(e) => {
+                            return self.handle_progressive_inter_scan_error(
+                                e,
+                                block,
+                                pixels,
+                                preserve_progressive_scans,
+                            )
+                        }
                     }
                 }
                 Marker::RST(_n) => {
@@ -173,7 +200,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
                 _ => {
                     if let Err(e) = self.parse_marker_inner(marker) {
-                        return self.handle_progressive_inter_scan_error(e, block, pixels);
+                        return self.handle_progressive_inter_scan_error(
+                            e,
+                            block,
+                            pixels,
+                            preserve_progressive_scans,
+                        );
                     }
                 }
             }
@@ -182,7 +214,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 Ok(marker_n) => {
                     marker = marker_n;
                 }
-                Err(e) => return self.handle_progressive_inter_scan_error(e, block, pixels)
+                Err(e) => {
+                    return self.handle_progressive_inter_scan_error(
+                        e,
+                        block,
+                        pixels,
+                        preserve_progressive_scans,
+                    )
+                }
             }
         }
 
@@ -191,7 +230,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_progressive_scan<B: BitStream>(
         &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        preserve_completed_scans: bool,
     ) -> Result<bool, DecodeErrors> {
+        if !preserve_completed_scans {
+            return self.decode_progressive_scan_direct(stream, block);
+        }
+
         self.checkpoint_progressive_scan(self.progressive_completed_scans)?;
         let mut touched_components = [false; MAX_COMPONENTS];
         for scan_index in 0..usize::from(self.num_scans) {
@@ -242,11 +286,45 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         Ok(true)
     }
 
+    fn decode_progressive_scan_direct<B: BitStream>(
+        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS],
+    ) -> Result<bool, DecodeErrors> {
+        let result = self.parse_entropy_coded_data(stream, block);
+
+        if let Err(e) = result {
+            if e.is_recoverable_eof() {
+                self.discard_progressive_partial();
+                return Err(e);
+            }
+            if self.stream.eof()? {
+                self.discard_progressive_partial();
+                return Err(DecodeErrors::ExhaustedData);
+            }
+            if self.options.strict_mode() {
+                return Err(e);
+            }
+            error!("{e}");
+            return Ok(false);
+        }
+        if stream.overread_by() > 0 {
+            self.discard_progressive_partial();
+            return Err(DecodeErrors::ExhaustedData);
+        }
+
+        self.progressive_completed_scans += 1;
+        Ok(true)
+    }
+
     fn handle_progressive_inter_scan_error(
         &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        preserve_completed_scans: bool,
     ) -> Result<(), DecodeErrors> {
         if error.is_recoverable_eof() {
-            self.finish_progressive_partial(block, pixels)?;
+            if preserve_completed_scans {
+                self.finish_progressive_partial(block, pixels)?;
+            } else {
+                self.discard_progressive_partial();
+            }
             return Err(error);
         }
         if self.options.strict_mode() {
@@ -254,6 +332,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
         error!("{error}");
         self.finish_progressive_decoding(block, pixels)
+    }
+
+    fn discard_progressive_partial(&mut self) {
+        self.invalidate_progressive_scan_checkpoint();
+        self.progressive_completed_scans = 0;
+        self.progressive_displayed_scans = 0;
+        self.pixels_decoded = 0;
     }
 
     fn finish_progressive_partial(

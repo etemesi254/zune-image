@@ -856,6 +856,7 @@ fn progressive_completed_dc_scan_is_displayable() {
         let limit = Rc::new(Cell::new(cutoff));
         let cursor = GrowableCursor::new(data, Rc::clone(&limit));
         let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
 
         decoder.decode_headers().expect("headers should be visible at cutoff");
         let height = usize::from(decoder.info().unwrap().height);
@@ -899,6 +900,42 @@ fn progressive_completed_dc_scan_is_displayable() {
 }
 
 #[test]
+fn progressive_preview_first_attempt_is_incremental_opt_in() {
+    let name = "down_sampled_grayscale_prog_first_attempt_preview_opt_in";
+    let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
+    let expected = decode_oneshot(data);
+    let scans = progressive_sos_scans(data);
+    assert!(scans.len() > 1, "fixture must contain multiple scans");
+
+    let cutoff = scans[1].data_start + 1;
+    let limit = Rc::new(Cell::new(cutoff));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+
+    decoder.decode_headers().expect("headers should be visible at cutoff");
+    let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+    let err = decoder
+        .decode_into(&mut out)
+        .expect_err("truncated second progressive scan should be recoverable");
+    assert!(err.is_recoverable_eof(), "got {err:?}");
+    assert_eq!(decoder.decoded_scans(), Some(0));
+    assert_eq!(decoder.decoded_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_scanlines(), Some(0));
+    assert_eq!(decoder.decoded_preview_output_bytes(), Some(0));
+    assert_eq!(decoder.decoded_preview_scanlines(), Some(0));
+    assert!(
+        out.iter().all(|byte| *byte == 0),
+        "first non-incremental attempt should not render a progressive preview"
+    );
+
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut out)
+        .expect("full input should finish progressive decode");
+    assert_pixels_match(&out, &expected, name, data.len());
+}
+
+#[test]
 fn progressive_ac_scan_retry_keeps_last_completed_preview() {
     for (name, data) in [
         (
@@ -924,6 +961,7 @@ fn progressive_ac_scan_retry_keeps_last_completed_preview() {
         let limit = Rc::new(Cell::new(cutoff));
         let cursor = GrowableCursor::new(data, Rc::clone(&limit));
         let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
 
         decoder.decode_headers().expect("headers should be visible at cutoff");
         let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
@@ -974,6 +1012,7 @@ fn progressive_refinement_retry_does_not_apply_partial_scan_twice() {
     let limit = Rc::new(Cell::new(cutoff));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
 
     decoder.decode_headers().expect("headers should be visible at cutoff");
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
