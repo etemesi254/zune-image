@@ -1,7 +1,7 @@
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::log::{trace, warn};
+use zune_isobmff::{BoxHeader, BoxSize, FourCC};
 
-use crate::bmf_reader::{BoxHeader, BoxSize, FourCC};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, HdlrSection, IdatSection, IinfSection, IlocExtent, IlocItem,

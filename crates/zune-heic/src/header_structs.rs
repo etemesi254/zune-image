@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::bmf_reader::FourCC;
+use zune_isobmff::FourCC;
 
 #[derive(Debug, Clone)]
 pub struct FtypHeader {

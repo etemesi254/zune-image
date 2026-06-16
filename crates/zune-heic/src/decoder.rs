@@ -6,7 +6,7 @@ use zune_core::colorspace::ColorSpace;
 use zune_core::log::trace;
 use zune_core::options::DecoderOptions;
 
-use crate::bmf_reader::{BoxHeader, BoxSize};
+use zune_isobmff::{BoxHeader, BoxSize};
 use crate::errors::HeicErrors;
 use crate::header_structs::{
     ColourInformation, FtypHeader, ItemProperty, MDatSection, MetaSection,
