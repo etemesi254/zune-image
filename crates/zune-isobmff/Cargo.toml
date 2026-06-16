@@ -1,0 +1,7 @@
+[package]
+name = "zune-isobmff"
+version = "0.5.0"
+edition = "2024"
+
+[dependencies]
+zune-core = { version = "0.5.1", path = "../zune-core" }

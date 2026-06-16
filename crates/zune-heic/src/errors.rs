@@ -3,29 +3,19 @@
 use core::fmt;
 
 use zune_core::bytestream::ZByteIoError;
+use zune_isobmff::{IsoBmffErrors, FourCC};
 
-use crate::bmf_reader::FourCC;
 use crate::hevc_decoder::nal_parser::NalError;
 
 pub enum HeicErrors {
     /// Wraps an underlying I/O failure.
     Io(ZByteIoError),
 
-    /// A box header reported a size that is inconsistent with its position
-    /// or the surrounding container.
-    InvalidBoxSize {
-        offset: u64,
-        size:   u64
-    },
-
     /// The parser needed more bytes than were available.
     UnexpectedEof {
         offset: u64,
         needed: u64
     },
-
-    /// The four-byte box-type field contained non-printable bytes.
-    InvalidBoxType([u8; 4]),
 
     /// A FullBox carried a `version` value the parser does not handle.
     UnsupportedVersion {
@@ -52,7 +42,8 @@ pub enum HeicErrors {
     Generic {
         msg: String
     },
-    NalErrors(NalError)
+    NalErrors(NalError),
+    HeaderError(IsoBmffErrors),
 }
 impl fmt::Display for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -60,17 +51,11 @@ impl fmt::Display for HeicErrors {
             HeicErrors::Io(e) => {
                 write!(f, "I/O error: {e:?}")
             }
-            HeicErrors::InvalidBoxSize { offset, size } => {
-                write!(f, "Box at offset {offset} has invalid size {size}")
-            }
             HeicErrors::UnexpectedEof { offset, needed } => {
                 write!(
                     f,
                     "Unexpected end of data: need {needed} bytes at offset {offset}"
                 )
-            }
-            HeicErrors::InvalidBoxType(bytes) => {
-                write!(f, "Box type contains non-ASCII bytes: {bytes:?}")
             }
             HeicErrors::UnsupportedVersion { offset, version } => {
                 write!(
@@ -100,6 +85,9 @@ impl fmt::Display for HeicErrors {
             HeicErrors::NalErrors(err) => {
                 write!(f, "{err}")
             }
+            HeicErrors::HeaderError(err) => {
+                write!(f, "{err}")
+            }
         }
     }
 }
@@ -107,19 +95,11 @@ impl fmt::Debug for HeicErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HeicErrors::Io(e) => f.debug_tuple("Io").field(e).finish(),
-            HeicErrors::InvalidBoxSize { offset, size } => f
-                .debug_struct("InvalidBoxSize")
-                .field("offset", offset)
-                .field("size", size)
-                .finish(),
             HeicErrors::UnexpectedEof { offset, needed } => f
                 .debug_struct("UnexpectedEof")
                 .field("offset", offset)
                 .field("needed", needed)
                 .finish(),
-            HeicErrors::InvalidBoxType(bytes) => {
-                f.debug_tuple("InvalidBoxType").field(bytes).finish()
-            }
             HeicErrors::UnsupportedVersion { offset, version } => f
                 .debug_struct("UnsupportedVersion")
                 .field("offset", offset)
@@ -145,7 +125,8 @@ impl fmt::Debug for HeicErrors {
                 write!(f, "Would underflow ({a}-{b}) ")
             }
             HeicErrors::Generic { msg } => f.debug_tuple("Generic").field(msg).finish(),
-            HeicErrors::NalErrors(msg) => f.debug_tuple("NalErrors").field(msg).finish()
+            HeicErrors::NalErrors(msg) => f.debug_tuple("NalErrors").field(msg).finish(),
+            HeicErrors::HeaderError(err) => f.debug_tuple("HeaderError").field(err).finish(),
         }
     }
 }
@@ -160,5 +141,11 @@ impl From<ZByteIoError> for HeicErrors {
 impl From<NalError> for HeicErrors {
     fn from(value: NalError) -> Self {
         Self::NalErrors(value)
+    }
+}
+
+impl From<IsoBmffErrors> for HeicErrors {
+    fn from(value: IsoBmffErrors) -> Self {
+        Self::HeaderError(value)
     }
 }

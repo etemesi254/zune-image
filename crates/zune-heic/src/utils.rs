@@ -1,6 +1,6 @@
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
+use zune_isobmff::FourCC;
 
-use crate::bmf_reader::FourCC;
 use crate::errors::HeicErrors;
 
 pub(crate) fn read_sized_int<R: ZByteReaderTrait>(
