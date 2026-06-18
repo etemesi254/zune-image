@@ -273,6 +273,8 @@ pub struct JpegDecoder<T> {
     pub(crate) options:          DecoderOptions,
     // cooperative cancellation check polled during decode
     pub(crate) cancel:           Option<Arc<dyn CancelCheck>>,
+    // MCUs of decoding work between polls of `cancel`; see set_cancel_interval
+    pub(crate) poll_interval:    usize,
     // byte-stream
     pub(crate) stream:           ZReader<T>,
     // Indicate whether headers have been decoded
@@ -552,6 +554,7 @@ where
             todo:              0x7fff_ffff,
             options:           options,
             cancel:            None,
+            poll_interval:     CANCEL_POLL_INTERVAL_MCUS,
             stream:            ZReader::new(buffer),
             headers_decoded:   false,
             seen_sof:          false,
@@ -763,7 +766,8 @@ where
     /// decoder.decode().unwrap();
     /// ```
     /// Set a cooperative cancellation check that is polled during decoding,
-    /// about every 1024 MCUs of decoding work.
+    /// about every 1024 MCUs of decoding work by default (see
+    /// [`set_cancel_interval`](Self::set_cancel_interval) to change the rate).
     ///
     /// Any `Fn() -> bool` that is `Send + Sync` works as the check (e.g. a
     /// closure over an `Arc<AtomicBool>` or a deadline). If it fires, decoding
@@ -780,11 +784,30 @@ where
         };
     }
 
+    /// Set how many MCUs of decoding work pass between polls of the cancel
+    /// check set with [`set_cancel`](Self::set_cancel). Defaults to 1024.
+    ///
+    /// Smaller values poll more often — more responsive cancellation for a
+    /// marginally higher polling cost — while larger values poll less often.
+    /// The decoder rounds the interval down to whole MCU rows, so the finest
+    /// effective granularity is one poll per MCU row; `1` selects it. Zero is
+    /// treated as one.
+    pub fn set_cancel_interval(&mut self, mcus: usize) {
+        self.poll_interval = mcus.max(1);
+    }
+
+    /// MCUs of decoding work between polls of the cancel check; see
+    /// [`set_cancel_interval`](Self::set_cancel_interval).
+    #[must_use]
+    pub fn cancel_interval(&self) -> usize {
+        self.poll_interval
+    }
+
     /// A stack-local [`Debounced`] view of the cancel check for the current
     /// scan, with the poll interval scaled from MCUs to the scan's MCU-row
     /// width. Owns a clone of the check, so it can live in a `&mut self` loop.
     pub(crate) fn cancel_debounced(&self, mcu_width: usize) -> Debounced {
-        Debounced::new(self.cancel.clone(), CANCEL_POLL_INTERVAL_MCUS / mcu_width.max(1))
+        Debounced::new(self.cancel.clone(), self.poll_interval / mcu_width.max(1))
     }
 
     pub fn set_options(&mut self, options: DecoderOptions) {
