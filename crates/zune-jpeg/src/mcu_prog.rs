@@ -269,6 +269,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 return Err(e);
             }
             error!("{e}");
+            // Match the direct path's best-effort non-strict output: keep
+            // partial corrupt-scan coefficients, but never for recoverable EOF.
+            for idx in 0..MAX_COMPONENTS {
+                if touched_components[idx] {
+                    core::mem::swap(&mut block[idx], &mut scan_block[idx]);
+                }
+            }
+            self.invalidate_progressive_scan_checkpoint();
             return Ok(false);
         }
         if stream.overread_by() > 0 {
