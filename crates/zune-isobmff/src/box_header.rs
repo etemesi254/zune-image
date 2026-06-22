@@ -28,11 +28,11 @@ pub struct BoxHeader {
     /// Total size of the box in bytes (header + payload).
     total_size: BoxSize,
     /// The four-character box type.
-    pub box_type: FourCC,
+    box_type: FourCC,
     /// For 'uuid' boxes: the 16-byte UUID following the type field.
     uuid: Option<[u8; 16]>,
     /// Byte length of the header itself (8 or 16 for extended size, +16 for uuid).
-    pub header_size: u64,
+    header_size: u64,
 }
 
 impl BoxHeader {
@@ -85,11 +85,21 @@ impl BoxHeader {
         self.offset
     }
 
+    /// Size of the header for this box.
+    pub fn get_header_size(&self) -> u64 {
+        self.header_size
+    }
+
     /// Total size for this box.
     ///
     /// This includes the header and payload bytes.
     pub fn get_total_size(&self) -> &BoxSize {
         &self.total_size
+    }
+
+    /// Box type identifying the box structure.
+    pub fn get_box_type(&self) -> &FourCC {
+        &self.box_type
     }
 
     /// The UUID defining the specific box, if using the `uuid` box type.

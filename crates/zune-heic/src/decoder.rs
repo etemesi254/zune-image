@@ -95,19 +95,19 @@ where
         loop {
             let header = BoxHeader::read(&mut self.stream)?;
 
-            match &header.box_type.0 {
+            match &header.get_box_type().0 {
                 b"ftyp" => {
                     let ftype = decode_ftyp(&mut self.stream, &header)?;
                     self.ftyp_section = Some(ftype);
                 }
                 b"mdat" => {
                     // store mdat option
-                    trace!("Found MDAT section :{:?}", header.total_size);
+                    trace!("Found MDAT section :{:?}", header.get_total_size());
                     let payload_start_offset = self.stream.position()?;
                     // skip to the next section
-                    match header.total_size {
+                    match header.get_total_size() {
                         BoxSize::Absolute(total_size) => {
-                            let payload_size = total_size.saturating_sub(header.header_size);
+                            let payload_size = total_size.saturating_sub(header.get_header_size());
 
                             if payload_size > self.options.hevc_max_mdat_size() as u64 {
                                 return Err(HeicErrors::Generic {
@@ -142,9 +142,9 @@ where
                     self.meta_section = Some(meta);
                 }
                 // skip to another section
-                _ => match header.total_size {
+                _ => match header.get_total_size() {
                     BoxSize::Absolute(total_size) => {
-                        let payload_size_opt = total_size.checked_sub(header.header_size);
+                        let payload_size_opt = total_size.checked_sub(header.get_header_size());
                         match payload_size_opt {
                             Some(payload_size) => {
                                 self.stream.skip(payload_size as usize)?;
@@ -153,7 +153,7 @@ where
                                 return Err(HeicErrors::Generic {
                                     msg: format!(
                                         "Payload size {total_size} larger than header size {}",
-                                        header.header_size
+                                        header.get_header_size()
                                     ),
                                 });
                             }
