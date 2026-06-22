@@ -25,20 +25,20 @@ fn subtract_value(value: usize, subtract: usize) -> Result<usize, HeicErrors> {
 #[track_caller]
 #[inline]
 fn get_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
-    match box_header.total_size {
-        BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.header_size) as usize),
+    match box_header.get_total_size() {
+        BoxSize::Absolute(s) => Ok(s.saturating_sub(box_header.get_header_size()) as usize),
         BoxSize::ToEnd => Err(HeicErrors::ParseError {
-            box_type: box_header.box_type,
+            box_type: *box_header.get_box_type(),
             msg: "Needs absolute size".into(),
         })
     }
 }
 #[inline]
 fn get_abs_length(box_header: &BoxHeader) -> Result<usize, HeicErrors> {
-    match box_header.total_size {
-        BoxSize::Absolute(s) => Ok(s as usize),
+    match box_header.get_total_size() {
+        BoxSize::Absolute(s) => Ok(*s as usize),
         BoxSize::ToEnd => Err(HeicErrors::ParseError {
-            box_type: box_header.box_type,
+            box_type: *box_header.get_box_type(),
             msg: "Needs absolute size".into(),
         })
     }
@@ -50,7 +50,7 @@ pub fn decode_ftyp<R: ZByteReaderTrait>(
 
     if full_size < 8 {
         return Err(HeicErrors::PayloadTooShort {
-            box_type: box_header.box_type,
+            box_type: *box_header.get_box_type(),
             needed: 8,
             have: 8 - full_size,
         });
@@ -287,12 +287,12 @@ pub fn decode_iinf<R: ZByteReaderTrait>(
         let child_header = BoxHeader::read(reader)?;
         let child_size = get_abs_length(&child_header)?;
 
-        if &child_header.box_type.0 == b"infe" {
+        if &child_header.get_box_type().0 == b"infe" {
             iinf.entries.push(decode_infe(reader, &child_header)?);
         } else {
-            trace!("Skipping infe child header: {}", child_header.box_type);
+            trace!("Skipping infe child header: {}", child_header.get_box_type());
 
-            let payload_size = child_size.saturating_sub(child_header.header_size as usize);
+            let payload_size = child_size.saturating_sub(child_header.get_header_size() as usize);
             reader.skip(payload_size)?;
         }
         bytes_left = subtract_value(bytes_left, child_size)?;
@@ -533,7 +533,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
 
         let child_size = get_abs_length(&child_header)?;
 
-        let mut child_bytes_left = child_size.saturating_sub(child_header.header_size as usize);
+        let mut child_bytes_left = child_size.saturating_sub(child_header.get_header_size() as usize);
 
         let from_item_id = if version == 0 {
             let id = u32::from(reader.get_u16_be_err()?);
@@ -572,7 +572,7 @@ pub fn decode_iref<R: ZByteReaderTrait>(
         }
 
         references.push(IrefEntry {
-            reference_type: child_header.box_type,
+            reference_type: *child_header.get_box_type(),
             from_item_id,
             to_item_ids,
         });
@@ -706,16 +706,16 @@ pub fn decode_iprp<R: ZByteReaderTrait>(
 
         let child_size = get_abs_length(&child_header)?;
 
-        match &child_header.box_type.0 {
+        match &child_header.get_box_type().0 {
             b"ipco" => iprp.ipco = Some(decode_ipco(reader, &child_header)?),
             b"ipma" => iprp.ipma = Some(decode_ipma(reader, &child_header)?),
             _ => {
                 trace!(
                     "Unsupported IPRP version {:?}",
-                    child_header.box_type.as_str()
+                    child_header.get_box_type().as_str()
                 );
 
-                let payload_size = child_size.saturating_sub(child_header.header_size as usize);
+                let payload_size = child_size.saturating_sub(child_header.get_header_size() as usize);
                 reader.skip(payload_size)?;
             }
         }
@@ -754,17 +754,17 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
         let child_header = BoxHeader::read(reader)?;
         let child_size = get_abs_length(&child_header)?;
 
-        let payload_size = child_size.saturating_sub(child_header.header_size as usize);
+        let payload_size = child_size.saturating_sub(child_header.get_header_size() as usize);
 
         if payload_size > MAX_SIZE {
             return Err(HeicErrors::Generic {
                 msg: format!(
                     "IPCO type {:?} with payload size {payload_size} exceeds max payload (max {MAX_SIZE} bytes)",
-                    child_header.box_type,
+                    child_header.get_box_type(),
                 )
             });
         }
-        match &child_header.box_type.0 {
+        match &child_header.get_box_type().0 {
             b"ispe" => {
                 reader.skip(4)?; // skip version/flags
 
@@ -848,7 +848,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                 let mut payload = vec![0; payload_size];
                 reader.read_exact_bytes(&mut payload)?;
 
-                let prop = match &child_header.box_type.0 {
+                let prop = match &child_header.get_box_type().0 {
                     b"hvcC" => ItemProperty::HvcC { payload },
                     b"av1C" => ItemProperty::Av1C { payload },
                     _ => unreachable!()
@@ -919,7 +919,7 @@ pub fn decode_ipco<R: ZByteReaderTrait>(
                 reader.read_exact_bytes(&mut payload)?;
 
                 ipco.properties.push(ItemProperty::Unknown {
-                    box_type: child_header.box_type,
+                    box_type: *child_header.get_box_type(),
                     payload,
                 });
             }
@@ -1037,9 +1037,9 @@ pub fn decode_ipma<R: ZByteReaderTrait>(
 pub fn decode_meta<R: ZByteReaderTrait>(
     reader: &mut ZReader<R>, box_header: &BoxHeader,
 ) -> Result<MetaSection, HeicErrors> {
-    if &box_header.box_type.0 != b"meta" {
+    if &box_header.get_box_type().0 != b"meta" {
         return Err(HeicErrors::ParseError {
-            box_type: box_header.box_type,
+            box_type: *box_header.get_box_type(),
             msg: "Expected META".into(),
         });
     }
@@ -1048,7 +1048,7 @@ pub fn decode_meta<R: ZByteReaderTrait>(
 
     if bytes_left < 4 {
         return Err(HeicErrors::PayloadTooShort {
-            box_type: box_header.box_type,
+            box_type: *box_header.get_box_type(),
             needed: 4,
             have: bytes_left,
         });
@@ -1068,12 +1068,12 @@ pub fn decode_meta<R: ZByteReaderTrait>(
 
         if child_size > bytes_left {
             return Err(HeicErrors::ParseError {
-                box_type: child_header.box_type,
+                box_type: *child_header.get_box_type(),
                 msg: "Child box exceeds meta bounds".into(),
             });
         }
 
-        match &child_header.box_type.0 {
+        match &child_header.get_box_type().0 {
             b"hdlr" => meta.hdlr = Some(decode_hdlr(reader, &child_header)?),
             b"pitm" => meta.pitm = Some(decode_pitm(reader, &child_header)?),
             b"iinf" => meta.iinf = Some(decode_iinf(reader, &child_header)?),
@@ -1089,10 +1089,10 @@ pub fn decode_meta<R: ZByteReaderTrait>(
             _ => {
                 warn!(
                     "Unknown meta child type: {:?} skipping",
-                    child_header.box_type.as_str()
+                    child_header.get_box_type().as_str()
                 );
 
-                let payload_size = child_size.saturating_sub(child_header.header_size as usize);
+                let payload_size = child_size.saturating_sub(child_header.get_header_size() as usize);
                 reader.skip(payload_size)?;
             }
         }
