@@ -150,8 +150,7 @@ impl<'a> DeflateEncoder<'a> {
     /// Encode a deflate data block with no compression
     ///
     /// # Argument
-    /// - `bytes`: number of bytes to compress from input as non-compressed
-    /// bytes
+    /// - `bytes`: number of bytes to compress from input as non-compressed bytes
     fn encode_no_compression(&mut self, bytes: usize) {
         let final_position = self.input_position + bytes;
 
