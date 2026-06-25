@@ -1080,10 +1080,7 @@ where
             }
 
             Marker::DNL => {
-                return Err(DecodeErrors::Format(format!(
-                    "Parsing of the following header `{m:?}` is not supported,\
-                                cannot continue"
-                )));
+                with_marker_body(self, |_decoder, _body| Ok(()))?;
             }
             Marker::DRI => {
                 with_marker_body(self, |decoder, body| {
@@ -1505,6 +1502,31 @@ where
     /// are available.
     pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
         self.decode_headers_internal()?;
+
+        if self.info.height == 0 {
+            let saved_pos = self.stream.position()? as usize;
+            let mut dnl_height = None;
+            let mut last_byte = 0;
+
+            while let Ok(byte) = self.stream.read_u8_err() {
+                if last_byte == 0xFF && byte == 0xDC {
+                    let _len = self.stream.get_u16_be_err()?;
+                    let height = self.stream.get_u16_be_err()?;
+                    dnl_height = Some(height);
+                    break;
+                }
+                last_byte = byte;
+            }
+
+            self.stream.set_position(saved_pos)?;
+
+            if let Some(height) = dnl_height {
+                self.info.height = height;
+            } else {
+                return Err(DecodeErrors::FormatStatic("Missing DNL marker for image with height 0"));
+            }
+        }
+
         Ok(())
     }
 

@@ -359,7 +359,7 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         }
 
         // Check image width or height is zero
-        if img_width == 0 || img_height == 0 {
+        if img_width == 0 {
             return Err(DecodeErrors::ZeroError);
         }
 
