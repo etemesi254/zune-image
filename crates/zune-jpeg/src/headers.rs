@@ -358,7 +358,8 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
             return Err(DecodeErrors::Format(format!("Image height {} greater than height limit {}. If use `set_limits` if you want to support huge images", img_height, img.options.max_height())));
         }
 
-        // Check image width or height is zero
+        // Check image width is zero (height may legitimately be 0 for DNL images
+        // where the actual number of lines is defined by a later DNL marker)
         if img_width == 0 {
             return Err(DecodeErrors::ZeroError);
         }
@@ -409,6 +410,12 @@ pub(crate) fn parse_start_of_frame<T: ZByteReaderTrait>(
         img.info.set_density(dt_precision);
         img.info.set_height(img_height);
         img.info.set_width(img_width);
+        // A height of 0 means the encoder used a DNL marker to define the
+        // actual line count. Signal this so the MCU decode loop knows to
+        // intercept the DNL marker rather than stopping at row 0.
+        if img_height == 0 {
+            img.expects_dnl = true;
+        }
         if num_components == 1 {
             img.input_colorspace = ColorSpace::Luma;
             debug!("Overriding default colorspace set to Luma");
