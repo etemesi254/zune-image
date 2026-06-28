@@ -336,7 +336,13 @@ pub struct JpegDecoder<T> {
     /// committed to the decoder; a retry replays the same marker bytes
     /// idempotently. The buffer is reused across markers so header parsing
     /// stays allocation-free in steady state.
-    pub(crate) marker_body_scratch: Vec<u8>
+    pub(crate) marker_body_scratch: Vec<u8>,
+    /// True when the SOF header carried a height of 0, meaning the actual
+    /// number of lines is defined by a DNL marker that follows the first
+    /// scan's entropy data. The MCU decode loop will intercept that marker
+    /// and store the real height; if it never arrives, decoding returns an
+    /// error.
+    pub(crate) expects_dnl: bool
 }
 
 impl<T> JpegDecoder<T>
@@ -569,7 +575,8 @@ where
             incremental_mode: false,
             scan_decode_attempted: false,
             progressive_mcus_buffer: core::array::from_fn(|_| Vec::new()),
-            marker_body_scratch: Vec::new()
+            marker_body_scratch: Vec::new(),
+            expects_dnl: false
         }
     }
     /// Decode a buffer already in memory
@@ -581,6 +588,26 @@ where
     /// See DecodeErrors for an explanation
     pub fn decode(&mut self) -> Result<Vec<u8>, DecodeErrors> {
         self.decode_headers()?;
+
+        if self.expects_dnl {
+            // Height is unknown until DNL is encountered during entropy
+            // decoding. Pre-allocate a buffer large enough for the worst case
+            // (the configured max height), run decode_into normally — the MCU
+            // loop will intercept the DNL marker and set info.height — then
+            // truncate to the actual decoded size.
+            let max_size = self.options.max_height()
+                .checked_mul(usize::from(self.info.width))
+                .and_then(|v| v.checked_mul(self.options.jpeg_get_out_colorspace().num_components()))
+                .ok_or(DecodeErrors::FormatStatic("DNL image dimensions overflow usize"))?;
+            let mut out = vec![0u8; max_size];
+            self.decode_into(&mut out)?;
+            // After decode_into, info.height has been set by the DNL handler.
+            let actual_size = self.output_buffer_size()
+                .ok_or(DecodeErrors::FormatStatic("DNL image: output size unavailable after decode"))?;
+            out.truncate(actual_size);
+            return Ok(out);
+        }
+
         let size = self.output_buffer_size().unwrap();
         let mut out = vec![0; size];
         self.decode_into(&mut out)?;
@@ -1134,7 +1161,24 @@ where
             }
 
             Marker::DNL => {
-                with_marker_body(self, |_decoder, _body| Ok(()))?;
+                // DNL before SOS is spec-illegal but tolerated by some encoders.
+                // Parse the height value; if we were expecting DNL (height was 0
+                // in SOF) store it, otherwise just swallow the segment.
+                with_marker_body(self, |decoder, body| {
+                    // DNL body must be exactly 2 bytes (the line count).
+                    let b = body.body();
+                    if b.len() != 2 {
+                        return Err(DecodeErrors::FormatStatic(
+                            "Malformed DNL segment: expected 2-byte body"
+                        ));
+                    }
+                    let height = u16::from_be_bytes([b[0], b[1]]);
+                    if decoder.expects_dnl {
+                        decoder.info.set_height(height);
+                        decoder.expects_dnl = false;
+                    }
+                    Ok(())
+                })?;
             }
             Marker::DRI => {
                 with_marker_body(self, |decoder, body| {
@@ -1556,31 +1600,11 @@ where
     /// are available.
     pub fn decode_headers(&mut self) -> Result<(), DecodeErrors> {
         self.decode_headers_internal()?;
-
-        if self.info.height == 0 {
-            let saved_pos = self.stream.position()? as usize;
-            let mut dnl_height = None;
-            let mut last_byte = 0;
-
-            while let Ok(byte) = self.stream.read_u8_err() {
-                if last_byte == 0xFF && byte == 0xDC {
-                    let _len = self.stream.get_u16_be_err()?;
-                    let height = self.stream.get_u16_be_err()?;
-                    dnl_height = Some(height);
-                    break;
-                }
-                last_byte = byte;
-            }
-
-            self.stream.set_position(saved_pos)?;
-
-            if let Some(height) = dnl_height {
-                self.info.height = height;
-            } else {
-                return Err(DecodeErrors::FormatStatic("Missing DNL marker for image with height 0"));
-            }
-        }
-
+        // For DNL images (SOF height == 0), the true line count is carried by
+        // a DNL marker that appears after the entropy data of the first scan.
+        // We leave info.height as 0 here; the MCU decode loop will intercept
+        // the DNL marker and update it. Callers that only call decode_headers
+        // will see height == 0 as an accurate reflection of the stream state.
         Ok(())
     }
 

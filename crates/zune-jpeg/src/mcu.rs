@@ -375,6 +375,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         }
                         return Ok(());
                     }
+                    McuContinuation::DnlFound => {
+                        // DNL marker was consumed and info.height is now set.
+                        // The image is complete; break out cleanly without
+                        // grey-filling any remaining buffer space.
+                        break 'sos;
+                    }
                 }
             }
 
@@ -425,6 +431,31 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // without a subsequent row to detect it.
         if stream.overread_by() > 0 {
             return Err(DecodeErrors::ExhaustedData);
+        }
+
+        // If DNL is expected, try to consume the marker now. The bitstream
+        // refiller reads ahead opportunistically, so we use get_marker() which
+        // handles both the latched-marker case and raw-stream scanning.
+        if self.expects_dnl {
+            match get_marker(&mut self.stream, &mut stream) {
+                Ok(Marker::DNL) => {
+                    let _length = self.stream.get_u16_be_err()?;
+                    let height = self.stream.get_u16_be_err()?;
+                    self.info.set_height(height);
+                    self.expects_dnl = false;
+                    trace!("DNL marker: actual image height = {height}");
+                }
+                Ok(other) => {
+                    return Err(DecodeErrors::Format(format!(
+                        "Expected DNL marker after height-0 scan, got {other:?}"
+                    )));
+                }
+                Err(_e) => {
+                    return Err(DecodeErrors::FormatStatic(
+                        "DNL marker expected (SOF height was 0) but not found in scan data"
+                    ));
+                }
+            }
         }
 
         if !all_components_in_first_scan {
@@ -829,6 +860,40 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let m = stream.marker().take().unwrap();
                 trace!("Found inter-scan marker {m:?}");
                 return Ok(McuContinuation::InterScanMarker(m));
+            } else if let Marker::DNL = m {
+                // DNL appears right after the last entropy-coded row. It
+                // carries the actual line count for images whose SOF height
+                // was 0. Only act on it when we were expecting one; otherwise
+                // treat it as an unexpected marker.
+                if self.expects_dnl {
+                    let _m = stream.marker().take().unwrap();
+                    // Consume the DNL segment: 2-byte length (always 4) + 2-byte height.
+                    // We read directly from the stream because the bitstream
+                    // reader has already drained the entropy data.
+                    let _length = self.stream.get_u16_be_err()?;
+                    let height = self.stream.get_u16_be_err()?;
+                    self.info.set_height(height);
+                    self.expects_dnl = false;
+                    trace!("DNL marker: actual image height = {height}");
+                    return Ok(McuContinuation::DnlFound);
+                } else {
+                    // Spurious DNL on a normal image — warn and terminate
+                    // (parsing it would silently corrupt info.height).\n                    // Swallow the segment body so the stream stays consistent.
+                    if self.options.strict_mode() {
+                        return Err(DecodeErrors::Format(format!(
+                            "Marker {:?} found where not expected", m
+                        )));
+                    }
+                    error!("Unexpected DNL marker in Huffman stream, possibly corrupt jpeg");
+                    stream.marker().take();
+                    // Skip the DNL body (length-prefixed: read length, skip payload).
+                    let length = self.stream.get_u16_be_err()?;
+                    let skip = usize::from(length).saturating_sub(2);
+                    self.stream.skip(skip)?;
+                    stream.reset();
+                    B::reset_arith_tables(&mut self.entropy_tables);
+                    return Ok(McuContinuation::Terminate);
+                }
             } else {
                 if self.options.strict_mode() {
                     return Err(DecodeErrors::Format(format!(
@@ -1168,4 +1233,7 @@ enum McuContinuation {
     /// The caller should parse it and scan for the next SOS.
     InterScanMarker(Marker),
     Terminate,
+    /// The DNL marker was found and parsed. The scan is complete and
+    /// `info.height` has been updated to the actual number of lines.
+    DnlFound
 }

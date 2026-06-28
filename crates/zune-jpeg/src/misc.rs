@@ -215,8 +215,15 @@ pub(crate) fn setup_component_params<T: ZByteReaderTrait>(
 
     // Number of MCU's per width
     img.mcu_x = usize::from(img.info.width).div_ceil(img.mcu_width);
-    // Number of MCU's per height
-    img.mcu_y = usize::from(img.info.height).div_ceil(img.mcu_height);
+    // Number of MCU's per height.
+    // For DNL images info.height is 0, so we use the configured max_height as
+    // a sentinel upper bound. The MCU decode loop will break early once the DNL
+    // marker is intercepted and the real height is stored in info.height.
+    img.mcu_y = if img.expects_dnl {
+        img.options.max_height().div_ceil(img.mcu_height)
+    } else {
+        usize::from(img.info.height).div_ceil(img.mcu_height)
+    };
 
     for component in &mut img.components {
         // Extract quantization tables from the arrays into components
