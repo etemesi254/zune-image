@@ -2354,7 +2354,6 @@ dependencies = [
 name = "zune-bmp"
 version = "0.5.2"
 dependencies = [
- "log",
  "zune-core 0.5.1",
 ]
 

@@ -98,11 +98,10 @@
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use log::error;
 use zune_core::bit_depth::BitDepth;
 use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZReader};
 use zune_core::colorspace::{ColorPrimaries, ColorSpace, RenderingIntent};
-use zune_core::log::{trace, warn};
+use zune_core::log::{error, trace, warn};
 use zune_core::options::DecoderOptions;
 
 use crate::common::{BmpCompression, BmpPixelFormat, PROFILE_EMBEDDED, PROFILE_LINKED};
