@@ -18,7 +18,7 @@ use alloc::{format, vec};
 use zune_core::bytestream::{ZByteReaderTrait, ZReader};
 use zune_core::colorspace::ColorSpace;
 use zune_core::log::{error, trace, warn};
-use zune_core::options::DecoderOptions;
+use zune_core::options::{DecoderOptions, InputColorspaceOverride, JpegScale};
 
 use crate::cancel::{CancelCheck, Debounced, CANCEL_POLL_INTERVAL_MCUS};
 
@@ -50,6 +50,87 @@ pub(crate) const MAX_COMPONENTS: usize = 4;
 
 /// Maximum image dimensions supported.
 pub(crate) const MAX_DIMENSIONS: usize = 1 << 27;
+
+/// A rectangle to decode from a JPEG image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodeRegion {
+    pub x:      usize,
+    pub y:      usize,
+    pub width:  usize,
+    pub height: usize
+}
+
+/// Region decode strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionDecodeMode {
+    /// Decode only what is needed where possible.
+    BestEffort,
+    /// Prefer simple behavior matching full-image decode.
+    Conservative
+}
+
+/// JPEG dimensions used when assembling split header/data streams.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JpegDimensions {
+    pub width:  u16,
+    pub height: u16
+}
+
+/// Assemble a JPEG stream from a reusable header and separate entropy payload.
+///
+/// The SOF marker at `sof_offset_in_header` must be a baseline, extended
+/// sequential, or progressive DCT SOF marker. Its height and width fields are
+/// patched to `dimensions`, `data` is appended after `header`, and an EOI marker
+/// is appended unless the assembled stream already ends with one.
+///
+/// # Errors
+/// Returns an error if the SOF offset cannot address the marker and
+/// height/width fields, or if the marker at that offset is not supported.
+pub fn assemble_split_jpeg(
+    header: &[u8], data: &[u8], sof_offset_in_header: usize, dimensions: JpegDimensions,
+    out: &mut Vec<u8>
+) -> Result<(), DecodeErrors> {
+    if dimensions.width == 0 || dimensions.height == 0 {
+        return Err(DecodeErrors::FormatStatic(
+            "Split JPEG dimensions must be non-zero"
+        ));
+    }
+
+    let sof_end = sof_offset_in_header
+        .checked_add(9)
+        .ok_or(DecodeErrors::FormatStatic("SOF offset overflows usize"))?;
+    if sof_end > header.len() {
+        return Err(DecodeErrors::FormatStatic(
+            "SOF offset cannot address JPEG dimensions"
+        ));
+    }
+
+    let marker = u16::from_be_bytes([
+        header[sof_offset_in_header],
+        header[sof_offset_in_header + 1]
+    ]);
+    if !matches!(marker, 0xffc0 | 0xffc1 | 0xffc2) {
+        return Err(DecodeErrors::FormatStatic(
+            "SOF offset does not point to a supported DCT SOF marker"
+        ));
+    }
+
+    out.clear();
+    out.reserve(header.len().saturating_add(data.len()).saturating_add(2));
+    out.extend_from_slice(header);
+    let height = dimensions.height.to_be_bytes();
+    let width = dimensions.width.to_be_bytes();
+    out[sof_offset_in_header + 5] = height[0];
+    out[sof_offset_in_header + 6] = height[1];
+    out[sof_offset_in_header + 7] = width[0];
+    out[sof_offset_in_header + 8] = width[1];
+    out.extend_from_slice(data);
+    if !out.ends_with(&[0xff, 0xd9]) {
+        out.extend_from_slice(&[0xff, 0xd9]);
+    }
+
+    Ok(())
+}
 
 /// Color conversion function that can convert YCbCr colorspace to RGB(A/X) for
 /// 16 values
@@ -509,6 +590,15 @@ where
         }
     }
 
+    /// Apply the configured JPEG input colorspace override to the parsed header state.
+    fn apply_input_colorspace_override(&mut self) {
+        if let InputColorspaceOverride::Force(colorspace) =
+            self.options.jpeg_get_input_colorspace_override()
+        {
+            self.input_colorspace = colorspace;
+        }
+    }
+
     #[allow(clippy::redundant_field_names)]
     fn default(options: DecoderOptions, buffer: T) -> Self {
         let color_convert = choose_ycbcr_to_rgb_convert_func(ColorSpace::RGB, &options).unwrap();
@@ -590,6 +680,48 @@ where
         self.decode_headers()?;
 
         if self.expects_dnl {
+            if self.options.jpeg_get_scale() != JpegScale::Full {
+                let options = self.options;
+                self.options = options.jpeg_set_scale(JpegScale::Full);
+                let max_size = self
+                    .options
+                    .max_height()
+                    .checked_mul(usize::from(self.info.width))
+                    .and_then(|v| {
+                        v.checked_mul(
+                            self.options.jpeg_get_out_colorspace().num_components()
+                        )
+                    })
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "DNL image dimensions overflow usize"
+                    ))?;
+                let mut full = vec![0u8; max_size];
+                let decode_result = self.decode_into(&mut full);
+                self.options = options;
+                decode_result?;
+                let full_size = self.full_output_buffer_size().ok_or(
+                    DecodeErrors::FormatStatic(
+                        "DNL image: full output size unavailable after decode"
+                    )
+                )?;
+                full.truncate(full_size);
+                let scaled_size = self.output_buffer_size().ok_or(
+                    DecodeErrors::FormatStatic(
+                        "DNL image: scaled output size unavailable after decode"
+                    )
+                )?;
+                let mut scaled = vec![0u8; scaled_size];
+                Self::scale_full_pixels(
+                    &full,
+                    usize::from(self.width()),
+                    usize::from(self.height()),
+                    options.jpeg_get_out_colorspace().num_components(),
+                    options.jpeg_get_scale(),
+                    &mut scaled
+                )?;
+                return Ok(scaled);
+            }
+
             // Height is unknown until DNL is encountered during entropy
             // decoding. Pre-allocate a buffer large enough for the worst case
             // (the configured max height), run decode_into normally — the MCU
@@ -666,13 +798,213 @@ where
     pub fn output_buffer_size(&self) -> Option<usize> {
         return if self.headers_decoded {
             Some(
-                usize::from(self.width())
-                    .checked_mul(usize::from(self.height()))?
+                self.scaled_width()
+                    .checked_mul(self.scaled_height())?
                     .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
             )
         } else {
             None
         };
+    }
+
+    /// Return the output buffer size before JPEG scaling is applied.
+    fn full_output_buffer_size(&self) -> Option<usize> {
+        if self.headers_decoded {
+            usize::from(self.width())
+                .checked_mul(usize::from(self.height()))?
+                .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
+        } else {
+            None
+        }
+    }
+
+    /// Return the image width after applying the configured JPEG scale.
+    fn scaled_width(&self) -> usize {
+        usize::from(self.width()).div_ceil(self.options.jpeg_get_scale().denominator())
+    }
+
+    /// Return the image height after applying the configured JPEG scale.
+    fn scaled_height(&self) -> usize {
+        usize::from(self.height()).div_ceil(self.options.jpeg_get_scale().denominator())
+    }
+
+    /// Return the number of bytes required to hold a tightly packed decoded
+    /// region in the configured output colorspace.
+    #[must_use]
+    pub fn region_output_buffer_size(&self, region: DecodeRegion) -> Option<usize> {
+        self.validate_region(region).ok()?;
+        region
+            .width
+            .checked_mul(region.height)?
+            .checked_mul(self.options.jpeg_get_out_colorspace().num_components())
+    }
+
+    /// Decode a tightly packed rectangular region.
+    ///
+    /// Baseline Huffman images use MCU-row decoding where possible; other
+    /// encodings may fall back to full-image decode plus crop.
+    ///
+    /// # Errors
+    /// Returns an error when headers are invalid, the region is empty or out of
+    /// bounds, or the underlying decode fails.
+    pub fn decode_region(
+        &mut self, region: DecodeRegion, mode: RegionDecodeMode
+    ) -> Result<Vec<u8>, DecodeErrors> {
+        self.decode_headers()?;
+        let size = self.region_output_buffer_size(region).ok_or(DecodeErrors::FormatStatic(
+            "Decode region is empty, out of bounds, or overflows usize"
+        ))?;
+        let mut out = vec![0; size];
+        self.decode_region_into(region, mode, &mut out)?;
+        Ok(out)
+    }
+
+    /// Decode a tightly packed rectangular region into a caller-provided
+    /// buffer.
+    ///
+    /// `out` must be at least [`region_output_buffer_size`](Self::region_output_buffer_size)
+    /// bytes long. Extra bytes are left untouched.
+    ///
+    /// # Errors
+    /// Returns an error when headers are invalid, the region is empty or out of
+    /// bounds, the output buffer is too small, or the underlying decode fails.
+    pub fn decode_region_into(
+        &mut self, region: DecodeRegion, _mode: RegionDecodeMode, out: &mut [u8]
+    ) -> Result<(), DecodeErrors> {
+        self.decode_headers()?;
+        let region_size = self.region_output_buffer_size(region).ok_or(DecodeErrors::FormatStatic(
+            "Decode region is empty, out of bounds, or overflows usize"
+        ))?;
+        if out.len() < region_size {
+            return Err(DecodeErrors::TooSmallOutput(region_size, out.len()));
+        }
+
+        if self.options.jpeg_get_scale() == JpegScale::Full
+            && !self.is_progressive
+            && !self.is_arithmetic
+            && !self.expects_dnl
+            && !self.scan_decode_attempted
+        {
+            self.decode_mcu_ycbcr_baseline_region::<BitStreamHuffman>(region, out)?;
+            self.pixels_decoded = region_size;
+            return Ok(());
+        }
+
+        if self.options.jpeg_get_scale() != JpegScale::Full && !self.expects_dnl {
+            self.decode_scaled_region_into(region, &mut out[..region_size])?;
+            self.pixels_decoded = region_size;
+            return Ok(());
+        }
+
+        let full_size = self.output_buffer_size().ok_or(DecodeErrors::FormatStatic(
+            "Full output buffer size is unavailable after header decode"
+        ))?;
+        let mut full = vec![0; full_size];
+        self.decode_into(&mut full)?;
+
+        let components = self.options.jpeg_get_out_colorspace().num_components();
+        let full_stride = self.scaled_width()
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Full output stride overflows usize"))?;
+        let region_stride = region
+            .width
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Region output stride overflows usize"))?;
+        let start_x = region
+            .x
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Region x offset overflows usize"))?;
+
+        for row in 0..region.height {
+            let src_start = (region.y + row)
+                .checked_mul(full_stride)
+                .and_then(|v| v.checked_add(start_x))
+                .ok_or(DecodeErrors::FormatStatic("Region source offset overflows usize"))?;
+            let src_end = src_start
+                .checked_add(region_stride)
+                .ok_or(DecodeErrors::FormatStatic("Region source end overflows usize"))?;
+            let dst_start = row
+                .checked_mul(region_stride)
+                .ok_or(DecodeErrors::FormatStatic("Region destination offset overflows usize"))?;
+            let dst_end = dst_start
+                .checked_add(region_stride)
+                .ok_or(DecodeErrors::FormatStatic("Region destination end overflows usize"))?;
+            out[dst_start..dst_end].copy_from_slice(&full[src_start..src_end]);
+        }
+
+        Ok(())
+    }
+
+    /// Decode the scaled full image and copy a tightly packed region from it.
+    fn decode_scaled_region_into(
+        &mut self, region: DecodeRegion, out: &mut [u8]
+    ) -> Result<(), DecodeErrors> {
+        let scaled_size = self.output_buffer_size().ok_or(DecodeErrors::FormatStatic(
+            "Scaled output buffer size is unavailable after header decode"
+        ))?;
+        let mut scaled = vec![0; scaled_size];
+        self.decode_scaled_into(&mut scaled)?;
+
+        let components = self.options.jpeg_get_out_colorspace().num_components();
+        let full_stride = self
+            .scaled_width()
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Scaled output stride overflows usize"))?;
+        let region_stride = region
+            .width
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Scaled region stride overflows usize"))?;
+        let start_x = region
+            .x
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Scaled region x offset overflows usize"))?;
+
+        for row in 0..region.height {
+            let src_start = (region.y + row)
+                .checked_mul(full_stride)
+                .and_then(|v| v.checked_add(start_x))
+                .ok_or(DecodeErrors::FormatStatic(
+                    "Scaled region source offset overflows usize"
+                ))?;
+            let src_end = src_start.checked_add(region_stride).ok_or(
+                DecodeErrors::FormatStatic("Scaled region source end overflows usize")
+            )?;
+            let dst_start = row.checked_mul(region_stride).ok_or(
+                DecodeErrors::FormatStatic("Scaled region destination offset overflows usize")
+            )?;
+            let dst_end = dst_start.checked_add(region_stride).ok_or(
+                DecodeErrors::FormatStatic("Scaled region destination end overflows usize")
+            )?;
+            out[dst_start..dst_end].copy_from_slice(&scaled[src_start..src_end]);
+        }
+
+        Ok(())
+    }
+
+    /// Validate that a decode region is non-empty and inside the scaled image bounds.
+    fn validate_region(&self, region: DecodeRegion) -> Result<(), DecodeErrors> {
+        if !self.headers_decoded {
+            return Err(DecodeErrors::FormatStatic(
+                "Cannot validate decode region before headers are decoded"
+            ));
+        }
+        if region.width == 0 || region.height == 0 {
+            return Err(DecodeErrors::FormatStatic("Decode region must be non-empty"));
+        }
+        let image_width = self.scaled_width();
+        let image_height = self.scaled_height();
+        let x_end = region
+            .x
+            .checked_add(region.width)
+            .ok_or(DecodeErrors::FormatStatic("Decode region width overflows usize"))?;
+        let y_end = region
+            .y
+            .checked_add(region.height)
+            .ok_or(DecodeErrors::FormatStatic("Decode region height overflows usize"))?;
+        if x_end > image_width || y_end > image_height {
+            return Err(DecodeErrors::FormatStatic("Decode region is outside image bounds"));
+        }
+        Ok(())
     }
 
     /// Return the number of output bytes known to be stable after the most
@@ -722,13 +1054,13 @@ where
     #[must_use]
     pub fn decoded_scanlines(&self) -> Option<usize> {
         let decoded_output_bytes = self.decoded_output_bytes()?;
-        let row_stride = usize::from(self.width())
+        let row_stride = self.scaled_width()
             .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?;
         if row_stride == 0 {
             return Some(0);
         }
 
-        Some((decoded_output_bytes / row_stride).min(usize::from(self.height())))
+        Some((decoded_output_bytes / row_stride).min(self.scaled_height()))
     }
 
     /// Get an immutable reference to the decoder options
@@ -1030,6 +1362,7 @@ where
             if is_rgb {
                 self.input_colorspace = ColorSpace::RGB;
             }
+            self.apply_input_colorspace_override();
 
             self.enter_scan_state()?;
             return Ok(MarkerStep::EnteredScan);
@@ -1408,6 +1741,10 @@ where
     ///
     #[allow(clippy::too_many_lines)]
     pub fn decode_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        if self.options.jpeg_get_scale() != JpegScale::Full {
+            return self.decode_scaled_into(out);
+        }
+
         // Pull the scan-resume state out into owned locals so the restore
         // below can freely mutate `self`. When headers haven't completed
         // yet, `scan_plan` is `None` and we just run header decoding below.
@@ -1571,6 +1908,89 @@ where
             }
             Err(e) => Err(e)
         }
+    }
+
+    /// Decode the image using the configured reduced JPEG scale.
+    fn decode_scaled_into(&mut self, out: &mut [u8]) -> Result<(), DecodeErrors> {
+        self.decode_headers_internal()?;
+        let expected_size = self.output_buffer_size().unwrap();
+        if out.len() < expected_size {
+            return Err(DecodeErrors::TooSmallOutput(expected_size, out.len()));
+        }
+
+        if !self.is_progressive
+            && !self.is_arithmetic
+            && !self.expects_dnl
+            && !self.scan_decode_attempted
+            && self.restart_interval == 0
+            && usize::from(self.num_scans) == self.components.len()
+            && matches!(self.input_colorspace, ColorSpace::Luma | ColorSpace::YCbCr)
+            && self.input_colorspace.num_components() == self.components.len()
+        {
+            return self.decode_scaled_baseline_into::<BitStreamHuffman>(&mut out[..expected_size]);
+        }
+
+        let full_size = self.full_output_buffer_size().ok_or(DecodeErrors::FormatStatic(
+            "Full output buffer size is unavailable after header decode"
+        ))?;
+        let options = self.options;
+        self.options = options.jpeg_set_scale(JpegScale::Full);
+        let mut full = vec![0; full_size];
+        let decode_result = self.decode_into(&mut full);
+        self.options = options;
+        decode_result?;
+
+        Self::scale_full_pixels(
+            &full,
+            usize::from(self.width()),
+            usize::from(self.height()),
+            options.jpeg_get_out_colorspace().num_components(),
+            options.jpeg_get_scale(),
+            &mut out[..expected_size],
+        )?;
+        self.pixels_decoded = expected_size;
+        Ok(())
+    }
+
+    /// Downsample a fully decoded image by selecting pixels at the JPEG scale interval.
+    fn scale_full_pixels(
+        full: &[u8], full_width: usize, full_height: usize, components: usize, scale: JpegScale,
+        out: &mut [u8]
+    ) -> Result<(), DecodeErrors> {
+        let denominator = scale.denominator();
+        let scaled_width = full_width.div_ceil(denominator);
+        let scaled_height = full_height.div_ceil(denominator);
+        let full_stride = full_width
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Full scaled source stride overflows usize"))?;
+        let scaled_stride = scaled_width
+            .checked_mul(components)
+            .ok_or(DecodeErrors::FormatStatic("Scaled output stride overflows usize"))?;
+        let expected = scaled_stride
+            .checked_mul(scaled_height)
+            .ok_or(DecodeErrors::FormatStatic("Scaled output size overflows usize"))?;
+        if out.len() < expected {
+            return Err(DecodeErrors::TooSmallOutput(expected, out.len()));
+        }
+
+        for y in 0..scaled_height {
+            let src_y = (y * denominator).min(full_height.saturating_sub(1));
+            for x in 0..scaled_width {
+                let src_x = (x * denominator).min(full_width.saturating_sub(1));
+                let src = src_y
+                    .checked_mul(full_stride)
+                    .and_then(|v| v.checked_add(src_x.checked_mul(components)?))
+                    .ok_or(DecodeErrors::FormatStatic("Scaled source offset overflows usize"))?;
+                let dst = y
+                    .checked_mul(scaled_stride)
+                    .and_then(|v| v.checked_add(x.checked_mul(components)?))
+                    .ok_or(DecodeErrors::FormatStatic(
+                        "Scaled destination offset overflows usize"
+                    ))?;
+                out[dst..dst + components].copy_from_slice(&full[src..src + components]);
+            }
+        }
+        Ok(())
     }
 
     /// Read only headers from a jpeg image buffer

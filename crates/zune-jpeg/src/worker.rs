@@ -491,14 +491,29 @@ pub(crate) fn upsample(
                 }
 
                 if upsample {
-                    // upsample
-                    (component.up_sampler)(
-                        curr_row,
-                        row_up,
-                        row_down,
-                        upsampler_scratch_space,
-                        dest
-                    );
+                    let segment_width = component.horizontal_sample * 8;
+                    if component.sample_ratio == SampleRatios::HV
+                        && segment_width < curr_row.len()
+                        && curr_row.len() % segment_width == 0
+                    {
+                        upsample_hv_mcu_segments(
+                            curr_row,
+                            row_up,
+                            row_down,
+                            upsampler_scratch_space,
+                            dest,
+                            segment_width
+                        );
+                    } else {
+                        // upsample
+                        (component.up_sampler)(
+                            curr_row,
+                            row_up,
+                            row_down,
+                            upsampler_scratch_space,
+                            dest
+                        );
+                    }
                 }
             }
         }
@@ -544,9 +559,14 @@ pub(crate) fn upsample(
                 .chunks_exact(component.width_stride)
                 .zip(dest_coeff.chunks_exact_mut(component.width_stride * 2))
             {
-                // upsample using the fn pointer, should only be H, so no need for
-                // row up and row down
-                (component.up_sampler)(single_row, &[], &[], &mut [], output_stride);
+                let segment_width = component.horizontal_sample * 8;
+                if segment_width < single_row.len() && single_row.len() % segment_width == 0 {
+                    upsample_h_mcu_segments(single_row, output_stride, segment_width);
+                } else {
+                    // upsample using the fn pointer, should only be H, so no need for
+                    // row up and row down
+                    (component.up_sampler)(single_row, &[], &[], &mut [], output_stride);
+                }
             }
         }
         SampleRatios::Generic(h, v) => {
@@ -574,4 +594,118 @@ pub(crate) fn upsample(
         SampleRatios::None => {}
     }
     Ok(())
+}
+
+/// Horizontally upsample row segments without filtering across MCU boundaries.
+fn upsample_h_mcu_segments(input: &[i16], output: &mut [i16], segment_width: usize) {
+    if segment_width == 0 || segment_width >= input.len() || input.len() % segment_width != 0 {
+        upsample_h_row(input, output);
+        return;
+    }
+    for (input_segment, output_segment) in input
+        .chunks_exact(segment_width)
+        .zip(output.chunks_exact_mut(segment_width * 2))
+    {
+        upsample_h_row(input_segment, output_segment);
+    }
+}
+
+/// Horizontally and vertically upsample row segments without crossing MCU boundaries.
+fn upsample_hv_mcu_segments(
+    input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16],
+    output: &mut [i16], segment_width: usize
+) {
+    if segment_width == 0 || segment_width >= input.len() || input.len() % segment_width != 0 {
+        upsample_hv_row(input, in_near, in_far, scratch_space, output);
+        return;
+    }
+    let scratch_space = &mut scratch_space[..input.len() * 2];
+    let (top, bottom) = scratch_space.split_at_mut(input.len());
+    for pos in 0..input.len() {
+        top[pos] = (((3 * input[pos]) + 2) + in_near[pos]) >> 2;
+        bottom[pos] = (((3 * input[pos]) + 2) + in_far[pos]) >> 2;
+    }
+    let output_half = output.len() / 2;
+    let (output_top, output_bottom) = output.split_at_mut(output_half);
+    upsample_h_mcu_segments(&scratch_space[..input.len()], output_top, segment_width);
+    upsample_h_mcu_segments(&scratch_space[input.len()..], output_bottom, segment_width);
+}
+
+/// Horizontally and vertically upsample one complete row.
+fn upsample_hv_row(
+    input: &[i16], in_near: &[i16], in_far: &[i16], scratch_space: &mut [i16], output: &mut [i16]
+) {
+    let scratch_space = &mut scratch_space[..input.len() * 2];
+    let (top, bottom) = scratch_space.split_at_mut(input.len());
+    for pos in 0..input.len() {
+        top[pos] = (((3 * input[pos]) + 2) + in_near[pos]) >> 2;
+        bottom[pos] = (((3 * input[pos]) + 2) + in_far[pos]) >> 2;
+    }
+    let output_half = output.len() / 2;
+    let (output_top, output_bottom) = output.split_at_mut(output_half);
+    upsample_h_row(&scratch_space[..input.len()], output_top);
+    upsample_h_row(&scratch_space[input.len()..], output_bottom);
+}
+
+/// Horizontally upsample one complete row with edge replication.
+fn upsample_h_row(input: &[i16], output: &mut [i16]) {
+    output[0] = input[0];
+    output[1] = (input[0] * 3 + input[1] + 2) >> 2;
+    for (output_window, input_window) in output[2..].chunks_exact_mut(2).zip(input.windows(3)) {
+        let sample = 3 * input_window[1] + 2;
+        output_window[0] = (sample + input_window[0]) >> 2;
+        output_window[1] = (sample + input_window[2]) >> 2;
+    }
+    let out_len = output.len() - 2;
+    let input_len = input.len() - 2;
+    let f_out = &mut output[out_len..];
+    let i_last = &input[input_len..];
+    f_out[0] = (3 * i_last[1] + i_last[0] + 2) >> 2;
+    f_out[1] = i_last[1];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    /// Confirm horizontal upsampling restarts its filter at segment boundaries.
+    fn h_upsampling_resets_at_mcu_segment_boundary() {
+        let input = [10, 20, 30, 40, 200, 210, 220, 230];
+        let mut output = [0; 16];
+        let mut expected = [0; 16];
+
+        upsample_h_mcu_segments(&input, &mut output, 4);
+        upsample_h_row(&input[..4], &mut expected[..8]);
+        upsample_h_row(&input[4..], &mut expected[8..]);
+
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    /// Confirm HV upsampling does not mix samples across horizontal segments.
+    fn hv_upsampling_resets_horizontal_filter_without_mixing_rows() {
+        let input = [10, 20, 30, 40, 200, 210, 220, 230];
+        let near = [8, 18, 28, 38, 198, 208, 218, 228];
+        let far = [12, 22, 32, 42, 202, 212, 222, 232];
+        let mut output = [0; 32];
+        let mut scratch = [0; 16];
+
+        upsample_hv_mcu_segments(&input, &near, &far, &mut scratch, &mut output, 4);
+
+        let mut first = [0; 16];
+        let mut second = [0; 16];
+        let mut scratch_first = [0; 8];
+        let mut scratch_second = [0; 8];
+        upsample_hv_row(&input[..4], &near[..4], &far[..4], &mut scratch_first, &mut first);
+        upsample_hv_row(&input[4..], &near[4..], &far[4..], &mut scratch_second, &mut second);
+
+        let mut expected = [0; 32];
+        expected[..8].copy_from_slice(&first[..8]);
+        expected[8..16].copy_from_slice(&second[..8]);
+        expected[16..24].copy_from_slice(&first[8..]);
+        expected[24..].copy_from_slice(&second[8..]);
+
+        assert_eq!(output, expected);
+    }
 }

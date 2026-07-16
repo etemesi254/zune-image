@@ -239,7 +239,9 @@ extern crate core;
 pub use zune_core;
 
 pub use crate::components::SampleRatios;
-pub use crate::decoder::{ImageInfo, JpegDecoder};
+pub use crate::decoder::{
+    assemble_split_jpeg, DecodeRegion, ImageInfo, JpegDecoder, JpegDimensions, RegionDecodeMode
+};
 pub use crate::marker::Marker;
 pub use crate::cancel::{CancelCheck, NeverCancel};
 mod bitstream;

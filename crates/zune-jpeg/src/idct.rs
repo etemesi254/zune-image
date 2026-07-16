@@ -34,7 +34,7 @@
 )]
 
 use zune_core::log::debug;
-use zune_core::options::DecoderOptions;
+use zune_core::options::{DecoderOptions, JpegScale};
 
 use crate::decoder::IDCTPtr;
 use crate::idct::scalar::{idct_int, idct_int_1x1};
@@ -101,6 +101,16 @@ pub fn choose_idct_4x4_func(_options: &DecoderOptions) -> IDCTPtr {
 pub fn choose_idct_1x1_func(_: &DecoderOptions) -> IDCTPtr {
     // These are simple stores, no alternative implementation for now
     idct_int_1x1
+}
+
+/// Choose the IDCT implementation for the requested JPEG scale.
+pub fn choose_scaled_idct_func(scale: JpegScale, _options: &DecoderOptions) -> IDCTPtr {
+    match scale {
+        JpegScale::Full => choose_idct_func(_options),
+        JpegScale::Half => scalar::idct_int_scaled_4x4,
+        JpegScale::Quarter => scalar::idct_int_scaled_2x2,
+        JpegScale::Eighth => scalar::idct_int_scaled_1x1,
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +211,51 @@ mod tests {
         for (wnd, name) in color.windows(2).zip(&dct_names) {
             let [a, b] = wnd else { unreachable!() };
             assert_eq!(a, b, "{name}");
+        }
+    }
+
+    #[test]
+    /// Confirm reduced IDCT output matches sampling from the full scalar IDCT.
+    fn scaled_idct_matches_full_idct_sampling() {
+        let coeff = [
+            91, -21, 13, 4, -9, 2, 1, -1,
+            7, -5, 3, -2, 1, 0, 0, 0,
+            -11, 8, -6, 4, -2, 1, 0, 0,
+            5, -3, 2, -1, 0, 0, 0, 0,
+            -4, 2, -1, 0, 0, 0, 0, 0,
+            3, -2, 1, 0, 0, 0, 0, 0,
+            -2, 1, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0, 0,
+        ];
+
+        for (denominator, scale, scaled_idct) in [
+            (2, JpegScale::Half, scalar::idct_int_scaled_4x4 as IDCTPtr),
+            (4, JpegScale::Quarter, scalar::idct_int_scaled_2x2 as IDCTPtr),
+            (8, JpegScale::Eighth, scalar::idct_int_scaled_1x1 as IDCTPtr),
+        ] {
+            let mut full_coeff = coeff;
+            let mut full = [0_i16; 64];
+            scalar::idct_int(&mut full_coeff, &mut full, 8);
+
+            for candidate in [
+                scaled_idct,
+                choose_scaled_idct_func(scale, &DecoderOptions::new_safe()),
+            ] {
+                let mut scaled_coeff = coeff;
+                let mut scaled = [0_i16; 64];
+                candidate(&mut scaled_coeff, &mut scaled, 8);
+
+                let reduced = 8 / denominator;
+                for y in 0..reduced {
+                    for x in 0..reduced {
+                        assert_eq!(
+                            scaled[y * 8 + x],
+                            full[(y * denominator) * 8 + x * denominator],
+                            "scaled IDCT mismatch for denominator {denominator} at ({x},{y})"
+                        );
+                    }
+                }
+            }
         }
     }
 }

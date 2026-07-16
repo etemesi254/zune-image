@@ -1,5 +1,6 @@
 use std::fs;
 use zune_core::bytestream::ZCursor;
+use zune_core::options::{DecoderOptions, JpegScale};
 use zune_jpeg::JpegDecoder;
 
 #[test]
@@ -22,4 +23,27 @@ fn test_dnl_decoding() {
     let info_after = decoder.info().unwrap();
     assert_eq!(info_after.height, 7524, "DNL image: height must be set after decode()");
     assert_eq!(pixels.len(), 8192 * 7524 * 3);
+
+    let scale = JpegScale::Eighth;
+    let options = DecoderOptions::default().jpeg_set_scale(scale);
+    let mut scaled_decoder = JpegDecoder::new_with_options(ZCursor::new(&bytes[..]), options);
+    let scaled = scaled_decoder.decode().unwrap();
+    let scaled_info = scaled_decoder.info().unwrap();
+    let scaled_width = 8192_usize.div_ceil(scale.denominator());
+    let scaled_height = 7524_usize.div_ceil(scale.denominator());
+
+    assert_eq!(scaled_info.height, 7524, "DNL image: height must be set before scaling");
+    assert_eq!(scaled.len(), scaled_width * scaled_height * 3);
+
+    let full_stride = 8192 * 3;
+    let scaled_stride = scaled_width * 3;
+    for y in 0..scaled_height {
+        let src_y = (y * scale.denominator()).min(7524 - 1);
+        for x in 0..scaled_width {
+            let src_x = (x * scale.denominator()).min(8192 - 1);
+            let src = src_y * full_stride + src_x * 3;
+            let dst = y * scaled_stride + x * 3;
+            assert_eq!(&scaled[dst..dst + 3], &pixels[src..src + 3]);
+        }
+    }
 }
