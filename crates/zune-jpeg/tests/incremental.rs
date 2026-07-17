@@ -775,7 +775,9 @@ fn baseline_images_do_not_expose_progressive_preview_state() {
     assert_eq!(decoder.decoded_preview_output_bytes(), None);
     assert_eq!(decoder.decoded_preview_scanlines(), None);
 
-    decoder.decode_headers().expect("baseline headers should decode");
+    decoder
+        .decode_headers()
+        .expect("baseline headers should decode");
 
     assert_eq!(decoder.decoded_scans(), None);
     assert_eq!(decoder.decoded_preview_output_bytes(), None);
@@ -867,9 +869,15 @@ fn progressive_completed_dc_scan_is_displayable() {
     ] {
         let expected = decode_oneshot(data);
         let scans = progressive_sos_scans(data);
-        assert!(scans.len() > 1, "{name}: fixture must contain multiple scans");
+        assert!(
+            scans.len() > 1,
+            "{name}: fixture must contain multiple scans"
+        );
         assert_eq!(scans[0].spec_start, 0, "{name}: first scan must include DC");
-        assert_eq!(scans[0].spec_end, 0, "{name}: first scan must include only DC");
+        assert_eq!(
+            scans[0].spec_end, 0,
+            "{name}: first scan must include only DC"
+        );
 
         let cutoff = scans[1].data_start + 1;
         let limit = Rc::new(Cell::new(cutoff));
@@ -877,14 +885,20 @@ fn progressive_completed_dc_scan_is_displayable() {
         let mut decoder = JpegDecoder::new(cursor);
         decoder.set_incremental_mode(true);
 
-        decoder.decode_headers().expect("headers should be visible at cutoff");
+        decoder
+            .decode_headers()
+            .expect("headers should be visible at cutoff");
         let height = usize::from(decoder.info().unwrap().height);
         let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
         let err = decoder
             .decode_into(&mut out)
             .expect_err("truncated second progressive scan should be recoverable");
         assert!(err.is_recoverable_eof(), "{name}: got {err:?}");
-        assert_eq!(decoder.decoded_scans(), Some(1), "{name}: DC scan should commit");
+        assert_eq!(
+            decoder.decoded_scans(),
+            Some(1),
+            "{name}: DC scan should commit"
+        );
         assert_eq!(
             decoder.decoded_output_bytes(),
             Some(0),
@@ -931,7 +945,9 @@ fn progressive_preview_first_attempt_is_incremental_opt_in() {
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
 
-    decoder.decode_headers().expect("headers should be visible at cutoff");
+    decoder
+        .decode_headers()
+        .expect("headers should be visible at cutoff");
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
     let err = decoder
         .decode_into(&mut out)
@@ -987,7 +1003,9 @@ fn progressive_ac_scan_retry_keeps_last_completed_preview() {
         let mut decoder = JpegDecoder::new(cursor);
         decoder.set_incremental_mode(true);
 
-        decoder.decode_headers().expect("headers should be visible at cutoff");
+        decoder
+            .decode_headers()
+            .expect("headers should be visible at cutoff");
         let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
         let first_err = decoder
             .decode_into(&mut out)
@@ -1008,7 +1026,10 @@ fn progressive_ac_scan_retry_keeps_last_completed_preview() {
         let second_err = decoder
             .decode_into(&mut out)
             .expect_err("same truncated AC scan should stay recoverable");
-        assert!(second_err.is_recoverable_eof(), "{name}: got {second_err:?}");
+        assert!(
+            second_err.is_recoverable_eof(),
+            "{name}: got {second_err:?}"
+        );
         assert_eq!(decoder.decoded_scans(), Some(completed_scans));
         assert_eq!(decoder.decoded_output_bytes(), Some(0));
         assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
@@ -1718,8 +1739,8 @@ fn progressive_sos_scans(data: &[u8]) -> Vec<ProgressiveSosScan> {
             Some(ProgressiveSosScan {
                 data_start: offset + 2 + length,
                 spec_start: data[params],
-                spec_end: data[params + 1],
-                succ_high: successive >> 4
+                spec_end:   data[params + 1],
+                succ_high:  successive >> 4
             })
         })
         .collect()
