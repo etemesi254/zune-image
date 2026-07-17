@@ -281,7 +281,7 @@ where
     /// # Returns
     /// - Ok(()) Indicates everything was okay during header parsing
     /// - Err: Error that occurred when decoding headers
-    #[allow(unused_assignments,unused_variables)]
+    #[allow(unused_assignments, unused_variables)]
     pub fn decode_headers(&mut self) -> Result<(), BmpDecoderErrors> {
         if self.decoded_headers {
             return Ok(());
@@ -555,9 +555,7 @@ where
                 self.palette.resize(256, PaletteEntry::default());
 
                 self.palette.iter_mut().take(colors as usize).for_each(|x| {
-                    let [b, g, r] = self
-                        .bytes
-                        .read_fixed_bytes_or_zero::<3>();
+                    let [b, g, r] = self.bytes.read_fixed_bytes_or_zero::<3>();
 
                     x.red = r;
                     x.green = g;
