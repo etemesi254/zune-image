@@ -1014,7 +1014,9 @@ where
                         pix.swap(0, 2);
                     }
                 }
-                _ => error!("Unhandled pixel format")
+                _ => {
+                    error!("Unhandled pixel format");
+                }
             }
             self.image_in_bgra = true;
         }
