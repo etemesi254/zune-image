@@ -12,6 +12,8 @@
 //! and that retrying with more data produces correct output.
 
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
+use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::JpegDecoder;
 
 use std::cell::{Cell, RefCell};
@@ -108,6 +110,13 @@ impl Seek for GrowableCursor<'_> {
 fn decode_oneshot(data: &[u8]) -> Vec<u8> {
     let mut decoder = JpegDecoder::new(ZCursor::new(data));
     decoder.decode().expect("one-shot decode failed")
+}
+
+fn decode_with_mode(data: &[u8], incremental: bool, strict: bool) -> Result<Vec<u8>, DecodeErrors> {
+    let options = DecoderOptions::default().set_strict_mode(strict);
+    let mut decoder = JpegDecoder::new_with_options(ZCursor::new(data), options);
+    decoder.set_incremental_mode(incremental);
+    decoder.decode()
 }
 
 fn assert_pixels_match(actual: &[u8], expected: &[u8], name: &str, available: usize) {
@@ -822,6 +831,11 @@ fn progressive_huffman_incremental_parity() {
             31
         ),
         (
+            "progressive_420_color",
+            include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg"),
+            257
+        ),
+        (
             "kiara_limited_progressive_four_components",
             include_bytes!(
                 "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
@@ -837,6 +851,11 @@ fn progressive_completed_dc_scan_is_displayable() {
         (
             "down_sampled_grayscale_prog",
             include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").as_slice()
+        ),
+        (
+            "progressive_420_color",
+            include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg")
+                .as_slice()
         ),
         (
             "kiara_limited_progressive_four_components",
@@ -943,6 +962,11 @@ fn progressive_ac_scan_retry_keeps_last_completed_preview() {
             include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").as_slice()
         ),
         (
+            "progressive_420_color_ac",
+            include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg")
+                .as_slice()
+        ),
+        (
             "kiara_limited_progressive_four_components_ac",
             include_bytes!(
                 "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
@@ -1000,48 +1024,216 @@ fn progressive_ac_scan_retry_keeps_last_completed_preview() {
 
 #[test]
 fn progressive_refinement_retry_does_not_apply_partial_scan_twice() {
-    let name = "down_sampled_grayscale_prog_refine";
-    let data = include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg");
-    let expected = decode_oneshot(data);
-    let scans = progressive_sos_scans(data);
-    let refine_scan = scans
-        .iter()
-        .find(|scan| scan.spec_start > 0 && scan.succ_high > 0)
-        .expect("fixture must contain an AC refinement scan");
-    let cutoff = refine_scan.data_start + 64;
+    for (name, data) in [
+        (
+            "down_sampled_grayscale_prog_refine",
+            include_bytes!("../../../test-images/jpeg/down_sampled_grayscale_prog.jpg").as_slice()
+        ),
+        (
+            "progressive_420_color_refine",
+            include_bytes!("../../../test-images/jpeg/rebuilt_relax_fill_bytes_before_marker.jpg")
+                .as_slice()
+        )
+    ] {
+        let expected = decode_oneshot(data);
+        let scans = progressive_sos_scans(data);
+        let refine_scan = scans
+            .iter()
+            .find(|scan| scan.spec_start > 0 && scan.succ_high > 0)
+            .expect("fixture must contain an AC refinement scan");
+        let cutoff = refine_scan.data_start + 64;
+        let limit = Rc::new(Cell::new(cutoff));
+        let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+        let mut decoder = JpegDecoder::new(cursor);
+        decoder.set_incremental_mode(true);
+
+        decoder
+            .decode_headers()
+            .expect("headers should be visible at cutoff");
+        let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
+        let first_err = decoder
+            .decode_into(&mut out)
+            .expect_err("truncated refinement scan should be recoverable");
+        assert!(first_err.is_recoverable_eof(), "{name}: got {first_err:?}");
+        let completed_scans = decoder
+            .decoded_scans()
+            .expect("progressive headers should expose scan progress");
+        assert!(
+            completed_scans > 0,
+            "{name}: completed scans should remain displayable"
+        );
+        assert_eq!(decoder.decoded_output_bytes(), Some(0));
+        assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
+        let first_partial = out.clone();
+
+        let second_err = decoder
+            .decode_into(&mut out)
+            .expect_err("same truncated refinement scan should stay recoverable");
+        assert!(
+            second_err.is_recoverable_eof(),
+            "{name}: got {second_err:?}"
+        );
+        assert_eq!(decoder.decoded_scans(), Some(completed_scans));
+        assert_eq!(decoder.decoded_output_bytes(), Some(0));
+        assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
+        assert_eq!(
+            out, first_partial,
+            "{name}: partial refinement data was applied twice"
+        );
+
+        limit.set(data.len());
+        decoder
+            .decode_into(&mut out)
+            .expect("full input should finish progressive decode");
+        assert_pixels_match(&out, &expected, name, data.len());
+    }
+}
+
+fn assert_progressive_marker_split_recovers(
+    data: &[u8], expected: &[u8], cutoff: usize, expect_preview: bool, label: &str
+) {
     let limit = Rc::new(Cell::new(cutoff));
     let cursor = GrowableCursor::new(data, Rc::clone(&limit));
     let mut decoder = JpegDecoder::new(cursor);
     decoder.set_incremental_mode(true);
+    decoder
+        .decode_headers()
+        .expect("first scan headers should be visible");
 
-    decoder.decode_headers().expect("headers should be visible at cutoff");
     let mut out = vec![0u8; decoder.output_buffer_size().unwrap()];
     let first_err = decoder
         .decode_into(&mut out)
-        .expect_err("truncated refinement scan should be recoverable");
-    assert!(first_err.is_recoverable_eof(), "got {first_err:?}");
-    let completed_scans = decoder
-        .decoded_scans()
-        .expect("progressive headers should expose scan progress");
-    assert!(completed_scans > 0, "completed scans should remain displayable");
-    assert_eq!(decoder.decoded_output_bytes(), Some(0));
-    assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
-    let first_partial = out.clone();
+        .expect_err("split marker should return recoverable EOF");
+    assert!(first_err.is_recoverable_eof(), "{label}: got {first_err:?}");
+    let completed_scans = decoder.decoded_scans().expect("image must be progressive");
+    assert_eq!(decoder.decoded_output_bytes(), Some(0), "{label}");
+    assert_eq!(decoder.decoded_scanlines(), Some(0), "{label}");
+    if expect_preview {
+        assert!(
+            completed_scans > 0,
+            "{label}: first scan should be committed"
+        );
+        assert_eq!(
+            decoder.decoded_preview_output_bytes(),
+            Some(out.len()),
+            "{label}"
+        );
+    } else {
+        assert_eq!(
+            completed_scans, 0,
+            "{label}: ambiguous marker must not commit scan"
+        );
+        assert_eq!(decoder.decoded_preview_output_bytes(), Some(0), "{label}");
+        assert!(
+            out.iter().all(|byte| *byte == 0),
+            "{label}: partial scan leaked"
+        );
+    }
+    let preview = out.clone();
 
     let second_err = decoder
         .decode_into(&mut out)
-        .expect_err("same truncated refinement scan should stay recoverable");
-    assert!(second_err.is_recoverable_eof(), "got {second_err:?}");
-    assert_eq!(decoder.decoded_scans(), Some(completed_scans));
-    assert_eq!(decoder.decoded_output_bytes(), Some(0));
-    assert_eq!(decoder.decoded_preview_output_bytes(), Some(out.len()));
-    assert_eq!(out, first_partial, "partial refinement data was applied twice");
+        .expect_err("unchanged split should remain recoverable");
+    assert!(
+        second_err.is_recoverable_eof(),
+        "{label}: got {second_err:?}"
+    );
+    assert_eq!(decoder.decoded_scans(), Some(completed_scans), "{label}");
+    assert_eq!(decoder.decoded_output_bytes(), Some(0), "{label}");
+    let expected_preview_bytes = if expect_preview { out.len() } else { 0 };
+    assert_eq!(
+        decoder.decoded_preview_output_bytes(),
+        Some(expected_preview_bytes),
+        "{label}"
+    );
+    assert_eq!(
+        out, preview,
+        "{label}: unchanged scan count changed preview pixels"
+    );
 
     limit.set(data.len());
     decoder
         .decode_into(&mut out)
-        .expect("full input should finish progressive decode");
-    assert_pixels_match(&out, &expected, name, data.len());
+        .unwrap_or_else(|error| panic!("{label}: full input should finish: {error:?}"));
+    assert_pixels_match(&out, expected, label, data.len());
+}
+
+#[test]
+fn progressive_inter_scan_marker_splits_preserve_preview() {
+    let data = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+    let expected = decode_oneshot(data);
+    let markers = list_jpeg_markers(data);
+    let first_sos = markers
+        .iter()
+        .position(|(_, code, _)| *code == 0xDA)
+        .expect("fixture must contain an SOS marker");
+    let inter_scan_dht = markers
+        .iter()
+        .skip(first_sos + 1)
+        .find(|(_, code, _)| *code == 0xC4)
+        .copied()
+        .expect("fixture must contain an inter-scan DHT marker");
+    let next_sos = markers
+        .iter()
+        .skip(first_sos + 1)
+        .find(|(_, code, _)| *code == 0xDA)
+        .copied()
+        .expect("fixture must contain a second SOS marker");
+
+    for (marker_name, (offset, _, body_len), prefix_has_preview) in
+        [("DHT", inter_scan_dht, false), ("SOS", next_sos, true)]
+    {
+        let body_len = body_len.expect("DHT and SOS markers must have bodies");
+        let marker_end = offset + 2 + body_len;
+        let prefix_label = format!("progressive {marker_name} at {offset}, prefix split");
+        assert_progressive_marker_split_recovers(
+            data,
+            &expected,
+            offset + 1,
+            prefix_has_preview,
+            &prefix_label
+        );
+
+        // Once the marker code is visible, the preceding entropy scan is known
+        // to be complete and must remain available as a preview while the
+        // marker length/body is still incomplete.
+        let mut cutoffs = vec![offset + 2, offset + 3, offset + 4, marker_end - 1];
+        cutoffs.sort_unstable();
+        cutoffs.dedup();
+        for cutoff in cutoffs {
+            let label = format!("progressive {marker_name} at {offset}, split at {cutoff}");
+            assert_progressive_marker_split_recovers(data, &expected, cutoff, true, &label);
+        }
+    }
+}
+
+#[test]
+fn progressive_non_strict_scratch_path_matches_direct_path() {
+    let original = include_bytes!("../../../test-images/jpeg/synthetic_image.jpg");
+    let first_sos = sos_marker_offset(original, 0);
+    let huffman_selector = first_sos + 6;
+    assert_eq!(
+        original[huffman_selector], 0,
+        "fixture's first scan must initially select Huffman tables 0/0"
+    );
+
+    let mut corrupt = original.to_vec();
+    corrupt[huffman_selector] = 0xFF;
+
+    let strict_error = decode_with_mode(&corrupt, true, true)
+        .expect_err("strict mode must reject the missing Huffman table");
+    assert!(!strict_error.is_recoverable_eof());
+
+    let direct = decode_with_mode(&corrupt, false, false)
+        .expect("non-strict direct path should produce best-effort output");
+    let scratch = decode_with_mode(&corrupt, true, false)
+        .expect("non-strict scratch path should produce best-effort output");
+    assert_pixels_match(
+        &scratch,
+        &direct,
+        "progressive non-strict scratch/direct parity",
+        corrupt.len()
+    );
 }
 
 #[test]
@@ -1108,7 +1300,7 @@ fn arithmetic_restart_resume_uses_rst_checkpoint() {
 
     let seeks = seek_log.borrow();
     assert!(
-        seeks.iter().any(|&position| position == 857),
+        seeks.contains(&857),
         "retry should seek to first RST checkpoint at 857, got {seeks:?}"
     );
     assert_pixels_match(&out, &expected, "arith_seq_restart_checkpoint", data.len());
