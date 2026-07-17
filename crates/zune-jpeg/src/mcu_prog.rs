@@ -61,7 +61,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         clippy::too_many_lines
     )]
     fn decode_mcu_ycbcr_progressive_inner<B: BitStream>(
-        &mut self, pixels: &mut [u8], block: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, pixels: &mut [u8], block: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
         let mut mcu_height;
@@ -138,7 +138,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     e,
                     block,
                     pixels,
-                    preserve_progressive_scans,
+                    preserve_progressive_scans
                 )
             }
         };
@@ -152,7 +152,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             e,
                             block,
                             pixels,
-                            preserve_progressive_scans,
+                            preserve_progressive_scans
                         );
                     }
 
@@ -166,7 +166,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         &mut stream,
                         block,
                         pixels,
-                        preserve_progressive_scans,
+                        preserve_progressive_scans
                     )? {
                         break 'eoi;
                     }
@@ -190,7 +190,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                                 e,
                                 block,
                                 pixels,
-                                preserve_progressive_scans,
+                                preserve_progressive_scans
                             )
                         }
                     }
@@ -204,7 +204,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             e,
                             block,
                             pixels,
-                            preserve_progressive_scans,
+                            preserve_progressive_scans
                         );
                     }
                 }
@@ -219,7 +219,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         e,
                         block,
                         pixels,
-                        preserve_progressive_scans,
+                        preserve_progressive_scans
                     )
                 }
             }
@@ -230,7 +230,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_progressive_scan<B: BitStream>(
         &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
-        preserve_completed_scans: bool,
+        preserve_completed_scans: bool
     ) -> Result<bool, DecodeErrors> {
         if !preserve_completed_scans {
             return self.decode_progressive_scan_direct(stream, block);
@@ -295,7 +295,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn decode_progressive_scan_direct<B: BitStream>(
-        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS],
+        &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS]
     ) -> Result<bool, DecodeErrors> {
         let result = self.parse_entropy_coded_data(stream, block);
 
@@ -325,7 +325,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn handle_progressive_inter_scan_error(
         &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
-        preserve_completed_scans: bool,
+        preserve_completed_scans: bool
     ) -> Result<(), DecodeErrors> {
         if error.is_recoverable_eof() {
             if preserve_completed_scans {
@@ -350,7 +350,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     }
 
     fn finish_progressive_partial(
-        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
+        &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8]
     ) -> Result<(), DecodeErrors> {
         if self.progressive_completed_scans == 0 {
             self.pixels_decoded = 0;
