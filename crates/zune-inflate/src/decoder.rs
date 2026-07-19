@@ -615,18 +615,22 @@ impl<'a> DeflateDecoder<'a> {
 
                 let start = self.stream.get_position() + self.position + self.stream.over_read;
 
-                // ensure there is enough space for a fast copy
-                if dest_offset + len + FASTCOPY_BYTES > out_block.len() {
-                    if dest_offset.wrapping_add(len) > out_block.len() {
-                        return Err(InflateDecodeErrors::new(
-                            DecodeErrorStatus::OutputLimitExceeded(
-                                self.options.limit,
-                                out_block.len(),
-                            ),
-                            out_block,
-                        ));
-                    }
-                    // and if there is not, resize
+                // Enforce the limit against the projected output size, not the buffer
+                // length — growing to fit a stored block is not a limit violation (#94).
+                let projected = dest_offset.saturating_add(len);
+
+                if projected > self.options.limit {
+                    out_block.truncate(dest_offset);
+
+                    let err_msg =
+                        DecodeErrorStatus::OutputLimitExceeded(self.options.limit, projected);
+                    let error = InflateDecodeErrors::new(err_msg, out_block);
+
+                    return Err(error);
+                }
+
+                // resize the buffer if there isn't room for a fast copy
+                if projected + FASTCOPY_BYTES > out_block.len() {
                     let new_len = out_block.len() + RESIZE_BY + len;
 
                     out_block.resize(new_len, 0);
@@ -636,15 +640,6 @@ impl<'a> DeflateDecoder<'a> {
                     out_block.truncate(dest_offset);
 
                     let err_msg = DecodeErrorStatus::CorruptData;
-                    let error = InflateDecodeErrors::new(err_msg, out_block);
-
-                    return Err(error);
-                }
-                if dest_offset > self.options.limit {
-                    out_block.truncate(dest_offset);
-
-                    let err_msg =
-                        DecodeErrorStatus::OutputLimitExceeded(self.options.limit, out_block.len());
                     let error = InflateDecodeErrors::new(err_msg, out_block);
 
                     return Err(error);
