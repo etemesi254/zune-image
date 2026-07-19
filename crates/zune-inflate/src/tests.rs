@@ -765,3 +765,145 @@ mod tests {
         }
     }
 }
+
+/// One-shot [`crate::DeflateDecoder`] tests for the stored/uncompressed-block output
+/// path. A valid stream that grows past the initial `size_hint` must not be rejected
+/// as `OutputLimitExceeded`, while the real user limit is still enforced (#94).
+mod one_shot_store_limit {
+    use miniz_oxide::deflate::{compress_to_vec, compress_to_vec_zlib};
+
+    use crate::errors::DecodeErrorStatus;
+    use crate::{DeflateDecoder, DeflateOptions};
+
+    /// gzip CRC-32 so we can build a valid gzip container in-test (miniz only emits
+    /// raw/zlib).
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFFu32;
+        for &b in data {
+            crc ^= b as u32;
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    fn gzip_wrap(raw_deflate: &[u8], original: &[u8]) -> Vec<u8> {
+        let mut out = vec![0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 0xff];
+        out.extend_from_slice(raw_deflate);
+        out.extend_from_slice(&crc32(original).to_le_bytes());
+        out.extend_from_slice(&(original.len() as u32).to_le_bytes());
+        out
+    }
+
+    /// A payload a level-0 encoder stores verbatim.
+    fn payload(n: usize) -> Vec<u8> {
+        (0..n).map(|i| (i * 31 + 7) as u8).collect()
+    }
+
+    /// A raw deflate stream of one final stored block (`data.len()` must be <= 65535),
+    /// so the projected output size at the block boundary is exactly `data.len()`.
+    fn raw_single_stored_block(data: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(data.len() + 5);
+        out.push(0x01); // BFINAL=1, BTYPE=00
+        let len = data.len() as u16;
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(&(!len).to_le_bytes());
+        out.extend_from_slice(data);
+        out
+    }
+
+    /// A single stored block larger than the default 37000-byte `size_hint` must decode
+    /// through every one-shot entry point (regressed by 0c0f87b9, restores #94).
+    #[test]
+    fn stored_block_over_size_hint_decodes_all_formats() {
+        let data = payload(40_000);
+
+        let raw = compress_to_vec(&data, 0);
+        assert_eq!(
+            DeflateDecoder::new(&raw).decode_deflate().unwrap(),
+            data,
+            "raw deflate stored block > size_hint must decode"
+        );
+
+        let zlib = compress_to_vec_zlib(&data, 0);
+        assert_eq!(
+            DeflateDecoder::new(&zlib).decode_zlib().unwrap(),
+            data,
+            "zlib stored block > size_hint must decode"
+        );
+
+        let gzip = gzip_wrap(&raw, &data);
+        assert_eq!(
+            DeflateDecoder::new(&gzip).decode_gzip().unwrap(),
+            data,
+            "gzip stored block > size_hint must decode"
+        );
+    }
+
+    /// Round-trip across the 37000-byte growth boundary, including inputs spanning
+    /// several stored blocks (each block caps at 65535 bytes).
+    #[test]
+    fn stored_block_roundtrip_across_growth_boundary() {
+        for &n in &[36_999usize, 37_000, 37_001, 50_000, 70_000, 200_000] {
+            let data = payload(n);
+
+            let raw = compress_to_vec(&data, 0);
+            assert_eq!(
+                DeflateDecoder::new(&raw).decode_deflate().unwrap(),
+                data,
+                "raw deflate round-trip failed at n={n}"
+            );
+
+            let zlib = compress_to_vec_zlib(&data, 0);
+            assert_eq!(
+                DeflateDecoder::new(&zlib).decode_zlib().unwrap(),
+                data,
+                "zlib round-trip failed at n={n}"
+            );
+        }
+    }
+
+    /// The bomb guard is preserved: a genuinely over-limit stream is still rejected, and
+    /// the reported size is the projected output size (`data.len()` here), not the buffer
+    /// length that the old check reported.
+    #[test]
+    fn stored_block_over_user_limit_still_errors_with_projected_size() {
+        let data = payload(40_000);
+        let raw = raw_single_stored_block(&data);
+
+        let opts = DeflateOptions::default().set_limit(1000);
+        let err = DeflateDecoder::new_with_options(&raw, opts)
+            .decode_deflate()
+            .expect_err("output beyond the user limit must be rejected");
+
+        match err.error {
+            DecodeErrorStatus::OutputLimitExceeded(limit, current) => {
+                assert_eq!(limit, 1000);
+                assert_eq!(
+                    current,
+                    data.len(),
+                    "should report the projected output size"
+                );
+            }
+            other => panic!("expected OutputLimitExceeded, got {other:?}")
+        }
+    }
+
+    /// A limit equal to the output size must succeed: projected == limit is not
+    /// "exceeded", matching the compressed-block `> limit` semantics.
+    #[test]
+    fn stored_block_limit_exactly_met_succeeds() {
+        let data = payload(40_000);
+        let raw = compress_to_vec(&data, 0);
+
+        let opts = DeflateOptions::default().set_limit(data.len());
+        assert_eq!(
+            DeflateDecoder::new_with_options(&raw, opts)
+                .decode_deflate()
+                .unwrap(),
+            data
+        );
+    }
+}
