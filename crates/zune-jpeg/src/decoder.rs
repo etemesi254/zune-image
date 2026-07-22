@@ -90,7 +90,35 @@ pub(crate) struct ScanDecodeState {
     pub(crate) append_snapshot:     HeaderAppendStateSnapshot,
     pub(crate) sos_snapshot:        SosParamsSnapshot,
     pub(crate) header_snapshot:     ScanHeaderStateSnapshot,
-    pub(crate) scan_checkpoint:     Option<Box<ScanCheckpoint>>
+    pub(crate) scan_checkpoint:     Option<Box<ScanCheckpoint>>,
+    pub(crate) progressive_resume:  Option<ProgressiveResumeState>
+}
+
+/// Row boundary where a cancelled progressive decode can resume safely.
+#[derive(Clone, Copy)]
+pub(crate) enum ProgressiveResumePhase {
+    /// Resume entropy decoding in the current SOS scan.
+    Entropy {
+        next_row:   usize,
+        seen_scans: usize
+    },
+    /// Resume final IDCT, upsampling, and color conversion.
+    Finish {
+        next_row:      usize,
+        pixels_written: usize
+    }
+}
+
+/// Minimal progressive state not already retained by `JpegDecoder`.
+///
+/// SOS parameters, entropy tables, predictors, restart state, coefficients,
+/// and upsampling carry remain in their existing decoder-owned fields. A
+/// progressive resume therefore bypasses first-SOS replay in `decode_into`.
+#[derive(Clone, Copy)]
+pub(crate) struct ProgressiveResumeState {
+    pub(crate) phase:           ProgressiveResumePhase,
+    pub(crate) stream_position: usize,
+    pub(crate) bitstream_state: BitstreamStateSnapshot
 }
 
 /// SOS fields restored before replaying scan data.
@@ -415,7 +443,8 @@ where
             append_snapshot,
             sos_snapshot,
             header_snapshot,
-            scan_checkpoint: None
+            scan_checkpoint: None,
+            progressive_resume: None
         }));
         Ok(())
     }
@@ -490,6 +519,33 @@ where
     pub(crate) fn invalidate_scan_checkpoint(&mut self) {
         if let Some(state) = self.scan_state.as_mut() {
             state.scan_checkpoint = None;
+        }
+    }
+
+    pub(crate) fn progressive_resume(&self) -> Option<ProgressiveResumeState> {
+        self.scan_state
+            .as_deref()
+            .and_then(|state| state.progressive_resume)
+    }
+
+    pub(crate) fn checkpoint_progressive(
+        &mut self, phase: ProgressiveResumePhase, bitstream_state: BitstreamStateSnapshot
+    ) -> Result<(), DecodeErrors> {
+        let stream_position = self.stream_position()?;
+        if let Some(state) = self.scan_state.as_mut() {
+            let resume = ProgressiveResumeState {
+                phase,
+                stream_position,
+                bitstream_state
+            };
+            state.progressive_resume = Some(resume);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_progressive_resume(&mut self) {
+        if let Some(state) = self.scan_state.as_mut() {
+            state.progressive_resume = None;
         }
     }
 
@@ -800,6 +856,8 @@ where
     /// closure over an `Arc<AtomicBool>` or a deadline). If it fires, decoding
     /// returns
     /// [`DecodeErrors::Cancelled`](crate::errors::DecodeErrors::Cancelled).
+    /// A cancelled decode can resume on the same decoder and output buffer.
+    /// Replace or clear a check that remains cancelled before retrying.
     /// Passing [`NeverCancel`](crate::NeverCancel) (or any check whose
     /// [`may_cancel`](crate::CancelCheck::may_cancel) is `false`) clears it; the
     /// default is no check, which costs a single predicted branch per poll.
@@ -1429,6 +1487,7 @@ where
             pixels_written:  usize,
             dc_predictions:  [(i32, i32); MAX_COMPONENTS]
         }
+        let progressive_resume = self.progressive_resume();
         let scan_plan = self.scan_state.as_deref().map(|state| ScanPlan {
             scan_start_position:   state.scan_start_position,
             outer_append_snapshot: state.append_snapshot,
@@ -1445,7 +1504,17 @@ where
                 }
             })
         });
-        if let Some(plan) = scan_plan {
+        if let Some(resume) = progressive_resume {
+            // Cooperative progressive cancellation happens only before an MCU
+            // row. The decoder still owns the exact current SOS, tables,
+            // predictors, restart state, coefficients, and upsampling carry,
+            // so restoring first-SOS state here would destroy the checkpoint.
+            self.stream.set_position(resume.stream_position)?;
+            self.pixels_decoded = match resume.phase {
+                ProgressiveResumePhase::Entropy { .. } => 0,
+                ProgressiveResumePhase::Finish { pixels_written, .. } => pixels_written
+            };
+        } else if let Some(plan) = scan_plan {
             let ScanPlan {
                 scan_start_position,
                 outer_append_snapshot,
@@ -1565,6 +1634,7 @@ where
                 );
                 if let Some(state) = self.scan_state.as_deref_mut() {
                     state.scan_checkpoint = None;
+                    state.progressive_resume = None;
                 }
                 self.pixels_decoded = expected_size;
                 Ok(())
