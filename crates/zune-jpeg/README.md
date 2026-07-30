@@ -47,10 +47,11 @@ caller expects input to arrive incrementally; this records checkpoints during
 the first baseline Huffman scan attempt and can reduce replay work on the next
 retry.
 
-Fine-grained row checkpoints currently apply within baseline Huffman scan
-bodies, including baseline multi-SOS / non-interleaved images. Those images may
-still report no stable output rows until the later component scans have been
-decoded and final assembly has run.
+Incremental-EOF row checkpoints apply within baseline Huffman scan bodies.
+Progressive Huffman decoding uses the same row boundary for cooperative
+cancellation, while truncated progressive input keeps scan-start replay.
+Progressive and baseline multi-SOS images still report no stable output rows
+until every component scan has been decoded and final assembly has run.
 
 Scan checkpoints store only scalar resume state: stream position, next MCU
 row/column, restart countdown, SOS parameters, DC predictors, and bitstream
@@ -58,6 +59,10 @@ state. Coefficients for already-decoded component scans stay on the decoder
 across retries. For multi-SOS images this means a retry can continue inside the
 current component scan, then decode later component scans, but output rows are
 not considered stable until final assembly has all component data.
+
+Cooperative cancellation can also be retried on the same decoder and output
+buffer. Replace or clear the cancellation check before retrying; a check that
+remains cancelled will immediately yield `DecodeErrors::Cancelled` again.
 
 ```Rust
 use zune_core::bytestream::ZCursor;
