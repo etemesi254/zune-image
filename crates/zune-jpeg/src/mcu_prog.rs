@@ -754,12 +754,38 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         {
                             *out = i32::from(*x) * qt_val;
                         }
-                        // determine where to write.
-                        let sl = &mut temp_channel[component.idct_pos..];
+                        let (x_start, x_end, y_start, y_end) = if self.is_interleaved {
+                            let v_factor = self.v_max / component.vertical_sample;
+                            let h_factor = self.h_max / component.horizontal_sample;
+                            let block_h = v_factor * 8;
+                            let block_w = h_factor * 8;
+                            let y0 = i * self.mcu_height + k * block_h;
+                            let x0 = j * block_w;
+                            (x0, x0 + block_w, y0, y0 + block_h)
+                        } else {
+                            let y0 = i * 8;
+                            let x0 = j * 8;
+                            (x0, x0 + 8, y0, y0 + 8)
+                        };
 
+                        let crop_y0 = self.crop_y.saturating_sub(16);
+                        let crop_y1 = (self.crop_y + self.crop_height).saturating_add(16);
+                        let crop_x0 = self.crop_x.saturating_sub(16);
+                        let crop_x1 = (self.crop_x + self.crop_width).saturating_add(16);
+
+                        let intersects = !self.use_cropping || (
+                            x_start < crop_x1 && x_end > crop_x0 &&
+                            y_start < crop_y1 && y_end > crop_y0
+                        );
+
+                        let idct_pos = component.idct_pos;
                         component.idct_pos += 8;
-                        // tmp now contains a dequantized block so idct it
-                        (self.idct_func)(&mut tmp, sl, component.width_stride);
+
+                        if intersects {
+                            let sl = &mut temp_channel[idct_pos..];
+                            // tmp now contains a dequantized block so idct it
+                            (self.idct_func)(&mut tmp, sl, component.width_stride);
+                        }
                     }
                     // after every write of 8, skip 7 since idct write stride wise 8 times.
                     //

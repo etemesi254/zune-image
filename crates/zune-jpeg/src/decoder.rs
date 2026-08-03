@@ -300,6 +300,11 @@ pub struct JpegDecoder<T> {
     /// Number of output bytes known to be stable after the most recent
     /// `decode_into` attempt.
     pub(crate) pixels_decoded: usize,
+    pub(crate) crop_x:           usize,
+    pub(crate) crop_y:           usize,
+    pub(crate) crop_width:       usize,
+    pub(crate) crop_height:      usize,
+    pub(crate) use_cropping:     bool,
     /// Persistent coefficient buffers for multi-SOS baseline decoding.
     ///
     /// Owned by the decoder so contents survive a recoverable EOF and the
@@ -571,6 +576,11 @@ where
             header_resume_position: 0,
             scan_state: None,
             pixels_decoded: 0,
+            crop_x:            0,
+            crop_y:            0,
+            crop_width:        0,
+            crop_height:       0,
+            use_cropping:      false,
             mcu_checkpoints_enabled: false,
             incremental_mode: false,
             scan_decode_attempted: false,
@@ -655,6 +665,17 @@ where
         return Some(self.info.clone());
     }
 
+    /// Set the cropping region for ROI (Region of Interest) decoding.
+    ///
+    /// This allows skipping IDCT and color conversion outside this region.
+    pub fn set_cropping_region(&mut self, x: usize, y: usize, w: usize, h: usize) {
+        self.crop_x = x;
+        self.crop_y = y;
+        self.crop_width = w;
+        self.crop_height = h;
+        self.use_cropping = true;
+    }
+
     /// Return the number of bytes required to hold a decoded image frame
     /// decoded using the given input transformations
     ///
@@ -665,9 +686,10 @@ where
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
         return if self.headers_decoded {
+            let w = if self.use_cropping { self.crop_width } else { usize::from(self.width()) };
+            let h = if self.use_cropping { self.crop_height } else { usize::from(self.height()) };
             Some(
-                usize::from(self.width())
-                    .checked_mul(usize::from(self.height()))?
+                w.checked_mul(h)?
                     .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
             )
         } else {
