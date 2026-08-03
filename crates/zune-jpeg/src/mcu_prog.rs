@@ -230,12 +230,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
     fn decode_progressive_scan<B: BitStream>(
         &mut self, stream: &mut B, block: &mut [Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
-        preserve_completed_scans: bool
+        use_scratch_coefficients: bool
     ) -> Result<bool, DecodeErrors> {
-        if !preserve_completed_scans {
+        if !use_scratch_coefficients {
+            // The default first decode attempt takes this path and updates the
+            // existing progressive buffers directly without cloning them.
             return self.decode_progressive_scan_direct(stream, block);
         }
 
+        // Incremental preservation was explicitly enabled for the first attempt,
+        // or this decoder is being retried. Clone only the components touched by
+        // the current scan so recoverable EOF can discard partial updates.
         self.checkpoint_progressive_scan(self.progressive_completed_scans)?;
         let mut touched_components = [false; MAX_COMPONENTS];
         for scan_index in 0..usize::from(self.num_scans) {

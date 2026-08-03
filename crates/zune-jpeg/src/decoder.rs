@@ -820,9 +820,11 @@ where
     /// active scan decodes through scratch coefficient storage so completed
     /// scans can be rendered as previews if that first attempt reaches EOF.
     ///
-    /// The default is `false`, which keeps one-shot decoding on the
-    /// lowest-overhead path. After a recoverable EOF, later attempts may enable
-    /// the same incremental preservation automatically.
+    /// The default is `false`. A first-attempt one-shot progressive decode then
+    /// updates its existing coefficient buffers directly and does not clone them.
+    /// Incremental mode clones only the coefficient buffers touched by the active
+    /// progressive scan. After any previous scan decode attempt, later attempts
+    /// enable the same preservation automatically so retries remain idempotent.
     pub fn set_incremental_mode(&mut self, enabled: bool) {
         self.incremental_mode = enabled;
     }
