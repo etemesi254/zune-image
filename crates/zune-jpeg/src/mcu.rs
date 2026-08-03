@@ -94,6 +94,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, pixels: &mut [u8], progressive_mcus: &mut [Vec<i16>; MAX_COMPONENTS],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
+        self.next_original_row = 0;
 
         let (mut mcu_width, mut mcu_height);
 
@@ -772,10 +773,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                             };
 
                             let idct_pos = channel.get_mut(idct_position..).unwrap();
-
-                            if len <= 1 {
+                            if len <= 1 || self.downscale_factor >= 8 {
                                 (self.idct_1x1_func)(tmp, idct_pos, component.width_stride);
-                            } else if len <= 10 {
+                            } else if len <= 10 || self.downscale_factor >= 4 {
                                 (self.idct_4x4_func)(tmp, idct_pos, component.width_stride);
                             } else {
                                 //  call idct.
@@ -1086,34 +1086,66 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         if out_colorspace_components < comp_len && self.options.jpeg_get_out_colorspace() == Luma {
             comp_len = out_colorspace_components;
         }
+        let out_width = width / self.downscale_factor;
+        let n = self.downscale_factor;
         let mut color_conv_function =
             |num_iters: usize, samples: [&[i16]; 4]| -> Result<(), DecodeErrors> {
-                for (pos, output) in pixels[px..]
-                    .chunks_exact_mut(width * out_colorspace_components)
-                    .take(num_iters)
-                    .enumerate()
-                {
-                    let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+                let mut chunks = pixels[px..].chunks_exact_mut(out_width * out_colorspace_components);
+                for pos in 0..num_iters {
+                    let row_idx = self.next_original_row;
+                    self.next_original_row += 1;
 
-                    // iterate over each line, since color-convert needs only
-                    // one line
-                    for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
-                        let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
-                        if temp.is_none() {
-                            return Err(DecodeErrors::FormatStatic("Missing samples"));
+                    let is_row_grid = row_idx % n == 0;
+                    if is_row_grid {
+                        let Some(output) = chunks.next() else {
+                            break;
+                        };
+                        if n == 1 {
+                            let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+                            for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                                let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
+                                if temp.is_none() {
+                                    return Err(DecodeErrors::FormatStatic("Missing samples"));
+                                }
+                                *samp = temp.unwrap();
+                            }
+                            color_convert(
+                                &raw_samples,
+                                self.color_convert_16,
+                                self.input_colorspace,
+                                self.options.jpeg_get_out_colorspace(),
+                                output,
+                                width,
+                                padded_width,
+                            )?;
+                        } else {
+                            let mut temp_row = vec![0u8; width * out_colorspace_components];
+                            let mut raw_samples: [&[i16]; 4] = [&[], &[], &[], &[]];
+                            for (j, samp) in raw_samples.iter_mut().enumerate().take(comp_len) {
+                                let temp = &samples[j].get(pos * padded_width..(pos + 1) * padded_width);
+                                if temp.is_none() {
+                                    return Err(DecodeErrors::FormatStatic("Missing samples"));
+                                }
+                                *samp = temp.unwrap();
+                            }
+                            color_convert(
+                                &raw_samples,
+                                self.color_convert_16,
+                                self.input_colorspace,
+                                self.options.jpeg_get_out_colorspace(),
+                                &mut temp_row,
+                                width,
+                                padded_width,
+                            )?;
+                            for c in 0..out_width {
+                                let src_idx = c * n * out_colorspace_components;
+                                let dst_idx = c * out_colorspace_components;
+                                output[dst_idx..dst_idx + out_colorspace_components]
+                                    .copy_from_slice(&temp_row[src_idx..src_idx + out_colorspace_components]);
+                            }
                         }
-                        *samp = temp.unwrap();
+                        px += out_width * out_colorspace_components;
                     }
-                    color_convert(
-                        &raw_samples,
-                        self.color_convert_16,
-                        self.input_colorspace,
-                        self.options.jpeg_get_out_colorspace(),
-                        output,
-                        width,
-                        padded_width,
-                    )?;
-                    px += width * out_colorspace_components;
                 }
                 Ok(())
             };

@@ -300,6 +300,8 @@ pub struct JpegDecoder<T> {
     /// Number of output bytes known to be stable after the most recent
     /// `decode_into` attempt.
     pub(crate) pixels_decoded: usize,
+    pub(crate) downscale_factor: usize,
+    pub(crate) next_original_row: usize,
     /// Persistent coefficient buffers for multi-SOS baseline decoding.
     ///
     /// Owned by the decoder so contents survive a recoverable EOF and the
@@ -571,6 +573,8 @@ where
             header_resume_position: 0,
             scan_state: None,
             pixels_decoded: 0,
+            downscale_factor: 1,
+            next_original_row: 0,
             mcu_checkpoints_enabled: false,
             incremental_mode: false,
             scan_decode_attempted: false,
@@ -655,6 +659,21 @@ where
         return Some(self.info.clone());
     }
 
+    /// Set the downscaling factor (1, 2, 4, or 8).
+    pub fn set_downscale_factor(&mut self, factor: usize) {
+        self.downscale_factor = factor;
+    }
+
+    /// Return the output width of the image taking downscaling into account.
+    pub fn output_width(&self) -> usize {
+        usize::from(self.info.width) / self.downscale_factor
+    }
+
+    /// Return the output height of the image taking downscaling into account.
+    pub fn output_height(&self) -> usize {
+        usize::from(self.info.height) / self.downscale_factor
+    }
+
     /// Return the number of bytes required to hold a decoded image frame
     /// decoded using the given input transformations
     ///
@@ -665,9 +684,10 @@ where
     #[must_use]
     pub fn output_buffer_size(&self) -> Option<usize> {
         return if self.headers_decoded {
+            let w = self.output_width();
+            let h = self.output_height();
             Some(
-                usize::from(self.width())
-                    .checked_mul(usize::from(self.height()))?
+                w.checked_mul(h)?
                     .checked_mul(self.options.jpeg_get_out_colorspace().num_components())?
             )
         } else {

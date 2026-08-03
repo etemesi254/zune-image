@@ -44,6 +44,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
         setup_component_params(self)?;
+        self.next_original_row = 0;
         let mut mcu_height;
 
         // Progressive retries replay from scan start with a fresh buffer.
@@ -758,8 +759,14 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                         let sl = &mut temp_channel[component.idct_pos..];
 
                         component.idct_pos += 8;
-                        // tmp now contains a dequantized block so idct it
-                        (self.idct_func)(&mut tmp, sl, component.width_stride);
+                        if self.downscale_factor >= 8 {
+                            (self.idct_1x1_func)(&mut tmp, sl, component.width_stride);
+                        } else if self.downscale_factor >= 4 {
+                            (self.idct_4x4_func)(&mut tmp, sl, component.width_stride);
+                        } else {
+                            // tmp now contains a dequantized block so idct it
+                            (self.idct_func)(&mut tmp, sl, component.width_stride);
+                        }
                     }
                     // after every write of 8, skip 7 since idct write stride wise 8 times.
                     //
