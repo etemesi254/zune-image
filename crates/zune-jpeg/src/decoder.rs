@@ -452,7 +452,10 @@ pub(crate) enum McuDecodeOutput<'planes, 'buf> {
 
 impl McuDecodeOutput<'_, '_> {
     pub(crate) const fn is_raw(&self) -> bool {
-        matches!(self, Self::RawPlanes(_))
+        match self {
+            Self::Pixels(_) => false,
+            Self::RawPlanes(_) => true
+        }
     }
 
     pub(crate) fn pixels_mut(&mut self) -> Option<&mut [u8]> {

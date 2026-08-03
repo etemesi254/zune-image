@@ -248,16 +248,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             let scan_mcu_height = if all_components_in_first_scan {
                 mcu_height
             } else {
-                let z_scans = &self.z_order[..usize::from(self.num_scans)];
-                z_scans
-                    .iter()
-                    .map(|&component_index| {
-                        let component = &self.components[component_index];
-                        (self.info.height as usize * component.vertical_sample)
-                            .div_ceil(self.v_max * 8)
-                    })
-                    .min()
-                    .unwrap_or(mcu_height)
+                let component_index = self.z_order.first().copied().unwrap_or(0);
+                if let Some(component) = self.components.get(component_index) {
+                    (self.info.height as usize * component.vertical_sample)
+                        .div_ceil(self.v_max * 8)
+                } else {
+                    mcu_height
+                }
             };
 
             trace!(
