@@ -843,6 +843,11 @@ fn progressive_huffman_incremental_parity() {
                 "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
             ),
             8192
+        ),
+        (
+            "progressive_restart_420",
+            include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg"),
+            97
         )
     ]);
 }
@@ -1274,6 +1279,12 @@ fn progressive_dc_first_resume_uses_fine_checkpoint() {
                 "../../../test-images/jpeg/Kiara_limited_progressive_four_components.jpg"
             )
             .as_slice()
+        ),
+        (
+            "progressive_restart_420_dc_first",
+            // Generated with Pillow 10.2 from a deterministic 256x256 RGB
+            // pattern using progressive=true and restart_marker_rows=1.
+            include_bytes!("../../../test-images/jpeg/progressive_restart_420.jpg").as_slice()
         )
     ] {
         let expected = decode_oneshot(data);
@@ -1283,6 +1294,15 @@ fn progressive_dc_first_resume_uses_fine_checkpoint() {
         assert_eq!(first_scan.spec_start, 0, "{name}: first scan must be DC");
         assert_eq!(first_scan.spec_end, 0, "{name}: first scan must be DC-only");
         assert_eq!(first_scan.succ_high, 0, "{name}: first scan must be first DC");
+
+        if name == "progressive_restart_420_dc_first" {
+            let markers = list_jpeg_markers(data);
+            assert!(markers.iter().any(|(_, code, _)| *code == 0xDD), "fixture must contain DRI");
+            assert!(
+                markers.iter().any(|(_, code, _)| (0xD0..=0xD7).contains(code)),
+                "fixture must contain RST markers"
+            );
+        }
 
         let second_sos_offset = sos_marker_offset(data, 1);
         let scan_len = second_sos_offset - first_scan.data_start;

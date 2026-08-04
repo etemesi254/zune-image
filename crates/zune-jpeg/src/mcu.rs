@@ -873,6 +873,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 trace!("Found inter-scan marker {m:?}");
                 return Ok(McuContinuation::InterScanMarker(m));
             } else if let Marker::DNL = m {
+                self.check_cancelled()?;
                 // DNL appears right after the last entropy-coded row. It
                 // carries the actual line count for images whose SOF height
                 // was 0. Only act on it when we were expecting one; otherwise
@@ -957,12 +958,12 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         // Keep the previous scan checkpoint valid until the next SOS is fully
         // parsed. If input ends between scans, rollback marker side effects so
         // the retry can resume from that checkpoint and parse the markers again.
-        macro_rules! restore_inter_scan_on_eof {
+        macro_rules! restore_inter_scan_on_suspend {
             ($result:expr) => {
                 match $result {
                     Ok(value) => value,
                     Err(e) => {
-                        if e.is_recoverable_eof() {
+                        if e.is_recoverable_eof() || matches!(e, DecodeErrors::Cancelled) {
                             if let Some((append_snapshot, header_snapshot)) = &inter_scan_snapshot {
                                 append_snapshot.rollback(self);
                                 self.restore_scan_header_state(header_snapshot);
@@ -975,16 +976,17 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         // Parse the first marker that triggered this call
-        restore_inter_scan_on_eof!(self.parse_marker_inner(first_marker));
+        restore_inter_scan_on_suspend!(self.parse_marker_inner(first_marker));
         stream.reset();
         B::reset_arith_tables(&mut self.entropy_tables);
 
         for _ in 0..MAX_INTER_SCAN_MARKERS {
-            let marker = restore_inter_scan_on_eof!(get_marker(&mut self.stream, stream));
+            restore_inter_scan_on_suspend!(self.check_cancelled());
+            let marker = restore_inter_scan_on_suspend!(get_marker(&mut self.stream, stream));
 
             match marker {
                 Marker::SOS => {
-                    restore_inter_scan_on_eof!(self.parse_marker_inner(Marker::SOS));
+                    restore_inter_scan_on_suspend!(self.parse_marker_inner(Marker::SOS));
                     self.invalidate_scan_checkpoint();
                     stream.reset();
                     B::reset_arith_tables(&mut self.entropy_tables);
@@ -998,11 +1000,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
                 Marker::DAC | Marker::DHT | Marker::DQT | Marker::DRI | Marker::COM => {
                     trace!("Parsing inter-scan marker {marker:?}");
-                    restore_inter_scan_on_eof!(self.parse_marker_inner(marker));
+                    restore_inter_scan_on_suspend!(self.parse_marker_inner(marker));
                 }
                 Marker::APP(_) => {
                     trace!("Parsing inter-scan APP marker {marker:?}");
-                    restore_inter_scan_on_eof!(self.parse_marker_inner(marker));
+                    restore_inter_scan_on_suspend!(self.parse_marker_inner(marker));
                 }
                 other => {
                     if self.options.strict_mode() {
@@ -1012,11 +1014,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                     }
                     // Non-strict: skip unknown marker
                     warn!("Skipping unexpected marker {other:?} between scans");
-                    let length = restore_inter_scan_on_eof!(
+                    let length = restore_inter_scan_on_suspend!(
                         self.stream.get_u16_be_err().map_err(DecodeErrors::IoErrors)
                     );
                     if length >= 2 {
-                        restore_inter_scan_on_eof!(
+                        restore_inter_scan_on_suspend!(
                             self.stream
                                 .skip((length - 2) as usize)
                                 .map_err(DecodeErrors::IoErrors)

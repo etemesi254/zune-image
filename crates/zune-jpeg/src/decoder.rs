@@ -346,9 +346,9 @@ pub struct JpegDecoder<T> {
     pub(crate) progressive_mcus_buffer: [Vec<i16>; MAX_COMPONENTS],
     /// Active progressive scan scratch buffers.
     ///
-    /// Unsafe scans discard these buffers on EOF. Safe first-DC scans keep them
-    /// across EOF so a later retry can resume from a fine checkpoint without
-    /// committing partial scan data to the preview buffer.
+    /// Storage is retained across EOF or cancellation so retries can reuse its
+    /// capacity. Safe first-DC scans also keep its contents so a later retry can
+    /// resume from a fine checkpoint without committing partial scan data.
     pub(crate) progressive_scan_buffer: [Vec<i16>; MAX_COMPONENTS],
     /// Number of progressive scans committed into `progressive_mcus_buffer`.
     pub(crate) progressive_completed_scans: usize,
@@ -997,7 +997,8 @@ where
     /// [`decode_into`](Self::decode_into) again with the same output buffer.
     /// Stable baseline rows remain valid. If cancellation interrupts a
     /// progressive render, preview queries return zero until rerendering
-    /// completes.
+    /// completes. Header parsing checks cancellation at marker boundaries and
+    /// while buffering large marker bodies.
     /// Passing [`NeverCancel`](crate::NeverCancel) (or any check whose
     /// [`may_cancel`](crate::CancelCheck::may_cancel) is `false`) clears it; the
     /// default is no check, which costs a single predicted branch per poll.
@@ -1033,6 +1034,16 @@ where
     /// width. Owns a clone of the check, so it can live in a `&mut self` loop.
     pub(crate) fn cancel_debounced(&self, mcu_width: usize) -> Debounced {
         Debounced::new(self.cancel.clone(), self.poll_interval / mcu_width.max(1))
+    }
+
+    /// Check cancellation at a non-MCU boundary, such as before parsing a
+    /// marker body. Marker parsing is atomic, so callers can retry safely from
+    /// the previously committed header or scan checkpoint.
+    pub(crate) fn check_cancelled(&self) -> Result<(), DecodeErrors> {
+        if self.cancel.as_ref().is_some_and(|cancel| cancel.is_cancelled()) {
+            return Err(DecodeErrors::Cancelled);
+        }
+        Ok(())
     }
 
     pub fn set_options(&mut self, options: DecoderOptions) {
@@ -1108,6 +1119,7 @@ where
         if self.headers_decoded || self.scan_state.is_some() {
             return Ok(());
         }
+        self.check_cancelled()?;
         let resume_position = self.header_resume_position;
         if resume_position == 0 {
             // First two bytes should be jpeg soi marker
@@ -1252,11 +1264,13 @@ where
     // Skip a marker we don't recognise, then checkpoint past it so we don't
     // need to re-skip on retry.
     fn skip_unknown_marker(&mut self) -> Result<(), DecodeErrors> {
+        self.check_cancelled()?;
         self.skip_marker_payload()?;
         self.checkpoint_headers()?;
         Ok(())
     }
     pub(crate) fn parse_marker_inner(&mut self, m: Marker) -> Result<(), DecodeErrors> {
+        self.check_cancelled()?;
         // Marker parsers are atomic: they read the full marker body into the
         // scratch buffer before mutating any decoder state, so a parser that
         // returns an error has already left the decoder in the same shape as

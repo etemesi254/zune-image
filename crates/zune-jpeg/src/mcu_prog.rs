@@ -35,9 +35,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     ///
     /// Completed progressive scans are committed into the decoder-owned
     /// coefficient buffer. When incremental scan preservation is enabled, the
-    /// current scan decodes into a scratch copy so a recoverable EOF can expose
-    /// the last completed scan without reapplying partially decoded refinement
-    /// data on retry.
+    /// current scan decodes into a scratch copy so EOF or cancellation can
+    /// expose the last completed scan without reapplying partially decoded
+    /// refinement data on retry.
     #[allow(
         clippy::needless_range_loop,
         clippy::cast_sign_loss,
@@ -161,6 +161,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         'eoi: while marker != Marker::EOI {
             match marker {
                 Marker::SOS => {
+                    self.check_cancelled()?;
                     if let Err(e) = parse_sos(self) {
                         return self.handle_progressive_inter_scan_error(
                             e,
@@ -256,7 +257,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
         // Incremental preservation was explicitly enabled for the first attempt,
         // or this decoder is being retried. Clone only the components touched by
-        // the current scan so recoverable EOF can discard partial updates.
+        // the current scan so EOF or cancellation can discard partial updates.
         let fine_resume = self.progressive_fine_resume::<B>();
         if fine_resume.is_none() {
             self.checkpoint_progressive_scan(self.progressive_completed_scans)?;
