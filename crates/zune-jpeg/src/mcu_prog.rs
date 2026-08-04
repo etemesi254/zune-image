@@ -26,6 +26,8 @@ use crate::marker::Marker;
 use crate::mcu::DCT_BLOCK;
 use crate::misc::{calculate_padded_width, setup_component_params};
 
+const PROGRESSIVE_CHECKPOINT_ROW_INTERVAL: usize = 8;
+
 impl<T: ZByteReaderTrait> JpegDecoder<T> {
     /// Decode a progressive image
     ///
@@ -52,7 +54,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut scan_block = core::mem::take(&mut self.progressive_scan_buffer);
         let result =
             self.decode_mcu_ycbcr_progressive_inner::<B>(pixels, &mut block, &mut scan_block);
-        self.progressive_scan_buffer = scan_block;
+        if matches!(&result, Err(error) if error.is_recoverable_eof()) {
+            self.progressive_scan_buffer = scan_block;
+        }
         self.progressive_mcus_buffer = block;
         result
     }
@@ -435,22 +439,16 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
     }
 
-    fn checkpoint_progressive_dc_first_mcu<B: BitStream>(
-        &mut self, stream: &B, mcu_row: usize, mcu_col: usize,
+    fn checkpoint_progressive_dc_first_row<B: BitStream>(
+        &mut self, stream: &B, next_mcu_row: usize,
     ) -> Result<(), DecodeErrors> {
-        if self.progressive_fine_checkpoints_enabled::<B>() && stream.overread_by() == 0 {
-            self.checkpoint_progressive_fine_scan(mcu_row, mcu_col, stream.snapshot_state())?;
+        if next_mcu_row % PROGRESSIVE_CHECKPOINT_ROW_INTERVAL == 0
+            && self.progressive_fine_checkpoints_enabled::<B>()
+            && stream.overread_by() == 0
+        {
+            self.checkpoint_progressive_fine_scan(next_mcu_row, 0, stream.snapshot_state())?;
         }
         Ok(())
-    }
-
-    #[inline]
-    fn next_progressive_mcu(row: usize, col: usize, width: usize) -> (usize, usize) {
-        if col + 1 == width {
-            (row + 1, 0)
-        } else {
-            (row, col + 1)
-        }
     }
 
     /// Parse a progressive scan's entropy-coded data into `buffer`.
@@ -586,10 +584,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
 
                     self.todo -= 1;
                     self.handle_rst_main(stream)?;
-                    let (next_row, next_col) = Self::next_progressive_mcu(i, j, mcu_width);
-                    self.checkpoint_progressive_dc_first_mcu::<B>(stream, next_row, next_col)?;
                 }
             }
+            self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
         }
         Ok(())
     }
@@ -727,9 +724,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 }
                 self.todo -= 1;
                 self.handle_rst_main(stream)?;
-                let (next_row, next_col) = Self::next_progressive_mcu(i, j, self.mcu_x);
-                self.checkpoint_progressive_dc_first_mcu::<B>(stream, next_row, next_col)?;
             }
+            self.checkpoint_progressive_dc_first_row::<B>(stream, i + 1)?;
         }
         Ok(())
     }
