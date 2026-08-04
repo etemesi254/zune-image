@@ -161,3 +161,53 @@ fn decode_non_interleaved_422_65x65() {
         "Center pixel wrong: expected ~(96,96,128), got ({r},{g},{b})"
     );
 }
+
+// Test for https://github.com/etemesi254/zune-image/issues/419.
+#[test]
+fn decode_baseline_non_interleaved_420_color_balance() {
+    // Path to a 4:2:0 baseline non-interleaved multi-scan JPEG (SOF0)
+    let test_data = include_bytes!("../../../test-images/jpeg/baseline_non_interleaved.jpg");
+    let mut decoder = JpegDecoder::new(ZCursor::new(test_data));
+    // 1. Check Slice Bounds Abort:
+    // Without the fix, Luma (Y, vertical_sample = 2) double-scales row offsets
+    // and aborts halfway down the image with "Would panic on slice iteration".
+    let pixels = decoder
+        .decode()
+        .expect("Decoder aborted on 4:2:0 baseline non-interleaved JPEG");
+    let info = decoder.info().expect("Failed to get image info");
+    let total_pixels = info.width as usize * info.height as usize;
+    assert_eq!(pixels.len(), total_pixels * 3, "Unexpected pixel buffer size");
+    let mut uninitialized_black_count = 0;
+    let mut green_tint_count = 0;
+    let mut valid_gray_count = 0;
+    for chunk in pixels.chunks_exact(3) {
+        let (r, g, b) = (chunk[0], chunk[1], chunk[2]);
+        if r < 10 && g < 10 && b < 10 {
+            uninitialized_black_count += 1;
+        } else if g.saturating_sub(r) > 40 {
+            green_tint_count += 1;
+        } else if r > 10 && r.abs_diff(g) < 40 && g.abs_diff(b) < 40 {
+            valid_gray_count += 1;
+        }
+    }
+    // 2. Catch current `dev` branch bug (skips odd Luma block rows -> 50% uninitialized black pixels)
+    assert_eq!(
+        uninitialized_black_count, 0,
+        "Found {} uninitialized black pixels ({:.1}% of image): decoder skipped Luma rows!",
+        uninitialized_black_count,
+        (uninitialized_black_count as f64 / total_pixels as f64) * 100.0
+    );
+    // 3. Catch release `0.5.15` bug (Cb over-read -> Cr starvation -> full-frame green tint)
+    assert_eq!(
+        green_tint_count, 0,
+        "Found {} green-tinted pixels ({:.1}% of image): chroma bitstream starvation occurred!",
+        green_tint_count,
+        (green_tint_count as f64 / total_pixels as f64) * 100.0
+    );
+    // 4. Confirm 100% of pixels in the tile decoded to valid balanced gray/white
+    assert_eq!(
+        valid_gray_count, total_pixels,
+        "Expected all {} pixels to be balanced gray, but only {} were valid.",
+        total_pixels, valid_gray_count
+    );
+}
