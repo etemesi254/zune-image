@@ -253,8 +253,19 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
             resume_row = 0;
             resume_col = 0;
 
+            let scan_du_height = if all_components_in_first_scan {
+                mcu_height
+            } else {
+                let k = self.z_order.first().copied().unwrap_or(0);
+                if let Some(comp) = self.components.get(k) {
+                    (self.info.height as usize * comp.vertical_sample).div_ceil(self.v_max * 8)
+                } else {
+                    mcu_height
+                }
+            };
+
             let mut cancel = self.cancel_debounced(mcu_width);
-            for i in current_resume_row..mcu_height {
+            for i in current_resume_row..scan_du_height {
                 let start_col = if i == current_resume_row {
                     current_resume_col
                 } else {
@@ -665,10 +676,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
                 let channel = if PROGRESSIVE {
                     let offset = mcu_row
                         .checked_mul(component.width_stride)
-                        .and_then(|x| {
-                            x.checked_mul(8)
-                                .and_then(|y| y.checked_mul(component.vertical_sample))
-                        })
+                        .and_then(|x| x.checked_mul(8))
                         .ok_or(DecodeErrors::FormatStatic("Overflow"))?;
                     // Small stopgap for https://github.com/etemesi254/zune-image/issues/362
                     if offset >= progressive[k].len() {
