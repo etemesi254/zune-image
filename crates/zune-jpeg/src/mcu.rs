@@ -540,9 +540,13 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         let mut pixels_written = 0;
+        let mut cancel = self.cancel_debounced(self.mcu_x);
 
         // dequantize and idct have been performed, only color convert.
         for i in 0..mcu_height {
+            if cancel.is_cancelled() {
+                return Err(DecodeErrors::Cancelled);
+            }
             // All the data is already in the right order, we just need to be able to pass it to
             // the post_process & upsample method. That expects all the data to be stored as one
             // row of MCUs in each component's `raw_coeff`.

@@ -54,7 +54,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let mut scan_block = core::mem::take(&mut self.progressive_scan_buffer);
         let result =
             self.decode_mcu_ycbcr_progressive_inner::<B>(pixels, &mut block, &mut scan_block);
-        if matches!(&result, Err(error) if error.is_recoverable_eof()) {
+        if matches!(&result, Err(error) if error.is_recoverable_eof() || matches!(error, DecodeErrors::Cancelled)) {
             self.progressive_scan_buffer = scan_block;
         }
         self.progressive_mcus_buffer = block;
@@ -288,6 +288,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let result = self.parse_entropy_coded_data(stream, scan_block, fine_resume.as_ref());
 
         if let Err(e) = result {
+            if matches!(e, DecodeErrors::Cancelled) {
+                return Err(e);
+            }
             // Completed scans are displayable, but a truncated scan is not:
             // refinement passes read-modify-write coefficient data, so the
             // scratch copy is discarded on recoverable EOF.
@@ -343,6 +346,10 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         let result = self.parse_entropy_coded_data(stream, block, None);
 
         if let Err(e) = result {
+            if matches!(e, DecodeErrors::Cancelled) {
+                self.discard_progressive_partial();
+                return Err(e);
+            }
             if e.is_recoverable_eof() {
                 self.discard_progressive_partial();
                 return Err(e);
@@ -370,6 +377,9 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         &mut self, error: DecodeErrors, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
         preserve_completed_scans: bool
     ) -> Result<(), DecodeErrors> {
+        if matches!(error, DecodeErrors::Cancelled) {
+            return Err(error);
+        }
         if error.is_recoverable_eof() {
             if preserve_completed_scans {
                 self.finish_progressive_partial(block, pixels)?;
@@ -389,6 +399,7 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         self.invalidate_progressive_scan_checkpoint();
         self.progressive_completed_scans = 0;
         self.progressive_displayed_scans = 0;
+        self.progressive_render_incomplete = false;
         self.pixels_decoded = 0;
     }
 
@@ -869,6 +880,11 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
     fn finish_progressive_decoding(
         &mut self, block: &[Vec<i16>; MAX_COMPONENTS], pixels: &mut [u8],
     ) -> Result<(), DecodeErrors> {
+        // Rendering replaces the caller's output row by row. Until every row
+        // succeeds, the buffer may contain a mix of preview generations and
+        // must not be advertised as a displayable progressive frame.
+        self.progressive_displayed_scans = 0;
+        self.progressive_render_incomplete = true;
         // This function is complicated because we need to replicate
         // the function in mcu.rs
         //
@@ -1022,6 +1038,8 @@ impl<T: ZByteReaderTrait> JpegDecoder<T> {
         }
 
         trace!("Finished decoding image");
+
+        self.progressive_render_incomplete = false;
 
         return Ok(());
     }

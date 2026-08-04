@@ -355,6 +355,9 @@ pub struct JpegDecoder<T> {
     /// Number of committed progressive scans currently rendered as preview
     /// pixels in the output buffer.
     pub(crate) progressive_displayed_scans: usize,
+    /// The output buffer contains a partially rendered progressive frame and
+    /// must not be advertised until rerendering succeeds.
+    pub(crate) progressive_render_incomplete: bool,
     /// Whether per-row checkpointing is enabled for the current decode.
     ///
     /// By default this becomes `true` after a previous scan attempt has run,
@@ -703,6 +706,7 @@ where
             progressive_scan_buffer: core::array::from_fn(|_| Vec::new()),
             progressive_completed_scans: 0,
             progressive_displayed_scans: 0,
+            progressive_render_incomplete: false,
             marker_body_scratch:         Vec::new(),
             expects_dnl:                 false
         }
@@ -988,6 +992,12 @@ where
     /// closure over an `Arc<AtomicBool>` or a deadline). If it fires, decoding
     /// returns
     /// [`DecodeErrors::Cancelled`](crate::errors::DecodeErrors::Cancelled).
+    /// Cancellation is propagated even in non-strict mode and is distinct from
+    /// recoverable EOF. To retry, replace or clear the check and call
+    /// [`decode_into`](Self::decode_into) again with the same output buffer.
+    /// Stable baseline rows remain valid. If cancellation interrupts a
+    /// progressive render, preview queries return zero until rerendering
+    /// completes.
     /// Passing [`NeverCancel`](crate::NeverCancel) (or any check whose
     /// [`may_cancel`](crate::CancelCheck::may_cancel) is `false`) clears it; the
     /// default is no check, which costs a single predicted branch per poll.
@@ -1736,7 +1746,8 @@ where
                 self.restore_scan_header_state(header_snapshot);
                 self.stream.set_position(view.stream_position)?;
                 self.progressive_completed_scans = view.completed_scans;
-                self.progressive_displayed_scans = view.displayed_scans;
+                self.progressive_displayed_scans =
+                    if self.progressive_render_incomplete { 0 } else { view.displayed_scans };
                 self.todo = view.todo;
                 self.pixels_decoded = 0;
                 for (i, comp) in self.components.iter_mut().enumerate().take(MAX_COMPONENTS) {
@@ -1748,7 +1759,8 @@ where
                 self.restore_scan_header_state(&view.header_snapshot);
                 self.stream.set_position(view.stream_position)?;
                 self.progressive_completed_scans = view.completed_scans;
-                self.progressive_displayed_scans = view.completed_scans;
+                self.progressive_displayed_scans =
+                    if self.progressive_render_incomplete { 0 } else { view.completed_scans };
                 self.pixels_decoded = 0;
                 for comp in &mut self.components {
                     comp.dc_pred = 0;
