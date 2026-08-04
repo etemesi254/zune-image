@@ -403,6 +403,156 @@ fn decode_streaming_mode(c: &mut Criterion) {
     });
 }
 
+#[derive(Clone, Copy)]
+struct ProgressiveScanRange {
+    data_start: usize,
+    data_end:   usize,
+    spec_start: u8,
+    spec_end:   u8,
+    succ_high:  u8
+}
+
+fn jpeg_markers(data: &[u8]) -> Vec<(usize, u8, Option<usize>)> {
+    // Keep this standalone benchmark helper aligned with the equivalent
+    // fixture scanner in zune-jpeg/tests/incremental.rs.
+    let mut markers = Vec::new();
+    let mut offset = 0;
+    while offset + 1 < data.len() {
+        if data[offset] != 0xFF {
+            offset += 1;
+            continue;
+        }
+        let code = data[offset + 1];
+        if code == 0xFF || code == 0x00 {
+            offset += 1;
+            continue;
+        }
+        if code == 0xD8 || code == 0xD9 || (0xD0..=0xD7).contains(&code) {
+            markers.push((offset, code, None));
+            offset += 2;
+            continue;
+        }
+        if offset + 3 >= data.len() {
+            break;
+        }
+        let length = usize::from(u16::from_be_bytes([data[offset + 2], data[offset + 3]]));
+        if length < 2 || offset + 2 + length > data.len() {
+            break;
+        }
+        markers.push((offset, code, Some(length)));
+        offset += 2 + length;
+    }
+    markers
+}
+
+fn progressive_scan_ranges(data: &[u8]) -> Vec<ProgressiveScanRange> {
+    let markers = jpeg_markers(data);
+    markers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (offset, code, length))| {
+            if *code != 0xDA {
+                return None;
+            }
+            let length = length.expect("SOS must have a length");
+            let payload = offset + 4;
+            let components = usize::from(data[payload]);
+            let params = payload + 1 + 2 * components;
+            let data_start = offset + 2 + length;
+            let data_end = markers
+                .iter()
+                .skip(index + 1)
+                .find_map(|(next_offset, next_code, _)| {
+                    (!((0xD0..=0xD7).contains(next_code))).then_some(*next_offset)
+                })
+                .unwrap_or(data.len());
+            let successive = data[params + 2];
+            Some(ProgressiveScanRange {
+                data_start,
+                data_end,
+                spec_start: data[params],
+                spec_end: data[params + 1],
+                succ_high: successive >> 4
+            })
+        })
+        .collect()
+}
+
+fn repeated_limits(start: usize, end: usize) -> [usize; 3] {
+    assert!(end > start + 3, "scan range is too small for repeated retries");
+    let length = end - start;
+    [start + length / 4, start + length / 2, start + length * 3 / 4]
+}
+
+fn decode_with_repeated_growth(data: &[u8], limits: &[usize]) -> Vec<u8> {
+    let first_limit = *limits.first().expect("at least one retry limit is required");
+    let limit = Rc::new(Cell::new(first_limit));
+    let cursor = GrowableCursor::new(data, Rc::clone(&limit));
+    let mut decoder = JpegDecoder::new(cursor);
+    decoder.set_incremental_mode(true);
+    decoder.decode_headers().expect("headers must fit before the first retry limit");
+    let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+
+    for visible in limits {
+        limit.set(*visible);
+        let error = decoder
+            .decode_into(&mut output)
+            .expect_err("each partial visibility limit must stop at recoverable EOF");
+        assert!(error.is_recoverable_eof(), "got: {error:?}");
+    }
+
+    limit.set(data.len());
+    decoder
+        .decode_into(&mut output)
+        .expect("full input must complete after repeated retries");
+    output
+}
+
+/// Measures total wall-clock work across three EOF/retry cycles plus the final
+/// successful decode. Progressive refinement deliberately replays from the
+/// current scan boundary; the DC-first case can use fine row checkpoints.
+fn decode_repeated_retry_cost(c: &mut Criterion) {
+    let baseline = read(
+        sample_path().join("test-images/jpeg/benchmarks/speed_bench_hv_subsampling.jpg")
+    )
+    .unwrap();
+    let baseline_start = baseline
+        .windows(2)
+        .position(|window| window == [0xFF, 0xDA])
+        .expect("baseline fixture must contain SOS");
+    let baseline_sos_length = usize::from(u16::from_be_bytes([
+        baseline[baseline_start + 2],
+        baseline[baseline_start + 3]
+    ]));
+    let baseline_entropy_start = baseline_start + 2 + baseline_sos_length;
+    let baseline_limits = repeated_limits(baseline_entropy_start, baseline.len() - 2);
+
+    let progressive = read(sample_path().join("test-images/jpeg/benchmarks/speed_bench_prog.jpg"))
+        .unwrap();
+    let scans = progressive_scan_ranges(&progressive);
+    let dc_first = scans
+        .iter()
+        .find(|scan| scan.spec_start == 0 && scan.spec_end == 0 && scan.succ_high == 0)
+        .expect("progressive fixture must contain a first-DC scan");
+    let refinement = scans
+        .iter()
+        .find(|scan| scan.succ_high > 0)
+        .expect("progressive fixture must contain a refinement scan");
+    let dc_limits = repeated_limits(dc_first.data_start, dc_first.data_end);
+    let refinement_limits = repeated_limits(refinement.data_start, refinement.data_end);
+
+    let mut group = c.benchmark_group("jpeg: Repeated incremental retry cost");
+    group.bench_function("baseline row checkpoints", |b| {
+        b.iter(|| black_box(decode_with_repeated_growth(&baseline, &baseline_limits)))
+    });
+    group.bench_function("progressive first-DC fine checkpoints", |b| {
+        b.iter(|| black_box(decode_with_repeated_growth(&progressive, &dc_limits)))
+    });
+    group.bench_function("progressive refinement scan-boundary replay", |b| {
+        b.iter(|| black_box(decode_with_repeated_growth(&progressive, &refinement_limits)))
+    });
+}
+
 criterion_group!(name=benches;
       config={
       let c = Criterion::default();
@@ -412,6 +562,7 @@ criterion_group!(name=benches;
     decode_hv_samp,criterion_benchmark_grayscale,
     decode_hv_samp_prog,decode_h_samp_prog,decode_no_samp_prog,decode_v_samp_prog,
     decode_no_samp_opts,
-    decode_restart_full,decode_restart_resume,decode_streaming_mode);
+    decode_restart_full,decode_restart_resume,decode_streaming_mode,
+    decode_repeated_retry_cost);
 
 criterion_main!(benches);
