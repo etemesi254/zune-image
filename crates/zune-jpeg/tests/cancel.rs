@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::{cell::{Cell, RefCell}, io::{BufRead, Read, Seek, SeekFrom}, rc::Rc};
 
 use zune_core::bytestream::ZCursor;
+use zune_core::options::DecoderOptions;
 use zune_jpeg::errors::DecodeErrors;
 use zune_jpeg::{CancelCheck, JpegDecoder, NeverCancel};
 
@@ -330,6 +331,47 @@ fn metadata_marker_cancellation_commits_once() {
 }
 
 #[test]
+fn progressive_edge_trigger_cancellation_is_reported() {
+    for strict in [false, true] {
+        for incremental in [false, true] {
+            let options = DecoderOptions::default().set_strict_mode(strict);
+            let mut decoder = JpegDecoder::new_with_options(ZCursor::new(PROGRESSIVE), options);
+            decoder.decode_headers().unwrap();
+            decoder.set_incremental_mode(incremental);
+            decoder.set_cancel_interval(1);
+            decoder.set_cancel(cancel_once_at(0));
+            let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+
+            let error = decoder.decode_into(&mut output).unwrap_err();
+            assert!(matches!(error, DecodeErrors::Cancelled));
+        }
+    }
+}
+
+#[test]
+fn progressive_cancellation_retry_matches_oneshot() {
+    let expected = JpegDecoder::new(ZCursor::new(PROGRESSIVE)).decode().unwrap();
+
+    // Poll cancellation after eight decoded rows, proving the latest MCU
+    // checkpoint and its matching scratch coefficients survive retry.
+    for (incremental, cancel_poll) in [(false, 0), (true, 8)] {
+        let mut decoder = JpegDecoder::new(ZCursor::new(PROGRESSIVE));
+        decoder.decode_headers().unwrap();
+        decoder.set_incremental_mode(incremental);
+        decoder.set_cancel_interval(1);
+        decoder.set_cancel(cancel_once_at(cancel_poll));
+        let mut output = vec![0; decoder.output_buffer_size().unwrap()];
+
+        let error = decoder.decode_into(&mut output).unwrap_err();
+        assert!(matches!(error, DecodeErrors::Cancelled));
+
+        decoder.set_cancel(NeverCancel);
+        decoder.decode_into(&mut output).unwrap();
+        assert_eq!(output, expected, "incremental={incremental}");
+    }
+}
+
+#[test]
 fn progressive_fine_cancellation_resume_uses_checkpoint() {
     let expected = JpegDecoder::new(ZCursor::new(PROGRESSIVE_RESTART)).decode().unwrap();
     let first_scan_start = sos_data_start(PROGRESSIVE_RESTART, 0);
@@ -390,7 +432,7 @@ fn progressive_inter_scan_marker_cancellation_retries() {
 }
 
 #[test]
-fn progressive_unsafe_scan_cancellation_retries() {
+fn progressive_ac_scan_cancellation_retries() {
     let expected = JpegDecoder::new(ZCursor::new(SMALL_PROGRESSIVE)).decode().unwrap();
     let unsafe_scan_start = ac_first_scan_start(SMALL_PROGRESSIVE, 1);
     let limit = Rc::new(Cell::new(SMALL_PROGRESSIVE.len()));
