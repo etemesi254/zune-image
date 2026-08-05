@@ -20,6 +20,8 @@ use zune_core::log::{trace, warn};
 
 use crate::components::{Components, SampleRatios};
 use crate::decoder::{ExtendedXmpSegment, GainMapInfo, ICCChunk, JpegDecoder, MAX_COMPONENTS};
+#[cfg(feature = "arith")]
+use crate::decoder::MAX_ARITHMETIC_TABLES;
 use crate::errors::DecodeErrors;
 use crate::huffman::HuffmanTable;
 use crate::misc::{SOFMarkers, UN_ZIGZAG};
@@ -218,9 +220,10 @@ where
             let dc_or_ac = (ht_info >> 4) & 0xF;
             let index = (ht_info & 0xF) as usize;
 
-            if index >= MAX_COMPONENTS {
+            if index >= MAX_ARITHMETIC_TABLES {
                 return Err(DecodeErrors::ArithmeticDecode(format!(
-                    "Invalid DAC index {index}, expected between 0 and 3"
+                    "Invalid DAC index {index}, expected between 0 and {}",
+                    MAX_ARITHMETIC_TABLES - 1
                 )));
             }
 
@@ -493,6 +496,17 @@ pub(crate) fn parse_sos<T: ZByteReaderTrait>(
             // top 4 bits contain dc huffman destination table
             // lower four bits contain ac huffman destination table
             let y = cursor.read_u8()?;
+
+            if !image.is_arithmetic {
+                let dc_table = usize::from(y >> 4);
+                let ac_table = usize::from(y & 0x0F);
+                if dc_table >= MAX_COMPONENTS || ac_table >= MAX_COMPONENTS {
+                    return Err(DecodeErrors::SosError(format!(
+                        "Invalid Huffman table selectors DC={dc_table}, AC={ac_table}; expected 0-{}",
+                        MAX_COMPONENTS - 1
+                    )));
+                }
+            }
 
             let mut j = 0;
             while j < image.info.components {
