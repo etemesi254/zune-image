@@ -41,14 +41,24 @@ macro_rules! __log_enabled {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __error {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __error {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 //
@@ -58,14 +68,24 @@ macro_rules! __error {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __warn {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __warn {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 //
@@ -75,14 +95,24 @@ macro_rules! __warn {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __info {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __info {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 //
@@ -92,14 +122,24 @@ macro_rules! __info {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __debug {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __debug {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 //
@@ -109,12 +149,52 @@ macro_rules! __debug {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __trace {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
 }
 
 #[cfg(not(feature = "std"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __trace {
-    ($($arg:tt)+) => {};
+    ($($arg:tt)+) => {{
+        // Expand to a block so the macro is usable in expression position.
+        // `{}` alone expands to *nothing*, which is a hard error for callers
+        // that use the macro as a trailing expression.
+        let _ = ::core::format_args!($($arg)+);
+    }};
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::log::{debug, error, info, trace, warn};
+
+    /// The no-op logging macros must expand to a valid expression of type `()`,
+    /// not to nothing at all.
+    ///
+    /// Downstream crates call these as the trailing expression of a block, e.g.
+    /// `else { warn!("..") }`. A macro with an empty transcriber still works as
+    /// a statement, so this crate keeps compiling standalone and the breakage
+    /// only shows up in dependents.
+    #[test]
+    fn macros_expand_in_expression_position() {
+        let value = 42;
+
+        let _: () = { error!("error {}", value) };
+        let _: () = { warn!("warn {}", value) };
+        let _: () = { info!("info {}", value) };
+        let _: () = { debug!("debug {}", value) };
+        let _: () = { trace!("trace {}", value) };
+    }
+
+    /// Statement position must keep working too.
+    #[test]
+    fn macros_expand_in_statement_position() {
+        warn!("no args");
+        warn!("with args {} {:?}", 1, "two");
+    }
 }
