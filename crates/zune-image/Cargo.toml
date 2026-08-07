@@ -54,7 +54,7 @@ all = ["image_formats", "serde-support", "metadata", "threads", "simd", "log", "
 # Core primitives
 zune-core = { path = "../zune-core", version = "^0.5.1", features = ["std"] }
 # Images
-zune-jpeg = { path = "../zune-jpeg", version = "^0.5.11", optional = true }
+zune-jpeg = { path = "../zune-jpeg", version = "^0.5.16-rc1", optional = true }
 zune-ppm = { path = "../zune-ppm", version = "^0.5.1", optional = true }
 zune-psd = { path = "../zune-psd", version = "^0.5.1", optional = true }
 zune-farbfeld = { path = "../zune-farbfeld", version = "^0.5.2", optional = true }
